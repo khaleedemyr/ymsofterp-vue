@@ -34,7 +34,13 @@ class PrFoodController extends Controller
 
     public function show($id)
     {
-        $prFood = PrFood::with(['warehouse', 'requester', 'items.item'])->findOrFail($id);
+        $prFood = PrFood::with([
+            'warehouse',
+            'requester',
+            'items.item',
+            'ssdManager:id,nama_lengkap',
+            'viceCoo:id,nama_lengkap'
+        ])->findOrFail($id);
         return Inertia::render('PrFoods/Show', [
             'prFood' => $prFood,
         ]);
@@ -61,6 +67,7 @@ class PrFoodController extends Controller
             'items.*.qty' => 'required|numeric|min:0.01',
             'items.*.unit' => 'required|string|max:20',
             'items.*.note' => 'nullable|string',
+            'items.*.arrival_date' => 'nullable|date',
         ]);
         $prNumber = 'PRF-' . date('Ymd') . '-' . strtoupper(Str::random(4));
         DB::beginTransaction();
@@ -79,6 +86,7 @@ class PrFoodController extends Controller
                 'qty' => $item['qty'],
                 'unit' => $item['unit'],
                 'note' => $item['note'] ?? null,
+                'arrival_date' => $item['arrival_date'] ?? null,
             ]);
         }
         ActivityLog::create([
@@ -92,12 +100,24 @@ class PrFoodController extends Controller
             'new_data' => $prFood->toArray(),
         ]);
         DB::commit();
+        // Notifikasi ke SSD Manager
+        $ssdManagers = DB::table('users')->where('id_jabatan', 161)->where('status', 'A')->pluck('id');
+        $no_pr = $prFood->pr_number;
+        $requester = $prFood->requester->nama_lengkap ?? '-';
+        $warehouse = $prFood->warehouse->name ?? '-';
+        $this->sendNotification(
+            $ssdManagers,
+            'pr_approval',
+            'Approval PR Foods',
+            "PR $no_pr dari $requester ($warehouse) menunggu approval Anda.",
+            route('pr-foods.show', $prFood->id)
+        );
         return redirect()->route('pr-foods.index');
     }
 
     public function edit($id)
     {
-        $prFood = PrFood::with('items')->findOrFail($id);
+        $prFood = PrFood::with(['items.item', 'warehouse', 'requester'])->findOrFail($id);
         $warehouses = Warehouse::all();
         $items = Item::all();
         return Inertia::render('PrFoods/Form', [
@@ -119,6 +139,7 @@ class PrFoodController extends Controller
             'items.*.qty' => 'required|numeric|min:0.01',
             'items.*.unit' => 'required|string|max:20',
             'items.*.note' => 'nullable|string',
+            'items.*.arrival_date' => 'nullable|date',
         ]);
         DB::beginTransaction();
         $oldData = $prFood->toArray();
@@ -135,6 +156,7 @@ class PrFoodController extends Controller
                 'qty' => $item['qty'],
                 'unit' => $item['unit'],
                 'note' => $item['note'] ?? null,
+                'arrival_date' => $item['arrival_date'] ?? null,
             ]);
         }
         ActivityLog::create([
@@ -172,13 +194,16 @@ class PrFoodController extends Controller
     // Approval SSD Manager
     public function approveSsdManager(Request $request, $id)
     {
-        $prFood = PrFood::findOrFail($id);
-        $prFood->update([
+        $prFood = PrFood::with(['requester', 'warehouse'])->findOrFail($id);
+        $updateData = [
             'ssd_manager_approved_at' => now(),
             'ssd_manager_approved_by' => Auth::id(),
             'ssd_manager_note' => $request->ssd_manager_note,
-            'status' => $request->approved ? 'approved' : 'rejected',
-        ]);
+        ];
+        if (!$request->approved) {
+            $updateData['status'] = 'rejected';
+        }
+        $prFood->update($updateData);
         ActivityLog::create([
             'user_id' => Auth::id(),
             'activity_type' => $request->approved ? 'approve' : 'reject',
@@ -189,18 +214,44 @@ class PrFoodController extends Controller
             'old_data' => null,
             'new_data' => $prFood->fresh()->toArray(),
         ]);
+        $no_pr = $prFood->pr_number;
+        $requester = $prFood->requester->nama_lengkap ?? '-';
+        $warehouse = $prFood->warehouse->name ?? '-';
+        if ($request->approved) {
+            // Notifikasi ke Vice COO
+            $viceCoos = DB::table('users')->where('id_jabatan', 154)->where('status', 'A')->pluck('id');
+            $this->sendNotification(
+                $viceCoos,
+                'pr_approval',
+                'Approval PR Foods',
+                "PR $no_pr dari $requester ($warehouse) sudah di-approve SSD Manager, menunggu approval Anda.",
+                route('pr-foods.show', $prFood->id)
+            );
+        } else {
+            // Notifikasi ke creator PR jika di-reject
+            $requestedBy = $prFood->requested_by;
+            \Log::info('Notif reject: requested_by', ['requested_by' => $requestedBy, 'pr_id' => $prFood->id]);
+            $this->sendNotification(
+                [$requestedBy],
+                'pr_rejected',
+                'PR Foods Ditolak',
+                "PR $no_pr dari $requester ($warehouse) telah ditolak oleh SSD Manager.",
+                route('pr-foods.show', $prFood->id)
+            );
+            \Log::info('Notif reject sent', ['user_id' => $requestedBy, 'pr_id' => $prFood->id]);
+        }
         return redirect()->route('pr-foods.index');
     }
 
     // Approval Vice COO
     public function approveViceCoo(Request $request, $id)
     {
-        $prFood = PrFood::findOrFail($id);
+        $prFood = PrFood::with(['requester', 'warehouse'])->findOrFail($id);
         $prFood->update([
             'vice_coo_approved_at' => now(),
             'vice_coo_approved_by' => Auth::id(),
             'vice_coo_note' => $request->vice_coo_note,
-            'status' => $request->approved ? 'po' : 'rejected',
+            'status' => $request->approved ? 'approved' : 'rejected',
         ]);
         ActivityLog::create([
             'user_id' => Auth::id(),
@@ -212,6 +263,42 @@ class PrFoodController extends Controller
             'old_data' => null,
             'new_data' => $prFood->fresh()->toArray(),
         ]);
+        if ($request->approved) {
+            // Notifikasi ke Admin Purchasing & Purchasing Manager
+            $adminPurchasing = DB::table('users')->where('id_jabatan', 244)->where('status', 'A')->pluck('id');
+            $purchasingManagers = DB::table('users')->where('id_jabatan', 168)->where('status', 'A')->pluck('id');
+            $userIds = $adminPurchasing->merge($purchasingManagers);
+            $no_pr = $prFood->pr_number;
+            $requester = $prFood->requester->nama_lengkap ?? '-';
+            $warehouse = $prFood->warehouse->name ?? '-';
+            $this->sendNotification(
+                $userIds,
+                'pr_po',
+                'Pembuatan PO',
+                "PR $no_pr dari $requester ($warehouse) sudah di-approve Vice COO, silakan buat PO.",
+                'PR Foods sudah di-approve Vice COO, silakan buat PO.',
+                route('pr-foods.show', $prFood->id)
+            );
+        }
         return redirect()->route('pr-foods.index');
+    }
+
+    // Helper untuk insert notifikasi
+    private function sendNotification($userIds, $type, $title, $message, $url) {
+        $now = now();
+        $data = [];
+        foreach ($userIds as $uid) {
+            $data[] = [
+                'user_id' => $uid,
+                'type' => $type,
+                'title' => $title,
+                'message' => $message,
+                'url' => $url,
+                'is_read' => 0,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ];
+        }
+        DB::table('notifications')->insert($data);
     }
 } 

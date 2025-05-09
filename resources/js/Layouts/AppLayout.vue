@@ -50,6 +50,7 @@ const menuGroups = [
             { name: () => 'Warehouse Division', icon: 'fa-solid fa-sitemap', route: '/warehouse-divisions' },
             { name: () => 'Outlets', icon: 'fa-solid fa-store', route: '/outlets' },
             { name: () => 'Customers', icon: 'fa-solid fa-users', route: '/customers' },
+            { name: () => 'Suppliers', icon: 'fa-solid fa-truck', route: '/suppliers' },
             { name: () => 'Regions', icon: 'fa-solid fa-globe-asia', route: '/regions' },
         ],
     },
@@ -60,6 +61,7 @@ const menuGroups = [
         open: ref(false),
         menus: [
             { name: () => 'Purchase Requisition Foods', icon: 'fa-solid fa-file-invoice', route: '/pr-foods' },
+            { name: () => 'Purchase Order Foods', icon: 'fa-solid fa-file-invoice-dollar', route: '/po-foods' },
         ],
     },
 ];

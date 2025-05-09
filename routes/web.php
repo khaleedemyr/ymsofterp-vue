@@ -28,6 +28,8 @@ use App\Http\Controllers\ItemController;
 use App\Http\Controllers\ModifierController;
 use App\Http\Controllers\ModifierOptionController;
 use App\Http\Controllers\PrFoodController;
+use App\Http\Controllers\SupplierController;
+use App\Http\Controllers\PurchaseOrderFoodsController;
 
 Route::get('/', function () {
     return Inertia::render('Welcome', [
@@ -199,6 +201,16 @@ Route::middleware(['auth'])->group(function () {
 
     Route::get('/dashboard-outlet', [OutletMapDashboardController::class, 'index'])->name('dashboard.outlet');
     Route::get('/api/outlets/active', [OutletMapDashboardController::class, 'activeOutlets'])->name('api.outlets.active');
+
+    // Purchase Order Foods routes
+    Route::get('/po-foods', [PurchaseOrderFoodsController::class, 'index'])->name('po-foods.index');
+    Route::get('/po-foods/create', [PurchaseOrderFoodsController::class, 'create'])->name('po-foods.create');
+    Route::get('/po-foods/{id}', [PurchaseOrderFoodsController::class, 'show'])->name('po-foods.show');
+    Route::get('/po-foods/{id}/edit', [PurchaseOrderFoodsController::class, 'edit'])->name('po-foods.edit');
+    Route::put('/po-foods/{id}', [PurchaseOrderFoodsController::class, 'update'])->name('po-foods.update');
+    Route::post('/po-foods/{id}/approve', [PurchaseOrderFoodsController::class, 'approvePurchasingManager'])->name('po-foods.approve');
+    Route::post('/po-foods/{id}/approve-gm-finance', [PurchaseOrderFoodsController::class, 'approveGMFinance'])->name('po-foods.approve-gm-finance');
+    Route::delete('/po-foods/{id}', [PurchaseOrderFoodsController::class, 'destroy'])->name('po-foods.destroy');
 });
 
 Route::get('/items/import-template', [ItemController::class, 'downloadImportTemplate'])->name('items.import.template');
@@ -208,6 +220,7 @@ Route::get('/items/export/excel', [ItemController::class, 'exportExcel'])->name(
 Route::get('/items/export/pdf', [ItemController::class, 'exportPdf'])->name('items.export.pdf');
 Route::post('/items/{id}/toggle-status', [ItemController::class, 'toggleStatus'])->name('items.toggleStatus');
 Route::get('/api/items/search-for-pr', [ItemController::class, 'searchForPr']);
+Route::get('/api/items/last-price', [PurchaseOrderFoodsController::class, 'getLastPrice']);
 
 Route::resource('items', ItemController::class);
 Route::resource('modifiers', ModifierController::class);
@@ -215,5 +228,18 @@ Route::resource('modifier-options', ModifierOptionController::class);
 Route::resource('pr-foods', PrFoodController::class);
 Route::post('pr-foods/{id}/approve-ssd-manager', [PrFoodController::class, 'approveSsdManager'])->name('pr-foods.approve-ssd-manager');
 Route::post('pr-foods/{id}/approve-vice-coo', [PrFoodController::class, 'approveViceCoo'])->name('pr-foods.approve-vice-coo');
+
+Route::resource('suppliers', SupplierController::class);
+Route::patch('suppliers/{id}/toggle-status', [SupplierController::class, 'toggleStatus'])->name('suppliers.toggle-status');
+
+// PO Foods Routes
+Route::middleware(['auth', 'verified'])->group(function () {
+    Route::get('/po-foods', [PurchaseOrderFoodsController::class, 'index'])->name('po-foods.index');
+    Route::get('/po-foods/create', [PurchaseOrderFoodsController::class, 'create'])->name('po-foods.create');
+    Route::get('/api/po-foods', [PurchaseOrderFoodsController::class, 'getPOList'])->name('po-foods.list');
+    Route::get('/api/pr-foods/available', [PurchaseOrderFoodsController::class, 'getAvailablePR'])->name('pr-foods.available');
+    Route::post('/api/pr-foods/items', [PurchaseOrderFoodsController::class, 'getPRItems'])->name('pr-foods.items');
+    Route::post('/api/po-foods/generate', [PurchaseOrderFoodsController::class, 'generatePO'])->name('po-foods.generate');
+});
 
 require __DIR__.'/auth.php';

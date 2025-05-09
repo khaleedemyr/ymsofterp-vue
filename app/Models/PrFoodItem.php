@@ -11,7 +11,7 @@ class PrFoodItem extends Model
 
     protected $table = 'pr_food_items';
     protected $fillable = [
-        'pr_food_id', 'item_id', 'qty', 'unit', 'note'
+        'pr_food_id', 'item_id', 'qty', 'unit', 'note', 'arrival_date'
     ];
 
     public function prFood()

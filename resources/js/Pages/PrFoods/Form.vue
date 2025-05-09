@@ -19,10 +19,11 @@ const form = useForm({
   description: props.prFood?.description || '',
   items: props.prFood?.items?.map(i => ({
     item_id: i.item_id,
-    item_name: i.item_name,
+    item_name: i.item_name || i.item?.name || '',
     qty: i.qty,
     unit: i.unit,
     note: i.note || '',
+    arrival_date: i.arrival_date || '',
     suggestions: [],
     showDropdown: false,
     loading: false,
@@ -31,7 +32,7 @@ const form = useForm({
     selected_unit: i.unit || '',
     _rowKey: Date.now() + '-' + Math.random(),
   })) || [
-    { item_id: '', item_name: '', qty: '', unit: '', note: '', suggestions: [], showDropdown: false, loading: false, highlightedIndex: -1, available_units: [], selected_unit: '', _rowKey: Date.now() + '-' + Math.random() }
+    { item_id: '', item_name: '', qty: '', unit: '', note: '', arrival_date: '', suggestions: [], showDropdown: false, loading: false, highlightedIndex: -1, available_units: [], selected_unit: '', _rowKey: Date.now() + '-' + Math.random() }
   ],
 });
 
@@ -51,7 +52,7 @@ watch(() => form.warehouse_id, (newVal) => {
 });
 
 function addItem() {
-  form.items.push({ item_id: '', item_name: '', qty: '', unit: '', note: '', suggestions: [], showDropdown: false, loading: false, highlightedIndex: -1, available_units: [], selected_unit: '', _rowKey: Date.now() + '-' + Math.random() });
+  form.items.push({ item_id: '', item_name: '', qty: '', unit: '', note: '', arrival_date: '', suggestions: [], showDropdown: false, loading: false, highlightedIndex: -1, available_units: [], selected_unit: '', _rowKey: Date.now() + '-' + Math.random() });
   nextTick(() => {
     setTimeout(() => {
       const lastIdx = form.items.length - 1;
@@ -355,6 +356,7 @@ function handleF1Focus(e) {
                   <th class="px-3 py-2 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Qty</th>
                   <th class="px-3 py-2 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Unit</th>
                   <th class="px-3 py-2 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Note</th>
+                  <th class="px-3 py-2 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Tgl Kedatangan</th>
                   <th class="px-3 py-2"></th>
                 </tr>
               </thead>
@@ -434,6 +436,10 @@ function handleF1Focus(e) {
                   </td>
                   <td class="px-3 py-2 min-w-[120px]">
                     <input type="text" v-model="item.note" class="w-full rounded border-gray-300" />
+                  </td>
+                  <td class="px-3 py-2 min-w-[120px]">
+                    <input type="date" v-model="item.arrival_date" class="w-full rounded border-gray-300" />
+                    <div v-if="form.errors[`items.${idx}.arrival_date` ]" class="text-xs text-red-500 mt-1">{{ form.errors[`items.${idx}.arrival_date`] }}</div>
                   </td>
                   <td class="px-3 py-2">
                     <button type="button" @click="removeItem(idx)" class="text-red-500 hover:text-red-700" :disabled="form.items.length === 1"><i class="fa fa-trash"></i></button>

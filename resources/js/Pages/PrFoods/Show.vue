@@ -9,8 +9,20 @@ const props = defineProps({
 });
 
 const user = usePage().props.auth?.user || {};
-const canApproveSSD = computed(() => user?.role === 'ssd_manager' && props.prFood.status === 'draft');
-const canApproveCOO = computed(() => user?.role === 'vice_coo' && props.prFood.status === 'approved');
+
+const isSuperadmin = computed(() =>
+  user?.id_role === '5af56935b011a' && user?.status === 'A'
+);
+const canApproveSSD = computed(() =>
+  ((user?.id_jabatan === 161 && user?.status === 'A') || isSuperadmin.value)
+  && props.prFood.status === 'draft'
+  && !props.prFood.ssd_manager_approved_at
+);
+const canApproveCOO = computed(() =>
+  ((user?.id_jabatan === 154 && user?.status === 'A') || isSuperadmin.value)
+  && props.prFood.status === 'draft'
+  && props.prFood.ssd_manager_approved_at
+);
 
 const ssdNote = ref('');
 const cooNote = ref('');
@@ -65,7 +77,7 @@ async function approveCOO(approved) {
           <div><b>No. PR:</b> {{ prFood.pr_number }}</div>
           <div><b>Tanggal:</b> {{ new Date(prFood.tanggal).toLocaleDateString('id-ID') }}</div>
           <div><b>Warehouse:</b> {{ prFood.warehouse?.name }}</div>
-          <div><b>Requester:</b> {{ prFood.requester?.name }}</div>
+          <div><b>Requester:</b> {{ prFood.requester?.nama_lengkap }}</div>
           <div><b>Status:</b> <span class="font-semibold">{{ prFood.status }}</span></div>
         </div>
         <div><b>Keterangan:</b> {{ prFood.description }}</div>
@@ -79,6 +91,7 @@ async function approveCOO(approved) {
               <th class="px-3 py-2 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Qty</th>
               <th class="px-3 py-2 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Unit</th>
               <th class="px-3 py-2 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Note</th>
+              <th class="px-3 py-2 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Tgl Kedatangan</th>
             </tr>
           </thead>
           <tbody>
@@ -87,6 +100,7 @@ async function approveCOO(approved) {
               <td class="px-3 py-2">{{ item.qty }}</td>
               <td class="px-3 py-2">{{ item.unit }}</td>
               <td class="px-3 py-2">{{ item.note }}</td>
+              <td class="px-3 py-2">{{ item.arrival_date ? new Date(item.arrival_date).toLocaleDateString('id-ID') : '-' }}</td>
             </tr>
           </tbody>
         </table>
@@ -96,7 +110,9 @@ async function approveCOO(approved) {
         <div class="mb-2">
           <b>SSD Manager:</b>
           <span v-if="prFood.ssd_manager_approved_at">
-            <span class="text-green-600 font-semibold">Approved</span> oleh {{ prFood.ssd_manager?.name }} pada {{ new Date(prFood.ssd_manager_approved_at).toLocaleString('id-ID') }}
+            <span class="text-green-600 font-semibold">Approved</span>
+            oleh <b>{{ prFood.ssd_manager?.nama_lengkap || prFood.ssd_manager_approved_by }}</b>
+            pada {{ new Date(prFood.ssd_manager_approved_at).toLocaleString('id-ID') }}
             <span v-if="prFood.ssd_manager_note">- Note: {{ prFood.ssd_manager_note }}</span>
           </span>
           <span v-else class="text-gray-500">Belum di-approve</span>
@@ -104,7 +120,9 @@ async function approveCOO(approved) {
         <div class="mb-2">
           <b>Vice COO:</b>
           <span v-if="prFood.vice_coo_approved_at">
-            <span class="text-green-600 font-semibold">Approved</span> oleh {{ prFood.vice_coo?.name }} pada {{ new Date(prFood.vice_coo_approved_at).toLocaleString('id-ID') }}
+            <span class="text-green-600 font-semibold">Approved</span>
+            oleh <b>{{ prFood.vice_coo?.nama_lengkap || prFood.vice_coo_approved_by }}</b>
+            pada {{ new Date(prFood.vice_coo_approved_at).toLocaleString('id-ID') }}
             <span v-if="prFood.vice_coo_note">- Note: {{ prFood.vice_coo_note }}</span>
           </span>
           <span v-else class="text-gray-500">Belum di-approve</span>

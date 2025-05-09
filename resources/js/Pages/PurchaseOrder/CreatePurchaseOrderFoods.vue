@@ -1,0 +1,273 @@
+<script setup>
+import { ref, onMounted } from 'vue';
+import { useForm } from '@inertiajs/vue3';
+import AppLayout from '@/Layouts/AppLayout.vue';
+import axios from 'axios';
+import Swal from 'sweetalert2';
+import { useRouter } from 'vue-router'
+
+const prList = ref([]);
+const suppliers = ref([]);
+const loading = ref(false);
+const expandedPRs = ref({});
+const notes = ref('');
+const router = useRouter()
+
+// Form untuk generate PO
+const poForm = useForm({
+    items_by_supplier: {},
+});
+
+// Fetch PR list yang belum di-PO
+const fetchPRList = async () => {
+    try {
+        loading.value = true;
+        const response = await axios.get('/api/pr-foods/available');
+        prList.value = response.data.map(pr => ({
+            ...pr,
+            items: pr.items.map(item => {
+                if (!poForm.items_by_supplier[item.id]) {
+                    poForm.items_by_supplier[item.id] = {
+                        supplier_id: '',
+                        price: '',
+                        last_price: '',
+                        min_price: '',
+                        max_price: ''
+                    };
+                }
+                return { ...item };
+            })
+        }));
+    } catch (error) {
+        console.error('Error fetching PR list:', error);
+        Swal.fire('Error', 'Failed to fetch PR list', 'error');
+    } finally {
+        loading.value = false;
+    }
+};
+
+// Fetch suppliers
+const fetchSuppliers = async () => {
+    try {
+        const response = await axios.get('/api/suppliers');
+        suppliers.value = response.data;
+    } catch (error) {
+        console.error('Error fetching suppliers:', error);
+        Swal.fire('Error', 'Failed to fetch suppliers', 'error');
+    }
+};
+
+// Toggle expand/collapse PR
+const togglePR = (prId) => {
+    expandedPRs.value[prId] = !expandedPRs.value[prId];
+};
+
+// Generate PO berdasarkan supplier
+const generatePO = async () => {
+    // Validasi
+    const itemsWithoutSupplier = Object.values(poForm.items_by_supplier).flat().filter(item => !item.supplier_id);
+    if (itemsWithoutSupplier.length > 0) {
+        Swal.fire('Error', 'Please select supplier for all items', 'error');
+        return;
+    }
+
+    // Hanya kirim field yang diperlukan
+    const itemsBySupplier = {};
+    Object.entries(poForm.items_by_supplier).forEach(([itemId, item]) => {
+        if (!item.supplier_id || !item.price) return;
+        if (!itemsBySupplier[item.supplier_id]) itemsBySupplier[item.supplier_id] = [];
+        itemsBySupplier[item.supplier_id].push({
+            id: Number(itemId),
+            supplier_id: item.supplier_id,
+            price: item.price
+        });
+    });
+
+    try {
+        loading.value = true;
+        const response = await axios.post('/api/po-foods/generate', {
+            items_by_supplier: itemsBySupplier,
+            notes: notes.value
+        });
+        Swal.fire('Success', 'PO has been generated successfully', 'success')
+            .then(() => {
+                window.location.href = '/po-foods';
+            });
+    } catch (error) {
+        console.error('Error generating PO:', error);
+        Swal.fire('Error', 'Failed to generate PO', 'error');
+    } finally {
+        loading.value = false;
+    }
+};
+
+const onSupplierChange = async (item) => {
+    const supplierId = poForm.items_by_supplier[item.id].supplier_id;
+    if (!supplierId) {
+        poForm.items_by_supplier[item.id].price = '';
+        poForm.items_by_supplier[item.id].last_price = 0;
+        poForm.items_by_supplier[item.id].min_price = 0;
+        poForm.items_by_supplier[item.id].max_price = 0;
+        return;
+    }
+    try {
+        const res = await axios.get('/api/items/last-price', {
+            params: {
+                item_id: item.id,
+                supplier_id: supplierId
+            }
+        });
+        poForm.items_by_supplier[item.id].price = res.data.last_price ?? 0;
+        poForm.items_by_supplier[item.id].last_price = res.data.last_price ?? 0;
+        poForm.items_by_supplier[item.id].min_price = res.data.min_price ?? 0;
+        poForm.items_by_supplier[item.id].max_price = res.data.max_price ?? 0;
+    } catch (e) {
+        poForm.items_by_supplier[item.id].price = 0;
+        poForm.items_by_supplier[item.id].last_price = 0;
+        poForm.items_by_supplier[item.id].min_price = 0;
+        poForm.items_by_supplier[item.id].max_price = 0;
+    }
+};
+
+function formatRupiah(value) {
+    if (!value) return 'Rp 0';
+    return 'Rp ' + Number(value).toLocaleString('id-ID');
+}
+
+function goBack() {
+    window.location.href = '/po-foods'
+}
+
+onMounted(() => {
+    fetchPRList();
+    fetchSuppliers();
+});
+</script>
+
+<template>
+    <AppLayout title="Create Purchase Order Foods">
+        <template #header>
+            <h2 class="font-semibold text-xl text-gray-800 leading-tight">
+                Create Purchase Order Foods
+            </h2>
+        </template>
+
+        <div class="py-12">
+            <div class="max-w-6xl mx-auto sm:px-6 lg:px-8">
+                <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
+                    <div class="p-6 bg-white border-b border-gray-200">
+                        <div class="mb-4">
+                            <button @click="goBack" class="inline-flex items-center px-4 py-2 bg-gray-200 border border-transparent rounded-md font-semibold text-xs text-gray-700 uppercase tracking-widest hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition ease-in-out duration-150">
+                                &larr; Kembali
+                            </button>
+                        </div>
+                        <!-- Notes Input -->
+                        <div class="mb-6">
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+                            <textarea v-model="notes" rows="2" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-blue-500 focus:border-blue-500"></textarea>
+                        </div>
+                        <!-- PR List -->
+                        <div v-if="loading" class="flex justify-center items-center py-8">
+                            <svg class="animate-spin h-8 w-8 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                        </div>
+                        <div v-else>
+                            <div v-for="pr in prList" :key="pr.id" class="mb-4 border rounded-lg overflow-hidden">
+                                <!-- PR Header -->
+                                <div 
+                                    class="bg-gray-50 px-4 py-3 flex justify-between items-center cursor-pointer hover:bg-gray-100"
+                                    @click="togglePR(pr.id)"
+                                >
+                                    <div class="flex items-center">
+                                        <svg 
+                                            class="w-5 h-5 mr-2 transition-transform"
+                                            :class="{ 'transform rotate-90': expandedPRs[pr.id] }"
+                                            fill="none" 
+                                            stroke="currentColor" 
+                                            viewBox="0 0 24 24"
+                                        >
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                                        </svg>
+                                        <span class="font-medium">{{ pr.number }} - {{ pr.date }}</span>
+                                    </div>
+                                </div>
+
+                                <!-- PR Items -->
+                                <div v-if="expandedPRs[pr.id]" class="p-4 border-t">
+                                    <table class="min-w-full divide-y divide-gray-200">
+                                        <thead class="bg-gray-50">
+                                            <tr>
+                                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Item</th>
+                                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Quantity</th>
+                                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Unit</th>
+                                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tgl Kedatangan</th>
+                                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Supplier</th>
+                                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Price</th>
+                                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Subtotal</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody class="bg-white divide-y divide-gray-200">
+                                            <tr v-for="item in pr.items" :key="item.id">
+                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ item.name }}</td>
+                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ item.quantity }}</td>
+                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ item.unit }}</td>
+                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ item.arrival_date ? new Date(item.arrival_date).toLocaleDateString('id-ID') : '-' }}</td>
+                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                                    <select
+                                                        v-model="poForm.items_by_supplier[item.id].supplier_id"
+                                                        @change="onSupplierChange(item)"
+                                                        class="w-40 mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
+                                                    >
+                                                        <option value="">Select Supplier</option>
+                                                        <option v-for="supplier in suppliers" :key="supplier.id" :value="supplier.id">
+                                                            {{ supplier.name }}
+                                                        </option>
+                                                    </select>
+                                                </td>
+                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                                    <input
+                                                        type="number"
+                                                        v-model="poForm.items_by_supplier[item.id].price"
+                                                        class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
+                                                        placeholder="Enter price"
+                                                    >
+                                                    <div>
+                                                        <small class="text-gray-400">
+                                                            Last: {{ formatRupiah(poForm.items_by_supplier[item.id].last_price ?? 0) }} |
+                                                            Min: {{ formatRupiah(poForm.items_by_supplier[item.id].min_price ?? 0) }} |
+                                                            Max: {{ formatRupiah(poForm.items_by_supplier[item.id].max_price ?? 0) }}
+                                                        </small>
+                                                    </div>
+                                                </td>
+                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                                    {{ formatRupiah((poForm.items_by_supplier[item.id].price || 0) * item.quantity) }}
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+
+                            <!-- Generate PO Button -->
+                            <div class="mt-6 flex justify-end">
+                                <button
+                                    @click="generatePO"
+                                    :disabled="loading"
+                                    class="inline-flex items-center px-4 py-2 bg-blue-600 border border-transparent rounded-md font-semibold text-xs text-white uppercase tracking-widest hover:bg-blue-700 active:bg-blue-900 focus:outline-none focus:border-blue-900 focus:ring focus:ring-blue-300 disabled:opacity-25 transition"
+                                >
+                                    <svg v-if="loading" class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                    {{ loading ? 'Generating...' : 'Generate PO' }}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </AppLayout>
+</template> 

@@ -32,6 +32,9 @@ function openCreate() {
 function openEdit(id) {
   router.visit(`/pr-foods/${id}/edit`);
 }
+function openDetail(id) {
+  router.visit(`/pr-foods/${id}`);
+}
 async function hapus(pr) {
   const result = await Swal.fire({
     title: 'Hapus PR Foods?',
@@ -98,7 +101,7 @@ async function hapus(pr) {
               <td class="px-6 py-3 font-mono font-semibold text-blue-700">{{ pr.pr_number }}</td>
               <td class="px-6 py-3">{{ new Date(pr.tanggal).toLocaleDateString('id-ID') }}</td>
               <td class="px-6 py-3">{{ pr.warehouse?.name }}</td>
-              <td class="px-6 py-3">{{ pr.requester?.name }}</td>
+              <td class="px-6 py-3">{{ pr.requester?.nama_lengkap }}</td>
               <td class="px-6 py-3">
                 <span :class="{
                   'bg-gray-100 text-gray-700': pr.status === 'draft',
@@ -113,6 +116,10 @@ async function hapus(pr) {
               </td>
               <td class="px-6 py-3">
                 <div class="flex gap-2">
+                  <button @click="openDetail(pr.id)" class="inline-flex items-center btn btn-xs bg-blue-100 text-blue-800 hover:bg-blue-200 rounded px-2 py-1 font-semibold transition">
+                    <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+                    Detail
+                  </button>
                   <button @click="openEdit(pr.id)" class="inline-flex items-center btn btn-xs bg-yellow-100 text-yellow-800 hover:bg-yellow-200 rounded px-2 py-1 font-semibold transition">
                     <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M15.232 5.232l3.536 3.536M9 13l6-6m2 2l-6 6m-2 2h6a2 2 0 002-2v-6a2 2 0 00-2-2H7a2 2 0 00-2 2v6a2 2 0 002 2z"/></svg>
                     Edit
