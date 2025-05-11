@@ -30,7 +30,7 @@ const menuGroups = [
             { name: () => t('sidebar.mt_dashboard'), icon: 'fa-solid fa-gauge', route: route('dashboard.maintenance') },
             { name: () => t('sidebar.maintenance_order'), icon: 'fa-solid fa-clipboard-check', route: '/maintenance-order' },
             { name: () => 'Kalender Jadwal', icon: 'fa-solid fa-calendar-alt', route: '/maintenance-order/schedule-calendar' },
-            { name: () => 'MT PO Payment', icon: 'fa-solid fa-money-bill-wave', route: route('mt-po-payment.index') },
+          
         ],
     },
     {
@@ -52,6 +52,17 @@ const menuGroups = [
             { name: () => 'Customers', icon: 'fa-solid fa-users', route: '/customers' },
             { name: () => 'Suppliers', icon: 'fa-solid fa-truck', route: '/suppliers' },
             { name: () => 'Regions', icon: 'fa-solid fa-globe-asia', route: '/regions' },
+        ],
+    },
+    {
+        title: () => 'HO Finance',
+        icon: 'fa-solid fa-building-columns',
+        collapsible: true,
+        open: ref(false),
+        menus: [
+            { name: () => 'Contra Bon', icon: 'fa-solid fa-file-circle-xmark', route: '/contra-bons' },
+            { name: () => 'Food Payment', icon: 'fa-solid fa-money-bill-transfer', route: '/food-payments' },
+            { name: () => 'MT PO Payment', icon: 'fa-solid fa-money-bill-wave', route: route('mt-po-payment.index') },
         ],
     },
     {

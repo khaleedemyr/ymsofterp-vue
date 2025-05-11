@@ -33,6 +33,8 @@ use App\Http\Controllers\PurchaseOrderFoodsController;
 use App\Http\Controllers\ItemBarcodeController;
 use App\Http\Controllers\FoodGoodReceiveController;
 use App\Http\Controllers\InventoryReportController;
+use App\Http\Controllers\ContraBonController;
+use App\Http\Controllers\FoodPaymentController;
 
 Route::get('/', function () {
     return Inertia::render('Welcome', [
@@ -219,6 +221,14 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/food-good-receive', [FoodGoodReceiveController::class, 'index'])->name('food-good-receive.index');
     Route::post('/food-good-receive/fetch-po', [FoodGoodReceiveController::class, 'fetchPO'])->name('food-good-receive.fetch-po');
     Route::post('/food-good-receive/store', [FoodGoodReceiveController::class, 'store'])->name('food-good-receive.store');
+
+    // Food Payment
+    Route::get('/food-payments', [\App\Http\Controllers\FoodPaymentController::class, 'index'])->name('food-payments.index');
+    Route::get('/food-payments/create', [\App\Http\Controllers\FoodPaymentController::class, 'create'])->name('food-payments.create');
+    Route::post('/food-payments', [\App\Http\Controllers\FoodPaymentController::class, 'store'])->name('food-payments.store');
+    Route::get('/food-payments/{id}', [\App\Http\Controllers\FoodPaymentController::class, 'show'])->name('food-payments.show');
+    Route::post('/food-payments/{id}/approve', [\App\Http\Controllers\FoodPaymentController::class, 'approve'])->name('food-payments.approve');
+    Route::get('/api/food-payments/contra-bon-unpaid', [\App\Http\Controllers\FoodPaymentController::class, 'getContraBonUnpaid']);
 });
 
 Route::get('/items/import-template', [ItemController::class, 'downloadImportTemplate'])->name('items.import.template');
@@ -240,6 +250,7 @@ Route::post('pr-foods/{id}/approve-vice-coo', [PrFoodController::class, 'approve
 
 Route::resource('suppliers', SupplierController::class);
 Route::patch('suppliers/{id}/toggle-status', [SupplierController::class, 'toggleStatus'])->name('suppliers.toggle-status');
+Route::get('/api/suppliers/{id}', [\App\Http\Controllers\Api\SupplierController::class, 'show']);
 
 // PO Foods Routes
 Route::middleware(['auth', 'verified'])->group(function () {
@@ -279,5 +290,17 @@ Route::get('/inventory/category-recap-report', [\App\Http\Controllers\InventoryR
 
 // Laporan Aging Report
 Route::get('/inventory/aging-report', [InventoryReportController::class, 'agingReport'])->name('inventory.aging-report');
+
+// Contra Bon routes
+Route::middleware(['auth'])->group(function () {
+    Route::get('/contra-bons', [ContraBonController::class, 'index'])->name('contra-bons.index');
+    Route::get('/contra-bons/create', [ContraBonController::class, 'create'])->name('contra-bons.create');
+    Route::post('/contra-bons', [ContraBonController::class, 'store'])->name('contra-bons.store');
+    Route::get('/contra-bons/{id}', [ContraBonController::class, 'show'])->name('contra-bons.show');
+    Route::get('/contra-bons/{id}/edit', [ContraBonController::class, 'edit'])->name('contra-bons.edit');
+    Route::post('/contra-bons/{id}/approve', [ContraBonController::class, 'approve'])->name('contra-bons.approve');
+    Route::get('/api/contra-bon/approved-good-receives', [\App\Http\Controllers\ContraBonController::class, 'getApprovedGoodReceives']);
+    Route::get('/api/contra-bon/po-with-approved-gr', [\App\Http\Controllers\ContraBonController::class, 'getPOWithApprovedGR']);
+});
 
 require __DIR__.'/auth.php';
