@@ -176,8 +176,8 @@
               </td>
               <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                 <div class="flex justify-end gap-2">
-                  <button @click="openDetail(item)" class="text-gray-600 hover:text-gray-900">
-                    <i class="fa-solid fa-eye"></i>
+                  <button @click="openBarcodeModal(item)" class="text-indigo-600 hover:text-indigo-900 mr-3 flex items-center gap-1" title="Kelola Barcode">
+                    <i class="fa-solid fa-barcode"></i>
                   </button>
                   <button @click="openEdit(item)" class="text-blue-600 hover:text-blue-900">
                     <i class="fa-solid fa-pen-to-square"></i>
@@ -204,20 +204,9 @@
         />
       </div>
       <ItemFormModal
-        :show="showModal"
-        :mode="modalMode"
+        :show="showFormModal"
         :item="selectedItem"
-        :categories="categories"
-        :subCategories="subCategories"
-        :units="units"
-        :warehouseDivisions="warehouseDivisions"
-        :menuTypes="menuTypes"
-        :regions="regions"
-        :outlets="outlets"
-        :bomItems="bomItems"
-        :modifiers="modifiers"
-        @close="showModal = false"
-        @success="handleSuccess"
+        @close="closeFormModal"
       />
       <ModalDetailItem
         :open="modalDetailOpen"
@@ -311,6 +300,11 @@
           <div v-else class="text-gray-500">Tidak ada data yang bisa dipreview.</div>
         </div>
       </div>
+      <ItemBarcodeModal
+        :show="showBarcodeModal"
+        :item="selectedItem"
+        @close="closeBarcodeModal"
+      />
     </div>
   </AppLayout>
 </template>
@@ -326,6 +320,7 @@ import EditItemModal from './EditItemModal.vue';
 import VueEasyLightbox from 'vue-easy-lightbox'
 import axios from 'axios'
 import { saveAs } from 'file-saver'
+import ItemBarcodeModal from './ItemBarcodeModal.vue';
 
 const props = defineProps({
   items: Object, // { data, links, meta }
@@ -343,8 +338,8 @@ const props = defineProps({
 const search = ref('');
 const categoryFilter = ref('');
 const statusFilter = ref('');
-const showModal = ref(false);
-const modalMode = ref('create'); // 'create' | 'edit'
+const showFormModal = ref(false);
+const showBarcodeModal = ref(false);
 const selectedItem = ref(null);
 const modalDetailOpen = ref(false);
 const selectedDetailItem = ref({});
@@ -386,9 +381,8 @@ const deleteItem = async (item) => {
 };
 
 function openCreate() {
-  modalMode.value = 'create';
   selectedItem.value = null;
-  showModal.value = true;
+  showFormModal.value = true;
 }
 
 function openEdit(item) {
@@ -403,7 +397,7 @@ async function openDetail(item) {
 }
 
 function handleSuccess() {
-  showModal.value = false;
+  showFormModal.value = false;
   reload();
 }
 
@@ -551,4 +545,14 @@ async function exportFile(type) {
     Swal.fire('Error', 'Failed to export file.', 'error');
   }
 }
+
+const openBarcodeModal = (item) => {
+  selectedItem.value = item;
+  showBarcodeModal.value = true;
+};
+
+const closeBarcodeModal = () => {
+  showBarcodeModal.value = false;
+  selectedItem.value = null;
+};
 </script> 

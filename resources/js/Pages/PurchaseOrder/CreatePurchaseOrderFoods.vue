@@ -101,6 +101,32 @@ const generatePO = async () => {
     }
 };
 
+// Tambahkan fungsi untuk mengambil konversi dari item atau item.item
+function getSmallConv(item) {
+    return Number(item.small_conversion_qty || (item.item && item.item.small_conversion_qty) || 1);
+}
+function getMediumConv(item) {
+    return Number(item.medium_conversion_qty || (item.item && item.item.medium_conversion_qty) || 1);
+}
+function getMediumUnitName(item) {
+    return item.medium_unit_name || (item.item && item.item.mediumUnit && item.item.mediumUnit.name) || '';
+}
+function getLargeUnitName(item) {
+    return item.large_unit_name || (item.item && item.item.largeUnit && item.item.largeUnit.name) || '';
+}
+
+function convertPrice(priceSmall, item) {
+    const smallConv = getSmallConv(item);
+    const mediumConv = getMediumConv(item);
+    let priceMedium = priceSmall * smallConv;
+    let priceLarge = priceSmall * smallConv * mediumConv;
+    return {
+        priceSmall,
+        priceMedium,
+        priceLarge
+    };
+}
+
 const onSupplierChange = async (item) => {
     const supplierId = poForm.items_by_supplier[item.id].supplier_id;
     if (!supplierId) {
@@ -108,24 +134,35 @@ const onSupplierChange = async (item) => {
         poForm.items_by_supplier[item.id].last_price = 0;
         poForm.items_by_supplier[item.id].min_price = 0;
         poForm.items_by_supplier[item.id].max_price = 0;
+        poForm.items_by_supplier[item.id].price_medium = 0;
+        poForm.items_by_supplier[item.id].price_large = 0;
         return;
     }
     try {
+        console.log('Item data:', item); // Debug log
         const res = await axios.get('/api/items/last-price', {
             params: {
-                item_id: item.id,
-                supplier_id: supplierId
+                item_id: item.item_id || item.item?.id, // Try both item_id and item.id
+                supplier_id: supplierId,
+                unit: item.unit
             }
         });
         poForm.items_by_supplier[item.id].price = res.data.last_price ?? 0;
         poForm.items_by_supplier[item.id].last_price = res.data.last_price ?? 0;
         poForm.items_by_supplier[item.id].min_price = res.data.min_price ?? 0;
         poForm.items_by_supplier[item.id].max_price = res.data.max_price ?? 0;
-    } catch (e) {
+        // Konversi ke medium dan large
+        const { priceMedium, priceLarge } = convertPrice(res.data.last_price ?? 0, item);
+        poForm.items_by_supplier[item.id].price_medium = priceMedium;
+        poForm.items_by_supplier[item.id].price_large = priceLarge;
+    } catch (error) {
+        console.error('Error fetching last price:', error);
         poForm.items_by_supplier[item.id].price = 0;
         poForm.items_by_supplier[item.id].last_price = 0;
         poForm.items_by_supplier[item.id].min_price = 0;
         poForm.items_by_supplier[item.id].max_price = 0;
+        poForm.items_by_supplier[item.id].price_medium = 0;
+        poForm.items_by_supplier[item.id].price_large = 0;
     }
 };
 
@@ -153,7 +190,7 @@ onMounted(() => {
         </template>
 
         <div class="py-12">
-            <div class="max-w-6xl mx-auto sm:px-6 lg:px-8">
+            <div class="w-full px-0">
                 <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
                     <div class="p-6 bg-white border-b border-gray-200">
                         <div class="mb-4">
@@ -195,58 +232,68 @@ onMounted(() => {
                                 </div>
 
                                 <!-- PR Items -->
-                                <div v-if="expandedPRs[pr.id]" class="p-4 border-t">
-                                    <table class="min-w-full divide-y divide-gray-200">
-                                        <thead class="bg-gray-50">
-                                            <tr>
-                                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Item</th>
-                                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Quantity</th>
-                                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Unit</th>
-                                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tgl Kedatangan</th>
-                                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Supplier</th>
-                                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Price</th>
-                                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Subtotal</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody class="bg-white divide-y divide-gray-200">
-                                            <tr v-for="item in pr.items" :key="item.id">
-                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ item.name }}</td>
-                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ item.quantity }}</td>
-                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ item.unit }}</td>
-                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ item.arrival_date ? new Date(item.arrival_date).toLocaleDateString('id-ID') : '-' }}</td>
-                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                                    <select
-                                                        v-model="poForm.items_by_supplier[item.id].supplier_id"
-                                                        @change="onSupplierChange(item)"
-                                                        class="w-40 mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
-                                                    >
-                                                        <option value="">Select Supplier</option>
-                                                        <option v-for="supplier in suppliers" :key="supplier.id" :value="supplier.id">
-                                                            {{ supplier.name }}
-                                                        </option>
-                                                    </select>
-                                                </td>
-                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                                    <input
-                                                        type="number"
-                                                        v-model="poForm.items_by_supplier[item.id].price"
-                                                        class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
-                                                        placeholder="Enter price"
-                                                    >
-                                                    <div>
-                                                        <small class="text-gray-400">
-                                                            Last: {{ formatRupiah(poForm.items_by_supplier[item.id].last_price ?? 0) }} |
-                                                            Min: {{ formatRupiah(poForm.items_by_supplier[item.id].min_price ?? 0) }} |
-                                                            Max: {{ formatRupiah(poForm.items_by_supplier[item.id].max_price ?? 0) }}
-                                                        </small>
-                                                    </div>
-                                                </td>
-                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                                    {{ formatRupiah((poForm.items_by_supplier[item.id].price || 0) * item.quantity) }}
-                                                </td>
-                                            </tr>
-                                        </tbody>
-                                    </table>
+                                <div v-if="expandedPRs[pr.id]" class="p-4 border-t overflow-x-auto">
+                                    <div class="overflow-x-auto">
+                                        <table class="min-w-full divide-y divide-gray-200">
+                                            <thead class="bg-gray-50">
+                                                <tr>
+                                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Item</th>
+                                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Quantity</th>
+                                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Unit</th>
+                                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tgl Kedatangan</th>
+                                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Supplier</th>
+                                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Price</th>
+                                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Subtotal</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody class="bg-white divide-y divide-gray-200">
+                                                <tr v-for="item in pr.items" :key="item.id">
+                                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ item.name }}</td>
+                                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ item.quantity }}</td>
+                                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ item.unit }}</td>
+                                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ item.arrival_date ? new Date(item.arrival_date).toLocaleDateString('id-ID') : '-' }}</td>
+                                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                                        <select
+                                                            v-model="poForm.items_by_supplier[item.id].supplier_id"
+                                                            @change="onSupplierChange(item)"
+                                                            class="w-40 mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
+                                                        >
+                                                            <option value="">Select Supplier</option>
+                                                            <option v-for="supplier in suppliers" :key="supplier.id" :value="supplier.id">
+                                                                {{ supplier.name }}
+                                                            </option>
+                                                        </select>
+                                                    </td>
+                                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                                        <input
+                                                            type="number"
+                                                            v-model="poForm.items_by_supplier[item.id].price"
+                                                            class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
+                                                            placeholder="Enter price"
+                                                        >
+                                                        <div>
+                                                            <small class="text-gray-400">
+                                                                Last: {{ formatRupiah(poForm.items_by_supplier[item.id].last_price ?? 0) }} |
+                                                                Min: {{ formatRupiah(poForm.items_by_supplier[item.id].min_price ?? 0) }} |
+                                                                Max: {{ formatRupiah(poForm.items_by_supplier[item.id].max_price ?? 0) }}
+                                                            </small>
+                                                        </div>
+                                                        <div v-if="poForm.items_by_supplier[item.id].price_medium || poForm.items_by_supplier[item.id].price_large" class="text-xs text-blue-500 mt-1">
+                                                            <div v-if="poForm.items_by_supplier[item.id].price_medium">
+                                                                Medium: {{ formatRupiah(poForm.items_by_supplier[item.id].price_medium) }} <span v-if="item.medium_unit_name">/ {{ item.medium_unit_name }}</span>
+                                                            </div>
+                                                            <div v-if="poForm.items_by_supplier[item.id].price_large">
+                                                                Large: {{ formatRupiah(poForm.items_by_supplier[item.id].price_large) }} <span v-if="item.large_unit_name">/ {{ item.large_unit_name }}</span>
+                                                            </div>
+                                                        </div>
+                                                    </td>
+                                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                                        {{ formatRupiah((poForm.items_by_supplier[item.id].price || 0) * item.quantity) }}
+                                                    </td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
                                 </div>
                             </div>
 

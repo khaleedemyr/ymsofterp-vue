@@ -181,15 +181,21 @@
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-2">Harga per Region/Outlet</label>
             <div v-for="(price, idx) in form.prices" :key="idx" class="flex gap-2 mb-2 items-center">
-              <select v-model="price.region_id" :disabled="!!price.outlet_id" class="rounded border-gray-300">
-                <option value="">Pilih Region</option>
-                <option v-for="region in regionsArray" :key="region.id" :value="region.id.toString()">{{ region.name }}</option>
+              <select v-model="price.price_type" class="rounded border-gray-300" @change="handlePriceTypeChange(price)">
+                <option value="all">All</option>
+                <option value="specific">Specific Region/Outlet</option>
               </select>
-              <span class="text-gray-400">atau</span>
-              <select v-model="price.outlet_id" :disabled="!!price.region_id" class="rounded border-gray-300">
-                <option value="">Pilih Outlet</option>
-                <option v-for="outlet in outletsArray" :key="outlet.id_outlet" :value="outlet.id_outlet.toString()">{{ outlet.nama_outlet }}</option>
-              </select>
+              <template v-if="price.price_type === 'specific'">
+                <select v-model="price.region_id" :disabled="!!price.outlet_id" class="rounded border-gray-300">
+                  <option value="">Pilih Region</option>
+                  <option v-for="region in regionsArray" :key="region.id" :value="region.id.toString()">{{ region.name }}</option>
+                </select>
+                <span class="text-gray-400">atau</span>
+                <select v-model="price.outlet_id" :disabled="!!price.region_id" class="rounded border-gray-300">
+                  <option value="">Pilih Outlet</option>
+                  <option v-for="outlet in outletsArray" :key="outlet.id_outlet" :value="outlet.id_outlet.toString()">{{ outlet.nama_outlet }}</option>
+                </select>
+              </template>
               <input type="number" v-model="price.price" min="0" placeholder="Harga" class="rounded border-gray-300 w-32" required />
               <button type="button" @click="removePriceRow(idx)" class="text-red-500 hover:text-red-700"><i class="fa-solid fa-trash"></i></button>
             </div>
@@ -619,10 +625,23 @@ const isShowWarehouseDivision = computed(() => {
 });
 
 const addPriceRow = () => {
-  form.prices.push({ region_id: '', outlet_id: '', price: 0 });
+  form.prices.push({ 
+    price_type: 'specific',
+    region_id: '', 
+    outlet_id: '', 
+    price: 0 
+  });
 };
+
 const removePriceRow = (idx) => {
   form.prices.splice(idx, 1);
+};
+
+const handlePriceTypeChange = (price) => {
+  if (price.price_type === 'all') {
+    price.region_id = '';
+    price.outlet_id = '';
+  }
 };
 
 const usedRegionIds = computed(() => form.prices.map(p => p.region_id ? p.region_id.toString() : '').filter(Boolean));
@@ -683,6 +702,7 @@ watch(() => props.show, (val) => {
       images: [],
       deleted_images: [],
       prices: props.item.prices ? props.item.prices.map(p => ({
+        price_type: p.availability_price_type === 'all' ? 'all' : 'specific',
         region_id: p.region_id,
         outlet_id: p.outlet_id,
         price: p.price,
@@ -700,7 +720,12 @@ watch(() => props.show, (val) => {
     previewImages.value = [];
   } else if (val && props.mode === 'create') {
     form.reset();
-    form.prices = [{ region_id: '', outlet_id: '', price: 0 }];
+    form.prices = [{ 
+      price_type: 'specific',
+      region_id: '', 
+      outlet_id: '', 
+      price: 0 
+    }];
     previewImages.value = [];
   }
 });

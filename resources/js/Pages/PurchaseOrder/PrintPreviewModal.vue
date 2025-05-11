@@ -6,10 +6,10 @@
           <i class="fas fa-times text-lg"></i>
         </button>
         <div id="print-area">
-          <div class="text-center mb-4">
-            <img src="/images/logojustusgroup.png" alt="Justus Group" style="max-width: 180px; margin: 0 auto 12px;" />
+          <div class="text-center mb-4 print-header">
+            <img src="/images/logojustusgroup.png" alt="Justus Group" class="logo-print" style="max-width: 180px; margin: 0 auto 12px; display:block;" />
             <h2 style="font-size: 20px; font-weight: bold; margin-bottom: 8px;">PURCHASE ORDER</h2>
-            <div style="color: #666; font-size: 13px; margin-bottom: 10px;">JUSTUS GROUP</div>
+           
           </div>
 
           <div class="mb-4 text-sm">
@@ -56,22 +56,20 @@
             </tfoot>
           </table>
 
-          <div class="grid grid-cols-2 gap-4 mt-8">
-            <div>
-              <p class="text-sm font-bold mb-2">Dibuat oleh,</p>
-              <div class="mt-12">
-                <p class="text-sm font-bold">{{ po.creator?.nama_lengkap }}</p>
-                <p class="text-xs">{{ po.creator?.jabatan?.nama_jabatan }}</p>
-              </div>
-            </div>
-            <div>
-              <p class="text-sm font-bold mb-2">Diterima oleh,</p>
-              <div class="mt-12">
-                <p class="text-sm font-bold">(___________________)</p>
-                <p class="text-xs">Supplier</p>
-              </div>
-            </div>
-          </div>
+          <table style="width:100%; margin-top: 40px;">
+            <tr>
+              <td style="vertical-align:top; width:60%;">
+                <p class="text-sm font-bold mb-2">Dibuat oleh,</p>
+                <div style="margin-top:48px;">
+                  <p class="text-sm font-bold">{{ po.creator?.nama_lengkap }}</p>
+                  <p class="text-xs">{{ po.creator?.jabatan?.nama_jabatan }}</p>
+                </div>
+              </td>
+              <td style="vertical-align:top; text-align:right; width:40%;">
+                <div id="qrcode"></div>
+              </td>
+            </tr>
+          </table>
         </div>
         <div class="flex justify-end gap-2 mt-6">
           <button @click="$emit('close')" class="px-4 py-2 text-gray-700 bg-gray-100 rounded hover:bg-gray-200">Tutup</button>
@@ -83,6 +81,8 @@
 </template>
 
 <script setup>
+import { onMounted, watch } from 'vue';
+
 const props = defineProps({
   show: Boolean,
   po: Object
@@ -97,17 +97,73 @@ function formatPrice(price) {
   }).format(price);
 }
 
+function generateQRCode() {
+  if (!props.po?.number) return;
+  const qrDiv = document.getElementById('qrcode');
+  if (qrDiv) qrDiv.innerHTML = '';
+  const scriptId = 'qrcodejs-cdn';
+  if (!document.getElementById(scriptId)) {
+    const script = document.createElement('script');
+    script.id = scriptId;
+    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js';
+    script.onload = () => {
+      new window.QRCode(qrDiv, {
+        text: props.po.number,
+        width: 80,
+        height: 80
+      });
+    };
+    document.body.appendChild(script);
+  } else {
+    new window.QRCode(qrDiv, {
+      text: props.po.number,
+      width: 80,
+      height: 80
+    });
+  }
+}
+
+watch(() => props.show, (val) => {
+  if (val) setTimeout(generateQRCode, 200);
+});
+onMounted(() => {
+  if (props.show) setTimeout(generateQRCode, 200);
+});
+
 function print() {
   const printContents = document.getElementById('print-area').innerHTML;
   const printWindow = window.open('', '', 'height=600,width=800');
   printWindow.document.write('<html><head><title>Print PO</title>');
-  printWindow.document.write('<style>body{font-family:Arial,sans-serif;}table{border-collapse:collapse;width:100%;}th,td{border:1px solid #ddd;padding:8px;}</style>');
+  printWindow.document.write(
+    '<style>' +
+      'body{font-family:Arial,sans-serif;}' +
+      'table{border-collapse:collapse;width:100%;}' +
+      'th,td{border:1px solid #ddd;padding:8px;}' +
+      '.print-header { text-align:center; }' +
+      '.logo-print { max-width:180px; margin:0 auto 12px; display:block; }' +
+      '@media print {' +
+        '.print-header { display:block !important; }' +
+        '.logo-print { display:block !important; }' +
+      '}' +
+    '</style>' +
+    "<script src='https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js'><\/script>"
+  );
   printWindow.document.write('</head><body>');
   printWindow.document.write(printContents);
+  printWindow.document.write(
+    "<script>" +
+      "var qrDiv = document.getElementById('qrcode');" +
+      "if(qrDiv && !qrDiv.hasChildNodes()) {" +
+        "new QRCode(qrDiv, { text: '" + props.po.number + "', width: 80, height: 80 });" +
+      "}" +
+    "<\/script>"
+  );
   printWindow.document.write('</body></html>');
   printWindow.document.close();
   printWindow.focus();
-  printWindow.print();
-  printWindow.close();
+  setTimeout(() => {
+    printWindow.print();
+    printWindow.close();
+  }, 500);
 }
 </script> 

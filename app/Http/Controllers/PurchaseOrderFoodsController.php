@@ -78,6 +78,7 @@ class PurchaseOrderFoodsController extends Controller
                     'items' => $pr->items->map(function ($item) {
                         return [
                             'id' => $item->id,
+                            'item_id' => $item->item_id,
                             'name' => $item->item->name ?? '-',
                             'quantity' => $item->qty,
                             'unit' => $item->unit,
@@ -213,24 +214,100 @@ class PurchaseOrderFoodsController extends Controller
 
     public function getLastPrice(Request $request)
     {
-        $request->validate([
-            'item_id' => 'required|integer',
-            'supplier_id' => 'required|integer',
-        ]);
+        try {
+            $request->validate([
+                'item_id' => 'required|integer',
+                'unit' => 'required|string',
+            ]);
 
-        $query = \DB::table('purchase_order_items')
-            ->where('item_id', $request->item_id)
-            ->where('supplier_id', $request->supplier_id);
+            // Cari inventory_item_id dari item_id
+            $inventoryItem = \DB::table('food_inventory_items')->where('item_id', $request->item_id)->first();
+            if (!$inventoryItem) {
+                return response()->json([
+                    'error' => true,
+                    'message' => 'Inventory item tidak ditemukan untuk item_id: ' . $request->item_id
+                ], 404);
+            }
+            $inventoryItemId = $inventoryItem->id;
 
-        $last = (clone $query)->orderByDesc('id')->value('price');
-        $min = (clone $query)->min('price');
-        $max = (clone $query)->max('price');
+            // Ambil item dan konversi unit
+            $item = \App\Models\Item::with(['smallUnit', 'mediumUnit', 'largeUnit'])->findOrFail($request->item_id);
 
-        return response()->json([
-            'last_price' => $last ?? 0,
-            'min_price' => $min ?? 0,
-            'max_price' => $max ?? 0,
-        ]);
+            // Log item data untuk debugging
+            \Log::info('Item data:', ['item' => $item->toArray()]);
+
+            // Ambil cost histories (cost per small unit)
+            $query = \DB::table('food_inventory_cost_histories')
+                ->where('inventory_item_id', $inventoryItemId)
+                ->orderBy('date', 'desc');
+
+            $last = (clone $query)->first()?->new_cost;
+            $min = (clone $query)->min('new_cost');
+            $max = (clone $query)->max('new_cost');
+
+            // Log cost data untuk debugging
+            \Log::info('Cost data:', [
+                'last' => $last,
+                'min' => $min,
+                'max' => $max
+            ]);
+
+            // Ambil nama unit dari relasi
+            $unitSmall = $item->smallUnit ? $item->smallUnit->name : null;
+            $unitMedium = $item->mediumUnit ? $item->mediumUnit->name : null;
+            $unitLarge = $item->largeUnit ? $item->largeUnit->name : null;
+            $smallConv = $item->small_conversion_qty ?: 1;
+            $mediumConv = $item->medium_conversion_qty ?: 1;
+
+            // Log unit data untuk debugging
+            \Log::info('Unit data:', [
+                'small' => $unitSmall,
+                'medium' => $unitMedium,
+                'large' => $unitLarge,
+                'small_conv' => $smallConv,
+                'medium_conv' => $mediumConv,
+                'requested_unit' => $request->unit
+            ]);
+
+            $convertCost = function($cost) use ($request, $unitSmall, $unitMedium, $unitLarge, $smallConv, $mediumConv) {
+                if ($request->unit == $unitSmall) {
+                    return $cost;
+                } elseif ($request->unit == $unitMedium) {
+                    return $cost * $smallConv;
+                } elseif ($request->unit == $unitLarge) {
+                    return $cost * $smallConv * $mediumConv;
+                }
+                return $cost;
+            };
+
+            $response = [
+                'last_price' => $convertCost($last ?? 0),
+                'min_price' => $convertCost($min ?? 0),
+                'max_price' => $convertCost($max ?? 0),
+                'unit_info' => [
+                    'requested_unit' => $request->unit,
+                    'available_units' => [
+                        'small' => $unitSmall,
+                        'medium' => $unitMedium,
+                        'large' => $unitLarge
+                    ]
+                ]
+            ];
+
+            \Log::info('Response data:', $response);
+
+            return response()->json($response);
+        } catch (\Exception $e) {
+            \Log::error('Error in getLastPrice:', [
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'error' => true,
+                'message' => $e->getMessage()
+            ], 500);
+        }
     }
 
     public function approvePurchasingManager(Request $request, $id)

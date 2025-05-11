@@ -30,6 +30,7 @@
         "html2canvas": "^1.4.1",
         "leaflet": "^1.9.4",
         "qrcode.vue": "^3.6.0",
+        "qrious": "^4.0.2",
         "signature_pad": "^5.0.7",
         "sweetalert2": "^11.21.0",
         "vue-easy-lightbox": "^1.19.0",

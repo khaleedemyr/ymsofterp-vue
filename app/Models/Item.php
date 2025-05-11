@@ -115,4 +115,10 @@ class Item extends Model
     {
         return $this->hasMany(\App\Models\ItemModifierOption::class, 'item_id', 'id');
     }
+
+    // Relasi dengan ItemBarcode
+    public function barcodes()
+    {
+        return $this->hasMany(\App\Models\ItemBarcode::class, 'item_id', 'id');
+    }
 } 

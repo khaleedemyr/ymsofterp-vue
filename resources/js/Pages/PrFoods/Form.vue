@@ -279,6 +279,27 @@ async function fetchStock(idx) {
   }
 }
 
+function formatNumber(val) {
+  if (val == null) return 0;
+  if (Number(val) % 1 === 0) return Number(val);
+  return Number(val).toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+}
+function formatStockDisplay(item) {
+  // Hitung total stok dalam small dari semua kolom
+  let totalSmall = 0;
+  if (item.stock) {
+    totalSmall = Number(item.stock.qty_small || 0)
+      + Number(item.stock.qty_medium || 0) * (item.stock.small_conversion_qty || 1)
+      + Number(item.stock.qty_large || 0) * (item.stock.small_conversion_qty || 1) * (item.stock.medium_conversion_qty || 1);
+  }
+  const smallConv = Number(item.stock?.small_conversion_qty || 1);
+  const mediumConv = Number(item.stock?.medium_conversion_qty || 1);
+  // Konversi total ke medium dan large
+  let totalMedium = smallConv ? totalSmall / smallConv : 0;
+  let totalLarge = (smallConv && mediumConv) ? totalSmall / (smallConv * mediumConv) : 0;
+  return `Stok: ${formatNumber(totalSmall)} ${item.stock?.unit_small || ''} | ${formatNumber(totalMedium)} ${item.stock?.unit_medium || ''} | ${formatNumber(totalLarge)} ${item.stock?.unit_large || ''}`;
+}
+
 onMounted(() => {
   window.addEventListener('keydown', handleF1Focus);
   
@@ -407,15 +428,8 @@ function handleF1Focus(e) {
                       {{ form.errors[`items.${idx}.item_id`] }}
                     </div>
                     <!-- Tampilkan stok -->
-                    <div v-if="item.stock_display" class="text-xs text-gray-500 mt-1">
-                      Stok: {{ item.stock_display.qty_large || 0 }} {{ item.available_units[2] || 'Large' }},
-                      {{ item.stock_display.qty_medium || 0 }} {{ item.available_units[1] || 'Medium' }},
-                      {{ item.stock_display.qty_small || 0 }} {{ item.available_units[0] || 'Small' }}
-                    </div>
-                    <div v-else-if="item.stock" class="text-xs text-gray-500 mt-1">
-                      Stok: {{ item.stock.qty_large || 0 }} {{ item.available_units[2] || 'Large' }},
-                      {{ item.stock.qty_medium || 0 }} {{ item.available_units[1] || 'Medium' }},
-                      {{ item.stock.qty_small || 0 }} {{ item.available_units[0] || 'Small' }}
+                    <div v-if="item.stock" class="text-xs text-gray-500 mt-1">
+                      Stok: {{ formatStockDisplay(item) }}
                     </div>
                   </td>
                   <td class="px-3 py-2 min-w-[100px]">

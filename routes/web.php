@@ -30,6 +30,9 @@ use App\Http\Controllers\ModifierOptionController;
 use App\Http\Controllers\PrFoodController;
 use App\Http\Controllers\SupplierController;
 use App\Http\Controllers\PurchaseOrderFoodsController;
+use App\Http\Controllers\ItemBarcodeController;
+use App\Http\Controllers\FoodGoodReceiveController;
+use App\Http\Controllers\InventoryReportController;
 
 Route::get('/', function () {
     return Inertia::render('Welcome', [
@@ -211,6 +214,11 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/po-foods/{id}/approve', [PurchaseOrderFoodsController::class, 'approvePurchasingManager'])->name('po-foods.approve');
     Route::post('/po-foods/{id}/approve-gm-finance', [PurchaseOrderFoodsController::class, 'approveGMFinance'])->name('po-foods.approve-gm-finance');
     Route::delete('/po-foods/{id}', [PurchaseOrderFoodsController::class, 'destroy'])->name('po-foods.destroy');
+
+    // Good Receive routes
+    Route::get('/food-good-receive', [FoodGoodReceiveController::class, 'index'])->name('food-good-receive.index');
+    Route::post('/food-good-receive/fetch-po', [FoodGoodReceiveController::class, 'fetchPO'])->name('food-good-receive.fetch-po');
+    Route::post('/food-good-receive/store', [FoodGoodReceiveController::class, 'store'])->name('food-good-receive.store');
 });
 
 Route::get('/items/import-template', [ItemController::class, 'downloadImportTemplate'])->name('items.import.template');
@@ -220,7 +228,8 @@ Route::get('/items/export/excel', [ItemController::class, 'exportExcel'])->name(
 Route::get('/items/export/pdf', [ItemController::class, 'exportPdf'])->name('items.export.pdf');
 Route::post('/items/{id}/toggle-status', [ItemController::class, 'toggleStatus'])->name('items.toggleStatus');
 Route::get('/api/items/search-for-pr', [ItemController::class, 'searchForPr']);
-Route::get('/api/items/last-price', [PurchaseOrderFoodsController::class, 'getLastPrice']);
+Route::get('/api/items/last-price', [\App\Http\Controllers\PurchaseOrderFoodsController::class, 'getLastPrice']);
+Route::get('/api/inventory/stock', [\App\Http\Controllers\ItemController::class, 'getStock']);
 
 Route::resource('items', ItemController::class);
 Route::resource('modifiers', ModifierController::class);
@@ -241,5 +250,34 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('/api/pr-foods/items', [PurchaseOrderFoodsController::class, 'getPRItems'])->name('pr-foods.items');
     Route::post('/api/po-foods/generate', [PurchaseOrderFoodsController::class, 'generatePO'])->name('po-foods.generate');
 });
+
+Route::middleware(['auth', 'verified'])->group(function () {
+    Route::post('/items/{item}/barcodes', [ItemBarcodeController::class, 'store'])->name('items.barcodes.store');
+    Route::delete('/items/{item}/barcodes/{barcode}', [ItemBarcodeController::class, 'destroy'])->name('items.barcodes.destroy');
+});
+
+// Laporan Stok Akhir
+Route::get('/inventory/stock-position', [\App\Http\Controllers\InventoryReportController::class, 'stockPosition'])->name('inventory.stock-position');
+
+// Laporan Kartu Stok
+Route::get('/inventory/stock-card', [\App\Http\Controllers\InventoryReportController::class, 'stockCard'])->name('inventory.stock-card');
+
+// Laporan Penerimaan Barang
+Route::get('/inventory/goods-received-report', [\App\Http\Controllers\InventoryReportController::class, 'goodsReceivedReport'])->name('inventory.goods-received-report');
+
+// Laporan Nilai Persediaan
+Route::get('/inventory/inventory-value-report', [\App\Http\Controllers\InventoryReportController::class, 'inventoryValueReport'])->name('inventory.inventory-value-report');
+
+// Laporan Riwayat Perubahan Harga Pokok
+Route::get('/inventory/cost-history-report', [\App\Http\Controllers\InventoryReportController::class, 'costHistoryReport'])->name('inventory.cost-history-report');
+
+// Laporan Stok Minimum
+Route::get('/inventory/minimum-stock-report', [\App\Http\Controllers\InventoryReportController::class, 'minimumStockReport'])->name('inventory.minimum-stock-report');
+
+// Laporan Rekap Persediaan per Kategori
+Route::get('/inventory/category-recap-report', [\App\Http\Controllers\InventoryReportController::class, 'categoryRecapReport'])->name('inventory.category-recap-report');
+
+// Laporan Aging Report
+Route::get('/inventory/aging-report', [InventoryReportController::class, 'agingReport'])->name('inventory.aging-report');
 
 require __DIR__.'/auth.php';

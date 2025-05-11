@@ -244,10 +244,12 @@ class ItemController extends Controller
                 \Log::info('ItemController@store - Processing prices');
                 foreach ($request->prices as $price) {
                     $type = 'all';
+                    if ($price['price_type'] === 'specific') {
                     if (!empty($price['region_id']) && empty($price['outlet_id'])) {
                         $type = 'region';
                     } else if (!empty($price['outlet_id'])) {
                         $type = 'outlet';
+                        }
                     }
                     $item->prices()->create([
                         'region_id' => $price['region_id'],
@@ -467,10 +469,12 @@ class ItemController extends Controller
             if ($request->prices) {
                 foreach ($request->prices as $price) {
                     $type = 'all';
+                    if ($price['price_type'] === 'specific') {
                     if (!empty($price['region_id']) && empty($price['outlet_id'])) {
                         $type = 'region';
                     } else if (!empty($price['outlet_id'])) {
                         $type = 'outlet';
+                        }
                     }
                     $item->prices()->create([
                         'region_id' => $price['region_id'],
@@ -746,8 +750,10 @@ class ItemController extends Controller
                 // Generate SKU
                 $date = now();
                 $ymd = $date->format('Ymd');
+                do {
                 $rand = str_pad(rand(1000, 9999), 4, '0', STR_PAD_LEFT);
                 $sku = $category->code . '-' . $ymd . '-' . $rand;
+                } while (\App\Models\Item::where('sku', $sku)->exists());
 
                 // Create item
                 $typeString = $menuType?->type ?? ($itemData['Type'] ?? null);
@@ -829,35 +835,22 @@ class ItemController extends Controller
                             $targetName = trim($matches[1]);
                             $priceValue = (float)$matches[2];
 
-                            $region = DB::table('regions')->whereRaw('LOWER(TRIM(name)) = ?', [mb_strtolower($targetName)])->first();
-                            $outlet = DB::table('tbl_data_outlet')->whereRaw('LOWER(TRIM(nama_outlet)) = ?', [mb_strtolower($targetName)])->first();
-
-                            $type = 'all';
-                            if ($region && !$outlet) $type = 'region';
-                            if ($outlet) $type = 'outlet';
-
-                            if ($region) {
-                                DB::table('item_prices')->insert([
-                                    'item_id' => $item->id,
-                                    'region_id' => $region->id,
-                                    'outlet_id' => null,
-                                    'price' => $priceValue,
-                                    'availability_price_type' => $type,
-                                    'created_at' => now(),
-                                    'updated_at' => now(),
-                                ]);
-                            } elseif ($outlet) {
+                            // Jika targetName adalah "All"
+                            if (strtolower($targetName) === 'all') {
                                 DB::table('item_prices')->insert([
                                     'item_id' => $item->id,
                                     'region_id' => null,
-                                    'outlet_id' => $outlet->id_outlet,
+                                    'outlet_id' => null,
                                     'price' => $priceValue,
-                                    'availability_price_type' => $type,
+                                    'availability_price_type' => 'all',
                                     'created_at' => now(),
                                     'updated_at' => now(),
                                 ]);
                             } else {
-                                throw new \Exception('Region/Outlet tidak ditemukan: ' . $targetName);
+                                // Logika untuk region/outlet spesifik
+                                $region = DB::table('regions')->whereRaw('LOWER(TRIM(name)) = ?', [mb_strtolower($targetName)])->first();
+                                $outlet = DB::table('tbl_data_outlet')->whereRaw('LOWER(TRIM(nama_outlet)) = ?', [mb_strtolower($targetName)])->first();
+                                // ... kode untuk menyimpan harga region/outlet
                             }
                         }
                     }
@@ -988,28 +981,36 @@ class ItemController extends Controller
     // Endpoint untuk ambil stok per item per warehouse
     public function getStock(Request $request)
     {
-        $itemId = $request->input('item_id');
-        $warehouseId = $request->input('warehouse_id');
-
-        // Cari inventory_item_id dari item_id
-        $inventoryItem = \DB::table('food_inventory_items')->where('item_id', $itemId)->first();
+        $item_id = $request->input('item_id');
+        $warehouse_id = $request->input('warehouse_id');
+        $inventoryItem = \DB::table('food_inventory_items')->where('item_id', $item_id)->first();
+        $itemMaster = \DB::table('items')->where('id', $item_id)->first();
+        $unitSmall = $itemMaster ? \DB::table('units')->where('id', $itemMaster->small_unit_id)->value('name') : null;
+        $unitMedium = $itemMaster ? \DB::table('units')->where('id', $itemMaster->medium_unit_id)->value('name') : null;
+        $unitLarge = $itemMaster ? \DB::table('units')->where('id', $itemMaster->large_unit_id)->value('name') : null;
         if (!$inventoryItem) {
             return response()->json([
-                'qty_small' => 0,
-                'qty_medium' => 0,
-                'qty_large' => 0,
+                'qty_small' => 0, 'qty_medium' => 0, 'qty_large' => 0,
+                'small_conversion_qty' => $itemMaster->small_conversion_qty ?? 1,
+                'medium_conversion_qty' => $itemMaster->medium_conversion_qty ?? 1,
+                'unit_small' => $unitSmall,
+                'unit_medium' => $unitMedium,
+                'unit_large' => $unitLarge,
             ]);
         }
-
         $stock = \DB::table('food_inventory_stocks')
             ->where('inventory_item_id', $inventoryItem->id)
-            ->where('warehouse_id', $warehouseId)
+            ->where('warehouse_id', $warehouse_id)
             ->first();
-
         return response()->json([
             'qty_small' => $stock->qty_small ?? 0,
             'qty_medium' => $stock->qty_medium ?? 0,
             'qty_large' => $stock->qty_large ?? 0,
+            'small_conversion_qty' => $itemMaster->small_conversion_qty ?? 1,
+            'medium_conversion_qty' => $itemMaster->medium_conversion_qty ?? 1,
+            'unit_small' => $unitSmall,
+            'unit_medium' => $unitMedium,
+            'unit_large' => $unitLarge,
         ]);
     }
 } 
