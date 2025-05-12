@@ -122,7 +122,7 @@ watch(locale, () => {
                 <!-- Avatar user -->
                 <div class="absolute left-6 top-6 flex items-center gap-2 z-20">
                     <div v-if="props.avatar" class="w-14 h-14 rounded-full overflow-hidden border-4 border-white shadow-lg">
-                        <img :src="props.avatar" alt="Avatar" class="w-full h-full object-cover" />
+                        <img :src="props.avatar ? `/storage/${props.avatar}` : '/images/avatar-default.png'" alt="Avatar" class="w-full h-full object-cover" />
                     </div>
                     <div v-else class="w-14 h-14 rounded-full bg-gradient-to-br from-blue-700 to-blue-400 flex items-center justify-center text-white text-2xl font-bold border-4 border-white shadow-lg">
                         {{ getInitials(props.nama_lengkap) }}

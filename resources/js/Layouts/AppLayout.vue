@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n';
 import axios from 'axios';
 import ESignatureModal from '@/Components/ESignatureModal.vue';
 import NavLink from '@/Components/NavLink.vue';
+import ProfileUpdateModal from '@/Components/ProfileUpdateModal.vue';
 
 const sidebarOpen = ref(true);
 const showLang = ref(false);
@@ -114,10 +115,11 @@ function toggleFullscreen() {
     }
 }
 
-const user = usePage().props.auth?.user || { name: 'User', avatar: null };
-const avatarUrl = user.avatar || '/images/avatar-default.png';
+const user = usePage().props.auth?.user || { nama_lengkap: '', avatar: null };
+const avatarUrl = user.avatar ? `/storage/${user.avatar}` : '/images/avatar-default.png';
 const showProfileDropdown = ref(false);
 const showESignatureModal = ref(false);
+const showProfileModal = ref(false);
 
 // Notification state
 const notifications = ref([]);
@@ -344,7 +346,7 @@ onMounted(() => {
                 <div class="relative">
                     <button @click="showProfileDropdown = !showProfileDropdown" class="flex items-center gap-2 focus:outline-none">
                         <img :src="avatarUrl" alt="Avatar" class="w-9 h-9 rounded-full object-cover border-2 border-blue-200" />
-                        <span class="hidden md:inline font-semibold text-gray-700">{{ user.name }}</span>
+                        <span class="hidden md:inline font-semibold text-gray-700">{{ user.nama_lengkap }}</span>
                         <i class="fas fa-chevron-down text-xs"></i>
                     </button>
                     <div v-if="showProfileDropdown" class="absolute right-0 mt-2 w-64 bg-white border rounded shadow z-50">
@@ -354,9 +356,9 @@ onMounted(() => {
                             <div class="text-xs text-gray-500" v-if="user.divisi">{{ user.divisi }}</div>
                             <div class="text-xs text-gray-500" v-if="user.outlet">{{ user.outlet }}</div>
                         </div>
-                        <Link href="/profile" class="flex items-center gap-2 px-4 py-2 hover:bg-blue-50">
+                        <button @click="showProfileModal = true; showProfileDropdown = false" class="flex items-center gap-2 w-full text-left px-4 py-2 hover:bg-blue-50">
                             <i class="fa-solid fa-user"></i> {{ t('profile.profile') }}
-                        </Link>
+                        </button>
                         <button @click="showESignatureModal = true; showProfileDropdown = false" class="flex items-center gap-2 w-full text-left px-4 py-2 hover:bg-blue-50">
                             <i class="fa-solid fa-pen-nib"></i> {{ t('profile.esign') }}
                         </button>
@@ -366,7 +368,7 @@ onMounted(() => {
                             as="button"
                             class="flex items-center gap-2 w-full text-left px-4 py-2 hover:bg-blue-50"
                         >
-                                <i class="fa-solid fa-right-from-bracket"></i> {{ t('profile.logout') }}
+                            <i class="fa-solid fa-right-from-bracket"></i> {{ t('profile.logout') }}
                         </Link>
                     </div>
                 </div>
@@ -412,6 +414,11 @@ onMounted(() => {
         :user="user"
         @close="showESignatureModal = false"
         @saved="showProfileDropdown = false"
+    />
+
+    <ProfileUpdateModal
+        :show="showProfileModal"
+        @close="showProfileModal = false"
     />
 </div>
 </template>

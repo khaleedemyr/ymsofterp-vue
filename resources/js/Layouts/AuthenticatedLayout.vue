@@ -6,8 +6,10 @@ import DropdownLink from '@/Components/DropdownLink.vue';
 import NavLink from '@/Components/NavLink.vue';
 import ResponsiveNavLink from '@/Components/ResponsiveNavLink.vue';
 import { Link } from '@inertiajs/vue3';
+import ProfileUpdateModal from '@/Components/ProfileUpdateModal.vue';
 
 const showingNavigationDropdown = ref(false);
+const showProfileModal = ref(false);
 </script>
 
 <template>
@@ -77,11 +79,9 @@ const showingNavigationDropdown = ref(false);
                                     </template>
 
                                     <template #content>
-                                        <DropdownLink
-                                            :href="route('profile.edit')"
-                                        >
+                                        <button @click="showProfileModal = true" class="block w-full px-4 py-2 text-start text-sm leading-5 text-gray-700 transition duration-150 ease-in-out hover:bg-gray-100 focus:bg-gray-100 focus:outline-none">
                                             Profile
-                                        </DropdownLink>
+                                        </button>
                                         <DropdownLink
                                             :href="route('logout')"
                                             method="post"
@@ -176,9 +176,9 @@ const showingNavigationDropdown = ref(false);
                         </div>
 
                         <div class="mt-3 space-y-1">
-                            <ResponsiveNavLink :href="route('profile.edit')">
+                            <button v-if="false" @click="showProfileModal = true" class="block w-full ps-3 pe-4 py-2 border-l-4 border-transparent text-start text-base font-medium text-gray-600 hover:text-gray-800 hover:bg-gray-50 hover:border-gray-300 focus:outline-none focus:text-gray-800 focus:bg-gray-50 focus:border-gray-300 transition duration-150 ease-in-out">
                                 Profile
-                            </ResponsiveNavLink>
+                            </button>
                             <ResponsiveNavLink
                                 :href="route('logout')"
                                 method="post"
@@ -207,4 +207,5 @@ const showingNavigationDropdown = ref(false);
             </main>
         </div>
     </div>
+    <ProfileUpdateModal :show="showProfileModal" @close="showProfileModal = false" />
 </template>
