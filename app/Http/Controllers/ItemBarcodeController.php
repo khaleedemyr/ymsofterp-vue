@@ -8,17 +8,24 @@ use Illuminate\Http\Request;
 
 class ItemBarcodeController extends Controller
 {
+    public function index(Item $item)
+    {
+        return response()->json([
+            'barcodes' => $item->barcodes()->get()
+        ]);
+    }
+
     public function store(Request $request, Item $item)
     {
         $request->validate([
             'barcode' => 'required|string|unique:item_barcodes,barcode'
         ]);
 
-        $item->barcodes()->create([
+        $barcode = $item->barcodes()->create([
             'barcode' => $request->barcode
         ]);
 
-        return back()->with('success', 'Barcode added successfully');
+        return response()->json(['barcode' => $barcode]);
     }
 
     public function destroy(Item $item, ItemBarcode $barcode)

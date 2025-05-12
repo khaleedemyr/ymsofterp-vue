@@ -39,7 +39,7 @@ class MTPOPaymentController extends Controller
 
         $unpaidPOs = $query->orderBy('created_at', 'desc')->get();
 
-        if ($request->wantsJson() || $request->ajax()) {
+        if ($request->header('X-Requested-With') === 'XMLHttpRequest' && $request->header('X-Inertia') === null) {
             return response()->json(['unpaidPOs' => $unpaidPOs]);
         }
 

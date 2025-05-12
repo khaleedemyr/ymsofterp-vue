@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
 import { Link, usePage } from '@inertiajs/vue3';
 import { useI18n } from 'vue-i18n';
 import axios from 'axios';
@@ -222,6 +222,13 @@ onMounted(async () => {
         await fetchNotifications();
         await fetchUnreadCount();
     }, 30000);
+
+    // Load html5-qrcode library
+    if (!window.Html5Qrcode) {
+        const script = document.createElement('script');
+        script.src = 'https://unpkg.com/html5-qrcode';
+        document.body.appendChild(script);
+    }
 });
 
 // Toast state
