@@ -121,14 +121,67 @@ const form = useForm({
 });
 
 async function setupCameras() {
-    if (!window.Html5Qrcode) return;
+    if (!window.Html5Qrcode) {
+        const script = document.createElement('script');
+        script.src = 'https://unpkg.com/html5-qrcode';
+        script.onload = setupCameras;
+        document.body.appendChild(script);
+        return;
+    }
+
     try {
         cameras.value = await window.Html5Qrcode.getCameras();
         if (cameras.value.length > 0) {
             selectedCameraId.value = cameras.value[0].id;
+            startScanner();
         }
     } catch (err) {
         console.error('Error getting cameras:', err);
+    }
+}
+
+function startScanner() {
+    if (!window.Html5Qrcode || !selectedCameraId.value) return;
+    
+    clearQrReaderElement();
+    html5QrCode = new window.Html5Qrcode('qr-reader');
+    
+    html5QrCode.start(
+        selectedCameraId.value,
+        { fps: 10, qrbox: 200 },
+        (decodedText) => {
+            newBarcode.value = decodedText;
+            addBarcode();
+        },
+        (errorMessage) => {
+            // Ignore common scanning errors
+            if (!errorMessage.includes('No MultiFormat Readers were able to detect the code')) {
+                console.error('Scanning error:', errorMessage);
+            }
+        }
+    ).then(() => {
+        isScanning.value = true;
+    }).catch((err) => {
+        console.error('Error starting scanner:', err);
+    });
+}
+
+function restartScanner() {
+    if (html5QrCode) {
+        html5QrCode.stop().then(() => {
+            html5QrCode.clear();
+            startScanner();
+        });
+    } else {
+        startScanner();
+    }
+}
+
+function toggleScanner() {
+    if (isScanning.value) {
+        stopScanner();
+    } else {
+        startScanner();
     }
 }
 
@@ -141,45 +194,6 @@ async function stopScanner() {
             // ignore errors
         }
         isScanning.value = false;
-    }
-}
-
-function clearQrReaderElement() {
-    const qrReader = document.getElementById('qr-reader');
-    if (qrReader) qrReader.innerHTML = '';
-}
-
-function startScanner() {
-    if (!window.Html5Qrcode || !selectedCameraId.value) return;
-    clearQrReaderElement();
-    html5QrCode = new window.Html5Qrcode('qr-reader');
-    html5QrCode.start(
-        selectedCameraId.value,
-        { fps: 10, qrbox: 200 },
-        (decodedText) => {
-            newBarcode.value = decodedText;
-            addBarcode();
-        },
-        (errorMessage) => {
-            // Ignore errors
-        }
-    ).then(() => {
-        isScanning.value = true;
-    }).catch((err) => {
-        console.error('Error starting scanner:', err);
-    });
-}
-
-async function restartScanner() {
-    await stopScanner();
-    startScanner();
-}
-
-function toggleScanner() {
-    if (isScanning.value) {
-        stopScanner();
-    } else {
-        startScanner();
     }
 }
 
@@ -235,10 +249,6 @@ watch(() => props.show, (val) => {
 });
 
 onMounted(async () => {
-    // Tunggu sampai Html5Qrcode tersedia
-    while (!window.Html5Qrcode) {
-        await new Promise(resolve => setTimeout(resolve, 100));
-    }
     setupCameras();
     fetchBarcodes();
 });
