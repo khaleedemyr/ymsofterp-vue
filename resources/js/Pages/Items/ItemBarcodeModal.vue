@@ -11,26 +11,24 @@
                     <div class="flex items-center justify-between mb-4">
                         <h3 class="text-md font-medium text-gray-700">Scan Barcode</h3>
                         <div class="flex items-center gap-2">
-                            <select 
-                                v-model="selectedCameraId" 
-                                class="rounded-md border-gray-300 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50"
-                                @change="restartScanner"
-                            >
-                                <option v-for="camera in cameras" :key="camera.id" :value="camera.id">
-                                    {{ camera.label }}
-                                </option>
-                            </select>
                             <button 
-                                @click="toggleScanner" 
-                                class="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white"
-                                :class="isScanning ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-600 hover:bg-blue-700'"
+                                @click="showScanner = true" 
+                                class="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-green-500 hover:bg-green-600"
                             >
-                                <i :class="isScanning ? 'fa-solid fa-stop' : 'fa-solid fa-camera'" class="mr-2"></i>
-                                {{ isScanning ? 'Stop Scanner' : 'Start Scanner' }}
+                                <i class="fa-solid fa-qrcode mr-2"></i>
+                                Scan Barcode
                             </button>
                         </div>
                     </div>
-                    <div id="qr-reader" class="w-full aspect-video bg-gray-100 rounded-lg overflow-hidden"></div>
+                    <div v-if="showScanner" class="mb-2">
+                        <div v-if="cameras.length > 1" class="mb-2">
+                            <select v-model="selectedCameraId" @change="restartScanner" class="border rounded px-2 py-1">
+                                <option v-for="cam in cameras" :key="cam.id" :value="cam.id">{{ cam.label }}</option>
+                            </select>
+                        </div>
+                        <div id="qr-reader" style="width: 100%"></div>
+                        <button @click="closeScanner" class="mt-2 bg-gray-300 hover:bg-gray-400 text-gray-700 px-3 py-1 rounded">Tutup Scanner</button>
+                    </div>
                 </div>
 
                 <!-- Manual Input Section -->
@@ -110,9 +108,9 @@ const emit = defineEmits(['close']);
 
 const barcodes = ref(props.item?.barcodes || []);
 const newBarcode = ref('');
+const showScanner = ref(false);
 const cameras = ref([]);
 const selectedCameraId = ref('');
-const isScanning = ref(false);
 let html5QrCode = null;
 const isSaving = ref(false);
 
@@ -120,81 +118,78 @@ const form = useForm({
     barcode: '',
 });
 
-async function setupCameras() {
-    if (!window.Html5Qrcode) {
-        const script = document.createElement('script');
-        script.src = 'https://unpkg.com/html5-qrcode';
-        script.onload = setupCameras;
-        document.body.appendChild(script);
-        return;
+watch(showScanner, async (val) => {
+    if (val) {
+        if (!window.Html5Qrcode) {
+            const script = document.createElement('script');
+            script.src = 'https://unpkg.com/html5-qrcode';
+            script.onload = setupCameras;
+            document.body.appendChild(script);
+        } else {
+            setupCameras();
+        }
+    } else {
+        // Cleanup when scanner is closed
+        if (html5QrCode) {
+            try {
+                await html5QrCode.stop();
+                html5QrCode.clear();
+                const qrReader = document.getElementById('qr-reader');
+                if (qrReader) qrReader.innerHTML = '';
+            } catch (e) {
+                console.error('Error cleaning up scanner:', e);
+            }
+        }
     }
+});
 
+async function setupCameras() {
+    if (!window.Html5Qrcode) return;
     try {
         cameras.value = await window.Html5Qrcode.getCameras();
-        if (cameras.value.length > 0) {
-            selectedCameraId.value = cameras.value[0].id;
-            startScanner();
-        }
-    } catch (err) {
-        console.error('Error getting cameras:', err);
+        selectedCameraId.value = cameras.value[0]?.id || '';
+        startScanner();
+    } catch (e) {
+        console.error('Error setting up cameras:', e);
     }
 }
 
 function startScanner() {
     if (!window.Html5Qrcode || !selectedCameraId.value) return;
     
-    clearQrReaderElement();
+    // Cleanup existing scanner if any
+    if (html5QrCode) {
+        try {
+            html5QrCode.stop().then(() => {
+                html5QrCode.clear();
+                const qrReader = document.getElementById('qr-reader');
+                if (qrReader) qrReader.innerHTML = '';
+            });
+        } catch (e) {
+            console.error('Error cleaning up existing scanner:', e);
+        }
+    }
+
+    // Create new scanner instance
     html5QrCode = new window.Html5Qrcode('qr-reader');
-    
     html5QrCode.start(
         selectedCameraId.value,
         { fps: 10, qrbox: 200 },
         (decodedText) => {
             newBarcode.value = decodedText;
             addBarcode();
-        },
-        (errorMessage) => {
-            // Ignore common scanning errors
-            if (!errorMessage.includes('No MultiFormat Readers were able to detect the code')) {
-                console.error('Scanning error:', errorMessage);
-            }
         }
-    ).then(() => {
-        isScanning.value = true;
-    }).catch((err) => {
-        console.error('Error starting scanner:', err);
+    ).catch(e => {
+        console.error('Error starting scanner:', e);
     });
 }
 
 function restartScanner() {
-    if (html5QrCode) {
-        html5QrCode.stop().then(() => {
-            html5QrCode.clear();
-            startScanner();
-        });
-    } else {
-        startScanner();
-    }
+    startScanner();
 }
 
-function toggleScanner() {
-    if (isScanning.value) {
-        stopScanner();
-    } else {
-        startScanner();
-    }
-}
-
-async function stopScanner() {
-    if (html5QrCode) {
-        try {
-            await html5QrCode.stop();
-            await html5QrCode.clear();
-        } catch (e) {
-            // ignore errors
-        }
-        isScanning.value = false;
-    }
+function closeScanner() {
+    showScanner.value = false;
 }
 
 const fetchBarcodes = async () => {
@@ -238,23 +233,44 @@ const deleteBarcode = async (barcode) => {
 };
 
 const closeModal = () => {
-    stopScanner();
+    showScanner.value = false;
+    if (html5QrCode) {
+        try {
+            html5QrCode.stop().then(() => {
+                html5QrCode.clear();
+                const qrReader = document.getElementById('qr-reader');
+                if (qrReader) qrReader.innerHTML = '';
+            });
+        } catch (e) {
+            console.error('Error cleaning up scanner:', e);
+        }
+    }
     emit('close');
 };
 
 watch(() => props.show, (val) => {
     if (val) {
         fetchBarcodes();
+        showScanner.value = false;
     }
 });
 
 onMounted(async () => {
-    setupCameras();
     fetchBarcodes();
 });
 
 onBeforeUnmount(() => {
-    stopScanner();
+    if (html5QrCode) {
+        try {
+            html5QrCode.stop().then(() => {
+                html5QrCode.clear();
+                const qrReader = document.getElementById('qr-reader');
+                if (qrReader) qrReader.innerHTML = '';
+            });
+        } catch (e) {
+            console.error('Error cleaning up scanner:', e);
+        }
+    }
 });
 </script>
 

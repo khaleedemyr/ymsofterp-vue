@@ -11,23 +11,38 @@ use Carbon\Carbon;
 class FoodGoodReceiveController extends Controller
 {
     // List Good Receive
-    public function index()
+    public function index(Request $request)
     {
-        $list = DB::table('food_good_receives as gr')
+        $query = DB::table('food_good_receives as gr')
             ->leftJoin('purchase_order_foods as po', 'gr.po_id', '=', 'po.id')
             ->leftJoin('suppliers as s', 'gr.supplier_id', '=', 's.id')
             ->leftJoin('users as u', 'gr.received_by', '=', 'u.id')
-            ->orderByDesc('gr.created_at')
             ->select(
                 'gr.id',
                 'gr.receive_date',
                 'po.number as po_number',
                 's.name as supplier_name',
                 'u.nama_lengkap as received_by_name'
-            )
-            ->get();
+            );
+        if ($request->search) {
+            $search = $request->search;
+            $query->where(function($q) use ($search) {
+                $q->where('po.number', 'like', "%$search%")
+                  ->orWhere('s.name', 'like', "%$search%")
+                  ->orWhere('u.nama_lengkap', 'like', "%$search%")
+                ;
+            });
+        }
+        if ($request->from) {
+            $query->whereDate('gr.receive_date', '>=', $request->from);
+        }
+        if ($request->to) {
+            $query->whereDate('gr.receive_date', '<=', $request->to);
+        }
+        $list = $query->orderByDesc('gr.created_at')->paginate(10)->withQueryString();
         return inertia('FoodGoodReceive/Index', [
-            'goodReceives' => $list
+            'goodReceives' => $list,
+            'filters' => $request->only(['search', 'from', 'to']),
         ]);
     }
 
@@ -126,60 +141,87 @@ class FoodGoodReceiveController extends Controller
                 } else {
                     $inventoryItemId = $inventoryItem->id;
                 }
-                // 2. Update/insert food_inventory_stocks
-                $stock = DB::table('food_inventory_stocks')->where('inventory_item_id', $inventoryItemId)->where('warehouse_id', $warehouseId)->first();
-                // Ambil harga dari PO item
+                // 1. Hitung cost
                 $cost = $poItem ? $poItem->price : 0;
-                // Konversi cost ke semua satuan
-                $cost_small = 0; $cost_medium = 0; $cost_large = 0;
-                if ($item['unit_id'] == $itemMaster->small_unit_id) {
-                    $cost_small = $cost;
-                    $cost_large = $itemMaster->small_conversion_qty ? $cost * $itemMaster->small_conversion_qty : $cost;
-                    $cost_medium = ($itemMaster->medium_conversion_qty && $itemMaster->small_conversion_qty) ? $cost * ($itemMaster->small_conversion_qty / $itemMaster->medium_conversion_qty) : $cost;
+                $cost_small = $cost; // harga per small dari input
+                $cost_medium = $cost_small * ($itemMaster->small_conversion_qty ?: 1);
+                $cost_large = $cost_medium * ($itemMaster->medium_conversion_qty ?: 1);
+                // 2. Hitung qty (konversi ke semua unit)
+                $smallConv = $itemMaster->small_conversion_qty ?: 1;
+                $mediumConv = $itemMaster->medium_conversion_qty ?: 1;
+                $qty_small = 0; $qty_medium = 0; $qty_large = 0; $qty_small_for_value = 0;
+                if ($item['unit_id'] == $itemMaster->large_unit_id) {
+                    $qty_large = (float) $item['qty_received'];
+                    $qty_medium = $qty_large * $mediumConv;
+                    $qty_small = $qty_medium * $smallConv;
+                    $qty_small_for_value = $qty_small;
                 } elseif ($item['unit_id'] == $itemMaster->medium_unit_id) {
-                    $cost_medium = $cost;
-                    $cost_large = $itemMaster->medium_conversion_qty ? $cost * $itemMaster->medium_conversion_qty : $cost;
-                    $cost_small = ($itemMaster->medium_conversion_qty && $itemMaster->small_conversion_qty) ? $cost / ($itemMaster->small_conversion_qty / $itemMaster->medium_conversion_qty) : $cost;
-                } elseif ($item['unit_id'] == $itemMaster->large_unit_id) {
-                    $cost_large = $cost;
-                    $cost_medium = $itemMaster->medium_conversion_qty ? $cost / $itemMaster->medium_conversion_qty : $cost;
-                    $cost_small = $itemMaster->small_conversion_qty ? $cost / $itemMaster->small_conversion_qty : $cost;
+                    $qty_medium = (float) $item['qty_received'];
+                    $qty_large = $mediumConv > 0 ? $qty_medium / $mediumConv : 0;
+                    $qty_small = $qty_medium * $smallConv;
+                    $qty_small_for_value = $qty_small;
+                } elseif ($item['unit_id'] == $itemMaster->small_unit_id) {
+                    $qty_small = (float) $item['qty_received'];
+                    $qty_medium = $smallConv > 0 ? $qty_small / $smallConv : 0;
+                    $qty_large = ($smallConv > 0 && $mediumConv > 0) ? $qty_small / ($smallConv * $mediumConv) : 0;
+                    $qty_small_for_value = $qty_small;
                 }
-                // Konversi qty ke small/medium/large
-                $qty_small = 0; $qty_medium = 0; $qty_large = 0;
-                if ($item['unit_id'] == $itemMaster->small_unit_id) {
-                    $qty_small = $item['qty_received'];
-                } elseif ($item['unit_id'] == $itemMaster->medium_unit_id) {
-                    $qty_medium = $item['qty_received'];
-                } elseif ($item['unit_id'] == $itemMaster->large_unit_id) {
-                    $qty_large = $item['qty_received'];
-                }
-                if (!$stock) {
+                // 4. Insert/update ke food_inventory_stocks dengan Moving Average Cost
+                $existingStock = DB::table('food_inventory_stocks')
+                    ->where('inventory_item_id', $inventoryItemId)
+                    ->where('warehouse_id', $warehouseId)
+                    ->first();
+                $qty_lama = $existingStock ? $existingStock->qty_small : 0;
+                $nilai_lama = $existingStock ? $existingStock->value : 0;
+                $qty_baru = $qty_small;
+                $nilai_baru = $qty_small_for_value * $cost_small;
+                $total_qty = $qty_lama + $qty_baru;
+                $total_nilai = $nilai_lama + $nilai_baru;
+                $mac = $total_qty > 0 ? $total_nilai / $total_qty : $cost_small;
+                if ($existingStock) {
+                    DB::table('food_inventory_stocks')
+                        ->where('id', $existingStock->id)
+                        ->update([
+                            'qty_small' => $total_qty,
+                            'qty_medium' => $existingStock->qty_medium + $qty_medium,
+                            'qty_large' => $existingStock->qty_large + $qty_large,
+                            'value' => $total_nilai,
+                            'last_cost_small' => $mac,
+                            'last_cost_medium' => $cost_medium, // opsional, bisa juga pakai konversi dari MAC
+                            'last_cost_large' => $cost_large,   // opsional
+                            'updated_at' => now(),
+                        ]);
+                } else {
                     DB::table('food_inventory_stocks')->insert([
                         'inventory_item_id' => $inventoryItemId,
                         'warehouse_id' => $warehouseId,
                         'qty_small' => $qty_small,
                         'qty_medium' => $qty_medium,
                         'qty_large' => $qty_large,
-                        'value' => $cost_small * $qty_small + $cost_medium * $qty_medium + $cost_large * $qty_large,
-                        'last_cost_small' => $cost_small,
-                        'last_cost_medium' => $cost_medium,
-                        'last_cost_large' => $cost_large,
-                        'updated_at' => now(),
-                    ]);
-                } else {
-                    DB::table('food_inventory_stocks')->where('id', $stock->id)->update([
-                        'qty_small' => $stock->qty_small + $qty_small,
-                        'qty_medium' => $stock->qty_medium + $qty_medium,
-                        'qty_large' => $stock->qty_large + $qty_large,
-                        'value' => $stock->value + ($cost_small * $qty_small + $cost_medium * $qty_medium + $cost_large * $qty_large),
+                        'value' => $nilai_baru,
                         'last_cost_small' => $cost_small,
                         'last_cost_medium' => $cost_medium,
                         'last_cost_large' => $cost_large,
                         'updated_at' => now(),
                     ]);
                 }
-                // 3. Insert ke food_inventory_cards
+                // 5. Hitung saldo kartu stok (stock card)
+                $lastCard = DB::table('food_inventory_cards')
+                    ->where('inventory_item_id', $inventoryItemId)
+                    ->where('warehouse_id', $warehouseId)
+                    ->orderByDesc('date')
+                    ->orderByDesc('id')
+                    ->first();
+                if ($lastCard) {
+                    $saldo_qty_small = $lastCard->saldo_qty_small + $qty_small;
+                    $saldo_qty_medium = $lastCard->saldo_qty_medium + $qty_medium;
+                    $saldo_qty_large = $lastCard->saldo_qty_large + $qty_large;
+                } else {
+                    $saldo_qty_small = $qty_small;
+                    $saldo_qty_medium = $qty_medium;
+                    $saldo_qty_large = $qty_large;
+                }
+                // 6. Insert ke food_inventory_cards (stock card)
                 DB::table('food_inventory_cards')->insert([
                     'inventory_item_id' => $inventoryItemId,
                     'warehouse_id' => $warehouseId,
@@ -195,22 +237,30 @@ class FoodGoodReceiveController extends Controller
                     'cost_per_small' => $cost_small,
                     'cost_per_medium' => $cost_medium,
                     'cost_per_large' => $cost_large,
-                    'value_in' => $cost_small * $qty_small + $cost_medium * $qty_medium + $cost_large * $qty_large,
+                    'value_in' => $qty_small_for_value * $cost_small,
                     'value_out' => 0,
-                    'saldo_qty_small' => 0,
-                    'saldo_qty_medium' => 0,
-                    'saldo_qty_large' => 0,
-                    'saldo_value' => 0,
+                    'saldo_qty_small' => $saldo_qty_small,
+                    'saldo_qty_medium' => $saldo_qty_medium,
+                    'saldo_qty_large' => $saldo_qty_large,
+                    'saldo_value' => ($existingStock ? ($existingStock->qty_small + $qty_small) : $qty_small) * $cost_small,
                     'description' => 'Good Receive',
                     'created_at' => now(),
                 ]);
-                // 4. Insert ke food_inventory_cost_histories
+                // 7. Insert ke food_inventory_cost_histories pakai MAC
+                $lastCostHistory = DB::table('food_inventory_cost_histories')
+                    ->where('inventory_item_id', $inventoryItemId)
+                    ->where('warehouse_id', $warehouseId)
+                    ->orderByDesc('date')
+                    ->orderByDesc('created_at')
+                    ->first();
+                $old_cost = $lastCostHistory ? $lastCostHistory->new_cost : 0;
                 DB::table('food_inventory_cost_histories')->insert([
                     'inventory_item_id' => $inventoryItemId,
                     'warehouse_id' => $warehouseId,
                     'date' => $request->receive_date,
-                    'old_cost' => 0, // Anda bisa update logic ini jika ingin ambil cost sebelumnya
-                    'new_cost' => $cost_small, // Simpan cost_small sebagai acuan utama
+                    'old_cost' => $old_cost,
+                    'new_cost' => $cost_small, // Harga pembelian terakhir
+                    'mac' => $mac, // Moving Average Cost
                     'type' => 'good_receive',
                     'reference_type' => 'good_receive',
                     'reference_id' => $goodReceiveId,
@@ -233,8 +283,334 @@ class FoodGoodReceiveController extends Controller
                 ]),
                 'created_at' => now(),
             ]);
+            // Update status PO menjadi received
+            DB::table('purchase_order_foods')->where('id', $request->po_id)->update(['status' => 'received']);
             DB::commit();
             return response()->json(['success' => true, 'message' => 'Good Receive berhasil disimpan']);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    public function show($id)
+    {
+        $gr = DB::table('food_good_receives as gr')
+            ->leftJoin('purchase_order_foods as po', 'gr.po_id', '=', 'po.id')
+            ->leftJoin('suppliers as s', 'gr.supplier_id', '=', 's.id')
+            ->leftJoin('users as u', 'gr.received_by', '=', 'u.id')
+            ->select(
+                'gr.id',
+                'gr.receive_date',
+                'po.number as po_number',
+                's.name as supplier_name',
+                'u.nama_lengkap as received_by_name'
+            )
+            ->where('gr.id', $id)
+            ->first();
+        if (!$gr) {
+            return response()->json(['message' => 'Good Receive tidak ditemukan'], 404);
+        }
+        $items = DB::table('food_good_receive_items as gri')
+            ->leftJoin('items as i', 'gri.item_id', '=', 'i.id')
+            ->leftJoin('units as u', 'gri.unit_id', '=', 'u.id')
+            ->leftJoin('purchase_order_food_items as poi', 'gri.po_item_id', '=', 'poi.id')
+            ->select(
+                'gri.id',
+                'i.name as item_name',
+                'gri.qty_received',
+                'u.name as unit_name',
+                'poi.price'
+            )
+            ->where('gri.good_receive_id', $id)
+            ->get();
+        $gr->items = $items;
+        return response()->json($gr);
+    }
+
+    public function update(Request $request, $id)
+    {
+        $request->validate([
+            'items' => 'required|array',
+            'items.*.id' => 'required|integer',
+            'items.*.qty_received' => 'required|numeric',
+        ]);
+
+        DB::beginTransaction();
+        try {
+            // 1. Get current GR data
+            $gr = DB::table('food_good_receives')->where('id', $id)->first();
+            if (!$gr) {
+                throw new \Exception('Good Receive tidak ditemukan');
+            }
+
+            // 2. Get current items
+            $currentItems = DB::table('food_good_receive_items')
+                ->where('good_receive_id', $id)
+                ->get();
+
+            // 3. Hapus semua record inventory terkait GR ini
+            foreach ($currentItems as $currentItem) {
+                // Get PO item untuk warehouse
+                $poItem = DB::table('purchase_order_food_items')->where('id', $currentItem->po_item_id)->first();
+                $prFoodItem = $poItem ? DB::table('pr_food_items')->where('id', $poItem->pr_food_item_id)->first() : null;
+                $pr = $prFoodItem ? DB::table('pr_foods')->where('id', $prFoodItem->pr_food_id)->first() : null;
+                $warehouseId = $pr ? $pr->warehouse_id : null;
+                $inventoryItem = DB::table('food_inventory_items')->where('item_id', $currentItem->item_id)->first();
+                if ($inventoryItem && $warehouseId) {
+                    // Hapus stok (reset ke 0, atau bisa juga diadjust sesuai kebutuhan)
+                    DB::table('food_inventory_stocks')
+                        ->where('inventory_item_id', $inventoryItem->id)
+                        ->where('warehouse_id', $warehouseId)
+                        ->delete();
+                }
+                // Hapus kartu stok
+                DB::table('food_inventory_cards')
+                    ->where('reference_type', 'good_receive')
+                    ->where('reference_id', $id)
+                    ->where('inventory_item_id', $inventoryItem ? $inventoryItem->id : 0)
+                    ->delete();
+                // Hapus cost history
+                DB::table('food_inventory_cost_histories')
+                    ->where('reference_type', 'good_receive')
+                    ->where('reference_id', $id)
+                    ->where('inventory_item_id', $inventoryItem ? $inventoryItem->id : 0)
+                    ->delete();
+            }
+
+            // 4. Update good_receive_items sesuai input
+            foreach ($request->items as $item) {
+                DB::table('food_good_receive_items')
+                    ->where('id', $item['id'])
+                    ->update([
+                        'qty_received' => $item['qty_received'],
+                        'updated_at' => now()
+                    ]);
+            }
+
+            // 5. Insert ulang inventory (mirip proses store)
+            foreach ($request->items as $item) {
+                $currentItem = DB::table('food_good_receive_items')->where('id', $item['id'])->first();
+                $poItem = DB::table('purchase_order_food_items')->where('id', $currentItem->po_item_id)->first();
+                $prFoodItem = $poItem ? DB::table('pr_food_items')->where('id', $poItem->pr_food_item_id)->first() : null;
+                $pr = $prFoodItem ? DB::table('pr_foods')->where('id', $prFoodItem->pr_food_id)->first() : null;
+                $warehouseId = $pr ? $pr->warehouse_id : null;
+                $itemMaster = DB::table('items')->where('id', $currentItem->item_id)->first();
+                $inventoryItem = DB::table('food_inventory_items')->where('item_id', $currentItem->item_id)->first();
+                if (!$inventoryItem) {
+                    $inventoryItemId = DB::table('food_inventory_items')->insertGetId([
+                        'item_id' => $currentItem->item_id,
+                        'small_unit_id' => $itemMaster->small_unit_id,
+                        'medium_unit_id' => $itemMaster->medium_unit_id,
+                        'large_unit_id' => $itemMaster->large_unit_id,
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+                } else {
+                    $inventoryItemId = $inventoryItem->id;
+                }
+                // 1. Hitung cost
+                $cost = $poItem ? $poItem->price : 0;
+                $cost_small = $cost; // harga per small dari input
+                $cost_medium = $cost_small * ($itemMaster->small_conversion_qty ?: 1);
+                $cost_large = $cost_medium * ($itemMaster->medium_conversion_qty ?: 1);
+                // 2. Hitung qty (konversi ke semua unit)
+                $smallConv = $itemMaster->small_conversion_qty ?: 1;
+                $mediumConv = $itemMaster->medium_conversion_qty ?: 1;
+                $qty_small = 0; $qty_medium = 0; $qty_large = 0; $qty_small_for_value = 0;
+                if ($currentItem->unit_id == $itemMaster->large_unit_id) {
+                    $qty_large = (float) $item['qty_received'];
+                    $qty_medium = $qty_large * $mediumConv;
+                    $qty_small = $qty_medium * $smallConv;
+                    $qty_small_for_value = $qty_small;
+                } elseif ($currentItem->unit_id == $itemMaster->medium_unit_id) {
+                    $qty_medium = (float) $item['qty_received'];
+                    $qty_large = $mediumConv > 0 ? $qty_medium / $mediumConv : 0;
+                    $qty_small = $qty_medium * $smallConv;
+                    $qty_small_for_value = $qty_small;
+                } elseif ($currentItem->unit_id == $itemMaster->small_unit_id) {
+                    $qty_small = (float) $item['qty_received'];
+                    $qty_medium = $smallConv > 0 ? $qty_small / $smallConv : 0;
+                    $qty_large = ($smallConv > 0 && $mediumConv > 0) ? $qty_small / ($smallConv * $mediumConv) : 0;
+                    $qty_small_for_value = $qty_small;
+                }
+                // 4. Insert/update ke food_inventory_stocks dengan Moving Average Cost
+                $existingStock = DB::table('food_inventory_stocks')
+                    ->where('inventory_item_id', $inventoryItemId)
+                    ->where('warehouse_id', $warehouseId)
+                    ->first();
+                $qty_lama = $existingStock ? $existingStock->qty_small : 0;
+                $nilai_lama = $existingStock ? $existingStock->value : 0;
+                $qty_baru = $qty_small;
+                $nilai_baru = $qty_small_for_value * $cost_small;
+                $total_qty = $qty_lama + $qty_baru;
+                $total_nilai = $nilai_lama + $nilai_baru;
+                $mac = $total_qty > 0 ? $total_nilai / $total_qty : $cost_small;
+                if ($existingStock) {
+                    DB::table('food_inventory_stocks')
+                        ->where('id', $existingStock->id)
+                        ->update([
+                            'qty_small' => $total_qty,
+                            'qty_medium' => $existingStock->qty_medium + $qty_medium,
+                            'qty_large' => $existingStock->qty_large + $qty_large,
+                            'value' => $total_nilai,
+                            'last_cost_small' => $mac,
+                            'last_cost_medium' => $cost_medium, // opsional, bisa juga pakai konversi dari MAC
+                            'last_cost_large' => $cost_large,   // opsional
+                            'updated_at' => now(),
+                        ]);
+                } else {
+                    DB::table('food_inventory_stocks')->insert([
+                        'inventory_item_id' => $inventoryItemId,
+                        'warehouse_id' => $warehouseId,
+                        'qty_small' => $qty_small,
+                        'qty_medium' => $qty_medium,
+                        'qty_large' => $qty_large,
+                        'value' => $nilai_baru,
+                        'last_cost_small' => $cost_small,
+                        'last_cost_medium' => $cost_medium,
+                        'last_cost_large' => $cost_large,
+                        'updated_at' => now(),
+                    ]);
+                }
+                // 5. Hitung saldo kartu stok (stock card)
+                $lastCard = DB::table('food_inventory_cards')
+                    ->where('inventory_item_id', $inventoryItemId)
+                    ->where('warehouse_id', $warehouseId)
+                    ->orderByDesc('date')
+                    ->orderByDesc('id')
+                    ->first();
+                if ($lastCard) {
+                    $saldo_qty_small = $lastCard->saldo_qty_small + $qty_small;
+                    $saldo_qty_medium = $lastCard->saldo_qty_medium + $qty_medium;
+                    $saldo_qty_large = $lastCard->saldo_qty_large + $qty_large;
+                } else {
+                    $saldo_qty_small = $qty_small;
+                    $saldo_qty_medium = $qty_medium;
+                    $saldo_qty_large = $qty_large;
+                }
+                // 6. Insert ke food_inventory_cards (stock card)
+                DB::table('food_inventory_cards')->insert([
+                    'inventory_item_id' => $inventoryItemId,
+                    'warehouse_id' => $warehouseId,
+                    'date' => $gr->receive_date,
+                    'reference_type' => 'good_receive',
+                    'reference_id' => $id,
+                    'in_qty_small' => $qty_small,
+                    'in_qty_medium' => $qty_medium,
+                    'in_qty_large' => $qty_large,
+                    'out_qty_small' => 0,
+                    'out_qty_medium' => 0,
+                    'out_qty_large' => 0,
+                    'cost_per_small' => $cost_small,
+                    'cost_per_medium' => $cost_medium,
+                    'cost_per_large' => $cost_large,
+                    'value_in' => $qty_small_for_value * $cost_small,
+                    'value_out' => 0,
+                    'saldo_qty_small' => $saldo_qty_small,
+                    'saldo_qty_medium' => $saldo_qty_medium,
+                    'saldo_qty_large' => $saldo_qty_large,
+                    'saldo_value' => ($existingStock ? ($existingStock->qty_small + $qty_small) : $qty_small) * $cost_small,
+                    'description' => 'Good Receive',
+                    'created_at' => now(),
+                ]);
+                // Insert food_inventory_cost_histories
+                $lastCostHistory = DB::table('food_inventory_cost_histories')
+                    ->where('inventory_item_id', $inventoryItemId)
+                    ->where('warehouse_id', $warehouseId)
+                    ->orderByDesc('date')
+                    ->orderByDesc('created_at')
+                    ->first();
+                $old_cost = $lastCostHistory ? $lastCostHistory->new_cost : 0;
+                DB::table('food_inventory_cost_histories')->insert([
+                    'inventory_item_id' => $inventoryItemId,
+                    'warehouse_id' => $warehouseId,
+                    'date' => $gr->receive_date,
+                    'old_cost' => $old_cost,
+                    'new_cost' => $cost_small, // Harga pembelian terakhir
+                    'mac' => $mac, // Moving Average Cost
+                    'type' => 'good_receive',
+                    'reference_type' => 'good_receive',
+                    'reference_id' => $id,
+                    'created_at' => now(),
+                ]);
+            }
+
+            // 6. Log activity
+            ActivityLog::create([
+                'user_id' => Auth::id(),
+                'activity_type' => 'update',
+                'module' => 'good_receive',
+                'description' => 'Update Good Receive: ' . $id,
+                'ip_address' => $request->ip(),
+                'user_agent' => $request->userAgent(),
+                'old_data' => json_encode($currentItems),
+                'new_data' => json_encode($request->items),
+                'created_at' => now(),
+            ]);
+
+            DB::commit();
+            return response()->json(['success' => true, 'message' => 'Good Receive berhasil diupdate']);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    public function destroy($id)
+    {
+        DB::beginTransaction();
+        try {
+            $gr = DB::table('food_good_receives')->where('id', $id)->first();
+            if (!$gr) {
+                return response()->json(['success' => false, 'message' => 'Good Receive tidak ditemukan'], 404);
+            }
+            // Ambil semua item GR
+            $items = DB::table('food_good_receive_items')->where('good_receive_id', $id)->get();
+            foreach ($items as $item) {
+                // Get PO item untuk warehouse
+                $poItem = DB::table('purchase_order_food_items')->where('id', $item->po_item_id)->first();
+                $prFoodItem = $poItem ? DB::table('pr_food_items')->where('id', $poItem->pr_food_item_id)->first() : null;
+                $pr = $prFoodItem ? DB::table('pr_foods')->where('id', $prFoodItem->pr_food_id)->first() : null;
+                $warehouseId = $pr ? $pr->warehouse_id : null;
+                $inventoryItem = DB::table('food_inventory_items')->where('item_id', $item->item_id)->first();
+                if ($inventoryItem && $warehouseId) {
+                    DB::table('food_inventory_stocks')
+                        ->where('inventory_item_id', $inventoryItem->id)
+                        ->where('warehouse_id', $warehouseId)
+                        ->delete();
+                }
+                DB::table('food_inventory_cards')
+                    ->where('reference_type', 'good_receive')
+                    ->where('reference_id', $id)
+                    ->where('inventory_item_id', $inventoryItem ? $inventoryItem->id : 0)
+                    ->delete();
+                DB::table('food_inventory_cost_histories')
+                    ->where('reference_type', 'good_receive')
+                    ->where('reference_id', $id)
+                    ->where('inventory_item_id', $inventoryItem ? $inventoryItem->id : 0)
+                    ->delete();
+            }
+            // Hapus detail GR
+            DB::table('food_good_receive_items')->where('good_receive_id', $id)->delete();
+            // Hapus GR
+            DB::table('food_good_receives')->where('id', $id)->delete();
+            // Update status PO menjadi approved
+            DB::table('purchase_order_foods')->where('id', $gr->po_id)->update(['status' => 'approved']);
+            // Log activity
+            ActivityLog::create([
+                'user_id' => Auth::id(),
+                'activity_type' => 'delete',
+                'module' => 'good_receive',
+                'description' => 'Delete Good Receive: ' . $id,
+                'ip_address' => request()->ip(),
+                'user_agent' => request()->userAgent(),
+                'old_data' => json_encode($gr),
+                'new_data' => null,
+                'created_at' => now(),
+            ]);
+            DB::commit();
+            return response()->json(['success' => true, 'message' => 'Good Receive berhasil dihapus']);
         } catch (\Exception $e) {
             DB::rollBack();
             return response()->json(['success' => false, 'message' => $e->getMessage()], 500);

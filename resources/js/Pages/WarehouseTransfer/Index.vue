@@ -3,13 +3,13 @@
     <div class="w-full py-8 px-0">
       <div class="flex justify-between items-center mb-6">
         <h1 class="text-2xl font-bold text-gray-800 flex items-center gap-2">
-          <i class="fa-solid fa-money-check-dollar"></i> Food Payment
+          <i class="fa-solid fa-right-left"></i> Pindah Gudang
         </h1>
         <Link
-          :href="route('food-payments.create')"
+          :href="route('warehouse-transfer.create')"
           class="bg-gradient-to-r from-blue-500 to-blue-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold"
         >
-          + Buat Food Payment
+          + Buat Pindah Gudang
         </Link>
       </div>
       <div class="flex flex-wrap gap-3 mb-4 items-center">
@@ -17,7 +17,7 @@
           v-model="search"
           @input="onSearchInput"
           type="text"
-          placeholder="Cari nomor/Supplier..."
+          placeholder="Cari nomor transfer/gudang..."
           class="w-64 px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition"
         />
         <select v-model="selectedStatus" @change="onStatusChange" class="px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition">
@@ -25,7 +25,6 @@
           <option value="draft">Draft</option>
           <option value="approved">Approved</option>
           <option value="rejected">Rejected</option>
-          <option value="paid">Paid</option>
         </select>
         <input type="date" v-model="from" @change="onDateChange" class="px-2 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition" placeholder="Dari tanggal" />
         <span>-</span>
@@ -37,43 +36,43 @@
             <tr>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider rounded-tl-2xl">Nomor</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Tanggal</th>
-              <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Supplier</th>
-              <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Payment Type</th>
-              <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Total</th>
+              <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Gudang Asal</th>
+              <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Gudang Tujuan</th>
+              <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Total Item</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Status</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Dibuat Oleh</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider rounded-tr-2xl">Aksi</th>
             </tr>
           </thead>
           <tbody>
-            <tr v-if="!payments.data || !payments.data.length">
-              <td colspan="8" class="text-center py-10 text-gray-400">Belum ada data Food Payment.</td>
+            <tr v-if="!transfers.data || !transfers.data.length">
+              <td colspan="8" class="text-center py-10 text-gray-400">Belum ada data Pindah Gudang.</td>
             </tr>
-            <tr v-for="p in payments.data" :key="p.id" class="hover:bg-blue-50 transition shadow-sm">
-              <td class="px-6 py-3 font-mono font-semibold text-blue-700">{{ p.number }}</td>
-              <td class="px-6 py-3">{{ formatDate(p.date) }}</td>
-              <td class="px-6 py-3">{{ p.supplier?.name }}</td>
-              <td class="px-6 py-3">{{ p.payment_type }}</td>
-              <td class="px-6 py-3">{{ formatCurrency(p.total) }}</td>
+            <tr v-for="tr in transfers.data" :key="tr.id" class="hover:bg-blue-50 transition shadow-sm">
+              <td class="px-6 py-3 font-mono font-semibold text-blue-700">{{ tr.transfer_number }}</td>
+              <td class="px-6 py-3">{{ formatDate(tr.transfer_date) }}</td>
+              <td class="px-6 py-3">{{ tr.warehouse_from?.name }}</td>
+              <td class="px-6 py-3">{{ tr.warehouse_to?.name }}</td>
+              <td class="px-6 py-3">{{ tr.total_items }}</td>
               <td class="px-6 py-3">
                 <span :class="{
-                  'bg-gray-100 text-gray-700': p.status === 'draft',
-                  'bg-green-100 text-green-700': p.status === 'approved' || p.status === 'paid',
-                  'bg-red-100 text-red-700': p.status === 'rejected',
+                  'bg-gray-100 text-gray-700': tr.status === 'draft',
+                  'bg-green-100 text-green-700': tr.status === 'approved',
+                  'bg-red-100 text-red-700': tr.status === 'rejected',
                 }" class="px-2 py-1 rounded-full text-xs font-semibold shadow">
-                  {{ p.status }}
+                  {{ tr.status }}
                 </span>
               </td>
-              <td class="px-6 py-3">{{ p.creator?.nama_lengkap }}</td>
+              <td class="px-6 py-3">{{ tr.creator?.nama_lengkap }}</td>
               <td class="px-6 py-3">
                 <div class="flex gap-2">
-                  <button @click="goToDetail(p.id)" class="inline-flex items-center btn btn-xs bg-blue-100 text-blue-800 hover:bg-blue-200 rounded px-2 py-1 font-semibold transition">
+                  <button @click="goToDetail(tr.id)" class="inline-flex items-center btn btn-xs bg-blue-100 text-blue-800 hover:bg-blue-200 rounded px-2 py-1 font-semibold transition">
                     <i class="fa fa-eye mr-1"></i> Detail
                   </button>
-                  <button @click="goToEdit(p.id)" class="inline-flex items-center btn btn-xs bg-yellow-100 text-yellow-800 hover:bg-yellow-200 rounded px-2 py-1 font-semibold transition">
+                  <button @click="goToEdit(tr.id)" class="inline-flex items-center btn btn-xs bg-yellow-100 text-yellow-800 hover:bg-yellow-200 rounded px-2 py-1 font-semibold transition">
                     <i class="fa fa-pencil-alt mr-1"></i> Edit
                   </button>
-                  <button @click="confirmDelete(p.id)" class="inline-flex items-center btn btn-xs bg-red-100 text-red-700 hover:bg-red-200 rounded px-2 py-1 font-semibold transition">
+                  <button @click="confirmDelete(tr.id)" class="inline-flex items-center btn btn-xs bg-red-100 text-red-700 hover:bg-red-200 rounded px-2 py-1 font-semibold transition">
                     <i class="fa fa-trash mr-1"></i> Hapus
                   </button>
                 </div>
@@ -85,7 +84,7 @@
       <!-- Pagination -->
       <div class="flex justify-end mt-4 gap-2">
         <button
-          v-for="link in payments.links"
+          v-for="link in transfers.links"
           :key="link.label"
           :disabled="!link.url"
           @click="goToPage(link.url)"
@@ -108,7 +107,7 @@ import { Link } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 
 const props = defineProps({
-  payments: Object,
+  transfers: Object,
   filters: Object,
 });
 
@@ -134,13 +133,8 @@ function formatDate(date) {
   return d.toLocaleDateString('id-ID', { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
-function formatCurrency(value) {
-  if (value == null) return '-';
-  return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(value);
-}
-
 function debouncedSearch() {
-  router.get('/food-payments', { search: search.value, status: selectedStatus.value, from: from.value, to: to.value }, { preserveState: true, replace: true });
+  router.get('/warehouse-transfer', { search: search.value, status: selectedStatus.value, from: from.value, to: to.value }, { preserveState: true, replace: true });
 }
 
 function onSearchInput() {
@@ -160,18 +154,18 @@ function goToPage(url) {
 }
 
 function goToEdit(id) {
-  router.visit(`/food-payments/${id}/edit`);
+  router.visit(`/warehouse-transfer/${id}/edit`);
 }
 
 function goToDetail(id) {
-  router.visit(`/food-payments/${id}`);
+  router.visit(`/warehouse-transfer/${id}`);
 }
 
 function confirmDelete(id) {
   if (!id) return;
   import('sweetalert2').then(({ default: Swal }) => {
     Swal.fire({
-      title: 'Hapus Food Payment?',
+      title: 'Hapus Pindah Gudang?',
       text: 'Data yang dihapus tidak dapat dikembalikan.',
       icon: 'warning',
       showCancelButton: true,
@@ -181,12 +175,12 @@ function confirmDelete(id) {
       cancelButtonText: 'Batal'
     }).then((result) => {
       if (result.isConfirmed) {
-        router.delete(`/food-payments/${id}`, {
+        router.delete(`/warehouse-transfer/${id}`, {
           onSuccess: () => {
-            Swal.fire('Berhasil', 'Food Payment berhasil dihapus!', 'success');
+            Swal.fire('Berhasil', 'Data berhasil dihapus!', 'success');
           },
           onError: () => {
-            Swal.fire('Gagal', 'Gagal menghapus Food Payment', 'error');
+            Swal.fire('Gagal', 'Gagal menghapus data', 'error');
           }
         });
       }

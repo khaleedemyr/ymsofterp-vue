@@ -9,7 +9,6 @@
           <div class="text-center mb-4 print-header">
             <img src="/images/logojustusgroup.png" alt="Justus Group" class="logo-print" style="max-width: 180px; margin: 0 auto 12px; display:block;" />
             <h2 style="font-size: 20px; font-weight: bold; margin-bottom: 8px;">PURCHASE ORDER</h2>
-           
           </div>
 
           <div class="mb-4 text-sm">
@@ -18,6 +17,8 @@
                 <p><strong>No. PO:</strong> {{ po.number }}</p>
                 <p><strong>Tanggal:</strong> {{ new Date(po.date).toLocaleDateString('id-ID') }}</p>
                 <p><strong>Supplier:</strong> {{ po.supplier?.name }}</p>
+                <p><strong>Outlet Pengiriman:</strong> {{ selectedOutlet?.nama_outlet || '-' }}</p>
+                <p><strong>Alamat Pengiriman:</strong> {{ selectedOutlet?.lokasi || '-' }}</p>
               </div>
               <div>
                 <p><strong>Status:</strong> {{ po.status }}</p>
@@ -36,6 +37,7 @@
                 <th class="border px-2 py-1">Unit</th>
                 <th class="border px-2 py-1">Harga</th>
                 <th class="border px-2 py-1">Total</th>
+                <th class="border px-2 py-1">Tgl Kedatangan</th>
               </tr>
             </thead>
             <tbody>
@@ -46,12 +48,13 @@
                 <td class="border px-2 py-1">{{ item.unit?.name }}</td>
                 <td class="border px-2 py-1 text-right">{{ formatPrice(item.price) }}</td>
                 <td class="border px-2 py-1 text-right">{{ formatPrice(item.total) }}</td>
+                <td class="border px-2 py-1">{{ item.arrival_date ? new Date(item.arrival_date).toLocaleDateString('id-ID') : '-' }}</td>
               </tr>
             </tbody>
             <tfoot>
               <tr>
                 <td colspan="5" class="border px-2 py-1 text-right"><strong>Total:</strong></td>
-                <td class="border px-2 py-1 text-right"><strong>{{ formatPrice(po.items.reduce((sum, item) => sum + item.total, 0)) }}</strong></td>
+                <td class="border px-2 py-1 text-right"><strong>{{ formatPrice(po.items.reduce((sum, item) => sum + (Number(item.total) || 0), 0)) }}</strong></td>
               </tr>
             </tfoot>
           </table>
@@ -71,9 +74,23 @@
             </tr>
           </table>
         </div>
-        <div class="flex justify-end gap-2 mt-6">
-          <button @click="$emit('close')" class="px-4 py-2 text-gray-700 bg-gray-100 rounded hover:bg-gray-200">Tutup</button>
-          <button @click="print" class="px-4 py-2 text-white bg-blue-500 rounded hover:bg-blue-600">Print</button>
+        <div class="flex flex-col gap-4 mt-6">
+          <div class="flex items-center gap-2">
+            <label class="text-sm font-medium text-gray-700">Pilih Outlet Pengiriman:</label>
+            <select 
+              v-model="selectedOutletId"
+              class="flex-1 rounded-md border-gray-300 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50"
+            >
+              <option value="">Pilih Outlet</option>
+              <option v-for="outlet in activeOutlets" :key="outlet.id_outlet" :value="outlet.id_outlet">
+                {{ outlet.nama_outlet }}
+              </option>
+            </select>
+          </div>
+          <div class="flex justify-end gap-2">
+            <button @click="$emit('close')" class="px-4 py-2 text-gray-700 bg-gray-100 rounded hover:bg-gray-200">Tutup</button>
+            <button @click="print" class="px-4 py-2 text-white bg-blue-500 rounded hover:bg-blue-600">Print</button>
+          </div>
         </div>
       </div>
     </div>
@@ -81,12 +98,29 @@
 </template>
 
 <script setup>
-import { onMounted, watch } from 'vue';
+import { onMounted, watch, ref, computed } from 'vue';
+import axios from 'axios';
 
 const props = defineProps({
   show: Boolean,
   po: Object
 });
+
+const activeOutlets = ref([]);
+const selectedOutletId = ref('');
+const selectedOutlet = computed(() =>
+  activeOutlets.value.find(o => o.id_outlet == selectedOutletId.value)
+);
+
+// Fetch active outlets
+const fetchOutlets = async () => {
+  try {
+    const response = await axios.get(route('outlets.list'));
+    activeOutlets.value = response.data.filter(outlet => outlet.status === 'A');
+  } catch (error) {
+    console.error('Error fetching outlets:', error);
+  }
+};
 
 function formatPrice(price) {
   return new Intl.NumberFormat('id-ID', {
@@ -124,10 +158,17 @@ function generateQRCode() {
 }
 
 watch(() => props.show, (val) => {
-  if (val) setTimeout(generateQRCode, 200);
+  if (val) {
+    setTimeout(generateQRCode, 200);
+    fetchOutlets();
+  }
 });
+
 onMounted(() => {
-  if (props.show) setTimeout(generateQRCode, 200);
+  if (props.show) {
+    setTimeout(generateQRCode, 200);
+    fetchOutlets();
+  }
 });
 
 function print() {

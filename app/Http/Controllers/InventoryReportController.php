@@ -43,24 +43,11 @@ class InventoryReportController extends Controller
             ->get();
         $warehouses = DB::table('warehouses')->select('id', 'name')->orderBy('name')->get();
 
-        // Konversi qty ke small, lalu tampilkan ke large, medium, small (semua kolom selalu terisi)
+        // Tampilkan qty langsung dari database
         $data = $data->map(function ($row) {
-            $qty_small = (int)($row->qty_small ?? 0);
-            $qty_medium = (int)($row->qty_medium ?? 0);
-            $qty_large = (int)($row->qty_large ?? 0);
-            $smallPerMedium = (int)($row->small_conversion_qty ?: 1);
-            $mediumPerLarge = (int)($row->medium_conversion_qty ?: 1);
-
-            // Semua qty dijadikan small unit dulu
-            $totalSmall = $qty_small + ($qty_medium * $smallPerMedium) + ($qty_large * $smallPerMedium * $mediumPerLarge);
-
-            // Tampilkan semua hasil konversi
-            $row->display_small = $totalSmall;
-            $row->display_medium = $smallPerMedium > 0 ? $totalSmall / $smallPerMedium : 0;
-            $row->display_large = ($smallPerMedium > 0 && $mediumPerLarge > 0) ? $totalSmall / ($smallPerMedium * $mediumPerLarge) : 0;
-            $row->display_large = (int)($row->display_large ?? 0);
-            $row->display_medium = (int)($row->display_medium ?? 0);
-            $row->display_small = (int)($row->display_small ?? 0);
+            $row->display_small = $row->qty_small;
+            $row->display_medium = $row->qty_medium;
+            $row->display_large = $row->qty_large;
             return $row;
         });
 
@@ -84,6 +71,10 @@ class InventoryReportController extends Controller
                 $join->on('c.reference_id', '=', 'gr.id')
                      ->where('c.reference_type', '=', 'good_receive');
             })
+            ->leftJoin('warehouse_transfers as wt', function($join) {
+                $join->on('c.reference_id', '=', 'wt.id')
+                     ->where('c.reference_type', '=', 'warehouse_transfer');
+            })
             ->select(
                 'c.id',
                 'c.date',
@@ -98,19 +89,33 @@ class InventoryReportController extends Controller
                 'c.value_in',
                 'c.value_out',
                 'c.saldo_value',
+                'c.saldo_qty_small',
+                'c.saldo_qty_medium',
+                'c.saldo_qty_large',
                 'c.reference_type',
                 'c.reference_id',
                 'c.description',
                 'gr.gr_number as reference_number',
+                'wt.transfer_number as transfer_number',
                 'us.name as small_unit_name',
                 'um.name as medium_unit_name',
-                'ul.name as large_unit_name'
+                'ul.name as large_unit_name',
+                'i.small_conversion_qty',
+                'i.medium_conversion_qty'
             )
             ->orderBy('i.name')
             ->orderBy('w.name')
             ->orderBy('c.date')
             ->orderBy('c.id')
             ->get();
+
+        // Setelah get(), map reference_number agar jika reference_type warehouse_transfer, pakai transfer_number
+        $data = $data->map(function ($row) {
+            if ($row->reference_type === 'warehouse_transfer' && $row->transfer_number) {
+                $row->reference_number = $row->transfer_number;
+            }
+            return $row;
+        });
 
         // Hitung saldo dinamis per item+warehouse dan konversi pecahan ke semua satuan
         $saldoMap = [];
@@ -143,6 +148,10 @@ class InventoryReportController extends Controller
             $row->display_large = (int)($display_large ?? 0);
             $row->display_medium = (int)($display_medium ?? 0);
             $row->display_small = (int)($display_small ?? 0);
+
+            // Tambahkan juga total in/out dalam satuan medium/large untuk frontend jika perlu
+            $row->in_total_small = $in_total_small;
+            $row->out_total_small = $out_total_small;
 
             \Log::info('StockCard row', [
                 'item' => $row->item_name,
@@ -227,11 +236,13 @@ class InventoryReportController extends Controller
                 'i.small_unit_id',
                 'i.medium_unit_id',
                 'i.large_unit_id',
+                'i.small_conversion_qty',
+                'i.medium_conversion_qty',
                 's.value',
                 's.last_cost_small',
                 's.last_cost_medium',
                 's.last_cost_large',
-                DB::raw('(s.qty_small * s.last_cost_small + s.qty_medium * s.last_cost_medium + s.qty_large * s.last_cost_large) as total_value')
+                's.value as total_value'
             )
             ->orderBy('w.name')
             ->orderBy('i.name')

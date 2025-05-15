@@ -179,4 +179,14 @@ class OutletController extends Controller
             ->header('Content-Type', 'image/png')
             ->header('Content-Disposition', 'attachment; filename="'.$filename.'"');
     }
+
+    public function apiList()
+    {
+        $outlets = \DB::table('tbl_data_outlet')
+            ->where('status', 'A')
+            ->select('id_outlet', 'nama_outlet', 'lokasi', 'region_id', 'qr_code', 'lat', 'long', 'keterangan', 'status', 'created_at', 'updated_at')
+            ->orderBy('nama_outlet')
+            ->get();
+        return response()->json($outlets);
+    }
 } 

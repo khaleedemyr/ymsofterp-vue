@@ -84,6 +84,7 @@ class InstructionsSheet implements FromArray, WithHeadings, WithTitle, WithStyle
             ['Medium Conversion Qty', 'Angka. Wajib diisi. Contoh: 10'],
             ['Small Conversion Qty', 'Angka. Wajib diisi. Contoh: 2'],
             ['Min Stock', 'Angka. Wajib diisi. Contoh: 5'],
+            ['Expiry Days', 'Angka. Boleh dikosongkan. Contoh: 7'],
             ['Status', 'Pilih: active/inactive. Wajib diisi. Contoh: active'],
             ['Composition Type', 'Pilih: single/composed. Wajib diisi. Contoh: single'],
             ['Modifier Enabled', 'Pilih: Yes/No. Contoh: Yes'],
@@ -130,7 +131,7 @@ class ItemsSheet implements FromArray, WithHeadings, WithTitle, WithStyles, With
     {
         return [
             [
-                'Item A', 'Food', 'Sub1', 'Gudang 1', 'Food', 'Deskripsi', 'Spesifikasi', 'Kg', 'Sak', 'Box', 10, 2, 5, 'active', 'single', 'Yes', 'Keju,Coklat', 'Gula x 2 (Kg); Tepung x 1 (Sak)', 'Jakarta=10000; Outlet A=20000', 'Jakarta; Outlet A; all', 'https://img.com/a.jpg,https://img.com/b.jpg'
+                'Item A', 'Food', 'Sub1', 'Gudang 1', 'Food', 'Deskripsi', 'Spesifikasi', 'Kg', 'Sak', 'Box', 10, 2, 5, 7, 'active', 'single', 'Yes', 'Keju,Coklat', 'Gula x 2 (Kg); Tepung x 1 (Sak)', 'Jakarta=10000; Outlet A=20000', 'Jakarta; Outlet A; all', 'https://img.com/a.jpg,https://img.com/b.jpg'
             ]
         ];
     }
@@ -138,7 +139,7 @@ class ItemsSheet implements FromArray, WithHeadings, WithTitle, WithStyles, With
     {
         return [
             'Name', 'Category', 'Sub Category', 'Warehouse Division', 'Type', 'Description', 'Specification',
-            'Small Unit', 'Medium Unit', 'Large Unit', 'Medium Conversion Qty', 'Small Conversion Qty', 'Min Stock', 'Status',
+            'Small Unit', 'Medium Unit', 'Large Unit', 'Medium Conversion Qty', 'Small Conversion Qty', 'Min Stock', 'Expiry Days', 'Status',
             'Composition Type', 'Modifier Enabled', 'Modifier Options', 'BOM', 'Prices', 'Availabilities', 'Images'
         ];
     }

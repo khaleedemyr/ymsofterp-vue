@@ -4,7 +4,13 @@
       <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
         <div class="mb-4">
           <button @click="$inertia.visit('/po-foods')" class="text-blue-500 hover:underline"><i class="fa fa-arrow-left"></i> Kembali</button>
-          <button @click="showPreview = true" class="ml-4 px-4 py-2 bg-gray-100 text-gray-700 rounded hover:bg-gray-200">
+          <button 
+            @click="showPreview = true" 
+            class="ml-4 px-4 py-2 bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
+            :disabled="po.status !== 'approved'"
+            :class="po.status !== 'approved' ? 'opacity-50 cursor-not-allowed' : ''"
+            title="PO harus berstatus approved untuk preview"
+          >
             <i class="fas fa-print mr-2"></i> Preview PO
           </button>
         </div>

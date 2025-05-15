@@ -81,6 +81,10 @@
                   <option value="inactive">Inactive</option>
                 </select>
               </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700">Expiry Days</label>
+                <input type="number" v-model="form.exp" min="0" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" placeholder="Enter expiry days" />
+              </div>
             </div>
           </div>
           <div v-if="selectedCategory && selectedCategory.show_pos == 1" class="mt-4">
@@ -337,7 +341,7 @@
               </div>
             </div>
             <!-- Modifier Information -->
-            <div v-if="form.modifier_enabled" class="bg-gradient-to-r from-yellow-50 to-yellow-100 border-l-4 border-yellow-400 shadow rounded-lg p-6">
+            <div v-if="form.modifier_enabled && validModifiers.length > 0 && form.modifier_option_ids && form.modifier_option_ids.length > 0" class="bg-gradient-to-r from-yellow-50 to-yellow-100 border-l-4 border-yellow-400 shadow rounded-lg p-6">
               <h4 class="flex items-center gap-2 text-md font-semibold text-yellow-700 mb-4">
                 <i class="fa-solid fa-sliders"></i> Modifiers
               </h4>
@@ -345,8 +349,7 @@
                 <div v-for="modifier in validModifiers" :key="modifier.id" class="border-b pb-4">
                   <p class="font-medium text-yellow-800 mb-2">{{ modifier.name }}</p>
                   <div class="flex flex-wrap gap-2">
-                    <span v-for="option in getValidOptions(modifier.options)" :key="option.id" 
-                          class="bg-yellow-200 text-yellow-800 px-2 py-1 rounded text-sm">
+                    <span v-for="option in getValidOptions(modifier.options)" :key="option.id" v-if="form.modifier_option_ids.includes(option.id)" class="bg-yellow-200 text-yellow-800 px-2 py-1 rounded text-sm">
                       {{ option.name }}
                     </span>
                   </div>
@@ -481,8 +484,8 @@ const props = defineProps({
   units: { type: Array, default: () => [] },
   warehouseDivisions: { type: Array, default: () => [] },
   menuTypes: { type: Array, default: () => [] },
-  regions: { type: Array, default: () => [] },
-  outlets: { type: Array, default: () => [] },
+  regions: { type: [Array, Object], default: () => ({}) },
+  outlets: { type: [Array, Object], default: () => ({}) },
   bomItems: { type: Array, default: () => [] },
   modifiers: { type: Array, default: () => [] }
 });
@@ -504,6 +507,7 @@ const form = useForm({
   medium_conversion_qty: '',
   small_conversion_qty: '',
   min_stock: 0,
+  exp: 0,
   status: 'active',
   images: [],
   deleted_images: [],
@@ -571,6 +575,7 @@ watch(() => props.show, (val) => {
       medium_conversion_qty: props.item.medium_conversion_qty,
       small_conversion_qty: props.item.small_conversion_qty,
       min_stock: props.item.min_stock,
+      exp: props.item.exp,
       status: props.item.status,
       deleted_images: [],
       prices: props.item.prices ? props.item.prices.map(p => ({

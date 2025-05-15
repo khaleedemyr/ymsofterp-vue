@@ -74,6 +74,10 @@
                 <p class="font-medium">{{ item?.min_stock || '-' }}</p>
               </div>
               <div>
+                <p class="text-sm text-gray-500">Expiry Days</p>
+                <p class="font-medium">{{ item?.exp || '-' }}</p>
+              </div>
+              <div>
                 <p class="text-sm text-gray-500">Status</p>
                 <span :class="item?.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'" class="px-2 py-1 rounded text-xs font-bold">
                   <i :class="item?.status === 'active' ? 'fa-solid fa-check-circle' : 'fa-solid fa-times-circle'"></i>
@@ -264,14 +268,14 @@ const props = defineProps({
     default: () => []
   },
   regions: {
-    type: Array,
+    type: [Array, Object],
     required: false,
-    default: () => []
+    default: () => ({})
   },
   outlets: {
-    type: Array,
+    type: [Array, Object],
     required: false,
-    default: () => []
+    default: () => ({})
   }
 })
 

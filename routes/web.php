@@ -35,6 +35,7 @@ use App\Http\Controllers\FoodGoodReceiveController;
 use App\Http\Controllers\InventoryReportController;
 use App\Http\Controllers\ContraBonController;
 use App\Http\Controllers\FoodPaymentController;
+use App\Http\Controllers\WarehouseTransferController;
 
 Route::get('/', function () {
     return Inertia::render('Welcome', [
@@ -182,6 +183,7 @@ Route::middleware(['auth'])->group(function () {
     Route::delete('/outlets/{id}', [OutletController::class, 'destroy'])->name('outlets.destroy');
     Route::patch('/outlets/{id}/toggle-status', [OutletController::class, 'toggleStatus'])->name('outlets.toggle-status');
     Route::get('/outlets/{id}/download-qr', [OutletController::class, 'downloadQr'])->name('outlets.download-qr');
+    Route::get('/api/outlets', [\App\Http\Controllers\OutletController::class, 'apiList'])->name('outlets.list');
 
     // Customer routes
     Route::get('/customers', [CustomerController::class, 'index'])->name('customers.index');
@@ -224,6 +226,8 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/food-good-receive', [FoodGoodReceiveController::class, 'index'])->name('food-good-receive.index');
     Route::post('/food-good-receive/fetch-po', [FoodGoodReceiveController::class, 'fetchPO'])->name('food-good-receive.fetch-po');
     Route::post('/food-good-receive/store', [FoodGoodReceiveController::class, 'store'])->name('food-good-receive.store');
+    Route::get('/food-good-receive/{id}', [FoodGoodReceiveController::class, 'show'])->name('food-good-receive.show');
+    Route::put('/food-good-receive/{id}', [FoodGoodReceiveController::class, 'update'])->name('food-good-receive.update');
 
     // Food Payment
     Route::get('/food-payments', [\App\Http\Controllers\FoodPaymentController::class, 'index'])->name('food-payments.index');
@@ -232,6 +236,7 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/food-payments/{id}', [\App\Http\Controllers\FoodPaymentController::class, 'show'])->name('food-payments.show');
     Route::post('/food-payments/{id}/approve', [\App\Http\Controllers\FoodPaymentController::class, 'approve'])->name('food-payments.approve');
     Route::get('/api/food-payments/contra-bon-unpaid', [\App\Http\Controllers\FoodPaymentController::class, 'getContraBonUnpaid']);
+    Route::delete('/food-payments/{id}', [\App\Http\Controllers\FoodPaymentController::class, 'destroy'])->name('food-payments.destroy');
 });
 
 Route::get('/items/import-template', [ItemController::class, 'downloadImportTemplate'])->name('items.import.template');
@@ -243,6 +248,9 @@ Route::post('/items/{id}/toggle-status', [ItemController::class, 'toggleStatus']
 Route::get('/api/items/search-for-pr', [ItemController::class, 'searchForPr']);
 Route::get('/api/items/last-price', [\App\Http\Controllers\PurchaseOrderFoodsController::class, 'getLastPrice']);
 Route::get('/api/inventory/stock', [\App\Http\Controllers\ItemController::class, 'getStock']);
+Route::get('/api/items/{id}', [App\Http\Controllers\ItemController::class, 'show']);
+Route::get('/api/items/{id}/detail', [App\Http\Controllers\ItemController::class, 'apiDetail']);
+Route::get('/items/search-for-warehouse-transfer', [ItemController::class, 'searchForWarehouseTransfer']);
 
 Route::resource('items', ItemController::class);
 Route::resource('modifiers', ModifierController::class);
@@ -305,6 +313,17 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/contra-bons/{id}/approve', [ContraBonController::class, 'approve'])->name('contra-bons.approve');
     Route::get('/api/contra-bon/approved-good-receives', [\App\Http\Controllers\ContraBonController::class, 'getApprovedGoodReceives']);
     Route::get('/api/contra-bon/po-with-approved-gr', [\App\Http\Controllers\ContraBonController::class, 'getPOWithApprovedGR']);
+});
+
+// Warehouse Transfer
+Route::middleware(['auth'])->group(function () {
+    Route::get('/warehouse-transfer', [\App\Http\Controllers\WarehouseTransferController::class, 'index'])->name('warehouse-transfer.index');
+    Route::get('/warehouse-transfer/create', [\App\Http\Controllers\WarehouseTransferController::class, 'create'])->name('warehouse-transfer.create');
+    Route::post('/warehouse-transfer', [\App\Http\Controllers\WarehouseTransferController::class, 'store'])->name('warehouse-transfer.store');
+    Route::get('/warehouse-transfer/{id}', [\App\Http\Controllers\WarehouseTransferController::class, 'show'])->name('warehouse-transfer.show');
+    Route::delete('/warehouse-transfer/{id}', [\App\Http\Controllers\WarehouseTransferController::class, 'destroy'])->name('warehouse-transfer.destroy');
+    Route::get('/warehouse-transfer/{id}/edit', [\App\Http\Controllers\WarehouseTransferController::class, 'edit'])->name('warehouse-transfer.edit');
+    Route::put('/warehouse-transfer/{id}', [\App\Http\Controllers\WarehouseTransferController::class, 'update'])->name('warehouse-transfer.update');
 });
 
 require __DIR__.'/auth.php';

@@ -12,15 +12,20 @@ const props = defineProps({
 
 const search = ref(props.filters?.search || '');
 const selectedStatus = ref(props.filters?.status || '');
+const from = ref(props.filters?.from || '');
+const to = ref(props.filters?.to || '');
 
 const debouncedSearch = debounce(() => {
-  router.get('/pr-foods', { search: search.value, status: selectedStatus.value }, { preserveState: true, replace: true });
+  router.get('/pr-foods', { search: search.value, status: selectedStatus.value, from: from.value, to: to.value }, { preserveState: true, replace: true });
 }, 400);
 
 function onSearchInput() {
   debouncedSearch();
 }
 function onStatusChange() {
+  debouncedSearch();
+}
+function onDateChange() {
   debouncedSearch();
 }
 function goToPage(url) {
@@ -54,7 +59,7 @@ async function hapus(pr) {
 </script>
 <template>
   <AppLayout>
-    <div class="max-w-7xl w-full mx-auto py-8 px-2">
+    <div class="w-full py-8 px-0">
       <div class="flex justify-between items-center mb-6">
         <h1 class="text-2xl font-bold text-gray-800 flex items-center gap-2">
           <i class="fa-solid fa-file-invoice text-blue-500"></i> Purchase Requisition Foods
@@ -63,13 +68,13 @@ async function hapus(pr) {
           + Buat PR Foods Baru
         </button>
       </div>
-      <div class="flex gap-3 mb-4">
+      <div class="flex flex-wrap gap-3 mb-4 items-center">
         <input
           v-model="search"
           @input="onSearchInput"
           type="text"
           placeholder="Cari nomor PR..."
-          class="w-full px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition"
+          class="w-64 px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition"
         />
         <select v-model="selectedStatus" @change="onStatusChange" class="px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition">
           <option value="">Semua Status</option>
@@ -80,6 +85,9 @@ async function hapus(pr) {
           <option value="receive">Receive</option>
           <option value="payment">Payment</option>
         </select>
+        <input type="date" v-model="from" @change="onDateChange" class="px-2 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition" placeholder="Dari tanggal" />
+        <span>-</span>
+        <input type="date" v-model="to" @change="onDateChange" class="px-2 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition" placeholder="Sampai tanggal" />
       </div>
       <div class="bg-white rounded-2xl shadow-2xl overflow-x-auto transition-all">
         <table class="w-full min-w-full divide-y divide-gray-200">

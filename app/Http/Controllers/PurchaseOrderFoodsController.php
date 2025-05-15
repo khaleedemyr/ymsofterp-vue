@@ -17,7 +17,7 @@ class PurchaseOrderFoodsController extends Controller
 {
     public function index()
     {
-        $query = PurchaseOrderFood::with(['supplier', 'creator'])
+        $query = PurchaseOrderFood::with(['supplier', 'creator', 'items'])
             ->orderBy('created_at', 'desc');
 
         if (request('search')) {
@@ -26,10 +26,25 @@ class PurchaseOrderFoodsController extends Controller
         if (request('status')) {
             $query->where('status', request('status'));
         }
+        if (request('from')) {
+            $query->whereDate('date', '>=', request('from'));
+        }
+        if (request('to')) {
+            $query->whereDate('date', '<=', request('to'));
+        }
+
+        $purchaseOrders = $query->paginate(10)->withQueryString();
+        $purchaseOrders->getCollection()->transform(function ($po) {
+            $prItemIds = $po->items->pluck('pr_food_item_id')->toArray();
+            $prIds = \App\Models\PurchaseRequisitionFoodItem::whereIn('id', $prItemIds)->pluck('pr_food_id')->unique()->toArray();
+            $prNumbers = \App\Models\PurchaseRequisitionFood::whereIn('id', $prIds)->pluck('pr_number')->unique()->toArray();
+            $po->pr_numbers = $prNumbers;
+            return $po;
+        });
 
         return inertia('PurchaseOrder/PurchaseOrderFoods', [
-            'purchaseOrders' => $query->paginate(10)->withQueryString(),
-            'filters' => request()->only(['search', 'status']),
+            'purchaseOrders' => $purchaseOrders,
+            'filters' => request()->only(['search', 'status', 'from', 'to']),
         ]);
     }
 
@@ -433,17 +448,22 @@ class PurchaseOrderFoodsController extends Controller
     {
         $po = PurchaseOrderFood::with([
             'supplier',
-            'items.item'
+            'items.item',
+            'items.unit'
         ])->findOrFail($id);
 
-        // Only allow editing if status is draft
-        if ($po->status !== 'draft') {
+        // Only allow editing if status is draft or approved
+        if (!in_array($po->status, ['draft', 'approved'])) {
             return redirect()->route('po-foods.show', $po->id)
-                ->with('error', 'PO tidak dapat diedit karena status bukan draft');
+                ->with('error', 'PO tidak dapat diedit karena status sudah received');
         }
 
+        // Ambil data supplier dari tabel suppliers
+        $suppliers = \App\Models\Supplier::whereIn('status', ['A', 'active'])->get(['id', 'name']);
+
         return inertia('PurchaseOrder/EditPurchaseOrderFoods', [
-            'po' => $po
+            'po' => $po,
+            'suppliers' => $suppliers,
         ]);
     }
 
@@ -451,11 +471,11 @@ class PurchaseOrderFoodsController extends Controller
     {
         $po = PurchaseOrderFood::findOrFail($id);
 
-        // Only allow updating if status is draft
-        if ($po->status !== 'draft') {
+        // Only allow updating if status is draft or approved
+        if (!in_array($po->status, ['draft', 'approved'])) {
             return response()->json([
                 'success' => false,
-                'message' => 'PO tidak dapat diupdate karena status bukan draft'
+                'message' => 'PO tidak dapat diupdate karena status sudah received'
             ], 422);
         }
 
@@ -515,8 +535,8 @@ class PurchaseOrderFoodsController extends Controller
     public function destroy(Request $request, $id)
     {
         $po = PurchaseOrderFood::with('items')->findOrFail($id);
-        if ($po->status !== 'draft') {
-            return back()->with('error', 'PO hanya bisa dihapus jika status draft');
+        if (!in_array($po->status, ['draft', 'approved'])) {
+            return back()->with('error', 'PO hanya bisa dihapus jika status draft atau approved');
         }
         try {
             \DB::beginTransaction();

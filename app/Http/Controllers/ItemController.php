@@ -20,6 +20,8 @@ use PDF;
 use App\Exports\ItemsImportTemplateExport;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Validator;
+use App\Models\FoodInventoryStock;
+use App\Models\FoodInventoryCard;
 
 class ItemController extends Controller
 {
@@ -196,6 +198,7 @@ class ItemController extends Controller
                 'availabilities.*.region_id' => 'nullable|exists:regions,id',
                 'availabilities.*.outlet_id' => 'nullable|exists:tbl_data_outlet,id_outlet',
                 'availabilities.*.status' => 'required|in:available,unavailable',
+                'exp' => 'nullable|integer|min:0',
             ]);
             \Log::info('ItemController@store - Validation passed', $validated);
 
@@ -206,6 +209,7 @@ class ItemController extends Controller
             $item = Item::create(array_merge($validated, [
                 'modifier_enabled' => $request->modifier_enabled ? 1 : 0,
                 'composition_type' => $request->composition_type,
+                'exp' => $request->exp ?? 0,
             ]));
             \Log::info('ItemController@store - Item created', ['item_id' => $item->id]);
 
@@ -438,6 +442,7 @@ class ItemController extends Controller
             'availabilities' => 'nullable|array',
             'availabilities.*.region_id' => 'nullable|exists:regions,id',
             'availabilities.*.outlet_id' => 'nullable|exists:tbl_data_outlet,id_outlet',
+            'exp' => 'nullable|integer|min:0',
         ]);
 
         try {
@@ -447,6 +452,7 @@ class ItemController extends Controller
             $item->update(array_merge($validated, [
                 'modifier_enabled' => $request->modifier_enabled ? 1 : 0,
                 'composition_type' => $request->composition_type,
+                'exp' => $request->exp ?? 0,
             ]));
 
             // Handle image uploads
@@ -626,7 +632,24 @@ class ItemController extends Controller
 
     public function downloadImportTemplate()
     {
-        return \Maatwebsite\Excel\Facades\Excel::download(new ItemsImportTemplateExport, 'items_import_template.xlsx');
+        $headers = [
+            'Name', 'Category', 'Sub Category', 'Small Unit', 'Medium Unit', 'Large Unit',
+            'Medium Conversion Qty', 'Small Conversion Qty', 'Min Stock', 'Expiry Days', 'Status',
+            'Description', 'Specification', 'Type', 'Warehouse Division', 'Composition Type',
+            'Modifier Enabled', 'Modifier Options', 'BOM', 'Prices', 'Availabilities', 'Images'
+        ];
+
+        $data = [
+            $headers,
+            [
+                'Sample Item', 'Food', 'Appetizer', 'PCS', 'BOX', 'CTN',
+                '12', '24', '10', '5', 'active',
+                'Sample Description', 'Sample Specification', 'product', 'Kitchen', 'single',
+                'No', '', '', 'All=10000', 'All', ''
+            ]
+        ];
+
+        return Excel::download(new ItemsImportTemplateExport($data), 'items_import_template.xlsx');
     }
 
     public function importPreview(Request $request)
@@ -772,6 +795,7 @@ class ItemController extends Controller
                     'medium_conversion_qty' => $itemData['Medium Conversion Qty'],
                     'small_conversion_qty' => $itemData['Small Conversion Qty'],
                     'min_stock' => $itemData['Min Stock'],
+                    'exp' => $itemData['Expiry Days'] ?? 0,
                     'status' => $itemData['Status'],
                     'composition_type' => $itemData['Composition Type'],
                     'sku' => $sku,
@@ -978,6 +1002,39 @@ class ItemController extends Controller
         }
     }
 
+    public function searchForWarehouseTransfer(Request $request)
+    {
+        \Log::info('DEBUG: masuk method searchForWarehouseTransfer');
+            $q = $request->input('q');
+        // $warehouseId = $request->input('warehouse_id'); // Boleh ada, tapi tidak dipakai di query
+
+            $items = \DB::table('items')
+            ->leftJoin('units as usmall', 'usmall.id', '=', 'items.small_unit_id')
+            ->leftJoin('units as umedium', 'umedium.id', '=', 'items.medium_unit_id')
+            ->leftJoin('units as ularge', 'ularge.id', '=', 'items.large_unit_id')
+            ->select(
+                    'items.id',
+                    'items.name',
+                    'items.sku',
+                'usmall.name as unit_small',
+                'umedium.name as unit_medium',
+                'ularge.name as unit_large',
+                    'items.small_unit_id',
+                    'items.medium_unit_id',
+                    'items.large_unit_id',
+                'items.medium_conversion_qty',
+                'items.small_conversion_qty'
+            )
+            ->where('items.status', 'active')
+            ->where('items.name', 'like', '%' . $q . '%')
+                ->orderBy('items.name')
+            ->limit(10)
+            ->get();
+
+        \Log::info('DEBUG: hasil items', ['items' => $items]);
+            return response()->json($items);
+    }
+
     // Endpoint untuk ambil stok per item per warehouse
     public function getStock(Request $request)
     {
@@ -1011,6 +1068,25 @@ class ItemController extends Controller
             'unit_small' => $unitSmall,
             'unit_medium' => $unitMedium,
             'unit_large' => $unitLarge,
+        ]);
+    }
+
+    public function apiDetail($id)
+    {
+        $item = \App\Models\Item::with('images')->findOrFail($id);
+        return response()->json([
+            'item' => [
+                'id' => $item->id,
+                'name' => $item->name,
+                'description' => $item->description,
+                'specification' => $item->specification,
+                'images' => $item->images->map(function($img) {
+                    return [
+                        'id' => $img->id,
+                        'path' => $img->path,
+                    ];
+                })->toArray(),
+            ]
         ]);
     }
 } 

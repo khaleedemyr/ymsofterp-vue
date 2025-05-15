@@ -1,5 +1,5 @@
 <template>
-  <AuthenticatedLayout>
+  <AppLayout>
     <template #header>
       <h2 class="font-semibold text-xl text-gray-800 leading-tight">
         Edit Purchase Order Foods
@@ -11,6 +11,14 @@
         <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
           <div class="p-6 bg-white border-b border-gray-200">
             <form @submit.prevent="handleSubmit">
+              <!-- Dropdown Supplier -->
+              <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700">Supplier</label>
+                <select v-model="form.supplier_id" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
+                  <option value="">Pilih Supplier</option>
+                  <option v-for="sup in suppliers" :key="sup.id" :value="sup.id">{{ sup.name }}</option>
+                </select>
+              </div>
               <!-- Header Info -->
               <div class="grid grid-cols-2 gap-4 mb-6">
                 <div>
@@ -21,7 +29,9 @@
                     <p><span class="font-medium">Status:</span> 
                       <span :class="getStatusClass(po.status)">{{ po.status }}</span>
                     </p>
-                    <p><span class="font-medium">Supplier:</span> {{ po.supplier?.name }}</p>
+                    <p><span class="font-medium">Supplier:</span>
+                      {{ suppliers.find(s => s.id == form.supplier_id)?.name || po.supplier?.name || '-' }}
+                    </p>
                   </div>
                 </div>
                 <div>
@@ -54,8 +64,18 @@
                     <tbody class="bg-white divide-y divide-gray-200">
                       <tr v-for="(item, index) in form.items" :key="index">
                         <td class="px-6 py-4 whitespace-nowrap">{{ item.item?.name }}</td>
-                        <td class="px-6 py-4 whitespace-nowrap">{{ item.quantity }}</td>
-                        <td class="px-6 py-4 whitespace-nowrap">{{ item.unit }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                          <input
+                            type="number"
+                            v-model="item.quantity"
+                            min="1"
+                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
+                            @input="updateItemTotal(index)"
+                          />
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                          {{ item.unit?.name || item.unit_name || item.unit || '-' }}
+                        </td>
                         <td class="px-6 py-4 whitespace-nowrap">
                           <input
                             type="number"
@@ -107,22 +127,27 @@
         </div>
       </div>
     </div>
-  </AuthenticatedLayout>
+  </AppLayout>
 </template>
 
 <script setup>
 import { ref, computed } from 'vue'
 import { router, Link } from '@inertiajs/vue3'
-import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue'
+import AppLayout from '@/Layouts/AppLayout.vue'
 
 const props = defineProps({
   po: {
     type: Object,
     required: true
+  },
+  suppliers: {
+    type: Array,
+    required: true
   }
 })
 
 const form = ref({
+  supplier_id: props.po.supplier_id || props.po.supplier?.id || '',
   notes: props.po.notes || '',
   items: props.po.items.map(item => ({
     ...item,
@@ -130,6 +155,8 @@ const form = ref({
     total: item.total
   }))
 })
+
+const deletedItems = ref([])
 
 const formatDate = (date) => {
   if (!date) return '-'
@@ -157,6 +184,7 @@ const updateItemTotal = (index) => {
 }
 
 const removeItem = (index) => {
+  deletedItems.value.push(form.value.items[index])
   form.value.items.splice(index, 1)
 }
 
@@ -166,8 +194,16 @@ const calculateTotal = () => {
 
 const handleSubmit = async () => {
   try {
-    const response = await axios.put(`/po-foods/${props.po.id}`, form.value)
-    
+    if (form.value.items.length === 0) {
+      // Hapus PO jika tidak ada item
+      await axios.delete(`/po-foods/${props.po.id}`);
+      router.visit(route('po-foods.index'));
+      return;
+    }
+    const response = await axios.put(`/po-foods/${props.po.id}`, {
+      ...form.value,
+      deleted_items: deletedItems.value.map(i => i.id)
+    })
     if (response.data.success) {
       router.visit(route('po-foods.show', props.po.id))
     }

@@ -176,6 +176,9 @@
               </td>
               <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                 <div class="flex justify-end gap-2">
+                  <button @click="openDetail(item)" class="text-gray-600 hover:text-indigo-700" title="Detail">
+                    <i class="fa-solid fa-eye"></i>
+                  </button>
                   <button @click="openBarcodeModal(item)" class="text-indigo-600 hover:text-indigo-900 mr-3 flex items-center gap-1" title="Kelola Barcode">
                     <i class="fa-solid fa-barcode"></i>
                   </button>
@@ -206,6 +209,16 @@
       <ItemFormModal
         :show="showFormModal"
         :item="selectedItem"
+        :categories="categories"
+        :sub-categories="subCategories"
+        :units="units"
+        :warehouse-divisions="warehouseDivisions"
+        :menu-types="menuTypes"
+        :regions="regions"
+        :outlets="outlets"
+        :bom-items="bomItems"
+        :modifiers="modifiers"
+        mode="create"
         @close="closeFormModal"
       />
       <ModalDetailItem
@@ -323,7 +336,7 @@ import { saveAs } from 'file-saver'
 import ItemBarcodeModal from './ItemBarcodeModal.vue';
 
 const props = defineProps({
-  items: Object, // { data, links, meta }
+  items: Object,
   categories: Array,
   subCategories: Array,
   units: Array,
@@ -332,7 +345,9 @@ const props = defineProps({
   regions: Array,
   outlets: Array,
   bomItems: Array,
-  modifiers: Array
+  modifiers: Array,
+  errors: Object,
+  auth: Object
 });
 
 const search = ref('');
@@ -553,6 +568,11 @@ const openBarcodeModal = (item) => {
 
 const closeBarcodeModal = () => {
   showBarcodeModal.value = false;
+  selectedItem.value = null;
+};
+
+const closeFormModal = () => {
+  showFormModal.value = false;
   selectedItem.value = null;
 };
 </script> 

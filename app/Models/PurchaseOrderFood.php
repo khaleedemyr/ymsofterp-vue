@@ -53,4 +53,21 @@ class PurchaseOrderFood extends Model
     {
         return $this->belongsTo(User::class, 'gm_finance_approved_by');
     }
+
+    public function purchase_requests()
+    {
+        return $this->belongsToMany(
+            \App\Models\PurchaseRequisitionFood::class,
+            'purchase_order_food_purchase_request',
+            'purchase_order_food_id',
+            'purchase_requisition_food_id'
+        );
+    }
+
+    public function getPrNumbersAttribute()
+    {
+        $prItemIds = $this->items()->pluck('pr_food_item_id')->toArray();
+        $prIds = \App\Models\PurchaseRequisitionFoodItem::whereIn('id', $prItemIds)->pluck('pr_food_id')->unique()->toArray();
+        return \App\Models\PurchaseRequisitionFood::whereIn('id', $prIds)->pluck('pr_number')->unique()->toArray();
+    }
 } 

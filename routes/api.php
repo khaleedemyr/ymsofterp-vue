@@ -19,6 +19,7 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\QuoteController;
 use App\Http\Controllers\PurchaseOrderFoodsController;
+use App\Http\Controllers\ItemController;
 
 
 
@@ -120,4 +121,6 @@ Route::prefix('auth')->group(function () {
 Route::get('/quotes/{dayOfYear}', [QuoteController::class, 'getQuoteByDay']);
 
 Route::get('items/last-price', [\App\Http\Controllers\PurchaseOrderFoodsController::class, 'getLastPrice']);
+
+Route::get('/items/search-for-warehouse-transfer', [ItemController::class, 'searchForWarehouseTransfer']);
 

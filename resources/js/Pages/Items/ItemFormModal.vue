@@ -5,7 +5,7 @@
         <i class="fa-solid fa-boxes-stacked text-blue-500"></i>
         {{ mode === 'create' ? 'Tambah Item Baru' : 'Edit Item' }}
       </h2>
-      <button @click="$emit('close')" class="absolute top-4 right-4 text-gray-400 hover:text-red-500">
+      <button @click="closeModal" class="absolute top-4 right-4 text-gray-400 hover:text-red-500">
         <i class="fa-solid fa-xmark text-2xl"></i>
       </button>
       <!-- Stepper Navigation -->
@@ -80,6 +80,10 @@
                   <option value="active">Active</option>
                   <option value="inactive">Inactive</option>
                 </select>
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700">Expiry Days</label>
+                <input type="number" v-model="form.exp" min="0" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" placeholder="Enter expiry days" />
               </div>
             </div>
           </div>
@@ -513,7 +517,10 @@ const props = defineProps({
   show: Boolean,
   mode: String, // 'create' | 'edit'
   item: Object,
-  categories: Array,
+  categories: {
+    type: Array,
+    default: () => []
+  },
   subCategories: {
     type: Array,
     default: () => []
@@ -532,11 +539,11 @@ const props = defineProps({
   },
   regions: {
     type: [Array, Object],
-    default: () => []
+    default: () => ({})
   },
   outlets: {
     type: [Array, Object],
-    default: () => []
+    default: () => ({})
   },
   bomItems: {
     type: Array,
@@ -565,6 +572,7 @@ const form = useForm({
   medium_conversion_qty: '',
   small_conversion_qty: '',
   min_stock: 0,
+  exp: 0,
   status: 'active',
   images: [],
   deleted_images: [],
@@ -613,11 +621,11 @@ const filteredSubCategories = computed(() => {
 });
 
 const hasSubCategories = computed(() => {
-  return filteredSubCategories.value.length > 0;
+  return filteredSubCategories.value?.length > 0;
 });
 
 const selectedCategory = computed(() => {
-  return props.categories.find(cat => cat.id === Number(form.category_id));
+  return props.categories?.find(cat => cat.id === Number(form.category_id)) || null;
 });
 
 const isShowWarehouseDivision = computed(() => {
@@ -682,7 +690,23 @@ watch(
 );
 
 watch(() => props.show, (val) => {
-  if (val && props.mode === 'edit' && props.item) {
+  if (val && props.mode === 'create') {
+    form.reset();
+    form.prices = [{ 
+      price_type: 'specific',
+      region_id: '', 
+      outlet_id: '', 
+      price: 0 
+    }];
+    form.availabilities = [];
+    form.bom = [];
+    form.images = [];
+    form.modifier_option_ids = [];
+    form.modifier_enabled = false;
+    form.composition_type = 'single';
+    form.status = 'active';
+    currentStep.value = 'info';
+  } else if (val && props.mode === 'edit' && props.item) {
     Object.assign(form, {
       category_id: props.item.category_id,
       sub_category_id: props.item.sub_category_id,
@@ -698,6 +722,7 @@ watch(() => props.show, (val) => {
       medium_conversion_qty: props.item.medium_conversion_qty,
       small_conversion_qty: props.item.small_conversion_qty,
       min_stock: props.item.min_stock,
+      exp: props.item.exp,
       status: props.item.status,
       images: [],
       deleted_images: [],
@@ -717,15 +742,6 @@ watch(() => props.show, (val) => {
       bom: props.item.bom ? JSON.parse(JSON.stringify(props.item.bom)) : [],
       modifier_option_ids: props.item.modifier_option_ids ? [...props.item.modifier_option_ids] : [],
     });
-    previewImages.value = [];
-  } else if (val && props.mode === 'create') {
-    form.reset();
-    form.prices = [{ 
-      price_type: 'specific',
-      region_id: '', 
-      outlet_id: '', 
-      price: 0 
-    }];
     previewImages.value = [];
   }
 });
@@ -894,4 +910,11 @@ const handleSave = async () => {
 
 const regionsArray = computed(() => Array.isArray(props.regions) ? props.regions : Object.values(props.regions || {}));
 const outletsArray = computed(() => Array.isArray(props.outlets) ? props.outlets : Object.values(props.outlets || {}));
+
+const closeModal = () => {
+  form.reset();
+  form.clearErrors();
+  currentStep.value = 'info';
+  emit('close');
+};
 </script> 

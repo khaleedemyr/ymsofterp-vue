@@ -25,10 +25,16 @@ class PrFoodController extends Controller
         if ($request->status) {
             $query->where('status', $request->status);
         }
+        if ($request->from) {
+            $query->whereDate('tanggal', '>=', $request->from);
+        }
+        if ($request->to) {
+            $query->whereDate('tanggal', '<=', $request->to);
+        }
         $prFoods = $query->paginate(10)->withQueryString();
         return Inertia::render('PrFoods/Index', [
             'prFoods' => $prFoods,
-            'filters' => $request->only(['search', 'status']),
+            'filters' => $request->only(['search', 'status', 'from', 'to']),
         ]);
     }
 

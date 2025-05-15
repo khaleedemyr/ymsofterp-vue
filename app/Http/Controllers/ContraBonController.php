@@ -40,12 +40,16 @@ class ContraBonController extends Controller
         if ($request->status) {
             $query->where('status', $request->status);
         }
-
-        $contraBons = $query->get();
-
+        if ($request->from) {
+            $query->whereDate('date', '>=', $request->from);
+        }
+        if ($request->to) {
+            $query->whereDate('date', '<=', $request->to);
+        }
+        $contraBons = $query->paginate(10)->withQueryString();
         return inertia('ContraBon/Index', [
             'contraBons' => $contraBons,
-            'filters' => $request->only(['search', 'status']),
+            'filters' => $request->only(['search', 'status', 'from', 'to']),
         ]);
     }
 
@@ -102,7 +106,7 @@ class ContraBonController extends Controller
                 'total_amount' => $totalAmount,
                 'notes' => $request->notes,
                 'image_path' => $imagePath,
-                'status' => 'paid',
+                'status' => 'draft',
                 'created_by' => Auth::id()
             ]);
 

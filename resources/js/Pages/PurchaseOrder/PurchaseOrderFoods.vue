@@ -20,15 +20,20 @@ const props = defineProps({
 
 const search = ref(props.filters?.search || '');
 const selectedStatus = ref(props.filters?.status || '');
+const from = ref(props.filters?.from || '');
+const to = ref(props.filters?.to || '');
 
 const debouncedSearch = debounce(() => {
-  router.get('/po-foods', { search: search.value, status: selectedStatus.value }, { preserveState: true, replace: true });
+  router.get('/po-foods', { search: search.value, status: selectedStatus.value, from: from.value, to: to.value }, { preserveState: true, replace: true });
 }, 400);
 
 function onSearchInput() {
   debouncedSearch();
 }
 function onStatusChange() {
+  debouncedSearch();
+}
+function onDateChange() {
   debouncedSearch();
 }
 function goToPage(url) {
@@ -165,7 +170,7 @@ onMounted(() => {
 
 <template>
     <AppLayout>
-        <div class="max-w-7xl w-full mx-auto py-8 px-2">
+        <div class="w-full py-8 px-0">
             <div class="flex justify-between items-center mb-6">
                 <h1 class="text-2xl font-bold text-gray-800 flex items-center gap-2">
                     <i class="fa-solid fa-file-invoice text-blue-500"></i> Purchase Order Foods
@@ -177,9 +182,31 @@ onMounted(() => {
                     + Buat PO Foods Baru
                 </button>
             </div>
+            <div class="py-4">
+                <div class="flex flex-wrap gap-3 mb-4 items-center">
+                    <input
+                        v-model="search"
+                        @input="onSearchInput"
+                        type="text"
+                        placeholder="Cari nomor PO..."
+                        class="w-64 px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition"
+                    />
+                    <select v-model="selectedStatus" @change="onStatusChange" class="px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition">
+                        <option value="">Semua Status</option>
+                        <option value="draft">Draft</option>
+                        <option value="approved">Approved</option>
+                        <option value="rejected">Rejected</option>
+                        <option value="receive">Receive</option>
+                        <option value="payment">Payment</option>
+                    </select>
+                    <input type="date" v-model="from" @change="onDateChange" class="px-2 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition" placeholder="Dari tanggal" />
+                    <span>-</span>
+                    <input type="date" v-model="to" @change="onDateChange" class="px-2 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition" placeholder="Sampai tanggal" />
+                </div>
+            </div>
             <div class="py-12">
-                <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
-                    <div class="bg-white overflow-hidden shadow-xl sm:rounded-lg p-6">
+                <div class="w-full px-0">
+                    <div class="bg-white overflow-hidden shadow-xl rounded-none p-0">
                         <!-- PO List -->
                         <div v-if="loading" class="flex justify-center items-center py-8">
                             <svg class="animate-spin h-8 w-8 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -188,29 +215,13 @@ onMounted(() => {
                             </svg>
                         </div>
                         <div v-else>
-                            <div class="flex gap-3 mb-4">
-                                <input
-                                    v-model="search"
-                                    @input="onSearchInput"
-                                    type="text"
-                                    placeholder="Cari nomor PO..."
-                                    class="w-full px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition"
-                                />
-                                <select v-model="selectedStatus" @change="onStatusChange" class="px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition">
-                                    <option value="">Semua Status</option>
-                                    <option value="draft">Draft</option>
-                                    <option value="approved">Approved</option>
-                                    <option value="rejected">Rejected</option>
-                                    <option value="receive">Receive</option>
-                                    <option value="payment">Payment</option>
-                                </select>
-                            </div>
                             <div class="bg-white rounded-2xl shadow-2xl overflow-x-auto transition-all">
                                 <table class="w-full min-w-full divide-y divide-gray-200">
                                     <thead class="bg-gradient-to-r from-blue-50 to-blue-100">
                                         <tr>
                                             <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider rounded-tl-2xl">No. PO</th>
                                             <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Tanggal</th>
+                                            <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">PR Numbers</th>
                                             <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Supplier</th>
                                             <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Created By</th>
                                             <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Status</th>
@@ -219,11 +230,19 @@ onMounted(() => {
                                     </thead>
                                     <tbody>
                                         <tr v-if="!purchaseOrders?.data || purchaseOrders.data.length === 0">
-                                            <td colspan="6" class="text-center py-10 text-gray-400">Tidak ada data PO Foods.</td>
+                                            <td colspan="7" class="text-center py-10 text-gray-400">Tidak ada data PO Foods.</td>
                                         </tr>
                                         <tr v-for="po in purchaseOrders?.data || []" :key="po.id" class="hover:bg-blue-50 transition shadow-sm">
                                             <td class="px-6 py-3 font-mono font-semibold text-blue-700">{{ po.number }}</td>
                                             <td class="px-6 py-3">{{ new Date(po.date).toLocaleDateString('id-ID') }}</td>
+                                            <td class="px-6 py-3">
+                                                <div class="flex flex-wrap gap-1">
+                                                    <span v-for="pr in po.pr_numbers" :key="pr" 
+                                                          class="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full">
+                                                        {{ pr }}
+                                                    </span>
+                                                </div>
+                                            </td>
                                             <td class="px-6 py-3">{{ po.supplier?.name }}</td>
                                             <td class="px-6 py-3">{{ po.creator?.nama_lengkap }}</td>
                                             <td class="px-6 py-3">

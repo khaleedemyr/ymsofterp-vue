@@ -75,6 +75,7 @@ const menuGroups = [
             { name: () => 'Purchase Requisition Foods', icon: 'fa-solid fa-file-invoice', route: '/pr-foods' },
             { name: () => 'Purchase Order Foods', icon: 'fa-solid fa-file-invoice-dollar', route: '/po-foods' },
             { name: () => 'Good Receive', icon: 'fa-solid fa-truck', route: '/food-good-receive' },
+            { name: () => 'Pindah Gudang', icon: 'fa-solid fa-right-left', route: '/warehouse-transfer' },
             { name: () => 'Laporan Stok Akhir', icon: 'fa-solid fa-clipboard-list', route: '/inventory/stock-position' },
             { name: () => 'Laporan Kartu Stok', icon: 'fa-solid fa-file-lines', route: '/inventory/stock-card' },
             { name: () => 'Laporan Penerimaan Barang', icon: 'fa-solid fa-truck-ramp-box', route: '/inventory/goods-received-report' },

@@ -4,7 +4,7 @@
       <h2 class="text-xl font-bold mb-4 flex items-center gap-2">
         <i class="fa-solid fa-truck"></i> Buat Good Receive
       </h2>
-      <button @click="$emit('close')" class="absolute top-4 right-4 text-gray-400 hover:text-red-500">
+      <button @click="handleClose" class="absolute top-4 right-4 text-gray-400 hover:text-red-500">
         <i class="fa-solid fa-xmark text-2xl"></i>
       </button>
       <div v-if="!poFetched">
@@ -26,7 +26,7 @@
             <div id="qr-reader" style="width: 100%"></div>
             <button @click="closeScanner" class="mt-2 bg-gray-300 hover:bg-gray-400 text-gray-700 px-3 py-1 rounded">Tutup Scanner</button>
           </div>
-          <div class="text-xs text-gray-400">Jika kamera tersedia, bisa gunakan scanner QR code (implementasi scanner bisa ditambah jika diinginkan).</div>
+          <div class="text-xs text-gray-400">Jika kamera tersedia, bisa gunakan scanner QR code</div>
         </div>
       </div>
       <div v-else>
@@ -45,7 +45,12 @@
             </thead>
             <tbody>
               <tr v-for="(item, idx) in items" :key="item.id">
-                <td class="px-2 py-1">{{ item.item_name }} <span class='text-xs text-gray-400'>({{ item.unit_name }})</span></td>
+                <td class="px-2 py-1">
+                  {{ item.item_name }} <span class='text-xs text-gray-400'>({{ item.unit_name }})</span>
+                  <button type="button" class="ml-1 px-2 py-1 rounded bg-yellow-100 text-yellow-800 text-xs font-semibold hover:bg-yellow-200 border border-yellow-300 flex items-center gap-1" @click="openSpsModal(item)" :disabled="!item.item_id">
+                    <i class="fa fa-info-circle"></i> SPS
+                  </button>
+                </td>
                 <td class="px-2 py-1 text-right">{{ item.quantity }}</td>
                 <td class="px-2 py-1 text-right">
                   <input v-model.number="item.qty_received" type="number" min="0" :max="item.quantity" class="w-20 px-2 py-1 border rounded" required />
@@ -54,7 +59,7 @@
             </tbody>
           </table>
           <div class="flex justify-end gap-2 mt-4">
-            <button type="button" @click="$emit('close')" class="bg-gray-200 hover:bg-gray-300 text-gray-700 px-4 py-2 rounded-lg">Batal</button>
+            <button type="button" @click="handleClose" class="bg-gray-200 hover:bg-gray-300 text-gray-700 px-4 py-2 rounded-lg">Batal</button>
             <button type="submit" :disabled="loading" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2">
               <svg v-if="loading" class="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                 <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
@@ -66,6 +71,37 @@
         </form>
       </div>
       <div v-if="error" class="text-red-500 mt-2">{{ error }}</div>
+      <Modal :show="spsModal" @close="closeSpsModal">
+        <div class="p-4 min-w-[320px] max-w-[90vw]">
+          <div class="flex justify-between items-center mb-2">
+            <h2 class="text-lg font-bold text-gray-700">Detail Item</h2>
+            <button @click="closeSpsModal" class="text-gray-400 hover:text-gray-700"><i class="fa fa-times"></i></button>
+          </div>
+          <div v-if="spsLoading" class="text-center py-8"><i class="fa fa-spinner fa-spin text-blue-400 text-2xl"></i></div>
+          <div v-else-if="spsItem && !spsItem.error">
+            <div class="mb-2">
+              <span class="font-semibold">Nama:</span> {{ spsItem.name }}
+            </div>
+            <div class="mb-2">
+              <span class="font-semibold">Deskripsi:</span>
+              <span v-if="spsItem.description">{{ spsItem.description }}</span>
+              <span v-else class="italic text-gray-400">(Tidak ada deskripsi)</span>
+            </div>
+            <div class="mb-2">
+              <span class="font-semibold">Spesifikasi:</span>
+              <span v-if="spsItem.specification">{{ spsItem.specification }}</span>
+              <span v-else class="italic text-gray-400">(Tidak ada spesifikasi)</span>
+            </div>
+            <div v-if="spsItem.images && spsItem.images.length" class="mb-2">
+              <span class="font-semibold">Gambar:</span>
+              <div class="flex flex-wrap gap-2 mt-1">
+                <img v-for="img in spsItem.images" :key="img.id" :src="img.path.startsWith('http') ? img.path : '/storage/' + img.path" class="w-24 h-24 object-contain border rounded bg-white" />
+              </div>
+            </div>
+          </div>
+          <div v-else-if="spsItem && spsItem.error" class="text-red-500 text-center py-4">{{ spsItem.error }}</div>
+        </div>
+      </Modal>
     </div>
   </div>
 </template>
@@ -74,6 +110,7 @@
 import { ref, onMounted, onBeforeUnmount, watch } from 'vue';
 import axios from 'axios';
 import Swal from 'sweetalert2';
+import Modal from '@/Components/Modal.vue';
 
 const emit = defineEmits(['close']);
 
@@ -86,6 +123,9 @@ const showScanner = ref(false);
 const cameras = ref([]);
 const selectedCameraId = ref('');
 const loading = ref(false);
+const spsModal = ref(false);
+const spsItem = ref({});
+const spsLoading = ref(false);
 let html5QrCode = null;
 
 const fetchPO = async () => {
@@ -105,15 +145,6 @@ const fetchPO = async () => {
 
 const submit = async () => {
   error.value = '';
-  // Validasi qty diterima harus antara 90% dan 110% qty PO
-  for (const item of items.value) {
-    const minQty = item.quantity * 0.9;
-    const maxQty = item.quantity * 1.1;
-    if (item.qty_received < minQty || item.qty_received > maxQty) {
-      error.value = `Qty diterima untuk barang ${item.item_name} harus antara ${minQty.toFixed(2)} dan ${maxQty.toFixed(2)}`;
-      return;
-    }
-  }
   loading.value = true;
   try {
     await axios.post(route('food-good-receive.store'), {
@@ -137,7 +168,7 @@ const submit = async () => {
       timer: 1500,
       showConfirmButton: false
     });
-    emit('close');
+    handleClose();
     window.location.reload();
   } catch (e) {
     loading.value = false;
@@ -153,7 +184,7 @@ const submit = async () => {
 const closeScanner = () => {
   showScanner.value = false;
   if (html5QrCode) {
-    html5QrCode.stop().then(() => html5QrCode.clear());
+    html5QrCode.stop().then(() => html5QrCode.clear()).catch(() => {});
   }
 };
 
@@ -198,9 +229,38 @@ function restartScanner() {
   startScanner();
 }
 
+async function openSpsModal(item) {
+  if (!item.item_id) return;
+  spsLoading.value = true;
+  spsModal.value = true;
+  try {
+    const res = await axios.get(`/api/items/${item.item_id}/detail`);
+    spsItem.value = res.data.item;
+  } catch (e) {
+    spsItem.value = { error: 'Gagal mengambil data item' };
+  } finally {
+    spsLoading.value = false;
+  }
+}
+
+function closeSpsModal() {
+  spsModal.value = false;
+  spsItem.value = {};
+}
+
+function handleClose() {
+  if (!spsModal.value) {
+    emit('close');
+  }
+}
+
 onBeforeUnmount(() => {
   if (html5QrCode) {
-    html5QrCode.stop().then(() => html5QrCode.clear());
+    try {
+      html5QrCode.stop().then(() => html5QrCode.clear()).catch(() => {});
+    } catch (e) {
+      // ignore
+    }
   }
 });
 </script> 
