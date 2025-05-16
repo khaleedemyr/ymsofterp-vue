@@ -20,6 +20,8 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\QuoteController;
 use App\Http\Controllers\PurchaseOrderFoodsController;
 use App\Http\Controllers\ItemController;
+use App\Http\Controllers\FOScheduleController;
+use App\Http\Controllers\ItemScheduleController;
 
 
 
@@ -123,4 +125,14 @@ Route::get('/quotes/{dayOfYear}', [QuoteController::class, 'getQuoteByDay']);
 Route::get('items/last-price', [\App\Http\Controllers\PurchaseOrderFoodsController::class, 'getLastPrice']);
 
 Route::get('/items/search-for-warehouse-transfer', [ItemController::class, 'searchForWarehouseTransfer']);
+
+Route::get('/fo-schedules/check', [\App\Http\Controllers\FOScheduleController::class, 'check']);
+
+Route::get('fo-schedules/outlet-schedules', [\App\Http\Controllers\FOScheduleController::class, 'getOutletSchedules']);
+
+Route::get('/items/by-fo-khusus', [App\Http\Controllers\ItemController::class, 'getByFOKhusus']);
+
+Route::get('/items/{id}', [App\Http\Controllers\ItemController::class, 'show']);
+
+Route::get('/item-schedules/today', [ItemScheduleController::class, 'getTodaySchedules']);
 

@@ -43,6 +43,7 @@ class HandleInertiaRequests extends Middleware
                     'avatar' => $request->user()->avatar ?? null,
                     'jabatan' => optional($request->user()->jabatan)->nama_jabatan,
                     'divisi' => optional($request->user()->divisi)->nama_divisi,
+                    'region' => optional($request->user()->region)->name,
                     'outlet' => optional($request->user()->outlet)->nama_outlet,
                     'signature_path' => $request->user()->signature_path,
                 ] : null,

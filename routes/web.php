@@ -36,6 +36,9 @@ use App\Http\Controllers\InventoryReportController;
 use App\Http\Controllers\ContraBonController;
 use App\Http\Controllers\FoodPaymentController;
 use App\Http\Controllers\WarehouseTransferController;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Request;
+use App\Http\Controllers\FoodFloorOrderController;
 
 Route::get('/', function () {
     return Inertia::render('Welcome', [
@@ -248,9 +251,11 @@ Route::post('/items/{id}/toggle-status', [ItemController::class, 'toggleStatus']
 Route::get('/api/items/search-for-pr', [ItemController::class, 'searchForPr']);
 Route::get('/api/items/last-price', [\App\Http\Controllers\PurchaseOrderFoodsController::class, 'getLastPrice']);
 Route::get('/api/inventory/stock', [\App\Http\Controllers\ItemController::class, 'getStock']);
+Route::get('/api/items/by-fo-khusus', [App\Http\Controllers\ItemController::class, 'getByFOKhusus']);
 Route::get('/api/items/{id}', [App\Http\Controllers\ItemController::class, 'show']);
 Route::get('/api/items/{id}/detail', [App\Http\Controllers\ItemController::class, 'apiDetail']);
 Route::get('/items/search-for-warehouse-transfer', [ItemController::class, 'searchForWarehouseTransfer']);
+Route::get('/api/items/by-fo-schedule/{fo_schedule_id}', [App\Http\Controllers\ItemController::class, 'getByFOSchedule']);
 
 Route::resource('items', ItemController::class);
 Route::resource('modifiers', ModifierController::class);
@@ -325,5 +330,40 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/warehouse-transfer/{id}/edit', [\App\Http\Controllers\WarehouseTransferController::class, 'edit'])->name('warehouse-transfer.edit');
     Route::put('/warehouse-transfer/{id}', [\App\Http\Controllers\WarehouseTransferController::class, 'update'])->name('warehouse-transfer.update');
 });
+
+Route::resource('item-schedules', App\Http\Controllers\ItemScheduleController::class);
+
+// FO Schedule routes
+Route::resource('fo-schedules', App\Http\Controllers\FOScheduleController::class);
+
+Route::get('/floor-order', function () {
+    $user = Auth::user()->load('outlet');
+    $orders = \App\Models\FoodFloorOrder::with(['items', 'outlet', 'requester', 'foSchedule'])
+        ->orderByDesc('created_at')
+        ->paginate(10);
+    return Inertia::render('FloorOrder/Index', [
+        'user' => $user,
+        'floorOrders' => $orders,
+    ]);
+})->name('floor-order.index');
+
+Route::get('/floor-order/create', function () {
+    $fo_mode = Request::get('fo_mode');
+    $input_mode = Request::get('input_mode');
+    $user = Auth::user()->load('outlet');
+    return Inertia::render('FloorOrder/Form', [
+        'fo_mode' => $fo_mode,
+        'input_mode' => $input_mode,
+        'user' => $user,
+    ]);
+})->name('floor-order.create');
+
+Route::get('/floor-order/edit/{id}', [FoodFloorOrderController::class, 'edit'])->name('floor-order.edit');
+Route::post('/floor-order', [FoodFloorOrderController::class, 'store'])->name('floor-order.store');
+Route::put('/floor-order/{id}', [FoodFloorOrderController::class, 'update'])->name('floor-order.update');
+Route::delete('/floor-order/{id}', [FoodFloorOrderController::class, 'destroy'])->name('floor-order.destroy');
+Route::post('/floor-order/{id}/submit', [FoodFloorOrderController::class, 'submit'])->name('floor-order.submit');
+Route::post('/api/floor-order/check-exists', [\App\Http\Controllers\FoodFloorOrderController::class, 'checkExists']);
+Route::get('/floor-order/{id}', [\App\Http\Controllers\FoodFloorOrderController::class, 'show'])->name('floor-order.show');
 
 require __DIR__.'/auth.php';

@@ -239,10 +239,31 @@ class InventoryReportController extends Controller
                 'i.small_conversion_qty',
                 'i.medium_conversion_qty',
                 's.value',
-                's.last_cost_small',
+                DB::raw('(
+                    SELECT new_cost
+                    FROM food_inventory_cost_histories
+                    WHERE inventory_item_id = s.inventory_item_id AND warehouse_id = s.warehouse_id
+                    ORDER BY date DESC, created_at DESC
+                    LIMIT 1
+                ) as last_cost_small'),
+                DB::raw('(
+                    SELECT mac
+                    FROM food_inventory_cost_histories
+                    WHERE inventory_item_id = s.inventory_item_id AND warehouse_id = s.warehouse_id
+                    ORDER BY date DESC, created_at DESC
+                    LIMIT 1
+                ) as mac'),
                 's.last_cost_medium',
                 's.last_cost_large',
-                's.value as total_value'
+                DB::raw('(
+                    s.qty_small * (
+                        SELECT mac
+                        FROM food_inventory_cost_histories
+                        WHERE inventory_item_id = s.inventory_item_id AND warehouse_id = s.warehouse_id
+                        ORDER BY date DESC, created_at DESC
+                        LIMIT 1
+                    )
+                ) as total_value')
             )
             ->orderBy('w.name')
             ->orderBy('i.name')
@@ -331,18 +352,29 @@ class InventoryReportController extends Controller
             ->join('food_inventory_items as fi', 's.inventory_item_id', '=', 'fi.id')
             ->join('items as i', 'fi.item_id', '=', 'i.id')
             ->leftJoin('categories as c', 'i.category_id', '=', 'c.id')
+            ->join('warehouses as w', 's.warehouse_id', '=', 'w.id')
             ->select(
                 'c.name as category_name',
-                DB::raw('SUM(s.qty_small + s.qty_medium + s.qty_large) as total_qty'),
-                DB::raw('SUM(s.qty_small * s.last_cost_small + s.qty_medium * s.last_cost_medium + s.qty_large * s.last_cost_large) as total_value')
+                'w.name as warehouse_name',
+                DB::raw('SUM(s.qty_small) as total_qty'),
+                DB::raw('SUM(s.qty_small * (
+                    SELECT mac
+                    FROM food_inventory_cost_histories
+                    WHERE inventory_item_id = s.inventory_item_id AND warehouse_id = s.warehouse_id
+                    ORDER BY date DESC, created_at DESC
+                    LIMIT 1
+                )) as total_value')
             )
-            ->groupBy('c.name')
+            ->groupBy('c.name', 'w.name')
             ->orderBy('c.name')
+            ->orderBy('w.name')
             ->get();
         $categories = DB::table('categories')->select('id', 'name')->orderBy('name')->get();
+        $warehouses = DB::table('warehouses')->select('id', 'name')->orderBy('name')->get();
         return inertia('Inventory/CategoryRecapReport', [
             'recaps' => $data,
             'categories' => $categories,
+            'warehouses' => $warehouses,
         ]);
     }
 

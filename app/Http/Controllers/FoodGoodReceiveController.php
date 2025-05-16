@@ -143,7 +143,13 @@ class FoodGoodReceiveController extends Controller
                 }
                 // 1. Hitung cost
                 $cost = $poItem ? $poItem->price : 0;
-                $cost_small = $cost; // harga per small dari input
+                $unit_id = $item['unit_id'];
+                $cost_small = $cost;
+                if ($unit_id == $itemMaster->large_unit_id) {
+                    $cost_small = $cost / (($itemMaster->small_conversion_qty ?: 1) * ($itemMaster->medium_conversion_qty ?: 1));
+                } elseif ($unit_id == $itemMaster->medium_unit_id) {
+                    $cost_small = $cost / ($itemMaster->small_conversion_qty ?: 1);
+                }
                 $cost_medium = $cost_small * ($itemMaster->small_conversion_qty ?: 1);
                 $cost_large = $cost_medium * ($itemMaster->medium_conversion_qty ?: 1);
                 // 2. Hitung qty (konversi ke semua unit)
@@ -411,7 +417,13 @@ class FoodGoodReceiveController extends Controller
                 }
                 // 1. Hitung cost
                 $cost = $poItem ? $poItem->price : 0;
-                $cost_small = $cost; // harga per small dari input
+                $unit_id = $item['unit_id'];
+                $cost_small = $cost;
+                if ($unit_id == $itemMaster->large_unit_id) {
+                    $cost_small = $cost / (($itemMaster->small_conversion_qty ?: 1) * ($itemMaster->medium_conversion_qty ?: 1));
+                } elseif ($unit_id == $itemMaster->medium_unit_id) {
+                    $cost_small = $cost / ($itemMaster->small_conversion_qty ?: 1);
+                }
                 $cost_medium = $cost_small * ($itemMaster->small_conversion_qty ?: 1);
                 $cost_large = $cost_medium * ($itemMaster->medium_conversion_qty ?: 1);
                 // 2. Hitung qty (konversi ke semua unit)

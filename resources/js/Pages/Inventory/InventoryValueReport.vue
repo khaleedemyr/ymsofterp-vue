@@ -44,6 +44,7 @@
               <th class="px-6 py-3 text-right text-xs font-bold text-gray-700 uppercase tracking-wider">Qty Medium</th>
               <th class="px-6 py-3 text-right text-xs font-bold text-gray-700 uppercase tracking-wider">Qty Large</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Last Cost Small</th>
+              <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">MAC</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Last Cost Medium</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Last Cost Large</th>
               <th class="px-6 py-3 text-right text-xs font-bold text-gray-700 uppercase tracking-wider">Total Value</th>
@@ -51,7 +52,7 @@
           </thead>
           <tbody class="bg-white divide-y divide-gray-200">
             <tr v-if="!filteredStocks.length">
-              <td colspan="10" class="text-center py-10 text-gray-400">Tidak ada data persediaan.</td>
+              <td colspan="11" class="text-center py-10 text-gray-400">Tidak ada data persediaan.</td>
             </tr>
             <tr v-for="row in paginatedStocks" :key="row.item_name + row.warehouse_name" class="hover:bg-gray-50 transition">
               <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ row.item_name }}</td>
@@ -61,6 +62,7 @@
               <td class="px-6 py-4 whitespace-nowrap text-sm text-right">{{ displayQty(row.qty_medium) }}</td>
               <td class="px-6 py-4 whitespace-nowrap text-sm text-right">{{ displayQty(row.qty_large) }}</td>
               <td class="px-6 py-4 whitespace-nowrap text-sm">{{ displayValue(row.last_cost_small) }}</td>
+              <td class="px-6 py-4 whitespace-nowrap text-sm">{{ displayValue(row.mac) }}</td>
               <td class="px-6 py-4 whitespace-nowrap text-sm">{{ displayValue(row.last_cost_medium) }}</td>
               <td class="px-6 py-4 whitespace-nowrap text-sm">{{ displayValue(row.last_cost_large) }}</td>
               <td class="px-6 py-4 whitespace-nowrap text-sm text-right">{{ displayValue(row.total_value) }}</td>
@@ -68,7 +70,7 @@
           </tbody>
           <tfoot v-if="paginatedStocks.length">
             <tr class="bg-gray-50 font-bold">
-              <td colspan="9" class="text-right px-6 py-3">Grand Total</td>
+              <td colspan="10" class="text-right px-6 py-3">Grand Total</td>
               <td class="px-6 py-3 text-right">{{ displayValue(grandTotal) }}</td>
             </tr>
           </tfoot>

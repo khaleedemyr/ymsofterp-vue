@@ -15,7 +15,7 @@ const router = useRouter()
 
 // Form untuk generate PO
 const poForm = useForm({
-    items_by_supplier: {}, // Akan diisi array per item
+    items_by_supplier: {},
 });
 
 // Fetch PR list yang belum di-PO
@@ -27,15 +27,13 @@ const fetchPRList = async () => {
             ...pr,
             items: pr.items.map(item => {
                 if (!poForm.items_by_supplier[item.id]) {
-                    // Default: satu baris, qty penuh
-                    poForm.items_by_supplier[item.id] = [{
+                    poForm.items_by_supplier[item.id] = {
                         supplier_id: '',
-                        qty: item.quantity,
                         price: '',
                         last_price: '',
                         min_price: '',
                         max_price: ''
-                    }];
+                    };
                 }
                 return { ...item };
             })
@@ -64,58 +62,17 @@ const togglePR = (prId) => {
     expandedPRs.value[prId] = !expandedPRs.value[prId];
 };
 
-// Tambah baris split untuk item tertentu
-function addSplit(itemId) {
-    poForm.items_by_supplier[itemId].push({
-        supplier_id: '',
-        qty: 0,
-        price: '',
-        last_price: '',
-        min_price: '',
-        max_price: ''
-    });
-}
-// Hapus baris split tertentu
-function removeSplit(itemId, idx) {
-    if (poForm.items_by_supplier[itemId].length > 1) {
-        poForm.items_by_supplier[itemId].splice(idx, 1);
-    }
-}
-// Hitung total qty split (kecuali idx tertentu jika sedang edit)
-function totalQtyUsed(itemId, exceptIdx = -1) {
-    return poForm.items_by_supplier[itemId]
-        .filter((_, idx) => idx !== exceptIdx)
-        .reduce((sum, split) => sum + Number(split.qty || 0), 0);
-}
-
-function validateSplitQty() {
-    for (const [itemId, splits] of Object.entries(poForm.items_by_supplier)) {
-        const total = splits.reduce((sum, s) => sum + Number(s.qty || 0), 0);
-        // Cari item di prList
-        const item = prList.value.flatMap(pr => pr.items).find(i => i.id == itemId);
-        if (item && total > item.quantity) {
-            Swal.fire('Error', `Total qty split untuk item "${item.name}" melebihi qty PR (${item.quantity})`, 'error');
-            return false;
-        }
-    }
-    return true;
-}
-
 // Generate PO berdasarkan supplier
 const generatePO = async () => {
-    if (!validateSplitQty()) return;
     // Hanya kirim field yang diperlukan
     const itemsBySupplier = {};
-    Object.entries(poForm.items_by_supplier).forEach(([itemId, splits]) => {
-        splits.forEach(split => {
-            if (!split.supplier_id || !split.price || !split.qty || split.qty <= 0) return;
-            if (!itemsBySupplier[split.supplier_id]) itemsBySupplier[split.supplier_id] = [];
-            itemsBySupplier[split.supplier_id].push({
-                id: Number(itemId),
-                supplier_id: split.supplier_id,
-                qty: split.qty,
-                price: split.price
-            });
+    Object.entries(poForm.items_by_supplier).forEach(([itemId, item]) => {
+        if (!item.supplier_id || !item.price) return;
+        if (!itemsBySupplier[item.supplier_id]) itemsBySupplier[item.supplier_id] = [];
+        itemsBySupplier[item.supplier_id].push({
+            id: Number(itemId),
+            supplier_id: item.supplier_id,
+            price: item.price
         });
     });
 
@@ -164,16 +121,14 @@ function convertPrice(priceSmall, item) {
 }
 
 const onSupplierChange = async (item) => {
-    const supplierId = poForm.items_by_supplier[item.id][0].supplier_id;
+    const supplierId = poForm.items_by_supplier[item.id].supplier_id;
     if (!supplierId) {
-        poForm.items_by_supplier[item.id].forEach(split => {
-            split.price = '';
-            split.last_price = 0;
-            split.min_price = 0;
-            split.max_price = 0;
-            split.price_medium = 0;
-            split.price_large = 0;
-        });
+        poForm.items_by_supplier[item.id].price = '';
+        poForm.items_by_supplier[item.id].last_price = 0;
+        poForm.items_by_supplier[item.id].min_price = 0;
+        poForm.items_by_supplier[item.id].max_price = 0;
+        poForm.items_by_supplier[item.id].price_medium = 0;
+        poForm.items_by_supplier[item.id].price_large = 0;
         return;
     }
     try {
@@ -185,26 +140,22 @@ const onSupplierChange = async (item) => {
                 unit: item.unit
             }
         });
-        poForm.items_by_supplier[item.id].forEach(split => {
-            split.price = res.data.last_price ?? 0;
-            split.last_price = res.data.last_price ?? 0;
-            split.min_price = res.data.min_price ?? 0;
-            split.max_price = res.data.max_price ?? 0;
-            // Konversi ke medium dan large
-            const { priceMedium, priceLarge } = convertPrice(res.data.last_price ?? 0, item);
-            split.price_medium = priceMedium;
-            split.price_large = priceLarge;
-        });
+        poForm.items_by_supplier[item.id].price = res.data.last_price ?? 0;
+        poForm.items_by_supplier[item.id].last_price = res.data.last_price ?? 0;
+        poForm.items_by_supplier[item.id].min_price = res.data.min_price ?? 0;
+        poForm.items_by_supplier[item.id].max_price = res.data.max_price ?? 0;
+        // Konversi ke medium dan large
+        const { priceMedium, priceLarge } = convertPrice(res.data.last_price ?? 0, item);
+        poForm.items_by_supplier[item.id].price_medium = priceMedium;
+        poForm.items_by_supplier[item.id].price_large = priceLarge;
     } catch (error) {
         console.error('Error fetching last price:', error);
-        poForm.items_by_supplier[item.id].forEach(split => {
-            split.price = 0;
-            split.last_price = 0;
-            split.min_price = 0;
-            split.max_price = 0;
-            split.price_medium = 0;
-            split.price_large = 0;
-        });
+        poForm.items_by_supplier[item.id].price = 0;
+        poForm.items_by_supplier[item.id].last_price = 0;
+        poForm.items_by_supplier[item.id].min_price = 0;
+        poForm.items_by_supplier[item.id].max_price = 0;
+        poForm.items_by_supplier[item.id].price_medium = 0;
+        poForm.items_by_supplier[item.id].price_large = 0;
     }
 };
 
@@ -286,53 +237,53 @@ onMounted(() => {
                                                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Supplier</th>
                                                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Price</th>
                                                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Subtotal</th>
-                                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Aksi</th>
                                                 </tr>
                                             </thead>
                                             <tbody class="bg-white divide-y divide-gray-200">
-                                                <template v-for="item in pr.items" :key="item.id">
-                                                    <tr v-for="(split, idx) in poForm.items_by_supplier[item.id]" :key="idx">
-                                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ item.name }}</td>
-                                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                                            <input type="number" v-model="split.qty" :max="item.quantity - totalQtyUsed(item.id, idx)" class="w-20 border rounded px-2 py-1" />
-                                                        </td>
-                                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ item.unit }}</td>
-                                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ item.arrival_date ? new Date(item.arrival_date).toLocaleDateString('id-ID') : '-' }}</td>
-                                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                                            <select v-model="split.supplier_id" @change="onSupplierChange(item)" class="w-40 mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md">
-                                                                <option value="">Select Supplier</option>
-                                                                <option v-for="supplier in suppliers" :key="supplier.id" :value="supplier.id">
-                                                                    {{ supplier.name }}
-                                                                </option>
-                                                            </select>
-                                                        </td>
-                                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                                            <input type="number" v-model="split.price" placeholder="Enter price" class="w-24 border rounded px-2 py-1" />
-                                                            <div>
-                                                                <small class="text-gray-400">
-                                                                    Last: {{ formatRupiah(split.last_price ?? 0) }} |
-                                                                    Min: {{ formatRupiah(split.min_price ?? 0) }} |
-                                                                    Max: {{ formatRupiah(split.max_price ?? 0) }}
-                                                                </small>
+                                                <tr v-for="item in pr.items" :key="item.id">
+                                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ item.name }}</td>
+                                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ item.quantity }}</td>
+                                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ item.unit }}</td>
+                                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ item.arrival_date ? new Date(item.arrival_date).toLocaleDateString('id-ID') : '-' }}</td>
+                                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                                        <select
+                                                            v-model="poForm.items_by_supplier[item.id].supplier_id"
+                                                            @change="onSupplierChange(item)"
+                                                            class="w-40 mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
+                                                        >
+                                                            <option value="">Select Supplier</option>
+                                                            <option v-for="supplier in suppliers" :key="supplier.id" :value="supplier.id">
+                                                                {{ supplier.name }}
+                                                            </option>
+                                                        </select>
+                                                    </td>
+                                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                                        <input
+                                                            type="number"
+                                                            v-model="poForm.items_by_supplier[item.id].price"
+                                                            class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
+                                                            placeholder="Enter price"
+                                                        >
+                                                        <div>
+                                                            <small class="text-gray-400">
+                                                                Last: {{ formatRupiah(poForm.items_by_supplier[item.id].last_price ?? 0) }} |
+                                                                Min: {{ formatRupiah(poForm.items_by_supplier[item.id].min_price ?? 0) }} |
+                                                                Max: {{ formatRupiah(poForm.items_by_supplier[item.id].max_price ?? 0) }}
+                                                            </small>
+                                                        </div>
+                                                        <div v-if="poForm.items_by_supplier[item.id].price_medium || poForm.items_by_supplier[item.id].price_large" class="text-xs text-blue-500 mt-1">
+                                                            <div v-if="poForm.items_by_supplier[item.id].price_medium">
+                                                                Medium: {{ formatRupiah(poForm.items_by_supplier[item.id].price_medium) }} <span v-if="item.medium_unit_name">/ {{ item.medium_unit_name }}</span>
                                                             </div>
-                                                            <div v-if="split.price_medium || split.price_large" class="text-xs text-blue-500 mt-1">
-                                                                <div v-if="split.price_medium">
-                                                                    Medium: {{ formatRupiah(split.price_medium) }} <span v-if="item.medium_unit_name">/ {{ item.medium_unit_name }}</span>
-                                                                </div>
-                                                                <div v-if="split.price_large">
-                                                                    Large: {{ formatRupiah(split.price_large) }} <span v-if="item.large_unit_name">/ {{ item.large_unit_name }}</span>
-                                                                </div>
+                                                            <div v-if="poForm.items_by_supplier[item.id].price_large">
+                                                                Large: {{ formatRupiah(poForm.items_by_supplier[item.id].price_large) }} <span v-if="item.large_unit_name">/ {{ item.large_unit_name }}</span>
                                                             </div>
-                                                        </td>
-                                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                                            {{ formatRupiah((split.price || 0) * split.qty) }}
-                                                        </td>
-                                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                                            <button type="button" @click="addSplit(item.id)" class="bg-blue-100 hover:bg-blue-200 text-blue-700 px-2 py-1 rounded text-xs mr-1">Split</button>
-                                                            <button v-if="poForm.items_by_supplier[item.id].length > 1" type="button" @click="removeSplit(item.id, idx)" class="bg-red-100 hover:bg-red-200 text-red-700 px-2 py-1 rounded text-xs">Hapus</button>
-                                                        </td>
-                                                    </tr>
-                                                </template>
+                                                        </div>
+                                                    </td>
+                                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                                        {{ formatRupiah((poForm.items_by_supplier[item.id].price || 0) * item.quantity) }}
+                                                    </td>
+                                                </tr>
                                             </tbody>
                                         </table>
                                     </div>

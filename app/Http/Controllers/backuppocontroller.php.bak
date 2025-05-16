@@ -173,7 +173,7 @@ class PurchaseOrderFoodsController extends Controller
                 // Create PO items
                 foreach ($items as $item) {
                     $prItem = PurchaseRequisitionFoodItem::findOrFail($item['id']);
-                    $quantity = $item['qty'];
+                    $quantity = $prItem->qty;
                     $price = $item['price'];
                     $total = $quantity * $price;
 

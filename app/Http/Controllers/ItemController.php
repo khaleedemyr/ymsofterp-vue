@@ -27,7 +27,19 @@ class ItemController extends Controller
 {
     public function index(Request $request)
     {
-        $query = Item::with(['category', 'subCategory', 'smallUnit', 'mediumUnit', 'largeUnit', 'images', 'itemModifierOptions', 'boms', 'prices', 'availabilities']);
+        $query = Item::with([
+            'category',
+            'subCategory',
+            'smallUnit',
+            'mediumUnit',
+            'largeUnit',
+            'images',
+            'itemModifierOptions',
+            'boms',
+            'prices',
+            'availabilities',
+            'warehouseDivision'
+        ]);
 
         // Filter search (by name or SKU)
         if ($request->filled('search')) {
@@ -1087,6 +1099,142 @@ class ItemController extends Controller
                     ];
                 })->toArray(),
             ]
+        ]);
+    }
+
+    /**
+     * Ambil item berdasarkan warehouse_division_id yang terkait dengan FO Schedule tertentu dan status=active
+     */
+    public function getByFOSchedule($fo_schedule_id)
+    {
+        $region_id = request('region_id');
+        $outlet_id = request('outlet_id');
+        $foSchedule = \App\Models\FOSchedule::with('warehouseDivisions')->findOrFail($fo_schedule_id);
+        $warehouseDivisionIds = $foSchedule->warehouseDivisions->pluck('id');
+        $itemIds = \App\Models\Item::whereIn('warehouse_division_id', $warehouseDivisionIds)
+            ->where('status', 'active')
+            ->pluck('id');
+        // Ambil item_id yang available untuk user (all, region, outlet)
+        $availableItemIds = \DB::table('item_availabilities')
+            ->whereIn('item_id', $itemIds)
+            ->where(function($q) use ($region_id, $outlet_id) {
+                $q->where('availability_type', 'all');
+                if ($region_id) {
+                    $q->orWhere(function($q2) use ($region_id) {
+                        $q2->where('availability_type', 'region')->where('region_id', $region_id);
+                    });
+                }
+                if ($outlet_id) {
+                    $q->orWhere(function($q2) use ($outlet_id) {
+                        $q2->where('availability_type', 'outlet')->where('outlet_id', $outlet_id);
+                    });
+                }
+            })
+            ->pluck('item_id')
+            ->unique();
+        $items = Item::whereIn('id', $availableItemIds)
+            ->with(['category', 'mediumUnit'])
+            ->get()
+            ->map(function($item) use ($region_id, $outlet_id) {
+                // Ambil harga prioritas: outlet > region > all
+                $price = \DB::table('item_prices')
+                    ->where('item_id', $item->id)
+                    ->where(function($q) use ($region_id, $outlet_id) {
+                        $q->where('availability_price_type', 'all');
+                        if ($region_id) {
+                            $q->orWhere(function($q2) use ($region_id) {
+                                $q2->where('availability_price_type', 'region')->where('region_id', $region_id);
+                            });
+                        }
+                        if ($outlet_id) {
+                            $q->orWhere(function($q2) use ($outlet_id) {
+                                $q2->where('availability_price_type', 'outlet')->where('outlet_id', $outlet_id);
+                            });
+                        }
+                    })
+                    ->orderByRaw("CASE 
+                        WHEN availability_price_type = 'outlet' THEN 1
+                        WHEN availability_price_type = 'region' THEN 2
+                        ELSE 3 END")
+                    ->orderByDesc('id')
+                    ->first();
+                $finalPrice = $price ? $price->price : 0;
+                return array_merge($item->toArray(), [
+                    'category_name' => $item->category ? $item->category->name : '-',
+                    'unit_medium_name' => $item->mediumUnit ? $item->mediumUnit->name : '-',
+                    'price' => $finalPrice,
+                ]);
+            });
+        return response()->json([
+            'items' => $items
+        ]);
+    }
+
+    /**
+     * Ambil item untuk FO Khusus (tanpa jadwal, validasi dari item_availabilities)
+     */
+    public function getByFOKhusus(Request $request)
+    {
+        \Log::info('MASUK getByFOKhusus');
+        $region_id = $request->region_id;
+        $outlet_id = $request->outlet_id;
+
+        // Ambil item_id dari item_availabilities yang aktif
+        $itemIds = \DB::table('item_availabilities')
+            ->where(function($q) use ($region_id, $outlet_id) {
+                $q->where('availability_type', 'all');
+                if ($region_id) {
+                    $q->orWhere(function($q2) use ($region_id) {
+                        $q2->where('availability_type', 'region')->where('region_id', $region_id);
+                    });
+                }
+                if ($outlet_id) {
+                    $q->orWhere(function($q2) use ($outlet_id) {
+                        $q2->where('availability_type', 'outlet')->where('outlet_id', $outlet_id);
+                    });
+                }
+            })
+            ->pluck('item_id')
+            ->unique();
+
+        // Ambil item yang status=active dan punya warehouse_division
+        $items = \App\Models\Item::whereIn('id', $itemIds)
+            ->where('status', 'active')
+            ->whereNotNull('warehouse_division_id')
+            ->with(['category', 'mediumUnit'])
+            ->get()
+            ->map(function($item) use ($region_id, $outlet_id) {
+                $price = \DB::table('item_prices')
+                    ->where('item_id', $item->id)
+                    ->where(function($q) use ($region_id, $outlet_id) {
+                        $q->where('availability_price_type', 'all');
+                        if ($region_id) {
+                            $q->orWhere(function($q2) use ($region_id) {
+                                $q2->where('availability_price_type', 'region')->where('region_id', $region_id);
+                            });
+                        }
+                        if ($outlet_id) {
+                            $q->orWhere(function($q2) use ($outlet_id) {
+                                $q2->where('availability_price_type', 'outlet')->where('outlet_id', $outlet_id);
+                            });
+                        }
+                    })
+                    ->orderByRaw("CASE 
+                        WHEN availability_price_type = 'outlet' THEN 1
+                        WHEN availability_price_type = 'region' THEN 2
+                        ELSE 3 END")
+                    ->orderByDesc('id')
+                    ->first();
+                $finalPrice = $price ? $price->price : 0;
+                return array_merge($item->toArray(), [
+                    'category_name' => $item->category ? $item->category->name : '-',
+                    'unit_medium_name' => $item->mediumUnit ? $item->mediumUnit->name : '-',
+                    'price' => $finalPrice,
+                ]);
+            });
+
+        return response()->json([
+            'items' => $items
         ]);
     }
 } 

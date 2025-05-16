@@ -53,6 +53,17 @@ const menuGroups = [
             { name: () => 'Customers', icon: 'fa-solid fa-users', route: '/customers' },
             { name: () => 'Suppliers', icon: 'fa-solid fa-truck', route: '/suppliers' },
             { name: () => 'Regions', icon: 'fa-solid fa-globe-asia', route: '/regions' },
+            { name: () => 'Item Schedule', icon: 'fa-solid fa-calendar-days', route: '/item-schedules' },
+            { name: () => 'FO Schedule', icon: 'fa-solid fa-calendar-days', route: '/fo-schedules' },
+        ],
+    },
+    {
+        title: () => 'Outlet Management',
+        icon: 'fa-solid fa-store',
+        collapsible: true,
+        open: ref(false),
+        menus: [
+            { name: () => 'Floor Order', icon: 'fa-solid fa-calendar-check', route: '/floor-order' },
         ],
     },
     {
@@ -267,24 +278,41 @@ onMounted(() => {
             </button>
         </div>
         <nav class="flex-1 overflow-y-auto py-4">
-            <div v-for="group in menuGroups" :key="group.title" class="mb-2">
-                <div class="px-6 py-2 text-xs font-bold text-gray-500 uppercase flex items-center gap-2 justify-between cursor-pointer"
-                    @click="toggleGroup(group)" v-if="group.collapsible">
-                    <span class="text-base"><i :class="group.icon"></i></span>
+            <div v-for="(group, idx) in menuGroups" :key="group.title" class="mb-4">
+                <div
+                    class="px-6 py-2 text-xs font-bold uppercase flex items-center gap-2 justify-between cursor-pointer group-title"
+                    :class="sidebarOpen ? 'text-gray-500' : 'text-gray-400'"
+                    @click="toggleGroup(group)"
+                    v-if="group.collapsible"
+                >
+                    <span class="text-lg"><i :class="group.icon"></i></span>
                     <span v-if="sidebarOpen">{{ typeof group.title === 'function' ? group.title() : group.title }}</span>
                     <svg v-if="sidebarOpen" :class="['w-4 h-4 transition-transform', group.open.value ? 'rotate-90' : '']" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>
                 </div>
-                <div v-else class="px-6 py-2 text-xs font-bold text-gray-500 uppercase flex items-center gap-2" v-if="sidebarOpen || group.icon">
-                    <span class="text-base"><i :class="group.icon"></i></span>
+                <div
+                    v-else
+                    class="px-6 py-2 text-xs font-bold uppercase flex items-center gap-2 group-title"
+                    :class="sidebarOpen ? 'text-gray-500' : 'text-gray-400'"
+                >
+                    <span class="text-lg"><i :class="group.icon"></i></span>
                     <span v-if="sidebarOpen">{{ typeof group.title === 'function' ? group.title() : group.title }}</span>
                 </div>
                 <div v-show="!group.collapsible || group.open.value">
-                    <Link v-for="menu in group.menus" :key="menu.name" :href="menu.route" class="flex items-center gap-3 px-4 py-2 my-1 rounded-lg text-gray-700 hover:bg-blue-100 transition-all"
-                        :class="sidebarOpen ? 'justify-start' : 'justify-center'">
+                    <Link
+                        v-for="menu in group.menus"
+                        :key="menu.name"
+                        :href="menu.route"
+                        class="flex items-center gap-3 px-6 py-2 my-1 rounded-lg text-gray-700 hover:bg-blue-100 transition-all sidebar-menu"
+                        :class="[
+                            sidebarOpen ? 'justify-start' : 'justify-center',
+                            $page.url.startsWith(menu.route) ? 'bg-blue-50 font-bold text-blue-700' : ''
+                        ]"
+                    >
                         <span class="text-lg w-7 flex justify-center"><i :class="menu.icon"></i></span>
                         <span v-if="sidebarOpen" class="whitespace-nowrap">{{ typeof menu.name === 'function' ? menu.name() : menu.name }}</span>
                     </Link>
                 </div>
+                <hr v-if="idx < menuGroups.length - 1" class="my-2 border-gray-200" />
             </div>
             <NavLink :href="route('announcement.index')" :active="route().current('announcement.index')" class="flex items-center gap-3 px-4 py-2 my-1 rounded-lg text-gray-700 hover:bg-blue-100 transition-all"
                 :class="sidebarOpen ? 'justify-start' : 'justify-center'">
@@ -451,5 +479,26 @@ onMounted(() => {
 
 .toast-slide-move {
     transition: transform 0.3s ease;
+}
+
+.group-title {
+    letter-spacing: 1px;
+    font-size: 13px;
+    margin-bottom: 2px;
+}
+.sidebar-menu {
+    font-size: 15px;
+    transition: background 0.2s, color 0.2s;
+}
+.sidebar-menu.router-link-exact-active,
+.sidebar-menu.bg-blue-50 {
+    background: #e8f0fe !important;
+    color: #2563eb !important;
+    font-weight: bold;
+}
+hr {
+    border: none;
+    border-top: 1px solid #e5e7eb;
+    margin: 8px 0;
 }
 </style> 

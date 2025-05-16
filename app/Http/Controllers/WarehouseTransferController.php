@@ -139,13 +139,6 @@ class WarehouseTransferController extends Controller
                 Log::info('Sesudah update stok gudang asal', ['qty_small' => $stockFrom->qty_small]);
 
                 // Update stok di warehouse tujuan (tambah) dengan MAC jika ada penambahan stok
-                $qty_lama = $stockTo->qty_small;
-                $nilai_lama = $stockTo->value;
-                $qty_baru = $qty_small;
-                $nilai_baru = $qty_small * $stockFrom->last_cost_small;
-                $total_qty = $qty_lama + $qty_baru;
-                $total_nilai = $nilai_lama + $nilai_baru;
-                $mac = $total_qty > 0 ? $total_nilai / $total_qty : $stockFrom->last_cost_small;
                 $stockTo = FoodInventoryStock::firstOrCreate(
                     [
                         'inventory_item_id' => $inventory_item_id,
@@ -161,7 +154,14 @@ class WarehouseTransferController extends Controller
                         'last_cost_large' => 0,
                     ]
                 );
-                Log::info('Sebelum update stok gudang tujuan', ['qty_small' => $stockTo->qty_small]);
+                $qty_lama = $stockTo->qty_small;
+                $nilai_lama = $stockTo->value;
+                $qty_baru = $qty_small;
+                $nilai_baru = $qty_small * $stockFrom->last_cost_small;
+                $total_qty = $qty_lama + $qty_baru;
+                $total_nilai = $nilai_lama + $nilai_baru;
+                $mac = $total_qty > 0 ? $total_nilai / $total_qty : $stockFrom->last_cost_small;
+                // Update stok tujuan
                 $stockTo->qty_small = $total_qty;
                 $stockTo->qty_medium += $qty_medium;
                 $stockTo->qty_large += $qty_large;

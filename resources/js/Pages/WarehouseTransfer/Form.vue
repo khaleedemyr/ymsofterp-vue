@@ -282,6 +282,11 @@ function handleF1Focus(e) {
   }
 }
 
+// Validasi sebelum input item
+const canInputItem = computed(() => {
+  return form.warehouse_from_id && form.warehouse_to_id && form.warehouse_from_id !== form.warehouse_to_id;
+});
+
 onMounted(() => {
   window.addEventListener('keydown', handleF1Focus);
   // Set tanggal otomatis ke hari ini jika belum diset
@@ -339,7 +344,10 @@ onUnmounted(() => {
         </div>
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-2">Detail Item</label>
-          <div class="overflow-x-auto">
+          <div v-if="!canInputItem" class="text-red-600 text-sm mb-2">
+            Pilih gudang asal dan tujuan terlebih dahulu, dan pastikan tidak sama.
+          </div>
+          <div class="overflow-x-auto" :class="{'pointer-events-none opacity-60': !canInputItem}">
             <table class="w-full min-w-full divide-y divide-gray-200">
               <thead class="bg-gradient-to-r from-blue-50 to-blue-100">
                 <tr>
@@ -428,7 +436,7 @@ onUnmounted(() => {
               </tbody>
             </table>
           </div>
-          <button type="button" @click="addItem" class="mt-2 px-3 py-1 rounded bg-blue-100 text-blue-700 font-semibold hover:bg-blue-200"><i class="fa fa-plus"></i> Tambah Item</button>
+          <button type="button" @click="addItem" class="mt-2 px-3 py-1 rounded bg-blue-100 text-blue-700 font-semibold hover:bg-blue-200" :disabled="!canInputItem"><i class="fa fa-plus"></i> Tambah Item</button>
         </div>
         <div class="flex justify-end gap-2">
           <button type="button" @click="goBack" class="px-4 py-2 rounded bg-gray-200 text-gray-700 font-semibold hover:bg-gray-300">Batal</button>
