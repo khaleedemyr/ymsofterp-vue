@@ -25,6 +25,17 @@ class ItemBarcodeController extends Controller
             'barcode' => $request->barcode
         ]);
 
+        \App\Models\ActivityLog::create([
+            'user_id' => auth()->id(),
+            'activity_type' => 'create',
+            'module' => 'item_barcodes',
+            'description' => 'Menambah barcode untuk item: ' . $item->name,
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+            'old_data' => null,
+            'new_data' => $barcode->toArray(),
+        ]);
+
         return response()->json(['barcode' => $barcode]);
     }
 
@@ -34,7 +45,19 @@ class ItemBarcodeController extends Controller
             abort(403);
         }
 
+        $oldData = $barcode->toArray();
         $barcode->delete();
+
+        \App\Models\ActivityLog::create([
+            'user_id' => auth()->id(),
+            'activity_type' => 'delete',
+            'module' => 'item_barcodes',
+            'description' => 'Menghapus barcode dari item: ' . $item->name,
+            'ip_address' => request()->ip(),
+            'user_agent' => request()->userAgent(),
+            'old_data' => $oldData,
+            'new_data' => null,
+        ]);
 
         return back()->with('success', 'Barcode deleted successfully');
     }

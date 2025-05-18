@@ -22,6 +22,8 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Validator;
 use App\Models\FoodInventoryStock;
 use App\Models\FoodInventoryCard;
+use App\Exports\BomImportTemplateExport;
+use App\Imports\BomImport;
 
 class ItemController extends Controller
 {
@@ -664,7 +666,7 @@ class ItemController extends Controller
         return Excel::download(new ItemsImportTemplateExport($data), 'items_import_template.xlsx');
     }
 
-    public function importPreview(Request $request)
+    public function previewImport(Request $request)
     {
         $request->validate([
             'file' => 'required|file|mimes:xlsx,xls',
@@ -1236,5 +1238,135 @@ class ItemController extends Controller
         return response()->json([
             'items' => $items
         ]);
+    }
+
+    public function downloadBomImportTemplate()
+    {
+        return Excel::download(new BomImportTemplateExport, 'bom_import_template.xlsx');
+    }
+
+    public function previewBomImport(Request $request)
+    {
+        $request->validate([
+            'file' => 'required|file|mimes:xlsx,xls'
+        ]);
+
+        try {
+            $data = \Maatwebsite\Excel\Facades\Excel::toArray(new \App\Imports\BomImport, $request->file('file'));
+            $bomSheet = [];
+            foreach ($data as $sheet) {
+                if (
+                    isset($sheet[0][0], $sheet[0][1], $sheet[0][2], $sheet[0][3]) &&
+                    strtolower(trim($sheet[0][0])) === 'parent item' &&
+                    strtolower(trim($sheet[0][1])) === 'child item' &&
+                    strtolower(trim($sheet[0][2])) === 'quantity' &&
+                    strtolower(trim($sheet[0][3])) === 'unit'
+                ) {
+                    $bomSheet = $sheet;
+                    break;
+                }
+            }
+            $headers = array_shift($bomSheet);
+            $preview = array_slice($bomSheet, 0, 5);
+            // Convert to array of object for frontend
+            $previewObjects = [];
+            foreach ($preview as $row) {
+                $obj = [];
+                foreach ($headers as $i => $h) {
+                    $obj[$h] = $row[$i] ?? null;
+                }
+                $previewObjects[] = $obj;
+            }
+            return response()->json([
+                'header' => $headers,
+                'preview' => $previewObjects
+            ]);
+        } catch (\Exception $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+    }
+
+    public function importBom(Request $request)
+    {
+        $request->validate([
+            'file' => 'required|file|mimes:xlsx,xls'
+        ]);
+
+        try {
+            $data = \Maatwebsite\Excel\Facades\Excel::toArray(new \App\Imports\BomImport, $request->file('file'));
+            $bomSheet = [];
+            foreach ($data as $sheet) {
+                if (
+                    isset($sheet[0][0], $sheet[0][1], $sheet[0][2], $sheet[0][3]) &&
+                    strtolower(trim($sheet[0][0])) === 'parent item' &&
+                    strtolower(trim($sheet[0][1])) === 'child item' &&
+                    strtolower(trim($sheet[0][2])) === 'quantity' &&
+                    strtolower(trim($sheet[0][3])) === 'unit'
+                ) {
+                    $bomSheet = $sheet;
+                    break;
+                }
+            }
+            array_shift($bomSheet); // Remove header
+            $results = [];
+            foreach ($bomSheet as $index => $row) {
+                try {
+                    // Validasi minimal kolom BOM
+                    if (empty($row[0]) || empty($row[1]) || empty($row[2]) || empty($row[3])) {
+                        throw new \Exception('Semua kolom wajib diisi');
+                    }
+                    // Find parent item
+                    $parentItem = \App\Models\Item::where('name', $row[0])
+                        ->where('composition_type', 'composed')
+                        ->where('status', 'active')
+                        ->first();
+                    if (!$parentItem) {
+                        throw new \Exception("Parent item not found or not active");
+                    }
+                    // Find child item
+                    $childItem = \App\Models\Item::where('name', $row[1])
+                        ->whereIn('type', ['Raw Materials', 'WIP'])
+                        ->where('status', 'active')
+                        ->first();
+                    if (!$childItem) {
+                        throw new \Exception("Child item not found or not active");
+                    }
+                    // Find unit
+                    $unit = \App\Models\Unit::where('name', $row[3])->first();
+                    if (!$unit) {
+                        throw new \Exception("Unit not found");
+                    }
+                    // Insert/update BOM
+                    \DB::table('item_bom')->updateOrInsert(
+                        [
+                            'item_id' => $parentItem->id,
+                            'material_item_id' => $childItem->id,
+                        ],
+                        [
+                            'qty' => $row[2],
+                            'unit_id' => $unit->id,
+                            'created_at' => now(),
+                            'updated_at' => now(),
+                        ]
+                    );
+                    $results[] = [
+                        'row' => $index + 2,
+                        'name' => $row[0],
+                        'status' => 'success',
+                        'message' => 'Successfully imported'
+                    ];
+                } catch (\Exception $e) {
+                    $results[] = [
+                        'row' => $index + 2,
+                        'name' => $row[0] ?? '',
+                        'status' => 'error',
+                        'message' => $e->getMessage()
+                    ];
+                }
+            }
+            return response()->json(['results' => $results]);
+        } catch (\Exception $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
     }
 } 

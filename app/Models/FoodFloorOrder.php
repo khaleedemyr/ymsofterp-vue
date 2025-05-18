@@ -28,4 +28,14 @@ class FoodFloorOrder extends Model
     {
         return $this->belongsTo(\App\Models\FOSchedule::class, 'fo_schedule_id');
     }
+
+    public function approver()
+    {
+        return $this->belongsTo(\App\Models\User::class, 'approval_by', 'id');
+    }
+
+    public function user()
+    {
+        return $this->belongsTo(User::class, 'user_id');
+    }
 } 

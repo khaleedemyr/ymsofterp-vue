@@ -39,6 +39,8 @@ use App\Http\Controllers\WarehouseTransferController;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Request;
 use App\Http\Controllers\FoodFloorOrderController;
+use App\Http\Controllers\FoodStockBalanceController;
+use App\Http\Controllers\RepackController;
 
 Route::get('/', function () {
     return Inertia::render('Welcome', [
@@ -242,9 +244,12 @@ Route::middleware(['auth'])->group(function () {
     Route::delete('/food-payments/{id}', [\App\Http\Controllers\FoodPaymentController::class, 'destroy'])->name('food-payments.destroy');
 });
 
-Route::get('/items/import-template', [ItemController::class, 'downloadImportTemplate'])->name('items.import.template');
-Route::post('/items/import-preview', [ItemController::class, 'importPreview'])->name('items.import.preview');
-Route::post('/items/import-excel', [ItemController::class, 'importExcel'])->name('items.import.excel');
+Route::get('/items/import/template', [ItemController::class, 'downloadImportTemplate'])->name('items.import.template');
+Route::get('/items/bom/import/template', [ItemController::class, 'downloadBomImportTemplate'])->name('items.bom.import.template');
+Route::post('/items/import/preview', [ItemController::class, 'previewImport'])->name('items.import.preview');
+Route::post('/items/bom/import/preview', [ItemController::class, 'previewBomImport'])->name('items.bom.import.preview');
+Route::post('/items/import/excel', [ItemController::class, 'importExcel'])->name('items.import.excel');
+Route::post('/items/bom/import/excel', [ItemController::class, 'importBom'])->name('items.bom.import.excel');
 Route::get('/items/export/excel', [ItemController::class, 'exportExcel'])->name('items.export.excel');
 Route::get('/items/export/pdf', [ItemController::class, 'exportPdf'])->name('items.export.pdf');
 Route::post('/items/{id}/toggle-status', [ItemController::class, 'toggleStatus'])->name('items.toggleStatus');
@@ -363,7 +368,48 @@ Route::post('/floor-order', [FoodFloorOrderController::class, 'store'])->name('f
 Route::put('/floor-order/{id}', [FoodFloorOrderController::class, 'update'])->name('floor-order.update');
 Route::delete('/floor-order/{id}', [FoodFloorOrderController::class, 'destroy'])->name('floor-order.destroy');
 Route::post('/floor-order/{id}/submit', [FoodFloorOrderController::class, 'submit'])->name('floor-order.submit');
+Route::post('/floor-order/{id}/approve', [FoodFloorOrderController::class, 'approve'])->name('floor-order.approve');
 Route::post('/api/floor-order/check-exists', [\App\Http\Controllers\FoodFloorOrderController::class, 'checkExists']);
 Route::get('/floor-order/{id}', [\App\Http\Controllers\FoodFloorOrderController::class, 'show'])->name('floor-order.show');
+
+Route::resource('packing-list', App\Http\Controllers\PackingListController::class);
+
+Route::get('/api/packing-list/available-items', [\App\Http\Controllers\PackingListController::class, 'availableItems']);
+Route::post('/api/packing-list/item-stocks', [\App\Http\Controllers\PackingListController::class, 'itemStocks']);
+
+// Food Stock Balance Routes
+Route::middleware(['auth', 'verified'])->group(function () {
+    Route::get('/food-stock-balances', [FoodStockBalanceController::class, 'index'])->name('food-stock-balances.index');
+    Route::post('/food-stock-balances', [FoodStockBalanceController::class, 'store'])->name('food-stock-balances.store');
+    Route::put('/food-stock-balances/{stockBalance}', [FoodStockBalanceController::class, 'update'])->name('food-stock-balances.update');
+    Route::delete('/food-stock-balances/{stockBalance}', [FoodStockBalanceController::class, 'destroy'])->name('food-stock-balances.destroy');
+    Route::get('/food-stock-balances/download-template', [FoodStockBalanceController::class, 'downloadTemplate'])->name('food-stock-balances.download-template');
+    Route::post('/food-stock-balances/preview-import', [FoodStockBalanceController::class, 'previewImport'])->name('food-stock-balances.preview-import');
+    Route::post('/food-stock-balances/import', [FoodStockBalanceController::class, 'import'])->name('food-stock-balances.import');
+});
+
+Route::resource('repack', RepackController::class);
+
+// Repack specific routes
+Route::middleware(['auth'])->group(function () {
+    // API routes untuk repack
+    Route::get('/api/repack/available-items', [RepackController::class, 'availableItems'])->name('repack.available-items');
+    Route::get('/api/repack/item-stocks', [RepackController::class, 'itemStocks'])->name('repack.item-stocks');
+    Route::post('/api/repack/generate-number', [RepackController::class, 'generateRepackNumber'])->name('repack.generate-number');
+    
+    // Approval routes
+    Route::post('/repack/{id}/approve', [RepackController::class, 'approve'])->name('repack.approve');
+    Route::post('/repack/{id}/reject', [RepackController::class, 'reject'])->name('repack.reject');
+    
+    // Process routes
+    Route::post('/repack/{id}/process', [RepackController::class, 'process'])->name('repack.process');
+    Route::post('/repack/{id}/complete', [RepackController::class, 'complete'])->name('repack.complete');
+    
+    // Report routes
+    Route::get('/repack/report', [RepackController::class, 'report'])->name('repack.report');
+    Route::get('/repack/export/excel', [RepackController::class, 'exportExcel'])->name('repack.export.excel');
+    Route::get('/repack/export/pdf', [RepackController::class, 'exportPdf'])->name('repack.export.pdf');
+    Route::get('/repack/{repack}/print-barcodes', [RepackController::class, 'printBarcodes'])->name('repack.print-barcodes');
+});
 
 require __DIR__.'/auth.php';

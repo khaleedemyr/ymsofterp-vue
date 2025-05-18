@@ -18,4 +18,9 @@ class FoodFloorOrderItem extends Model
     {
         return $this->belongsTo(\App\Models\Category::class, 'category_id', 'id');
     }
+
+    public function item()
+    {
+        return $this->belongsTo(Item::class, 'item_id');
+    }
 } 

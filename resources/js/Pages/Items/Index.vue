@@ -77,10 +77,17 @@
             <button @click="downloadTemplate" class="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
               <i class="fa-solid fa-download text-blue-600 mr-2"></i> Download Template Import
             </button>
+            <button @click="downloadBomTemplate" class="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
+              <i class="fa-solid fa-download text-blue-600 mr-2"></i> Download BOM Template
+            </button>
             <button @click="openImportFile" class="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
               <i class="fa-solid fa-upload text-green-600 mr-2"></i> Import File
             </button>
+            <button @click="openBomImportFile" class="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
+              <i class="fa-solid fa-upload text-green-600 mr-2"></i> Import BOM
+            </button>
             <input type="file" ref="importFileInput" class="hidden" @change="handleFileChange" accept=".xlsx,.xls" />
+            <input type="file" ref="bomImportFileInput" class="hidden" @change="handleBomFileChange" accept=".xlsx,.xls" />
           </div>
         </div>
       </div>
@@ -305,7 +312,7 @@
             </div>
             <div class="flex justify-end gap-2 mt-4">
               <button @click="closeImportPreview" class="bg-gray-200 hover:bg-gray-300 text-gray-700 px-4 py-2 rounded-lg">Tutup</button>
-              <button v-if="!importUploading && !importResults.length" @click="handleImportUpload" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2">
+              <button v-if="!importUploading && !importResults.length" @click="handleBomImportUpload" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2">
                 <i class="fa-solid fa-upload"></i> Upload
               </button>
             </div>
@@ -372,6 +379,7 @@ const importFile = ref(null)
 const importUploading = ref(false)
 const importProgress = ref(0)
 const importResults = ref([])
+const bomImportFileInput = ref(null)
 
 function goToPage(url) {
   if (url) router.visit(url, { preserveState: true, replace: true });
@@ -472,8 +480,16 @@ function downloadTemplate() {
   window.location.href = route('items.import.template')
 }
 
+function downloadBomTemplate() {
+  window.location.href = route('items.bom.import.template')
+}
+
 function openImportFile() {
   importFileInput.value && importFileInput.value.click()
+}
+
+function openBomImportFile() {
+  bomImportFileInput.value && bomImportFileInput.value.click()
 }
 
 async function handleFileChange(e) {
@@ -497,6 +513,27 @@ async function handleFileChange(e) {
   }
 }
 
+async function handleBomFileChange(e) {
+  const file = e.target.files[0]
+  if (file) {
+    importFile.value = file
+    importPreviewData.value = { header: [], preview: [] }
+    importResults.value = []
+    importProgress.value = 0
+    importUploading.value = false
+    // Preview
+    const formData = new FormData()
+    formData.append('file', file)
+    try {
+      const res = await axios.post(route('items.bom.import.preview'), formData, { headers: { 'Content-Type': 'multipart/form-data' } })
+      importPreviewData.value = res.data
+      importPreviewModal.value = true
+    } catch (err) {
+      Swal.fire('Error', 'Gagal membaca file: ' + (err.response?.data?.message || err.message), 'error')
+    }
+  }
+}
+
 async function handleImportUpload() {
   if (!importFile.value) return
   importUploading.value = true
@@ -506,6 +543,31 @@ async function handleImportUpload() {
   formData.append('file', importFile.value)
   try {
     const res = await axios.post(route('items.import.excel'), formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      onUploadProgress: (progressEvent) => {
+        if (progressEvent.total) {
+          importProgress.value = Math.round((progressEvent.loaded * 100) / progressEvent.total)
+        }
+      }
+    })
+    importResults.value = res.data.results
+    importUploading.value = false
+    importProgress.value = 100
+  } catch (err) {
+    importUploading.value = false
+    Swal.fire('Error', 'Gagal import file: ' + (err.response?.data?.message || err.message), 'error')
+  }
+}
+
+async function handleBomImportUpload() {
+  if (!importFile.value) return
+  importUploading.value = true
+  importProgress.value = 0
+  importResults.value = []
+  const formData = new FormData()
+  formData.append('file', importFile.value)
+  try {
+    const res = await axios.post(route('items.bom.import.excel'), formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
       onUploadProgress: (progressEvent) => {
         if (progressEvent.total) {

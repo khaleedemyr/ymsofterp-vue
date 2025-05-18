@@ -48,6 +48,29 @@ class FoodFloorOrderController extends Controller
                 'category_id' => $masterItem ? $masterItem->category_id : null,
             ]);
         }
+        // Notifikasi ke Executive Chef jika FO Khusus
+        if ($order->fo_mode === 'FO Khusus') {
+            $executiveChefs = \DB::table('users')->where('id_jabatan', 163)->where('status', 'A')->pluck('id');
+            $requester = $user->name ?? ($user->nama_lengkap ?? '-');
+            $outletName = $user->outlet->nama_outlet ?? '-';
+            $this->sendNotification(
+                $executiveChefs,
+                'fo_approval',
+                'Approval Floor Order Khusus',
+                "Floor Order Khusus dari $requester ($outletName) menunggu approval Anda.",
+                route('floor-order.edit', $order->id)
+            );
+        }
+        \App\Models\ActivityLog::create([
+            'user_id' => $user->id,
+            'activity_type' => 'create',
+            'module' => 'food_floor_order',
+            'description' => 'Membuat Floor Order: ' . $order->id,
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+            'old_data' => null,
+            'new_data' => $order->toArray(),
+        ]);
         return response()->json(['id' => $order->id]);
     }
 
@@ -55,6 +78,7 @@ class FoodFloorOrderController extends Controller
     public function update(Request $request, $id)
     {
         $order = FoodFloorOrder::findOrFail($id);
+        $oldData = $order->toArray();
         $order->update($request->only(['tanggal', 'description', 'fo_mode', 'input_mode', 'fo_schedule_id']));
         // Update items (bisa dioptimasi, ini contoh sederhana)
         $order->items()->delete();
@@ -70,6 +94,16 @@ class FoodFloorOrderController extends Controller
                 'category_id' => $masterItem ? $masterItem->category_id : null,
             ]);
         }
+        \App\Models\ActivityLog::create([
+            'user_id' => Auth::id(),
+            'activity_type' => 'update',
+            'module' => 'food_floor_order',
+            'description' => 'Update Floor Order: ' . $order->id,
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+            'old_data' => $oldData,
+            'new_data' => $order->fresh()->toArray(),
+        ]);
         return response()->json(['success' => true]);
     }
 
@@ -77,11 +111,22 @@ class FoodFloorOrderController extends Controller
     public function destroy($id)
     {
         $order = FoodFloorOrder::findOrFail($id);
+        $oldData = $order->toArray();
         if (!in_array($order->status, ['draft', 'approved', 'submitted'])) {
             return response()->json(['error' => 'Tidak bisa hapus selain draft, approved, atau submitted'], 422);
         }
         $order->items()->delete();
         $order->delete();
+        \App\Models\ActivityLog::create([
+            'user_id' => Auth::id(),
+            'activity_type' => 'delete',
+            'module' => 'food_floor_order',
+            'description' => 'Menghapus Floor Order: ' . $oldData['id'],
+            'ip_address' => request()->ip(),
+            'user_agent' => request()->userAgent(),
+            'old_data' => $oldData,
+            'new_data' => null,
+        ]);
         return response()->json(['success' => true]);
     }
 
@@ -124,10 +169,64 @@ class FoodFloorOrderController extends Controller
 
     public function show($id)
     {
-        $order = FoodFloorOrder::with(['items.category', 'outlet', 'requester', 'foSchedule'])->findOrFail($id);
+        $order = FoodFloorOrder::with(['items.category', 'outlet', 'requester', 'foSchedule', 'approver'])->findOrFail($id);
         return Inertia::render('FloorOrder/Show', [
             'order' => $order,
             'user' => Auth::user()->load('outlet'),
         ]);
+    }
+
+    // Tambahkan method sendNotification
+    private function sendNotification($userIds, $type, $title, $message, $url) {
+        $now = now();
+        $data = [];
+        foreach ($userIds as $uid) {
+            $data[] = [
+                'user_id' => $uid,
+                'type' => $type,
+                'title' => $title,
+                'message' => $message,
+                'url' => $url,
+                'is_read' => 0,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ];
+        }
+        \DB::table('notifications')->insert($data);
+    }
+
+    public function approve(Request $request, $id)
+    {
+        $user = Auth::user();
+        $order = \App\Models\FoodFloorOrder::findOrFail($id);
+
+        // Cek hak akses
+        $isSuperadmin = $user->id_role === '5af56935b011a' && $user->status === 'A';
+        $isExecutiveChef = $user->id_jabatan == 163 && $user->status === 'A';
+        if (!($isSuperadmin || $isExecutiveChef)) {
+            abort(403, 'Unauthorized');
+        }
+
+        if ($order->fo_mode !== 'FO Khusus' || $order->status !== 'submitted') {
+            abort(400, 'Tidak bisa approve order ini');
+        }
+
+        $order->update([
+            'status' => 'approved',
+            'approval_by' => $user->id,
+            'approval_at' => now(),
+            'approval_notes' => $request->notes,
+        ]);
+        \App\Models\ActivityLog::create([
+            'user_id' => $user->id,
+            'activity_type' => 'approve',
+            'module' => 'food_floor_order',
+            'description' => 'Approve Floor Order: ' . $order->id,
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+            'old_data' => null,
+            'new_data' => $order->fresh()->toArray(),
+        ]);
+        return redirect()->back()->with('success', 'Floor Order berhasil di-approve');
     }
 } 

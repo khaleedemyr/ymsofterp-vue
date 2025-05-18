@@ -94,6 +94,16 @@ class FOScheduleController extends Controller
 
         return redirect()->route('fo-schedules.index')
             ->with('success', 'Jadwal FO berhasil ditambahkan');
+        \App\Models\ActivityLog::create([
+            'user_id' => Auth::id(),
+            'activity_type' => 'create',
+            'module' => 'fo_schedule',
+            'description' => 'Membuat jadwal FO: ' . $schedule->fo_mode . ' - ' . $schedule->day,
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+            'old_data' => null,
+            'new_data' => $schedule->toArray(),
+        ]);
     }
 
     public function edit($id)
@@ -142,12 +152,32 @@ class FOScheduleController extends Controller
 
         return redirect()->route('fo-schedules.index')
             ->with('success', 'Jadwal FO berhasil diupdate');
+        \App\Models\ActivityLog::create([
+            'user_id' => Auth::id(),
+            'activity_type' => 'update',
+            'module' => 'fo_schedule',
+            'description' => 'Update jadwal FO: ' . $schedule->fo_mode . ' - ' . $schedule->day,
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+            'old_data' => null,
+            'new_data' => $schedule->fresh()->toArray(),
+        ]);
     }
 
     public function destroy($id)
     {
         $schedule = FOSchedule::findOrFail($id);
         $schedule->delete();
+        \App\Models\ActivityLog::create([
+            'user_id' => Auth::id(),
+            'activity_type' => 'delete',
+            'module' => 'fo_schedule',
+            'description' => 'Menghapus jadwal FO: ' . $schedule->fo_mode . ' - ' . $schedule->day,
+            'ip_address' => request()->ip(),
+            'user_agent' => request()->userAgent(),
+            'old_data' => $schedule->toArray(),
+            'new_data' => null,
+        ]);
         return redirect()->route('fo-schedules.index')
             ->with('success', 'Jadwal FO berhasil dihapus');
     }
@@ -159,22 +189,16 @@ class FOScheduleController extends Controller
             'day' => 'required',
         ]);
 
-        // Ambil user login
+        date_default_timezone_set('Asia/Jakarta');
         $user = Auth::user();
         $id_outlet = $request->outlet_id;
         $region_id = $request->region_id;
-
-        // Jika outlet_id tidak dikirim, ambil dari user
         if (!$id_outlet && $user && $user->id_outlet) {
             $id_outlet = $user->id_outlet;
         }
-
-        // Jika region_id tidak dikirim, ambil dari tbl_data_outlet
         if (!$region_id && $id_outlet) {
             $region_id = DB::table('tbl_data_outlet')->where('id_outlet', $id_outlet)->value('region_id');
         }
-
-        // Pastikan region aktif
         $regionExists = false;
         if ($region_id) {
             $regionExists = DB::table('regions')->where('id', $region_id)->where('status', 'active')->exists();
@@ -183,122 +207,115 @@ class FOScheduleController extends Controller
             $region_id = null;
         }
 
-        $now = now();
-        $currentDay = $now->format('l');
-        
-        // Cek jadwal hari ini (untuk jam close)
-        $todaySchedule = FOSchedule::with(['warehouseDivisions', 'regions', 'outlets'])
+        $now = now('Asia/Jakarta');
+        $daysOfWeek = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+        $todayIdx = array_search($now->format('l'), $daysOfWeek);
+        $todayName = $now->format('l');
+        $currentTime = $now->format('H:i:s');
+
+        // Ambil semua jadwal FO mode ini
+        $schedules = FOSchedule::with(['warehouseDivisions', 'regions', 'outlets'])
             ->where('fo_mode', $request->fo_mode)
-            ->where('day', $currentDay)
-            ->first();
+            ->get();
 
-        $found = false;
-        $isActive = false;
-        $openDateTime = null;
-        $closeDateTime = null;
-        $schedule = null;
-
-        // Cek jadwal hari ini untuk jam close
-        if ($todaySchedule) {
-            $regionMatch = $region_id && $todaySchedule->regions->pluck('id')->contains($region_id);
-            $outletMatch = $id_outlet && $todaySchedule->outlets->pluck('id_outlet')->contains($id_outlet);
-
-            if ($regionMatch || $outletMatch) {
-                $found = true;
-                $schedule = $todaySchedule;
-                
-                // Set jam close hari ini
-                $closeDateTime = $now->copy()->setTimeFromTimeString($todaySchedule->close_time);
-                
-                // Jika sekarang sudah lewat jam close, cari jadwal berikutnya
-                if ($now->greaterThanOrEqualTo($closeDateTime)) {
-                    // Cari jadwal berikutnya (bisa hari besok atau hari lainnya)
-                    $nextSchedule = null;
-                    $checkDate = $now->copy()->addDay();
-                    
-                    // Cek maksimal 7 hari ke depan
-                    for ($i = 0; $i < 7; $i++) {
-                        $nextDay = $checkDate->format('l');
-                        $nextSchedule = FOSchedule::with(['warehouseDivisions', 'regions', 'outlets'])
-                            ->where('fo_mode', $request->fo_mode)
-                            ->where('day', $nextDay)
-                            ->first();
-                            
-                        if ($nextSchedule) {
-                            $regionMatch = $region_id && $nextSchedule->regions->pluck('id')->contains($region_id);
-                            $outletMatch = $id_outlet && $nextSchedule->outlets->pluck('id_outlet')->contains($id_outlet);
-                            
-                            if ($regionMatch || $outletMatch) {
-                                break;
-                            }
-                        }
-                        
-                        $checkDate->addDay();
-                    }
-                    
-                    if ($nextSchedule) {
-                        $schedule = $nextSchedule;
-                        // Jika shift malam (open > close), openDateTime = hari sebelum hari jadwal jam open, closeDateTime = hari jadwal jam close
-                        if (strtotime($nextSchedule->open_time) > strtotime($nextSchedule->close_time)) {
-                            $nextScheduleDate = $now->copy()->next($nextSchedule->day);
-                            $openDateTime = $nextScheduleDate->copy()->subDay()->setTimeFromTimeString($nextSchedule->open_time);
-                            $closeDateTime = $nextScheduleDate->copy()->setTimeFromTimeString($nextSchedule->close_time);
-                        } else {
-                            // Jika shift siang, openDateTime = hari jadwal jam open, closeDateTime = hari jadwal jam close
-                            $nextScheduleDate = $now->copy()->next($nextSchedule->day);
-                            $openDateTime = $nextScheduleDate->copy()->setTimeFromTimeString($nextSchedule->open_time);
-                            $closeDateTime = $nextScheduleDate->copy()->setTimeFromTimeString($nextSchedule->close_time);
-                        }
-                    }
-                } else {
-                    // Jika belum lewat jam close, window aktif dari 00:00 sampai jam close
-                    $openDateTime = $now->copy()->startOfDay();
+        // 1. Cek jadwal hari ini
+        $todaySchedules = $schedules->where('day', $todayName);
+        $activeWindow = null;
+        foreach ($todaySchedules as $schedule) {
+            $regionMatch = $region_id && $schedule->regions->pluck('id')->contains($region_id);
+            $outletMatch = $id_outlet && $schedule->outlets->pluck('id_outlet')->contains($id_outlet);
+            if (!($regionMatch || $outletMatch)) continue;
+            $openTime = $schedule->open_time;
+            $closeTime = $schedule->close_time;
+            if (strtotime($openTime) < strtotime($closeTime)) {
+                // Shift siang: window = hari ini jam open-close
+                $openDT = $now->copy()->setTimeFromTimeString($openTime);
+                $closeDT = $now->copy()->setTimeFromTimeString($closeTime);
+                if ($now->gte($openDT) && $now->lt($closeDT)) {
+                    $activeWindow = [
+                        'schedule' => $schedule,
+                        'open_datetime' => $openDT->toDateTimeString(),
+                        'close_datetime' => $closeDT->toDateTimeString(),
+                    ];
+                    break;
+                }
+            } else {
+                // Shift malam: window = 00:00 hari ini sampai jam close
+                $openDT = $now->copy()->startOfDay();
+                $closeDT = $now->copy()->setTimeFromTimeString($closeTime);
+                if ($now->gte($openDT) && $now->lt($closeDT)) {
+                    $activeWindow = [
+                        'schedule' => $schedule,
+                        'open_datetime' => $openDT->toDateTimeString(),
+                        'close_datetime' => $closeDT->toDateTimeString(),
+                    ];
+                    break;
                 }
             }
         }
-
-        // Cek apakah sekarang dalam window aktif
-        if ($found && $openDateTime && $closeDateTime) {
-            if ($now->between($openDateTime, $closeDateTime)) {
-                $isActive = true;
+        // 2. Jika sudah lewat jam close, cari jadwal berikutnya
+        if (!$activeWindow) {
+            // Cek jadwal berikutnya (max 7 hari ke depan)
+            for ($i = 1; $i <= 7; $i++) {
+                $nextIdx = ($todayIdx + $i) % 7;
+                $nextDay = $daysOfWeek[$nextIdx];
+                $nextSchedules = $schedules->where('day', $nextDay);
+                foreach ($nextSchedules as $schedule) {
+                    $regionMatch = $region_id && $schedule->regions->pluck('id')->contains($region_id);
+                    $outletMatch = $id_outlet && $schedule->outlets->pluck('id_outlet')->contains($id_outlet);
+                    if (!($regionMatch || $outletMatch)) continue;
+                    $openTime = $schedule->open_time;
+                    $closeTime = $schedule->close_time;
+                    if (strtotime($openTime) > strtotime($closeTime)) {
+                        // Shift malam: window = hari ini jam open sampai hari berikutnya jam close
+                        $openDT = $now->copy()->setTimeFromTimeString($openTime);
+                        $closeDT = $now->copy()->addDays($i)->setTimeFromTimeString($closeTime);
+                        if ($now->gte($openDT) && $now->lt($closeDT)) {
+                            $activeWindow = [
+                                'schedule' => $schedule,
+                                'open_datetime' => $openDT->toDateTimeString(),
+                                'close_datetime' => $closeDT->toDateTimeString(),
+                            ];
+                            break 2;
+                        }
+                    }
+                }
             }
         }
-
-     
-
-        if ($found) {
+        if ($activeWindow) {
+            $s = $activeWindow['schedule'];
             return response()->json([
                 'schedule' => [
-                    'id' => $schedule->id,
-                    'fo_mode' => $schedule->fo_mode,
-                    'day' => $schedule->day,
-                    'open_time' => $schedule->open_time,
-                    'close_time' => $schedule->close_time,
-                    'warehouse_divisions' => $schedule->warehouseDivisions->map(function($wd) {
+                    'id' => $s->id,
+                    'fo_mode' => $s->fo_mode,
+                    'day' => $s->day,
+                    'open_time' => $s->open_time,
+                    'close_time' => $s->close_time,
+                    'warehouse_divisions' => $s->warehouseDivisions->map(function($wd) {
                         return [
                             'id' => $wd->id,
                             'name' => $wd->name
                         ];
                     }),
-                    'regions' => $schedule->regions->map(function($r) {
+                    'regions' => $s->regions->map(function($r) {
                         return [
                             'id' => $r->id,
                             'name' => $r->name
                         ];
                     }),
-                    'outlets' => $schedule->outlets->map(function($o) {
+                    'outlets' => $s->outlets->map(function($o) {
                         return [
                             'id_outlet' => $o->id_outlet,
                             'nama_outlet' => $o->nama_outlet
                         ];
                     }),
-                    'open_datetime' => $openDateTime ? $openDateTime->toDateTimeString() : null,
-                    'close_datetime' => $closeDateTime ? $closeDateTime->toDateTimeString() : null,
-                    'is_active' => $isActive,
+                    'open_datetime' => $activeWindow['open_datetime'],
+                    'close_datetime' => $activeWindow['close_datetime'],
+                    'is_active' => true,
                 ]
             ]);
         } else {
-            return response()->json(['schedule' => null]);
+            return response()->json(['schedule' => null, 'error' => 'Di luar jam operasional']);
         }
     }
 

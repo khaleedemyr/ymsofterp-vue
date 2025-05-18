@@ -51,21 +51,21 @@ class Item extends Model
     }
 
     // Relasi dengan Unit (small)
-    public function smallUnit()
+    public function unit()
     {
-        return $this->belongsTo(Unit::class, 'small_unit_id');
+        return $this->belongsTo(\App\Models\Unit::class, 'small_unit_id');
     }
 
     // Relasi dengan Unit (medium)
     public function mediumUnit()
     {
-        return $this->belongsTo(Unit::class, 'medium_unit_id');
+        return $this->belongsTo(\App\Models\Unit::class, 'medium_unit_id');
     }
 
     // Relasi dengan Unit (large)
     public function largeUnit()
     {
-        return $this->belongsTo(Unit::class, 'large_unit_id');
+        return $this->belongsTo(\App\Models\Unit::class, 'large_unit_id');
     }
 
     // Relasi dengan ItemPrices

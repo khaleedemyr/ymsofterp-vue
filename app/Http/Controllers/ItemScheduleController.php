@@ -32,7 +32,17 @@ class ItemScheduleController extends Controller
             'arrival_day' => 'required|string',
             'notes' => 'nullable|string',
         ]);
-        ItemSchedule::create($data);
+        $schedule = ItemSchedule::create($data);
+        \App\Models\ActivityLog::create([
+            'user_id' => auth()->id(),
+            'activity_type' => 'create',
+            'module' => 'item_schedule',
+            'description' => 'Menambah jadwal item: ' . $schedule->item_id . ' - ' . $schedule->arrival_day,
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+            'old_data' => null,
+            'new_data' => $schedule->toArray(),
+        ]);
         return redirect()->route('item-schedules.index')->with('success', 'Jadwal item berhasil ditambahkan');
     }
 
@@ -54,14 +64,36 @@ class ItemScheduleController extends Controller
             'notes' => 'nullable|string',
         ]);
         $schedule = ItemSchedule::findOrFail($id);
+        $oldData = $schedule->toArray();
         $schedule->update($data);
+        \App\Models\ActivityLog::create([
+            'user_id' => auth()->id(),
+            'activity_type' => 'update',
+            'module' => 'item_schedule',
+            'description' => 'Update jadwal item: ' . $schedule->item_id . ' - ' . $schedule->arrival_day,
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+            'old_data' => $oldData,
+            'new_data' => $schedule->fresh()->toArray(),
+        ]);
         return redirect()->route('item-schedules.index')->with('success', 'Jadwal item berhasil diupdate');
     }
 
     public function destroy($id)
     {
         $schedule = ItemSchedule::findOrFail($id);
+        $oldData = $schedule->toArray();
         $schedule->delete();
+        \App\Models\ActivityLog::create([
+            'user_id' => auth()->id(),
+            'activity_type' => 'delete',
+            'module' => 'item_schedule',
+            'description' => 'Menghapus jadwal item: ' . $oldData['item_id'] . ' - ' . $oldData['arrival_day'],
+            'ip_address' => request()->ip(),
+            'user_agent' => request()->userAgent(),
+            'old_data' => $oldData,
+            'new_data' => null,
+        ]);
         return redirect()->route('item-schedules.index')->with('success', 'Jadwal item berhasil dihapus');
     }
 

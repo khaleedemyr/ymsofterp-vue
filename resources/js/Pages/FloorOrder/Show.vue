@@ -2,6 +2,7 @@
 import { computed } from 'vue';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { router } from '@inertiajs/vue3';
+import Swal from 'sweetalert2';
 
 const props = defineProps({
   order: Object,
@@ -38,9 +39,47 @@ const groupedItems = computed(() => {
   return group;
 });
 
+// Tambahkan subtotal per kategori
+const categorySubtotals = computed(() => {
+  const result = {};
+  Object.entries(groupedItems.value).forEach(([cat, items]) => {
+    result[cat] = items.reduce((sum, item) => sum + (Number(item.subtotal) || 0), 0);
+  });
+  return result;
+});
+
 const grandTotal = computed(() =>
   props.order.items?.reduce((sum, item) => sum + (Number(item.subtotal) || 0), 0) || 0
 );
+
+const isSuperadmin = computed(() =>
+  props.user?.id_role === '5af56935b011a' && props.user?.status === 'A'
+);
+const isExecutiveChef = computed(() =>
+  props.user?.id_jabatan === 163 && props.user?.status === 'A'
+);
+const canApproveFO = computed(() =>
+  props.order.fo_mode === 'FO Khusus' &&
+  props.order.status === 'submitted' &&
+  (isExecutiveChef.value || isSuperadmin.value)
+);
+
+async function approveFO() {
+  const { value: note } = await Swal.fire({
+    title: 'Approve Floor Order?',
+    input: 'textarea',
+    inputLabel: 'Catatan (opsional)',
+    inputValue: '',
+    showCancelButton: true,
+    confirmButtonText: 'Approve',
+    cancelButtonText: 'Batal',
+  });
+  if (note !== undefined) {
+    router.post(route('floor-order.approve', props.order.id), {
+      notes: note,
+    });
+  }
+}
 </script>
 <template>
   <AppLayout>
@@ -72,6 +111,11 @@ const grandTotal = computed(() =>
             }" class="px-2 py-1 rounded-full text-xs font-semibold shadow">
               {{ props.order.status }}
             </span>
+            <div v-if="props.order.status === 'approved'" class="mt-1 text-xs text-green-700">
+              Disetujui oleh: <b>{{ props.order.approver?.nama_lengkap || props.order.approver?.name || props.order.approval_by }}</b>
+              <span v-if="props.order.approval_at">pada {{ new Date(props.order.approval_at).toLocaleString('id-ID') }}</span>
+              <span v-if="props.order.approval_notes">- Note: {{ props.order.approval_notes }}</span>
+            </div>
           </div>
           <div>
             <div class="text-xs text-gray-500">Jadwal FO</div>
@@ -85,6 +129,15 @@ const grandTotal = computed(() =>
         <div class="mb-2">
           <div class="text-xs text-gray-500">Keterangan</div>
           <div class="font-semibold">{{ props.order.description || '-' }}</div>
+        </div>
+        <div class="mt-4">
+          <button
+            v-if="canApproveFO"
+            @click="approveFO"
+            class="px-4 py-2 rounded bg-green-600 text-white font-semibold hover:bg-green-700"
+          >
+            Approve
+          </button>
         </div>
       </div>
       <div class="space-y-8">
@@ -108,6 +161,10 @@ const grandTotal = computed(() =>
                   <td class="px-4 py-2">{{ item.unit }}</td>
                   <td class="px-4 py-2">{{ formatRupiah(item.price) }}</td>
                   <td class="px-4 py-2 font-semibold">{{ formatRupiah(item.subtotal) }}</td>
+                </tr>
+                <tr class="bg-blue-100 font-bold">
+                  <td colspan="4" class="text-right">Total {{ cat }}</td>
+                  <td>{{ formatRupiah(categorySubtotals[cat]) }}</td>
                 </tr>
               </tbody>
             </table>

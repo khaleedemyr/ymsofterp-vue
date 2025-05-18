@@ -276,6 +276,16 @@ class WarehouseTransferController extends Controller
             }
 
             DB::commit();
+            \App\Models\ActivityLog::create([
+                'user_id' => Auth::id(),
+                'activity_type' => 'create',
+                'module' => 'warehouse_transfer',
+                'description' => 'Membuat transfer gudang: ' . $transfer->transfer_number,
+                'ip_address' => $request->ip(),
+                'user_agent' => $request->userAgent(),
+                'old_data' => null,
+                'new_data' => $transfer->toArray(),
+            ]);
             Log::info('Selesai proses simpan warehouse transfer');
             return redirect()->route('warehouse-transfer.index')->with('success', 'Pindah Gudang berhasil disimpan!');
         } catch (\Exception $e) {
@@ -400,6 +410,16 @@ class WarehouseTransferController extends Controller
             $transfer->items()->delete();
             $transfer->delete();
             DB::commit();
+            \App\Models\ActivityLog::create([
+                'user_id' => Auth::id(),
+                'activity_type' => 'delete',
+                'module' => 'warehouse_transfer',
+                'description' => 'Menghapus transfer gudang: ' . $transfer->transfer_number,
+                'ip_address' => request()->ip(),
+                'user_agent' => request()->userAgent(),
+                'old_data' => $transfer->toArray(),
+                'new_data' => null,
+            ]);
             return redirect()->route('warehouse-transfer.index')->with('success', 'Data berhasil dihapus!');
         } catch (\Exception $e) {
             DB::rollBack();
@@ -618,6 +638,16 @@ class WarehouseTransferController extends Controller
                 ]);
             }
             DB::commit();
+            \App\Models\ActivityLog::create([
+                'user_id' => Auth::id(),
+                'activity_type' => 'update',
+                'module' => 'warehouse_transfer',
+                'description' => 'Update transfer gudang: ' . $transfer->transfer_number,
+                'ip_address' => $request->ip(),
+                'user_agent' => $request->userAgent(),
+                'old_data' => null,
+                'new_data' => $transfer->fresh()->toArray(),
+            ]);
             return redirect()->route('warehouse-transfer.index')->with('success', 'Transfer berhasil diupdate!');
         } catch (\Exception $e) {
             DB::rollBack();

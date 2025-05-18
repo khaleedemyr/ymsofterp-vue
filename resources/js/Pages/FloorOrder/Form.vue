@@ -360,7 +360,7 @@ async function fetchOutletSchedules() {
 }
 
 watch(error, (val) => {
-  if (val === 'Di luar jam operasional') {
+  if (val) {
     fetchOutletSchedules();
   }
 });
@@ -601,6 +601,24 @@ async function periksaJadwalFO() {
   // ...lanjutkan proses periksa jadwal FO seperti biasa...
   // ... existing code ...
 }
+
+// Tambahkan computed untuk kategori dan total per kategori di preview
+const itemsByCategory = computed(() => {
+  const map = {};
+  form.value.items.forEach(item => {
+    const cat = item.category_name || item.category || 'Tanpa Kategori';
+    if (!map[cat]) map[cat] = [];
+    map[cat].push(item);
+  });
+  return map;
+});
+const categorySubtotals = computed(() => {
+  const result = {};
+  Object.entries(itemsByCategory.value).forEach(([cat, items]) => {
+    result[cat] = items.reduce((sum, item) => sum + (Number(item.subtotal) || 0), 0);
+  });
+  return result;
+});
 </script>
 <template>
   <AppLayout>
@@ -646,22 +664,22 @@ async function periksaJadwalFO() {
           </div>
           <div class="ml-3">
             <p class="text-sm text-red-700">{{ error }}</p>
-            <div v-if="error === 'Di luar jam operasional'" class="mt-3">
-              <div class="font-semibold text-gray-700 mb-1">Jadwal FO Outlet Anda:</div>
-              <div v-for="(schedules, mode) in groupedSchedules" :key="mode" class="mb-3">
-                <div class="font-bold text-blue-700 mb-1">{{ mode }}</div>
-                <ul class="ml-2 text-gray-700 text-sm">
-                  <li v-for="s in schedules" :key="s.id" class="mb-1">
-                    <span class="inline-block w-20 font-semibold">{{ s.day }}</span>
-                    <span class="inline-block w-32 font-mono">{{ s.open_time }} - {{ s.close_time }}</span>
-                    <span v-if="s.warehouse_divisions && s.warehouse_divisions.length" class="inline-block text-xs text-gray-600 ml-2">
-                      [<span v-for="(wd, i) in s.warehouse_divisions" :key="wd.id">{{ wd.name }}<span v-if="i < s.warehouse_divisions.length-1">, </span></span>]
-                    </span>
-                  </li>
-                </ul>
-              </div>
-            </div>
           </div>
+        </div>
+      </div>
+      <div v-if="outletSchedules.length" class="bg-red-50 border-l-4 border-red-500 p-4 mb-6">
+        <div class="font-semibold text-gray-700 mb-1">Jadwal FO Outlet Anda:</div>
+        <div v-for="(schedules, mode) in groupedSchedules" :key="mode" class="mb-3">
+          <div class="font-bold text-blue-700 mb-1">{{ mode }}</div>
+          <ul class="ml-2 text-gray-700 text-sm">
+            <li v-for="s in schedules" :key="s.id" class="mb-1">
+              <span class="inline-block w-20 font-semibold">{{ s.day }}</span>
+              <span class="inline-block w-32 font-mono">{{ s.open_time }} - {{ s.close_time }}</span>
+              <span v-if="s.warehouse_divisions && s.warehouse_divisions.length" class="inline-block text-xs text-gray-600 ml-2">
+                [<span v-for="(wd, i) in s.warehouse_divisions" :key="wd.id">{{ wd.name }}<span v-if="i < s.warehouse_divisions.length-1">, </span></span>]
+              </span>
+            </li>
+          </ul>
         </div>
       </div>
       <div v-if="selectedFOMode && !loading" class="mb-6">
@@ -921,27 +939,34 @@ async function periksaJadwalFO() {
       <button @click="showPreview = true" class="mt-8 px-6 py-2 rounded bg-blue-600 text-white font-bold text-lg hover:bg-blue-700">Submit</button>
       <!-- Modal Preview -->
       <div v-if="showPreview" class="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
-        <div class="bg-white rounded-xl p-6 max-w-2xl w-full shadow-2xl">
+        <div class="bg-white rounded-xl p-6 max-w-2xl w-full shadow-2xl" style="max-height: 90vh; overflow-y: auto;">
           <h2 class="text-xl font-bold mb-4">Preview Floor Order</h2>
           <div class="mb-2"><b>Tanggal:</b> {{ form.tanggal }}</div>
           <div class="mb-2"><b>Keterangan:</b> {{ form.description }}</div>
           <div class="mb-2"><b>Items:</b></div>
-          <table class="w-full mb-4">
-            <thead>
-              <tr>
-                <th>Item</th><th>Qty</th><th>Unit</th><th>Harga</th><th>Subtotal</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="item in form.items" :key="item._rowKey">
-                <td>{{ item.item_name }}</td>
-                <td>{{ item.qty }}</td>
-                <td>{{ item.unit }}</td>
-                <td>{{ formatRupiah(item.price) }}</td>
-                <td>{{ formatRupiah(item.subtotal) }}</td>
-              </tr>
-            </tbody>
-          </table>
+          <div v-for="(items, cat) in itemsByCategory" :key="cat" class="mb-2">
+            <div class="font-semibold text-blue-700 mb-1">{{ cat }}</div>
+            <table class="w-full mb-2">
+              <thead>
+                <tr>
+                  <th>Item</th><th>Qty</th><th>Unit</th><th>Harga</th><th>Subtotal</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="item in items" :key="item._rowKey">
+                  <td>{{ item.item_name }}</td>
+                  <td>{{ item.qty }}</td>
+                  <td>{{ item.unit }}</td>
+                  <td>{{ formatRupiah(item.price) }}</td>
+                  <td>{{ formatRupiah(item.subtotal) }}</td>
+                </tr>
+                <tr class="bg-blue-50 font-bold">
+                  <td colspan="4" class="text-right">Total {{ cat }}</td>
+                  <td>{{ formatRupiah(categorySubtotals[cat]) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
           <div class="text-right font-bold text-lg mb-4">Grand Total: {{ formatRupiah(grandTotalPC) }}</div>
           <div class="flex justify-end gap-2">
             <button @click="showPreview = false" class="px-4 py-2 bg-gray-200 rounded">Batal</button>
