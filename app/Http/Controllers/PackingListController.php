@@ -73,10 +73,19 @@ class PackingListController extends Controller
                     'source' => $item['source'],
                 ]);
             }
-            // Update status FO
-            $fo = FoodFloorOrder::find($data['food_floor_order_id']);
+            // Update status FO hanya jika semua warehouse division pada FO sudah selesai packing
+            $fo = FoodFloorOrder::with('warehouseDivisions')->find($data['food_floor_order_id']);
             $oldStatus = $fo->status;
-            $fo->update(['status' => 'packing']);
+            $allDivisions = $fo->warehouseDivisions->pluck('id')->toArray();
+            $packedDivisions = FoodPackingList::where('food_floor_order_id', $fo->id)
+                ->whereIn('warehouse_division_id', $allDivisions)
+                ->where('status', 'packing')
+                ->pluck('warehouse_division_id')
+                ->unique()
+                ->toArray();
+            if (count($packedDivisions) === count($allDivisions)) {
+                $fo->update(['status' => 'packing']);
+            }
             // Log activity
             \App\Models\ActivityLog::create([
                 'user_id' => auth()->id(),

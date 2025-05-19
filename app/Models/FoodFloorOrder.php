@@ -38,4 +38,14 @@ class FoodFloorOrder extends Model
     {
         return $this->belongsTo(User::class, 'user_id');
     }
+
+    public function warehouseDivisions()
+    {
+        return $this->belongsToMany(
+            \App\Models\WarehouseDivision::class,
+            'food_floor_order_items', // nama pivot table
+            'floor_order_id',         // foreign key di pivot mengarah ke FO
+            'warehouse_division_id'   // foreign key di pivot mengarah ke division
+        )->distinct();
+    }
 } 

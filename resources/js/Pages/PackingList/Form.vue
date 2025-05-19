@@ -107,13 +107,15 @@ async function confirmSubmit() {
     const data = {
       food_floor_order_id: selectedFO.value,
       warehouse_division_id: selectedDivision.value,
-      items: items.value.filter(i => i.checked).map(i => ({
-        food_floor_order_item_id: i.id,
-        qty: i.input_qty,
-        unit: i.unit,
-        source: i.source,
-        reason: i.reason || null
-      }))
+      items: items.value
+        .filter(i => i.checked && Number(i.input_qty) > 0)
+        .map(i => ({
+          food_floor_order_item_id: i.id,
+          qty: i.input_qty,
+          unit: i.unit,
+          source: i.source,
+          reason: i.reason || null
+        }))
     };
     const res = await axios.post('/packing-list', data);
     isSubmitting.value = false;

@@ -51,7 +51,7 @@ class Item extends Model
     }
 
     // Relasi dengan Unit (small)
-    public function unit()
+    public function smallUnit()
     {
         return $this->belongsTo(\App\Models\Unit::class, 'small_unit_id');
     }
