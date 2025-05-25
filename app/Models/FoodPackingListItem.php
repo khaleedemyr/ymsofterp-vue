@@ -17,4 +17,9 @@ class FoodPackingListItem extends Model
     {
         return $this->belongsTo(FoodFloorOrderItem::class, 'food_floor_order_item_id');
     }
+
+    public function warehouseDivision()
+    {
+        return $this->belongsTo(WarehouseDivision::class, 'warehouse_division_id');
+    }
 } 

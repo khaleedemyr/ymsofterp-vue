@@ -23,4 +23,9 @@ class PrFoodItem extends Model
     {
         return $this->belongsTo(Item::class, 'item_id');
     }
+
+    public function butcherPrFood()
+    {
+        return $this->belongsTo(PrFood::class, 'pr_food_id');
+    }
 } 

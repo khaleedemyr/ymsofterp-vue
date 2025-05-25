@@ -42,4 +42,9 @@ class PurchaseOrderFoodItem extends Model
     {
         return $this->belongsTo(Unit::class);
     }
+
+    public function butcherPrFoodItem()
+    {
+        return $this->belongsTo(PrFoodItem::class, 'pr_food_item_id');
+    }
 } 

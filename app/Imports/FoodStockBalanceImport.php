@@ -33,7 +33,7 @@ class FoodStockBalanceImport implements ToCollection, WithHeadingRow, WithValida
                 try {
                     // Validasi data
                     if (empty($row['sku']) || empty($row['name']) || empty($row['small_unit']) || 
-                        empty($row['warehouse']) || empty($row['quantity']) || empty($row['cost'])) {
+                        empty($row['warehouse']) || !isset($row['quantity']) || !isset($row['cost'])) {
                         throw new \Exception('Semua field wajib diisi kecuali Notes');
                     }
 
@@ -58,10 +58,10 @@ class FoodStockBalanceImport implements ToCollection, WithHeadingRow, WithValida
                     }
 
                     // Validasi quantity dan cost
-                    if (!is_numeric($row['quantity']) || $row['quantity'] <= 0) {
-                        throw new \Exception('Quantity harus berupa angka positif');
+                    if (!is_numeric($row['quantity'])) {
+                        throw new \Exception('Quantity harus berupa angka');
                     }
-                    if (!is_numeric($row['cost']) || $row['cost'] <= 0) {
+                    if (!is_numeric($row['cost']) || $row['cost'] < 0) {
                         throw new \Exception('Cost harus berupa angka positif');
                     }
 
@@ -164,6 +164,7 @@ class FoodStockBalanceImport implements ToCollection, WithHeadingRow, WithValida
                         'date' => now(),
                         'old_cost' => 0,
                         'new_cost' => $cost_small,
+                        'mac' => $cost_small,
                         'type' => 'initial_balance',
                         'reference_type' => 'initial_balance',
                         'reference_id' => 0,
@@ -177,6 +178,10 @@ class FoodStockBalanceImport implements ToCollection, WithHeadingRow, WithValida
                         'error' => $e->getMessage()
                     ];
                     $this->errorCount++;
+                    \Log::error('Import Saldo Awal Stock Error: ' . $e->getMessage(), [
+                        'row' => $index + 2,
+                        'data' => $row
+                    ]);
                 }
             }
 

@@ -4,6 +4,7 @@ import AppLayout from '@/Layouts/AppLayout.vue';
 import { router } from '@inertiajs/vue3';
 import Swal from 'sweetalert2';
 import axios from 'axios';
+import dayjs from 'dayjs';
 
 const props = defineProps({
   user: Object,
@@ -14,6 +15,12 @@ const search = ref('');
 const selectedStatus = ref('');
 const from = ref('');
 const to = ref('');
+
+const showSummaryModal = ref(false);
+const summaryDate = ref(dayjs().format('YYYY-MM-DD'));
+const summaryLoading = ref(false);
+const summaryItems = ref([]);
+const summaryError = ref('');
 
 function onSearchInput() {}
 function onStatusChange() {}
@@ -70,6 +77,24 @@ function getSubtotal(list) {
 const grandTotal = computed(() =>
   props.packingLists.data.reduce((sum, list) => sum + getSubtotal(list), 0)
 );
+
+async function openSummaryModal() {
+  showSummaryModal.value = true;
+  await fetchSummary();
+}
+async function fetchSummary() {
+  summaryLoading.value = true;
+  summaryError.value = '';
+  summaryItems.value = [];
+  try {
+    const res = await axios.get('/api/packing-list/summary', { params: { tanggal: summaryDate.value } });
+    summaryItems.value = res.data.items || [];
+  } catch (e) {
+    summaryError.value = 'Gagal mengambil data rangkuman.';
+  } finally {
+    summaryLoading.value = false;
+  }
+}
 </script>
 <template>
   <AppLayout>
@@ -84,9 +109,14 @@ const grandTotal = computed(() =>
         <h1 class="text-2xl font-bold text-gray-800 flex items-center gap-2">
           <i class="fa-solid fa-box text-blue-500"></i> Packing List
         </h1>
-        <button @click="openCreate" class="bg-gradient-to-r from-blue-500 to-blue-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold">
-          + Buat Packing List
-        </button>
+        <div class="flex gap-2">
+          <button @click="openSummaryModal" class="bg-gradient-to-r from-green-500 to-green-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold">
+            <i class="fa fa-list mr-1"></i> Rangkuman Packing List
+          </button>
+          <button @click="openCreate" class="bg-gradient-to-r from-blue-500 to-blue-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold">
+            + Buat Packing List
+          </button>
+        </div>
       </div>
       <div class="flex flex-wrap gap-3 mb-4 items-center">
         <input
@@ -172,6 +202,45 @@ const grandTotal = computed(() =>
             !link.url ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
           ]"
         />
+      </div>
+      <!-- Modal Rangkuman Packing List -->
+      <div v-if="showSummaryModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40">
+        <div class="bg-white rounded-xl shadow-lg w-full max-w-3xl p-6 relative" style="max-height:80vh; overflow-y:auto;">
+          <button @click="showSummaryModal = false" class="absolute top-3 right-3 text-gray-400 hover:text-gray-600">
+            <i class="fas fa-times text-lg"></i>
+          </button>
+          <h2 class="text-xl font-bold mb-4">Rangkuman Packing List (Belum di-Packing)</h2>
+          <div class="mb-4 flex items-center gap-2">
+            <label class="font-semibold">Tanggal:</label>
+            <input type="date" v-model="summaryDate" @change="fetchSummary" class="rounded border-gray-300 px-2 py-1" />
+          </div>
+          <div v-if="summaryLoading" class="text-center py-8">
+            <i class="fas fa-spinner fa-spin text-blue-500 text-2xl"></i>
+            <p class="mt-2 text-gray-600">Memuat data rangkuman...</p>
+          </div>
+          <div v-else-if="summaryError" class="text-red-600 mb-4">{{ summaryError }}</div>
+          <div v-else>
+            <table class="w-full mb-2">
+              <thead>
+                <tr class="bg-blue-50">
+                  <th class="py-2 text-left">Nama Item</th>
+                  <th class="py-2 text-left">Total Qty</th>
+                  <th class="py-2 text-left">Unit</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-if="summaryItems.length === 0">
+                  <td colspan="3" class="text-center text-gray-400 py-6">Tidak ada data FO yang belum di-packing pada tanggal ini.</td>
+                </tr>
+                <tr v-for="item in summaryItems" :key="item.item_id">
+                  <td>{{ item.item_name }}</td>
+                  <td>{{ item.total_qty }}</td>
+                  <td>{{ item.unit }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
     </div>
   </AppLayout>

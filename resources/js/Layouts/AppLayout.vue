@@ -55,7 +55,7 @@ const menuGroups = [
             { name: () => 'Suppliers', icon: 'fa-solid fa-truck', route: '/suppliers' },
             { name: () => 'Regions', icon: 'fa-solid fa-globe-asia', route: '/regions' },
             { name: () => 'Item Schedule', icon: 'fa-solid fa-calendar-days', route: '/item-schedules' },
-            { name: () => 'FO Schedule', icon: 'fa-solid fa-calendar-days', route: '/fo-schedules' },
+            { name: () => 'RO Schedule', icon: 'fa-solid fa-calendar-days', route: '/fo-schedules' },
         ],
     },
     {
@@ -64,7 +64,7 @@ const menuGroups = [
         collapsible: true,
         open: ref(false),
         menus: [
-            { name: () => 'Floor Order', icon: 'fa-solid fa-calendar-check', route: '/floor-order' },
+            { name: () => 'Request Order (RO)', icon: 'fa-solid fa-calendar-check', route: '/floor-order' },
         ],
     },
     {
@@ -100,6 +100,30 @@ const menuGroups = [
             { name: () => 'Laporan Rekap Persediaan per Kategori', icon: 'fa-solid fa-layer-group', route: '/inventory/category-recap-report' },
             { name: () => 'Laporan Aging Persediaan', icon: 'fa-solid fa-hourglass-half', route: '/inventory/aging-report' },
             { name: () => 'Warehouse Stock', icon: 'fa-solid fa-boxes-stacked', route: '/warehouse-stock' },
+            { name: () => 'Internal Use & Waste', icon: 'fa-solid fa-recycle', route: '/internal-use-waste' },
+        ],
+    },
+    {
+        title: () => 'Production',
+        icon: 'fa-solid fa-industry',
+        collapsible: true,
+        open: ref(false),
+        menus: [
+            { name: () => 'Butcher', icon: 'fa-solid fa-cut', route: '/butcher-processes' },
+            { name: () => 'Butcher Report', icon: 'fa-solid fa-file-lines', route: '/butcher-processes/report' },           
+            { name: () => 'Laporan Stok & Cost Butcher', icon: 'fa-solid fa-money-bill-trend-up', route: '/inventory/stock-cost-report' },
+            { name: () => 'Laporan Analisis Butcher', icon: 'fa-solid fa-chart-line', route: '/butcher-processes/analysis-report' },
+            { name: () => 'MK Production', icon: 'fa-solid fa-industry', route: '/mk-production' },
+            { name: () => 'Laporan MK Production', icon: 'fa-solid fa-file-lines', route: '/mk-production/report' },
+        ],
+    },
+    {
+        title: () => 'Sales & Marketing',
+        icon: 'fa-solid fa-bullhorn',
+        collapsible: true,
+        open: ref(false),
+        menus: [
+            { name: () => 'Scrapper Google Review', icon: 'fa-brands fa-google', route: '/google-review' },
         ],
     },
 ];

@@ -31,8 +31,8 @@ function openDetail(id) {
 }
 async function hapus(order) {
   const result = await Swal.fire({
-    title: 'Hapus Floor Order?',
-    text: `Yakin ingin menghapus Floor Order ${order.order_number}?`,
+    title: 'Hapus Request Order?',
+    text: `Yakin ingin menghapus Request Order ${order.order_number}?`,
     icon: 'warning',
     showCancelButton: true,
     confirmButtonColor: '#3085d6',
@@ -46,7 +46,7 @@ async function hapus(order) {
     Swal.fire({
       icon: 'success',
       title: 'Berhasil',
-      text: 'Floor Order berhasil dihapus.',
+      text: 'Request Order berhasil dihapus.',
       timer: 1500,
       showConfirmButton: false
     });
@@ -55,7 +55,7 @@ async function hapus(order) {
     Swal.fire({
       icon: 'error',
       title: 'Gagal',
-      text: err?.response?.data?.error || 'Tidak bisa hapus Floor Order ini.'
+      text: err?.response?.data?.error || 'Tidak bisa hapus Request Order ini.'
     });
   }
 }
@@ -96,10 +96,10 @@ function formatRupiah(val) {
       </div>
       <div class="flex justify-between items-center mb-6">
         <h1 class="text-2xl font-bold text-gray-800 flex items-center gap-2">
-          <i class="fa-solid fa-calendar-check text-blue-500"></i> Floor Order
+          <i class="fa-solid fa-calendar-check text-blue-500"></i> Request Order (RO)
         </h1>
         <button @click="openCreate" class="bg-gradient-to-r from-blue-500 to-blue-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold">
-          + Buat Floor Order
+          + Buat Request Order (RO)
         </button>
       </div>
       <div class="flex flex-wrap gap-3 mb-4 items-center">
@@ -107,7 +107,7 @@ function formatRupiah(val) {
           v-model="search"
           @input="onSearchInput"
           type="text"
-          placeholder="Cari nomor Floor Order..."
+          placeholder="Cari nomor Request Order..."
           class="w-64 px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition"
         />
         <select v-model="selectedStatus" @change="onStatusChange" class="px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition">
@@ -123,7 +123,7 @@ function formatRupiah(val) {
         <table class="w-full min-w-full divide-y divide-gray-200">
           <thead class="bg-gradient-to-r from-blue-50 to-blue-100">
             <tr>
-              <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider rounded-tl-2xl">No. Floor Order</th>
+              <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider rounded-tl-2xl">No. Request Order</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Tanggal</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Outlet</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Requester</th>
@@ -135,7 +135,7 @@ function formatRupiah(val) {
           </thead>
           <tbody>
             <tr v-if="props.floorOrders.data.length === 0">
-              <td colspan="6" class="text-center py-10 text-gray-400">Tidak ada data Floor Order.</td>
+              <td colspan="6" class="text-center py-10 text-gray-400">Tidak ada data Request Order.</td>
             </tr>
             <tr v-for="order in props.floorOrders.data" :key="order.id" class="hover:bg-blue-50 transition shadow-sm">
               <td class="px-6 py-3 font-mono font-semibold text-blue-700">{{ order.order_number }}</td>

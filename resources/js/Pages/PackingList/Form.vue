@@ -189,9 +189,9 @@ function printFO() {
       </h1>
       <div class="mb-4 grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">Floor Order</label>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Request Order (RO)</label>
           <select v-model="selectedFO" class="w-full rounded border-gray-300">
-            <option value="">Pilih Floor Order</option>
+            <option value="">Pilih Request Order (RO)</option>
             <option v-for="fo in props.floorOrders" :key="fo.id" :value="fo.id">
               {{ fo.outlet?.nama_outlet }} - {{ fo.tanggal }} - {{ fo.fo_mode }} - {{ fo.order_number }}
             </option>
@@ -209,17 +209,17 @@ function printFO() {
       </div>
       <div v-if="selectedFO">
         <div class="bg-blue-50 border-l-4 border-blue-400 p-4 rounded mb-4">
-          <div class="font-bold text-blue-800 mb-1">Detail Floor Order</div>
+          <div class="font-bold text-blue-800 mb-1">Detail Request Order (RO)</div>
           <div v-if="foDetail">
             <div><b>Outlet:</b> {{ foDetail.outlet?.nama_outlet }}</div>
             <div><b>Tanggal:</b> {{ foDetail.tanggal }}</div>
-            <div><b>FO Mode:</b> {{ foDetail.fo_mode }}</div>
+            <div><b>RO Mode:</b> {{ foDetail.fo_mode }}</div>
             <div><b>Nomor:</b> {{ foDetail.order_number }}</div>
             <div><b>Creator:</b> {{ foDetail.user?.nama_lengkap || '-' }}</div>
           </div>
         </div>
         <button @click="showPrint = true" :disabled="!selectedDivision" class="mb-4 px-4 py-2 rounded bg-blue-500 text-white font-semibold hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed">
-          <i class="fas fa-print mr-2"></i> Print Preview FO
+          <i class="fas fa-print mr-2"></i> Print Preview Request Order (RO)
         </button>
       </div>
       <div v-if="loadingItems" class="text-center py-8">
@@ -248,15 +248,12 @@ function printFO() {
                 <td><input type="checkbox" v-model="item.checked" /></td>
                 <td>{{ item.item?.name || item.item_name }}
                   <div class="text-xs text-gray-500 mt-1">
-                    Stok:
-                    {{ (itemStocks[item.item_id || item.item?.id]?.qty_small ?? 0) }} {{ item.item?.smallUnit?.name || '-' }} |
-                    {{ (itemStocks[item.item_id || item.item?.id]?.qty_medium ?? 0) }} {{ item.item?.mediumUnit?.name || '-' }} |
-                    {{ (itemStocks[item.item_id || item.item?.id]?.qty_large ?? 0) }} {{ item.item?.largeUnit?.name || '-' }}
+                    Stok: <span :class="{'text-red-600 font-bold': item.stock === 0}">{{ item.stock }}</span> {{ item.unit }}
                   </div>
                 </td>
                 <td>{{ item.qty ?? item.qty_order }}</td>
                 <td class="flex items-center gap-2">
-                  <input type="number" v-model.number="item.input_qty" min="0" step="0.01" class="w-20 rounded border-gray-300 text-right" :placeholder="'Qty'" @input="onQtyInput(item, idx)" />
+                  <input type="number" v-model.number="item.input_qty" min="0" :max="item.stock" step="0.01" class="w-20 rounded border-gray-300 text-right" :placeholder="'Qty'" @input="onQtyInput(item, idx)" />
                   <button type="button" @click="item.input_qty = item.qty ?? item.qty_order" class="px-2 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200" title="Isi qty sesuai pesanan">=</button>
                 </td>
                 <td>{{ item.unit }}</td>
@@ -288,7 +285,7 @@ function printFO() {
             <div class="mb-4 text-sm">
               <div><b>Outlet:</b> {{ foDetail.outlet?.nama_outlet }}</div>
               <div><b>Tanggal:</b> {{ foDetail.tanggal }}</div>
-              <div><b>FO Mode:</b> {{ foDetail.fo_mode }}</div>
+              <div><b>RO Mode:</b> {{ foDetail.fo_mode }}</div>
               <div><b>Nomor:</b> {{ foDetail.order_number }}</div>
               <div><b>Creator:</b> {{ foDetail.user?.nama_lengkap || '-' }}</div>
               <div><b>Warehouse Division:</b> {{ selectedDivisionName }}</div>
@@ -346,7 +343,7 @@ function printFO() {
             <div class="mb-4 text-sm">
               <div><b>Outlet:</b> {{ foDetail.outlet?.nama_outlet }}</div>
               <div><b>Tanggal:</b> {{ foDetail.tanggal }}</div>
-              <div><b>FO Mode:</b> {{ foDetail.fo_mode }}</div>
+              <div><b>RO Mode:</b> {{ foDetail.fo_mode }}</div>
               <div><b>Nomor:</b> {{ foDetail.order_number }}</div>
               <div><b>Creator:</b> {{ foDetail.user?.nama_lengkap || '-' }}</div>
               <div><b>Warehouse Division:</b> {{ selectedDivisionName }}</div>

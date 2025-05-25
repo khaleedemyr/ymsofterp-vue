@@ -137,7 +137,7 @@ class FoodFloorOrderController extends Controller
         // Generate order_number
         $date = now()->format('Ymd');
         $random = strtoupper(substr(bin2hex(random_bytes(2)), 0, 4)); // 4 karakter acak angka+huruf
-        $order_number = 'FO-' . $date . '-' . $random;
+        $order_number = 'RO-' . $date . '-' . $random;
 
         $order->update([
             'status' => $order->fo_mode === 'FO Khusus' ? 'submitted' : 'approved',

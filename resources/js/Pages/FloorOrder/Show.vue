@@ -66,7 +66,7 @@ const canApproveFO = computed(() =>
 
 async function approveFO() {
   const { value: note } = await Swal.fire({
-    title: 'Approve Floor Order?',
+    title: 'Approve Request Order (RO)?',
     input: 'textarea',
     inputLabel: 'Catatan (opsional)',
     inputValue: '',
@@ -88,7 +88,7 @@ async function approveFO() {
       <div class="bg-white rounded-2xl shadow-2xl p-6 mb-8">
         <div class="flex flex-wrap gap-6 mb-4">
           <div>
-            <div class="text-xs text-gray-500">No. Floor Order</div>
+            <div class="text-xs text-gray-500">No. Request Order (RO)</div>
             <div class="font-mono font-bold text-blue-700 text-lg">{{ props.order.order_number }}</div>
           </div>
           <div>

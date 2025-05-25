@@ -38,10 +38,8 @@ class MaintenanceBAController extends Controller
                     ->select('u.nama_lengkap', 'u.signature_path', 'j.nama_jabatan', 'u.id')
                     ->first(),
                 'approver' => $pr->chief_engineering_approval_by ? DB::table('users as u')
-                    ->join('tbl_data_jabatan as j', 'u.id_jabatan', '=', 'j.id_jabatan')
                     ->where('u.id', $pr->chief_engineering_approval_by)
-                    ->select('u.nama_lengkap', 'u.signature_path', 'j.nama_jabatan', 'u.id')
-                    ->first() : null
+                    ->value('nama_lengkap') : null
             ],
             'purchasing_manager' => [
                 'official' => DB::table('users as u')
@@ -50,11 +48,6 @@ class MaintenanceBAController extends Controller
                     ->where('u.status', 'A')
                     ->select('u.nama_lengkap', 'u.signature_path', 'j.nama_jabatan', 'u.id')
                     ->first(),
-                'approver' => $pr->purchasing_manager_approval_by ? DB::table('users as u')
-                    ->join('tbl_data_jabatan as j', 'u.id_jabatan', '=', 'j.id_jabatan')
-                    ->where('u.id', $pr->purchasing_manager_approval_by)
-                    ->select('u.nama_lengkap', 'u.signature_path', 'j.nama_jabatan', 'u.id')
-                    ->first() : null
             ],
             'coo' => [
                 'official' => DB::table('users as u')

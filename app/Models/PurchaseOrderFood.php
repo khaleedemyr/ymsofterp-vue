@@ -39,6 +39,11 @@ class PurchaseOrderFood extends Model
         return $this->hasMany(PurchaseOrderFoodItem::class, 'purchase_order_food_id');
     }
 
+    public function butcherPoItems()
+    {
+        return $this->hasMany(PurchaseOrderFoodItem::class, 'purchase_order_food_id');
+    }
+
     public function creator()
     {
         return $this->belongsTo(User::class, 'created_by');

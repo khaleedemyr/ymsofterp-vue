@@ -41,6 +41,15 @@ use Illuminate\Support\Facades\Request;
 use App\Http\Controllers\FoodFloorOrderController;
 use App\Http\Controllers\FoodStockBalanceController;
 use App\Http\Controllers\RepackController;
+use App\Http\Controllers\ButcherProcessController;
+use App\Http\Controllers\MKProductionController;
+use App\Http\Controllers\ScrapperGoogleReviewController;
+use App\Http\Controllers\GoogleReviewController;
+use App\Http\Controllers\ButcherReportController;
+use App\Http\Controllers\StockCostReportController;
+use App\Http\Controllers\ButcherAnalysisReportController;
+use App\Http\Controllers\InternalUseWasteController;
+use App\Http\Controllers\DeliveryOrderController;
 
 Route::get('/', function () {
     return Inertia::render('Welcome', [
@@ -257,6 +266,7 @@ Route::get('/api/items/search-for-pr', [ItemController::class, 'searchForPr']);
 Route::get('/api/items/last-price', [\App\Http\Controllers\PurchaseOrderFoodsController::class, 'getLastPrice']);
 Route::get('/api/inventory/stock', [\App\Http\Controllers\ItemController::class, 'getStock']);
 Route::get('/api/items/by-fo-khusus', [App\Http\Controllers\ItemController::class, 'getByFOKhusus']);
+Route::get('/api/items/autocomplete-pcs', [ItemController::class, 'autocompletePcs']);
 Route::get('/api/items/{id}', [App\Http\Controllers\ItemController::class, 'show']);
 Route::get('/api/items/{id}/detail', [App\Http\Controllers\ItemController::class, 'apiDetail']);
 Route::get('/items/search-for-warehouse-transfer', [ItemController::class, 'searchForWarehouseTransfer']);
@@ -312,6 +322,9 @@ Route::get('/inventory/category-recap-report', [\App\Http\Controllers\InventoryR
 
 // Laporan Aging Report
 Route::get('/inventory/aging-report', [InventoryReportController::class, 'agingReport'])->name('inventory.aging-report');
+
+// Laporan Stok dan Cost
+Route::get('/inventory/stock-cost-report', [\App\Http\Controllers\StockCostReportController::class, 'index'])->name('inventory.stock-cost-report');
 
 // Contra Bon routes
 Route::middleware(['auth'])->group(function () {
@@ -376,6 +389,7 @@ Route::resource('packing-list', App\Http\Controllers\PackingListController::clas
 
 Route::get('/api/packing-list/available-items', [\App\Http\Controllers\PackingListController::class, 'availableItems']);
 Route::post('/api/packing-list/item-stocks', [\App\Http\Controllers\PackingListController::class, 'itemStocks']);
+Route::get('/api/packing-list/summary', [\App\Http\Controllers\PackingListController::class, 'summary']);
 
 // Food Stock Balance Routes
 Route::middleware(['auth', 'verified'])->group(function () {
@@ -411,5 +425,47 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/repack/export/pdf', [RepackController::class, 'exportPdf'])->name('repack.export.pdf');
     Route::get('/repack/{repack}/print-barcodes', [RepackController::class, 'printBarcodes'])->name('repack.print-barcodes');
 });
+
+// Butcher Process Routes
+Route::middleware(['auth'])->group(function () {
+    Route::get('/butcher-processes', [ButcherProcessController::class, 'index'])->name('butcher-processes.index');
+    Route::get('/butcher-processes/create', [ButcherProcessController::class, 'create'])->name('butcher-processes.create');
+    Route::post('/butcher-processes', [ButcherProcessController::class, 'store'])->name('butcher-processes.store');
+    Route::get('/butcher-processes/report', [ButcherReportController::class, 'index'])->name('butcher-processes.report');
+    Route::get('/butcher-processes/analysis-report', [\App\Http\Controllers\ButcherAnalysisReportController::class, 'index'])->name('butcher-processes.analysis-report');
+    Route::get('/butcher-processes/stock-cost-report', [\App\Http\Controllers\ButcherStockCostReportController::class, 'index'])->name('butcher-processes.stock-cost-report');
+    Route::get('/butcher-processes/{id}', [ButcherProcessController::class, 'show'])->name('butcher-processes.show');
+    Route::delete('/butcher-processes/{id}', [\App\Http\Controllers\ButcherProcessController::class, 'destroy'])->name('butcher-processes.destroy');
+});
+
+// MK Production
+Route::get('/mk-production', [\App\Http\Controllers\MKProductionController::class, 'index'])->name('mk-production.index');
+Route::post('/mk-production/bom', [\App\Http\Controllers\MKProductionController::class, 'getBomAndStock'])->name('mk-production.bom');
+Route::post('/mk-production', [\App\Http\Controllers\MKProductionController::class, 'store'])->name('mk-production.store');
+Route::get('/mk-production/create', [\App\Http\Controllers\MKProductionController::class, 'create'])->name('mk-production.create');
+Route::get('/mk-production/report', [\App\Http\Controllers\MKProductionController::class, 'report'])->name('mk-production.report');
+Route::get('/mk-production/{id}', [\App\Http\Controllers\MKProductionController::class, 'show'])->name('mk-production.show');
+Route::delete('/mk-production/{id}', [\App\Http\Controllers\MKProductionController::class, 'destroy'])->name('mk-production.destroy');
+
+// Scrapper Google Review
+
+Route::get('/google-review', [GoogleReviewController::class, 'index'])->name('google-review.index');
+Route::post('/google-review/fetch', [GoogleReviewController::class, 'scrapeReviews'])->name('google-review.fetch');
+Route::get('/scraped-reviews', [GoogleReviewController::class, 'getScrapedReviews']);
+
+Route::get('/internal-use-waste', [InternalUseWasteController::class, 'index'])->name('internal-use-waste.index');
+Route::get('/internal-use-waste/create', [InternalUseWasteController::class, 'create'])->name('internal-use-waste.create');
+Route::post('/internal-use-waste', [InternalUseWasteController::class, 'store'])->name('internal-use-waste.store');
+Route::get('/internal-use-waste/{id}', [InternalUseWasteController::class, 'show'])->name('internal-use-waste.show');
+Route::delete('/internal-use-waste/{id}', [InternalUseWasteController::class, 'destroy'])->name('internal-use-waste.destroy');
+Route::get('/internal-use-waste/item/{id}/units', [App\Http\Controllers\InternalUseWasteController::class, 'getItemUnits']);
+
+Route::get('/delivery-order', [DeliveryOrderController::class, 'index'])->name('delivery-order.index');
+Route::get('/delivery-order/create', [DeliveryOrderController::class, 'create'])->name('delivery-order.create');
+Route::post('/delivery-order', [DeliveryOrderController::class, 'store'])->name('delivery-order.store');
+Route::get('/delivery-order/{id}', [DeliveryOrderController::class, 'show'])->name('delivery-order.show');
+
+// API untuk fetch item packing list
+Route::get('/api/packing-list/{id}/items', [DeliveryOrderController::class, 'getPackingListItems']);
 
 require __DIR__.'/auth.php';

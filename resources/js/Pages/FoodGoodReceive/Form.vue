@@ -53,7 +53,18 @@
                 </td>
                 <td class="px-2 py-1 text-right">{{ item.quantity }}</td>
                 <td class="px-2 py-1 text-right">
-                  <input v-model.number="item.qty_received" type="number" min="0" :max="item.quantity" class="w-20 px-2 py-1 border rounded" required />
+                  <input 
+                    v-model.number="item.qty_received" 
+                    type="number" 
+                    min="0" 
+                    :max="item.quantity" 
+                    step="0.01"
+                    class="w-20 px-2 py-1 border rounded" 
+                    :class="{'border-red-500': item.qty_error}"
+                    required 
+                    @input="validateQty(item)"
+                  />
+                  <div v-if="item.qty_error" class="text-red-500 text-xs mt-1">{{ item.qty_error }}</div>
                 </td>
               </tr>
             </tbody>
@@ -143,9 +154,44 @@ const fetchPO = async () => {
   }
 };
 
+const validateQty = (item) => {
+  item.qty_error = '';
+  if (item.qty_received === null || item.qty_received === undefined) {
+    item.qty_error = 'Jumlah harus diisi';
+    return false;
+  }
+  if (item.qty_received < 0) {
+    item.qty_error = 'Jumlah tidak boleh negatif';
+    return false;
+  }
+  if (item.qty_received > item.quantity) {
+    item.qty_error = `Jumlah tidak boleh melebihi ${item.quantity}`;
+    return false;
+  }
+  // Validate decimal places (max 2 decimal places)
+  if (item.qty_received.toString().split('.')[1]?.length > 2) {
+    item.qty_error = 'Maksimal 2 angka di belakang koma';
+    return false;
+  }
+  return true;
+};
+
 const submit = async () => {
   error.value = '';
   loading.value = true;
+  
+  // Validate all items before submit
+  const isValid = items.value.every(item => validateQty(item));
+  if (!isValid) {
+    loading.value = false;
+    await Swal.fire({
+      icon: 'error',
+      title: 'Validasi Gagal',
+      text: 'Mohon periksa kembali jumlah yang diterima',
+    });
+    return;
+  }
+
   try {
     await axios.post(route('food-good-receive.store'), {
       po_id: po.value.id,

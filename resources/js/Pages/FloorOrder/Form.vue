@@ -60,7 +60,7 @@ const draftId = ref(props.order?.id || null);
 
 function addItem() {
   // Validasi khusus FO Tambahan: max 6 item
-  if (selectedFOMode.value === 'FO Tambahan' && form.value.items.length >= 6) {
+  if (selectedFOMode.value === 'RO Tambahan' && form.value.items.length >= 6) {
     Swal.fire({
       icon: 'warning',
       title: 'Maksimal 6 Item',
@@ -211,7 +211,7 @@ function setQty(item, val) {
       Swal.fire({
         icon: 'warning',
         title: 'Maksimal 6 Item',
-        text: 'Anda hanya bisa input maksimal 6 item untuk FO Tambahan.',
+        text: 'Anda hanya bisa input maksimal 6 item untuk RO Tambahan.',
         confirmButtonColor: '#3085d6',
       });
       item.qty = 0;
@@ -248,10 +248,10 @@ function syncTabItemsToForm() {
 
 // FO Modes
 const foModes = [
-  { value: 'FO Utama', label: 'FO Utama' },
-  { value: 'FO Tambahan', label: 'FO Tambahan' },
-  { value: 'FO Pengambilan', label: 'FO Pengambilan' },
-  { value: 'FO Khusus', label: 'FO Khusus' },
+  { value: 'RO Utama', label: 'RO Utama' },
+  { value: 'RO Tambahan', label: 'RO Tambahan' },
+  { value: 'RO Pengambilan', label: 'RO Pengambilan' },
+  { value: 'RO Khusus', label: 'RO Khusus' },
 ];
 
 // Get current day name
@@ -283,7 +283,7 @@ async function checkFOSchedule() {
     if (response.data.schedule) {
       if (response.data.schedule.is_active) {
         // Validasi exists hanya untuk FO Utama/Tambahan
-        if (selectedFOMode.value === 'FO Utama' || selectedFOMode.value === 'FO Tambahan') {
+        if (selectedFOMode.value === 'RO Utama' || selectedFOMode.value === 'RO Tambahan') {
           const res = await axios.post('/api/floor-order/check-exists', {
             tanggal: tanggal.value,
             id_outlet: props.user.outlet.id_outlet,
@@ -294,7 +294,7 @@ async function checkFOSchedule() {
             Swal.fire({
               icon: 'error',
               title: 'Sudah Ada',
-              text: `FO ${selectedFOMode.value} untuk hari ini sudah dibuat, tidak bisa membuat lagi. Edit FO Utama/FO Tambahan yang sudah ada jika ingin menambah pesanan.`,
+              text: `RO ${selectedFOMode.value} untuk hari ini sudah dibuat, tidak bisa membuat lagi. Edit RO Utama/RO Tambahan yang sudah ada jika ingin menambah pesanan.`,
               confirmButtonColor: '#3085d6',
             });
             loading.value = false;
@@ -316,7 +316,7 @@ async function checkFOSchedule() {
       jadwalSiap.value = false;
     }
   } catch (err) {
-    error.value = 'Gagal memeriksa jadwal FO';
+    error.value = 'Gagal memeriksa jadwal RO';
     jadwalSiap.value = false;
     console.error(err);
   } finally {
@@ -544,25 +544,38 @@ watch(form, triggerAutosave, { deep: true });
 
 function submitOrderWithLoading() {
   if (!draftId.value) return;
-  isSubmitting.value = true;
-  axios.post(`/floor-order/${draftId.value}/submit`).then(() => {
-    isSubmitting.value = false;
-    showPreview.value = false;
-    Swal.fire({
-      icon: 'success',
-      title: 'Berhasil!',
-      text: 'Floor Order berhasil disubmit.',
-      confirmButtonColor: '#3085d6',
-    }).then(() => {
-      router.visit('/floor-order');
-    });
-  }).catch(() => {
-    isSubmitting.value = false;
-    Swal.fire({
-      icon: 'error',
-      title: 'Gagal',
-      text: 'Terjadi kesalahan saat submit.',
-    });
+  Swal.fire({
+    icon: 'warning',
+    title: 'Konfirmasi RO',
+    html: `<div style="font-size:1.1em;">Ingat: Barang yang sudah selesai di-RO tidak dapat dicancel dengan alasan apapun<br><br><b>Apakah RO ini sudah benar dan sesuai item barang2nya?</b></div>`,
+    showCancelButton: true,
+    confirmButtonText: 'Ya, sudah benar',
+    cancelButtonText: 'Cek Lagi',
+    focusCancel: true,
+    reverseButtons: true,
+  }).then((result) => {
+    if (result.isConfirmed) {
+      isSubmitting.value = true;
+      axios.post(`/floor-order/${draftId.value}/submit`).then(() => {
+        isSubmitting.value = false;
+        showPreview.value = false;
+        Swal.fire({
+          icon: 'success',
+          title: 'Berhasil!',
+          text: 'Floor Order berhasil disubmit.',
+          confirmButtonColor: '#3085d6',
+        }).then(() => {
+          router.visit('/floor-order');
+        });
+      }).catch(() => {
+        isSubmitting.value = false;
+        Swal.fire({
+          icon: 'error',
+          title: 'Gagal',
+          text: 'Terjadi kesalahan saat submit.',
+        });
+      });
+    }
   });
 }
 
@@ -581,7 +594,7 @@ watch(categories, (val) => {
 
 async function periksaJadwalFO() {
   // Validasi: hanya 1 FO Utama & 1 FO Tambahan per hari per outlet
-  if (selectedFOMode.value === 'FO Utama' || selectedFOMode.value === 'FO Tambahan') {
+  if (selectedFOMode.value === 'RO Utama' || selectedFOMode.value === 'RO Tambahan') {
     const res = await axios.post('/api/floor-order/check-exists', {
       tanggal: tanggal.value,
       id_outlet: props.user.outlet.id_outlet,
@@ -592,7 +605,7 @@ async function periksaJadwalFO() {
       Swal.fire({
         icon: 'error',
         title: 'Sudah Ada',
-        text: `FO ${selectedFOMode.value} untuk hari ini sudah dibuat, tidak bisa membuat lagi.`,
+        text: `RO ${selectedFOMode.value} untuk hari ini sudah dibuat, tidak bisa membuat lagi.`,
         confirmButtonColor: '#3085d6',
       });
       return;
@@ -626,7 +639,7 @@ const categorySubtotals = computed(() => {
       <div class="flex items-center gap-4 mb-6">
         <button @click="$inertia.visit('/floor-order')" class="text-blue-500 hover:underline"><i class="fa fa-arrow-left"></i> Kembali</button>
         <h1 class="text-2xl font-bold text-gray-800 flex items-center gap-2 ml-4">
-          <i class="fa-solid fa-calendar-check text-blue-500"></i> Buat Floor Order
+          <i class="fa-solid fa-calendar-check text-blue-500"></i> Buat Request Order (RO)
         </h1>
       </div>
       <div v-if="props.user?.outlet?.nama_outlet" class="mb-4 ml-16">
@@ -636,7 +649,7 @@ const categorySubtotals = computed(() => {
         </div>
       </div>
       <div class="mb-6">
-        <label class="block text-sm font-medium text-gray-700 mb-2">Mode Floor Order</label>
+        <label class="block text-sm font-medium text-gray-700 mb-2">Mode Request Order (RO)</label>
         <div class="flex gap-4">
           <button 
             v-for="mode in foModes" 
@@ -655,7 +668,7 @@ const categorySubtotals = computed(() => {
       </div>
       <div v-if="loading" class="text-center py-8">
         <i class="fas fa-spinner fa-spin text-blue-500 text-2xl"></i>
-        <p class="mt-2 text-gray-600">Memeriksa jadwal FO...</p>
+        <p class="mt-2 text-gray-600">Memeriksa jadwal RO...</p>
       </div>
       <div v-if="error" class="bg-red-50 border-l-4 border-red-500 p-4 mb-6">
         <div class="flex">
@@ -668,7 +681,7 @@ const categorySubtotals = computed(() => {
         </div>
       </div>
       <div v-if="outletSchedules.length" class="bg-red-50 border-l-4 border-red-500 p-4 mb-6">
-        <div class="font-semibold text-gray-700 mb-1">Jadwal FO Outlet Anda:</div>
+        <div class="font-semibold text-gray-700 mb-1">Jadwal RO Outlet Anda:</div>
         <div v-for="(schedules, mode) in groupedSchedules" :key="mode" class="mb-3">
           <div class="font-bold text-blue-700 mb-1">{{ mode }}</div>
           <ul class="ml-2 text-gray-700 text-sm">
@@ -694,7 +707,7 @@ const categorySubtotals = computed(() => {
       <div v-if="showScheduleModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
         <div class="bg-white rounded-2xl p-6 max-w-2xl w-full mx-4">
           <div class="flex justify-between items-center mb-4">
-            <h3 class="text-xl font-bold text-gray-800">Jadwal FO Tersedia</h3>
+            <h3 class="text-xl font-bold text-gray-800">Jadwal RO Tersedia</h3>
             <button @click="showScheduleModal = false" class="text-gray-500 hover:text-gray-700">
               <i class="fas fa-times"></i>
             </button>
@@ -703,7 +716,7 @@ const categorySubtotals = computed(() => {
           <div v-if="scheduleData" class="space-y-4">
             <div class="grid grid-cols-2 gap-4">
               <div>
-                <label class="block text-sm font-medium text-gray-600">Mode FO</label>
+                <label class="block text-sm font-medium text-gray-600">Mode RO</label>
                 <p class="mt-1 font-semibold">{{ scheduleData.fo_mode }}</p>
               </div>
               <div>
@@ -940,7 +953,7 @@ const categorySubtotals = computed(() => {
       <!-- Modal Preview -->
       <div v-if="showPreview" class="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
         <div class="bg-white rounded-xl p-6 max-w-2xl w-full shadow-2xl" style="max-height: 90vh; overflow-y: auto;">
-          <h2 class="text-xl font-bold mb-4">Preview Floor Order</h2>
+          <h2 class="text-xl font-bold mb-4">Preview Request Order (RO)</h2>
           <div class="mb-2"><b>Tanggal:</b> {{ form.tanggal }}</div>
           <div class="mb-2"><b>Keterangan:</b> {{ form.description }}</div>
           <div class="mb-2"><b>Items:</b></div>

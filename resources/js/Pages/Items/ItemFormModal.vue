@@ -60,7 +60,7 @@
                 <label class="block text-sm font-medium text-gray-700">SKU</label>
                 <input type="text" v-model="form.sku" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" readonly required />
               </div>
-              <div v-if="selectedCategory && selectedCategory.show_pos == 1">
+              <div>
                 <label class="block text-sm font-medium text-gray-700">Type</label>
                 <select v-model="form.type" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" required>
                   <option v-for="type in menuTypes" :key="type.id" :value="type.type">{{ type.type }}</option>

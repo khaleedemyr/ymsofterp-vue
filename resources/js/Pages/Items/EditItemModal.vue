@@ -60,7 +60,7 @@
                 <label class="block text-sm font-medium text-gray-700">SKU</label>
                 <input type="text" v-model="form.sku" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" readonly required />
               </div>
-              <div v-if="selectedCategory && selectedCategory.show_pos == 1">
+              <div>
                 <label class="block text-sm font-medium text-gray-700">Type</label>
                 <select v-model="form.type" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" required>
                   <option v-for="type in menuTypes" :key="type.id" :value="type.type">{{ type.type }}</option>
@@ -664,12 +664,37 @@ const closeModal = () => emit('close');
 const isSaving = ref(false);
 
 const saveItem = () => {
-  // Validasi prices
-  const hasEmptyPrice = form.prices && form.prices.some(p => !p.price || isNaN(p.price));
-  if (hasEmptyPrice) {
-    Swal.fire({ icon: 'error', title: 'Gagal', text: 'Semua harga pada region/outlet harus diisi.' });
-    return;
+  // Hapus field modifier jika tidak relevan
+  if (!form.modifier_enabled && (!form.modifier_option_ids || form.modifier_option_ids.length === 0)) {
+    delete form.modifier_enabled;
+    delete form.modifier_option_ids;
   }
+  // Hapus field bom jika bukan composed
+  if (form.composition_type !== 'composed') {
+    delete form.bom;
+  }
+
+  // Konversi region_id dan outlet_id di prices & availabilities ke number/null (bukan 0)
+  form.prices = form.prices.map(p => ({
+    ...p,
+    region_id: p.region_id === '' || typeof p.region_id === 'undefined' || p.region_id === null ? null : Number(p.region_id),
+    outlet_id: p.outlet_id === '' || typeof p.outlet_id === 'undefined' || p.outlet_id === null ? null : Number(p.outlet_id),
+    price: p.price === '' || p.price === null || typeof p.price === 'undefined' ? '' : Number(p.price)
+  }));
+  form.availabilities = form.availabilities.map(a => ({
+    ...a,
+    region_id: a.region_id === '' || typeof a.region_id === 'undefined' || a.region_id === null ? null : Number(a.region_id),
+    outlet_id: a.outlet_id === '' || typeof a.outlet_id === 'undefined' || a.outlet_id === null ? null : Number(a.outlet_id)
+  }));
+  // Filter prices dan availabilities agar hanya data valid yang dikirim (region_id/outlet_id bukan null/NaN/0)
+  form.prices = form.prices.filter(p => 
+    ((p.region_id !== null && !isNaN(p.region_id) && p.region_id !== 0) || (p.outlet_id !== null && !isNaN(p.outlet_id) && p.outlet_id !== 0)) && 
+    p.price !== '' && !isNaN(p.price)
+  );
+  form.availabilities = form.availabilities.filter(a => 
+    (a.region_id !== null && !isNaN(a.region_id) && a.region_id !== 0) || (a.outlet_id !== null && !isNaN(a.outlet_id) && a.outlet_id !== 0)
+  );
+
   // Validasi sub_category_id
   if (!form.sub_category_id || !props.subCategories.find(sc => sc.id == form.sub_category_id)) {
     Swal.fire({ icon: 'error', title: 'Gagal', text: 'Sub Category harus dipilih dan valid.' });
@@ -684,12 +709,33 @@ const saveItem = () => {
         newImages.forEach((img) => {
           formData.append('images[]', img);
         });
+      } else if (Array.isArray(value) && value.length && typeof value[0] === 'object') {
+        value.forEach((obj, idx) => {
+          Object.entries(obj).forEach(([k, v]) => {
+            let val = v;
+            if ((k === 'region_id' || k === 'outlet_id') && (v === '' || typeof v === 'undefined')) {
+              val = null;
+            }
+            if ((k === 'region_id' || k === 'outlet_id') && v !== null && v !== '' && typeof v !== 'undefined') {
+              val = Number(v);
+              if (isNaN(val)) val = null;
+            }
+            if (val !== null && val !== '' && typeof val !== 'undefined') {
+              formData.append(`${key}[${idx}][${k}]`, val);
+            }
+          });
+        });
       } else if (Array.isArray(value)) {
         value.forEach((v, idx) => formData.append(`${key}[${idx}]`, v));
       } else {
         formData.append(key, value);
       }
     });
+    // Tambahkan log FormData sebelum submit
+    console.log('FORM DATA DEBUG:');
+    for (let pair of formData.entries()) {
+      console.log(pair[0]+ ': ' + pair[1]);
+    }
     isSaving.value = true;
     window.axios.post(route('items.update', props.item.id), formData, {
       headers: { 'Content-Type': 'multipart/form-data' },

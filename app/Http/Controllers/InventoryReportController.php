@@ -153,14 +153,14 @@ class InventoryReportController extends Controller
             $row->in_total_small = $in_total_small;
             $row->out_total_small = $out_total_small;
 
-            \Log::info('StockCard row', [
-                'item' => $row->item_name,
-                'small_conversion_qty' => $smallPerMedium,
-                'medium_conversion_qty' => $mediumPerLarge,
-                'display_large' => $row->display_large,
-                'display_medium' => $row->display_medium,
-                'display_small' => $row->display_small,
-            ]);
+           // \Log::info('StockCard row', [
+            //    'item' => $row->item_name,
+            //    'small_conversion_qty' => $smallPerMedium,
+            //    'medium_conversion_qty' => $mediumPerLarge,
+            //    'display_large' => $row->display_large,
+            //    'display_medium' => $row->display_medium,
+            //    'display_small' => $row->display_small,
+            //]);
         }
 
         $warehouses = DB::table('warehouses')->select('id', 'name')->orderBy('name')->get();

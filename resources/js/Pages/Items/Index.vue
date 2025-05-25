@@ -141,7 +141,7 @@
                   </div>
                   <div class="ml-4">
                     <div class="text-sm font-medium text-gray-900">{{ item.name }}</div>
-                    <div class="text-sm text-gray-500">{{ item.warehouse_division_id }}</div>
+                    <div class="text-sm text-gray-500">{{ item.warehouse_division?.name }}</div>
                   </div>
                 </div>
               </td>

@@ -227,6 +227,19 @@ class ItemController extends Controller
             ]));
             \Log::info('ItemController@store - Item created', ['item_id' => $item->id]);
 
+            // Insert SKU ke item_barcodes jika belum ada
+            if ($item->sku) {
+                $exists = DB::table('item_barcodes')->where('barcode', $item->sku)->exists();
+                if (!$exists) {
+                    DB::table('item_barcodes')->insert([
+                        'item_id' => $item->id,
+                        'barcode' => $item->sku,
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+                }
+            }
+
             // Handle image uploads
             if ($request->hasFile('images')) {
                 \Log::info('ItemController@store - Processing images');
@@ -428,12 +441,13 @@ class ItemController extends Controller
 
     public function update(Request $request, Item $item)
     {
+        $allowedTypes = \DB::table('menu_type')->pluck('type')->toArray();
         $validated = $request->validate([
             'category_id' => 'required|exists:categories,id',
             'sub_category_id' => 'nullable|exists:sub_categories,id',
             'warehouse_division_id' => 'nullable|string|max:255',
             'sku' => 'required|string|max:255|unique:items,sku,' . $item->id,
-            'type' => 'nullable|in:Food,Beverages,Mod',
+            'type' => ['nullable', \Illuminate\Validation\Rule::in($allowedTypes)],
             'name' => 'required|string|max:255',
             'description' => 'nullable|string',
             'specification' => 'nullable|string',
@@ -463,11 +477,18 @@ class ItemController extends Controller
             DB::beginTransaction();
 
             $oldData = $item->toArray();
+            \Log::info('ITEM UPDATE DEBUG - BEFORE', $item->toArray());
+            \Log::info('ITEM UPDATE DEBUG - PAYLOAD', array_merge($validated, [
+                'modifier_enabled' => $request->modifier_enabled ? 1 : 0,
+                'composition_type' => $request->composition_type,
+                'exp' => $request->exp ?? 0,
+            ]));
             $item->update(array_merge($validated, [
                 'modifier_enabled' => $request->modifier_enabled ? 1 : 0,
                 'composition_type' => $request->composition_type,
                 'exp' => $request->exp ?? 0,
             ]));
+            \Log::info('ITEM UPDATE DEBUG - AFTER', $item->fresh()->toArray());
 
             // Handle image uploads
             if ($request->hasFile('images')) {
@@ -477,62 +498,79 @@ class ItemController extends Controller
                 }
             }
 
-            // Simpan relasi modifier_option jika enabled
-            if ($item->modifier_enabled && $request->modifier_option_ids) {
-                $item->modifierOptions()->sync($request->modifier_option_ids);
-            } else {
-                $item->modifierOptions()->detach();
-            }
-
             // Update harga per region/outlet
-            $item->prices()->delete();
-            if ($request->prices) {
-                foreach ($request->prices as $price) {
-                    $type = 'all';
-                    if ($price['price_type'] === 'specific') {
-                    if (!empty($price['region_id']) && empty($price['outlet_id'])) {
-                        $type = 'region';
-                    } else if (!empty($price['outlet_id'])) {
-                        $type = 'outlet';
+            if ($request->has('prices')) {
+                \Log::info('ITEM UPDATE DEBUG - BEFORE PRICES', $item->prices->toArray());
+                $item->prices()->delete();
+                \Log::info('ITEM UPDATE DEBUG - AFTER DELETE PRICES', $item->prices->toArray());
+                if ($request->prices) {
+                    foreach ($request->prices as $price) {
+                        $type = 'all';
+                        if (isset($price['region_id']) && !empty($price['region_id']) && (!isset($price['outlet_id']) || empty($price['outlet_id']))) {
+                            $type = 'region';
+                        } else if (isset($price['outlet_id']) && !empty($price['outlet_id'])) {
+                            $type = 'outlet';
                         }
+                        $item->prices()->create([
+                            'region_id' => isset($price['region_id']) ? $price['region_id'] : null,
+                            'outlet_id' => isset($price['outlet_id']) ? $price['outlet_id'] : null,
+                            'price' => $price['price'],
+                            'availability_price_type' => $type,
+                        ]);
                     }
-                    $item->prices()->create([
-                        'region_id' => $price['region_id'],
-                        'outlet_id' => $price['outlet_id'],
-                        'price' => $price['price'],
-                        'availability_price_type' => $type,
-                    ]);
+                    \Log::info('ITEM UPDATE DEBUG - AFTER INSERT PRICES', $item->prices->toArray());
                 }
             }
 
             // Update availability per region/outlet
-            $item->availabilities()->delete();
-            if ($request->availabilities) {
-                foreach ($request->availabilities as $availability) {
-                    $type = 'all';
-                    if (!empty($availability['region_id']) && empty($availability['outlet_id'])) {
-                        $type = 'region';
-                    } else if (!empty($availability['outlet_id'])) {
-                        $type = 'outlet';
+            if ($request->has('availabilities')) {
+                \Log::info('ITEM UPDATE DEBUG - BEFORE AVAIL', $item->availabilities->toArray());
+                $item->availabilities()->delete();
+                \Log::info('ITEM UPDATE DEBUG - AFTER DELETE AVAIL', $item->availabilities->toArray());
+                if ($request->availabilities) {
+                    foreach ($request->availabilities as $availability) {
+                        $type = 'all';
+                        if (isset($availability['region_id']) && !empty($availability['region_id']) && (!isset($availability['outlet_id']) || empty($availability['outlet_id']))) {
+                            $type = 'region';
+                        } else if (isset($availability['outlet_id']) && !empty($availability['outlet_id'])) {
+                            $type = 'outlet';
+                        }
+                        $item->availabilities()->create([
+                            'region_id' => isset($availability['region_id']) ? $availability['region_id'] : null,
+                            'outlet_id' => isset($availability['outlet_id']) ? $availability['outlet_id'] : null,
+                            'availability_type' => $type,
+                        ]);
                     }
-                    $item->availabilities()->create([
-                        'region_id' => $availability['region_id'],
-                        'outlet_id' => $availability['outlet_id'],
-                        'availability_type' => $type,
-                    ]);
+                    \Log::info('ITEM UPDATE DEBUG - AFTER INSERT AVAIL', $item->availabilities->toArray());
                 }
             }
 
             // Update BOM jika composition_type = 'composed'
-            $item->boms()->delete();
-            if ($request->composition_type === 'composed' && $request->bom) {
-                foreach ($request->bom as $bom) {
-                    $item->boms()->create([
-                        'material_item_id' => $bom['item_id'],
-                        'qty' => $bom['qty'],
-                        'unit_id' => $bom['unit_id'],
-                    ]);
+            if ($request->has('bom')) {
+                \Log::info('ITEM UPDATE DEBUG - BEFORE BOM', $item->boms->toArray());
+                $item->boms()->delete();
+                \Log::info('ITEM UPDATE DEBUG - AFTER DELETE BOM', $item->boms->toArray());
+                if ($request->composition_type === 'composed' && $request->bom) {
+                    foreach ($request->bom as $bom) {
+                        $item->boms()->create([
+                            'material_item_id' => $bom['item_id'],
+                            'qty' => $bom['qty'],
+                            'unit_id' => $bom['unit_id'],
+                        ]);
+                    }
+                    \Log::info('ITEM UPDATE DEBUG - AFTER INSERT BOM', $item->boms->toArray());
                 }
+            }
+
+            // Update modifier options
+            if ($request->has('modifier_option_ids')) {
+                \Log::info('ITEM UPDATE DEBUG - BEFORE MODIFIER', $item->modifierOptions->toArray());
+                if ($item->modifier_enabled && $request->modifier_option_ids) {
+                    $item->modifierOptions()->sync($request->modifier_option_ids);
+                } else {
+                    $item->modifierOptions()->detach();
+                }
+                \Log::info('ITEM UPDATE DEBUG - AFTER MODIFIER', $item->modifierOptions->toArray());
             }
 
             // Log activity
@@ -550,6 +588,7 @@ class ItemController extends Controller
             DB::commit();
             return redirect()->route('items.index')->with('success', 'Item updated successfully.');
         } catch (\Exception $e) {
+            \Log::error('ITEM UPDATE DEBUG - ERROR', ['message' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
             DB::rollBack();
             return back()->with('error', 'Failed to update item: ' . $e->getMessage());
         }
@@ -816,6 +855,19 @@ class ItemController extends Controller
                     'modifier_enabled' => $itemData['Modifier Enabled'] === 'Yes',
                     'type' => $typeString,
                 ]);
+
+                // Insert SKU ke item_barcodes jika belum ada
+                if ($item->sku) {
+                    $exists = \DB::table('item_barcodes')->where('barcode', $item->sku)->exists();
+                    if (!$exists) {
+                        \DB::table('item_barcodes')->insert([
+                            'item_id' => $item->id,
+                            'barcode' => $item->sku,
+                            'created_at' => now(),
+                            'updated_at' => now(),
+                        ]);
+                    }
+                }
 
                 // Handle Modifier Options
                 if (!empty($itemData['Modifier Options'])) {
@@ -1367,6 +1419,52 @@ class ItemController extends Controller
             return response()->json(['results' => $results]);
         } catch (\Exception $e) {
             return response()->json(['message' => $e->getMessage()], 422);
+        }
+    }
+
+    /**
+     * Autocomplete PCS item (untuk butchering, dsb)
+     */
+    public function autocompletePcs(Request $request)
+    {
+        try {
+            $q = $request->input('q');
+            $items = \DB::table('items')
+                ->join('categories', 'items.category_id', '=', 'categories.id')
+                ->leftJoin('units as u_small', 'items.small_unit_id', '=', 'u_small.id')
+                ->leftJoin('units as u_medium', 'items.medium_unit_id', '=', 'u_medium.id')
+                ->leftJoin('units as u_large', 'items.large_unit_id', '=', 'u_large.id')
+                ->where('items.status', 'active')
+                ->where('categories.show_pos', '0')
+                ->where(function($query) use ($q) {
+                    $query->where('items.name', 'like', "%$q%")
+                          ->orWhere('items.sku', 'like', "%$q%");
+                })
+                ->select([
+                    'items.id',
+                    'items.name',
+                    'items.sku',
+                    'items.status',
+                    'items.small_unit_id',
+                    'items.medium_unit_id',
+                    'items.large_unit_id',
+                    'u_small.name as unit_small',
+                    'u_medium.name as unit_medium',
+                    'u_large.name as unit_large',
+                ])
+                ->orderBy('items.name')
+                ->limit(20)
+                ->get();
+            return response()->json($items);
+        } catch (\Exception $e) {
+            \Log::error('Error in autocompletePcs: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString(),
+                'query' => $q ?? 'null'
+            ]);
+            return response()->json([
+                'error' => 'Failed to search items',
+                'message' => $e->getMessage()
+            ], 500);
         }
     }
 } 

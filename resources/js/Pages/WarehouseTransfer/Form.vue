@@ -46,6 +46,30 @@ function removeItem(idx) {
   form.items.splice(idx, 1);
 }
 function onSubmit() {
+  // Log debug qty dan stok
+  for (const [idx, item] of form.items.entries()) {
+    console.log('DEBUG VALIDASI QTY', { item, stock: item.stock, qty: item.qty, unit: item.selected_unit || item.unit });
+    const qty = Number(item.qty || 0);
+    let stock = 0;
+    const unit = item.selected_unit || item.unit;
+    if (unit === item.stock?.unit_small) {
+      stock = Number(item.stock?.qty_small || 0);
+    } else if (unit === item.stock?.unit_medium) {
+      stock = Number(item.stock?.qty_medium || 0);
+    } else if (unit === item.stock?.unit_large) {
+      stock = Number(item.stock?.qty_large || 0);
+    } else {
+      stock = 0;
+    }
+    if (qty > stock) {
+      Swal.fire({
+        icon: 'error',
+        title: 'Gagal!',
+        text: `Qty item \"${item.item_name}\" melebihi stok di gudang asal untuk unit ${unit} (${stock})`,
+      });
+      return;
+    }
+  }
   Swal.fire({
     title: isEdit.value ? 'Menyimpan Perubahan...' : 'Menyimpan Data...',
     text: 'Mohon tunggu sebentar',
@@ -175,17 +199,11 @@ function formatNumber(val) {
   return Number(val).toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 }
 function formatStockDisplay(item) {
-  let totalSmall = 0;
-  if (item.stock) {
-    totalSmall = Number(item.stock.qty_small || 0)
-      + Number(item.stock.qty_medium || 0) * (item.stock.small_conversion_qty || 1)
-      + Number(item.stock.qty_large || 0) * (item.stock.small_conversion_qty || 1) * (item.stock.medium_conversion_qty || 1);
-  }
-  const smallConv = Number(item.stock?.small_conversion_qty || 1);
-  const mediumConv = Number(item.stock?.medium_conversion_qty || 1);
-  let totalMedium = smallConv ? totalSmall / smallConv : 0;
-  let totalLarge = (smallConv && mediumConv) ? totalSmall / (smallConv * mediumConv) : 0;
-  return `Stok: ${formatNumber(totalSmall)} ${item.stock?.unit_small || ''} | ${formatNumber(totalMedium)} ${item.stock?.unit_medium || ''} | ${formatNumber(totalLarge)} ${item.stock?.unit_large || ''}`;
+  if (!item.stock) return 'Stok: 0';
+  const small = Number(item.stock.qty_small || 0);
+  const medium = Number(item.stock.qty_medium || 0);
+  const large = Number(item.stock.qty_large || 0);
+  return `Stok: ${formatNumber(small)} ${item.stock.unit_small || ''} | ${formatNumber(medium)} ${item.stock.unit_medium || ''} | ${formatNumber(large)} ${item.stock.unit_large || ''}`;
 }
 
 // Panggil fetchStock setiap kali item dipilih atau warehouse_from_id berubah

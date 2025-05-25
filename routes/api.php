@@ -22,6 +22,8 @@ use App\Http\Controllers\PurchaseOrderFoodsController;
 use App\Http\Controllers\ItemController;
 use App\Http\Controllers\FOScheduleController;
 use App\Http\Controllers\ItemScheduleController;
+use App\Http\Controllers\Api\GoodReceiveController;
+use App\Http\Controllers\Api\ItemController as ApiItemController;
 
 
 
@@ -132,7 +134,9 @@ Route::get('fo-schedules/outlet-schedules', [\App\Http\Controllers\FOScheduleCon
 
 Route::get('/items/by-fo-khusus', [App\Http\Controllers\ItemController::class, 'getByFOKhusus']);
 
-Route::get('/items/{id}', [App\Http\Controllers\ItemController::class, 'show']);
-
 Route::get('/item-schedules/today', [ItemScheduleController::class, 'getTodaySchedules']);
+
+Route::get('/good-receives/autocomplete', [GoodReceiveController::class, 'autocomplete']);
+Route::get('/good-receives/{id}/items', [GoodReceiveController::class, 'items']);
+Route::get('/items/autocomplete-pcs', [ItemController::class, 'autocompletePcs']);
 

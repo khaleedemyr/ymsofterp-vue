@@ -29,6 +29,7 @@ class Item extends Model
         'composition_type',
         'modifier_enabled',
         'status',
+        'exp',
     ];
 
     protected $casts = [

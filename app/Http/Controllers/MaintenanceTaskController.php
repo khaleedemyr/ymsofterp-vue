@@ -141,13 +141,11 @@ class MaintenanceTaskController extends Controller
     {
         $prs = DB::table('maintenance_purchase_requisitions')
             ->leftJoin('users as chief_engineering', 'chief_engineering.id', '=', 'maintenance_purchase_requisitions.chief_engineering_approval_by')
-            ->leftJoin('users as purchasing_manager', 'purchasing_manager.id', '=', 'maintenance_purchase_requisitions.purchasing_manager_approval_by')
             ->leftJoin('users as coo', 'coo.id', '=', 'maintenance_purchase_requisitions.coo_approval_by')
             ->leftJoin('users as ceo', 'ceo.id', '=', 'maintenance_purchase_requisitions.ceo_approval_by')
             ->select(
                 'maintenance_purchase_requisitions.*',
                 'chief_engineering.nama_lengkap as chief_engineering_approval_by_user_nama_lengkap',
-                'purchasing_manager.nama_lengkap as purchasing_manager_approval_by_user_nama_lengkap',
                 'coo.nama_lengkap as coo_approval_by_user_nama_lengkap',
                 'ceo.nama_lengkap as ceo_approval_by_user_nama_lengkap'
             )
@@ -167,9 +165,6 @@ class MaintenanceTaskController extends Controller
             $pr->chief_engineering_approval_by_user = $pr->chief_engineering_approval_by_user_nama_lengkap ? [
                 'nama_lengkap' => $pr->chief_engineering_approval_by_user_nama_lengkap
             ] : null;
-            $pr->purchasing_manager_approval_by_user = $pr->purchasing_manager_approval_by_user_nama_lengkap ? [
-                'nama_lengkap' => $pr->purchasing_manager_approval_by_user_nama_lengkap
-            ] : null;
             $pr->coo_approval_by_user = $pr->coo_approval_by_user_nama_lengkap ? [
                 'nama_lengkap' => $pr->coo_approval_by_user_nama_lengkap
             ] : null;
@@ -179,7 +174,6 @@ class MaintenanceTaskController extends Controller
 
             // Hapus field temporary
             unset($pr->chief_engineering_approval_by_user_nama_lengkap);
-            unset($pr->purchasing_manager_approval_by_user_nama_lengkap);
             unset($pr->coo_approval_by_user_nama_lengkap);
             unset($pr->ceo_approval_by_user_nama_lengkap);
         }

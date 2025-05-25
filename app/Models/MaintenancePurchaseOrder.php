@@ -20,7 +20,6 @@ class MaintenancePurchaseOrder extends Model
         'approved_by',
         'approved_at',
         'purchasing_manager_approval',
-        'purchasing_manager_approval_by',
         'purchasing_manager_approval_date',
         'purchasing_manager_approval_notes',
         'gm_finance_approval',

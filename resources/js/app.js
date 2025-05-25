@@ -1,6 +1,9 @@
 import '../css/app.css';
 import './bootstrap';
 
+// Set timezone to Asia/Jakarta
+Intl.DateTimeFormat().resolvedOptions().timeZone = 'Asia/Jakarta';
+
 import { createInertiaApp } from '@inertiajs/vue3';
 import { resolvePageComponent } from 'laravel-vite-plugin/inertia-helpers';
 import { createApp, h } from 'vue';

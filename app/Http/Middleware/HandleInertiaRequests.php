@@ -48,6 +48,7 @@ class HandleInertiaRequests extends Middleware
                     'signature_path' => $request->user()->signature_path,
                 ] : null,
             ],
+            'result' => fn () => $request->session()->get('result'),
         ];
     }
 }
