@@ -5,15 +5,14 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 
 class HomeController extends Controller
 {
-    public function show(Request $request)
+    public function show()
     {
-        $user = Auth::user();
         return Inertia::render('Home', [
-            'nama_lengkap' => $user->nama_lengkap ?? $user->name,
-            'avatar' => $user->avatar ?? null,
+            // ...props lain jika ada
         ]);
     }
 } 

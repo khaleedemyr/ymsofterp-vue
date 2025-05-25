@@ -11,27 +11,26 @@ const sidebarOpen = ref(true);
 const showLang = ref(false);
 const { locale, t } = useI18n();
 
+const allowedMenus = usePage().props.allowedMenus || [];
+
 const menuGroups = [
     {
         title: () => t('sidebar.main'),
         icon: 'fa-solid fa-bars',
         menus: [
-            { name: () => t('sidebar.dashboard'), icon: 'fa-solid fa-home', route: '/home' },
-            { name: () => 'Dashboard Outlet', icon: 'fa-solid fa-map-location-dot', route: '/dashboard-outlet' },
-            { name: () => t('sidebar.users'), icon: 'fa-solid fa-users', route: '/users' },
+            { name: () => t('sidebar.dashboard'), icon: 'fa-solid fa-home', route: '/home', code: 'dashboard' },
+            { name: () => 'Dashboard Outlet', icon: 'fa-solid fa-map-location-dot', route: '/dashboard-outlet', code: 'dashboard_outlet' },
         ],
     },
-   
     {
         title: () => t('sidebar.maintenance'),
         icon: 'fa-solid fa-screwdriver-wrench',
         collapsible: true,
         open: ref(false),
         menus: [
-            { name: () => t('sidebar.mt_dashboard'), icon: 'fa-solid fa-gauge', route: route('dashboard.maintenance') },
-            { name: () => t('sidebar.maintenance_order'), icon: 'fa-solid fa-clipboard-check', route: '/maintenance-order' },
-            { name: () => 'Kalender Jadwal', icon: 'fa-solid fa-calendar-alt', route: '/maintenance-order/schedule-calendar' },
-          
+            { name: () => 'MT Dashboard', icon: 'fa-solid fa-gauge', route: route('dashboard.maintenance'), code: 'mt_dashboard' },
+            { name: () => 'Maintenance Order', icon: 'fa-solid fa-clipboard-check', route: '/maintenance-order', code: 'maintenance_order' },
+            { name: () => 'Kalender Jadwal', icon: 'fa-solid fa-calendar-alt', route: '/maintenance-order/schedule-calendar', code: 'maintenance_schedule_calendar' },
         ],
     },
     {
@@ -40,22 +39,22 @@ const menuGroups = [
         collapsible: true,
         open: ref(false),
         menus: [
-            { name: () => 'Categories', icon: 'fa-solid fa-tags', route: '/categories' },
-            { name: () => 'Sub Category', icon: 'fa-solid fa-tag', route: '/sub-categories' },
-            { name: () => 'Units', icon: 'fa-solid fa-ruler', route: '/units' },
-            { name: () => 'Items', icon: 'fa-solid fa-boxes-stacked', route: '/items' },
-            { name: () => 'Repack', icon: 'fa-solid fa-box-open', route: '/repack' },
-            { name: () => 'Menu Type', icon: 'fa-solid fa-list', route: '/menu-types' },
-            { name: () => 'Modifiers', icon: 'fa-solid fa-sliders', route: '/modifiers' },
-            { name: () => 'Modifier Options', icon: 'fa-solid fa-sliders', route: '/modifier-options' },
-            { name: () => 'Warehouses', icon: 'fa-solid fa-warehouse', route: '/warehouses' },
-            { name: () => 'Warehouse Division', icon: 'fa-solid fa-sitemap', route: '/warehouse-divisions' },
-            { name: () => 'Outlets', icon: 'fa-solid fa-store', route: '/outlets' },
-            { name: () => 'Customers', icon: 'fa-solid fa-users', route: '/customers' },
-            { name: () => 'Suppliers', icon: 'fa-solid fa-truck', route: '/suppliers' },
-            { name: () => 'Regions', icon: 'fa-solid fa-globe-asia', route: '/regions' },
-            { name: () => 'Item Schedule', icon: 'fa-solid fa-calendar-days', route: '/item-schedules' },
-            { name: () => 'RO Schedule', icon: 'fa-solid fa-calendar-days', route: '/fo-schedules' },
+            { name: () => 'Categories', icon: 'fa-solid fa-tags', route: '/categories', code: 'categories' },
+            { name: () => 'Sub Category', icon: 'fa-solid fa-tag', route: '/sub-categories', code: 'sub_categories' },
+            { name: () => 'Units', icon: 'fa-solid fa-ruler', route: '/units', code: 'units' },
+            { name: () => 'Items', icon: 'fa-solid fa-boxes-stacked', route: '/items', code: 'items' },
+            { name: () => 'Repack', icon: 'fa-solid fa-box-open', route: '/repack', code: 'repack' },
+            { name: () => 'Menu Type', icon: 'fa-solid fa-list', route: '/menu-types', code: 'menu_types' },
+            { name: () => 'Modifiers', icon: 'fa-solid fa-sliders', route: '/modifiers', code: 'modifiers' },
+            { name: () => 'Modifier Options', icon: 'fa-solid fa-sliders', route: '/modifier-options', code: 'modifier_options' },
+            { name: () => 'Warehouses', icon: 'fa-solid fa-warehouse', route: '/warehouses', code: 'warehouses' },
+            { name: () => 'Warehouse Division', icon: 'fa-solid fa-sitemap', route: '/warehouse-divisions', code: 'warehouse_divisions' },
+            { name: () => 'Outlets', icon: 'fa-solid fa-store', route: '/outlets', code: 'outlets' },
+            { name: () => 'Customers', icon: 'fa-solid fa-users', route: '/customers', code: 'customers' },
+            { name: () => 'Suppliers', icon: 'fa-solid fa-truck', route: '/suppliers', code: 'suppliers' },
+            { name: () => 'Regions', icon: 'fa-solid fa-globe-asia', route: '/regions', code: 'regions' },
+            { name: () => 'Item Schedule', icon: 'fa-solid fa-calendar-days', route: '/item-schedules', code: 'item_schedules' },
+            { name: () => 'RO Schedule', icon: 'fa-solid fa-calendar-days', route: '/fo-schedules', code: 'fo_schedules' },
         ],
     },
     {
@@ -64,7 +63,7 @@ const menuGroups = [
         collapsible: true,
         open: ref(false),
         menus: [
-            { name: () => 'Request Order (RO)', icon: 'fa-solid fa-calendar-check', route: '/floor-order' },
+            { name: () => 'Request Order (RO)', icon: 'fa-solid fa-calendar-check', route: '/floor-order', code: 'floor_order' },
         ],
     },
     {
@@ -73,9 +72,9 @@ const menuGroups = [
         collapsible: true,
         open: ref(false),
         menus: [
-            { name: () => 'Contra Bon', icon: 'fa-solid fa-file-circle-xmark', route: '/contra-bons' },
-            { name: () => 'Food Payment', icon: 'fa-solid fa-money-bill-transfer', route: '/food-payments' },
-            { name: () => 'MT PO Payment', icon: 'fa-solid fa-money-bill-wave', route: route('mt-po-payment.index') },
+            { name: () => 'Contra Bon', icon: 'fa-solid fa-file-circle-xmark', route: '/contra-bons', code: 'contra_bon' },
+            { name: () => 'Food Payment', icon: 'fa-solid fa-money-bill-transfer', route: '/food-payments', code: 'food_payment' },
+            { name: () => 'MT PO Payment', icon: 'fa-solid fa-money-bill-wave', route: route('mt-po-payment.index'), code: 'mt_po_payment' },
         ],
     },
     {
@@ -84,23 +83,23 @@ const menuGroups = [
         collapsible: true,
         open: ref(false),
         menus: [
-            { name: () => 'Purchase Requisition Foods', icon: 'fa-solid fa-file-invoice', route: '/pr-foods' },
-            { name: () => 'Purchase Order Foods', icon: 'fa-solid fa-file-invoice-dollar', route: '/po-foods' },
-            { name: () => 'Good Receive', icon: 'fa-solid fa-truck', route: '/food-good-receive' },
-            { name: () => 'Pindah Gudang', icon: 'fa-solid fa-right-left', route: '/warehouse-transfer' },           
-            { name: () => 'Packing List', icon: 'fa-solid fa-box', route: '/packing-list' },
-            { name: () => 'Delivery Order', icon: 'fa-solid fa-truck-arrow-right', route: '/delivery-order' },
-            { name: () => 'Saldo Awal Stok', icon: 'fa-solid fa-money-bill-wave', route: '/food-stock-balances' },
-            { name: () => 'Laporan Stok Akhir', icon: 'fa-solid fa-clipboard-list', route: '/inventory/stock-position' },
-            { name: () => 'Laporan Kartu Stok', icon: 'fa-solid fa-file-lines', route: '/inventory/stock-card' },
-            { name: () => 'Laporan Penerimaan Barang', icon: 'fa-solid fa-truck-ramp-box', route: '/inventory/goods-received-report' },
-            { name: () => 'Laporan Nilai Persediaan', icon: 'fa-solid fa-money-check-dollar', route: '/inventory/inventory-value-report' },
-            { name: () => 'Laporan Riwayat Perubahan Harga Pokok', icon: 'fa-solid fa-history', route: '/inventory/cost-history-report' },
-            { name: () => 'Laporan Stok Minimum', icon: 'fa-solid fa-arrow-down-short-wide', route: '/inventory/minimum-stock-report' },
-            { name: () => 'Laporan Rekap Persediaan per Kategori', icon: 'fa-solid fa-layer-group', route: '/inventory/category-recap-report' },
-            { name: () => 'Laporan Aging Persediaan', icon: 'fa-solid fa-hourglass-half', route: '/inventory/aging-report' },
-            { name: () => 'Warehouse Stock', icon: 'fa-solid fa-boxes-stacked', route: '/warehouse-stock' },
-            { name: () => 'Internal Use & Waste', icon: 'fa-solid fa-recycle', route: '/internal-use-waste' },
+            { name: () => 'Purchase Requisition Foods', icon: 'fa-solid fa-file-invoice', route: '/pr-foods', code: 'pr_foods' },
+            { name: () => 'Purchase Order Foods', icon: 'fa-solid fa-file-invoice-dollar', route: '/po-foods', code: 'po_foods' },
+            { name: () => 'Good Receive', icon: 'fa-solid fa-truck', route: '/food-good-receive', code: 'food_good_receive' },
+            { name: () => 'Pindah Gudang', icon: 'fa-solid fa-right-left', route: '/warehouse-transfer', code: 'warehouse_transfer' },
+            { name: () => 'Packing List', icon: 'fa-solid fa-box', route: '/packing-list', code: 'packing_list' },
+            { name: () => 'Delivery Order', icon: 'fa-solid fa-truck-arrow-right', route: '/delivery-order', code: 'delivery_order' },
+            { name: () => 'Saldo Awal Stok', icon: 'fa-solid fa-money-bill-wave', route: '/food-stock-balances', code: 'food_stock_balances' },
+            { name: () => 'Laporan Stok Akhir', icon: 'fa-solid fa-clipboard-list', route: '/inventory/stock-position', code: 'inventory_stock_position' },
+            { name: () => 'Laporan Kartu Stok', icon: 'fa-solid fa-file-lines', route: '/inventory/stock-card', code: 'inventory_stock_card' },
+            { name: () => 'Laporan Penerimaan Barang', icon: 'fa-solid fa-truck-ramp-box', route: '/inventory/goods-received-report', code: 'inventory_goods_received_report' },
+            { name: () => 'Laporan Nilai Persediaan', icon: 'fa-solid fa-money-check-dollar', route: '/inventory/inventory-value-report', code: 'inventory_value_report' },
+            { name: () => 'Laporan Riwayat Perubahan Harga Pokok', icon: 'fa-solid fa-history', route: '/inventory/cost-history-report', code: 'inventory_cost_history_report' },
+            { name: () => 'Laporan Stok Minimum', icon: 'fa-solid fa-arrow-down-short-wide', route: '/inventory/minimum-stock-report', code: 'inventory_minimum_stock_report' },
+            { name: () => 'Laporan Rekap Persediaan per Kategori', icon: 'fa-solid fa-layer-group', route: '/inventory/category-recap-report', code: 'inventory_category_recap_report' },
+            { name: () => 'Laporan Aging Persediaan', icon: 'fa-solid fa-hourglass-half', route: '/inventory/aging-report', code: 'inventory_aging_report' },
+            { name: () => 'Warehouse Stock', icon: 'fa-solid fa-boxes-stacked', route: '/warehouse-stock', code: 'warehouse_stock' },
+            { name: () => 'Internal Use & Waste', icon: 'fa-solid fa-recycle', route: '/internal-use-waste', code: 'internal_use_waste' },
         ],
     },
     {
@@ -109,12 +108,12 @@ const menuGroups = [
         collapsible: true,
         open: ref(false),
         menus: [
-            { name: () => 'Butcher', icon: 'fa-solid fa-cut', route: '/butcher-processes' },
-            { name: () => 'Butcher Report', icon: 'fa-solid fa-file-lines', route: '/butcher-processes/report' },           
-            { name: () => 'Laporan Stok & Cost Butcher', icon: 'fa-solid fa-money-bill-trend-up', route: '/inventory/stock-cost-report' },
-            { name: () => 'Laporan Analisis Butcher', icon: 'fa-solid fa-chart-line', route: '/butcher-processes/analysis-report' },
-            { name: () => 'MK Production', icon: 'fa-solid fa-industry', route: '/mk-production' },
-            { name: () => 'Laporan MK Production', icon: 'fa-solid fa-file-lines', route: '/mk-production/report' },
+            { name: () => 'Butcher', icon: 'fa-solid fa-cut', route: '/butcher-processes', code: 'butcher' },
+            { name: () => 'Butcher Report', icon: 'fa-solid fa-file-lines', route: '/butcher-report', code: 'butcher_report' },
+            { name: () => 'Laporan Stok & Cost Butcher', icon: 'fa-solid fa-money-bill-trend-up', route: '/butcher-stock-cost-report', code: 'butcher_stock_cost_report' },
+            { name: () => 'Laporan Analisis Butcher', icon: 'fa-solid fa-chart-line', route: '/butcher-analysis-report', code: 'butcher_analysis_report' },
+            { name: () => 'MK Production', icon: 'fa-solid fa-industry', route: '/mk-production', code: 'mk_production' },
+            { name: () => 'Laporan MK Production', icon: 'fa-solid fa-file-lines', route: '/mk-production-report', code: 'mk_production_report' },
         ],
     },
     {
@@ -123,10 +122,35 @@ const menuGroups = [
         collapsible: true,
         open: ref(false),
         menus: [
-            { name: () => 'Scrapper Google Review', icon: 'fa-brands fa-google', route: '/google-review' },
+            { name: () => 'Scrapper Google Review', icon: 'fa-brands fa-google', route: '/scrapper-google-review', code: 'scrapper_google_review' },
+        ],
+    },
+    {
+        title: () => 'User Management',
+        icon: 'fa-solid fa-user-gear',
+        collapsible: true,
+        open: ref(false),
+        menus: [
+            { name: () => 'Role Management', icon: 'fa-solid fa-user-shield', route: '/roles', code: 'role_management' },
+            { name: () => 'User Role Setting', icon: 'fa-solid fa-users-cog', route: '/user-roles', code: 'user_role_setting' },
+            { name: () => 'Menu Management', icon: 'fa-solid fa-bars-progress', route: '/menus', code: 'menu_management' },
+        ],
+    },
+    {
+        title: () => 'Announcement',
+        icon: 'fa-solid fa-bullhorn',
+        menus: [
+            { name: () => 'Announcement', icon: 'fa-solid fa-bullhorn', route: '/announcement', code: 'announcement' },
         ],
     },
 ];
+
+const filteredMenuGroups = computed(() =>
+  menuGroups.map(group => ({
+    ...group,
+    menus: group.menus.filter(menu => !menu.code || allowedMenus.includes(menu.code))
+  })).filter(group => group.menus.length > 0)
+);
 
 const languages = [
     { code: 'id', label: 'Indonesia' },
@@ -307,7 +331,7 @@ onMounted(() => {
             </button>
         </div>
         <nav class="flex-1 overflow-y-auto py-4">
-            <div v-for="(group, idx) in menuGroups" :key="group.title" class="mb-4">
+            <div v-for="(group, idx) in filteredMenuGroups" :key="group.title" class="mb-4">
                 <div
                     class="px-6 py-2 text-xs font-bold uppercase flex items-center gap-2 justify-between cursor-pointer group-title"
                     :class="sidebarOpen ? 'text-gray-500' : 'text-gray-400'"
@@ -341,13 +365,8 @@ onMounted(() => {
                         <span v-if="sidebarOpen" class="whitespace-nowrap">{{ typeof menu.name === 'function' ? menu.name() : menu.name }}</span>
                     </Link>
                 </div>
-                <hr v-if="idx < menuGroups.length - 1" class="my-2 border-gray-200" />
+                <hr v-if="idx < filteredMenuGroups.length - 1" class="my-2 border-gray-200" />
             </div>
-            <NavLink :href="route('announcement.index')" :active="route().current('announcement.index')" class="flex items-center gap-3 px-4 py-2 my-1 rounded-lg text-gray-700 hover:bg-blue-100 transition-all"
-                :class="sidebarOpen ? 'justify-start' : 'justify-center'">
-                <span class="text-lg w-7 flex justify-center"><i class="fa fa-bullhorn mr-2"></i></span>
-                <span v-if="sidebarOpen" class="whitespace-nowrap">Announcement</span>
-            </NavLink>
         </nav>
     </aside>
     <!-- Main Content -->

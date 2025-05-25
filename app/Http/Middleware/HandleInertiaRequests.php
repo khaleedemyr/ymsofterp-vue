@@ -4,6 +4,7 @@ namespace App\Http\Middleware;
 
 use Illuminate\Http\Request;
 use Inertia\Middleware;
+use Illuminate\Support\Facades\DB;
 
 class HandleInertiaRequests extends Middleware
 {
@@ -29,8 +30,24 @@ class HandleInertiaRequests extends Middleware
      */
     public function share(Request $request): array
     {
-        return [
-            ...parent::share($request),
+        $userId = auth()->id();
+        $allowedMenus = [];
+        
+        if ($userId) {
+            $allowedMenus = DB::table('users as u')
+                ->join('erp_user_role as ur', 'ur.user_id', '=', 'u.id')
+                ->join('erp_role as r', 'ur.role_id', '=', 'r.id')
+                ->join('erp_role_permission as rp', 'rp.role_id', '=', 'r.id')
+                ->join('erp_permission as p', 'p.id', '=', 'rp.permission_id')
+                ->join('erp_menu as m', 'm.id', '=', 'p.menu_id')
+                ->where('u.id', $userId)
+                ->where('p.action', 'view')
+                ->distinct()
+                ->pluck('m.code')
+                ->toArray();
+        }
+
+        return array_merge(parent::share($request), [
             'auth' => [
                 'user' => $request->user() ? [
                     'id' => $request->user()->id,
@@ -49,6 +66,10 @@ class HandleInertiaRequests extends Middleware
                 ] : null,
             ],
             'result' => fn () => $request->session()->get('result'),
-        ];
+            'flash' => [
+                'message' => fn () => $request->session()->get('message')
+            ],
+            'allowedMenus' => $allowedMenus,
+        ]);
     }
 }

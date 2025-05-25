@@ -50,6 +50,9 @@ use App\Http\Controllers\StockCostReportController;
 use App\Http\Controllers\ButcherAnalysisReportController;
 use App\Http\Controllers\InternalUseWasteController;
 use App\Http\Controllers\DeliveryOrderController;
+use App\Http\Controllers\MenuController;
+use App\Http\Controllers\RoleController;
+use App\Http\Controllers\UserRoleController;
 
 Route::get('/', function () {
     return Inertia::render('Welcome', [
@@ -467,5 +470,25 @@ Route::get('/delivery-order/{id}', [DeliveryOrderController::class, 'show'])->na
 
 // API untuk fetch item packing list
 Route::get('/api/packing-list/{id}/items', [DeliveryOrderController::class, 'getPackingListItems']);
+
+Route::middleware(['auth'])->group(function () {
+    Route::get('/menus', [MenuController::class, 'index'])->name('menus.index');
+    Route::get('/menus/create', [MenuController::class, 'create'])->name('menus.create');
+    Route::post('/menus', [MenuController::class, 'store'])->name('menus.store');
+    Route::get('/menus/{menu}/edit', [MenuController::class, 'edit'])->name('menus.edit');
+    Route::put('/menus/{menu}', [MenuController::class, 'update'])->name('menus.update');
+    Route::delete('/menus/{menu}', [MenuController::class, 'destroy'])->name('menus.destroy');
+});
+
+// Role Management
+Route::middleware(['auth'])->group(function () {
+    Route::get('/roles', [RoleController::class, 'index'])->name('roles.index');
+    Route::post('/roles', [RoleController::class, 'store'])->name('roles.store');
+    Route::put('/roles/{role}', [RoleController::class, 'update'])->name('roles.update');
+    Route::delete('/roles/{role}', [RoleController::class, 'destroy'])->name('roles.destroy');
+});
+
+Route::get('/user-roles', [\App\Http\Controllers\UserRoleController::class, 'index']);
+Route::put('/user-roles/{id}', [\App\Http\Controllers\UserRoleController::class, 'update']);
 
 require __DIR__.'/auth.php';
