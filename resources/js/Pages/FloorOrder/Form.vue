@@ -698,6 +698,7 @@ const categorySubtotals = computed(() => {
       <div v-if="selectedFOMode && !loading" class="mb-6">
         <button 
           @click="checkFOSchedule"
+          :disabled="!selectedFOMode"
           class="px-4 py-2 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-colors"
         >
           <i class="fas fa-calendar-check mr-2"></i>

@@ -10,6 +10,7 @@ use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class FOScheduleController extends Controller
 {
@@ -52,14 +53,14 @@ class FOScheduleController extends Controller
             'regions' => Region::where('status', 'active')->orderBy('name')->get(),
             'outlets' => Outlet::where('status', 'A')->orderBy('nama_outlet')->get(),
             'warehouseDivisions' => WarehouseDivision::orderBy('name')->get(),
-            'foModes' => ['FO Utama', 'FO Tambahan', 'FO Pengambilan']
+            'foModes' => ['RO Utama', 'RO Tambahan', 'RO Pengambilan']
         ]);
     }
 
     public function store(Request $request)
     {
         $data = $request->validate([
-            'fo_mode' => 'required|in:FO Utama,FO Tambahan,FO Pengambilan',
+            'fo_mode' => 'required|in:RO Utama,RO Tambahan,RO Pengambilan',
             'warehouse_division_ids' => 'required|array',
             'warehouse_division_ids.*' => 'exists:warehouse_division,id',
             'day' => 'required|string',
@@ -98,7 +99,7 @@ class FOScheduleController extends Controller
             'user_id' => Auth::id(),
             'activity_type' => 'create',
             'module' => 'fo_schedule',
-            'description' => 'Membuat jadwal FO: ' . $schedule->fo_mode . ' - ' . $schedule->day,
+            'description' => 'Membuat jadwal RO: ' . $schedule->fo_mode . ' - ' . $schedule->day,
             'ip_address' => $request->ip(),
             'user_agent' => $request->userAgent(),
             'old_data' => null,
@@ -115,14 +116,14 @@ class FOScheduleController extends Controller
             'regions' => Region::where('status', 'active')->orderBy('name')->get(),
             'outlets' => Outlet::where('status', 'A')->orderBy('nama_outlet')->get(),
             'warehouseDivisions' => WarehouseDivision::orderBy('name')->get(),
-            'foModes' => ['FO Utama', 'FO Tambahan', 'FO Pengambilan']
+            'foModes' => ['RO Utama', 'RO Tambahan', 'RO Pengambilan']
         ]);
     }
 
     public function update(Request $request, $id)
     {
         $data = $request->validate([
-            'fo_mode' => 'required|in:FO Utama,FO Tambahan,FO Pengambilan',
+            'fo_mode' => 'required|in:RO Utama,RO Tambahan,RO Pengambilan',
             'warehouse_division_ids' => 'required|array',
             'warehouse_division_ids.*' => 'exists:warehouse_division,id',
             'day' => 'required|string',
@@ -184,21 +185,19 @@ class FOScheduleController extends Controller
 
     public function check(Request $request)
     {
-        $request->validate([
-            'fo_mode' => 'required',
-            'day' => 'required',
-        ]);
-
-        date_default_timezone_set('Asia/Jakarta');
         $user = Auth::user();
         $id_outlet = $request->outlet_id;
         $region_id = $request->region_id;
-        if (!$id_outlet && $user && $user->id_outlet) {
-            $id_outlet = $user->id_outlet;
-        }
         if (!$region_id && $id_outlet) {
             $region_id = DB::table('tbl_data_outlet')->where('id_outlet', $id_outlet)->value('region_id');
         }
+        \Log::error('[FO DEBUG] PARAMS', [
+            'fo_mode' => $request->fo_mode,
+            'day' => $request->day,
+            'region_id' => $region_id,
+            'outlet_id' => $id_outlet,
+            'all' => $request->all(),
+        ]);
         $regionExists = false;
         if ($region_id) {
             $regionExists = DB::table('regions')->where('id', $region_id)->where('status', 'active')->exists();
@@ -218,66 +217,80 @@ class FOScheduleController extends Controller
             ->where('fo_mode', $request->fo_mode)
             ->get();
 
-        // 1. Cek jadwal hari ini
-        $todaySchedules = $schedules->where('day', $todayName);
         $activeWindow = null;
-        foreach ($todaySchedules as $schedule) {
+        foreach ($schedules as $schedule) {
             $regionMatch = $region_id && $schedule->regions->pluck('id')->contains($region_id);
             $outletMatch = $id_outlet && $schedule->outlets->pluck('id_outlet')->contains($id_outlet);
+            \Log::error('[FO DEBUG] Jadwal Filter', [
+                'schedule_id' => $schedule->id,
+                'regionMatch' => $regionMatch,
+                'outletMatch' => $outletMatch,
+                'schedule_regions' => $schedule->regions->pluck('id')->toArray(),
+                'schedule_outlets' => $schedule->outlets->pluck('id_outlet')->toArray(),
+                'region_id' => $region_id,
+                'id_outlet' => $id_outlet,
+            ]);
             if (!($regionMatch || $outletMatch)) continue;
+
             $openTime = $schedule->open_time;
             $closeTime = $schedule->close_time;
+            $scheduleDayIdx = array_search($schedule->day, $daysOfWeek);
+
             if (strtotime($openTime) < strtotime($closeTime)) {
-                // Shift siang: window = hari ini jam open-close
-                $openDT = $now->copy()->setTimeFromTimeString($openTime);
-                $closeDT = $now->copy()->setTimeFromTimeString($closeTime);
-                if ($now->gte($openDT) && $now->lt($closeDT)) {
-                    $activeWindow = [
-                        'schedule' => $schedule,
-                        'open_datetime' => $openDT->toDateTimeString(),
-                        'close_datetime' => $closeDT->toDateTimeString(),
-                    ];
-                    break;
+                if ($todayName == $schedule->day) {
+                    $openDT = $now->copy()->setTimeFromTimeString($openTime);
+                    $closeDT = $now->copy()->setTimeFromTimeString($closeTime);
+                    Log::info('[FO DEBUG] Shift siang', [
+                        'openDT' => $openDT->toDateTimeString(),
+                        'closeDT' => $closeDT->toDateTimeString(),
+                        'now' => $now->toDateTimeString(),
+                    ]);
+                    if ($now->gte($openDT) && $now->lt($closeDT)) {
+                        Log::info('[FO DEBUG] Jadwal AKTIF (siang)');
+                        $activeWindow = [
+                            'schedule' => $schedule,
+                            'open_datetime' => $openDT->toDateTimeString(),
+                            'close_datetime' => $closeDT->toDateTimeString(),
+                        ];
+                        break;
+                    }
                 }
             } else {
-                // Shift malam: window = 00:00 hari ini sampai jam close
-                $openDT = $now->copy()->startOfDay();
-                $closeDT = $now->copy()->setTimeFromTimeString($closeTime);
-                if ($now->gte($openDT) && $now->lt($closeDT)) {
-                    $activeWindow = [
-                        'schedule' => $schedule,
-                        'open_datetime' => $openDT->toDateTimeString(),
-                        'close_datetime' => $closeDT->toDateTimeString(),
-                    ];
-                    break;
-                }
-            }
-        }
-        // 2. Jika sudah lewat jam close, cari jadwal berikutnya
-        if (!$activeWindow) {
-            // Cek jadwal berikutnya (max 7 hari ke depan)
-            for ($i = 1; $i <= 7; $i++) {
-                $nextIdx = ($todayIdx + $i) % 7;
-                $nextDay = $daysOfWeek[$nextIdx];
-                $nextSchedules = $schedules->where('day', $nextDay);
-                foreach ($nextSchedules as $schedule) {
-                    $regionMatch = $region_id && $schedule->regions->pluck('id')->contains($region_id);
-                    $outletMatch = $id_outlet && $schedule->outlets->pluck('id_outlet')->contains($id_outlet);
-                    if (!($regionMatch || $outletMatch)) continue;
-                    $openTime = $schedule->open_time;
-                    $closeTime = $schedule->close_time;
-                    if (strtotime($openTime) > strtotime($closeTime)) {
-                        // Shift malam: window = hari ini jam open sampai hari berikutnya jam close
-                        $openDT = $now->copy()->setTimeFromTimeString($openTime);
-                        $closeDT = $now->copy()->addDays($i)->setTimeFromTimeString($closeTime);
-                        if ($now->gte($openDT) && $now->lt($closeDT)) {
-                            $activeWindow = [
-                                'schedule' => $schedule,
-                                'open_datetime' => $openDT->toDateTimeString(),
-                                'close_datetime' => $closeDT->toDateTimeString(),
-                            ];
-                            break 2;
-                        }
+                $prevDayIdx = ($scheduleDayIdx - 1) < 0 ? 6 : ($scheduleDayIdx - 1);
+                $prevDay = $daysOfWeek[$prevDayIdx];
+                if ($todayName == $schedule->day) {
+                    $openDT = $now->copy()->subDay()->setTimeFromTimeString($openTime);
+                    $closeDT = $now->copy()->setTimeFromTimeString($closeTime);
+                    Log::info('[FO DEBUG] Shift malam (window close)', [
+                        'openDT' => $openDT->toDateTimeString(),
+                        'closeDT' => $closeDT->toDateTimeString(),
+                        'now' => $now->toDateTimeString(),
+                    ]);
+                    if ($now->gte($openDT) && $now->lt($closeDT)) {
+                        Log::info('[FO DEBUG] Jadwal AKTIF (malam, window close)');
+                        $activeWindow = [
+                            'schedule' => $schedule,
+                            'open_datetime' => $openDT->toDateTimeString(),
+                            'close_datetime' => $closeDT->toDateTimeString(),
+                        ];
+                        break;
+                    }
+                } elseif ($todayName == $prevDay) {
+                    $openDT = $now->copy()->setTimeFromTimeString($openTime);
+                    $closeDT = $now->copy()->addDay()->setTimeFromTimeString($closeTime);
+                    Log::info('[FO DEBUG] Shift malam (window open)', [
+                        'openDT' => $openDT->toDateTimeString(),
+                        'closeDT' => $closeDT->toDateTimeString(),
+                        'now' => $now->toDateTimeString(),
+                    ]);
+                    if ($now->gte($openDT)) {
+                        Log::info('[FO DEBUG] Jadwal AKTIF (malam, window open)');
+                        $activeWindow = [
+                            'schedule' => $schedule,
+                            'open_datetime' => $openDT->toDateTimeString(),
+                            'close_datetime' => $closeDT->toDateTimeString(),
+                        ];
+                        break;
                     }
                 }
             }

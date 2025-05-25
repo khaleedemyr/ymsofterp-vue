@@ -81,15 +81,15 @@ function goBack() {
         </button>
         <h1 class="text-2xl font-bold text-gray-800 flex items-center gap-2 ml-4">
           <i class="fa-solid fa-calendar-days text-blue-500"></i>
-          <span v-if="isEdit">Edit Jadwal FO</span>
-          <span v-else>Buat Jadwal FO</span>
+          <span v-if="isEdit">Edit Jadwal RO</span>
+          <span v-else>Buat Jadwal RO</span>
         </h1>
       </div>
 
       <form @submit.prevent="onSubmit" class="bg-white rounded-2xl shadow-2xl p-6 space-y-6">
         <!-- Mode FO -->
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">Mode FO</label>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Mode RO</label>
           <select v-model="form.fo_mode" 
             class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500">
             <option value="">Pilih Mode FO</option>
