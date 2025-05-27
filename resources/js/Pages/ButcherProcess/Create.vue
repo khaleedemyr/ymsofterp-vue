@@ -6,7 +6,7 @@
       <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
         <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
           <div class="p-6 bg-white border-b border-gray-200">
-            <form @submit.prevent="submit">
+            <form @submit.prevent="validateAndSubmit" @keydown.enter.prevent>
               <!-- Basic Information -->
               <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
                 <div>
@@ -15,6 +15,7 @@
                     v-model="form.warehouse_id"
                     class="mt-1 block w-full rounded-md border-gray-300"
                     required
+                    @keydown.enter.prevent
                   >
                     <option value="">Select Warehouse</option>
                     <option v-for="warehouse in warehouses" :key="warehouse.id" :value="warehouse.id">
@@ -69,6 +70,8 @@
                         <th class="px-4 py-2 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">SISA QTY</th>
                         <th class="px-4 py-2 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Qty to Butcher</th>
                         <th class="px-4 py-2 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Unit</th>
+                        <th class="px-4 py-2 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Harga PO</th>
+                        <th class="px-4 py-2 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Harga per {{ getUnitName(item?.small_unit_id) || 'Small Unit' }}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -78,25 +81,40 @@
                         </td>
                         <td class="px-4 py-2">{{ item.sku }}</td>
                         <td class="px-4 py-2">{{ item.name }}</td>
-                        <td class="px-4 py-2">{{ item.qty }}</td>
                         <td class="px-4 py-2">
-                          {{ item.qty - getUsedQty(item.id) - (Number(selectedWhole[item.id]?.qty) || 0) }}
+                          {{ item.qty_received ?? 0 }}
                         </td>
                         <td class="px-4 py-2">
-                          <input type="number" v-model.number="selectedWhole[item.id].qty" min="0.01" :max="item.qty" step="0.01"
-                            :disabled="!selectedWhole[item.id]?.checked" class="w-24 rounded border-gray-300" />
-                          <div v-if="selectedWhole[item.id]?.qty && Number(selectedWhole[item.id].qty) > item.qty" class="text-xs text-red-600 mt-1">
-                            Qty to Butcher tidak boleh melebihi Qty asal ({{ item.qty }})
+                          {{ item.sisa_qty ?? 0 }}
+                        </td>
+                        <td class="px-4 py-2">
+                          <input 
+                            type="number" 
+                            v-model.number="selectedWhole[item.id].qty" 
+                            min="0.01" 
+                            :max="item.sisa_qty" 
+                            step="0.01"
+                            :disabled="!selectedWhole[item.id]?.checked" 
+                            class="w-24 rounded border-gray-300" 
+                          />
+                          <div v-if="selectedWhole[item.id]?.qty && Number(selectedWhole[item.id].qty) > item.sisa_qty" class="text-xs text-red-600 mt-1">
+                            Qty to Butcher tidak boleh melebihi sisa qty ({{ item.sisa_qty }})
                           </div>
                         </td>
                         <td class="px-4 py-2">{{ item.unit }}</td>
+                        <td class="px-4 py-2">
+                          {{ formatRupiah(item.po_price) }} / {{ getUnitName(item?.po_unit_id) }}
+                        </td>
+                        <td class="px-4 py-2">
+                          {{ formatRupiah(pricePerSmallUnit(item)) }} / {{ getUnitName(item?.small_unit_id) }}
+                        </td>
                       </tr>
                     </tbody>
                   </table>
                 </div>
                 <button type="button" class="mt-2 px-3 py-1 rounded bg-blue-600 text-white font-semibold hover:bg-blue-700"
                   @click="addSelectedToButcher"
-                  :disabled="!Object.values(selectedWhole).some(v => v.checked && Number(v.qty) > 0) || wholeItems.some(item => selectedWhole[item.id]?.qty && Number(selectedWhole[item.id].qty) > item.qty)">
+                  :disabled="!Object.values(selectedWhole).some(v => v.checked && Number(v.qty) > 0) || wholeItems.some(item => selectedWhole[item.id]?.qty && Number(selectedWhole[item.id]?.qty) > item.sisa_qty)">
                   Add to Butcher
                 </button>
               </div>
@@ -105,13 +123,6 @@
               <div class="mb-6">
                 <div class="flex justify-between items-center mb-4">
                   <h3 class="text-lg font-medium text-gray-900">Butcher Output (PCS Items)</h3>
-                  <button
-                    type="button"
-                    @click="addItem"
-                    class="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700"
-                  >
-                    Add Item
-                  </button>
                 </div>
 
                 <div v-for="(item, idx) in form.items" :key="idx" class="mb-4 border rounded-lg">
@@ -198,6 +209,13 @@
                     </div>
                   </div>
                 </div>
+
+                <!-- Total Cost & MAC PCS Preview -->
+                <div class="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                  <div class="font-semibold mb-1">Preview Perhitungan:</div>
+                  <div>Total Cost: <span class="font-mono">{{ formatRupiah(totalCostPreview) }}</span></div>
+                  <div>MAC PCS: <span class="font-mono">{{ formatRupiah(macPcsPreview) }}</span></div>
+                </div>
               </div>
 
               <!-- Certificates -->
@@ -279,11 +297,17 @@
         </div>
       </div>
     </div>
+    <div v-if="isLoading" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-30">
+      <div class="bg-white px-6 py-4 rounded shadow flex items-center gap-2">
+        <span class="loader border-2 border-blue-500 border-t-transparent rounded-full w-6 h-6 animate-spin"></span>
+        <span>Menyimpan...</span>
+      </div>
+    </div>
   </AppLayout>
 </template>
 
 <script setup>
-import { ref, reactive, watch, nextTick } from 'vue'
+import { ref, reactive, watch, nextTick, computed } from 'vue'
 import { Head, useForm } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import axios from 'axios'
@@ -312,6 +336,11 @@ const wholeItems = ref([])
 const selectedWhole = ref({})
 const expandedWhole = ref({})
 const pcsItems = ref(props.pcsItems || [])
+
+// Add new refs for validation
+const isSubmitting = ref(false)
+const validationErrors = ref({})
+const isLoading = ref(false)
 
 const fetchGoodReceiveSuggestions = async (q) => {
   goodReceiveLoading.value = true
@@ -360,20 +389,34 @@ const removeItem = (index) => {
 
 const addSelectedToButcher = () => {
   // Ambil item yang dicentang dan qty > 0
-  const items = wholeItems.value.filter(item => selectedWhole.value[item.id]?.checked && Number(selectedWhole.value[item.id]?.qty) > 0)
+  const items = wholeItems.value.filter(item => {
+    return selectedWhole.value[item.id]?.checked && 
+           Number(selectedWhole.value[item.id]?.qty) > 0 &&
+           Number(selectedWhole.value[item.id]?.qty) <= item.sisa_qty;
+  });
+
   items.forEach(item => {
+    const qtyToButcher = Number(selectedWhole.value[item.id].qty);
     form.items.push({
-      whole_item_id: item.id,
+      whole_item_id: Number(item.item_id),
       whole_item_name: item.name,
-      whole_qty: Number(selectedWhole.value[item.id].qty),
+      whole_qty: qtyToButcher,
       whole_unit: item.unit,
+      qty_purchase: item.qty_received ?? qtyToButcher,
       pcs: [],
-      susut_air: { qty: '', unit: item.unit }
-    })
+      susut_air: { qty: '', unit: item.unit },
+      small_conversion_qty: item.small_conversion_qty,
+      po_price: item.po_price,
+      po_unit_id: item.po_unit_id,
+      small_unit_id: item.small_unit_id
+    });
+    // Kurangi sisa_qty
+    item.sisa_qty = (item.sisa_qty ?? 0) - qtyToButcher;
     // Optional: reset checkbox & qty
-    selectedWhole.value[item.id].checked = false
-    selectedWhole.value[item.id].qty = ''
-  })
+    selectedWhole.value[item.id].checked = false;
+    selectedWhole.value[item.id].qty = '';
+    console.log('item yang di-add:', item);
+  });
 }
 
 const setWholeChecked = (id, checked) => {
@@ -405,11 +448,142 @@ const getItemUnits = (itemId, itemName) => {
   return ['Small', 'Medium', 'Large']
 }
 
-const submit = () => {
+// Add validation function
+const validateForm = () => {
+  validationErrors.value = {}
+  let isValid = true
+
+  // Validate warehouse
+  if (!form.warehouse_id) {
+    validationErrors.value.warehouse_id = 'Warehouse is required'
+    isValid = false
+  }
+
+  // Validate good receive
+  if (!form.good_receive_id) {
+    validationErrors.value.good_receive_id = 'Good Receive is required'
+    isValid = false
+  }
+
+  // Validate items
+  if (!form.items || form.items.length === 0) {
+    validationErrors.value.items = 'At least one item must be added'
+    isValid = false
+  }
+
+  // Validate each item
+  form.items.forEach((item, index) => {
+    if (!item.whole_item_id) {
+      validationErrors.value[`items.${index}.whole_item_id`] = 'Whole item is required'
+      isValid = false
+    }
+    if (!item.whole_qty || item.whole_qty <= 0) {
+      validationErrors.value[`items.${index}.whole_qty`] = 'Whole quantity must be greater than 0'
+      isValid = false
+    }
+    if (!item.pcs || item.pcs.length === 0) {
+      validationErrors.value[`items.${index}.pcs`] = 'At least one PCS item must be added'
+      isValid = false
+    }
+
+    // Validate each PCS item
+    item.pcs.forEach((pcs, pcsIndex) => {
+      if (!pcs.pcs_item_id) {
+        validationErrors.value[`items.${index}.pcs.${pcsIndex}.pcs_item_id`] = 'PCS item is required'
+        isValid = false
+      }
+      if (!pcs.unit_id) {
+        validationErrors.value[`items.${index}.pcs.${pcsIndex}.unit_id`] = 'Unit is required'
+        isValid = false
+      }
+      if (!pcs.pcs_qty || pcs.pcs_qty <= 0) {
+        validationErrors.value[`items.${index}.pcs.${pcsIndex}.pcs_qty`] = 'PCS quantity must be greater than 0'
+        isValid = false
+      }
+    })
+  })
+
+  // Validate certificates
+  if (!form.certificates || form.certificates.length === 0) {
+    validationErrors.value.certificates = 'At least one halal certificate is required'
+    isValid = false
+  } else {
+    // Validate each certificate
+    form.certificates.forEach((cert, index) => {
+      if (!cert.producer_name) {
+        validationErrors.value[`certificates.${index}.producer_name`] = 'Producer name is required'
+        isValid = false
+      }
+      if (!cert.certificate_number) {
+        validationErrors.value[`certificates.${index}.certificate_number`] = 'Certificate number is required'
+        isValid = false
+      }
+      if (!cert.file) {
+        validationErrors.value[`certificates.${index}.file`] = 'Certificate file is required'
+        isValid = false
+      }
+    })
+  }
+
+  return isValid
+}
+
+// Modify submit function to include validation
+const validateAndSubmit = async () => {
+  if (isSubmitting.value || isLoading.value) return
+
+  if (!validateForm()) {
+    Swal.fire({
+      icon: 'error',
+      title: 'Validation Error',
+      html: Object.values(validationErrors.value).join('<br>'),
+      confirmButtonText: 'OK'
+    })
+    return
+  }
+
+  // SweetAlert konfirmasi
+  const result = await Swal.fire({
+    title: 'Konfirmasi Simpan',
+    text: 'Apakah Anda yakin ingin menyimpan butcher process ini?',
+    icon: 'question',
+    showCancelButton: true,
+    confirmButtonText: 'Ya, simpan!',
+    cancelButtonText: 'Batal'
+  })
+
+  if (!result.isConfirmed) return
+
+  isSubmitting.value = true
+  isLoading.value = true
+  try {
+    await submit()
+  } catch (error) {
+    console.error('Error submitting form:', error)
+    Swal.fire({
+      icon: 'error',
+      title: 'Gagal',
+      text: error.response?.data?.message || error.message || 'Terjadi error saat simpan data.'
+    })
+  } finally {
+    isSubmitting.value = false
+    isLoading.value = false
+  }
+}
+
+// Modify existing submit function
+const submit = async () => {
+  // Filter hanya item dengan whole_item_id yang valid
+  form.items = form.items.filter(item => item.whole_item_id);
+  console.log('form.items (before flatten):', JSON.stringify(form.items, null, 2));
   // FLATTEN items: setiap PCS pada setiap Whole menjadi 1 item di array items
   const flatItems = [];
   form.items.forEach(whole => {
     (whole.pcs || []).forEach(pcs => {
+      let macPcs = 0;
+      if (!pcs.costs_0) {
+        macPcs = macPcsPreview.value;
+      }
       flatItems.push({
         whole_item_id: whole.whole_item_id,
         whole_item_name: whole.whole_item_name,
@@ -419,8 +593,6 @@ const submit = () => {
         packing_date: whole.packing_date,
         batch_est: whole.batch_est,
         qty_purchase: whole.qty_purchase,
-        attachment_pdf: whole.attachment_pdf,
-        upload_image: whole.upload_image,
         susut_air: whole.susut_air,
         pcs_item_id: pcs.pcs_item_id,
         pcs_item_name: pcs.pcs_item_name,
@@ -429,53 +601,57 @@ const submit = () => {
         costs_0: pcs.costs_0,
         qty: pcs.qty,
         qty_kg: pcs.qty,
+        mac_pcs: macPcs
       });
+      console.log('KIRIM mac_pcs:', macPcs, 'costs_0:', pcs.costs_0, 'pcs:', pcs.pcs_item_name);
     });
   });
-  // Debug log
-  console.log('FLATTENED ITEMS:', flatItems);
-  // Validasi frontend sebelum submit
-  for (let i = 0; i < flatItems.length; i++) {
-    const item = flatItems[i];
-    if (!item.pcs_item_id || !item.pcs_qty || !item.unit_id) {
-      Swal.fire({
-        icon: 'error',
-        title: 'Gagal',
-        html: `PCS item ke-${i+1} belum lengkap.<br>Pastikan pilih item PCS, isi qty, dan pilih unit.`
-      });
-      return;
+  console.log('flatItems (to be sent):', JSON.stringify(flatItems, null, 2));
+
+  // Create FormData for file uploads
+  const formData = new FormData();
+  formData.append('warehouse_id', form.warehouse_id);
+  formData.append('good_receive_id', form.good_receive_id);
+  formData.append('items', JSON.stringify(flatItems));
+  // Kirim file untuk setiap item
+  form.items.forEach((whole, wIdx) => {
+    if (whole.attachment_pdf) {
+      formData.append(`items_files[${wIdx}][attachment_pdf]`, whole.attachment_pdf);
     }
-  }
-  form.items = flatItems; // <-- assign langsung agar FormData tetap terbentuk
-  form.processing = true;
-  form.post(route('butcher-processes.store'), {
-    onSuccess: () => {
-      form.processing = false;
-      Swal.fire('Sukses', 'Butcher process berhasil disimpan!', 'success');
-      form.reset();
-      selectedGoodReceive.value = null;
-      wholeItems.value = [];
-    },
-    onError: (errors) => {
-      form.processing = false;
-      let msg = 'Terjadi kesalahan saat menyimpan data';
-      if (errors && typeof errors === 'object') {
-        if (errors.error) {
-          msg = errors.error;
-        } else if (Object.values(errors).length) {
-          msg = Object.values(errors).join('<br>');
-        }
-      }
-      Swal.fire({
-        icon: 'error',
-        title: 'Gagal',
-        html: msg
-      });
-    },
-    onFinish: () => {
-      form.processing = false;
+    if (whole.upload_image) {
+      formData.append(`items_files[${wIdx}][upload_image]`, whole.upload_image);
     }
   });
+  // Append certificates
+  if (form.certificates && form.certificates.length > 0) {
+    formData.append('certificates', JSON.stringify(form.certificates));
+    form.certificates.forEach((cert, index) => {
+      if (cert.file) {
+        formData.append(`certificate_files[${index}]`, cert.file);
+      }
+    });
+  }
+
+  try {
+    const response = await axios.post(route('butcher-processes.store'), formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      }
+    });
+    
+    if (response.data.success) {
+      await Swal.fire({
+        icon: 'success',
+        title: 'Berhasil',
+        text: 'Butcher process berhasil disimpan!'
+      });
+      window.location.href = route('butcher-processes.index');
+    } else {
+      throw new Error(response.data.message || 'Failed to create butcher process');
+        }
+  } catch (error) {
+    throw error;
+    }
 }
 
 function handleImageUpload(e, item) {
@@ -511,9 +687,9 @@ function onPcsSelect(idx, pcsIdx) {
   if (selected) {
     pcs.pcs_item_name = selected.name;
     pcs.unit_options = [
-      selected.unit_small ? { id: selected.small_unit_id, name: selected.unit_small } : null,
-      selected.unit_medium ? { id: selected.medium_unit_id, name: selected.unit_medium } : null,
-      selected.unit_large ? { id: selected.large_unit_id, name: selected.unit_large } : null,
+      selected.small_unit_id ? { id: selected.small_unit_id, name: selected.small_unit_name } : null,
+      selected.medium_unit_id ? { id: selected.medium_unit_id, name: selected.medium_unit_name } : null,
+      selected.large_unit_id ? { id: selected.large_unit_id, name: selected.large_unit_name } : null,
     ].filter(Boolean);
     pcs.unit_id = '';
   } else {
@@ -541,4 +717,116 @@ watch(() => form.warehouse_id, () => {
   form.good_receive_id = ''
   form.items = []
 })
+
+// Add keydown handler for inputs
+const handleKeyDown = (event) => {
+  if (event.key === 'Enter') {
+    event.preventDefault()
+  }
+}
+
+// Tambahkan helper untuk preview total cost dan mac pcs
+function formatRupiah(val) {
+  if (val == null || isNaN(val)) return '-';
+  return 'Rp ' + Number(val).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+// Total Cost Preview
+const totalCostPreview = computed(() => {
+  if (!form.items.length) return 0;
+  const pricePerSmall = pricePerSmallUnit(form.items[0]);
+  const qtyAddToButcherSmall = Number(form.items[0].whole_qty || 0) * (Number(form.items[0].small_conversion_qty) || 1);
+  return pricePerSmall * qtyAddToButcherSmall;
+});
+
+// 1. Sum qty_kg (PCS) yang cost 0 = false
+const sumQtyKgCostFalse = computed(() => {
+  let sum = 0;
+  form.items.forEach(item => {
+    if (Array.isArray(item.pcs)) {
+      item.pcs.forEach(pcs => {
+        if (!pcs.costs_0) {
+          sum += Number(pcs.qty || 0);
+        }
+      });
+    }
+  });
+  return sum;
+});
+
+// 2. Cost per small unit baru
+const costPerSmallUnitBaru = computed(() => {
+  const totalCost = Number(totalCostPreview.value);
+  const sumKg = Number(sumQtyKgCostFalse.value);
+  const conversion = Number(form.items[0]?.small_conversion_qty) || 1;
+  return sumKg > 0 ? totalCost / (sumKg * conversion) : 0;
+});
+
+// 3. Total output (kg semua row + susut air, cost 0 = false)
+const totalOutputKg = computed(() => {
+  let sum = 0;
+  form.items.forEach(item => {
+    if (Array.isArray(item.pcs)) {
+      item.pcs.forEach(pcs => {
+        sum += Number(pcs.qty || 0);
+      });
+    }
+    // Tambah susut air
+    if (item.susut_air && item.susut_air.qty) {
+      sum += Number(item.susut_air.qty || 0);
+    }
+  });
+  return sum;
+});
+
+// 4. Total output dalam small unit
+const totalOutputSmall = computed(() => Number(totalOutputKg.value) * (Number(form.items[0]?.small_conversion_qty) || 1));
+const totalValueOutput = computed(() => Number(totalOutputSmall.value) * Number(costPerSmallUnitBaru.value));
+
+// 5. Sum qty pcs (PCS) yang cost 0 = false
+const sumQtyPcsCostFalse = computed(() => {
+  let sum = 0;
+  form.items.forEach(item => {
+    if (Array.isArray(item.pcs)) {
+      item.pcs.forEach(pcs => {
+        if (!pcs.costs_0) {
+          sum += Number(pcs.pcs_qty || 0);
+        }
+      });
+    }
+  });
+  return sum;
+});
+
+// 6. MAC PCS
+const macPcsPreview = computed(() => {
+  return sumQtyPcsCostFalse.value > 0 ? totalValueOutput.value / sumQtyPcsCostFalse.value : 0;
+});
+
+function pricePerSmallUnit(item) {
+  const price = Number(item.po_price);
+  const conv = Number(item.small_conversion_qty);
+  if (!price || !conv) return 0;
+  return price / conv;
+}
+
+function getUnitName(unitId) {
+  const unit = props.units?.find(u => u.id == unitId);
+  return unit ? unit.name : '-';
+}
 </script> 
+
+<style scoped>
+.loader {
+  border-width: 2px;
+  border-style: solid;
+  border-radius: 9999px;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-top-color: transparent;
+  animation: spin 1s linear infinite;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+</style> 

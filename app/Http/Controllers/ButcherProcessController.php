@@ -20,6 +20,7 @@ use App\Models\ButcherProcessItemDetail;
 use App\Models\FoodInventoryStock;
 use Illuminate\Support\Facades\Log;
 use App\Models\FoodInventoryItem;
+use App\Models\GoodReceive;
 
 class ButcherProcessController extends Controller
 {
@@ -66,52 +67,86 @@ class ButcherProcessController extends Controller
 
     public function create()
     {
-        // Ambil semua item PCS dan Whole yang status aktif dan kategori show_pos = 0
-        $pcsItems = Item::join('categories', 'items.category_id', '=', 'categories.id')
+        $warehouses = Warehouse::where('status', 'active')->get();
+        $units = Unit::where('status', 'active')->get();
+        
+        // Get PCS items (items that can be produced from whole items)
+        $pcsItems = Item::whereHas('category', function($q) {
+            $q->where('show_pos', '0');
+        })
+            ->where('items.status', 'active')
             ->leftJoin('units as small_unit', 'items.small_unit_id', '=', 'small_unit.id')
             ->leftJoin('units as medium_unit', 'items.medium_unit_id', '=', 'medium_unit.id')
             ->leftJoin('units as large_unit', 'items.large_unit_id', '=', 'large_unit.id')
-            ->where('items.status', 'active')
-            ->where('categories.show_pos', '0')
             ->select(
                 'items.*',
-                'small_unit.name as unit_small',
                 'small_unit.id as small_unit_id',
-                'medium_unit.name as unit_medium',
+            'small_unit.name as small_unit_name',
                 'medium_unit.id as medium_unit_id',
-                'large_unit.name as unit_large',
-                'large_unit.id as large_unit_id'
+            'medium_unit.name as medium_unit_name',
+            'large_unit.id as large_unit_id',
+            'large_unit.name as large_unit_name'
             )
             ->orderBy('items.name', 'asc')
             ->get();
-        $wholeItems = Item::join('categories', 'items.category_id', '=', 'categories.id')
-            ->leftJoin('units as small_unit', 'items.small_unit_id', '=', 'small_unit.id')
-            ->leftJoin('units as medium_unit', 'items.medium_unit_id', '=', 'medium_unit.id')
-            ->leftJoin('units as large_unit', 'items.large_unit_id', '=', 'large_unit.id')
-            ->where('items.status', 'active')
-            ->where('categories.show_pos', '0')
-            ->select(
-                'items.*',
-                'small_unit.name as unit_small',
-                'small_unit.id as small_unit_id',
-                'medium_unit.name as unit_medium',
-                'medium_unit.id as medium_unit_id',
-                'large_unit.name as unit_large',
-                'large_unit.id as large_unit_id'
-            )
-            ->orderBy('items.name', 'asc')
-            ->get();
+
+        // Get good receives that have remaining quantity
+        $goodReceives = FoodGoodReceive::whereHas('items', function($query) {
+            $query->whereRaw('qty_received > COALESCE((
+                SELECT SUM(bpi.whole_qty)
+                FROM butcher_process_items bpi
+                JOIN butcher_processes bp ON bp.id = bpi.butcher_process_id
+                WHERE bp.good_receive_id = food_good_receives.id
+                AND bpi.whole_item_id = food_good_receive_items.item_id
+            ), 0)');
+        })->get();
+
         return Inertia::render('ButcherProcess/Create', [
-            'warehouses' => Warehouse::all(),
-            'wholeItems' => $wholeItems,
+            'warehouses' => $warehouses,
+            'units' => $units,
             'pcsItems' => $pcsItems,
-            'units' => Unit::all(),
-            'goodReceives' => FoodGoodReceive::with('supplier')->latest()->get()
+            'goodReceives' => $goodReceives
         ]);
     }
 
     public function store(Request $request)
     {
+        // Jika items dikirim sebagai string (karena FormData), decode dulu
+        if (is_string($request->items)) {
+            $request->merge([
+                'items' => json_decode($request->items, true)
+            ]);
+        }
+        // Jika certificates dikirim sebagai string (karena FormData), decode juga
+        if (is_string($request->certificates)) {
+            $request->merge([
+                'certificates' => json_decode($request->certificates, true)
+            ]);
+        }
+        // Mapping file upload ke certificates
+        if ($request->hasFile('certificate_files')) {
+            $certificateFiles = $request->file('certificate_files');
+            $certificates = $request->certificates;
+            foreach ($certificateFiles as $idx => $file) {
+                if (isset($certificates[$idx])) {
+                    $certificates[$idx]['file'] = $file;
+                }
+            }
+            $request->merge(['certificates' => $certificates]);
+        }
+        // Mapping file upload ke items
+        if ($request->hasFile('items_files')) {
+            $itemsFiles = $request->file('items_files');
+            $items = $request->items;
+            foreach ($itemsFiles as $idx => $files) {
+                foreach ($files as $key => $file) {
+                    if (isset($items[$idx])) {
+                        $items[$idx][$key] = $file;
+                    }
+                }
+            }
+            $request->merge(['items' => $items]);
+        }
         $request->validate([
             'warehouse_id' => 'required|exists:warehouses,id',
             'good_receive_id' => 'nullable|exists:food_good_receives,id',
@@ -136,6 +171,7 @@ class ButcherProcessController extends Controller
 
         try {
             DB::beginTransaction();
+            Log::info('BUTCHER STORE: Mulai simpan butcher process', $request->all());
 
             // Generate butcher number
             $lastButcher = ButcherProcess::latest()->first();
@@ -152,264 +188,222 @@ class ButcherProcessController extends Controller
                 'created_by' => auth()->id(),
                 'notes' => $request->notes
             ]);
+            Log::info('BUTCHER STORE: Butcher process created', ['butcherProcess' => $butcherProcess]);
 
-            // 1. Hitung total whole_qty per whole_item_id
-            $wholeQtyMap = [];
-            $wholeUnitMap = [];
+            // 1. Hitung total cost butcher (MAC small cost x qty add to butcher dalam small unit)
+            $itemMasterSample = null;
+            $macSmallCost = 0;
+            $qtyAddToButcherSmall = 0;
             foreach ($request->items as $item) {
-                if (!isset($wholeQtyMap[$item['whole_item_id']])) {
-                    $wholeQtyMap[$item['whole_item_id']] = $item['whole_qty'];
-                    $wholeUnitMap[$item['whole_item_id']] = $item['whole_unit'];
+                if (!$itemMasterSample) {
+                    $itemMasterSample = \App\Models\Item::find($item['whole_item_id']);
                 }
             }
-            // 2. Update stok whole dan insert kartu stok hanya sekali per whole_item_id
-            $wholeInventoryMap = [];
-            foreach ($wholeQtyMap as $whole_item_id => $total_whole_qty) {
-                $itemMaster = \App\Models\Item::find($whole_item_id);
-                $inventoryItem = FoodInventoryItem::where('item_id', $whole_item_id)->first();
-                $wholeInventory = FoodInventoryStock::where('inventory_item_id', $inventoryItem->id ?? 0)
-                    ->where('warehouse_id', $request->warehouse_id)
-                    ->first();
-                $unitSmall = optional($itemMaster->smallUnit)->name;
-                $unitMedium = optional($itemMaster->mediumUnit)->name;
-                $unitLarge = optional($itemMaster->largeUnit)->name;
-                $smallConv = $itemMaster->small_conversion_qty ?: 1;
-                $mediumConv = $itemMaster->medium_conversion_qty ?: 1;
-                $unitName = $wholeUnitMap[$whole_item_id];
-                $qty_small = 0; $qty_medium = 0; $qty_large = 0;
-                if ($unitName === $unitSmall) {
-                    $qty_small = $total_whole_qty;
-                    $qty_medium = $smallConv > 0 ? $qty_small / $smallConv : 0;
-                    $qty_large = ($smallConv > 0 && $mediumConv > 0) ? $qty_small / ($smallConv * $mediumConv) : 0;
-                } elseif ($unitName === $unitMedium) {
-                    $qty_medium = $total_whole_qty;
-                    $qty_small = $qty_medium * $smallConv;
-                    $qty_large = $mediumConv > 0 ? $qty_medium / $mediumConv : 0;
-                } elseif ($unitName === $unitLarge) {
-                    $qty_large = $total_whole_qty;
-                    $qty_medium = $qty_large * $mediumConv;
-                    $qty_small = $qty_medium * $smallConv;
-                } else {
-                    $qty_small = $total_whole_qty;
-                }
-                // Update stok whole
-                $wholeInventory->qty_small -= $qty_small;
-                $wholeInventory->qty_medium -= $qty_medium;
-                $wholeInventory->qty_large -= $qty_large;
-                $wholeInventory->value = $wholeInventory->qty_small * $wholeInventory->last_cost_small;
-                $wholeInventory->last_cost_small = $wholeInventory->last_cost_small;
-                $wholeInventory->last_cost_medium = $wholeInventory->last_cost_medium;
-                $wholeInventory->last_cost_large = $wholeInventory->last_cost_large;
-                $wholeInventory->save();
-                // Simpan saldo setelah update untuk kartu stok
-                $wholeInventoryMap[$whole_item_id] = [
-                    'qty_small' => $wholeInventory->qty_small,
-                    'qty_medium' => $wholeInventory->qty_medium,
-                    'qty_large' => $wholeInventory->qty_large,
-                    'last_cost_small' => $wholeInventory->last_cost_small,
-                    'last_cost_medium' => $wholeInventory->last_cost_medium,
-                    'last_cost_large' => $wholeInventory->last_cost_large,
-                ];
-                // Insert kartu stok OUT whole
-                \App\Models\FoodInventoryCard::create([
-                    'inventory_item_id' => $inventoryItem->id,
-                    'warehouse_id' => $request->warehouse_id,
-                    'date' => now()->toDateString(),
-                    'reference_type' => 'butcher_process',
-                    'reference_id' => $butcherProcess->id,
-                    'out_qty_small' => $qty_small,
-                    'out_qty_medium' => $qty_medium,
-                    'out_qty_large' => $qty_large,
-                    'cost_per_small' => $wholeInventory->last_cost_small,
-                    'cost_per_medium' => $wholeInventory->last_cost_medium,
-                    'cost_per_large' => $wholeInventory->last_cost_large,
-                    'value_out' => $qty_small * $wholeInventory->last_cost_small,
-                    'saldo_qty_small' => $wholeInventory->qty_small,
-                    'saldo_qty_medium' => $wholeInventory->qty_medium,
-                    'saldo_qty_large' => $wholeInventory->qty_large,
-                    'saldo_value' => $wholeInventory->qty_small * $wholeInventory->last_cost_small,
-                    'description' => 'Pemotongan whole item',
-                ]);
-                Log::info('DEBUG UPDATE WHOLE STOCK FINAL', [
-                    'whole_item_id' => $whole_item_id,
-                    'total_whole_qty' => $total_whole_qty,
-                    'unitName' => $unitName,
-                    'qty_small' => $qty_small,
-                    'qty_medium' => $qty_medium,
-                    'qty_large' => $qty_large,
-                    'after_qty_small' => $wholeInventory->qty_small,
-                    'after_qty_medium' => $wholeInventory->qty_medium,
-                    'after_qty_large' => $wholeInventory->qty_large,
-                ]);
-            }
+            if ($itemMasterSample) {
+                // Get price from purchase order
+                $goodReceive = FoodGoodReceive::find($request->good_receive_id);
+                if ($goodReceive) {
+                    $poItem = DB::table('purchase_order_food_items')
+                        ->join('food_good_receive_items', 'food_good_receive_items.po_item_id', '=', 'purchase_order_food_items.id')
+                        ->where('food_good_receive_items.good_receive_id', $goodReceive->id)
+                        ->where('food_good_receive_items.item_id', $itemMasterSample->id)
+                        ->select('purchase_order_food_items.price', 'purchase_order_food_items.unit_id')
+                        ->first();
 
-            // Store items and update inventory
-            foreach ($request->items as $item) {
-                // Create butcher process item
-                $butcherItem = ButcherProcessItem::create([
-                    'butcher_process_id' => $butcherProcess->id,
-                    'whole_item_id' => $item['whole_item_id'],
-                    'pcs_item_id' => $item['pcs_item_id'],
-                    'whole_qty' => $item['whole_qty'],
-                    'pcs_qty' => $item['pcs_qty'],
-                    'unit_id' => $item['unit_id']
-                ]);
+                    if ($poItem) {
+                        // Get conversion based on PO unit
+                        $poUnitId = $poItem->unit_id;
+                        $conversionValue = 1;
 
-                // Handle file upload (PDF & image)
-                $attachmentPdfPath = null;
-                $uploadImagePath = null;
-                if (isset($item['attachment_pdf']) && $item['attachment_pdf']) {
-                    $attachmentPdfPath = $item['attachment_pdf']->store('butcher_attachments/pdf', 'public');
-                }
-                if (isset($item['upload_image']) && $item['upload_image']) {
-                    $uploadImagePath = $item['upload_image']->store('butcher_attachments/image', 'public');
-                }
+                        if ($poUnitId == $itemMasterSample->small_unit_id) {
+                            $conversionValue = 1;
+                        } elseif ($poUnitId == $itemMasterSample->medium_unit_id) {
+                            $conversionValue = $itemMasterSample->small_conversion_qty;
+                        } elseif ($poUnitId == $itemMasterSample->large_unit_id) {
+                            $conversionValue = $itemMasterSample->small_conversion_qty * $itemMasterSample->medium_conversion_qty;
+                        }
 
-                // Create detail record
-                ButcherProcessItemDetail::create([
-                    'butcher_process_item_id' => $butcherItem->id,
-                    'slaughter_date' => $item['slaughter_date'] ?? null,
-                    'packing_date' => $item['packing_date'] ?? null,
-                    'batch_est' => $item['batch_est'] ?? null,
-                    'qty_purchase' => $item['qty_purchase'] ?? null,
-                    'qty_kg' => $item['qty_kg'] ?? null,
-                    'costs_0' => isset($item['costs_0']) ? (bool)$item['costs_0'] : false,
-                    'attachment_pdf' => $attachmentPdfPath,
-                    'upload_image' => $uploadImagePath,
-                    'susut_air_qty' => $item['susut_air']['qty'] ?? null,
-                    'susut_air_unit' => $item['susut_air']['unit'] ?? null,
-                ]);
-
-                // Update inventory for pcs item (increase)
-                $pcsInventoryItem = FoodInventoryItem::where('item_id', $item['pcs_item_id'])->first();
-                $pcsInventory = FoodInventoryStock::firstOrCreate(
-                    [
-                        'inventory_item_id' => $pcsInventoryItem->id ?? 0,
-                        'warehouse_id' => $request->warehouse_id
-                    ],
-                    ['qty_small' => 0, 'qty_medium' => 0, 'qty_large' => 0]
-                );
-
-                $pcsInventory->update([
-                    'qty_small' => $pcsInventory->qty_small + $item['pcs_qty'],
-                    'qty_medium' => $pcsInventory->qty_medium + $item['pcs_qty'],
-                    'qty_large' => $pcsInventory->qty_large + $item['pcs_qty']
-                ]);
-
-                // Ambil MAC whole (last_cost_small) dari food_inventory_stocks
-                $inventoryItem = FoodInventoryItem::where('item_id', $item['whole_item_id'])->first();
-                $stock = FoodInventoryStock::where('inventory_item_id', $inventoryItem->id)
-                    ->where('warehouse_id', $request->warehouse_id)->first();
-                $macWhole = $stock ? $stock->last_cost_small : 0;
-
-                // Konversi qty whole ke small unit
-                $itemMaster = \App\Models\Item::find($item['whole_item_id']);
-                $unitInput = $item['whole_unit'];
-                $qtyInput = $item['whole_qty'];
-                $smallConv = $itemMaster->small_conversion_qty ?: 1;
-                $mediumConv = $itemMaster->medium_conversion_qty ?: 1;
-                $qtySmall = 0;
-                if ($unitInput === optional($itemMaster->smallUnit)->name) {
-                    $qtySmall = $qtyInput;
-                } elseif ($unitInput === optional($itemMaster->mediumUnit)->name) {
-                    $qtySmall = $qtyInput * $smallConv;
-                } elseif ($unitInput === optional($itemMaster->largeUnit)->name) {
-                    $qtySmall = $qtyInput * $smallConv * $mediumConv;
-                } else {
-                    $qtySmall = $qtyInput;
-                }
-                $totalCost = $qtySmall * $macWhole;
-
-                // Hitung total qty PCS yang cost 0-nya tidak dicentang
-                $totalQtyPcsCost = 0;
-                foreach ($request->items as $i) {
-                    if (empty($i['costs_0'])) {
-                        $totalQtyPcsCost += $i['pcs_qty'];
+                        $macSmallCost = $poItem->price / $conversionValue;
                     }
                 }
-                // Alokasikan cost ke PCS
-                $costPerPcs = 0;
-                if (empty($item['costs_0']) && $totalQtyPcsCost > 0) {
-                    $costPerPcs = $totalCost / $totalQtyPcsCost;
-                }
-                // Simpan cost per PCS ke detail (misal: mac_pcs)
-                $detail = \App\Models\ButcherProcessItemDetail::where('butcher_process_item_id', $butcherItem->id)->first();
-                if ($detail) {
-                    $detail->mac_pcs = $costPerPcs;
-                    $detail->save();
-                }
+            }
+            // Ambil total qty add to butcher (dalam small unit)
+            $qtyAddToButcher = array_sum(array_column($request->items, 'whole_qty'));
+            $unitInput = $request->items[0]['whole_unit'] ?? '';
+            $smallConv = $itemMasterSample ? ($itemMasterSample->small_conversion_qty ?: 1) : 1;
+            $mediumConv = $itemMasterSample ? ($itemMasterSample->medium_conversion_qty ?: 1) : 1;
+            if ($unitInput === optional($itemMasterSample->smallUnit)->name) {
+                $qtyAddToButcherSmall = $qtyAddToButcher;
+            } elseif ($unitInput === optional($itemMasterSample->mediumUnit)->name) {
+                $qtyAddToButcherSmall = $qtyAddToButcher * $smallConv;
+            } elseif ($unitInput === optional($itemMasterSample->largeUnit)->name) {
+                $qtyAddToButcherSmall = $qtyAddToButcher * $smallConv * $mediumConv;
+            } else {
+                $qtyAddToButcherSmall = $qtyAddToButcher;
+            }
+            $totalCost = $macSmallCost * $qtyAddToButcherSmall;
 
-                // Tambahkan konversi satuan PCS sebelum insert FoodInventoryCard untuk PCS
-                $pcsItemMaster = \App\Models\Item::find($item['pcs_item_id']);
-                $pcsSmallConv = $pcsItemMaster->small_conversion_qty ?: 1;
-                $pcsMediumConv = $pcsItemMaster->medium_conversion_qty ?: 1;
-                $pcs_qty_small = 0; $pcs_qty_medium = 0; $pcs_qty_large = 0;
-                if ($item['unit_id'] == $pcsItemMaster->small_unit_id) {
-                    $pcs_qty_small = $item['pcs_qty'];
-                    $pcs_qty_medium = $pcsSmallConv > 0 ? $pcs_qty_small / $pcsSmallConv : 0;
-                    $pcs_qty_large = ($pcsSmallConv > 0 && $pcsMediumConv > 0) ? $pcs_qty_small / ($pcsSmallConv * $pcsMediumConv) : 0;
-                } elseif ($item['unit_id'] == $pcsItemMaster->medium_unit_id) {
-                    $pcs_qty_medium = $item['pcs_qty'];
-                    $pcs_qty_small = $pcs_qty_medium * $pcsSmallConv;
-                    $pcs_qty_large = $pcsMediumConv > 0 ? $pcs_qty_medium / $pcsMediumConv : 0;
-                } elseif ($item['unit_id'] == $pcsItemMaster->large_unit_id) {
-                    $pcs_qty_large = $item['pcs_qty'];
-                    $pcs_qty_medium = $pcs_qty_large * $pcsMediumConv;
-                    $pcs_qty_small = $pcs_qty_medium * $pcsSmallConv;
-                } else {
-                    $pcs_qty_small = $item['pcs_qty'];
+            // --- NEW MAC PCS LOGIC ---
+            // 1. Sum qty_kg (PCS) yang cost 0 = false
+            $sumQtyKgCostFalse = 0;
+            $sumQtyPcsCostFalse = 0;
+            $totalOutputKg = 0;
+            foreach ($request->items as $item) {
+                if (empty($item['costs_0'])) {
+                    $sumQtyKgCostFalse += isset($item['qty_kg']) ? $item['qty_kg'] : (isset($item['qty']) ? $item['qty'] : 0);
+                    $sumQtyPcsCostFalse += isset($item['pcs_qty']) ? $item['pcs_qty'] : (isset($item['qty_pcs']) ? $item['qty_pcs'] : 0);
                 }
-                // Insert ke FoodInventoryCard
-                \App\Models\FoodInventoryCard::create([
-                    'inventory_item_id' => $pcsInventoryItem->id ?? null,
-                    'warehouse_id' => $request->warehouse_id,
-                    'date' => now()->toDateString(),
-                    'reference_type' => 'butcher_process',
-                    'reference_id' => $butcherProcess->id,
-                    'in_qty_small' => $pcs_qty_small,
-                    'in_qty_medium' => $pcs_qty_medium,
-                    'in_qty_large' => $pcs_qty_large,
-                    'cost_per_small' => $costPerPcs ?? 0,
-                    'value_in' => $pcs_qty_small * ($costPerPcs ?? 0),
-                    'saldo_qty_small' => $pcsInventory->qty_small,
-                    'saldo_qty_medium' => $pcsInventory->qty_medium,
-                    'saldo_qty_large' => $pcsInventory->qty_large,
-                    'saldo_value' => $pcsInventory->qty_small * ($costPerPcs ?? 0),
-                    'description' => 'Hasil potong PCS',
-                ]);
-                // Cost history jika ada perubahan MAC pada item PCS
-                if (isset($costPerPcs) && $costPerPcs > 0) {
-                    \DB::table('food_inventory_cost_histories')->insert([
+                // Semua row, baik cost 0 dicentang atau tidak
+                $totalOutputKg += isset($item['qty_kg']) ? $item['qty_kg'] : (isset($item['qty']) ? $item['qty'] : 0);
+                // Tambah susut air
+                if (isset($item['susut_air']) && is_array($item['susut_air']) && isset($item['susut_air']['qty'])) {
+                    $totalOutputKg += $item['susut_air']['qty'];
+                }
+            }
+            $smallConv = $itemMasterSample ? ($itemMasterSample->small_conversion_qty ?: 1) : 1;
+            $costPerSmallUnitBaru = $sumQtyKgCostFalse > 0 ? $totalCost / ($sumQtyKgCostFalse * $smallConv) : 0;
+            $totalOutputSmall = $totalOutputKg * $smallConv;
+            $totalValueOutput = $totalOutputSmall * $costPerSmallUnitBaru;
+            $macPcs = $sumQtyPcsCostFalse > 0 ? $totalValueOutput / $sumQtyPcsCostFalse : 0;
+            // --- END NEW MAC PCS LOGIC ---
+
+            // 3. Untuk setiap item PCS, hitung total cost dan cost per PCS, simpan ke detail
+            foreach ($request->items as $idx => $item) {
+                try {
+                    $macPcs = isset($item['mac_pcs']) ? $item['mac_pcs'] : 0;
+                    Log::info('DEBUG MAC_PCS DARI FRONTEND', [
+                        'idx' => $idx,
+                        'whole_item_id' => $item['whole_item_id'],
+                        'pcs_item_id' => $item['pcs_item_id'],
+                        'mac_pcs' => $macPcs,
+                        'costs_0' => $item['costs_0'] ?? null,
+                        'item' => $item
+                    ]);
+                    $serialNumber = 'BTR-' . date('Ymd') . '-' . $butcherProcess->id . '-' . str_pad($idx+1, 3, '0', STR_PAD_LEFT);
+                    $butcherItem = ButcherProcessItem::create([
+                        'butcher_process_id' => $butcherProcess->id,
+                        'whole_item_id' => $item['whole_item_id'],
+                        'pcs_item_id' => $item['pcs_item_id'],
+                        'whole_qty' => $item['whole_qty'],
+                        'pcs_qty' => $item['pcs_qty'],
+                        'unit_id' => $item['unit_id'],
+                        'serial_number' => $serialNumber
+                    ]);
+
+                    // Handle file upload (PDF & image)
+                    $attachmentPdfPath = null;
+                    $uploadImagePath = null;
+                    if (isset($item['attachment_pdf']) && $item['attachment_pdf']) {
+                        $attachmentPdfPath = $item['attachment_pdf']->store('butcher_attachments/pdf', 'public');
+                    }
+                    if (isset($item['upload_image']) && $item['upload_image']) {
+                        $uploadImagePath = $item['upload_image']->store('butcher_attachments/image', 'public');
+                    }
+
+                    // Create detail record
+                    ButcherProcessItemDetail::create([
+                        'butcher_process_item_id' => $butcherItem->id,
+                        'slaughter_date' => $item['slaughter_date'] ?? null,
+                        'packing_date' => $item['packing_date'] ?? null,
+                        'batch_est' => $item['batch_est'] ?? null,
+                        'qty_purchase' => $item['qty_purchase'] ?? null,
+                        'qty_kg' => $item['qty_kg'] ?? null,
+                        'costs_0' => isset($item['costs_0']) ? (bool)$item['costs_0'] : false,
+                        'attachment_pdf' => $attachmentPdfPath,
+                        'upload_image' => $uploadImagePath,
+                        'susut_air_qty' => $item['susut_air']['qty'] ?? null,
+                        'susut_air_unit' => $item['susut_air']['unit'] ?? null,
+                        'mac_pcs' => $macPcs,
+                    ]);
+
+                    // Update inventory for pcs item (increase)
+                    $pcsInventoryItem = FoodInventoryItem::where('item_id', $item['pcs_item_id'])->first();
+                    $pcsInventory = FoodInventoryStock::firstOrCreate(
+                        [
+                            'inventory_item_id' => $pcsInventoryItem->id ?? 0,
+                            'warehouse_id' => $request->warehouse_id
+                        ],
+                        ['qty_small' => 0, 'qty_medium' => 0, 'qty_large' => 0]
+                    );
+                    Log::info('BUTCHER STORE: Before update PCS stock', ['pcs_item_id' => $item['pcs_item_id'], 'inventory_item_id' => $pcsInventoryItem->id ?? null, 'pcsInventory' => $pcsInventory]);
+                    $pcsInventory->update([
+                        'qty_small' => $pcsInventory->qty_small + $item['pcs_qty'],
+                        'qty_medium' => $pcsInventory->qty_medium + $item['pcs_qty'],
+                        'qty_large' => $pcsInventory->qty_large + $item['pcs_qty']
+                    ]);
+                    $saldo_qty_small_pcs = $pcsInventory->qty_small;
+                    $saldo_qty_medium_pcs = $pcsInventory->qty_medium;
+                    $saldo_qty_large_pcs = $pcsInventory->qty_large;
+                    $saldo_value_pcs = ($saldo_qty_small_pcs * $macPcs)
+                        + ($saldo_qty_medium_pcs * $macPcs)
+                        + ($saldo_qty_large_pcs * $macPcs);
+                    // Insert ke FoodInventoryCard (PCS)
+                    Log::info('BUTCHER STORE: FoodInventoryCard IN PCS', [
+                        'inventory_item_id' => $pcsInventoryItem->id ?? null,
+                        'warehouse_id' => $request->warehouse_id,
+                        'pcs_qty_small' => $item['pcs_qty'],
+                        'pcs_qty_medium' => $item['pcs_qty'],
+                        'pcs_qty_large' => $item['pcs_qty'],
+                        'saldo_qty_small' => $saldo_qty_small_pcs,
+                        'saldo_qty_medium' => $saldo_qty_medium_pcs,
+                        'saldo_qty_large' => $saldo_qty_large_pcs,
+                        'value_in' => $item['pcs_qty'] * $macPcs,
+                        'saldo_value' => $saldo_value_pcs,
+                    ]);
+                    \App\Models\FoodInventoryCard::create([
                         'inventory_item_id' => $pcsInventoryItem->id ?? null,
                         'warehouse_id' => $request->warehouse_id,
                         'date' => now()->toDateString(),
-                        'old_cost' => 0, // update jika ada histori sebelumnya
-                        'new_cost' => $costPerPcs,
-                        'mac' => $costPerPcs,
-                        'type' => 'butcher_process',
                         'reference_type' => 'butcher_process',
                         'reference_id' => $butcherProcess->id,
-                        'created_at' => now(),
+                        'in_qty_small' => $item['pcs_qty'],
+                        'in_qty_medium' => $item['pcs_qty'],
+                        'in_qty_large' => $item['pcs_qty'],
+                        'cost_per_small' => $macPcs,
+                        'value_in' => $item['pcs_qty'] * $macPcs,
+                        'saldo_qty_small' => $saldo_qty_small_pcs,
+                        'saldo_qty_medium' => $saldo_qty_medium_pcs,
+                        'saldo_qty_large' => $saldo_qty_large_pcs,
+                        'saldo_value' => $saldo_value_pcs,
+                        'description' => 'Hasil potong PCS',
                     ]);
-                }
-                // Setelah insert detail
-                Log::info('DEBUG DETAIL', [
-                    'butcher_process_item_id' => $butcherItem->id,
-                    'detail' => $detail ?? null
-                ]);
+                    // Cost history jika ada perubahan MAC pada item PCS
+                    if (empty($item['costs_0'])) {
+                        \DB::table('food_inventory_cost_histories')->insert([
+                            'inventory_item_id' => $pcsInventoryItem->id ?? null,
+                            'warehouse_id' => $request->warehouse_id,
+                            'date' => now()->toDateString(),
+                            'old_cost' => 0,
+                            'new_cost' => $macPcs,
+                            'mac' => $macPcs,
+                            'type' => 'butcher_process',
+                            'reference_type' => 'butcher_process',
+                            'reference_id' => $butcherProcess->id,
+                            'created_at' => now(),
+                        ]);
+                    }
+                    // Setelah insert detail
+                    Log::info('DEBUG DETAIL', [
+                        'butcher_process_item_id' => $butcherItem->id,
+                        'detail' => $item['costs_0'] ? $item['costs_0'] : null
+                    ]);
 
-                Log::info('DEBUG STOCK', [
-                    'unitName_input' => $unitName,
-                    'smallUnit' => optional($inventoryItem->smallUnit)->name,
-                    'mediumUnit' => optional($inventoryItem->mediumUnit)->name,
-                    'largeUnit' => optional($inventoryItem->largeUnit)->name,
-                    'qty_small' => $pcsInventory->qty_small ?? null,
-                    'qty_medium' => $pcsInventory->qty_medium ?? null,
-                    'qty_large' => $pcsInventory->qty_large ?? null,
-                    'item_whole_qty' => $item['whole_qty'],
-                    'inventory_item_id' => $inventoryItem->id ?? null,
-                    'warehouse_id' => $request->warehouse_id,
-                ]);
+                    Log::info('DEBUG STOCK', [
+                        'unitName_input' => $item['whole_unit'],
+                        'smallUnit' => optional($pcsInventoryItem->smallUnit)->name,
+                        'mediumUnit' => optional($pcsInventoryItem->mediumUnit)->name,
+                        'largeUnit' => optional($pcsInventoryItem->largeUnit)->name,
+                        'qty_small' => $pcsInventory->qty_small ?? null,
+                        'qty_medium' => $pcsInventory->qty_medium ?? null,
+                        'qty_large' => $pcsInventory->qty_large ?? null,
+                        'item_whole_qty' => $item['whole_qty'],
+                        'inventory_item_id' => $pcsInventoryItem->id ?? null,
+                        'warehouse_id' => $request->warehouse_id,
+                    ]);
+                } catch (\Exception $e) {
+                    Log::error('BUTCHER STORE: ERROR proses item', ['idx' => $idx, 'item' => $item, 'error' => $e->getMessage()]);
+                    throw $e;
+                }
             }
 
             // Store certificates
@@ -440,6 +434,15 @@ class ButcherProcessController extends Controller
 
             Log::info('ButcherProcess created', ['butcherProcess' => $butcherProcess]);
 
+            // Jika request expects JSON (AJAX/axios)
+            if ($request->expectsJson() || $request->wantsJson() || $request->isJson() || $request->header('Accept') === 'application/json') {
+                return response()->json([
+                    'success' => true,
+                    'id' => $butcherProcess->id,
+                    'redirect' => route('butcher-processes.show', $butcherProcess->id)
+                ]);
+            }
+            // Jika request biasa (form biasa)
             return redirect()->route('butcher-processes.show', $butcherProcess->id)
                 ->with('success', 'Butcher process created successfully');
         } catch (\Exception $e) {
@@ -486,6 +489,7 @@ class ButcherProcessController extends Controller
         try {
             $butcher = ButcherProcess::with(['items', 'items.details'])->findOrFail($id);
             $warehouseId = $butcher->warehouse_id;
+
             // Rollback stok dan kartu stok
             foreach ($butcher->items as $item) {
                 // Rollback stok whole (tambah kembali)

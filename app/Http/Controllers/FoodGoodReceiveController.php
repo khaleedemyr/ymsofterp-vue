@@ -111,6 +111,7 @@ class FoodGoodReceiveController extends Controller
                     'item_id' => $item['item_id'],
                     'qty_ordered' => $item['qty_ordered'],
                     'qty_received' => $item['qty_received'],
+                    'used_qty' => $item['qty_received'],
                     'unit_id' => $item['unit_id'],
                     'notes' => $item['notes'] ?? null,
                     'created_at' => now(),

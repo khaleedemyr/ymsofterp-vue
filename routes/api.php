@@ -24,6 +24,7 @@ use App\Http\Controllers\FOScheduleController;
 use App\Http\Controllers\ItemScheduleController;
 use App\Http\Controllers\Api\GoodReceiveController;
 use App\Http\Controllers\Api\ItemController as ApiItemController;
+use App\Models\FoodGoodReceive;
 
 
 
@@ -137,6 +138,30 @@ Route::get('/items/by-fo-khusus', [App\Http\Controllers\ItemController::class, '
 Route::get('/item-schedules/today', [ItemScheduleController::class, 'getTodaySchedules']);
 
 Route::get('/good-receives/autocomplete', [GoodReceiveController::class, 'autocomplete']);
-Route::get('/good-receives/{id}/items', [GoodReceiveController::class, 'items']);
+Route::get('/good-receives/{id}/items', function ($id) {
+    $items = DB::table('food_good_receive_items as gri')
+        ->join('items as i', 'gri.item_id', '=', 'i.id')
+        ->join('units as u', 'gri.unit_id', '=', 'u.id')
+        ->join('purchase_order_food_items as poi', 'gri.po_item_id', '=', 'poi.id')
+        ->select(
+            'gri.id',
+            'gri.item_id',
+            'i.name',
+            'i.sku',
+            'gri.qty_received',
+            'gri.used_qty as sisa_qty',
+            'u.name as unit',
+            'gri.unit_id',
+            'poi.price as po_price',
+            'poi.unit_id as po_unit_id',
+            'i.small_unit_id',
+            'i.small_conversion_qty'
+        )
+        ->where('gri.good_receive_id', $id)
+        ->get();
+
+    return $items;
+});
+
 Route::get('/items/autocomplete-pcs', [ItemController::class, 'autocompletePcs']);
 

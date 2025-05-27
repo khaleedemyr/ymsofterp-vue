@@ -498,6 +498,17 @@ class ItemController extends Controller
                 }
             }
 
+            // Handle image deletions
+            if ($request->has('deleted_images') && is_array($request->deleted_images)) {
+                foreach ($request->deleted_images as $imgPath) {
+                    $image = $item->images()->where('path', $imgPath)->first();
+                    if ($image) {
+                        \Storage::disk('public')->delete($image->path);
+                        $image->delete();
+                    }
+                }
+            }
+
             // Update harga per region/outlet
             if ($request->has('prices')) {
                 \Log::info('ITEM UPDATE DEBUG - BEFORE PRICES', $item->prices->toArray());
@@ -623,16 +634,32 @@ class ItemController extends Controller
         }
     }
 
-    public function show(Item $item)
+    public function show($id)
     {
+        $item = \App\Models\Item::with(['images', 'prices', 'availabilities', 'modifierOptions', 'boms', 'category', 'subCategory', 'smallUnit', 'mediumUnit', 'largeUnit', 'warehouseDivision'])->find($id);
+        \Log::info('DEBUG MANUAL FIND', ['item' => $item]);
+        if (!$item) {
+            return response()->json(['error' => 'Item not found'], 404);
+        }
         $units = Unit::all();
         $regions = \DB::table('regions')->where('status', 'active')->get()->keyBy('id');
         $outlets = \DB::table('tbl_data_outlet')->where('status', 'A')->get()->keyBy('id_outlet');
-        $item->load(['prices']);
-        $itemData = $item->toArray();
-        $itemData['prices'] = $item->prices->map(function($p) use ($regions, $outlets) {
-            $regionName = $p->region_id ? optional($regions->get($p->region_id))->name : null;
-            $outletName = $p->outlet_id ? optional($outlets->get($p->outlet_id))->nama_outlet : null;
+        $bomItems = \DB::table('items')->where('composition_type', 'single')->where('status', 'active')->orderBy('name')->get();
+        $modifiers = Modifier::with('options')->get();
+        \Log::info('DEBUG $item->prices RAW', $item->prices->toArray());
+        \Log::info('DEBUG $regions', $regions->toArray());
+        \Log::info('DEBUG $outlets', $outlets->toArray());
+        $mappedPrices = $item->prices->map(function($p) use ($regions, $outlets) {
+            $regionId = $p->region_id !== null ? (int) $p->region_id : null;
+            $outletId = $p->outlet_id !== null ? (int) $p->outlet_id : null;
+            $regionName = $regionId ? optional($regions->get($regionId))->name : null;
+            $outletName = $outletId ? optional($outlets->get($outletId))->nama_outlet : null;
+            if ($regionId && !$regions->has($regionId)) {
+                \Log::warning('Region ID not found in master', [$regionId]);
+            }
+            if ($outletId && !$outlets->has($outletId)) {
+                \Log::warning('Outlet ID not found in master', [$outletId]);
+            }
             if ($regionName) {
                 $label = $regionName;
             } elseif ($outletName) {
@@ -641,14 +668,88 @@ class ItemController extends Controller
                 $label = 'All';
             }
             return [
-                'region_id' => $p->region_id,
+                'region_id' => $regionId,
                 'region_name' => $regionName,
-                'outlet_id' => $p->outlet_id,
+                'outlet_id' => $outletId,
                 'outlet_name' => $outletName,
                 'label' => $label,
                 'price' => $p->price,
             ];
         })->toArray();
+        \Log::info('DEBUG $item->prices MAPPED', $mappedPrices);
+        $itemData = [
+            'id' => $item->id,
+            'category_id' => $item->category_id,
+            'sub_category_id' => $item->sub_category_id,
+            'warehouse_division_id' => $item->warehouse_division_id,
+            'sku' => $item->sku,
+            'type' => $item->type,
+            'name' => $item->name,
+            'description' => $item->description,
+            'specification' => $item->specification,
+            'small_unit_id' => $item->small_unit_id,
+            'medium_unit_id' => $item->medium_unit_id,
+            'large_unit_id' => $item->large_unit_id,
+            'medium_conversion_qty' => $item->medium_conversion_qty,
+            'small_conversion_qty' => $item->small_conversion_qty,
+            'min_stock' => $item->min_stock,
+            'exp' => $item->exp,
+            'status' => $item->status,
+            'images' => $item->images,
+            'prices' => $mappedPrices,
+            'availabilities' => $item->availabilities->map(function($a) use ($regions, $outlets) {
+                $regionId = $a->region_id !== null ? (int) $a->region_id : null;
+                $outletId = $a->outlet_id !== null ? (int) $a->outlet_id : null;
+                $regionName = $regionId ? optional($regions->get($regionId))->name : null;
+                $outletName = $outletId ? optional($outlets->get($outletId))->nama_outlet : null;
+                if ($regionId && !$regions->has($regionId)) {
+                    \Log::warning('Region ID not found in master (avail)', [$regionId]);
+                }
+                if ($outletId && !$outlets->has($outletId)) {
+                    \Log::warning('Outlet ID not found in master (avail)', [$outletId]);
+                }
+                if ($regionName) {
+                    $label = $regionName;
+                } elseif ($outletName) {
+                    $label = $outletName;
+                } else {
+                    $label = 'All';
+                }
+                return [
+                    'region_id' => $regionId,
+                    'region_name' => $regionName,
+                    'outlet_id' => $outletId,
+                    'outlet_name' => $outletName,
+                    'label' => $label,
+                    'availability_type' => $a->availability_type,
+                ];
+            })->toArray(),
+            'bom' => $item->boms->map(function($b) use ($bomItems, $units) {
+                $itemName = $b->material_item_id ? optional($bomItems->firstWhere('id', $b->material_item_id))->name : null;
+                $unitName = $b->unit_id ? optional($units->firstWhere('id', $b->unit_id))->name : null;
+                return [
+                    'item_id' => $b->material_item_id,
+                    'item_name' => $itemName,
+                    'qty' => $b->qty,
+                    'unit_id' => $b->unit_id,
+                    'unit_name' => $unitName,
+                ];
+            })->toArray(),
+            'modifier_option_ids' => $item->modifierOptions->pluck('id')->toArray(),
+            'modifiers' => $modifiers->map(function($mod) use ($item) {
+                $selectedOptions = $mod->options->whereIn('id', $item->modifierOptions->pluck('id')->toArray());
+                return [
+                    'id' => $mod->id,
+                    'name' => $mod->name,
+                    'options' => $selectedOptions->map(function($opt) {
+                        return [
+                            'id' => $opt->id,
+                            'name' => $opt->name,
+                        ];
+                    })->values()->all(),
+                ];
+            })->filter(fn($m) => count($m['options']) > 0)->values()->all(),
+        ];
         return response()->json(['item' => $itemData]);
     }
 

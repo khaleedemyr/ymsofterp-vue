@@ -436,7 +436,7 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/butcher-processes', [ButcherProcessController::class, 'store'])->name('butcher-processes.store');
     Route::get('/butcher-processes/report', [ButcherReportController::class, 'index'])->name('butcher-processes.report');
     Route::get('/butcher-processes/analysis-report', [\App\Http\Controllers\ButcherAnalysisReportController::class, 'index'])->name('butcher-processes.analysis-report');
-    Route::get('/butcher-processes/stock-cost-report', [\App\Http\Controllers\ButcherStockCostReportController::class, 'index'])->name('butcher-processes.stock-cost-report');
+    Route::get('/butcher-processes/stock-cost-report', [\App\Http\Controllers\StockCostReportController::class, 'index'])->name('butcher-processes.stock-cost-report');
     Route::get('/butcher-processes/{id}', [ButcherProcessController::class, 'show'])->name('butcher-processes.show');
     Route::delete('/butcher-processes/{id}', [\App\Http\Controllers\ButcherProcessController::class, 'destroy'])->name('butcher-processes.destroy');
 });

@@ -98,7 +98,6 @@ const menuGroups = [
             { name: () => 'Laporan Stok Minimum', icon: 'fa-solid fa-arrow-down-short-wide', route: '/inventory/minimum-stock-report', code: 'inventory_minimum_stock_report' },
             { name: () => 'Laporan Rekap Persediaan per Kategori', icon: 'fa-solid fa-layer-group', route: '/inventory/category-recap-report', code: 'inventory_category_recap_report' },
             { name: () => 'Laporan Aging Persediaan', icon: 'fa-solid fa-hourglass-half', route: '/inventory/aging-report', code: 'inventory_aging_report' },
-            { name: () => 'Warehouse Stock', icon: 'fa-solid fa-boxes-stacked', route: '/warehouse-stock', code: 'warehouse_stock' },
             { name: () => 'Internal Use & Waste', icon: 'fa-solid fa-recycle', route: '/internal-use-waste', code: 'internal_use_waste' },
         ],
     },
@@ -109,11 +108,11 @@ const menuGroups = [
         open: ref(false),
         menus: [
             { name: () => 'Butcher', icon: 'fa-solid fa-cut', route: '/butcher-processes', code: 'butcher' },
-            { name: () => 'Butcher Report', icon: 'fa-solid fa-file-lines', route: '/butcher-report', code: 'butcher_report' },
-            { name: () => 'Laporan Stok & Cost Butcher', icon: 'fa-solid fa-money-bill-trend-up', route: '/butcher-stock-cost-report', code: 'butcher_stock_cost_report' },
-            { name: () => 'Laporan Analisis Butcher', icon: 'fa-solid fa-chart-line', route: '/butcher-analysis-report', code: 'butcher_analysis_report' },
+            { name: () => 'Butcher Report', icon: 'fa-solid fa-file-lines', route: '/butcher-processes/report', code: 'butcher_report' },
+            { name: () => 'Laporan Stok & Cost Butcher', icon: 'fa-solid fa-money-bill-trend-up', route: '/butcher-processes/stock-cost-report', code: 'butcher_stock_cost_report' },
+            { name: () => 'Laporan Analisis Butcher', icon: 'fa-solid fa-chart-line', route: '/butcher-processes/analysis-report', code: 'butcher_analysis_report' },
             { name: () => 'MK Production', icon: 'fa-solid fa-industry', route: '/mk-production', code: 'mk_production' },
-            { name: () => 'Laporan MK Production', icon: 'fa-solid fa-file-lines', route: '/mk-production-report', code: 'mk_production_report' },
+            { name: () => 'Laporan MK Production', icon: 'fa-solid fa-file-lines', route: '/mk-production/report', code: 'mk_production_report' },
         ],
     },
     {

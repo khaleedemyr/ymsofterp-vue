@@ -44,20 +44,43 @@ class GoodReceiveController extends Controller
     // Get items by good receive
     public function items($id)
     {
+        \Log::info('Fetching items for good receive', ['id' => $id]);
+        
         $items = FoodGoodReceiveItem::where('good_receive_id', $id)
             ->with(['item' => function($q) {
-                $q->select('id', 'name', 'sku', 'status');
+                $q->select('id', 'name', 'sku', 'status', 'small_unit_id', 'small_conversion_qty');
             }, 'unit'])
             ->get()
             ->map(function($item) {
+                \Log::info('Processing item', [
+                    'food_good_receive_item_id' => $item->id,
+                    'item_id' => $item->item_id,
+                    'item_exists' => $item->item ? true : false,
+                    'item_name' => $item->item ? $item->item->name : null
+                ]);
+                
+                // Only return if item exists
+                if (!$item->item) {
+                    return null;
+                }
+                
                 return [
-                    'id' => $item->item_id,
-                    'name' => $item->item ? $item->item->name : '',
-                    'sku' => $item->item ? $item->item->sku : '',
-                    'qty' => $item->qty_received,
+                    'id' => $item->item->id,
+                    'name' => $item->item->name,
+                    'sku' => $item->item->sku,
+                    'qty_received' => $item->qty_received,
                     'unit' => $item->unit ? $item->unit->name : '',
+                    'sisa_qty' => $item->qty_received - $item->used_qty,
+                    'po_price' => $item->price,
+                    'po_unit_id' => $item->unit_id,
+                    'small_unit_id' => $item->item->small_unit_id,
+                    'small_conversion_qty' => $item->item->small_conversion_qty
                 ];
-            });
+            })
+            ->filter() // Remove null items
+            ->values(); // Reset array keys
+            
+        \Log::info('Returning items', ['count' => $items->count()]);
         return response()->json($items);
     }
 } 

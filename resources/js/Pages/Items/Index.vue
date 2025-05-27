@@ -409,8 +409,12 @@ function openCreate() {
 }
 
 function openEdit(item) {
-  selectedEditItem.value = item;
-  showEditModal.value = true;
+  axios.get(`/api/items/${item.id}`)
+    .then(res => {
+      selectedEditItem.value = res.data.item;
+      showEditModal.value = true;
+      console.log('API DATA', res.data);
+    });
 }
 
 async function openDetail(item) {

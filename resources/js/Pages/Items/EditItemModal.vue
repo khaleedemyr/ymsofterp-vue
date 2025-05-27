@@ -198,12 +198,14 @@
             <div v-for="(price, idx) in form.prices" :key="idx" class="flex gap-2 mb-2 items-center">
               <select v-model="price.region_id" :disabled="!!price.outlet_id" class="rounded border-gray-300">
                 <option value="">Pilih Region</option>
-                <option v-for="region in (regionsArray || []).filter(r => !usedRegionIds.includes(r?.id?.toString()) || price.region_id == r?.id?.toString())" :key="region?.id" :value="region?.id">{{ region?.name }}</option>
+                <option value="all">All</option>
+                <option v-for="region in regionsArray" :key="region?.id" :value="region?.id?.toString()">{{ region?.name }}</option>
               </select>
               <span class="text-gray-400">atau</span>
               <select v-model="price.outlet_id" :disabled="!!price.region_id" class="rounded border-gray-300">
                 <option value="">Pilih Outlet</option>
-                <option v-for="outlet in (outletsArray || []).filter(o => !usedOutletIds.includes(o?.id_outlet?.toString()) || price.outlet_id == o?.id_outlet?.toString())" :key="outlet?.id_outlet" :value="outlet?.id_outlet">{{ outlet?.nama_outlet }}</option>
+                <option value="all">All</option>
+                <option v-for="outlet in outletsArray" :key="outlet?.id_outlet" :value="outlet?.id_outlet?.toString()">{{ outlet?.nama_outlet }}</option>
               </select>
               <input type="number" v-model="price.price" min="0" placeholder="Harga" class="rounded border-gray-300 w-32" required />
               <button type="button" @click="removePriceRow(idx)" class="text-red-500 hover:text-red-700"><i class="fa-solid fa-trash"></i></button>
@@ -560,6 +562,7 @@ const prevStep = () => {
 
 watch(() => props.show, (val) => {
   if (val && props.item) {
+    console.log('DEBUG [EditItemModal] props.item (watch):', JSON.parse(JSON.stringify(props.item)));
     Object.assign(form, {
       category_id: props.item.category_id,
       sub_category_id: props.item.sub_category_id,
@@ -579,14 +582,14 @@ watch(() => props.show, (val) => {
       status: props.item.status,
       deleted_images: [],
       prices: props.item.prices ? props.item.prices.map(p => ({
-        region_id: p.region_id,
-        outlet_id: p.outlet_id,
+        region_id: p.region_id === null ? 'all' : p.region_id?.toString(),
+        outlet_id: p.outlet_id === null ? 'all' : p.outlet_id?.toString(),
         price: p.price,
         label: p.label
       })) : [],
       availabilities: props.item.availabilities ? props.item.availabilities.map(a => ({
-        region_id: a.region_id,
-        outlet_id: a.outlet_id,
+        region_id: a.region_id === null ? 'all' : a.region_id?.toString(),
+        outlet_id: a.outlet_id === null ? 'all' : a.outlet_id?.toString(),
         availability_type: a.availability_type,
         label: a.label
       })) : [],
@@ -602,6 +605,8 @@ watch(() => props.show, (val) => {
       : [];
     form.images = images;
     previewImages.value = [];
+    console.log('DEBUG [EditItemModal] form.prices:', form.prices);
+    console.log('DEBUG [EditItemModal] form.availabilities:', form.availabilities);
   } else if (val) {
     form.reset();
     previewImages.value = [];
@@ -664,6 +669,47 @@ const closeModal = () => emit('close');
 const isSaving = ref(false);
 
 const saveItem = () => {
+  console.log('DEBUG: Starting saveItem');
+  console.log('DEBUG: form.prices before check:', form.prices);
+  console.log('DEBUG: form.availabilities before check:', form.availabilities);
+
+  // Ensure prices and availabilities are arrays
+  if (!Array.isArray(form.prices)) {
+    console.log('DEBUG: form.prices was not an array, initializing as empty array');
+    form.prices = [];
+  }
+  if (!Array.isArray(form.availabilities)) {
+    console.log('DEBUG: form.availabilities was not an array, initializing as empty array');
+    form.availabilities = [];
+  }
+
+  // Ensure all required fields are present
+  const requiredFields = {
+    category_id: form.category_id,
+    sub_category_id: form.sub_category_id,
+    warehouse_division_id: form.warehouse_division_id,
+    sku: form.sku,
+    type: form.type,
+    name: form.name,
+    small_unit_id: form.small_unit_id,
+    min_stock: form.min_stock,
+    status: form.status
+  };
+
+  // Check for missing required fields
+  const missingFields = Object.entries(requiredFields)
+    .filter(([_, value]) => !value)
+    .map(([key]) => key);
+
+  if (missingFields.length > 0) {
+    Swal.fire({
+      icon: 'error',
+      title: 'Gagal',
+      text: `Field berikut harus diisi: ${missingFields.join(', ')}`
+    });
+    return;
+  }
+
   // Hapus field modifier jika tidak relevan
   if (!form.modifier_enabled && (!form.modifier_option_ids || form.modifier_option_ids.length === 0)) {
     delete form.modifier_enabled;
@@ -674,44 +720,52 @@ const saveItem = () => {
     delete form.bom;
   }
 
-  // Konversi region_id dan outlet_id di prices & availabilities ke number/null (bukan 0)
-  form.prices = form.prices.map(p => ({
-    ...p,
-    region_id: p.region_id === '' || typeof p.region_id === 'undefined' || p.region_id === null ? null : Number(p.region_id),
-    outlet_id: p.outlet_id === '' || typeof p.outlet_id === 'undefined' || p.outlet_id === null ? null : Number(p.outlet_id),
-    price: p.price === '' || p.price === null || typeof p.price === 'undefined' ? '' : Number(p.price)
-  }));
-  form.availabilities = form.availabilities.map(a => ({
-    ...a,
-    region_id: a.region_id === '' || typeof a.region_id === 'undefined' || a.region_id === null ? null : Number(a.region_id),
-    outlet_id: a.outlet_id === '' || typeof a.outlet_id === 'undefined' || a.outlet_id === null ? null : Number(a.outlet_id)
-  }));
-  // Filter prices dan availabilities agar hanya data valid yang dikirim (region_id/outlet_id bukan null/NaN/0)
-  form.prices = form.prices.filter(p => 
-    ((p.region_id !== null && !isNaN(p.region_id) && p.region_id !== 0) || (p.outlet_id !== null && !isNaN(p.outlet_id) && p.outlet_id !== 0)) && 
-    p.price !== '' && !isNaN(p.price)
-  );
-  form.availabilities = form.availabilities.filter(a => 
-    (a.region_id !== null && !isNaN(a.region_id) && a.region_id !== 0) || (a.outlet_id !== null && !isNaN(a.outlet_id) && a.outlet_id !== 0)
-  );
+  try {
+    // Konversi region_id dan outlet_id di prices & availabilities ke number/null (bukan 0)
+    form.prices = (form.prices || []).map(p => ({
+      ...p,
+      region_id: p.region_id === 'all' ? null : (p.region_id === '' || typeof p.region_id === 'undefined' || p.region_id === null ? null : Number(p.region_id)),
+      outlet_id: p.outlet_id === 'all' ? null : (p.outlet_id === '' || typeof p.outlet_id === 'undefined' || p.outlet_id === null ? null : Number(p.outlet_id)),
+      price: p.price === '' || p.price === null || typeof p.price === 'undefined' ? '' : Number(p.price)
+    }));
+    form.availabilities = (form.availabilities || []).map(a => ({
+      ...a,
+      region_id: a.region_id === 'all' ? null : (a.region_id === '' || typeof a.region_id === 'undefined' || a.region_id === null ? null : Number(a.region_id)),
+      outlet_id: a.outlet_id === 'all' ? null : (a.outlet_id === '' || typeof a.outlet_id === 'undefined' || a.outlet_id === null ? null : Number(a.outlet_id))
+    }));
+  } catch (error) {
+    console.error('DEBUG: Error processing prices/availabilities:', error);
+    form.prices = [];
+    form.availabilities = [];
+  }
+
+  // Filter prices dan availabilities agar hanya data valid yang dikirim
+  form.prices = (form.prices || []).filter(p => (p.price !== '' && !isNaN(p.price)));
+  form.availabilities = (form.availabilities || []).filter(a => true);
+
+  console.log('DEBUG: Processed form data:', {
+    prices: form.prices,
+    availabilities: form.availabilities
+  });
 
   // Validasi sub_category_id
   if (!form.sub_category_id || !props.subCategories.find(sc => sc.id == form.sub_category_id)) {
     Swal.fire({ icon: 'error', title: 'Gagal', text: 'Sub Category harus dipilih dan valid.' });
     return;
   }
-  const newImages = form.images.filter(img => img instanceof File);
+
+  const newImages = (form.images || []).filter(img => img instanceof File);
   if (newImages.length) {
     // Kirim pakai FormData jika ada file baru
     const formData = new FormData();
     Object.entries(form).forEach(([key, value]) => {
       if (key === 'images') {
-        newImages.forEach((img) => {
+        (newImages || []).forEach((img) => {
           formData.append('images[]', img);
         });
       } else if (Array.isArray(value) && value.length && typeof value[0] === 'object') {
-        value.forEach((obj, idx) => {
-          Object.entries(obj).forEach(([k, v]) => {
+        (value || []).forEach((obj, idx) => {
+          Object.entries(obj || {}).forEach(([k, v]) => {
             let val = v;
             if ((k === 'region_id' || k === 'outlet_id') && (v === '' || typeof v === 'undefined')) {
               val = null;
@@ -726,29 +780,59 @@ const saveItem = () => {
           });
         });
       } else if (Array.isArray(value)) {
-        value.forEach((v, idx) => formData.append(`${key}[${idx}]`, v));
+        (value || []).forEach((v, idx) => formData.append(`${key}[${idx}]`, v));
       } else {
         formData.append(key, value);
       }
     });
+
     // Tambahkan log FormData sebelum submit
     console.log('FORM DATA DEBUG:');
     for (let pair of formData.entries()) {
       console.log(pair[0]+ ': ' + pair[1]);
     }
+
     isSaving.value = true;
     window.axios.post(route('items.update', props.item.id), formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
       method: 'POST',
       params: { _method: 'PUT' },
     })
-      .then(() => {
+      .then((response) => {
+        console.log('DEBUG: Response data:', response.data);
         isSaving.value = false;
+        // Ensure we have valid data before emitting success
+        if (response.data && response.data.item) {
+          const item = response.data.item;
+          // Ensure prices and availabilities are arrays
+          if (!Array.isArray(item.prices)) {
+            item.prices = [];
+          }
+          if (!Array.isArray(item.availabilities)) {
+            item.availabilities = [];
+          }
+          // Ensure all required arrays are initialized
+          item.prices = item.prices.map(p => ({
+            region_id: p.region_id === null ? 'all' : p.region_id?.toString(),
+            outlet_id: p.outlet_id === null ? 'all' : p.outlet_id?.toString(),
+            price: p.price,
+            label: p.label
+          }));
+          item.availabilities = item.availabilities.map(a => ({
+            region_id: a.region_id === null ? 'all' : a.region_id?.toString(),
+            outlet_id: a.outlet_id === null ? 'all' : a.outlet_id?.toString(),
+            availability_type: a.availability_type,
+            label: a.label
+          }));
+          emit('success', item);
+        } else {
+          emit('success');
+        }
         Swal.fire({ icon: 'success', title: 'Berhasil', text: 'Data item berhasil diperbarui!' });
-        emit('success');
         emit('close');
       })
       .catch((error) => {
+        console.error('DEBUG: Error response:', error.response);
         isSaving.value = false;
         if (error.response && error.response.data && error.response.data.errors) {
           console.error('Validation errors:', error.response.data.errors);
@@ -766,13 +850,41 @@ const saveItem = () => {
       ...formWithoutImages,
       _method: 'PUT',
     })
-      .then(() => {
+      .then((response) => {
+        console.log('DEBUG: Response data:', response.data);
         isSaving.value = false;
+        // Ensure we have valid data before emitting success
+        if (response.data && response.data.item) {
+          const item = response.data.item;
+          // Ensure prices and availabilities are arrays
+          if (!Array.isArray(item.prices)) {
+            item.prices = [];
+          }
+          if (!Array.isArray(item.availabilities)) {
+            item.availabilities = [];
+          }
+          // Ensure all required arrays are initialized
+          item.prices = item.prices.map(p => ({
+            region_id: p.region_id === null ? 'all' : p.region_id?.toString(),
+            outlet_id: p.outlet_id === null ? 'all' : p.outlet_id?.toString(),
+            price: p.price,
+            label: p.label
+          }));
+          item.availabilities = item.availabilities.map(a => ({
+            region_id: a.region_id === null ? 'all' : a.region_id?.toString(),
+            outlet_id: a.outlet_id === null ? 'all' : a.outlet_id?.toString(),
+            availability_type: a.availability_type,
+            label: a.label
+          }));
+          emit('success', item);
+        } else {
+          emit('success');
+        }
         Swal.fire({ icon: 'success', title: 'Berhasil', text: 'Data item berhasil diperbarui!' });
-        emit('success');
         emit('close');
       })
       .catch((error) => {
+        console.error('DEBUG: Error response:', error.response);
         isSaving.value = false;
         if (error.response && error.response.data && error.response.data.errors) {
           console.error('Validation errors:', error.response.data.errors);
@@ -851,15 +963,25 @@ const handleImageUpload = (event) => {
 };
 
 const removeImage = (index) => {
-  if (typeof form.images[index] === 'string') {
-    form.deleted_images.push(form.images[index]);
+  const img = form.images[index];
+  // If image is a string (path), push as is
+  if (typeof img === 'string') {
+    form.deleted_images.push(img);
+  } else if (img && typeof img === 'object') {
+    // If image is an object, try to push its path or id
+    if (img.path) {
+      form.deleted_images.push(img.path);
+    } else if (img.id) {
+      form.deleted_images.push(img.id);
+    }
   }
   form.images.splice(index, 1);
 };
 
 watch(
-  () => form.bom.map(b => b.item_id),
+  () => Array.isArray(form.bom) ? form.bom.map(b => b.item_id) : [],
   (newVal, oldVal) => {
+    if (!Array.isArray(form.bom)) return;
     form.bom.forEach((bom, idx) => {
       const item = props.bomItems.find(i => i.id == bom.item_id);
       bom.unit_id = item ? item.small_unit_id : '';
@@ -908,4 +1030,12 @@ function getImagePreviewSrc(image) {
   if (image && typeof image === 'object' && image.type && image.size) return URL.createObjectURL(image);
   return getImageUrl(image);
 }
+
+onMounted(() => {
+  console.log('DEBUG props.item (onMounted)', props.item);
+});
+
+watch(() => props.item, (val) => {
+  console.log('DEBUG [EditItemModal] props.item (watch):', JSON.parse(JSON.stringify(val)));
+});
 </script> 
