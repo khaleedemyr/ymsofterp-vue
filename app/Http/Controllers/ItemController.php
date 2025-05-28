@@ -1099,7 +1099,6 @@ class ItemController extends Controller
                             $targetName = trim($matches[1]);
                             $priceValue = (float)$matches[2];
 
-                            // Jika targetName adalah "All"
                             if (strtolower($targetName) === 'all') {
                                 DB::table('item_prices')->insert([
                                     'item_id' => $item->id,
@@ -1111,10 +1110,31 @@ class ItemController extends Controller
                                     'updated_at' => now(),
                                 ]);
                             } else {
-                                // Logika untuk region/outlet spesifik
                                 $region = DB::table('regions')->whereRaw('LOWER(TRIM(name)) = ?', [mb_strtolower($targetName)])->first();
                                 $outlet = DB::table('tbl_data_outlet')->whereRaw('LOWER(TRIM(nama_outlet)) = ?', [mb_strtolower($targetName)])->first();
-                                // ... kode untuk menyimpan harga region/outlet
+                                if ($region) {
+                                    DB::table('item_prices')->insert([
+                                        'item_id' => $item->id,
+                                        'region_id' => $region->id,
+                                        'outlet_id' => null,
+                                        'price' => $priceValue,
+                                        'availability_price_type' => 'region',
+                                        'created_at' => now(),
+                                        'updated_at' => now(),
+                                    ]);
+                                } elseif ($outlet) {
+                                    DB::table('item_prices')->insert([
+                                        'item_id' => $item->id,
+                                        'region_id' => null,
+                                        'outlet_id' => $outlet->id_outlet,
+                                        'price' => $priceValue,
+                                        'availability_price_type' => 'outlet',
+                                        'created_at' => now(),
+                                        'updated_at' => now(),
+                                    ]);
+                                } else {
+                                    \Log::warning('ImportExcel: Region/Outlet not found for price', ['targetName' => $targetName]);
+                                }
                             }
                         }
                     }
