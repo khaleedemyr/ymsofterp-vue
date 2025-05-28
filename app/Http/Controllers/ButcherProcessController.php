@@ -244,39 +244,33 @@ class ButcherProcessController extends Controller
             $totalCost = $macSmallCost * $qtyAddToButcherSmall;
 
             // --- NEW MAC PCS LOGIC ---
-            // 1. Sum qty_kg (PCS) yang cost 0 = false
-            $sumQtyKgCostFalse = 0;
-            $sumQtyPcsCostFalse = 0;
-            $totalOutputKg = 0;
+            // 1. Sum qty_kg (PCS) yang cost 0 = false, konversi ke gram
+            $sumQtyKgCostFalseGram = 0;
             foreach ($request->items as $item) {
                 if (empty($item['costs_0'])) {
-                    $sumQtyKgCostFalse += isset($item['qty_kg']) ? $item['qty_kg'] : (isset($item['qty']) ? $item['qty'] : 0);
-                    $sumQtyPcsCostFalse += isset($item['pcs_qty']) ? $item['pcs_qty'] : (isset($item['qty_pcs']) ? $item['qty_pcs'] : 0);
-                }
-                // Semua row, baik cost 0 dicentang atau tidak
-                $totalOutputKg += isset($item['qty_kg']) ? $item['qty_kg'] : (isset($item['qty']) ? $item['qty'] : 0);
-                // Tambah susut air
-                if (isset($item['susut_air']) && is_array($item['susut_air']) && isset($item['susut_air']['qty'])) {
-                    $totalOutputKg += $item['susut_air']['qty'];
+                    $qtyKg = isset($item['qty_kg']) ? $item['qty_kg'] : (isset($item['qty']) ? $item['qty'] : 0);
+                    $sumQtyKgCostFalseGram += $qtyKg * 1000; // 1 kg = 1000 gram
                 }
             }
-            $smallConv = $itemMasterSample ? ($itemMasterSample->small_conversion_qty ?: 1) : 1;
-            $costPerSmallUnitBaru = $sumQtyKgCostFalse > 0 ? $totalCost / ($sumQtyKgCostFalse * $smallConv) : 0;
-            $totalOutputSmall = $totalOutputKg * $smallConv;
-            $totalValueOutput = $totalOutputSmall * $costPerSmallUnitBaru;
-            $macPcs = $sumQtyPcsCostFalse > 0 ? $totalValueOutput / $sumQtyPcsCostFalse : 0;
+            $costPerGram = $sumQtyKgCostFalseGram > 0 ? $totalCost / $sumQtyKgCostFalseGram : 0;
             // --- END NEW MAC PCS LOGIC ---
 
             // 3. Untuk setiap item PCS, hitung total cost dan cost per PCS, simpan ke detail
             foreach ($request->items as $idx => $item) {
                 try {
-                    $macPcs = isset($item['mac_pcs']) ? $item['mac_pcs'] : 0;
-                    Log::info('DEBUG MAC_PCS DARI FRONTEND', [
+                    // Ambil small_conversion_qty dari item PCS
+                    $pcsItemModel = \App\Models\Item::find($item['pcs_item_id']);
+                    $pcsSmallConv = $pcsItemModel ? ($pcsItemModel->small_conversion_qty ?: 1) : 1;
+                    // Ambil mac_pcs dari request jika ada, fallback ke hasil hitung
+                    $macPcs = isset($item['mac_pcs']) ? $item['mac_pcs'] : ($costPerGram * $pcsSmallConv);
+                    Log::info('DEBUG MAC_PCS BACKEND', [
                         'idx' => $idx,
                         'whole_item_id' => $item['whole_item_id'],
                         'pcs_item_id' => $item['pcs_item_id'],
                         'mac_pcs' => $macPcs,
                         'costs_0' => $item['costs_0'] ?? null,
+                        'cost_per_gram' => $costPerGram,
+                        'pcs_small_conv' => $pcsSmallConv,
                         'item' => $item
                     ]);
                     $serialNumber = 'BTR-' . date('Ymd') . '-' . $butcherProcess->id . '-' . str_pad($idx+1, 3, '0', STR_PAD_LEFT);
@@ -469,6 +463,8 @@ class ButcherProcessController extends Controller
         $butcherProcess->items->transform(function ($item) {
             $item->whole_item_name = $item->wholeItem ? $item->wholeItem->name : null;
             $item->pcs_item_name = $item->pcsItem ? $item->pcsItem->name : null;
+            // Ambil small_conversion_qty dari relasi pcsItem
+            $item->small_conversion_qty = $item->pcsItem ? $item->pcsItem->small_conversion_qty : null;
             // Ambil hanya satu detail (paling awal)
             $item->details = collect($item->details)->take(1)->values();
             return $item;

@@ -40,7 +40,7 @@ function handleImageError() {
     <div class="min-h-screen flex flex-col justify-center items-center bg-gradient-to-br from-gray-50 via-white to-blue-100">
         <div class="w-full max-w-md bg-white/90 rounded-2xl shadow-xl p-8 flex flex-col items-center">
             <img src="/images/logo.png" alt="YMSoft ERP Logo" class="h-20 mb-6 drop-shadow-lg" />
-            <h1 class="text-3xl font-extrabold text-gray-900 mb-2 tracking-wide text-center">YMSoft ERP</h1>
+          
             <!-- Tagline kosong, bisa diisi nanti -->
             <p class="mb-8 text-gray-500 text-center">Crafted with ❤️ by IT Department-Justus Group</p>
             <button

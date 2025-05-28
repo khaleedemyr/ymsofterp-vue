@@ -467,6 +467,7 @@ Route::get('/delivery-order', [DeliveryOrderController::class, 'index'])->name('
 Route::get('/delivery-order/create', [DeliveryOrderController::class, 'create'])->name('delivery-order.create');
 Route::post('/delivery-order', [DeliveryOrderController::class, 'store'])->name('delivery-order.store');
 Route::get('/delivery-order/{id}', [DeliveryOrderController::class, 'show'])->name('delivery-order.show');
+Route::delete('/delivery-order/{id}', [DeliveryOrderController::class, 'destroy'])->name('delivery-order.destroy');
 
 // API untuk fetch item packing list
 Route::get('/api/packing-list/{id}/items', [DeliveryOrderController::class, 'getPackingListItems']);

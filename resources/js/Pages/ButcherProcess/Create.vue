@@ -182,7 +182,7 @@
                     </div>
                     <!-- List PCS Items -->
                     <div class="mb-2 font-semibold">PCS Items</div>
-                    <div v-for="(pcs, pcsIdx) in item.pcs" :key="pcsIdx" class="grid grid-cols-1 md:grid-cols-7 gap-2 mb-2 items-center relative">
+                    <div v-for="(pcs, pcsIdx) in item.pcs" :key="pcsIdx" class="grid grid-cols-1 md:grid-cols-8 gap-2 mb-2 items-center relative">
                       <div class="relative w-full">
                         <select v-model="pcs.pcs_item_id" @change="onPcsSelect(idx, pcsIdx)" class="rounded border-gray-300 w-full" required>
                           <option value="">Pilih Item PCS</option>
@@ -200,11 +200,19 @@
                       <span>{{ item.whole_unit }}</span>
                       <label class="flex items-center gap-1"><input type="checkbox" v-model="pcs.costs_0" /> Costs 0</label>
                       <button type="button" class="text-red-600" @click="removePcsFromWhole(idx, pcsIdx)">Delete</button>
+                      <!-- Kolom baru: MAC PCS Preview -->
+                      <div class="text-xs text-blue-700 font-semibold leading-tight text-right min-w-max">
+                        <div>MAC /Gram: {{ formatRupiah(pcs.costs_0 ? 0 : (macPcsPreviewArray[idx]?.[pcsIdx] || 0)) }}</div>
+                        <div v-if="pcs.pcs_item_id">MAC /Pcs: {{ formatRupiah(pcs.costs_0 ? 0 : macPcsPerPcs(idx, pcsIdx)) }}</div>
+                      </div>
                     </div>
                     <button type="button" class="mt-2 px-3 py-1 rounded bg-blue-100 text-blue-700 font-semibold hover:bg-blue-200" @click="addPcsToWhole(idx)">+ Add PCS Item</button>
                     <div class="mt-4 font-semibold">Susut Air</div>
                     <div class="flex gap-2 items-center mt-1">
                       <input v-model="item.susut_air.qty" type="number" min="0" step="0.01" :placeholder="'Qty ('+item.whole_unit+')'" class="rounded border-gray-300" />
+                      <button type="button" class="px-2 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200" @click="calculateSusutAir(idx)">
+                        Hitung
+                      </button>
                       <span>{{ item.whole_unit }}</span>
                     </div>
                   </div>
@@ -578,11 +586,12 @@ const submit = async () => {
   console.log('form.items (before flatten):', JSON.stringify(form.items, null, 2));
   // FLATTEN items: setiap PCS pada setiap Whole menjadi 1 item di array items
   const flatItems = [];
-  form.items.forEach(whole => {
-    (whole.pcs || []).forEach(pcs => {
+  form.items.forEach((whole, idx) => {
+    (whole.pcs || []).forEach((pcs, pcsIdx) => {
       let macPcs = 0;
       if (!pcs.costs_0) {
-        macPcs = macPcsPreview.value;
+        // Ambil dari macPcsPreviewArray per row
+        macPcs = macPcsPreviewArray.value[idx]?.[pcsIdx] || 0;
       }
       flatItems.push({
         whole_item_id: whole.whole_item_id,
@@ -739,14 +748,16 @@ const totalCostPreview = computed(() => {
   return pricePerSmall * qtyAddToButcherSmall;
 });
 
-// 1. Sum qty_kg (PCS) yang cost 0 = false
-const sumQtyKgCostFalse = computed(() => {
+// 1. Sum qty_kg (PCS) yang cost 0 = false, dikonversi ke gram (small unit)
+const sumQtyKgCostFalseGram = computed(() => {
   let sum = 0;
   form.items.forEach(item => {
     if (Array.isArray(item.pcs)) {
       item.pcs.forEach(pcs => {
         if (!pcs.costs_0) {
-          sum += Number(pcs.qty || 0);
+          // qty (kg) ke gram
+          const qtyKg = Number(pcs.qty || 0);
+          sum += qtyKg * 1000; // 1 kg = 1000 gram
         }
       });
     }
@@ -754,53 +765,30 @@ const sumQtyKgCostFalse = computed(() => {
   return sum;
 });
 
-// 2. Cost per small unit baru
-const costPerSmallUnitBaru = computed(() => {
+// 2. Cost per gram
+const costPerGram = computed(() => {
   const totalCost = Number(totalCostPreview.value);
-  const sumKg = Number(sumQtyKgCostFalse.value);
-  const conversion = Number(form.items[0]?.small_conversion_qty) || 1;
-  return sumKg > 0 ? totalCost / (sumKg * conversion) : 0;
+  const sumGram = Number(sumQtyKgCostFalseGram.value);
+  return sumGram > 0 ? totalCost / sumGram : 0;
 });
 
-// 3. Total output (kg semua row + susut air, cost 0 = false)
-const totalOutputKg = computed(() => {
-  let sum = 0;
-  form.items.forEach(item => {
-    if (Array.isArray(item.pcs)) {
-      item.pcs.forEach(pcs => {
-        sum += Number(pcs.qty || 0);
-      });
-    }
-    // Tambah susut air
-    if (item.susut_air && item.susut_air.qty) {
-      sum += Number(item.susut_air.qty || 0);
-    }
+// 3. MAC PCS Preview per PCS item (array of array)
+const macPcsPreviewArray = computed(() => {
+  return form.items.map(item => {
+    if (!Array.isArray(item.pcs)) return [];
+    return item.pcs.map(pcs => {
+      // Ambil small_conversion_qty dari PCS item
+      const smallConv = Number(pcs.small_conversion_qty) || 1;
+      return costPerGram.value * smallConv;
+    });
   });
-  return sum;
 });
 
-// 4. Total output dalam small unit
-const totalOutputSmall = computed(() => Number(totalOutputKg.value) * (Number(form.items[0]?.small_conversion_qty) || 1));
-const totalValueOutput = computed(() => Number(totalOutputSmall.value) * Number(costPerSmallUnitBaru.value));
-
-// 5. Sum qty pcs (PCS) yang cost 0 = false
-const sumQtyPcsCostFalse = computed(() => {
-  let sum = 0;
-  form.items.forEach(item => {
-    if (Array.isArray(item.pcs)) {
-      item.pcs.forEach(pcs => {
-        if (!pcs.costs_0) {
-          sum += Number(pcs.pcs_qty || 0);
-        }
-      });
-    }
-  });
-  return sum;
-});
-
-// 6. MAC PCS
+// 4. MAC PCS Preview (total, misal untuk display satu nilai)
 const macPcsPreview = computed(() => {
-  return sumQtyPcsCostFalse.value > 0 ? totalValueOutput.value / sumQtyPcsCostFalse.value : 0;
+  // Ambil total MAC PCS dari item pertama dan pcs pertama (untuk display preview utama)
+  if (!macPcsPreviewArray.value.length || !macPcsPreviewArray.value[0].length) return 0;
+  return macPcsPreviewArray.value[0][0];
 });
 
 function pricePerSmallUnit(item) {
@@ -813,6 +801,27 @@ function pricePerSmallUnit(item) {
 function getUnitName(unitId) {
   const unit = props.units?.find(u => u.id == unitId);
   return unit ? unit.name : '-';
+}
+
+const calculateSusutAir = (idx) => {
+  const item = form.items[idx];
+  const qtyAddToButcher = Number(item.whole_qty || 0);
+  const sumQtyKg = item.pcs.reduce((sum, pcs) => {
+    return sum + Number(pcs.qty || 0);
+  }, 0);
+  let susutAir = qtyAddToButcher - sumQtyKg;
+  susutAir = susutAir > 0 ? susutAir : 0;
+  item.susut_air.qty = Number(susutAir.toFixed(2));
+}
+
+function macPcsPerPcs(idx, pcsIdx) {
+  const pcs = form.items[idx]?.pcs?.[pcsIdx];
+  if (!pcs || !pcs.pcs_item_id || pcs.costs_0) return 0;
+  const macPerGram = macPcsPreviewArray.value[idx]?.[pcsIdx] || 0;
+  // Find small_conversion_qty from pcsItems
+  const pcsItem = pcsItems.value.find(i => i.id == pcs.pcs_item_id);
+  const smallConv = Number(pcsItem?.small_conversion_qty) || 1;
+  return macPerGram * smallConv;
 }
 </script> 
 

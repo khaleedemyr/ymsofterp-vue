@@ -65,8 +65,10 @@
         <input ref="barcodeInput" v-model="barcodeInputVal" @keyup.enter="onScanBarcode" class="border-2 border-blue-400 rounded-lg px-4 py-3 w-full text-xl text-center focus:ring-2 focus:ring-blue-500 shadow-lg" placeholder="Scan barcode di sini..." autofocus />
         <div v-if="scanFeedback" :class="scanFeedbackClass" class="mt-4 font-bold text-xl min-h-[32px]">{{ scanFeedback }}</div>
       </div>
-      <button v-if="packingListItems.length" @click="confirmSubmit" :disabled="!isReadyToSubmit" class="bg-gradient-to-r from-blue-500 to-blue-700 text-white px-10 py-4 rounded-2xl font-extrabold text-2xl shadow-xl hover:scale-105 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
-        <i class="fa-solid fa-paper-plane mr-2"></i> Submit Delivery Order
+      <button v-if="packingListItems.length" @click="confirmSubmit" :disabled="!isReadyToSubmit || loadingSubmit" class="bg-gradient-to-r from-blue-500 to-blue-700 text-white px-10 py-4 rounded-2xl font-extrabold text-2xl shadow-xl hover:scale-105 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
+        <i v-if="loadingSubmit" class="fa fa-spinner fa-spin mr-2"></i>
+        <i v-else class="fa-solid fa-paper-plane mr-2"></i>
+        Submit Delivery Order
       </button>
       <!-- Konfirmasi Modal -->
       <div v-if="showConfirmModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40">
@@ -103,13 +105,20 @@
       </div>
     </div>
   </AppLayout>
+  <teleport to="body">
+    <PrintStruk v-if="printStrukData" v-bind="printStrukData" />
+  </teleport>
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, nextTick, computed } from 'vue';
+import { ref, reactive, onMounted, nextTick, computed, h, createApp } from 'vue';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { router } from '@inertiajs/vue3';
 import axios from 'axios';
+import PrintStruk from './PrintStruk.vue';
+import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
+import QRCode from 'qrcode';
 
 const props = defineProps({
   packingLists: Array,
@@ -133,6 +142,8 @@ const reasonOptions = [
   'Lainnya',
 ];
 const selectedReason = ref('');
+const loadingSubmit = ref(false);
+const printStrukData = ref(null);
 
 const isReadyToSubmit = computed(() => packingListItems.length > 0 && packingListItems.some(i => i.qty_scan > 0));
 const selectedPackingList = computed(() => packingLists.value.find(pl => pl.id == selectedPackingListId.value) || null);
@@ -259,10 +270,145 @@ function confirmSubmit() {
   showConfirmModal.value = true;
 }
 
+function printStrukToNewWindow(strukData) {
+  const printWindow = window.open('', '', 'width=400,height=600');
+  if (!printWindow) return;
+  // Inject root dan style
+  printWindow.document.write(`
+    <html><head>
+      <title>Print Struk</title>
+      <style>
+        html, body { width: 80mm !important; margin: 0 !important; padding: 0 !important; background: #fff !important; }
+        body * { visibility: hidden !important; }
+        #struk, #struk * { visibility: visible !important; }
+        #struk { position: absolute !important; left: 0 !important; top: 0 !important; width: 80mm !important; min-width: 80mm !important; max-width: 80mm !important; margin: 0 !important; padding: 0 !important; background: #fff !important; z-index: 99999 !important; }
+      </style>
+    </head><body><div id="print-root"></div></body></html>
+  `);
+  printWindow.document.close();
+  // Render komponen struk ke window baru
+  const app = createApp({
+    render() {
+      return h(PrintStruk, strukData);
+    }
+  });
+  app.mount(printWindow.document.getElementById('print-root'));
+  setTimeout(() => {
+    printWindow.focus();
+    printWindow.print();
+    setTimeout(() => printWindow.close(), 500);
+  }, 500);
+}
+
+async function getBase64FromUrl(url) {
+  const response = await fetch(url);
+  const blob = await response.blob();
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function generateStrukPDF({ orderNumber, date, outlet, items }) {
+  try {
+    // Ukuran 80mm = 226.77pt, tinggi dinamis
+    const pageWidth = 226.77; // 80mm
+    let y = 20;
+    const pdf = new jsPDF({ unit: 'pt', format: [pageWidth, 600], orientation: 'portrait' });
+    pdf.setFont('courier', 'normal');
+    pdf.setFontSize(13);
+    pdf.text('DELIVERY ORDER', pageWidth/2, y, { align: 'center' });
+    y += 18;
+    pdf.setFontSize(10);
+    pdf.text(`No: ${orderNumber}`, 10, y);
+    y += 13;
+    pdf.text(`Tanggal: ${date}`, 10, y);
+    y += 13;
+    pdf.text(`Outlet: ${outlet}`, 10, y);
+    y += 13;
+    pdf.line(10, y, pageWidth-10, y);
+    y += 8;
+    // Header tabel
+    pdf.text('Item', 10, y);
+    pdf.text('Qty', pageWidth/2, y, { align: 'center' });
+    pdf.text('Unit', pageWidth-10, y, { align: 'right' });
+    y += 10;
+    pdf.text('-------------------------------', 10, y);
+    y += 10;
+    // Isi item
+    items.forEach(i => {
+      pdf.text(i.name, 10, y);
+      pdf.text(String(i.qty_scan), pageWidth/2, y, { align: 'center' });
+      pdf.text(i.unit, pageWidth-10, y, { align: 'right' });
+      y += 12;
+    });
+    pdf.text('-------------------------------', 10, y);
+    y += 16;
+    pdf.text('Terima kasih', pageWidth/2, y, { align: 'center' });
+    y += 18;
+    pdf.setFontSize(9);
+    pdf.text('Cetak struk by jsPDF', pageWidth/2, y, { align: 'center' });
+    // Resize page height
+    pdf.internal.pageSize.setHeight(y+20);
+    pdf.autoPrint();
+    pdf.output('dataurlnewwindow');
+  } catch (err) {
+    console.error('Gagal generate PDF struk:', err);
+    alert('Gagal generate PDF struk. Cek console untuk detail error.');
+  }
+}
+
 function submitDO() {
   showConfirmModal.value = false;
-  // TODO: submit hasil scan ke backend
-  alert('Submit Delivery Order! (implementasi backend diperlukan)');
+  loadingSubmit.value = true;
+  const itemsToSubmit = packingListItems
+    .filter(i => i.qty_scan > 0)
+    .map(i => ({
+      id: i.item_id || i.id, // fallback jika item_id tidak ada
+      barcode: Array.isArray(i.barcodes) ? (i.barcodes[0] || null) : (i.barcode || null),
+      qty: i.qty,
+      qty_scan: i.qty_scan,
+      unit: i.unit,
+      name: i.name, // untuk struk
+      reason: i.reason || null,
+    }));
+  if (!selectedPackingListId.value || itemsToSubmit.length === 0) {
+    scanFeedback.value = 'Pilih packing list dan scan minimal 1 item!';
+    scanFeedbackClass.value = 'text-red-600';
+    loadingSubmit.value = false;
+    return;
+  }
+  router.post('/delivery-order', {
+    packing_list_id: selectedPackingListId.value,
+    items: itemsToSubmit,
+  }, {
+    onSuccess: (page) => {
+      scanFeedback.value = 'Delivery Order berhasil disimpan!';
+      scanFeedbackClass.value = 'text-green-700';
+      const orderNumber = page?.props?.orderNumber || 'DO Terakhir';
+      const date = new Date().toLocaleDateString('id-ID');
+      const outlet = selectedPackingList.value?.nama_outlet || '-';
+      const strukData = {
+        orderNumber,
+        date,
+        outlet,
+        items: itemsToSubmit,
+      };
+      // printStrukToNewWindow(strukData);
+      generateStrukPDF({ orderNumber, date, outlet, items: itemsToSubmit });
+      selectedPackingListId.value = '';
+      packingListItems.splice(0);
+    },
+    onError: (errors) => {
+      scanFeedback.value = errors?.message || 'Gagal menyimpan Delivery Order!';
+      scanFeedbackClass.value = 'text-red-600';
+    },
+    onFinish: () => {
+      loadingSubmit.value = false;
+    }
+  });
 }
 </script>
 

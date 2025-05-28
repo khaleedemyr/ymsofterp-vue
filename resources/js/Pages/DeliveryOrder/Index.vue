@@ -35,6 +35,10 @@
                 <Link :href="`/delivery-order/${order.id}`" class="inline-flex items-center btn btn-xs bg-blue-100 text-blue-800 hover:bg-blue-200 rounded px-2 py-1 font-semibold transition">
                   <i class="fa fa-eye mr-1"></i> Detail
                 </Link>
+                <button @click="handleDelete(order.id)" :disabled="loadingDeleteId === order.id" class="ml-2 inline-flex items-center btn btn-xs bg-red-100 text-red-800 hover:bg-red-200 rounded px-2 py-1 font-semibold transition disabled:opacity-50">
+                  <i v-if="loadingDeleteId === order.id" class="fa fa-spinner fa-spin mr-1"></i>
+                  <i v-else class="fa fa-trash mr-1"></i> Delete
+                </button>
               </td>
             </tr>
           </tbody>
@@ -47,9 +51,41 @@
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { Link } from '@inertiajs/vue3';
+import Swal from 'sweetalert2';
+import { router } from '@inertiajs/vue3';
+import { ref } from 'vue';
+
 const props = defineProps({ orders: Array });
+const loadingDeleteId = ref(null);
+
 function formatDate(date) {
   if (!date) return '-';
   return new Date(date).toLocaleDateString('id-ID');
+}
+
+function handleDelete(id) {
+  Swal.fire({
+    title: 'Hapus Delivery Order?',
+    text: 'Data dan seluruh pengaruh ke inventory akan di-rollback. Lanjutkan?',
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonText: 'Ya, Hapus',
+    cancelButtonText: 'Batal',
+    reverseButtons: true,
+    allowOutsideClick: false,
+    allowEscapeKey: false,
+    showLoaderOnConfirm: true,
+    preConfirm: () => {
+      loadingDeleteId.value = id;
+      return router.delete(`/delivery-order/${id}`, {
+        onFinish: () => {
+          loadingDeleteId.value = null;
+        },
+        onError: () => {
+          loadingDeleteId.value = null;
+        }
+      });
+    }
+  });
 }
 </script> 

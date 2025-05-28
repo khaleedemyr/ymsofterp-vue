@@ -53,34 +53,42 @@
                   <thead class="bg-gray-50">
                     <tr>
                       <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Whole Item</th>
-                      <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">PCS Item</th>
                       <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Whole Qty</th>
+                      <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">PCS Item</th>
                       <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">PCS Qty</th>
                       <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Unit</th>
-                      <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">MAC PCS</th>
+                      <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">MAC /Gram</th>
+                      <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">MAC /Pcs</th>
                     </tr>
                   </thead>
                   <tbody class="bg-white divide-y divide-gray-200">
-                    <tr v-for="item in butcherProcess.items" :key="item.id">
-                      <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {{ item.wholeItem?.name || item.whole_item_name || '-' }}
-                      </td>
-                      <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {{ item.pcsItem?.name || item.pcs_item_name || '-' }}
-                      </td>
-                      <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {{ item.whole_qty }}
-                      </td>
-                      <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {{ item.pcs_qty }}
-                      </td>
-                      <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {{ item.unit?.name }}
-                      </td>
-                      <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {{ item.details && item.details.length > 0 ? Number(item.details[0].mac_pcs).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-' }}
-                      </td>
-                    </tr>
+                    <template v-for="(group, groupIdx) in groupByWholeItem(butcherProcess.items)" :key="groupIdx">
+                      <template v-for="(item, idx) in group.items" :key="item.id">
+                        <tr>
+                          <td v-if="idx === 0" class="px-6 py-4 whitespace-nowrap text-sm text-gray-900" :rowspan="group.items.length">
+                            {{ item.wholeItem?.name || item.whole_item_name || '-' }}
+                          </td>
+                          <td v-if="idx === 0" class="px-6 py-4 whitespace-nowrap text-sm text-gray-900" :rowspan="group.items.length">
+                            {{ item.whole_qty }}
+                          </td>
+                          <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {{ item.pcsItem?.name || item.pcs_item_name || '-' }}
+                          </td>
+                          <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {{ item.pcs_qty }}
+                          </td>
+                          <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {{ item.unit?.name }}
+                          </td>
+                          <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {{ item.details && item.details.length > 0 ? Number(item.details[0].mac_pcs).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-' }}
+                          </td>
+                          <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {{ item.details && item.details.length > 0 && item.small_conversion_qty ? (Number(item.details[0].mac_pcs) * Number(item.small_conversion_qty)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-' }}
+                          </td>
+                        </tr>
+                      </template>
+                    </template>
                   </tbody>
                 </table>
               </div>
@@ -167,5 +175,21 @@ const formatDate = (date) => {
 
 const formatDateTime = (date) => {
   return new Date(date).toLocaleString('id-ID')
+}
+
+function groupByWholeItem(items) {
+  const groups = [];
+  let lastKey = null;
+  let current = null;
+  items.forEach(item => {
+    const key = item.wholeItem?.name || item.whole_item_name || '-';
+    if (key !== lastKey) {
+      current = { key, items: [] };
+      groups.push(current);
+      lastKey = key;
+    }
+    current.items.push(item);
+  });
+  return groups;
 }
 </script> 
