@@ -808,60 +808,133 @@ class ItemController extends Controller
 
     public function previewImport(Request $request)
     {
+        \Log::info('ItemController@previewImport - Starting preview');
+        \Log::info('ItemController@previewImport - File received', [
+            'original_name' => $request->file('file')->getClientOriginalName(),
+            'mime_type' => $request->file('file')->getMimeType(),
+            'size' => $request->file('file')->getSize()
+        ]);
+
         $request->validate([
             'file' => 'required|file|mimes:xlsx,xls',
         ]);
+
         $file = $request->file('file');
-        $data = Excel::toArray([], $file);
-        // Cari sheet dengan header 'Name', 'Category', dst (sheet Items)
-        $rows = [];
-        foreach ($data as $sheet) {
-            if (isset($sheet[0]) && in_array('Name', $sheet[0]) && in_array('Category', $sheet[0])) {
-                $rows = $sheet;
-                break;
+        try {
+            $data = Excel::toArray([], $file);
+            \Log::info('ItemController@previewImport - Excel data loaded', [
+                'sheets_count' => count($data)
+            ]);
+
+            // Cari sheet dengan header 'Name', 'Category', dst (sheet Items)
+            $rows = [];
+            foreach ($data as $sheetIndex => $sheet) {
+                if (isset($sheet[0]) && in_array('Name', $sheet[0]) && in_array('Category', $sheet[0])) {
+                    $rows = $sheet;
+                    \Log::info('ItemController@previewImport - Found items sheet', [
+                        'sheet_index' => $sheetIndex,
+                        'rows_count' => count($sheet)
+                    ]);
+                    break;
+                }
             }
-        }
-        $header = array_map('trim', $rows[0] ?? []);
-        $preview = [];
-        foreach (array_slice($rows, 1, 10) as $row) {
-            $item = [];
-            foreach ($header as $i => $col) {
-                $item[$col] = $row[$i] ?? null;
+
+            if (empty($rows)) {
+                \Log::error('ItemController@previewImport - No valid items sheet found');
+                return response()->json([
+                    'message' => 'File tidak valid: Sheet items tidak ditemukan',
+                    'error' => true
+                ], 400);
             }
-            $preview[] = $item;
+
+            $header = array_map('trim', $rows[0] ?? []);
+            $preview = [];
+            foreach (array_slice($rows, 1, 10) as $rowIdx => $row) {
+                $item = [];
+                foreach ($header as $i => $col) {
+                    $item[$col] = $row[$i] ?? null;
+                }
+                $preview[] = $item;
+            }
+
+            \Log::info('ItemController@previewImport - Preview generated', [
+                'header' => $header,
+                'preview_rows' => count($preview)
+            ]);
+
+            return response()->json([
+                'header' => $header,
+                'preview' => $preview,
+                'error' => false
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('ItemController@previewImport - Error processing file', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return response()->json([
+                'message' => 'Gagal membaca file: ' . $e->getMessage(),
+                'error' => true
+            ], 400);
         }
-        return response()->json([
-            'header' => $header,
-            'preview' => $preview,
-        ]);
     }
 
     public function importExcel(Request $request)
     {
+        \Log::info('MASUK FUNGSI IMPORT EXCEL');
+        \Log::info('ItemController@importExcel - Starting import');
+        \Log::info('ItemController@importExcel - File received', [
+            'original_name' => $request->file('file')->getClientOriginalName(),
+            'mime_type' => $request->file('file')->getMimeType(),
+            'size' => $request->file('file')->getSize()
+        ]);
+
         $request->validate([
             'file' => 'required|file|mimes:xlsx,xls',
         ]);
 
         $file = $request->file('file');
         $data = Excel::toArray([], $file);
+        \Log::info('ItemController@importExcel - Excel data loaded', [
+            'sheets_count' => count($data)
+        ]);
+
         // Cari sheet dengan header 'Name', 'Category', dst (sheet Items)
         $rows = [];
-        foreach ($data as $sheet) {
+        foreach ($data as $sheetIndex => $sheet) {
             if (isset($sheet[0]) && in_array('Name', $sheet[0]) && in_array('Category', $sheet[0])) {
                 $rows = $sheet;
+                \Log::info('ItemController@importExcel - Found items sheet', [
+                    'sheet_index' => $sheetIndex,
+                    'rows_count' => count($sheet)
+                ]);
                 break;
             }
         }
+
+        if (empty($rows)) {
+            \Log::error('ItemController@importExcel - No valid items sheet found');
+            return response()->json([
+                'message' => 'File tidak valid: Sheet items tidak ditemukan',
+                'error' => true
+            ], 400);
+        }
+
         $header = array_map('trim', $rows[0] ?? []);
         $results = [];
 
         DB::beginTransaction();
         try {
-        foreach (array_slice($rows, 1) as $rowIdx => $row) {
-            $itemData = [];
-            foreach ($header as $i => $col) {
-                $itemData[$col] = $row[$i] ?? null;
-            }
+            foreach (array_slice($rows, 1) as $rowIdx => $row) {
+                \Log::info('ItemController@importExcel - Processing row', [
+                    'row_index' => $rowIdx + 2, // +2 karena index 0 adalah header dan array_slice dimulai dari 1
+                    'row_data' => $row
+                ]);
+
+                $itemData = [];
+                foreach ($header as $i => $col) {
+                    $itemData[$col] = $row[$i] ?? null;
+                }
 
                 // Validasi data wajib sesuai rules store()
                 $requiredFields = [

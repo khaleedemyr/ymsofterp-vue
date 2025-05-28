@@ -312,7 +312,7 @@
             </div>
             <div class="flex justify-end gap-2 mt-4">
               <button @click="closeImportPreview" class="bg-gray-200 hover:bg-gray-300 text-gray-700 px-4 py-2 rounded-lg">Tutup</button>
-              <button v-if="!importUploading && !importResults.length" @click="handleBomImportUpload" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2">
+              <button v-if="!importUploading && !importResults.length" @click="handleImportUpload" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2">
                 <i class="fa-solid fa-upload"></i> Upload
               </button>
             </div>
@@ -508,11 +508,19 @@ async function handleFileChange(e) {
     const formData = new FormData()
     formData.append('file', file)
     try {
-      const res = await axios.post(route('items.import.preview'), formData, { headers: { 'Content-Type': 'multipart/form-data' } })
+      const res = await axios.post(route('items.import.preview'), formData, { 
+        headers: { 'Content-Type': 'multipart/form-data' } 
+      })
+      if (res.data.error) {
+        Swal.fire('Error', res.data.message || 'Gagal membaca file', 'error')
+        return
+      }
       importPreviewData.value = res.data
       importPreviewModal.value = true
     } catch (err) {
-      Swal.fire('Error', 'Gagal membaca file: ' + (err.response?.data?.message || err.message), 'error')
+      console.error('Preview error:', err)
+      const errorMessage = err.response?.data?.message || err.message || 'Gagal membaca file'
+      Swal.fire('Error', errorMessage, 'error')
     }
   }
 }
@@ -539,6 +547,7 @@ async function handleBomFileChange(e) {
 }
 
 async function handleImportUpload() {
+  console.log('IMPORT UPLOAD CLICKED');
   if (!importFile.value) return
   importUploading.value = true
   importProgress.value = 0
@@ -554,12 +563,20 @@ async function handleImportUpload() {
         }
       }
     })
-    importResults.value = res.data.results
+    importResults.value = res.data.results || []
     importUploading.value = false
     importProgress.value = 100
+    if (res.data.error) {
+      Swal.fire('Error', res.data.message || 'Gagal import file', 'error')
+    } else {
+      Swal.fire('Success', 'File berhasil diimport', 'success')
+      reload()
+    }
   } catch (err) {
     importUploading.value = false
-    Swal.fire('Error', 'Gagal import file: ' + (err.response?.data?.message || err.message), 'error')
+    console.error('Import error:', err)
+    const errorMessage = err.response?.data?.message || err.message || 'Gagal import file'
+    Swal.fire('Error', errorMessage, 'error')
   }
 }
 
