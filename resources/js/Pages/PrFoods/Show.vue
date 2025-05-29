@@ -96,7 +96,15 @@ async function approveCOO(approved) {
           </thead>
           <tbody>
             <tr v-for="item in prFood.items" :key="item.id">
-              <td class="px-3 py-2">{{ item.item?.name }}</td>
+              <td class="px-3 py-2">
+                <div>{{ item.item?.name }}</div>
+                <div v-if="item.stock_small !== undefined" class="text-xs text-gray-500 mt-1">
+                  Stok:
+                  <span v-if="item.unit_small">{{ Number(item.stock_small).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }} {{ item.unit_small }}</span>
+                  <span v-if="item.unit_medium"> | {{ Number(item.stock_medium).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }} {{ item.unit_medium }}</span>
+                  <span v-if="item.unit_large"> | {{ Number(item.stock_large).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }} {{ item.unit_large }}</span>
+                </div>
+              </td>
               <td class="px-3 py-2">{{ item.qty }}</td>
               <td class="px-3 py-2">{{ item.unit }}</td>
               <td class="px-3 py-2">{{ item.note }}</td>

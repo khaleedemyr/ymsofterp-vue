@@ -156,7 +156,30 @@ class PurchaseOrderFoodsController extends Controller
                 ->unique()
                 ->values();
 
+            // Group items by supplier_id and arrival_date
+            $groupedItems = [];
             foreach ($request->items_by_supplier as $supplierId => $items) {
+                foreach ($items as $item) {
+                    $prItem = PurchaseRequisitionFoodItem::findOrFail($item['id']);
+                    $arrivalDate = $prItem->arrival_date;
+                    
+                    // Create unique key combining supplier_id and arrival_date
+                    $key = $supplierId . '_' . $arrivalDate;
+                    
+                    if (!isset($groupedItems[$key])) {
+                        $groupedItems[$key] = [
+                            'supplier_id' => $supplierId,
+                            'arrival_date' => $arrivalDate,
+                            'items' => []
+                        ];
+                    }
+                    
+                    $groupedItems[$key]['items'][] = $item;
+                }
+            }
+
+            // Create PO for each group
+            foreach ($groupedItems as $group) {
                 // Generate PO number
                 $poNumber = 'PO-F/' . date('Ymd') . '/' . str_pad(PurchaseOrderFood::whereDate('created_at', Carbon::today())->count() + 1, 4, '0', STR_PAD_LEFT);
 
@@ -164,14 +187,15 @@ class PurchaseOrderFoodsController extends Controller
                 $po = PurchaseOrderFood::create([
                     'number' => $poNumber,
                     'date' => Carbon::now(),
-                    'supplier_id' => $supplierId,
+                    'supplier_id' => $group['supplier_id'],
                     'status' => 'draft',
                     'created_by' => auth()->id(),
                     'notes' => $request->notes ?? null,
+                    'arrival_date' => $group['arrival_date'], // Add arrival_date to PO
                 ]);
 
                 // Create PO items
-                foreach ($items as $item) {
+                foreach ($group['items'] as $item) {
                     $prItem = PurchaseRequisitionFoodItem::findOrFail($item['id']);
                     $quantity = $item['qty'];
                     $price = $item['price'];
@@ -223,7 +247,7 @@ class PurchaseOrderFoodsController extends Controller
             return response()->json(['message' => 'PO generated successfully']);
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json(['message' => 'Failed to generate PO: ' . $e->getMessage()], 500);
+            return response()->json(['error' => $e->getMessage()], 500);
         }
     }
 
@@ -565,5 +589,13 @@ class PurchaseOrderFoodsController extends Controller
             \DB::rollBack();
             return back()->with('error', 'Gagal menghapus PO: ' . $e->getMessage());
         }
+    }
+
+    public function markPrinted($id)
+    {
+        $po = PurchaseOrderFood::findOrFail($id);
+        $po->printed_at = now();
+        $po->save();
+        return response()->json(['success' => true, 'printed_at' => $po->printed_at]);
     }
 } 

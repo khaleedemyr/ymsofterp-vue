@@ -26,6 +26,13 @@
               <option v-for="w in props.warehouses" :key="w.id" :value="w.id">{{ w.name }}</option>
             </select>
           </div>
+          <div v-if="form.type === 'internal_use'">
+            <label class="block text-xs font-bold text-gray-600 mb-1">Ruko</label>
+            <select v-model="form.ruko_id" class="input input-bordered w-full" required>
+              <option value="">Pilih Ruko</option>
+              <option v-for="r in props.rukos" :key="r.id_ruko" :value="r.id_ruko">{{ r.nama_ruko }}</option>
+            </select>
+          </div>
           <div>
             <label class="block text-xs font-bold text-gray-600 mb-1">Item</label>
             <select v-model="form.item_id" class="input input-bordered w-full" required>
@@ -76,13 +83,15 @@ import Swal from 'sweetalert2'
 
 const props = defineProps({
   warehouses: Array,
-  items: Array
+  items: Array,
+  rukos: Array
 })
 
 const form = ref({
   type: '',
   date: new Date().toISOString().slice(0, 10),
   warehouse_id: '',
+  ruko_id: '',
   item_id: '',
   qty: '',
   unit_id: '',
@@ -100,6 +109,12 @@ watch(() => form.value.item_id, async (newVal) => {
   } else {
     unitOptions.value = []
     form.value.unit_id = ''
+  }
+})
+
+watch(() => form.value.type, (newVal) => {
+  if (newVal !== 'internal_use') {
+    form.value.ruko_id = ''
   }
 })
 
@@ -138,6 +153,7 @@ async function submit() {
     })
   }
 }
+
 function goBack() {
   router.visit(route('internal-use-waste.index'))
 }

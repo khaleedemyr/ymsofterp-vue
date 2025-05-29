@@ -30,6 +30,7 @@
                     <span :class="getStatusClass(po.status)">{{ po.status }}</span>
                   </p>
                   <p><span class="font-medium">Supplier:</span> {{ po.supplier?.name }}</p>
+                  <p><span class="font-medium">Tanggal Kedatangan:</span> {{ formatDate(po.arrival_date) }}</p>
                   <p><span class="font-medium">Dibuat oleh:</span> {{ po.creator?.nama_lengkap }}</p>
                 </div>
               </div>

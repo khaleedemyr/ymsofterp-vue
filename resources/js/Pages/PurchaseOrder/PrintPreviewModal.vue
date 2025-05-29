@@ -17,6 +17,7 @@
                 <p><strong>No. PO:</strong> {{ po.number }}</p>
                 <p><strong>Tanggal:</strong> {{ new Date(po.date).toLocaleDateString('id-ID') }}</p>
                 <p><strong>Supplier:</strong> {{ po.supplier?.name }}</p>
+                <p><strong>Tanggal Kedatangan:</strong> {{ po.arrival_date ? new Date(po.arrival_date).toLocaleDateString('id-ID') : '-' }}</p>
                 <p><strong>Outlet Pengiriman:</strong> {{ selectedOutlet?.nama_outlet || '-' }}</p>
                 <p><strong>Alamat Pengiriman:</strong> {{ selectedOutlet?.lokasi || '-' }}</p>
               </div>
@@ -37,7 +38,6 @@
                 <th class="border px-2 py-1">Unit</th>
                 <th class="border px-2 py-1">Harga</th>
                 <th class="border px-2 py-1">Total</th>
-                <th class="border px-2 py-1">Tgl Kedatangan</th>
               </tr>
             </thead>
             <tbody>
@@ -48,7 +48,6 @@
                 <td class="border px-2 py-1">{{ item.unit?.name }}</td>
                 <td class="border px-2 py-1 text-right">{{ formatPrice(item.price) }}</td>
                 <td class="border px-2 py-1 text-right">{{ formatPrice(item.total) }}</td>
-                <td class="border px-2 py-1">{{ item.arrival_date ? new Date(item.arrival_date).toLocaleDateString('id-ID') : '-' }}</td>
               </tr>
             </tbody>
             <tfoot>
@@ -205,6 +204,12 @@ function print() {
   setTimeout(() => {
     printWindow.print();
     printWindow.close();
+    // Setelah print, catat waktu print ke backend
+    axios.post(route('po-foods.mark-printed', props.po.id)).then(res => {
+      if (res.data.printed_at) {
+        props.po.printed_at = res.data.printed_at;
+      }
+    });
   }, 500);
 }
 </script> 

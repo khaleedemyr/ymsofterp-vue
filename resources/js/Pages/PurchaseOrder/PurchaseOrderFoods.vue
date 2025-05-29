@@ -223,6 +223,8 @@ onMounted(() => {
                                             <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Tanggal</th>
                                             <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">PR Numbers</th>
                                             <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Supplier</th>
+                                            <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Tgl Kedatangan</th>
+                                            <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Tanggal Print</th>
                                             <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Created By</th>
                                             <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Status</th>
                                             <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider rounded-tr-2xl">Aksi</th>
@@ -244,6 +246,8 @@ onMounted(() => {
                                                 </div>
                                             </td>
                                             <td class="px-6 py-3">{{ po.supplier?.name }}</td>
+                                            <td class="px-6 py-3">{{ po.arrival_date ? new Date(po.arrival_date).toLocaleDateString('id-ID') : '-' }}</td>
+                                            <td class="px-6 py-3">{{ po.printed_at ? new Date(po.printed_at).toLocaleDateString('id-ID') + ' ' + new Date(po.printed_at).toLocaleTimeString('id-ID') : '-' }}</td>
                                             <td class="px-6 py-3">{{ po.creator?.nama_lengkap }}</td>
                                             <td class="px-6 py-3">
                                                 <span :class="{

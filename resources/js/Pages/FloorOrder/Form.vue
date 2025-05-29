@@ -547,7 +547,7 @@ function submitOrderWithLoading() {
   Swal.fire({
     icon: 'warning',
     title: 'Konfirmasi RO',
-    html: `<div style="font-size:1.1em;">Ingat: Barang yang sudah selesai di-RO tidak dapat dicancel dengan alasan apapun<br><br><b>Apakah RO ini sudah benar dan sesuai item barang2nya?</b></div>`,
+    html: `<div style="font-size:1.1em;">Ingat: Barang yang sudah selesai di-RO tidak dapat di batalkan dengan alasan apapun<br><br><b>Apakah RO ini sudah benar dan sesuai item barang-barang yang ingin dipesan?</b></div>`,
     showCancelButton: true,
     confirmButtonText: 'Ya, sudah benar',
     cancelButtonText: 'Cek Lagi',

@@ -17,6 +17,8 @@ class PurchaseOrderFood extends Model
         'supplier_id',
         'status',
         'created_by',
+        'notes',
+        'arrival_date',
         'purchasing_manager_approved_at',
         'purchasing_manager_approved_by',
         'purchasing_manager_note',

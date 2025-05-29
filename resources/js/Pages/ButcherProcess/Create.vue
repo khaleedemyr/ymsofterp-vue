@@ -186,7 +186,7 @@
                       <div class="relative w-full">
                         <select v-model="pcs.pcs_item_id" @change="onPcsSelect(idx, pcsIdx)" class="rounded border-gray-300 w-full" required>
                           <option value="">Pilih Item PCS</option>
-                          <option v-for="item in pcsItems" :key="item.id" :value="item.id">
+                          <option v-for="item in filteredPcsItems" :key="item.id" :value="item.id">
                             {{ item.name }} ({{ item.sku }})
                           </option>
                         </select>
@@ -222,7 +222,7 @@
                 <div class="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
                   <div class="font-semibold mb-1">Preview Perhitungan:</div>
                   <div>Total Cost: <span class="font-mono">{{ formatRupiah(totalCostPreview) }}</span></div>
-                  <div>MAC PCS: <span class="font-mono">{{ formatRupiah(macPcsPreview) }}</span></div>
+                  <div>MAC Gram: <span class="font-mono">{{ formatRupiah(macPcsPreview) }}</span></div>
                 </div>
               </div>
 
@@ -343,7 +343,16 @@ const selectedGoodReceive = ref(null)
 const wholeItems = ref([])
 const selectedWhole = ref({})
 const expandedWhole = ref({})
-const pcsItems = ref(props.pcsItems || [])
+
+// Ambil kode kategori yang diizinkan
+const allowedCategoryCodes = ['MT', 'BK', 'BP'];
+
+// Filter pcsItems agar hanya yang kategori MT, BK, BP yang muncul
+const filteredPcsItems = computed(() => {
+  return (props.pcsItems || []).filter(item =>
+    allowedCategoryCodes.includes(item.category_code)
+  );
+});
 
 // Add new refs for validation
 const isSubmitting = ref(false)
@@ -692,7 +701,7 @@ function getUsedQty(itemId) {
 
 function onPcsSelect(idx, pcsIdx) {
   const pcs = form.items[idx].pcs[pcsIdx];
-  const selected = pcsItems.value.find(i => i.id == pcs.pcs_item_id);
+  const selected = filteredPcsItems.value.find(i => i.id == pcs.pcs_item_id);
   if (selected) {
     pcs.pcs_item_name = selected.name;
     pcs.unit_options = [
@@ -819,7 +828,7 @@ function macPcsPerPcs(idx, pcsIdx) {
   if (!pcs || !pcs.pcs_item_id || pcs.costs_0) return 0;
   const macPerGram = macPcsPreviewArray.value[idx]?.[pcsIdx] || 0;
   // Find small_conversion_qty from pcsItems
-  const pcsItem = pcsItems.value.find(i => i.id == pcs.pcs_item_id);
+  const pcsItem = filteredPcsItems.value.find(i => i.id == pcs.pcs_item_id);
   const smallConv = Number(pcsItem?.small_conversion_qty) || 1;
   return macPerGram * smallConv;
 }

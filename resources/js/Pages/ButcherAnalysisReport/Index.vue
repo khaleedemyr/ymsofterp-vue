@@ -31,6 +31,7 @@
               <th class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider border border-gray-300">Item Whole</th>
               <th class="px-4 py-3 text-right text-xs font-bold text-gray-700 uppercase tracking-wider border border-gray-300">Input Whole</th>
               <th class="px-4 py-3 text-right text-xs font-bold text-gray-700 uppercase tracking-wider border border-gray-300">Susut Air</th>
+              <th class="px-4 py-3 text-right text-xs font-bold text-gray-700 uppercase tracking-wider border border-gray-300">Susut Air (%)</th>
               <th class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider border border-gray-300">Unit Susut</th>
               <th class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider border border-gray-300">Item PCS</th>
               <th class="px-4 py-3 text-right text-xs font-bold text-gray-700 uppercase tracking-wider border border-gray-300">Output PCS</th>
@@ -48,11 +49,16 @@
                   <td v-if="idx === 0" :rowspan="group.rows.length" class="px-4 py-3 whitespace-nowrap text-sm border border-gray-300">{{ row.item_whole }}</td>
                   <td v-if="idx === 0" :rowspan="group.rows.length" class="px-4 py-3 whitespace-nowrap text-sm text-right border border-gray-300">{{ formatNumber(row.input_whole) }}</td>
                   <td v-if="idx === 0" :rowspan="group.rows.length" class="px-4 py-3 whitespace-nowrap text-sm text-right border border-gray-300">{{ formatNumber(row.susut_air) }}</td>
+                  <td v-if="idx === 0" :rowspan="group.rows.length" class="px-4 py-3 whitespace-nowrap text-sm text-right border border-gray-300">
+                    {{ row.input_whole && row.susut_air ? ((row.susut_air / row.input_whole) * 100).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00' }}
+                  </td>
                   <td v-if="idx === 0" :rowspan="group.rows.length" class="px-4 py-3 whitespace-nowrap text-sm border border-gray-300">{{ row.susut_air_unit || '-' }}</td>
                   <td class="px-4 py-3 whitespace-nowrap text-sm border border-gray-300">{{ row.item_pcs }}</td>
                   <td class="px-4 py-3 whitespace-nowrap text-sm text-right border border-gray-300">{{ formatNumber(row.output_pcs) }}</td>
                   <td class="px-4 py-3 whitespace-nowrap text-sm text-right border border-gray-300">{{ formatNumber(row.output_kg) }}</td>
-                  <td v-if="idx === 0" :rowspan="group.rows.length" class="px-4 py-3 whitespace-nowrap text-sm text-right border border-gray-300">{{ formatNumber(row.efisiensi) }}</td>
+                  <td class="px-4 py-3 whitespace-nowrap text-sm text-right border border-gray-300">
+                    {{ row.input_whole > 0 ? ((row.output_kg / row.input_whole) * 100).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00' }}
+                  </td>
                   <td class="px-4 py-3 whitespace-nowrap text-sm text-right border border-gray-300">{{ formatCurrency(row.cost_per_unit) }}</td>
                 </tr>
               </template>
