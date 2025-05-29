@@ -10,7 +10,7 @@
         <select v-model="selectedPackingListId" @change="onPackingListChange" class="border-2 border-blue-400 rounded-lg px-3 py-2 w-full max-w-xs focus:ring-2 focus:ring-blue-500">
           <option value="">Pilih Packing List...</option>
           <option v-for="pl in packingLists" :key="pl.id" :value="pl.id">
-            {{ new Date(pl.created_at).toLocaleDateString('id-ID') }} - {{ pl.nama_outlet || '-' }} - {{ pl.packing_number }}
+            {{ new Date(pl.created_at).toLocaleDateString('id-ID') }} - {{ pl.nama_outlet || '-' }} - {{ pl.division_name || '-' }} - {{ pl.packing_number }}
           </option>
         </select>
       </div>

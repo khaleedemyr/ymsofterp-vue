@@ -359,12 +359,32 @@ Route::resource('fo-schedules', App\Http\Controllers\FOScheduleController::class
 
 Route::get('/floor-order', function () {
     $user = Auth::user()->load('outlet');
-    $orders = \App\Models\FoodFloorOrder::with(['items', 'outlet', 'requester', 'foSchedule'])
-        ->orderByDesc('created_at')
-        ->paginate(10);
+    $query = \App\Models\FoodFloorOrder::with(['items', 'outlet', 'requester', 'foSchedule']);
+    
+    // Jika user bukan dari outlet 1, filter berdasarkan id_outlet user
+    if ($user->id_outlet != 1) {
+        $query->where('id_outlet', $user->id_outlet);
+    }
+    
+    // Filter tanggal
+    $start = Request::get('start_date');
+    $end = Request::get('end_date');
+    if ($start && $end) {
+        $query->whereBetween('created_at', [
+            $start . ' 00:00:00',
+            $end . ' 23:59:59'
+        ]);
+    }
+    
+    $orders = $query->orderByDesc('created_at')->paginate(10);
+    
     return Inertia::render('FloorOrder/Index', [
         'user' => $user,
         'floorOrders' => $orders,
+        'filters' => [
+            'start_date' => $start,
+            'end_date' => $end,
+        ],
     ]);
 })->name('floor-order.index');
 

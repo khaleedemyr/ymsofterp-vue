@@ -46,6 +46,7 @@ class FoodFloorOrderController extends Controller
                 'price' => $item['price'],
                 'subtotal' => $item['subtotal'],
                 'category_id' => $masterItem ? $masterItem->category_id : null,
+                'warehouse_division_id' => $masterItem ? $masterItem->warehouse_division_id : null,
             ]);
         }
         // Notifikasi ke Executive Chef jika FO Khusus
@@ -92,6 +93,7 @@ class FoodFloorOrderController extends Controller
                 'price' => $item['price'],
                 'subtotal' => $item['subtotal'],
                 'category_id' => $masterItem ? $masterItem->category_id : null,
+                'warehouse_division_id' => $masterItem ? $masterItem->warehouse_division_id : null,
             ]);
         }
         \App\Models\ActivityLog::create([

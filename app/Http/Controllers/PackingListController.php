@@ -6,6 +6,7 @@ use Illuminate\Http\Request;
 use App\Models\FoodPackingList;
 use App\Models\FoodFloorOrder;
 use App\Models\WarehouseDivision;
+use App\Models\FoodPackingListItem;
 
 class PackingListController extends Controller
 {
@@ -28,9 +29,41 @@ class PackingListController extends Controller
 
     public function create()
     {
+        // Ambil semua FO yang approved
         $floorOrders = FoodFloorOrder::where('status', 'approved')
-            ->with(['outlet', 'user', 'items.item.smallUnit', 'items.item.mediumUnit', 'items.item.largeUnit'])
-            ->orderByDesc('created_at')->get();
+            ->with(['outlet', 'user', 'items.item.smallUnit', 'items.item.mediumUnit', 'items.item.largeUnit', 'warehouseDivisions'])
+            ->orderByDesc('created_at')
+            ->get();
+
+        // Filter FO yang masih memiliki item yang belum di-packing untuk setiap warehouse division
+        $floorOrders = $floorOrders->filter(function($fo) {
+            // Ambil semua warehouse division yang terkait dengan FO
+            $foDivisions = $fo->warehouseDivisions->pluck('id')->toArray();
+            
+            // Untuk setiap warehouse division, cek apakah masih ada item yang belum di-packing
+            foreach ($foDivisions as $divisionId) {
+                // Ambil item yang sesuai dengan warehouse division ini
+                $itemsInDivision = $fo->items->filter(function($item) use ($divisionId) {
+                    return $item->item && $item->item->warehouse_division_id == $divisionId;
+                });
+                
+                if ($itemsInDivision->count() > 0) {
+                    // Cek apakah semua item di division ini sudah di-packing
+                    $packedItems = FoodPackingListItem::whereHas('packingList', function($q) use ($fo, $divisionId) {
+                        $q->where('food_floor_order_id', $fo->id)
+                          ->where('warehouse_division_id', $divisionId);
+                    })->pluck('food_floor_order_item_id')->toArray();
+                    
+                    // Jika masih ada item yang belum di-packing, FO ini masih valid
+                    if ($itemsInDivision->whereNotIn('id', $packedItems)->count() > 0) {
+                        return true;
+                    }
+                }
+            }
+            
+            return false;
+        })->values();
+
         $warehouseDivisions = \App\Models\WarehouseDivision::all();
         return inertia('PackingList/Form', [
             'floorOrders' => $floorOrders,
@@ -46,9 +79,10 @@ class PackingListController extends Controller
             'reason' => 'nullable|string',
             'items' => 'required|array|min:1',
             'items.*.food_floor_order_item_id' => 'required|exists:food_floor_order_items,id',
-            'items.*.qty' => 'required|numeric|min:0.01',
+            'items.*.qty' => 'required|numeric|min:0',
             'items.*.unit' => 'required|string',
             'items.*.source' => 'required|in:warehouse,supplier',
+            'items.*.reason' => 'nullable|string',
         ]);
 
         \DB::beginTransaction();
@@ -93,11 +127,13 @@ class PackingListController extends Controller
                 'status' => 'packing',
             ]);
             foreach ($data['items'] as $item) {
+                \Log::info('PackingListItem reason', ['item' => $item]);
                 $packingList->items()->create([
                     'food_floor_order_item_id' => $item['food_floor_order_item_id'],
                     'qty' => $item['qty'],
                     'unit' => $item['unit'],
                     'source' => $item['source'],
+                    'reason' => $item['reason'] ?? null,
                 ]);
             }
             // Update status FO hanya jika semua warehouse division pada FO sudah selesai packing
@@ -174,7 +210,7 @@ class PackingListController extends Controller
             })
             ->with(['item.smallUnit', 'item.mediumUnit', 'item.largeUnit', 'item.category'])
             ->get();
-        // Item yang sudah pernah di-packing
+        // Item yang sudah pernah di-packing (qty berapapun)
         $packedItemIds = \App\Models\FoodPackingListItem::whereHas('packingList', function($q) use ($foId, $divisionId) {
             $q->where('food_floor_order_id', $foId)
               ->where('warehouse_division_id', $divisionId);

@@ -8,16 +8,34 @@ import axios from 'axios';
 const props = defineProps({
   user: Object,
   floorOrders: Object,
+  filters: Object,
 });
 
 const search = ref('');
 const selectedStatus = ref('');
-const from = ref('');
-const to = ref('');
+const from = ref(props.filters?.start_date || '');
+const to = ref(props.filters?.end_date || '');
 
-function onSearchInput() {}
-function onStatusChange() {}
-function onDateChange() {}
+function onSearchInput() {
+  doFilter();
+}
+function onStatusChange() {
+  doFilter();
+}
+function onDateChange() {
+  doFilter();
+}
+function doFilter() {
+  router.get('/floor-order', {
+    search: search.value,
+    status: selectedStatus.value,
+    start_date: from.value,
+    end_date: to.value,
+  }, {
+    preserveState: true,
+    replace: true,
+  });
+}
 function goToPage(url) {}
 function openCreate() {
   // Go directly to create form with default mode (e.g., FO Utama)

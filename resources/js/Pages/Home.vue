@@ -1,15 +1,13 @@
 <script setup>
 import { ref, onMounted, watch } from 'vue';
-import { Head } from '@inertiajs/vue3';
+import { Head, usePage } from '@inertiajs/vue3';
 import AnalogClock from '@/Components/AnalogClock.vue';
 import WeatherIcon from '@/Components/WeatherIcon.vue';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { useI18n } from 'vue-i18n';
 
-const props = defineProps({
-    nama_lengkap: String,
-    avatar: String,
-});
+const page = usePage();
+const user = page.props.auth?.user || {};
 
 const { t, locale } = useI18n();
 
@@ -121,11 +119,11 @@ watch(locale, () => {
                 :class="isNight ? 'bg-[#1a223a]/80 border-blue-900' : 'bg-white/70 border-blue-200 hover:shadow-blue-300'">
                 <!-- Avatar user -->
                 <div class="absolute left-6 top-6 flex items-center gap-2 z-20">
-                    <div v-if="props.avatar" class="w-14 h-14 rounded-full overflow-hidden border-4 border-white shadow-lg">
-                        <img :src="props.avatar ? `/storage/${props.avatar}` : '/images/avatar-default.png'" alt="Avatar" class="w-full h-full object-cover" />
+                    <div v-if="user.avatar" class="w-14 h-14 rounded-full overflow-hidden border-4 border-white shadow-lg">
+                        <img :src="user.avatar ? `/storage/${user.avatar}` : '/images/avatar-default.png'" alt="Avatar" class="w-full h-full object-cover" />
                     </div>
                     <div v-else class="w-14 h-14 rounded-full bg-gradient-to-br from-blue-700 to-blue-400 flex items-center justify-center text-white text-2xl font-bold border-4 border-white shadow-lg">
-                        {{ getInitials(props.nama_lengkap) }}
+                        {{ getInitials(user.nama_lengkap) }}
                     </div>
                 </div>
                 <div class="ml-24 md:ml-32">
@@ -133,7 +131,7 @@ watch(locale, () => {
                         <!-- Kiri: Sapaan, nama, quotes -->
                         <div class="flex-1 flex flex-col items-center md:items-start text-center md:text-left gap-6">
                             <div class="text-3xl md:text-5xl font-extrabold" :class="isNight ? 'text-white' : 'text-gray-800'">{{ greeting }},</div>
-                            <div class="text-2xl md:text-3xl font-bold" :class="isNight ? 'text-blue-100' : 'text-blue-900'">{{ props.nama_lengkap }}</div>
+                            <div class="text-2xl md:text-3xl font-bold" :class="isNight ? 'text-blue-100' : 'text-blue-900'">{{ user.nama_lengkap }}</div>
                             <div class="mt-6 max-w-xl mx-auto p-4 rounded-xl min-h-[100px] flex flex-col justify-center border"
                                 :class="[
                                     isNight ? 'bg-white/10 text-blue-100 border-blue-300' : 'bg-blue-50/80 text-blue-900 border-blue-100',

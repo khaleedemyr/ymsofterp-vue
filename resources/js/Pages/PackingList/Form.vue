@@ -26,7 +26,7 @@ const reasonOptions = [
   'Permintaan outlet berubah',
   'Lainnya',
 ];
-const reasonItemIdx = ref(null);
+const reasonItemId = ref(null);
 const itemStocks = ref({});
 const isSubmitting = ref(false);
 
@@ -101,22 +101,51 @@ async function onSubmit() {
 }
 
 async function confirmSubmit() {
+  // Loop untuk semua item checked yang butuh reason
+  for (let i = 0; i < items.value.length; i++) {
+    const item = items.value[i];
+    const qtyOrder = Number(item.qty ?? item.qty_order);
+    if (item.checked && Number(item.input_qty) < qtyOrder && (!item.reason || item.reason === '')) {
+      reasonItemId.value = item.id;
+      showReasonModal.value = true;
+      // Tunggu user memilih reason
+      await new Promise(resolve => {
+        const unwatch = watch(showReasonModal, (val) => {
+          if (!val) {
+            unwatch();
+            resolve();
+          }
+        });
+      });
+      // Setelah modal ditutup, cek lagi
+      if (!item.reason || item.reason === '') {
+        await Swal.fire({
+          icon: 'warning',
+          title: 'Alasan Wajib Diisi',
+          text: 'Ada item dengan qty kurang dari permintaan FO, alasan harus diisi!',
+        });
+        return;
+      }
+    }
+  }
+  const data = {
+    food_floor_order_id: selectedFO.value,
+    warehouse_division_id: selectedDivision.value,
+    items: items.value
+      .filter(i => i.checked)
+      .map(i => ({
+        food_floor_order_item_id: i.id,
+        qty: i.input_qty ?? 0,
+        unit: i.unit,
+        source: i.source,
+        reason: i.reason || null
+      }))
+  };
+  // Debug: cek reason sebelum kirim ke backend
+  console.log('DATA TO BACKEND', JSON.parse(JSON.stringify(data)));
   showPreviewModal.value = false;
   isSubmitting.value = true;
   try {
-    const data = {
-      food_floor_order_id: selectedFO.value,
-      warehouse_division_id: selectedDivision.value,
-      items: items.value
-        .filter(i => i.checked && Number(i.input_qty) > 0)
-        .map(i => ({
-          food_floor_order_item_id: i.id,
-          qty: i.input_qty,
-          unit: i.unit,
-          source: i.source,
-          reason: i.reason || null
-        }))
-    };
     const res = await axios.post('/packing-list', data);
     isSubmitting.value = false;
     await Swal.fire({
@@ -138,7 +167,7 @@ async function confirmSubmit() {
 function onQtyInput(item, idx) {
   const qtyOrder = Number(item.qty ?? item.qty_order);
   if (item.input_qty !== null && Number(item.input_qty) < qtyOrder) {
-    reasonItemIdx.value = idx;
+    reasonItemId.value = item.id;
     showReasonModal.value = true;
   } else {
     item.reason = '';
@@ -146,9 +175,13 @@ function onQtyInput(item, idx) {
 }
 
 function selectReason(r) {
-  if (reasonItemIdx.value !== null) {
-    items.value[reasonItemIdx.value].reason = r;
-    reasonItemIdx.value = null;
+  if (reasonItemId.value !== null) {
+    const found = items.value.find(i => i.id === reasonItemId.value);
+    if (found) {
+      found.reason = r;
+      console.log('Reason set for id', reasonItemId.value, r, found);
+    }
+    reasonItemId.value = null;
   }
   showReasonModal.value = false;
 }
@@ -221,6 +254,9 @@ function printFO() {
         <button @click="showPrint = true" :disabled="!selectedDivision" class="mb-4 px-4 py-2 rounded bg-blue-500 text-white font-semibold hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed">
           <i class="fas fa-print mr-2"></i> Print Preview Request Order (RO)
         </button>
+      </div>
+      <div v-if="!loadingItems && items.length === 0 && selectedFO && selectedDivision" class="text-center text-gray-500 my-8">
+        Semua item di warehouse division ini sudah di-packing.
       </div>
       <div v-if="loadingItems" class="text-center py-8">
         <i class="fas fa-spinner fa-spin text-blue-500 text-2xl"></i>

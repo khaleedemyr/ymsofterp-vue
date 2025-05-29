@@ -7,6 +7,14 @@ class FoodPackingListItem extends Model
 {
     protected $table = 'food_packing_list_items';
     protected $guarded = [];
+    protected $fillable = [
+        'packing_list_id',
+        'food_floor_order_item_id',
+        'qty',
+        'unit',
+        'source',
+        'reason',
+    ];
 
     public function packingList()
     {
