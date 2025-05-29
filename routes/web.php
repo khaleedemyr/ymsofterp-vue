@@ -285,6 +285,10 @@ Route::post('pr-foods/{id}/approve-vice-coo', [PrFoodController::class, 'approve
 
 Route::resource('suppliers', SupplierController::class);
 Route::patch('suppliers/{id}/toggle-status', [SupplierController::class, 'toggleStatus'])->name('suppliers.toggle-status');
+Route::get('/suppliers/import/template', [SupplierController::class, 'downloadImportTemplate'])->name('suppliers.import.template');
+Route::post('/suppliers/import/preview', [SupplierController::class, 'previewImport'])->name('suppliers.import.preview');
+Route::post('/suppliers/import/excel', [SupplierController::class, 'importExcel'])->name('suppliers.import.excel');
+
 Route::get('/api/suppliers/{id}', [\App\Http\Controllers\Api\SupplierController::class, 'show']);
 
 // PO Foods Routes

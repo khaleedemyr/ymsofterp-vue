@@ -86,8 +86,7 @@ async function submit() {
       onFinish: () => isSubmitting.value = false,
     });
   } else if (props.mode === 'edit' && props.supplier) {
-    form._method = 'PUT';
-    form.post(route('suppliers.update', props.supplier.id), {
+    form.patch(route('suppliers.update', props.supplier.id), {
       onSuccess: () => {
         Swal.fire('Berhasil', 'Supplier berhasil diupdate!', 'success');
         emit('success');
