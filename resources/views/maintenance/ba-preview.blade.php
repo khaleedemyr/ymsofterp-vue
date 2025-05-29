@@ -216,7 +216,11 @@
                 @endif
                 <div class="signature-name">{{ $signatures['chief_engineering']['official']->nama_lengkap }}</div>
                 <div class="signature-title">{{ $signatures['chief_engineering']['official']->nama_jabatan }}</div>
-                @if($signatures['chief_engineering']['approver'] && $signatures['chief_engineering']['approver']->id != $signatures['chief_engineering']['official']->id)
+                @if(
+                    is_object($signatures['chief_engineering']['approver']) &&
+                    is_object($signatures['chief_engineering']['official']) &&
+                    $signatures['chief_engineering']['approver']->id != $signatures['chief_engineering']['official']->id
+                )
                     <div class="signature-note" style="color: #666; font-style: italic;">
                         {{ $signatures['chief_engineering']['approver']->nama_lengkap }}<br>
                         Bertindak atas nama {{ $signatures['chief_engineering']['official']->nama_jabatan }}

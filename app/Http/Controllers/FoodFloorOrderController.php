@@ -62,11 +62,30 @@ class FoodFloorOrderController extends Controller
                 route('floor-order.edit', $order->id)
             );
         }
+
+        // Notifikasi ke user dengan id_jabatan tertentu
+        $jabatanList = [179, 189, 199, 172, 161];
+        $targetUsers = \DB::table('users')
+            ->whereIn('id_jabatan', $jabatanList)
+            ->where('status', 'A')
+            ->pluck('id');
+        $outletName = $user->outlet->nama_outlet ?? '-';
+        $requester = $user->name ?? ($user->nama_lengkap ?? '-');
+        $orderNumber = $order->order_number ?? '-';
+        $notifMessage = "Request Order baru telah dibuat:\nNo: $orderNumber\nOutlet: $outletName\nDibuat oleh: $requester";
+        $this->sendNotification(
+            $targetUsers,
+            'floor_order_created',
+            'Request Order Baru',
+            $notifMessage,
+            route('floor-order.edit', $order->id)
+        );
+
         \App\Models\ActivityLog::create([
             'user_id' => $user->id,
             'activity_type' => 'create',
             'module' => 'food_floor_order',
-            'description' => 'Membuat Floor Order: ' . $order->id,
+            'description' => 'Membuat Request Order: ' . $order->id,
             'ip_address' => $request->ip(),
             'user_agent' => $request->userAgent(),
             'old_data' => null,
