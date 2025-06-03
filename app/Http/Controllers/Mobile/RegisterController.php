@@ -46,23 +46,25 @@ class RegisterController extends Controller
             'foto_ktp' => 'nullable|file|image|max:1024',
             'foto_kk' => 'nullable|file|image|max:1024',
             'upload_latest_color_photo' => 'nullable|file|image|max:10240',
+            'avatar' => 'nullable|file|image|max:2048',
+            'pin_pos' => 'nullable|string|max:10',
+            'work_start_date' => 'nullable|date',
         ]);
-
-        // Generate NIK otomatis: 4 digit sequence + 2 digit tahun
-        $validated['nik'] = $this->generateNik();
 
         // Handle file upload
         $foto_ktp_path = $request->hasFile('foto_ktp') ? $request->file('foto_ktp')->store('ktp', 'public') : null;
         $foto_kk_path = $request->hasFile('foto_kk') ? $request->file('foto_kk')->store('kk', 'public') : null;
         $latest_photo_path = $request->hasFile('upload_latest_color_photo') ? $request->file('upload_latest_color_photo')->store('latest_photo', 'public') : null;
+        $avatar_path = $request->hasFile('avatar') ? $request->file('avatar')->store('avatars', 'public') : null;
 
         // Simpan user
         $user = User::create([
-            'nik' => $validated['nik'],
+            'nik' => $this->generateNik(),
             'no_ktp' => $validated['no_ktp'],
             'nama_lengkap' => $validated['nama_lengkap'],
             'email' => $validated['email'],
             'password' => Hash::make($validated['password']),
+            'hint_password' => $validated['password'],
             'jenis_kelamin' => $validated['jenis_kelamin'],
             'tempat_lahir' => $validated['tempat_lahir'],
             'tanggal_lahir' => $validated['tanggal_lahir'],
@@ -89,6 +91,12 @@ class RegisterController extends Controller
             'foto_ktp' => $foto_ktp_path,
             'foto_kk' => $foto_kk_path,
             'upload_latest_color_photo' => $latest_photo_path,
+            'imei' => $request->input('imei'),
+            'avatar' => $avatar_path,
+            'status' => 'B',
+            'pin_pos' => $validated['pin_pos'] ?? null,
+            'work_start_date' => $validated['work_start_date'] ?? null,
+            'tanggal_masuk' => $validated['work_start_date'] ?? null,
         ]);
 
         return response()->json(['success' => true, 'user' => $user]);

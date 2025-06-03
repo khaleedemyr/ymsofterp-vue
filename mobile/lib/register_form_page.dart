@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:awesome_dialog/awesome_dialog.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'dart:convert';
+import 'package:device_info_plus/device_info_plus.dart';
 
 class RegisterFormPage extends StatefulWidget {
   const RegisterFormPage({Key? key}) : super(key: key);
@@ -26,14 +27,34 @@ class _RegisterFormPageState extends State<RegisterFormPage> {
   // Tambahkan List<Function> _onNextCallbacks di RegisterFormPage untuk menyimpan callback dari setiap step
   final List<Function> _onNextCallbacks = [];
 
-  // Tambahkan GlobalKey untuk setiap step
-  final List<GlobalKey<_Step1DataPribadiState>> _stepKeys = [GlobalKey<_Step1DataPribadiState>(), ...];
-
   // 1. Buat GlobalKey untuk setiap step
   final _step1Key = GlobalKey<_Step1DataPribadiState>();
   final _step2Key = GlobalKey<_Step2KontakKeluargaState>();
   final _step3Key = GlobalKey<_Step3PendidikanPekerjaanState>();
   final _step4Key = GlobalKey<_Step4DokumenState>();
+
+  String? deviceId;
+
+  @override
+  void initState() {
+    super.initState();
+    _initDeviceId();
+  }
+
+  Future<void> _initDeviceId() async {
+    final deviceInfo = DeviceInfoPlugin();
+    String? id;
+    if (Platform.isAndroid) {
+      final androidInfo = await deviceInfo.androidInfo;
+      id = androidInfo.id;
+    } else if (Platform.isIOS) {
+      final iosInfo = await deviceInfo.iosInfo;
+      id = iosInfo.identifierForVendor;
+    }
+    setState(() {
+      deviceId = id;
+    });
+  }
 
   void _nextStep() {
     if (_formKeys[_currentStep].currentState?.validate() ?? true) {
@@ -90,7 +111,6 @@ class _RegisterFormPageState extends State<RegisterFormPage> {
 
           // Mapping field Flutter ke field backend
           final Map<String, dynamic> mappedData = {
-            'nik': formData['nik'] ?? '',
             'no_ktp': formData['noKtp'] ?? '',
             'nama_lengkap': formData['nama'] ?? '',
             'email': formData['email'] ?? '',
@@ -117,7 +137,10 @@ class _RegisterFormPageState extends State<RegisterFormPage> {
             'last_education': formData['pendidikanTerakhir'] ?? '',
             'name_school_college': formData['namaSekolah'] ?? '',
             'school_college_major': formData['jurusan'] ?? '',
+            'id_jabatan': formData['idJabatan'] ?? '',
             'position': formData['idJabatan'] ?? '',
+            'work_start_date': formData['workStartDate'] != null ? (formData['workStartDate'] is DateTime ? (formData['workStartDate'] as DateTime).toIso8601String().substring(0,10) : formData['workStartDate'].toString().substring(0,10)) : '',
+            'imei': deviceId ?? '',
           };
 
           mappedData.forEach((key, value) {
@@ -136,6 +159,9 @@ class _RegisterFormPageState extends State<RegisterFormPage> {
           if (formData['fotoBerwarna'] != null) {
             request.files.add(await http.MultipartFile.fromPath('upload_latest_color_photo', formData['fotoBerwarna'].path));
           }
+          if (formData['avatarFile'] != null) {
+            request.files.add(await http.MultipartFile.fromPath('avatar', formData['avatarFile'].path));
+          }
 
           var response = await request.send();
           final respStr = await response.stream.bytesToString();
@@ -146,9 +172,9 @@ class _RegisterFormPageState extends State<RegisterFormPage> {
               dialogType: DialogType.success,
               animType: AnimType.bottomSlide,
               title: 'Sukses',
-              desc: 'Registrasi berhasil! Data Anda telah tersimpan.',
+              desc: 'Registrasi berhasil! Silakan login.',
               btnOkOnPress: () {
-                Navigator.of(context).popUntil((route) => route.isFirst);
+                Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
               },
             ).show();
           } else {
@@ -295,6 +321,8 @@ class _Step1DataPribadiState extends State<_Step1DataPribadi> with SingleTickerP
   String? statusPernikahan;
   final TextEditingController alamatDomisiliController = TextEditingController();
   final TextEditingController alamatKtpController = TextEditingController();
+  DateTime? workStartDate;
+  File? avatarFile;
 
   // Tambahkan state untuk jabatan
   List<Map<String, dynamic>> daftarJabatan = [];
@@ -317,6 +345,7 @@ class _Step1DataPribadiState extends State<_Step1DataPribadi> with SingleTickerP
     alamatDomisiliController.text = widget.initialData['alamatDomisili'] ?? '';
     alamatKtpController.text = widget.initialData['alamatKtp'] ?? '';
     selectedJabatanId = widget.initialData['idJabatan'];
+    workStartDate = widget.initialData['workStartDate'];
     _animController = AnimationController(vsync: this, duration: const Duration(milliseconds: 700));
     _cardAnim = CurvedAnimation(parent: _animController, curve: Curves.easeOutBack);
     _animController.forward();
@@ -514,6 +543,44 @@ class _Step1DataPribadiState extends State<_Step1DataPribadi> with SingleTickerP
                         label: 'Alamat Lengkap Sesuai KTP',
                         icon: Icons.location_city,
                       ),
+                      const SizedBox(height: 14),
+                      GestureDetector(
+                        onTap: () async {
+                          final picked = await showDatePicker(
+                            context: context,
+                            initialDate: workStartDate ?? DateTime.now(),
+                            firstDate: DateTime(2000),
+                            lastDate: DateTime(2100),
+                          );
+                          if (picked != null) setState(() => workStartDate = picked);
+                        },
+                        child: AbsorbPointer(
+                          child: _roundedInput(
+                            controller: TextEditingController(
+                              text: workStartDate == null ? '' : '${workStartDate!.year}-${workStartDate!.month.toString().padLeft(2, '0')}-${workStartDate!.day.toString().padLeft(2, '0')}',
+                            ),
+                            label: 'Tanggal Mulai Kerja',
+                            icon: Icons.date_range,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      const Text('Upload Foto Avatar (opsional)'),
+                      Row(
+                        children: [
+                          ElevatedButton.icon(
+                            onPressed: () async {
+                              final picker = ImagePicker();
+                              final picked = await picker.pickImage(source: ImageSource.gallery, imageQuality: 80);
+                              if (picked != null) setState(() => avatarFile = File(picked.path));
+                            },
+                            icon: const Icon(Icons.upload_file),
+                            label: const Text('Pilih File'),
+                          ),
+                          const SizedBox(width: 8),
+                          if (avatarFile != null) Text('Sudah dipilih', style: TextStyle(color: Colors.green)),
+                        ],
+                      ),
                       const SizedBox(height: 24),
                     ],
                   ),
@@ -591,6 +658,8 @@ class _Step1DataPribadiState extends State<_Step1DataPribadi> with SingleTickerP
     'alamatDomisili': alamatDomisiliController.text,
     'alamatKtp': alamatKtpController.text,
     'idJabatan': selectedJabatanId,
+    'workStartDate': workStartDate,
+    'avatarFile': avatarFile,
   };
 }
 

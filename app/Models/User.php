@@ -18,15 +18,14 @@ class User extends Authenticatable
      * @var list<string>
      */
     protected $fillable = [
-        // 'name', // dihapus karena tidak ada di tabel
-        'nama_lengkap',
-        'email',
-        'password',
-        'status',
-        'id_role',
-        'id_outlet',
-        'division_id',
-        'avatar',
+        'nik', 'no_ktp', 'nama_lengkap', 'email', 'password', 'hint_password', 'jenis_kelamin', 'tempat_lahir', 'tanggal_lahir',
+        'agama', 'status_pernikahan', 'alamat', 'alamat_ktp', 'golongan_darah', 'no_hp', 'nama_kontak_darurat',
+        'no_hp_kontak_darurat', 'hubungan_kontak_darurat', 'jumlah_anak', 'nomor_kk', 'nama_rekening', 'no_rekening',
+        'npwp_number', 'bpjs_health_number', 'bpjs_employment_number', 'last_education', 'name_school_college',
+        'school_college_major', 'position', 'foto_ktp', 'foto_kk', 'upload_latest_color_photo', 'imei',
+        'avatar', 'status', 'pin_pos', 'work_start_date',
+        // field lama
+        'id_role', 'id_outlet', 'division_id',
     ];
 
     /**

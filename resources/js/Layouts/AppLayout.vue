@@ -132,6 +132,15 @@ const menuGroups = [
         ],
     },
     {
+        title: () => 'OPS-Kitchen',
+        icon: 'fa-solid fa-utensils',
+        collapsible: true,
+        open: ref(false),
+        menus: [
+            { name: () => 'Action Plan Guest Review', icon: 'fa-solid fa-clipboard-list', route: '/ops-kitchen/action-plan-guest-review', code: 'ops_kitchen_action_plan_guest_review' },
+        ],
+    },
+    {
         title: () => 'Sales & Marketing',
         icon: 'fa-solid fa-bullhorn',
         collapsible: true,

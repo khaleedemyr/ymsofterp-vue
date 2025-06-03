@@ -53,6 +53,8 @@ use App\Http\Controllers\DeliveryOrderController;
 use App\Http\Controllers\MenuController;
 use App\Http\Controllers\RoleController;
 use App\Http\Controllers\UserRoleController;
+use App\Http\Controllers\OpsKitchen\ActionPlanGuestReviewController;
+use App\Http\Controllers\CostControlController;
 
 Route::get('/', function () {
     return Inertia::render('Welcome', [
@@ -530,5 +532,17 @@ Route::resource('outlet-food-good-receives', \App\Http\Controllers\OutletFoodGoo
 Route::get('/outlet-food-good-receives/scan-do', [\App\Http\Controllers\OutletFoodGoodReceiveController::class, 'scanDO'])->name('outlet-food-good-receives.scan-do');
 Route::get('/api/delivery-orders/validate', [\App\Http\Controllers\OutletFoodGoodReceiveController::class, 'validateDO']);
 Route::get('/outlet-food-good-receives/create-from-do/{delivery_order_id}', [\App\Http\Controllers\OutletFoodGoodReceiveController::class, 'createFromDO'])->name('outlet-food-good-receives.create-from-do');
+
+Route::prefix('ops-kitchen')->group(function () {
+    Route::get('/action-plan-guest-review', [ActionPlanGuestReviewController::class, 'index'])->name('ops-kitchen.action-plan-guest-review.index');
+    Route::get('/action-plan-guest-review/create', [ActionPlanGuestReviewController::class, 'create'])->name('ops-kitchen.action-plan-guest-review.create');
+    Route::post('/action-plan-guest-review', [ActionPlanGuestReviewController::class, 'store'])->name('ops-kitchen.action-plan-guest-review.store');
+    Route::get('/action-plan-guest-review/{id}', [ActionPlanGuestReviewController::class, 'show'])->name('ops-kitchen.action-plan-guest-review.show');
+    Route::get('/action-plan-guest-review/{id}/edit', [ActionPlanGuestReviewController::class, 'edit'])->name('ops-kitchen.action-plan-guest-review.edit');
+    Route::put('/action-plan-guest-review/{id}', [ActionPlanGuestReviewController::class, 'update'])->name('ops-kitchen.action-plan-guest-review.update');
+    Route::delete('/action-plan-guest-review/{id}', [ActionPlanGuestReviewController::class, 'destroy'])->name('ops-kitchen.action-plan-guest-review.destroy');
+});
+
+Route::get('/inventory/po-price-change-report', [CostControlController::class, 'poPriceChangeReport'])->name('po_price_change_report.index');
 
 require __DIR__.'/auth.php';

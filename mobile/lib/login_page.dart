@@ -276,7 +276,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                                 ),
                                 child: Text(
                                   _isLogin ? 'Login' : 'Registrasi',
-                                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: Colors.white),
                                 ),
                               ),
                             ),
@@ -295,7 +295,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                                 _isLogin
                                     ? 'Belum punya akun? Registrasi'
                                     : 'Sudah punya akun? Login',
-                                style: TextStyle(color: Colors.blue[400]),
+                                style: const TextStyle(color: Colors.black),
                               ),
                             ),
                           ],

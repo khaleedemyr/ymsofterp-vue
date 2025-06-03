@@ -57,7 +57,7 @@ class RegisterPrepPage extends StatelessWidget {
                     borderRadius: BorderRadius.circular(12),
                   ),
                 ),
-                child: const Text('Mulai Registrasi', style: TextStyle(fontSize: 16)),
+                child: const Text('Mulai Registrasi', style: TextStyle(fontSize: 16, color: Colors.white)),
               ),
             ),
           ],
