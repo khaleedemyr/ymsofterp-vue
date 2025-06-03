@@ -17,7 +17,7 @@ class AuthController extends Controller
         $validator = Validator::make($request->all(), [
             'email' => 'required|email',
             'password' => 'required|string',
-            'imei' => 'required|string',
+            'imei' => 'nullable|string',
         ]);
         if ($validator->fails()) {
             return response()->json($validator->errors(), 422);
@@ -34,12 +34,14 @@ class AuthController extends Controller
                 'message' => 'User tidak aktif',
             ], 401);
         }
-        // Cek IMEI/UUID device jika tidak 00000
-        if ($user->imei !== '00000' && $user->imei !== null) {
-            if ($user->imei !== $request->imei) {
-                return response()->json([
-                    'message' => 'Akun ini hanya bisa diakses dari perangkat yang terdaftar',
-                ], 401);
+        // Cek IMEI/UUID device hanya jika request mengirimkan IMEI
+        if ($request->filled('imei')) {
+            if ($user->imei !== '00000' && $user->imei !== null) {
+                if ($user->imei !== $request->imei) {
+                    return response()->json([
+                        'message' => 'Akun ini hanya bisa diakses dari perangkat yang terdaftar',
+                    ], 401);
+                }
             }
         }
         // Simpan last_seen, imei, device_info jika dikirim
@@ -48,10 +50,15 @@ class AuthController extends Controller
         if ($request->has('device_info')) $user->device_info = json_encode($request->device_info);
         $user->save();
 
-        $token = $user->createToken('mobile')->plainTextToken;
+        // Generate token manual dan simpan ke remember_token
+        $token = bin2hex(random_bytes(32));
         $user->remember_token = $token;
         $user->save();
-        return $this->createNewToken($token, $user);
+        return response()->json([
+            'access_token' => $token,
+            'token_type' => 'bearer',
+            'user' => $user
+        ]);
     }
 
     public function user(Request $request)
@@ -65,17 +72,6 @@ class AuthController extends Controller
     {
         $request->user()->currentAccessToken()->delete();
         return response()->json(['message' => 'Berhasil logout']);
-    }
-
-    protected function createNewToken($token, $user)
-    {
-        $this->appendUserInfo($user);
-        return response()->json([
-            'access_token' => $token,
-            'token_type' => 'bearer',
-            'expires_in' => 60 * 60 * 24 * 30, // 30 hari (dummy, Sanctum tidak expire by default)
-            'user' => $user
-        ]);
     }
 
     protected function appendUserInfo($user)

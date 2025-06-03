@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'api_config.dart';
 
 class RegisterPrepPage extends StatelessWidget {
   const RegisterPrepPage({Key? key}) : super(key: key);

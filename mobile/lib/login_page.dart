@@ -2,6 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/services.dart';
 import 'dart:io';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'api_config.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({Key? key}) : super(key: key);
@@ -60,17 +64,43 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
     super.dispose();
   }
 
-  void _onLogin() {
+  Future<void> _onLogin() async {
     setState(() {
       _error = null;
     });
     if (_usernameController.text.isEmpty || _passwordController.text.isEmpty) {
       setState(() {
-        _error = 'Username dan password wajib diisi';
+        _error = 'Email dan password wajib diisi';
       });
       return;
     }
-    Navigator.of(context).pushReplacementNamed('/home');
+    try {
+      final response = await http.post(
+        Uri.parse('$BASE_URL/api/mobile/login'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'email': _usernameController.text.trim(),
+          'password': _passwordController.text,
+        }),
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('token', data['token']);
+        await prefs.setString('user', jsonEncode(data['user']));
+        if (!mounted) return;
+        Navigator.of(context).pushReplacementNamed('/home');
+      } else {
+        final data = jsonDecode(response.body);
+        setState(() {
+          _error = data['message'] ?? 'Login gagal';
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _error = 'Tidak dapat terhubung ke server';
+      });
+    }
   }
 
   void _onRegister() {

@@ -23,4 +23,23 @@ class QuoteController extends Controller
 
         return response()->json($quote);
     }
+
+    // Tambahan untuk API
+    public function getQuoteByDayOfYear()
+    {
+        $dayOfYear = now()->setTimezone('Asia/Jakarta')->dayOfYear;
+        $quote = DB::table('quotes')
+            ->where('day_of_year', $dayOfYear)
+            ->select('quote', 'author')
+            ->first();
+
+        if (!$quote) {
+            return response()->json([
+                'quote' => 'Keep the spirit and stay productive!',
+                'author' => 'YMSoft ERP'
+            ]);
+        }
+
+        return response()->json($quote);
+    }
 } 

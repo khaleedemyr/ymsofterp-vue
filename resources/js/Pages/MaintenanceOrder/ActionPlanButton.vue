@@ -1,21 +1,21 @@
 <template>
   <div>
-    <!-- Tombol Action Plan di dropdown task card -->
+    <!-- Tombol FRR di dropdown task card -->
     <button 
       v-if="canCreateActionPlan"
       @click="openModal" 
       class="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center"
     >
       <i class="fas fa-clipboard-list mr-2"></i>
-      Action Plan
+      FRR
     </button>
 
-    <!-- Modal Action Plan -->
+    <!-- Modal FRR -->
     <Teleport to="body">
       <div v-if="showModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
         <div class="bg-white rounded-lg w-full max-w-3xl max-h-[90vh] overflow-y-auto">
           <div class="p-4 border-b flex justify-between items-center">
-            <h3 class="text-lg font-semibold">Buat Action Plan</h3>
+            <h3 class="text-lg font-semibold">Buat FRR</h3>
             <button @click="closeModal" class="text-gray-500 hover:text-gray-700">
               <i class="fas fa-times"></i>
             </button>
@@ -23,12 +23,12 @@
 
           <div class="p-4">
             <div class="mb-4">
-              <label class="block text-sm font-medium text-gray-700 mb-1">Deskripsi Action Plan</label>
+              <label class="block text-sm font-medium text-gray-700 mb-1">Deskripsi FRR</label>
               <textarea 
                 v-model="description" 
                 class="w-full border rounded p-2" 
                 rows="4"
-                placeholder="Masukkan deskripsi action plan..."
+                placeholder="Masukkan deskripsi FRR..."
               ></textarea>
             </div>
 
@@ -343,7 +343,7 @@ async function saveActionPlan() {
   if (!description.value.trim()) {
     Swal.fire({
       title: 'Perhatian',
-      text: 'Deskripsi action plan tidak boleh kosong',
+      text: 'Deskripsi FRR tidak boleh kosong',
       icon: 'warning'
     });
     return;
@@ -376,7 +376,7 @@ async function saveActionPlan() {
     if (response.data.success) {
       Swal.fire({
         title: 'Berhasil',
-        text: 'Action plan berhasil disimpan',
+        text: 'FRR berhasil disimpan',
         icon: 'success'
       });
       
@@ -387,7 +387,7 @@ async function saveActionPlan() {
     console.error('Error saving action plan:', error);
     console.log('Error response:', error.response?.data);
     
-    let errorMessage = 'Gagal menyimpan action plan';
+    let errorMessage = 'Gagal menyimpan FRR';
     
     if (error.response?.data?.errors) {
       const errors = Object.values(error.response.data.errors).flat();

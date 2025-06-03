@@ -62,7 +62,7 @@ Route::get('/retail/task/{taskId}', [RetailController::class, 'getByTask']);
 Route::delete('/retail/image/{imageId}/{type}', [RetailController::class, 'deleteImage']); 
 
 // Purchase Order Routes
-Route::middleware('auth:sanctum')->group(function () {
+Route::middleware('auth')->group(function () {
     Route::prefix('maintenance-tasks/{taskId}/purchase-orders')->group(function () {
         Route::get('/', [MaintenancePurchaseOrderController::class, 'index']);
         Route::post('/', [MaintenancePurchaseOrderController::class, 'store']);
@@ -121,7 +121,7 @@ Route::middleware('auth')->group(function () {
 
 Route::prefix('auth')->group(function () {
     Route::post('/login', [AuthController::class, 'login']);
-    Route::middleware('auth:sanctum')->get('/user', [AuthController::class, 'user']);
+    Route::middleware('auth')->get('/user', [AuthController::class, 'user']);
 });
 
 Route::get('/quotes/{dayOfYear}', [QuoteController::class, 'getQuoteByDay']);
@@ -167,6 +167,7 @@ Route::get('/good-receives/{id}/items', function ($id) {
 Route::get('/items/autocomplete-pcs', [ItemController::class, 'autocompletePcs']);
 
 Route::post('/mobile/register', [RegisterController::class, 'register']);
+Route::post('/mobile/login', [\App\Http\Controllers\Api\MobileAuthController::class, 'login']);
 
 // Endpoint untuk dropdown jabatan
 Route::get('/jabatan', function () {
@@ -177,4 +178,6 @@ Route::get('/jabatan', function () {
         ->get()
     );
 });
+
+Route::get('/quotes/of-the-day', [QuoteController::class, 'getQuoteByDayOfYear']);
 

@@ -4,6 +4,7 @@ import 'login_page.dart';
 import 'register_prep_page.dart';
 import 'register_form_page.dart';
 import 'package:flutter/services.dart';
+import 'home_page.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -43,7 +44,7 @@ class MyApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
       ),
       routes: {
-        '/home': (context) => const MyHomePage(title: 'YMSoft'),
+        '/home': (context) => const HomePage(),
         '/login': (context) => const LoginPage(),
         '/register-prep': (context) => const RegisterPrepPage(),
         '/register': (context) => const RegisterFormPage(),

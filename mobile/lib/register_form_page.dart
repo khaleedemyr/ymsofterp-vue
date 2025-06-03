@@ -6,6 +6,7 @@ import 'package:awesome_dialog/awesome_dialog.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'dart:convert';
 import 'package:device_info_plus/device_info_plus.dart';
+import 'api_config.dart';
 
 class RegisterFormPage extends StatefulWidget {
   const RegisterFormPage({Key? key}) : super(key: key);
@@ -105,7 +106,7 @@ class _RegisterFormPageState extends State<RegisterFormPage> {
           builder: (ctx) => const Center(child: CircularProgressIndicator()),
         );
         try {
-          var uri = Uri.parse('http://10.0.2.2:8000/api/mobile/register');
+          var uri = Uri.parse('$BASE_URL/api/mobile/register');
           var request = http.MultipartRequest('POST', uri);
           request.headers['Accept'] = 'application/json';
 
@@ -354,7 +355,7 @@ class _Step1DataPribadiState extends State<_Step1DataPribadi> with SingleTickerP
 
   Future<void> _fetchJabatan() async {
     try {
-      final response = await http.get(Uri.parse('http://10.0.2.2:8000/api/jabatan'));
+      final response = await http.get(Uri.parse('$BASE_URL/api/jabatan'));
       if (response.statusCode == 200) {
         final List data = json.decode(response.body);
         setState(() {

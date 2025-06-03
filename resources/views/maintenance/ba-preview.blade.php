@@ -167,10 +167,10 @@
     </div>
     @endif
 
-    <!-- Action Plans -->
+    <!-- FEASIBILITY OF REPAIR REQUESTS -->
     @if($actionPlans && count($actionPlans) > 0)
     <div style="margin: 30px 0;">
-        <strong>Action Plans:</strong>
+        <strong>FEASIBILITY OF REPAIR REQUESTS:</strong>
         @foreach($actionPlans as $plan)
             <div style="margin: 15px 0; padding: 15px; border: 1px solid #ddd; border-radius: 4px;">
                 <div style="margin-bottom: 8px;">
@@ -185,7 +185,7 @@
                     <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px;">
                         @foreach($plan->media as $media)
                             <div style="text-align: center;">
-                                <img src="{{ asset('storage/' . $media->file_path) }}" alt="Action Plan Media" style="width: 150px; height: 150px; object-fit: cover; border: 1px solid #ddd; border-radius: 4px;">
+                                <img src="{{ asset('storage/' . $media->file_path) }}" alt="FEASIBILITY OF REPAIR REQUEST Media" style="width: 150px; height: 150px; object-fit: cover; border: 1px solid #ddd; border-radius: 4px;">
                             </div>
                         @endforeach
                     </div>

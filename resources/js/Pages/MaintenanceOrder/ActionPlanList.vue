@@ -5,7 +5,7 @@
     </div>
     
     <div v-else-if="actionPlans.length === 0" class="text-center py-4 text-gray-500">
-      Belum ada action plan
+      Belum ada FRR
     </div>
     
     <div v-else class="space-y-4">

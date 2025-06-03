@@ -191,10 +191,11 @@ class PurchaseOrderFoodsController extends Controller
                     'status' => 'draft',
                     'created_by' => auth()->id(),
                     'notes' => $request->notes ?? null,
-                    'arrival_date' => $group['arrival_date'], // Add arrival_date to PO
+                    'arrival_date' => $group['arrival_date'],
                 ]);
 
-                // Create PO items
+                // Create PO items and check price changes
+                $priceChanges = [];
                 foreach ($group['items'] as $item) {
                     $prItem = PurchaseRequisitionFoodItem::findOrFail($item['id']);
                     $quantity = $item['qty'];
@@ -210,6 +211,33 @@ class PurchaseOrderFoodsController extends Controller
                         throw new \Exception('Unit ID tidak ditemukan untuk unit: ' . $prItem->unit);
                     }
 
+                    // Cek harga terakhir dari PO sebelumnya
+                    $lastPOItem = PurchaseOrderFoodItem::where('item_id', $prItem->item_id)
+                        ->whereHas('purchaseOrder', function($q) use ($group) {
+                            $q->where('supplier_id', $group['supplier_id'])
+                              ->where('status', '!=', 'draft')
+                              ->orderBy('created_at', 'desc');
+                        })
+                        ->latest()
+                        ->first();
+
+                    if ($lastPOItem) {
+                        $lastPrice = $lastPOItem->price;
+                        $priceDiff = $price - $lastPrice;
+                        $priceDiffPercent = ($priceDiff / $lastPrice) * 100;
+
+                        if (abs($priceDiffPercent) > 0) { // Jika ada perubahan harga
+                            $priceChanges[] = [
+                                'item_name' => $prItem->item->name,
+                                'last_price' => $lastPrice,
+                                'new_price' => $price,
+                                'price_diff' => $priceDiff,
+                                'price_diff_percent' => $priceDiffPercent,
+                                'supplier_name' => $po->supplier->name
+                            ];
+                        }
+                    }
+
                     PurchaseOrderFoodItem::create([
                         'purchase_order_food_id' => $po->id,
                         'pr_food_item_id' => $prItem->id,
@@ -221,6 +249,37 @@ class PurchaseOrderFoodsController extends Controller
                         'created_by' => auth()->id(),
                         'arrival_date' => $prItem->arrival_date,
                     ]);
+                }
+
+                // Kirim notifikasi jika ada perubahan harga
+                if (!empty($priceChanges)) {
+                    $notifyUsers = DB::table('users')
+                        ->where('id_jabatan', 167)
+                        ->where('status', 'A')
+                        ->pluck('id');
+
+                    foreach ($notifyUsers as $userId) {
+                        $message = "Perubahan harga pada PO {$po->number}:\n\n";
+                        foreach ($priceChanges as $change) {
+                            $direction = $change['price_diff'] > 0 ? 'naik' : 'turun';
+                            $message .= "Item: {$change['item_name']}\n";
+                            $message .= "Supplier: {$change['supplier_name']}\n";
+                            $message .= "Harga lama: " . number_format($change['last_price'], 2) . "\n";
+                            $message .= "Harga baru: " . number_format($change['new_price'], 2) . "\n";
+                            $message .= "Perubahan: {$direction} " . number_format(abs($change['price_diff_percent']), 2) . "%\n\n";
+                        }
+
+                        DB::table('notifications')->insert([
+                            'user_id' => $userId,
+                            'type' => 'price_change',
+                            'title' => 'Perubahan Harga PO',
+                            'message' => $message,
+                            'url' => '/po-foods/' . $po->id,
+                            'is_read' => 0,
+                            'created_at' => now(),
+                            'updated_at' => now(),
+                        ]);
+                    }
                 }
             }
 
