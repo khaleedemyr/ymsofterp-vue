@@ -82,10 +82,10 @@ class ButcherProcessController extends Controller
             ->select(
                 'items.*',
                 'small_unit.id as small_unit_id',
-                'small_unit.name as small_unit_name',
+            'small_unit.name as small_unit_name',
                 'medium_unit.id as medium_unit_id',
-                'medium_unit.name as medium_unit_name',
-                'large_unit.id as large_unit_id',
+            'medium_unit.name as medium_unit_name',
+            'large_unit.id as large_unit_id',
                 'large_unit.name as large_unit_name',
                 'categories.code as category_code'
             )

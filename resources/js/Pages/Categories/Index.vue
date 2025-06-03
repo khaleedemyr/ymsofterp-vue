@@ -126,12 +126,13 @@ function toggleStatus(cat) {
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Deskripsi</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Status</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Show POS</th>
+              <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Availability</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider rounded-tr-2xl">Aksi</th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="categories.data.length === 0">
-              <td colspan="6" class="text-center py-10 text-gray-400">Tidak ada data kategori.</td>
+              <td colspan="7" class="text-center py-10 text-gray-400">Tidak ada data kategori.</td>
             </tr>
             <tr v-for="cat in categories.data" :key="cat.id" class="hover:bg-blue-50 transition shadow-sm">
               <td class="px-6 py-3 font-mono font-semibold text-blue-700">{{ cat.code }}</td>
@@ -150,6 +151,14 @@ function toggleStatus(cat) {
                 <span :class="cat.show_pos == 1 ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-700'" class="px-2 py-1 rounded-full text-xs font-semibold shadow">
                   {{ cat.show_pos == 1 ? 'Yes' : 'No' }}
                 </span>
+              </td>
+              <td class="px-6 py-3">
+                <div v-if="cat.availabilities && cat.availabilities.length > 0">
+                  <div v-for="avail in cat.availabilities" :key="avail.id">
+                    <span v-if="avail.outlet">{{ avail.outlet.nama_outlet }}</span>
+                  </div>
+                </div>
+                <span v-else>All Outlets</span>
               </td>
               <td class="px-6 py-3">
                 <div class="flex gap-2">

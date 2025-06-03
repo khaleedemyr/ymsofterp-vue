@@ -25,6 +25,11 @@
           </select>
           <span class="text-sm">data</span>
         </div>
+        <button @click="reloadData" :disabled="loadingReload" class="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-md font-semibold hover:bg-blue-700">
+          <span v-if="loadingReload" class="animate-spin mr-2"><i class="fas fa-spinner"></i></span>
+          <span v-else class="mr-2"><i class="fas fa-sync-alt"></i></span>
+          Load Data
+        </button>
       </div>
       <div class="bg-white rounded-xl shadow-lg overflow-x-auto">
         <table class="min-w-full divide-y divide-gray-200">
@@ -85,6 +90,7 @@ const perPage = ref(25);
 const page = ref(1);
 const selectedWarehouse = ref('');
 const selectedItem = ref('');
+const loadingReload = ref(false)
 
 const filteredStocks = computed(() => {
   let data = props.stocks;
@@ -118,5 +124,10 @@ watch([perPage, search], () => { page.value = 1; });
 function displayQty(val) {
   if (!val || Number(val) === 0) return '-';
   return Number(val).toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+}
+
+function reloadData() {
+  loadingReload.value = true
+  window.location.reload()
 }
 </script> 

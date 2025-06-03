@@ -67,7 +67,15 @@
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                                     {{ barcode.barcode }}
                                 </td>
-                                <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium flex items-center justify-end gap-2">
+                                    <input type="number" v-model.number="qtyPrint[barcode.id]" min="1" class="w-14 border rounded px-1 mr-2" />
+                                    <button
+                                        @click="printBarcode(barcode.barcode, qtyPrint[barcode.id] || 1)"
+                                        class="text-blue-600 hover:text-blue-900 mr-2"
+                                        title="Print Barcode"
+                                    >
+                                        <i class="fa-solid fa-print"></i>
+                                    </button>
                                     <button
                                         @click="deleteBarcode(barcode)"
                                         class="text-red-600 hover:text-red-900"
@@ -113,6 +121,7 @@ const cameras = ref([]);
 const selectedCameraId = ref('');
 let html5QrCode = null;
 const isSaving = ref(false);
+const qtyPrint = ref({});
 
 const form = useForm({
     barcode: '',
@@ -272,6 +281,48 @@ onBeforeUnmount(() => {
         }
     }
 });
+
+function printBarcode(barcode, qty = 1) {
+    const printWindow = window.open('', '', 'width=400,height=300');
+    const barcodes = Array(qty).fill(barcode);
+    const rows = [];
+    for (let i = 0; i < barcodes.length; i += 2) {
+        rows.push(barcodes.slice(i, i + 2));
+    }
+    const html = [
+        '<html>',
+        '<head>',
+        '<title>Print Barcode</title>',
+        '<style>',
+        '@media print { body { margin: 0; } }',
+        'body { margin: 0; padding: 0; }',
+        '.label-row { display: flex; flex-direction: row; width: 6cm; height: 1.5cm; margin: 0; padding: 0; }',
+        '.label-cell { width: 3cm; height: 1.5cm; display: flex; flex-direction: column; align-items: center; justify-content: center; border: none; margin: 0; padding: 0; }',
+        '.barcode-svg { width: 2.8cm; height: 1.3cm; }',
+        '.barcode-value { font-size: 14px; text-align: center; margin-top: -0.2cm; }',
+        '</style>',
+        '</head>',
+        '<body>',
+        '<div id="labels">',
+        rows.map(row => `\n      <div class="label-row">\n        ${row.map(bc => '<div class="label-cell"><svg class="barcode-svg"></svg></div>').join('')}\n        ${row.length === 1 ? '<div class="label-cell"></div>' : ''}\n      </div>\n    `).join(''),
+        '</div>',
+        '<script src="https://cdn.jsdelivr.net/npm/jsbarcode/dist/JsBarcode.all.min.js"><\/script>',
+        '<script>',
+        'window.onload = function() {',
+        '  const svgs = document.querySelectorAll(".barcode-svg");',
+        '  svgs.forEach((svg, idx) => {',
+        '    JsBarcode(svg, "' + barcode + '", {format: "CODE128", width:3, height:90, displayValue:true, fontSize:14, margin:0});',
+        '  });',
+        '  window.print();',
+        '  setTimeout(() => window.close(), 500);',
+        '}',
+        '<\/script>',
+        '</body>',
+        '</html>'
+    ].join('');
+    printWindow.document.write(html);
+    printWindow.document.close();
+}
 </script>
 
 <style>

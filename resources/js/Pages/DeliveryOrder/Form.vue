@@ -144,6 +144,7 @@ const reasonOptions = [
 const selectedReason = ref('');
 const loadingSubmit = ref(false);
 const printStrukData = ref(null);
+const doNumber = ref('');
 
 const isReadyToSubmit = computed(() => packingListItems.length > 0 && packingListItems.some(i => i.qty_scan > 0));
 const selectedPackingList = computed(() => packingLists.value.find(pl => pl.id == selectedPackingListId.value) || null);
@@ -360,55 +361,30 @@ async function generateStrukPDF({ orderNumber, date, outlet, items }) {
   }
 }
 
-function submitDO() {
-  showConfirmModal.value = false;
-  loadingSubmit.value = true;
-  const itemsToSubmit = packingListItems
-    .filter(i => i.qty_scan > 0)
-    .map(i => ({
-      id: i.item_id || i.id, // fallback jika item_id tidak ada
-      barcode: Array.isArray(i.barcodes) ? (i.barcodes[0] || null) : (i.barcode || null),
-      qty: i.qty,
-      qty_scan: i.qty_scan,
-      unit: i.unit,
-      name: i.name, // untuk struk
-      reason: i.reason || null,
-    }));
-  if (!selectedPackingListId.value || itemsToSubmit.length === 0) {
-    scanFeedback.value = 'Pilih packing list dan scan minimal 1 item!';
-    scanFeedbackClass.value = 'text-red-600';
-    loadingSubmit.value = false;
-    return;
-  }
-  router.post('/delivery-order', {
-    packing_list_id: selectedPackingListId.value,
-    items: itemsToSubmit,
-  }, {
-    onSuccess: (page) => {
-      scanFeedback.value = 'Delivery Order berhasil disimpan!';
-      scanFeedbackClass.value = 'text-green-700';
-      const orderNumber = page?.props?.orderNumber || 'DO Terakhir';
-      const date = new Date().toLocaleDateString('id-ID');
-      const outlet = selectedPackingList.value?.nama_outlet || '-';
-      const strukData = {
-        orderNumber,
-        date,
-        outlet,
-        items: itemsToSubmit,
-      };
-      // printStrukToNewWindow(strukData);
-      generateStrukPDF({ orderNumber, date, outlet, items: itemsToSubmit });
-      selectedPackingListId.value = '';
-      packingListItems.splice(0);
-    },
-    onError: (errors) => {
-      scanFeedback.value = errors?.message || 'Gagal menyimpan Delivery Order!';
-      scanFeedbackClass.value = 'text-red-600';
-    },
-    onFinish: () => {
-      loadingSubmit.value = false;
+async function submitDO() {
+  error.value = '';
+  let res;
+  try {
+    res = await fetch(`/api/delivery-orders/validate?number=${encodeURIComponent(doNumber.value)}`);
+    console.log('VALIDATE DO RESPONSE', res);
+    console.log('Status:', res.status, 'Content-Type:', res.headers.get('content-type'));
+    if (!res.ok) {
+      const text = await res.text();
+      console.error('Response not OK:', text);
+      error.value = 'Terjadi kesalahan server.';
+      return;
     }
-  });
+    const data = await res.json();
+    console.log('VALIDATE DO DATA', data);
+    if (data.success && data.delivery_order_id) {
+      router.visit(`/outlet-food-good-receives/create-from-do/${data.delivery_order_id}`);
+    } else {
+      error.value = data.message || 'Delivery Order tidak ditemukan.';
+    }
+  } catch (e) {
+    console.error('VALIDATE DO ERROR', e, res);
+    error.value = 'Terjadi kesalahan server.';
+  }
 }
 </script>
 

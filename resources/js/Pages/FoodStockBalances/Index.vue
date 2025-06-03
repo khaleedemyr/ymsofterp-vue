@@ -27,6 +27,11 @@
                 Import Data
               </button>
             </div>
+            <button @click="reloadData" :disabled="loadingReload" class="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-md font-semibold hover:bg-blue-700">
+              <span v-if="loadingReload" class="animate-spin mr-2"><i class="fas fa-spinner"></i></span>
+              <span v-else class="mr-2"><i class="fas fa-sync-alt"></i></span>
+              Load Data
+            </button>
           </div>
 
           <!-- Filters -->
@@ -410,6 +415,7 @@ export default {
       notes: '',
     })
     const importLoading = ref(false)
+    const loadingReload = ref(false)
 
     const form = useForm({
       warehouse_id: props.filters.warehouse_id || '',
@@ -550,6 +556,12 @@ export default {
       }
     }
 
+    function reloadData() {
+      loadingReload.value = true
+      filter()
+      setTimeout(() => { loadingReload.value = false }, 1000)
+    }
+
     return {
       showImportModal,
       selectedFile,
@@ -572,6 +584,8 @@ export default {
       deleteBalance,
       formatDate,
       importLoading,
+      loadingReload,
+      reloadData,
     }
   },
 }

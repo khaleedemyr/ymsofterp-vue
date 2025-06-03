@@ -69,6 +69,27 @@ class DeliveryOrderController extends Controller
         ]);
     }
 
+    private function generateDONumber()
+    {
+        $prefix = 'DO';
+        $date = now()->format('ymd');
+        
+        // Get the last DO number for today
+        $lastDO = DB::table('delivery_orders')
+            ->where('number', 'like', $prefix . $date . '%')
+            ->orderBy('number', 'desc')
+            ->first();
+        
+        if ($lastDO) {
+            $lastNumber = (int) substr($lastDO->number, -4);
+            $newNumber = $lastNumber + 1;
+        } else {
+            $newNumber = 1;
+        }
+        
+        return $prefix . $date . str_pad($newNumber, 4, '0', STR_PAD_LEFT);
+    }
+
     public function store(Request $request)
     {
         Log::info('Mulai proses store Delivery Order', $request->all());
@@ -83,8 +104,9 @@ class DeliveryOrderController extends Controller
         try {
             Log::info('Insert delivery_orders', ['packing_list_id' => $request->packing_list_id]);
             $doId = DB::table('delivery_orders')->insertGetId([
+                'number' => $this->generateDONumber(),
                 'packing_list_id' => $request->packing_list_id,
-                'floor_order_id' => $floorOrderId, // simpan id FO
+                'floor_order_id' => $floorOrderId,
                 'created_by' => auth()->id(),
                 'created_at' => now(),
                 'updated_at' => now(),

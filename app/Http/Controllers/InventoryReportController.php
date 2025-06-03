@@ -193,11 +193,20 @@ class InventoryReportController extends Controller
             ->leftJoin('pr_food_items as pri', 'poi.pr_food_item_id', '=', 'pri.id')
             ->leftJoin('suppliers as s', 'gr.supplier_id', '=', 's.id')
             ->leftJoin('purchase_order_foods as po', 'gr.po_id', '=', 'po.id')
+            ->leftJoin('units as us', 'i.small_unit_id', '=', 'us.id')
+            ->leftJoin('units as um', 'i.medium_unit_id', '=', 'um.id')
+            ->leftJoin('units as ul', 'i.large_unit_id', '=', 'ul.id')
             ->select(
                 'c.date',
                 'i.name as item_name',
                 'w.name as warehouse_name',
-                DB::raw('c.in_qty_small + c.in_qty_medium + c.in_qty_large as qty_received'),
+                'c.in_qty_large',
+                'c.in_qty_medium',
+                'c.in_qty_small',
+                'ul.name as large_unit_name',
+                'um.name as medium_unit_name',
+                'us.name as small_unit_name',
+                DB::raw('ROUND((c.in_qty_small / NULLIF(i.small_conversion_qty,0)) + c.in_qty_medium + (c.in_qty_large * IFNULL(i.medium_conversion_qty,1)), 3) as qty_received_kg'),
                 'pri.unit as unit_pr',
                 's.name as supplier_name',
                 'po.number as po_number',
@@ -211,6 +220,14 @@ class InventoryReportController extends Controller
             ->get();
         $warehouses = DB::table('warehouses')->select('id', 'name')->orderBy('name')->get();
         $items = DB::table('items')->select('id', 'name')->orderBy('name')->get();
+        $data = $data->map(function ($row) {
+            $parts = [];
+            if ($row->in_qty_large > 0) $parts[] = $row->in_qty_large . ' ' . $row->large_unit_name;
+            if ($row->in_qty_medium > 0) $parts[] = $row->in_qty_medium . ' ' . $row->medium_unit_name;
+            if ($row->in_qty_small > 0) $parts[] = $row->in_qty_small . ' ' . $row->small_unit_name;
+            $row->qty_received_display = implode(', ', $parts);
+            return $row;
+        });
         return inertia('Inventory/GoodsReceivedReport', [
             'receives' => $data,
             'warehouses' => $warehouses,
@@ -477,6 +494,57 @@ class InventoryReportController extends Controller
             'warehouses' => $warehouses,
             'categories' => $categories,
             'items' => $items,
+        ]);
+    }
+
+    // Laporan Perubahan Harga PO per Item
+    public function purchaseOrderPriceChangeReport(Request $request)
+    {
+        $from = $request->input('from_date');
+        $to = $request->input('to_date');
+        $query = DB::table('purchase_order_food_items as poi')
+            ->join('purchase_order_foods as po', 'poi.purchase_order_food_id', '=', 'po.id')
+            ->join('items as i', 'poi.item_id', '=', 'i.id')
+            ->join('suppliers as s', 'po.supplier_id', '=', 's.id')
+            ->select(
+                'poi.item_id',
+                'i.name as item_name',
+                'poi.price',
+                'po.date as po_date',
+                's.name as supplier_name',
+                'po.number as po_number'
+            );
+        if ($from) $query->whereDate('po.date', '>=', $from);
+        if ($to) $query->whereDate('po.date', '<=', $to);
+        $query->orderBy('poi.item_id')->orderByDesc('po.date');
+        $rows = $query->get();
+
+        // Group by item, ambil 2 PO terakhir per item
+        $grouped = $rows->groupBy('item_id');
+        $result = [];
+        foreach ($grouped as $item_id => $list) {
+            $latest = $list->first();
+            $previous = $list->skip(1)->first();
+            if ($latest && $previous) {
+                $percent = $previous->price != 0 ? round((($latest->price - $previous->price) / $previous->price) * 100, 2) : null;
+                $result[] = [
+                    'item_name' => $latest->item_name,
+                    'prev_price' => $previous->price,
+                    'prev_supplier' => $previous->supplier_name,
+                    'prev_po_number' => $previous->po_number,
+                    'prev_po_date' => $previous->po_date,
+                    'latest_price' => $latest->price,
+                    'latest_supplier' => $latest->supplier_name,
+                    'latest_po_number' => $latest->po_number,
+                    'latest_po_date' => $latest->po_date,
+                    'percent_change' => $percent,
+                ];
+            }
+        }
+        return inertia('Inventory/PurchaseOrderPriceChangeReport', [
+            'reports' => $result,
+            'from_date' => $from,
+            'to_date' => $to,
         ]);
     }
 } 

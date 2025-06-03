@@ -18,6 +18,11 @@
             <option v-for="w in warehouses" :key="w.id" :value="w.name">{{ w.name }}</option>
           </select>
         </div>
+        <button @click="reloadData" :disabled="loadingReload" class="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-md font-semibold hover:bg-blue-700">
+          <span v-if="loadingReload" class="animate-spin mr-2"><i class="fas fa-spinner"></i></span>
+          <span v-else class="mr-2"><i class="fas fa-sync-alt"></i></span>
+          Load Data
+        </button>
       </div>
       <div class="bg-white rounded-xl shadow-lg overflow-x-auto">
         <table class="min-w-full divide-y divide-gray-200">
@@ -63,6 +68,7 @@ const props = defineProps({
 const search = ref('');
 const selectedCategory = ref('');
 const selectedWarehouse = ref('');
+const loadingReload = ref(false)
 
 const filteredRecaps = computed(() => {
   let data = props.recaps;
@@ -85,5 +91,10 @@ const grandTotalValue = computed(() => filteredRecaps.value.reduce((sum, row) =>
 function displayValue(val) {
   if (!val || Number(val) === 0) return '-';
   return Number(val).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function reloadData() {
+  loadingReload.value = true
+  window.location.reload()
 }
 </script> 

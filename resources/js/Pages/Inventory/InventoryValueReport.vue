@@ -32,6 +32,11 @@
           </select>
           <span class="text-sm">data</span>
         </div>
+        <button @click="reloadData" :disabled="loadingReload" class="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-md font-semibold hover:bg-blue-700">
+          <span v-if="loadingReload" class="animate-spin mr-2"><i class="fas fa-spinner"></i></span>
+          <span v-else class="mr-2"><i class="fas fa-sync-alt"></i></span>
+          Load Data
+        </button>
       </div>
       <div class="bg-white rounded-xl shadow-lg overflow-x-auto">
         <table class="min-w-full divide-y divide-gray-200">
@@ -105,6 +110,7 @@ const page = ref(1);
 const selectedWarehouse = ref('');
 const selectedCategory = ref('');
 const selectedItem = ref('');
+const loadingReload = ref(false)
 
 const filteredStocks = computed(() => {
   let data = props.stocks;
@@ -149,4 +155,9 @@ function displayValue(val) {
 }
 
 const grandTotal = computed(() => paginatedStocks.value.reduce((sum, row) => sum + (Number(row.total_value) || 0), 0));
+
+function reloadData() {
+  loadingReload.value = true
+  window.location.reload()
+}
 </script> 

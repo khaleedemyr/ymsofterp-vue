@@ -25,6 +25,7 @@ use App\Http\Controllers\ItemScheduleController;
 use App\Http\Controllers\Api\GoodReceiveController;
 use App\Http\Controllers\Api\ItemController as ApiItemController;
 use App\Models\FoodGoodReceive;
+use App\Http\Controllers\Mobile\RegisterController;
 
 
 
@@ -164,4 +165,16 @@ Route::get('/good-receives/{id}/items', function ($id) {
 });
 
 Route::get('/items/autocomplete-pcs', [ItemController::class, 'autocompletePcs']);
+
+Route::post('/mobile/register', [RegisterController::class, 'register']);
+
+// Endpoint untuk dropdown jabatan
+Route::get('/jabatan', function () {
+    return response()->json(DB::table('tbl_data_jabatan')
+        ->where('status', 'A')
+        ->select('id_jabatan', 'nama_jabatan')
+        ->orderBy('nama_jabatan')
+        ->get()
+    );
+});
 

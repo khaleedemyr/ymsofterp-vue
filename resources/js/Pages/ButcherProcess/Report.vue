@@ -3,7 +3,7 @@
     <div class="w-full min-h-screen py-8 px-2 md:px-6">
       <h1 class="text-2xl font-bold mb-6">Butcher Report</h1>
       
-      <!-- Filters -->
+      <!-- Filters & Load Data Button -->
       <div class="flex flex-col md:flex-row md:items-center gap-4 mb-4">
         <input 
           v-model="search" 
@@ -37,6 +37,11 @@
             class="border border-gray-300 rounded-lg px-2 py-2 focus:ring-blue-500 focus:border-blue-500"
           />
         </div>
+        <button @click="reloadData" :disabled="loadingReload" class="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-md font-semibold hover:bg-blue-700">
+          <span v-if="loadingReload" class="animate-spin mr-2"><i class="fas fa-spinner"></i></span>
+          <span v-else class="mr-2"><i class="fas fa-sync-alt"></i></span>
+          Load Data
+        </button>
       </div>
 
       <!-- Report Table -->
@@ -143,6 +148,7 @@ const search = ref(props.filters.search || '');
 const selectedWarehouse = ref(props.filters.warehouse_id || '');
 const from = ref(props.filters.from || '');
 const to = ref(props.filters.to || '');
+const loadingReload = ref(false)
 
 // Watch filters and update URL
 watch([search, selectedWarehouse, from, to], () => {
@@ -216,5 +222,10 @@ function groupItems(items) {
     group.items.push(item);
   });
   return groups;
+}
+
+function reloadData() {
+  loadingReload.value = true
+  window.location.reload()
 }
 </script> 

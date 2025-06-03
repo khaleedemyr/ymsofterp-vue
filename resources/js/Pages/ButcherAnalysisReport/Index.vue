@@ -2,7 +2,7 @@
   <AppLayout>
     <div class="w-full min-h-screen py-8 px-2 md:px-6">
       <h1 class="text-2xl font-bold mb-6">Laporan Analisis Pemotongan</h1>
-      <!-- Filters -->
+      <!-- Filters & Load Data Button -->
       <div class="flex flex-col md:flex-row md:items-center gap-4 mb-4">
         <div class="flex items-center gap-2">
           <label class="text-sm">Warehouse</label>
@@ -19,6 +19,11 @@
           <label class="text-sm">Sampai</label>
           <input type="date" v-model="to" class="border border-gray-300 rounded-lg px-2 py-2 focus:ring-blue-500 focus:border-blue-500" />
         </div>
+        <button @click="reloadData" :disabled="loadingReload" class="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-md font-semibold hover:bg-blue-700">
+          <span v-if="loadingReload" class="animate-spin mr-2"><i class="fas fa-spinner"></i></span>
+          <span v-else class="mr-2"><i class="fas fa-sync-alt"></i></span>
+          Load Data
+        </button>
       </div>
       <!-- Table Analisis -->
       <div class="bg-white rounded-xl shadow-lg overflow-x-auto mb-8">
@@ -85,6 +90,7 @@ const props = defineProps({
 const selectedWarehouse = ref(props.filters.warehouse_id || '');
 const from = ref(props.filters.from || '');
 const to = ref(props.filters.to || '');
+const loadingReload = ref(false)
 
 watch([selectedWarehouse, from, to], () => {
   router.get(
@@ -143,4 +149,9 @@ const groupedAnalisis = computed(() => {
   if (currentGroup) groups.push(currentGroup);
   return groups;
 });
+
+function reloadData() {
+  loadingReload.value = true
+  window.location.reload()
+}
 </script> 

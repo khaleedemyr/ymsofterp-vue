@@ -1,5 +1,5 @@
 <script setup>
-import { ref, watch } from 'vue';
+import { ref, watch, computed } from 'vue';
 import { router } from '@inertiajs/vue3';
 import { debounce } from 'lodash';
 import Swal from 'sweetalert2';
@@ -8,9 +8,10 @@ import SubCategoryFormModal from './SubCategoryFormModal.vue';
 import { Switch } from '@headlessui/vue';
 
 const props = defineProps({
-  subCategories: Object, // { data, links, meta }
-  filters: Object,
-  categories: Array, // Untuk dropdown kategori induk
+  subCategories: Array,
+  categories: Array,
+  regions: Array,
+  outlets: Array,
 });
 
 const search = ref(props.filters?.search || '');
@@ -79,6 +80,28 @@ function toggleStatus(sub) {
     onSuccess: reload,
   });
 }
+
+const filteredSubCategories = computed(() => {
+  if (!props.subCategories || !props.subCategories.data) return [];
+  let arr = props.subCategories.data;
+  // Filter by search (optional, since backend already filters)
+  if (search.value) {
+    const s = search.value.toLowerCase();
+    arr = arr.filter(
+      sc =>
+        (sc.code && sc.code.toLowerCase().includes(s)) ||
+        (sc.name && sc.name.toLowerCase().includes(s)) ||
+        (sc.description && sc.description.toLowerCase().includes(s))
+    );
+  }
+  // Filter by status (optional, since backend already filters)
+  if (showInactive.value) {
+    arr = arr.filter(sc => sc.status === 'inactive');
+  } else {
+    arr = arr.filter(sc => sc.status === 'active');
+  }
+  return arr;
+});
 </script>
 
 <template>
@@ -110,7 +133,7 @@ function toggleStatus(sub) {
           v-model="search"
           @input="onSearchInput"
           type="text"
-          placeholder="Cari nama/deskripsi..."
+          placeholder="Cari sub kategori..."
           class="w-full px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition"
         />
       </div>
@@ -118,37 +141,62 @@ function toggleStatus(sub) {
         <table class="w-full min-w-full divide-y divide-gray-200">
           <thead class="bg-gradient-to-r from-blue-50 to-blue-100">
             <tr>
+              <!-- <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider rounded-tl-2xl">Kode</th> -->
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider rounded-tl-2xl">Nama</th>
+              <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Kategori</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Deskripsi</th>
-              <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Kategori Induk</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Status</th>
+              <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Show POS</th>
+              <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Availability</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider rounded-tr-2xl">Aksi</th>
             </tr>
           </thead>
           <tbody>
-            <tr v-if="subCategories.data.length === 0">
-              <td colspan="5" class="text-center py-10 text-gray-400">Tidak ada data sub kategori.</td>
+            <tr v-if="filteredSubCategories.length === 0">
+              <td colspan="7" class="text-center py-10 text-gray-400">Tidak ada data sub kategori.</td>
             </tr>
-            <tr v-for="sub in subCategories.data" :key="sub.id" class="hover:bg-blue-50 transition shadow-sm">
-              <td class="px-6 py-3 font-semibold">{{ sub.name }}</td>
-              <td class="px-6 py-3 text-gray-500">{{ sub.description }}</td>
-              <td class="px-6 py-3">{{ sub.category_name }}</td>
+            <tr v-for="subCategory in filteredSubCategories" :key="subCategory.id" class="hover:bg-blue-50 transition shadow-sm">
+              <!-- <td class="px-6 py-3 font-mono font-semibold text-blue-700">{{ subCategory.code }}</td> -->
+              <td class="px-6 py-3 font-semibold">{{ subCategory.name }}</td>
+              <td class="px-6 py-3">{{ categories.find(c => c.id === subCategory.category_id)?.name || '-' }}</td>
+              <td class="px-6 py-3 text-gray-500">{{ subCategory.description || '-' }}</td>
               <td class="px-6 py-3">
                 <button
-                  :class="sub.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'"
+                  :class="subCategory.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'"
                   class="px-2 py-1 rounded-full text-xs font-semibold shadow hover:opacity-80 transition"
-                  @click="toggleStatus(sub)"
+                  @click="toggleStatus(subCategory)"
                 >
-                  {{ sub.status }}
+                  {{ subCategory.status }}
                 </button>
               </td>
               <td class="px-6 py-3">
+                <span :class="subCategory.show_pos == 1 ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-700'" class="px-2 py-1 rounded-full text-xs font-semibold shadow">
+                  {{ subCategory.show_pos == 1 ? 'Yes' : 'No' }}
+                </span>
+              </td>
+              <td class="px-6 py-3">
+                <div v-if="subCategory.show_pos === 1">
+                  <div v-if="subCategory.availabilities && subCategory.availabilities.length > 0">
+                    <div v-for="avail in subCategory.availabilities" :key="avail.id" class="mb-1">
+                      <span v-if="avail.availability_type === 'byRegion' && avail.region">
+                        Region: {{ avail.region.name }}
+                      </span>
+                      <span v-else-if="avail.availability_type === 'byOutlet' && avail.outlet">
+                        Outlet: {{ avail.outlet.nama_outlet }}
+                      </span>
+                    </div>
+                  </div>
+                  <span v-else class="text-gray-400">All Outlets</span>
+                </div>
+                <span v-else class="text-gray-400">-</span>
+              </td>
+              <td class="px-6 py-3">
                 <div class="flex gap-2">
-                  <button @click="openEdit(sub)" class="inline-flex items-center btn btn-xs bg-yellow-100 text-yellow-800 hover:bg-yellow-200 rounded px-2 py-1 font-semibold transition">
+                  <button @click="openEdit(subCategory)" class="inline-flex items-center btn btn-xs bg-yellow-100 text-yellow-800 hover:bg-yellow-200 rounded px-2 py-1 font-semibold transition">
                     <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M15.232 5.232l3.536 3.536M9 13l6-6m2 2l-6 6m-2 2h6a2 2 0 002-2v-6a2 2 0 00-2-2H7a2 2 0 00-2 2v6a2 2 0 002 2z"/></svg>
                     Edit
                   </button>
-                  <button @click="hapus(sub)" class="inline-flex items-center btn btn-xs bg-red-100 text-red-700 hover:bg-red-200 rounded px-2 py-1 font-semibold transition">
+                  <button @click="hapus(subCategory)" class="inline-flex items-center btn btn-xs bg-red-100 text-red-700 hover:bg-red-200 rounded px-2 py-1 font-semibold transition">
                     <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12"/></svg>
                     Hapus
                   </button>
@@ -158,10 +206,10 @@ function toggleStatus(sub) {
           </tbody>
         </table>
       </div>
-      <!-- Pagination -->
+      <!-- Pagination (optional, if you have pagination) -->
       <div class="flex justify-end mt-4 gap-2">
         <button
-          v-for="link in subCategories.links"
+          v-for="link in props.subCategories.links"
           :key="link.label"
           :disabled="!link.url"
           @click="goToPage(link.url)"
@@ -176,8 +224,10 @@ function toggleStatus(sub) {
       <SubCategoryFormModal
         :show="showModal"
         :mode="modalMode"
-        :subCategory="selectedSubCategory"
-        :categories="props.categories"
+        :sub-category="selectedSubCategory"
+        :categories="categories"
+        :regions="regions"
+        :outlets="outlets"
         @close="closeModal"
         @success="reload"
       />

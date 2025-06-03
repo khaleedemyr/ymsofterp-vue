@@ -11,4 +11,9 @@ class Category extends Model
     protected $casts = [
         'show_pos' => 'integer',
     ];
+
+    public function availabilities()
+    {
+        return $this->hasMany(\App\Models\CategoryOutlet::class, 'category_id', 'id');
+    }
 }

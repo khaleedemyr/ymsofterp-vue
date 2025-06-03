@@ -49,7 +49,9 @@
               <td class="px-6 py-4 whitespace-nowrap text-sm">{{ row.date ? new Date(row.date).toLocaleDateString('id-ID') : '-' }}</td>
               <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ row.item_name }}</td>
               <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{{ row.warehouse_name }}</td>
-              <td class="px-6 py-4 whitespace-nowrap text-sm text-right">{{ displayQty(row.qty_received) }}</td>
+              <td class="px-6 py-4 whitespace-nowrap text-sm text-right">
+                <span>{{ formatQtyDisplay(row.qty_received_display) }}</span>
+              </td>
               <td class="px-6 py-4 whitespace-nowrap text-sm">{{ row.unit_pr || '-' }}</td>
               <td class="px-6 py-4 whitespace-nowrap text-sm">{{ row.supplier_name || '-' }}</td>
               <td class="px-6 py-4 whitespace-nowrap text-sm">{{ row.po_number || '-' }}</td>
@@ -127,5 +129,13 @@ function displayQty(val) {
 function displayValue(val) {
   if (!val || Number(val) === 0) return '-';
   return Number(val).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function formatQtyDisplay(val) {
+  if (!val) return '-';
+  // Format setiap angka di qty_received_display agar maksimal 2 angka di belakang koma
+  return val.split(',').map(part => {
+    return part.replace(/([0-9]+\.[0-9]+)/g, v => Number(v).toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 2 }));
+  }).join(', ');
 }
 </script> 
