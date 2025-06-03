@@ -117,6 +117,7 @@ Route::middleware('auth')->group(function () {
     Route::get('/overdue-tasks/all', [\App\Http\Controllers\DashboardController::class, 'allOverdueTasks']);
     Route::get('/dashboard/task-completion-stats', [\App\Http\Controllers\DashboardController::class, 'taskCompletionStats']);
     Route::get('/dashboard/task-by-due-date-stats', [\App\Http\Controllers\DashboardController::class, 'taskByDueDateStats']);
+    Route::get('/dashboard/maintenance/task-per-member', [\App\Http\Controllers\DashboardController::class, 'taskCountPerMember']);
 }); 
 
 Route::prefix('auth')->group(function () {

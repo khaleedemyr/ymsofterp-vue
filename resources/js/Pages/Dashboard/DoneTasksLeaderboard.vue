@@ -1,6 +1,5 @@
 <template>
   <div>
-
     <div v-if="loading" class="flex justify-center py-8"><i class="fas fa-spinner fa-spin text-2xl text-blue-400"></i></div>
     <div v-else>
       <!-- Top 3 Cards -->
@@ -15,10 +14,11 @@
           <div class="text-2xl font-extrabold text-green-600 mt-2">{{ member.done }}</div>
           <div class="text-xs text-gray-500">Tasks Selesai</div>
           <div class="text-xs text-gray-400 mt-1">Total: {{ member.total }}</div>
+          <div class="text-xs text-blue-600 mt-1 font-semibold">Produktivitas: {{ member.produktivitas }}%</div>
         </div>
       </div>
       <!-- List Ranking -->
-      <div class="bg-white rounded-xl shadow p-4">
+      <div class="bg-white rounded-xl shadow p-4 mb-6">
         <div class="font-semibold text-base mb-2">Ranking Semua Member</div>
         <table class="min-w-full text-sm">
           <thead>
@@ -27,6 +27,7 @@
               <th class="py-1 px-2 text-left">Nama</th>
               <th class="py-1 px-2 text-center">Tasks Selesai</th>
               <th class="py-1 px-2 text-center">Total Task</th>
+              <th class="py-1 px-2 text-center">Produktivitas</th>
             </tr>
           </thead>
           <tbody>
@@ -35,6 +36,7 @@
               <td class="py-1 px-2">{{ member.name }}</td>
               <td class="py-1 px-2 text-center font-bold text-green-700">{{ member.done }}</td>
               <td class="py-1 px-2 text-center text-gray-500">{{ member.total }}</td>
+              <td class="py-1 px-2 text-center text-blue-600 font-semibold">{{ member.produktivitas }}%</td>
             </tr>
           </tbody>
         </table>

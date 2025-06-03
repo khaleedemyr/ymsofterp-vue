@@ -110,4 +110,11 @@ class DashboardController extends Controller
         $data = $this->dashboardService->getDashboardRepository()->getTaskByDueDateStats($filters);
         return response()->json($data);
     }
+
+    public function taskCountPerMember(Request $request)
+    {
+        $filters = $request->only(['startDate', 'endDate']);
+        $data = $this->dashboardService->getDashboardRepository()->getTaskCountPerMember($filters);
+        return response()->json($data);
+    }
 } 

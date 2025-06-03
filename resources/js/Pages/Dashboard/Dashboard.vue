@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, watch } from 'vue';
 import axios from 'axios';
 import DashboardFilterBar from './DashboardFilterBar.vue';
 import DashboardStats from './DashboardStats.vue';
@@ -66,6 +66,8 @@ const taskCompletionStats = ref({});
 const taskByDueDateStats = ref({});
 const currentFilters = ref({});
 const loading = ref(false);
+const memberBarChartData = ref([]);
+const periodFilter = ref({ startDate: '', endDate: '' });
 
 async function fetchDashboardData(filters = {}) {
   let url = '/api/dashboard/maintenance';
@@ -119,6 +121,11 @@ async function fetchTaskByDueDateStats(filters = {}) {
   taskByDueDateStats.value = res.data;
 }
 
+async function fetchMemberBarChart() {
+  const res = await axios.get('/api/dashboard/maintenance/task-per-member', { params: periodFilter.value });
+  memberBarChartData.value = res.data;
+}
+
 async function loadAllDashboardData(filters = {}) {
   loading.value = true;
   await Promise.all([
@@ -129,6 +136,7 @@ async function loadAllDashboardData(filters = {}) {
     fetchActivityLatest(filters),
     fetchTaskCompletionStats(filters),
     fetchTaskByDueDateStats(filters),
+    fetchMemberBarChart(),
   ]);
   loading.value = false;
 }
@@ -142,11 +150,16 @@ onMounted(() => {
   function toInputDate(d) { return d.toISOString().slice(0, 10); }
   const filters = { startDate: toInputDate(prior), endDate: toInputDate(today) };
   currentFilters.value = filters;
+  periodFilter.value = { startDate: toInputDate(prior), endDate: toInputDate(today) };
   loadAllDashboardData(filters);
+  fetchMemberBarChart();
 });
+
+watch(periodFilter, fetchMemberBarChart);
 
 function onFilterChange(filters) {
   currentFilters.value = filters;
+  periodFilter.value = filters;
   loadAllDashboardData(filters);
 }
 
@@ -292,6 +305,11 @@ function openAllActivity() {
         </div>
         <DoneTasksLeaderboard class="mt-0" />
       </div>
+    </div>
+
+    <!-- Grafik Tasks per Member (Full Width) -->
+    <div class="w-full mb-8">
+      <DashboardMemberBar :data="memberBarChartData" />
     </div>
 
     <!-- Purchase Orders Terbaru (full width) -->

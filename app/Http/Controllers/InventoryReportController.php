@@ -60,7 +60,11 @@ class InventoryReportController extends Controller
     // Laporan Kartu Stok
     public function stockCard(Request $request)
     {
-        $data = DB::table('food_inventory_cards as c')
+        $from = $request->input('from');
+        $to = $request->input('to');
+        $itemId = $request->input('item_id');
+        $warehouseId = $request->input('warehouse_id');
+        $query = DB::table('food_inventory_cards as c')
             ->join('food_inventory_items as fi', 'c.inventory_item_id', '=', 'fi.id')
             ->join('items as i', 'fi.item_id', '=', 'i.id')
             ->join('warehouses as w', 'c.warehouse_id', '=', 'w.id')
@@ -78,7 +82,9 @@ class InventoryReportController extends Controller
             ->select(
                 'c.id',
                 'c.date',
+                'i.id as item_id',
                 'i.name as item_name',
+                'w.id as warehouse_id',
                 'w.name as warehouse_name',
                 'c.in_qty_small',
                 'c.in_qty_medium',
@@ -102,73 +108,42 @@ class InventoryReportController extends Controller
                 'ul.name as large_unit_name',
                 'i.small_conversion_qty',
                 'i.medium_conversion_qty'
-            )
-            ->orderBy('i.name')
-            ->orderBy('w.name')
-            ->orderBy('c.date')
-            ->orderBy('c.id')
-            ->get();
-
-        // Setelah get(), map reference_number agar jika reference_type warehouse_transfer, pakai transfer_number
-        $data = $data->map(function ($row) {
-            if ($row->reference_type === 'warehouse_transfer' && $row->transfer_number) {
-                $row->reference_number = $row->transfer_number;
+            );
+        if ($itemId) $query->where('i.id', $itemId);
+        if ($warehouseId) $query->where('w.id', $warehouseId);
+        if ($from) $query->whereDate('c.date', '>=', $from);
+        if ($to) $query->whereDate('c.date', '<=', $to);
+        $query->orderBy('c.date')->orderBy('c.id');
+        $data = $query->get();
+        // Saldo awal: ambil saldo akhir transaksi terakhir sebelum tanggal from
+        $saldoAwal = null;
+        if ($from && $itemId) {
+            $saldoQuery = DB::table('food_inventory_cards as c')
+                ->join('food_inventory_items as fi', 'c.inventory_item_id', '=', 'fi.id')
+                ->join('items as i', 'fi.item_id', '=', 'i.id')
+                ->where('i.id', $itemId)
+                ->whereDate('c.date', '<', $from);
+            if ($warehouseId) $saldoQuery->where('c.warehouse_id', $warehouseId);
+            $saldoQuery->orderByDesc('c.date')->orderByDesc('c.id');
+            $last = $saldoQuery->first();
+            if ($last) {
+                $saldoAwal = [
+                    'small' => $last->saldo_qty_small,
+                    'medium' => $last->saldo_qty_medium,
+                    'large' => $last->saldo_qty_large,
+                    'small_unit_name' => $last->small_unit_name ?? '',
+                    'medium_unit_name' => $last->medium_unit_name ?? '',
+                    'large_unit_name' => $last->large_unit_name ?? '',
+                ];
             }
-            return $row;
-        });
-
-        // Hitung saldo dinamis per item+warehouse dan konversi pecahan ke semua satuan
-        $saldoMap = [];
-        foreach ($data as $row) {
-            $key = $row->item_name . '-' . $row->warehouse_name;
-            $smallPerMedium = (int)($row->small_conversion_qty ?? 1);
-            $mediumPerLarge = (int)($row->medium_conversion_qty ?? 1);
-
-            // Konversi semua qty masuk dan keluar ke small unit
-            $in_total_small = ($row->in_qty_small ?? 0)
-                + (($row->in_qty_medium ?? 0) * $smallPerMedium)
-                + (($row->in_qty_large ?? 0) * $smallPerMedium * $mediumPerLarge);
-            $out_total_small = ($row->out_qty_small ?? 0)
-                + (($row->out_qty_medium ?? 0) * $smallPerMedium)
-                + (($row->out_qty_large ?? 0) * $smallPerMedium * $mediumPerLarge);
-
-            // Hitung saldo small dinamis
-            if (!isset($saldoMap[$key])) {
-                $saldoMap[$key] = 0;
-            }
-            $saldoMap[$key] += $in_total_small - $out_total_small;
-            $saldo_total_small = $saldoMap[$key];
-
-            // Pecah saldo ke large, medium, small
-            $display_large = ($smallPerMedium > 0 && $mediumPerLarge > 0) ? intdiv($saldo_total_small, $smallPerMedium * $mediumPerLarge) : 0;
-            $sisaSetelahLarge = ($smallPerMedium > 0 && $mediumPerLarge > 0) ? $saldo_total_small % ($smallPerMedium * $mediumPerLarge) : $saldo_total_small;
-            $display_medium = $smallPerMedium > 0 ? intdiv($sisaSetelahLarge, $smallPerMedium) : 0;
-            $display_small = $smallPerMedium > 0 ? $sisaSetelahLarge % $smallPerMedium : $sisaSetelahLarge;
-
-            $row->display_large = (int)($display_large ?? 0);
-            $row->display_medium = (int)($display_medium ?? 0);
-            $row->display_small = (int)($display_small ?? 0);
-
-            // Tambahkan juga total in/out dalam satuan medium/large untuk frontend jika perlu
-            $row->in_total_small = $in_total_small;
-            $row->out_total_small = $out_total_small;
-
-           // \Log::info('StockCard row', [
-            //    'item' => $row->item_name,
-            //    'small_conversion_qty' => $smallPerMedium,
-            //    'medium_conversion_qty' => $mediumPerLarge,
-            //    'display_large' => $row->display_large,
-            //    'display_medium' => $row->display_medium,
-            //    'display_small' => $row->display_small,
-            //]);
         }
-
         $warehouses = DB::table('warehouses')->select('id', 'name')->orderBy('name')->get();
         $items = DB::table('items')->select('id', 'name')->orderBy('name')->get();
         return inertia('Inventory/StockCard', [
             'cards' => $data,
             'warehouses' => $warehouses,
             'items' => $items,
+            'saldo_awal' => $saldoAwal,
         ]);
     }
 

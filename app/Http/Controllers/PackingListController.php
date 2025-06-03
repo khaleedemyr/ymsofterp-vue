@@ -288,7 +288,7 @@ class PackingListController extends Controller
 
         // Get all floor orders that are approved but not yet fully packed
         $floorOrders = FoodFloorOrder::where('status', 'approved')
-            ->whereDate('created_at', $request->tanggal)
+            ->whereDate('tanggal', $request->tanggal)
             ->with(['items.item', 'items.item.smallUnit', 'items.item.mediumUnit', 'items.item.largeUnit'])
             ->get();
 

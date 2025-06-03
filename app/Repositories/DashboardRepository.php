@@ -487,11 +487,13 @@ class DashboardRepository
                 ->whereRaw('UPPER(maintenance_tasks.status) = ?', ['DONE'])
                 ->whereIn('maintenance_tasks.id', $taskIds)
                 ->count();
+            $produktivitas = $total > 0 ? round(($done / $total) * 100, 2) : 0;
             $result[] = [
                 'id' => $member->id,
                 'name' => $member->name,
                 'total' => $total,
                 'done' => $done,
+                'produktivitas' => $produktivitas,
             ];
         }
         usort($result, function($a, $b) {
@@ -824,6 +826,32 @@ class DashboardRepository
             'on_time' => $on_time,
             'late' => $late,
         ];
+    }
+
+    public function getTaskCountPerMember($filters = []) {
+        $query = DB::table('users')
+            ->where('division_id', 20)
+            ->where('status', 'A');
+        $users = $query->get(['id', 'nama_lengkap']);
+        $result = [];
+        foreach ($users as $user) {
+            $taskQuery = DB::table('maintenance_members')
+                ->join('maintenance_tasks', 'maintenance_members.task_id', '=', 'maintenance_tasks.id')
+                ->where('maintenance_members.user_id', $user->id)
+                ->where('maintenance_members.role', 'ASSIGNEE');
+            if (!empty($filters['startDate'])) {
+                $taskQuery->where('maintenance_tasks.created_at', '>=', $filters['startDate']);
+            }
+            if (!empty($filters['endDate'])) {
+                $taskQuery->where('maintenance_tasks.created_at', '<=', $filters['endDate']);
+            }
+            $result[] = [
+                'id' => $user->id,
+                'name' => $user->nama_lengkap,
+                'total_task' => $taskQuery->count(),
+            ];
+        }
+        return $result;
     }
 
     protected function applyFilters($query, $filters)
