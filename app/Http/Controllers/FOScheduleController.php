@@ -185,6 +185,11 @@ class FOScheduleController extends Controller
 
     public function check(Request $request)
     {
+        \Log::info('DEBUG FO CHECK region_id', [
+            'region_id_param' => $request->region_id,
+            'outlet_id_param' => $request->outlet_id,
+            'all_params' => $request->all()
+        ]);
         $user = Auth::user();
         $id_outlet = $request->outlet_id;
         $region_id = $request->region_id;

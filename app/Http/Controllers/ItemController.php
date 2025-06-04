@@ -1355,6 +1355,11 @@ class ItemController extends Controller
      */
     public function getByFOSchedule($fo_schedule_id)
     {
+        \Log::info('DEBUG REQUEST region_id', [
+            'region_id_param' => request('region_id'),
+            'outlet_id_param' => request('outlet_id'),
+            'all_params' => request()->all()
+        ]);
         $region_id = request('region_id');
         $outlet_id = request('outlet_id');
         $foSchedule = \App\Models\FOSchedule::with('warehouseDivisions')->findOrFail($fo_schedule_id);
@@ -1380,6 +1385,12 @@ class ItemController extends Controller
             })
             ->pluck('item_id')
             ->unique();
+        // Log debug
+        \Log::info('FO getByFOSchedule availabilities', [
+            'region_id' => $region_id,
+            'outlet_id' => $outlet_id,
+            'availableItemIds' => $availableItemIds
+        ]);
         $items = Item::whereIn('id', $availableItemIds)
             ->with(['category', 'mediumUnit'])
             ->get()
@@ -1413,6 +1424,11 @@ class ItemController extends Controller
                     'price' => $finalPrice,
                 ]);
             });
+        // Log debug hasil akhir
+        \Log::info('FO getByFOSchedule items', [
+            'count' => $items->count(),
+            'item_ids' => $items->pluck('id')
+        ]);
         return response()->json([
             'items' => $items
         ]);

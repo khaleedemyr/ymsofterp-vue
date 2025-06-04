@@ -15,6 +15,9 @@ const props = defineProps({
 const { props: globalProps } = usePage();
 const userGlobal = computed(() => globalProps.value?.auth?.user || {});
 
+console.log('DEBUG props.user', props.user);
+console.log('DEBUG userGlobal', userGlobal.value);
+
 const mode = ref(props.input_mode || 'pc');
 const selectedFOMode = ref(props.fo_mode || '');
 const showScheduleModal = ref(false);
@@ -58,6 +61,14 @@ if (props.order) {
 
 const draftId = ref(props.order?.id || null);
 
+const region_id = computed(() =>
+  props.user.region_id ||
+  props.user.outlet?.region_id ||
+  userGlobal.value.region_id ||
+  userGlobal.value.outlet?.region_id
+);
+const outlet_id = computed(() => props.user.id_outlet || userGlobal.value.id_outlet);
+
 function addItem() {
   // Validasi khusus FO Tambahan: max 6 item
   if (selectedFOMode.value === 'RO Tambahan' && form.value.items.length >= 6) {
@@ -91,15 +102,24 @@ const categories = ref([]); // Untuk mode tab, jika ingin dikelompokkan per kate
 async function fetchItemsByFOSchedule(foScheduleId) {
   loadingItems.value = true;
   try {
-    const res = await axios.get(`/api/items/by-fo-schedule/${foScheduleId}`);
+    console.log('DEBUG region_id', region_id.value, 'outlet_id', outlet_id.value);
+    const res = await axios.get(`/api/items/by-fo-schedule/${foScheduleId}`, {
+      params: { region_id: region_id.value, outlet_id: outlet_id.value }
+    });
     itemsByFOSchedule.value = res.data.items || [];
+    // Log hasil fetch
+    console.log('itemsByFOSchedule:', itemsByFOSchedule.value);
     // Optional: Kelompokkan per kategori jika ingin di mode tab
     const grouped = {};
     itemsByFOSchedule.value.forEach(item => {
-      if (!grouped[item.category_id]) grouped[item.category_id] = { id: item.category_id, name: item.category_name || '-', items: [] };
+      // Gunakan nama kategori default jika kosong/null
+      const catName = item.category_name && item.category_name.trim() !== '' ? item.category_name : 'Tanpa Kategori';
+      if (!grouped[item.category_id]) grouped[item.category_id] = { id: item.category_id, name: catName, items: [] };
       grouped[item.category_id].items.push({ ...item, qty: 0 });
     });
     categories.value = Object.values(grouped);
+    // Log hasil grouping
+    console.log('categories:', categories.value);
   } catch (e) {
     itemsByFOSchedule.value = [];
     categories.value = [];
@@ -271,12 +291,13 @@ async function checkFOSchedule() {
   error.value = '';
 
   try {
+    console.log('DEBUG region_id', region_id.value, 'outlet_id', outlet_id.value);
     const response = await axios.get('/api/fo-schedules/check', {
       params: {
         fo_mode: selectedFOMode.value,
         day: getCurrentDay(),
-        region_id: props.user.region_id,
-        outlet_id: props.user.id_outlet
+        region_id: region_id.value,
+        outlet_id: outlet_id.value
       }
     });
 
@@ -347,10 +368,11 @@ const grandTotal = computed(() =>
 
 async function fetchOutletSchedules() {
   try {
+    console.log('DEBUG region_id', region_id.value, 'outlet_id', outlet_id.value);
     const res = await axios.get('/api/fo-schedules/outlet-schedules', {
       params: {
-        outlet_id: props.user.id_outlet,
-        region_id: props.user.region_id
+        outlet_id: outlet_id.value,
+        region_id: region_id.value
       }
     });
     outletSchedules.value = res.data.schedules || [];
@@ -406,12 +428,12 @@ watch(selectedFOMode, async (val) => {
     showScheduleModal.value = false;
     error.value = '';
     loadingItems.value = true;
-    // Dummy fetch, ganti endpoint sesuai backend
     try {
+      console.log('DEBUG region_id', region_id.value, 'outlet_id', outlet_id.value);
       const res = await axios.get('/api/items/by-fo-khusus', {
         params: {
-          region_id: props.user.region_id,
-          outlet_id: props.user.id_outlet
+          region_id: region_id.value,
+          outlet_id: outlet_id.value
         }
       });
       itemsByFOSchedule.value = res.data.items || [];
