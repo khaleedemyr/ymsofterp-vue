@@ -101,6 +101,7 @@ const menuGroups = [
             { name: () => 'Laporan Rekap Persediaan per Kategori', icon: 'fa-solid fa-layer-group', route: '/inventory/category-recap-report', code: 'inventory_category_recap_report' },
             { name: () => 'Laporan Aging Persediaan', icon: 'fa-solid fa-hourglass-half', route: '/inventory/aging-report', code: 'inventory_aging_report' },
             { name: () => 'Internal Use & Waste', icon: 'fa-solid fa-recycle', route: '/internal-use-waste', code: 'internal_use_waste' },
+            { name: () => 'Penjualan Antar Gudang', icon: 'fas fa-exchange-alt', route: '/warehouse-sales', code: 'warehouse_sales' },
         ],
     },
     {
@@ -127,6 +128,7 @@ const menuGroups = [
             { name: () => 'Butcher Report', icon: 'fa-solid fa-file-lines', route: '/butcher-processes/report', code: 'butcher_report' },
             { name: () => 'Laporan Stok & Cost Butcher', icon: 'fa-solid fa-money-bill-trend-up', route: '/butcher-processes/stock-cost-report', code: 'butcher_stock_cost_report' },
             { name: () => 'Laporan Analisis Butcher', icon: 'fa-solid fa-chart-line', route: '/butcher-processes/analysis-report', code: 'butcher_analysis_report' },
+            { name: () => 'Summary Hasil Butcher', icon: 'fa-solid fa-list', route: '/butcher-summary-report', code: 'butcher_summary_report' },
             { name: () => 'MK Production', icon: 'fa-solid fa-industry', route: '/mk-production', code: 'mk_production' },
             { name: () => 'Laporan MK Production', icon: 'fa-solid fa-file-lines', route: '/mk-production/report', code: 'mk_production_report' },
         ],

@@ -55,6 +55,7 @@ use App\Http\Controllers\RoleController;
 use App\Http\Controllers\UserRoleController;
 use App\Http\Controllers\OpsKitchen\ActionPlanGuestReviewController;
 use App\Http\Controllers\CostControlController;
+use App\Http\Controllers\WarehouseSaleController;
 
 Route::get('/', function () {
     return Inertia::render('Welcome', [
@@ -544,5 +545,19 @@ Route::prefix('ops-kitchen')->group(function () {
 });
 
 Route::get('/inventory/po-price-change-report', [CostControlController::class, 'poPriceChangeReport'])->name('po_price_change_report.index');
+
+// Warehouse Sales Routes
+Route::middleware(['auth', 'verified'])->group(function () {
+    Route::get('/warehouse-sales', [WarehouseSaleController::class, 'index'])->name('warehouse-sales.index');
+    Route::get('/warehouse-sales/create', [WarehouseSaleController::class, 'create'])->name('warehouse-sales.create');
+    Route::post('/warehouse-sales', [WarehouseSaleController::class, 'store'])->name('warehouse-sales.store');
+    Route::get('/warehouse-sales/{warehouseSale}', [WarehouseSaleController::class, 'show'])->name('warehouse-sales.show');
+    Route::delete('/warehouse-sales/{warehouseSale}', [WarehouseSaleController::class, 'destroy'])->name('warehouse-sales.destroy');
+    Route::get('/api/warehouse-sales/item-price', [WarehouseSaleController::class, 'getItemPrice']);
+});
+
+Route::middleware(['auth', 'verified'])->group(function () {
+    Route::get('/butcher-summary-report', [\App\Http\Controllers\ButcherReportController::class, 'summaryReport'])->name('butcher-summary-report.index');
+});
 
 require __DIR__.'/auth.php';

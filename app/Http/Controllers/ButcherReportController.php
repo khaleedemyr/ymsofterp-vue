@@ -113,4 +113,24 @@ class ButcherReportController extends Controller
             'filters' => $request->only(['search', 'from', 'to', 'warehouse_id'])
         ]);
     }
+
+    public function summaryReport(Request $request)
+    {
+        $from = $request->input('from');
+        $to = $request->input('to');
+        $query = \DB::table('butcher_processes as bp')
+            ->join('items as i', 'bp.result_item_id', '=', 'i.id')
+            ->join('units as u', 'i.small_unit_id', '=', 'u.id')
+            ->select('bp.process_date', 'i.name as item_name', 'bp.result_qty', 'u.name as unit_name');
+        if ($from) $query->whereDate('bp.process_date', '>=', $from);
+        if ($to) $query->whereDate('bp.process_date', '<=', $to);
+        $data = $query->orderBy('bp.process_date', 'desc')->get();
+        return inertia('ButcherReport/Summary', [
+            'data' => $data,
+            'filters' => [
+                'from' => $from,
+                'to' => $to
+            ]
+        ]);
+    }
 } 

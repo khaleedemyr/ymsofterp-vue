@@ -41,12 +41,6 @@
         Silakan pilih barang terlebih dahulu untuk melihat kartu stok.
       </div>
       <template v-else>
-        <div class="flex flex-wrap gap-6 mb-4 items-center bg-blue-50 rounded-xl p-4">
-          <div><b>Saldo Awal:</b> {{ summary.saldoAwal }}</div>
-          <div><b>Total Masuk:</b> {{ summary.totalMasuk }}</div>
-          <div><b>Total Keluar:</b> {{ summary.totalKeluar }}</div>
-          <div><b>Saldo Akhir:</b> {{ summary.saldoAkhir }}</div>
-        </div>
         <div class="bg-white rounded-xl shadow-lg overflow-hidden">
           <div class="overflow-x-auto">
             <table class="min-w-full divide-y divide-gray-200">
@@ -65,7 +59,7 @@
                 <tr v-if="!filteredCards.length">
                   <td colspan="7" class="text-center py-10 text-gray-400">Tidak ada data kartu stok.</td>
                 </tr>
-                <tr v-for="(row, index) in paginatedCards" :key="row.id" class="hover:bg-gray-50 transition">
+                <tr v-for="(row, index) in paginatedCards" :key="row.id" :class="[ 'hover:bg-gray-50 transition', index === paginatedCards.length - 1 ? 'bg-yellow-200 font-bold' : '' ]">
                   <td class="px-6 py-4 whitespace-nowrap text-sm">{{ row.date ? new Date(row.date).toLocaleDateString('id-ID') : '-' }}</td>
                   <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{{ row.warehouse_name }}</td>
                   <td class="px-6 py-4 whitespace-nowrap text-sm text-right">{{ formatQty(row, 'in') }}</td>

@@ -32,6 +32,7 @@ class AppServiceProvider extends ServiceProvider
                         'id' => $user->id,
                         'name' => $user->name,
                         'id_role' => $user->id_role,
+                        'id_jabatan' => $user->id_jabatan,
                         'status' => $user->status,
                         'division_id' => $user->division_id,
                         // field lain yang dibutuhkan
