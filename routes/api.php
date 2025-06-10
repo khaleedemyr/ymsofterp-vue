@@ -182,3 +182,5 @@ Route::get('/jabatan', function () {
 
 Route::get('/quotes/of-the-day', [QuoteController::class, 'getQuoteByDayOfYear']);
 
+Route::get('/items', [ItemController::class, 'apiIndex']);
+

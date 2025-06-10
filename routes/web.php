@@ -56,6 +56,11 @@ use App\Http\Controllers\UserRoleController;
 use App\Http\Controllers\OpsKitchen\ActionPlanGuestReviewController;
 use App\Http\Controllers\CostControlController;
 use App\Http\Controllers\WarehouseSaleController;
+use App\Http\Controllers\OutletFoodInventoryAdjustmentController;
+use App\Http\Controllers\OutletInventoryReportController;
+use App\Http\Controllers\OutletStockBalanceController;
+use App\Http\Controllers\OutletInternalUseWasteController;
+use App\Http\Controllers\RetailFoodController;
 
 Route::get('/', function () {
     return Inertia::render('Welcome', [
@@ -278,6 +283,7 @@ Route::get('/api/items/{id}', [App\Http\Controllers\ItemController::class, 'show
 Route::get('/api/items/{id}/detail', [App\Http\Controllers\ItemController::class, 'apiDetail']);
 Route::get('/items/search-for-warehouse-transfer', [ItemController::class, 'searchForWarehouseTransfer']);
 Route::get('/api/items/by-fo-schedule/{fo_schedule_id}', [App\Http\Controllers\ItemController::class, 'getByFOSchedule']);
+Route::get('/items/search-for-outlet-transfer', [ItemController::class, 'searchForOutletTransfer']);
 
 Route::resource('items', ItemController::class);
 Route::resource('modifiers', ModifierController::class);
@@ -493,8 +499,6 @@ Route::get('/internal-use-waste/{id}', [InternalUseWasteController::class, 'show
 Route::delete('/internal-use-waste/{id}', [InternalUseWasteController::class, 'destroy'])->name('internal-use-waste.destroy');
 Route::get('/internal-use-waste/item/{id}/units', [App\Http\Controllers\InternalUseWasteController::class, 'getItemUnits']);
 
-
-
 Route::get('/delivery-order', [DeliveryOrderController::class, 'index'])->name('delivery-order.index');
 Route::get('/delivery-order/create', [DeliveryOrderController::class, 'create'])->name('delivery-order.create');
 Route::post('/delivery-order', [DeliveryOrderController::class, 'store'])->name('delivery-order.store');
@@ -533,6 +537,10 @@ Route::resource('outlet-food-good-receives', \App\Http\Controllers\OutletFoodGoo
 Route::get('/outlet-food-good-receives/scan-do', [\App\Http\Controllers\OutletFoodGoodReceiveController::class, 'scanDO'])->name('outlet-food-good-receives.scan-do');
 Route::get('/api/delivery-orders/validate', [\App\Http\Controllers\OutletFoodGoodReceiveController::class, 'validateDO']);
 Route::get('/outlet-food-good-receives/create-from-do/{delivery_order_id}', [\App\Http\Controllers\OutletFoodGoodReceiveController::class, 'createFromDO'])->name('outlet-food-good-receives.create-from-do');
+Route::get('/outlet-food-good-receives/available-dos', [OutletFoodGoodReceiveController::class, 'availableDOs']);
+Route::get('/outlet-food-good-receives/do-detail/{do_id}', [OutletFoodGoodReceiveController::class, 'doDetail']);
+Route::post('/outlet-food-good-receives/{id}/submit', [OutletFoodGoodReceiveController::class, 'submit']);
+Route::post('/outlet-food-good-receives/{id}/process-stock', [OutletFoodGoodReceiveController::class, 'processStock']);
 
 Route::prefix('ops-kitchen')->group(function () {
     Route::get('/action-plan-guest-review', [ActionPlanGuestReviewController::class, 'index'])->name('ops-kitchen.action-plan-guest-review.index');
@@ -559,5 +567,44 @@ Route::middleware(['auth', 'verified'])->group(function () {
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/butcher-summary-report', [\App\Http\Controllers\ButcherReportController::class, 'summaryReport'])->name('butcher-summary-report.index');
 });
+
+// Outlet Food Inventory Adjustment Routes
+Route::middleware(['auth', 'verified'])->group(function () {
+    Route::get('/outlet-food-inventory-adjustment', [OutletFoodInventoryAdjustmentController::class, 'index'])->name('outlet-food-inventory-adjustment.index');
+    Route::get('/outlet-food-inventory-adjustment/create', [OutletFoodInventoryAdjustmentController::class, 'create'])->name('outlet-food-inventory-adjustment.create');
+    Route::post('/outlet-food-inventory-adjustment', [OutletFoodInventoryAdjustmentController::class, 'store'])->name('outlet-food-inventory-adjustment.store');
+    Route::get('/outlet-food-inventory-adjustment/{id}', [OutletFoodInventoryAdjustmentController::class, 'show'])->name('outlet-food-inventory-adjustment.show');
+    Route::post('/outlet-food-inventory-adjustment/{id}/approve', [OutletFoodInventoryAdjustmentController::class, 'approve'])->name('outlet-food-inventory-adjustment.approve');
+    Route::post('/outlet-food-inventory-adjustment/{id}/reject', [OutletFoodInventoryAdjustmentController::class, 'reject'])->name('outlet-food-inventory-adjustment.reject');
+    Route::delete('/outlet-food-inventory-adjustment/{id}', [OutletFoodInventoryAdjustmentController::class, 'destroy'])->name('outlet-food-inventory-adjustment.destroy');
+});
+
+// Laporan Stok Akhir Outlet
+Route::get('/outlet-inventory/stock-position', [\App\Http\Controllers\OutletInventoryReportController::class, 'stockPosition'])->name('outlet-inventory.stock-position');
+
+// Saldo Awal Stok Outlet
+Route::get('/outlet-stock-balances', [\App\Http\Controllers\OutletStockBalanceController::class, 'index'])->name('outlet-stock-balances.index');
+Route::post('/outlet-stock-balances', [\App\Http\Controllers\OutletStockBalanceController::class, 'store'])->name('outlet-stock-balances.store');
+Route::put('/outlet-stock-balances/{id}', [\App\Http\Controllers\OutletStockBalanceController::class, 'update'])->name('outlet-stock-balances.update');
+Route::delete('/outlet-stock-balances/{id}', [\App\Http\Controllers\OutletStockBalanceController::class, 'destroy'])->name('outlet-stock-balances.destroy');
+Route::post('/outlet-stock-balances/import', [\App\Http\Controllers\OutletStockBalanceController::class, 'import'])->name('outlet-stock-balances.import');
+Route::post('/outlet-stock-balances/preview-import', [\App\Http\Controllers\OutletStockBalanceController::class, 'previewImport'])->name('outlet-stock-balances.preview-import');
+Route::get('/outlet-stock-balances/download-template', [\App\Http\Controllers\OutletStockBalanceController::class, 'downloadTemplate'])->name('outlet-stock-balances.download-template');
+
+Route::get('/outlet-inventory/stock-card', [\App\Http\Controllers\OutletInventoryReportController::class, 'stockCard'])->name('outlet-inventory.stock-card');
+Route::get('/outlet-inventory/inventory-value-report', [\App\Http\Controllers\OutletInventoryReportController::class, 'inventoryValueReport'])->name('outlet-inventory.inventory-value-report');
+Route::get('/outlet-inventory/category-recap-report', [\App\Http\Controllers\OutletInventoryReportController::class, 'categoryRecapReport'])->name('outlet-inventory.category-recap-report');
+
+Route::get('/outlet-internal-use-waste', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'index'])->name('outlet-internal-use-waste.index');
+Route::get('/outlet-internal-use-waste/create', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'create'])->name('outlet-internal-use-waste.create');
+Route::post('/outlet-internal-use-waste', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'store'])->name('outlet-internal-use-waste.store');
+Route::get('/outlet-internal-use-waste/{id}', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'show'])->name('outlet-internal-use-waste.show');
+Route::delete('/outlet-internal-use-waste/{id}', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'destroy'])->name('outlet-internal-use-waste.destroy');
+Route::get('/outlet-internal-use-waste/get-item-units/{id}', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'getItemUnits'])->name('outlet-internal-use-waste.get-item-units');
+Route::get('/outlet-internal-use-waste/report', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'report'])->name('outlet-internal-use-waste.report');
+Route::get('/outlet-internal-use-waste/report-waste-spoil', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'reportWasteSpoil'])->name('outlet-internal-use-waste.report-waste-spoil');
+
+Route::resource('retail-food', RetailFoodController::class);
+Route::get('retail-food/get-item-units/{itemId}', [\App\Http\Controllers\RetailFoodController::class, 'getItemUnits']);
 
 require __DIR__.'/auth.php';

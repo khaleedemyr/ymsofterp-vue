@@ -3,10 +3,16 @@
     <div class="max-w-7xl mx-auto py-8 px-2">
       <div class="flex justify-between items-center mb-6">
         <h1 class="text-2xl font-bold text-gray-800 flex items-center gap-2">
-          <i class="fa-solid fa-truck text-blue-500"></i> Good Receive Outlet
+          <i class="fa-solid fa-recycle text-green-500"></i> Internal Use & Waste Outlet
         </h1>
         <div class="flex gap-2">
-          <button @click="goCreate" class="bg-gradient-to-r from-blue-500 to-blue-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold">
+          <button @click="goReport" class="bg-blue-500 text-white px-4 py-2 rounded-xl shadow-lg hover:bg-blue-600 transition-all font-semibold">
+            <i class="fa fa-file-lines mr-1"></i> Laporan Internal Use
+          </button>
+          <button @click="goReportWasteSpoil" class="bg-yellow-500 text-white px-4 py-2 rounded-xl shadow-lg hover:bg-yellow-600 transition-all font-semibold">
+            <i class="fa fa-file-lines mr-1"></i> Laporan Spoil & Waste
+          </button>
+          <button @click="goCreate" class="bg-gradient-to-r from-green-500 to-green-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold">
             + Tambah Baru
           </button>
         </div>
@@ -18,25 +24,29 @@
             <thead class="bg-gray-50">
               <tr>
                 <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Tanggal</th>
-                <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Nomor GR</th>
+                <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Tipe</th>
                 <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Outlet</th>
-                <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Nomor DO</th>
-                <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Status</th>
+                <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Item</th>
+                <th class="px-6 py-3 text-right text-xs font-bold text-gray-700 uppercase tracking-wider">Qty</th>
+                <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Unit</th>
+                <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Catatan</th>
                 <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Aksi</th>
               </tr>
             </thead>
             <tbody class="bg-white divide-y divide-gray-200">
-              <tr v-if="!props.goodReceives.length">
-                <td colspan="6" class="text-center py-10 text-blue-300">Tidak ada data.</td>
+              <tr v-if="!props.data.length">
+                <td colspan="8" class="text-center py-10 text-green-300">Tidak ada data.</td>
               </tr>
-              <tr v-for="row in props.goodReceives" :key="row.id">
-                <td class="px-6 py-3">{{ formatDate(row.receive_date) }}</td>
-                <td class="px-6 py-3">{{ row.number }}</td>
+              <tr v-for="row in props.data" :key="row.id">
+                <td class="px-6 py-3">{{ formatDate(row.date) }}</td>
+                <td class="px-6 py-3">{{ typeLabel(row.type) }}</td>
                 <td class="px-6 py-3">{{ row.outlet_name }}</td>
-                <td class="px-6 py-3">{{ row.delivery_order_number }}</td>
-                <td class="px-6 py-3">{{ row.status }}</td>
+                <td class="px-6 py-3">{{ row.item_name }}</td>
+                <td class="px-6 py-3 text-right">{{ formatNumber(row.qty) }}</td>
+                <td class="px-6 py-3">{{ row.unit_name }}</td>
+                <td class="px-6 py-3">{{ row.notes }}</td>
                 <td class="px-6 py-3">
-                  <button class="inline-flex items-center btn btn-xs bg-blue-100 text-blue-800 hover:bg-blue-200 rounded px-2 py-1 font-semibold transition" @click="goDetail(row.id)">
+                  <button class="inline-flex items-center btn btn-xs bg-green-100 text-green-800 hover:bg-green-200 rounded px-2 py-1 font-semibold transition" @click="goDetail(row.id)">
                     <i class="fa fa-eye mr-1"></i> Detail
                   </button>
                   <button class="inline-flex items-center btn btn-xs bg-red-100 text-red-700 hover:bg-red-200 rounded px-2 py-1 font-semibold transition ml-2" @click="onDelete(row.id)" :disabled="loadingId === row.id">
@@ -60,23 +70,31 @@ import Swal from 'sweetalert2'
 import { ref } from 'vue'
 
 const props = defineProps({
-  goodReceives: Array
+  data: Array
 })
 
 const loadingId = ref(null)
 
 function goCreate() {
-  router.visit(route('outlet-food-good-receives.create'))
+  router.visit(route('outlet-internal-use-waste.create'))
+}
+
+function goReport() {
+  router.visit(route('outlet-internal-use-waste.report'))
+}
+
+function goReportWasteSpoil() {
+  router.visit(route('outlet-internal-use-waste.report-waste-spoil'))
 }
 
 function goDetail(id) {
-  router.visit(route('outlet-food-good-receives.show', id))
+  router.visit(route('outlet-internal-use-waste.show', id))
 }
 
 function onDelete(id) {
   Swal.fire({
     title: 'Yakin hapus data ini?',
-    text: 'Data akan dihapus permanen!',
+    text: 'Stok akan di-rollback otomatis!',
     icon: 'warning',
     showCancelButton: true,
     confirmButtonText: 'Ya, hapus',
@@ -86,12 +104,12 @@ function onDelete(id) {
     if (result.isConfirmed) {
       loadingId.value = id
       try {
-        const res = await axios.delete(`/outlet-food-good-receives/${id}`)
+        const res = await axios.delete(`/outlet-internal-use-waste/${id}`)
         if (res.data && res.data.success) {
           Swal.fire({
             icon: 'success',
             title: 'Berhasil',
-            text: 'Data berhasil dihapus!',
+            text: 'Data berhasil dihapus dan stok di-rollback!',
             timer: 1500,
             showConfirmButton: false
           })
@@ -115,5 +133,18 @@ function onDelete(id) {
 function formatDate(date) {
   if (!date) return '-';
   return new Date(date).toLocaleDateString('id-ID')
+}
+
+function formatNumber(val) {
+  if (val == null) return '-';
+  if (Number(val) % 1 === 0) return Number(val);
+  return Number(val).toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+}
+
+function typeLabel(type) {
+  if (type === 'internal_use') return 'Internal Use';
+  if (type === 'spoil') return 'Spoil';
+  if (type === 'waste') return 'Waste';
+  return type;
 }
 </script> 

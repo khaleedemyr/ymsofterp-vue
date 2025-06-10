@@ -69,9 +69,6 @@
                   <button @click="goToDetail(tr.id)" class="inline-flex items-center btn btn-xs bg-blue-100 text-blue-800 hover:bg-blue-200 rounded px-2 py-1 font-semibold transition">
                     <i class="fa fa-eye mr-1"></i> Detail
                   </button>
-                  <button @click="goToEdit(tr.id)" class="inline-flex items-center btn btn-xs bg-yellow-100 text-yellow-800 hover:bg-yellow-200 rounded px-2 py-1 font-semibold transition">
-                    <i class="fa fa-pencil-alt mr-1"></i> Edit
-                  </button>
                   <button @click="confirmDelete(tr.id)" class="inline-flex items-center btn btn-xs bg-red-100 text-red-700 hover:bg-red-200 rounded px-2 py-1 font-semibold transition">
                     <i class="fa fa-trash mr-1"></i> Hapus
                   </button>
@@ -105,6 +102,7 @@ import { ref, watch } from 'vue';
 import { router } from '@inertiajs/vue3';
 import { Link } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
+import Swal from 'sweetalert2';
 
 const props = defineProps({
   transfers: Object,
@@ -153,38 +151,40 @@ function goToPage(url) {
   if (url) router.visit(url, { preserveState: true, replace: true });
 }
 
-function goToEdit(id) {
-  router.visit(`/warehouse-transfer/${id}/edit`);
-}
-
 function goToDetail(id) {
   router.visit(`/warehouse-transfer/${id}`);
 }
 
 function confirmDelete(id) {
   if (!id) return;
-  import('sweetalert2').then(({ default: Swal }) => {
-    Swal.fire({
-      title: 'Hapus Pindah Gudang?',
-      text: 'Data yang dihapus tidak dapat dikembalikan.',
-      icon: 'warning',
-      showCancelButton: true,
-      confirmButtonColor: '#3085d6',
-      cancelButtonColor: '#d33',
-      confirmButtonText: 'Ya, Hapus!',
-      cancelButtonText: 'Batal'
-    }).then((result) => {
-      if (result.isConfirmed) {
-        router.delete(`/warehouse-transfer/${id}`, {
-          onSuccess: () => {
-            Swal.fire('Berhasil', 'Data berhasil dihapus!', 'success');
-          },
-          onError: () => {
-            Swal.fire('Gagal', 'Gagal menghapus data', 'error');
-          }
-        });
-      }
-    });
+  Swal.fire({
+    title: 'Apakah Anda yakin?',
+    text: "Data yang dihapus tidak dapat dikembalikan!",
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonColor: '#3085d6',
+    cancelButtonColor: '#d33',
+    confirmButtonText: 'Ya, hapus!',
+    cancelButtonText: 'Batal'
+  }).then((result) => {
+    if (result.isConfirmed) {
+      router.delete(route('warehouse-transfer.destroy', id), {
+        onSuccess: () => {
+          Swal.fire(
+            'Terhapus!',
+            'Data berhasil dihapus.',
+            'success'
+          );
+        },
+        onError: () => {
+          Swal.fire(
+            'Error!',
+            'Terjadi kesalahan saat menghapus data.',
+            'error'
+          );
+        }
+      });
+    }
   });
 }
 </script> 

@@ -275,7 +275,6 @@ function printFO() {
                 <th class="py-2 text-left">Qty Order</th>
                 <th class="py-2 text-left">Input Qty</th>
                 <th class="py-2 text-left">Unit</th>
-                <th class="py-2 text-left">Sumber</th>
               </tr>
             </thead>
             <tbody>
@@ -293,12 +292,6 @@ function printFO() {
                   <button type="button" @click="item.input_qty = item.qty ?? item.qty_order" class="px-2 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200" title="Isi qty sesuai pesanan">=</button>
                 </td>
                 <td>{{ item.unit }}</td>
-                <td>
-                  <label class="inline-flex items-center gap-2 cursor-pointer">
-                    <input type="checkbox" v-model="item.source" true-value="supplier" false-value="warehouse" />
-                    Supplier
-                  </label>
-                </td>
               </tr>
             </tbody>
           </table>
@@ -394,7 +387,6 @@ function printFO() {
                     <th class="py-2 px-3 text-left">Qty Order</th>
                     <th class="py-2 px-3 text-left">Qty Input</th>
                     <th class="py-2 px-3 text-left">Unit</th>
-                    <th class="py-2 px-3 text-left">Sumber</th>
                     <th class="py-2 px-3 text-left">Alasan (jika ada)</th>
                   </tr>
                 </thead>
@@ -405,7 +397,6 @@ function printFO() {
                     <td class="py-2 px-3">{{ item.qty ?? item.qty_order }}</td>
                     <td class="py-2 px-3">{{ item.input_qty }}</td>
                     <td class="py-2 px-3">{{ item.unit }}</td>
-                    <td class="py-2 px-3">{{ item.source === 'supplier' ? 'Supplier' : 'Warehouse' }}</td>
                     <td class="py-2 px-3 text-red-600">{{ item.reason || '-' }}</td>
                   </tr>
                 </tbody>

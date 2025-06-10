@@ -119,12 +119,22 @@ class ButcherReportController extends Controller
         $from = $request->input('from');
         $to = $request->input('to');
         $query = \DB::table('butcher_processes as bp')
-            ->join('items as i', 'bp.result_item_id', '=', 'i.id')
-            ->join('units as u', 'i.small_unit_id', '=', 'u.id')
-            ->select('bp.process_date', 'i.name as item_name', 'bp.result_qty', 'u.name as unit_name');
+            ->join('butcher_process_items as bpi', 'bpi.butcher_process_id', '=', 'bp.id')
+            ->join('items as i', 'bpi.pcs_item_id', '=', 'i.id')
+            ->join('units as u', 'bpi.unit_id', '=', 'u.id')
+            ->leftJoin('butcher_process_item_details as bpid', 'bpid.butcher_process_item_id', '=', 'bpi.id')
+            ->select(
+                'bp.process_date',
+                'i.name as item_name',
+                \DB::raw('SUM(bpi.pcs_qty) as total_pcs_qty'),
+                \DB::raw('SUM(bpid.qty_kg) as total_qty_kg'),
+                'u.name as unit_name'
+            );
         if ($from) $query->whereDate('bp.process_date', '>=', $from);
         if ($to) $query->whereDate('bp.process_date', '<=', $to);
-        $data = $query->orderBy('bp.process_date', 'desc')->get();
+        $data = $query->groupBy('bp.process_date', 'i.name', 'u.name')
+            ->orderBy('bp.process_date', 'desc')
+            ->get();
         return inertia('ButcherReport/Summary', [
             'data' => $data,
             'filters' => [

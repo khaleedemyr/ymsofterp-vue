@@ -109,220 +109,75 @@ class OutletFoodGoodReceiveController extends Controller
     public function storeScan(Request $request)
     {
         $request->validate([
-            'outlet_food_good_receive_id' => 'required|exists:outlet_food_good_receives,id',
+            'good_receive_id' => 'required|exists:outlet_food_good_receives,id',
             'barcode' => 'required|string',
-            'qty' => 'required|numeric|min:1',
-            'exp_date' => 'nullable|date',
-            'batch_number' => 'nullable|string',
+            'qty' => 'nullable|numeric', // hanya diisi jika unit kg
         ]);
 
         DB::beginTransaction();
         try {
-            $gr = \App\Models\OutletFoodGoodReceive::with(['items', 'deliveryOrder'])->findOrFail($request->outlet_food_good_receive_id);
+            $gr = DB::table('outlet_food_good_receives')->where('id', $request->good_receive_id)->first();
+            if (!$gr) throw new \Exception('Good Receive tidak ditemukan');
 
-            // Cari item_id dari barcode di item_barcodes
-            $itemBarcode = \DB::table('item_barcodes')->where('barcode', $request->barcode)->first();
-            if (!$itemBarcode) {
-                throw new \Exception('Barcode tidak ditemukan pada master item');
+            // Cari item di DO berdasarkan barcode
+            $item = DB::table('delivery_order_items as doi')
+                ->join('items as i', 'doi.item_id', '=', 'i.id')
+                ->where('doi.delivery_order_id', $gr->delivery_order_id)
+                ->where('i.barcode', $request->barcode)
+                ->select('doi.*', 'i.name as item_name', 'doi.unit')
+                ->first();
+            if (!$item) throw new \Exception('Item tidak ditemukan di DO');
+
+            // Cek satuan
+            if ($item->unit == 'pcs') {
+                $qtyToAdd = 1;
+            } else {
+                // kg, gr, liter, dst
+                if (!$request->qty || $request->qty <= 0) throw new \Exception('Qty harus diisi untuk item kiloan');
+                $qtyToAdd = $request->qty;
             }
-            $itemId = $itemBarcode->item_id;
 
-            // Temukan item pada GR
-            $grItem = $gr->items()->where('item_id', $itemId)->first();
-            if (!$grItem) {
-                throw new \Exception('Item tidak terdaftar pada Good Receive ini');
+            // Update qty_scan
+            $newQtyScan = $item->qty_scan + $qtyToAdd;
+            if ($newQtyScan > $item->qty_packing_list) {
+                throw new \Exception('Qty scan melebihi qty DO');
             }
-
-            // Simpan scan
-            $scan = $gr->scans()->create([
-                'outlet_food_good_receive_item_id' => $grItem->id,
-                'barcode' => $request->barcode,
-                'qty' => $request->qty,
-                'exp_date' => $request->exp_date,
-                'batch_number' => $request->batch_number,
-                'created_by' => auth()->id(),
+            DB::table('delivery_order_items')->where('id', $item->id)->update([
+                'qty_scan' => $newQtyScan,
+                'updated_at' => now(),
             ]);
 
-            // Update received_qty dan remaining_qty
-            $grItem->received_qty += $request->qty;
-            $grItem->remaining_qty = max(0, $grItem->qty - $grItem->received_qty);
-            $grItem->save();
-
-            // Ambil harga dari food_floor_order_items
-            $deliveryOrder = $gr->deliveryOrder;
-            if (!$deliveryOrder) {
-                throw new \Exception('Delivery Order tidak ditemukan pada GR ini');
-            }
-            $floorOrderId = $deliveryOrder->floor_order_id;
-            if (!$floorOrderId) {
-                throw new \Exception('floor_order_id tidak ditemukan pada Delivery Order');
-            }
-            $floorOrderItem = \DB::table('food_floor_order_items')
-                ->where('floor_order_id', $floorOrderId)
-                ->where('item_id', $itemId)
+            // Simpan ke outlet_food_good_receive_items jika belum ada
+            $grItem = DB::table('outlet_food_good_receive_items')
+                ->where('outlet_food_good_receive_id', $gr->id)
+                ->where('item_id', $item->item_id)
                 ->first();
-            if (!$floorOrderItem) {
-                throw new \Exception('Item tidak ditemukan pada Food Floor Order');
-            }
-            $price = $floorOrderItem->price;
-
-            // Ambil master item untuk konversi satuan
-            $itemMaster = \DB::table('items')->where('id', $itemId)->first();
-            if (!$itemMaster) {
-                throw new \Exception('Master item tidak ditemukan');
-            }
-            $unit_id = $grItem->unit_id;
-            $smallConv = $itemMaster->small_conversion_qty ?: 1;
-            $mediumConv = $itemMaster->medium_conversion_qty ?: 1;
-            $qty_small = 0; $qty_medium = 0; $qty_large = 0; $qty_small_for_value = 0;
-            if ($unit_id == $itemMaster->large_unit_id) {
-                $qty_large = (float) $request->qty;
-                $qty_medium = $qty_large * $mediumConv;
-                $qty_small = $qty_medium * $smallConv;
-                $qty_small_for_value = $qty_small;
-            } elseif ($unit_id == $itemMaster->medium_unit_id) {
-                $qty_medium = (float) $request->qty;
-                $qty_large = $mediumConv > 0 ? $qty_medium / $mediumConv : 0;
-                $qty_small = $qty_medium * $smallConv;
-                $qty_small_for_value = $qty_small;
-            } elseif ($unit_id == $itemMaster->small_unit_id) {
-                $qty_small = (float) $request->qty;
-                $qty_medium = $smallConv > 0 ? $qty_small / $smallConv : 0;
-                $qty_large = ($smallConv > 0 && $mediumConv > 0) ? $qty_small / ($smallConv * $mediumConv) : 0;
-                $qty_small_for_value = $qty_small;
-            }
-            // Hitung cost per unit
-            $cost_small = $price;
-            if ($unit_id == $itemMaster->large_unit_id) {
-                $cost_small = $price / (($itemMaster->small_conversion_qty ?: 1) * ($itemMaster->medium_conversion_qty ?: 1));
-            } elseif ($unit_id == $itemMaster->medium_unit_id) {
-                $cost_small = $price / ($itemMaster->small_conversion_qty ?: 1);
-            }
-            $cost_medium = $cost_small * ($itemMaster->small_conversion_qty ?: 1);
-            $cost_large = $cost_medium * ($itemMaster->medium_conversion_qty ?: 1);
-
-            // Insert/update ke outlet_food_inventory_items
-            $inventoryItem = \DB::table('outlet_food_inventory_items')->where('item_id', $itemId)->where('outlet_id', $gr->outlet_id)->first();
-            if (!$inventoryItem) {
-                $inventoryItemId = \DB::table('outlet_food_inventory_items')->insertGetId([
-                    'item_id' => $itemId,
-                    'outlet_id' => $gr->outlet_id,
-                    'small_unit_id' => $itemMaster->small_unit_id,
-                    'medium_unit_id' => $itemMaster->medium_unit_id,
-                    'large_unit_id' => $itemMaster->large_unit_id,
+            if (!$grItem) {
+                DB::table('outlet_food_good_receive_items')->insert([
+                    'outlet_food_good_receive_id' => $gr->id,
+                    'item_id' => $item->item_id,
+                    'unit_id' => null, // bisa diisi jika perlu
+                    'qty' => $item->qty_packing_list,
+                    'received_qty' => $qtyToAdd,
+                    'remaining_qty' => $item->qty_packing_list - $qtyToAdd,
                     'created_at' => now(),
                     'updated_at' => now(),
                 ]);
             } else {
-                $inventoryItemId = $inventoryItem->id;
-            }
-
-            // Insert/update ke outlet_food_inventory_stocks (pakai outlet_id)
-            $existingStock = \DB::table('outlet_food_inventory_stocks')
-                ->where('inventory_item_id', $inventoryItemId)
-                ->where('outlet_id', $gr->outlet_id)
-                ->first();
-            $qty_lama = $existingStock ? $existingStock->qty_small : 0;
-            $nilai_lama = $existingStock ? $existingStock->value : 0;
-            $qty_baru = $qty_small;
-            $nilai_baru = $qty_small_for_value * $cost_small;
-            $total_qty = $qty_lama + $qty_baru;
-            $total_nilai = $nilai_lama + $nilai_baru;
-            $mac = $total_qty > 0 ? $total_nilai / $total_qty : $cost_small;
-            if ($existingStock) {
-                \DB::table('outlet_food_inventory_stocks')
-                    ->where('id', $existingStock->id)
+                DB::table('outlet_food_good_receive_items')
+                    ->where('id', $grItem->id)
                     ->update([
-                        'qty_small' => $total_qty,
-                        'qty_medium' => $existingStock->qty_medium + $qty_medium,
-                        'qty_large' => $existingStock->qty_large + $qty_large,
-                        'value' => $total_nilai,
-                        'last_cost_small' => $mac,
-                        'last_cost_medium' => $cost_medium,
-                        'last_cost_large' => $cost_large,
+                        'received_qty' => $grItem->received_qty + $qtyToAdd,
+                        'remaining_qty' => $item->qty_packing_list - ($grItem->received_qty + $qtyToAdd),
                         'updated_at' => now(),
                     ]);
-            } else {
-                \DB::table('outlet_food_inventory_stocks')->insert([
-                    'inventory_item_id' => $inventoryItemId,
-                    'outlet_id' => $gr->outlet_id,
-                    'qty_small' => $qty_small,
-                    'qty_medium' => $qty_medium,
-                    'qty_large' => $qty_large,
-                    'value' => $nilai_baru,
-                    'last_cost_small' => $cost_small,
-                    'last_cost_medium' => $cost_medium,
-                    'last_cost_large' => $cost_large,
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ]);
             }
-
-            // Insert ke outlet_food_inventory_cards (stock card)
-            $lastCard = \DB::table('outlet_food_inventory_cards')
-                ->where('inventory_item_id', $inventoryItemId)
-                ->where('outlet_id', $gr->outlet_id)
-                ->orderByDesc('date')
-                ->orderByDesc('id')
-                ->first();
-            if ($lastCard) {
-                $saldo_qty_small = $lastCard->saldo_qty_small + $qty_small;
-                $saldo_qty_medium = $lastCard->saldo_qty_medium + $qty_medium;
-                $saldo_qty_large = $lastCard->saldo_qty_large + $qty_large;
-            } else {
-                $saldo_qty_small = $qty_small;
-                $saldo_qty_medium = $qty_medium;
-                $saldo_qty_large = $qty_large;
-            }
-            \DB::table('outlet_food_inventory_cards')->insert([
-                'inventory_item_id' => $inventoryItemId,
-                'outlet_id' => $gr->outlet_id,
-                'date' => now(),
-                'reference_type' => 'good_receive',
-                'reference_id' => $gr->id,
-                'in_qty_small' => $qty_small,
-                'in_qty_medium' => $qty_medium,
-                'in_qty_large' => $qty_large,
-                'out_qty_small' => 0,
-                'out_qty_medium' => 0,
-                'out_qty_large' => 0,
-                'cost_per_small' => $cost_small,
-                'cost_per_medium' => $cost_medium,
-                'cost_per_large' => $cost_large,
-                'value_in' => $qty_small_for_value * $cost_small,
-                'value_out' => 0,
-                'saldo_qty_small' => $saldo_qty_small,
-                'saldo_qty_medium' => $saldo_qty_medium,
-                'saldo_qty_large' => $saldo_qty_large,
-                'saldo_value' => $saldo_qty_small * $cost_small,
-                'description' => 'Good Receive',
-                'created_at' => now(),
-            ]);
-
-            // Insert ke outlet_food_inventory_cost_histories
-            \DB::table('outlet_food_inventory_cost_histories')->insert([
-                'inventory_item_id' => $inventoryItemId,
-                'id_outlet' => $gr->outlet_id,
-                'date' => now(),
-                'old_cost' => $cost_small,
-                'new_cost' => $cost_small,
-                'mac' => $mac,
-                'type' => 'good_receive',
-                'reference_type' => 'good_receive',
-                'reference_id' => $gr->id,
-                'created_at' => now(),
-            ]);
 
             DB::commit();
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Scan berhasil disimpan',
-                'scan' => $scan,
-            ]);
+            return response()->json(['success' => true]);
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 400);
         }
     }
 
@@ -386,5 +241,214 @@ class OutletFoodGoodReceiveController extends Controller
                 'items' => $items,
             ]
         ]);
+    }
+
+    public function availableDOs(Request $request)
+    {
+        $q = $request->input('q');
+        $query = DB::table('delivery_orders as do')
+            ->leftJoin('outlet_food_good_receives as gr', function($join) {
+                $join->on('gr.delivery_order_id', '=', 'do.id')->whereNull('gr.deleted_at');
+            })
+            ->whereNull('gr.id');
+        if ($q) {
+            $query->where('do.number', 'like', "%$q%");
+        }
+        $dos = $query->orderByDesc('do.created_at')
+            ->select('do.id', 'do.number')
+            ->limit(20)
+            ->get();
+        return response()->json($dos);
+    }
+
+    public function doDetail($do_id)
+    {
+        // Info DO, Packing List, FO
+        $do = DB::table('delivery_orders as do')
+            ->leftJoin('food_packing_lists as pl', 'do.packing_list_id', '=', 'pl.id')
+            ->leftJoin('food_floor_orders as fo', 'do.floor_order_id', '=', 'fo.id')
+            ->select(
+                'do.id as do_id', 'do.number as do_number', 'do.packing_list_id', 'do.floor_order_id',
+                'pl.packing_number', 'pl.reason as packing_reason',
+                'fo.order_number as floor_order_number', 'fo.tanggal as floor_order_date', 'fo.description as floor_order_desc',
+                'do.created_at as do_created_at'
+            )
+            ->where('do.id', $do_id)
+            ->first();
+
+        // List item DO
+        $items = DB::table('delivery_order_items as doi')
+            ->leftJoin('items as i', 'doi.item_id', '=', 'i.id')
+            ->leftJoin('units as u', 'i.small_unit_id', '=', 'u.id')
+            ->select(
+                'doi.id as delivery_order_item_id',
+                'doi.item_id',
+                'i.name as item_name',
+                'doi.qty_packing_list',
+                'doi.qty_scan',
+                'doi.unit',
+                'i.barcode',
+                'u.name as unit_name'
+            )
+            ->where('doi.delivery_order_id', $do_id)
+            ->get();
+
+        return response()->json([
+            'do' => $do,
+            'items' => $items,
+        ]);
+    }
+
+    public function submit(Request $request, $id)
+    {
+        $gr = DB::table('outlet_food_good_receives')->where('id', $id)->first();
+        if (!$gr) {
+            return response()->json(['success' => false, 'message' => 'Good Receive tidak ditemukan'], 404);
+        }
+        // Ambil semua item DO
+        $items = DB::table('delivery_order_items')
+            ->where('delivery_order_id', $gr->delivery_order_id)
+            ->get();
+        foreach ($items as $item) {
+            if (floatval($item->qty_scan) < floatval($item->qty_packing_list)) {
+                return response()->json(['success' => false, 'message' => 'Masih ada item yang belum discan sesuai qty DO!'], 400);
+            }
+        }
+        // Update status GR
+        DB::table('outlet_food_good_receives')->where('id', $id)->update([
+            'status' => 'done',
+            'updated_at' => now(),
+            'updated_by' => auth()->id(),
+        ]);
+        return response()->json(['success' => true]);
+    }
+
+    public function processStock($id)
+    {
+        DB::beginTransaction();
+        try {
+            $gr = DB::table('outlet_food_good_receives')->where('id', $id)->first();
+            if (!$gr) throw new \Exception('Good Receive tidak ditemukan');
+            if ($gr->status !== 'done') throw new \Exception('GR belum disubmit atau sudah diproses');
+
+            $items = DB::table('outlet_food_good_receive_items')->where('outlet_food_good_receive_id', $id)->get();
+            foreach ($items as $item) {
+                // Ambil master item
+                $itemMaster = DB::table('items')->where('id', $item->item_id)->first();
+                if (!$itemMaster) continue;
+
+                // Insert/update outlet_food_inventory_items
+                $inventoryItem = DB::table('outlet_food_inventory_items')
+                    ->where('item_id', $item->item_id)
+                    ->where('outlet_id', $gr->outlet_id)
+                    ->first();
+                if (!$inventoryItem) {
+                    $inventoryItemId = DB::table('outlet_food_inventory_items')->insertGetId([
+                        'item_id' => $item->item_id,
+                        'outlet_id' => $gr->outlet_id,
+                        'small_unit_id' => $itemMaster->small_unit_id,
+                        'medium_unit_id' => $itemMaster->medium_unit_id,
+                        'large_unit_id' => $itemMaster->large_unit_id,
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+                } else {
+                    $inventoryItemId = $inventoryItem->id;
+                }
+
+                // Konversi qty ke small/medium/large
+                $unit = DB::table('units')->where('id', $item->unit_id)->value('name');
+                $qty_input = $item->received_qty;
+                $qty_small = 0; $qty_medium = 0; $qty_large = 0;
+                $unitSmall = DB::table('units')->where('id', $itemMaster->small_unit_id)->value('name');
+                $unitMedium = DB::table('units')->where('id', $itemMaster->medium_unit_id)->value('name');
+                $unitLarge = DB::table('units')->where('id', $itemMaster->large_unit_id)->value('name');
+                $smallConv = $itemMaster->small_conversion_qty ?: 1;
+                $mediumConv = $itemMaster->medium_conversion_qty ?: 1;
+                if ($unit === $unitSmall) {
+                    $qty_small = $qty_input;
+                    $qty_medium = $smallConv > 0 ? $qty_small / $smallConv : 0;
+                    $qty_large = ($smallConv > 0 && $mediumConv > 0) ? $qty_small / ($smallConv * $mediumConv) : 0;
+                } elseif ($unit === $unitMedium) {
+                    $qty_medium = $qty_input;
+                    $qty_small = $qty_medium * $smallConv;
+                    $qty_large = $mediumConv > 0 ? $qty_medium / $mediumConv : 0;
+                } elseif ($unit === $unitLarge) {
+                    $qty_large = $qty_input;
+                    $qty_medium = $qty_large * $mediumConv;
+                    $qty_small = $qty_medium * $smallConv;
+                } else {
+                    $qty_small = $qty_input;
+                }
+
+                // Update/insert outlet_food_inventory_stocks
+                $stock = DB::table('outlet_food_inventory_stocks')
+                    ->where('inventory_item_id', $inventoryItemId)
+                    ->where('id_outlet', $gr->outlet_id)
+                    ->first();
+                if ($stock) {
+                    DB::table('outlet_food_inventory_stocks')
+                        ->where('id', $stock->id)
+                        ->update([
+                            'qty_small' => $stock->qty_small + $qty_small,
+                            'qty_medium' => $stock->qty_medium + $qty_medium,
+                            'qty_large' => $stock->qty_large + $qty_large,
+                            'value' => ($stock->qty_small + $qty_small) * $stock->last_cost_small,
+                            'updated_at' => now(),
+                        ]);
+                } else {
+                    DB::table('outlet_food_inventory_stocks')->insert([
+                        'inventory_item_id' => $inventoryItemId,
+                        'id_outlet' => $gr->outlet_id,
+                        'qty_small' => $qty_small,
+                        'qty_medium' => $qty_medium,
+                        'qty_large' => $qty_large,
+                        'value' => $qty_small * 0, // cost bisa diisi jika ada
+                        'last_cost_small' => 0,
+                        'last_cost_medium' => 0,
+                        'last_cost_large' => 0,
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+                }
+
+                // Insert kartu stok (stock in)
+                DB::table('outlet_food_inventory_cards')->insert([
+                    'inventory_item_id' => $inventoryItemId,
+                    'id_outlet' => $gr->outlet_id,
+                    'date' => $gr->receive_date,
+                    'reference_type' => 'good_receive_outlet',
+                    'reference_id' => $gr->id,
+                    'in_qty_small' => $qty_small,
+                    'in_qty_medium' => $qty_medium,
+                    'in_qty_large' => $qty_large,
+                    'out_qty_small' => 0,
+                    'out_qty_medium' => 0,
+                    'out_qty_large' => 0,
+                    'cost_per_small' => 0,
+                    'cost_per_medium' => 0,
+                    'cost_per_large' => 0,
+                    'value_in' => 0,
+                    'value_out' => 0,
+                    'saldo_qty_small' => $stock ? $stock->qty_small + $qty_small : $qty_small,
+                    'saldo_qty_medium' => $stock ? $stock->qty_medium + $qty_medium : $qty_medium,
+                    'saldo_qty_large' => $stock ? $stock->qty_large + $qty_large : $qty_large,
+                    'saldo_value' => 0,
+                    'description' => 'Good Receive Outlet',
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            }
+            // Update status GR jadi 'stocked'
+            DB::table('outlet_food_good_receives')->where('id', $id)->update([
+                'status' => 'stocked',
+                'updated_at' => now(),
+            ]);
+            DB::commit();
+            return response()->json(['success' => true]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json(['success' => false, 'message' => $e->getMessage()]);
+        }
     }
 } 

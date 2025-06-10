@@ -70,11 +70,25 @@
                                 <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium flex items-center justify-end gap-2">
                                     <input type="number" v-model.number="qtyPrint[barcode.id]" min="1" class="w-14 border rounded px-1 mr-2" />
                                     <button
-                                        @click="printBarcode(barcode.barcode, qtyPrint[barcode.id] || 1)"
+                                        @click="downloadPDF(barcode.barcode, qtyPrint[barcode.id] || 1)"
                                         class="text-blue-600 hover:text-blue-900 mr-2"
-                                        title="Print Barcode"
+                                        title="Download PDF"
                                     >
                                         <i class="fa-solid fa-print"></i>
+                                    </button>
+                                    <button
+                                        @click="printBarcode(barcode.barcode, props.item?.name, qtyPrint[barcode.id] || 1)"
+                                        class="text-green-600 hover:text-green-900 mr-2"
+                                        title="Print ZPL"
+                                    >
+                                        <i class="fa-solid fa-barcode"></i> Print ZPL
+                                    </button>
+                                    <button
+                                        @click="downloadZPL(barcode.barcode, props.item?.name)"
+                                        class="text-orange-600 hover:text-orange-900 mr-2"
+                                        title="Download ZPL"
+                                    >
+                                        <i class="fa-solid fa-download"></i> ZPL
                                     </button>
                                     <button
                                         @click="deleteBarcode(barcode)"
@@ -96,6 +110,20 @@
             </div>
         </div>
     </Modal>
+    <teleport to="body">
+      <div v-if="showPrintPreview" class="fixed inset-0 z-[99999] flex items-center justify-center bg-black/60">
+        <div class="bg-white rounded-xl shadow-lg p-4">
+          <PrintPreview
+            :sku="printPreviewData.sku"
+            :name="printPreviewData.name"
+            :qty="printPreviewData.qty"
+          />
+          <div class="flex justify-end mt-4">
+            <button @click="showPrintPreview = false" class="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300">Tutup</button>
+          </div>
+        </div>
+      </div>
+    </teleport>
 </template>
 
 <script setup>
@@ -106,6 +134,9 @@ import PrimaryButton from '@/Components/PrimaryButton.vue';
 import SecondaryButton from '@/Components/SecondaryButton.vue';
 import { useForm } from '@inertiajs/vue3';
 import axios from 'axios';
+import PrintPreview from './PrintPreview.vue';
+import JsBarcode from 'jsbarcode';
+import jsPDF from 'jspdf';
 
 const props = defineProps({
     show: Boolean,
@@ -122,6 +153,8 @@ const selectedCameraId = ref('');
 let html5QrCode = null;
 const isSaving = ref(false);
 const qtyPrint = ref({});
+const showPrintPreview = ref(false);
+const printPreviewData = ref({ sku: '', name: '', qty: 1 });
 
 const form = useForm({
     barcode: '',
@@ -282,46 +315,152 @@ onBeforeUnmount(() => {
     }
 });
 
-function printBarcode(barcode, qty = 1) {
-    const printWindow = window.open('', '', 'width=400,height=300');
-    const barcodes = Array(qty).fill(barcode);
-    const rows = [];
-    for (let i = 0; i < barcodes.length; i += 2) {
-        rows.push(barcodes.slice(i, i + 2));
+function generateZplBarcode(sku, name) {
+    // Konfigurasi label
+    const labelWidth = 30; // 3cm = 30mm
+    const labelHeight = 15; // 1.5cm = 15mm
+    const gap = 2; // 0.2cm = 2mm
+    const dpi = 203; // DPI Zebra ZD220
+    
+    // Konversi mm ke dots (1mm = 8 dots pada 203 DPI)
+    const widthInDots = labelWidth * 8;
+    const heightInDots = labelHeight * 8;
+    const gapInDots = gap * 8;
+    
+    // Generate ZPL code
+    let zpl = '';
+    
+    // Set label size dan gap
+    zpl += `^Q${heightInDots},${gapInDots}\n`; // Set label height and gap
+    zpl += `^W${widthInDots}\n`; // Set label width
+    
+    // Set font dan ukuran
+    zpl += `^A0N,20,20\n`; // Font 0, height 20, width 20
+    
+    // Barcode Code128
+    zpl += `^FO10,10^BY2\n`; // Field Origin, Barcode field default
+    zpl += `^BCN,50,Y,N,N\n`; // Code128, height 50, print human readable, no check digit
+    zpl += `^FD${sku}^FS\n`; // Field Data, Field Separator
+    
+    // Nama item (2 baris jika panjang)
+    const maxCharsPerLine = 20;
+    if (name.length > maxCharsPerLine) {
+        const firstLine = name.substring(0, maxCharsPerLine);
+        const secondLine = name.substring(maxCharsPerLine);
+        zpl += `^FO10,70^A0N,15,15^FD${firstLine}^FS\n`;
+        zpl += `^FO10,90^A0N,15,15^FD${secondLine}^FS\n`;
+    } else {
+        zpl += `^FO10,70^A0N,15,15^FD${name}^FS\n`;
     }
-    const html = [
-        '<html>',
-        '<head>',
-        '<title>Print Barcode</title>',
-        '<style>',
-        '@media print { body { margin: 0; } }',
-        'body { margin: 0; padding: 0; }',
-        '.label-row { display: flex; flex-direction: row; width: 6cm; height: 1.5cm; margin: 0; padding: 0; }',
-        '.label-cell { width: 3cm; height: 1.5cm; display: flex; flex-direction: column; align-items: center; justify-content: center; border: none; margin: 0; padding: 0; }',
-        '.barcode-svg { width: 2.8cm; height: 1.3cm; }',
-        '.barcode-value { font-size: 14px; text-align: center; margin-top: -0.2cm; }',
-        '</style>',
-        '</head>',
-        '<body>',
-        '<div id="labels">',
-        rows.map(row => `\n      <div class="label-row">\n        ${row.map(bc => '<div class="label-cell"><svg class="barcode-svg"></svg></div>').join('')}\n        ${row.length === 1 ? '<div class="label-cell"></div>' : ''}\n      </div>\n    `).join(''),
-        '</div>',
-        '<script src="https://cdn.jsdelivr.net/npm/jsbarcode/dist/JsBarcode.all.min.js"><\/script>',
-        '<script>',
-        'window.onload = function() {',
-        '  const svgs = document.querySelectorAll(".barcode-svg");',
-        '  svgs.forEach((svg, idx) => {',
-        '    JsBarcode(svg, "' + barcode + '", {format: "CODE128", width:3, height:90, displayValue:true, fontSize:14, margin:0});',
-        '  });',
-        '  window.print();',
-        '  setTimeout(() => window.close(), 500);',
-        '}',
-        '<\/script>',
-        '</body>',
-        '</html>'
-    ].join('');
-    printWindow.document.write(html);
-    printWindow.document.close();
+    
+    return zpl;
+}
+
+function printBarcode(sku, name, qty = 1) {
+    // Generate array barcode sesuai qty
+    const barcodes = Array(qty).fill({ sku, name });
+    
+    // Bagi per 3 untuk 1 baris label
+    const rows = [];
+    for (let i = 0; i < barcodes.length; i += 3) {
+        rows.push(barcodes.slice(i, i + 3));
+    }
+    
+    // Gabungkan ZPL untuk semua baris
+    let zplData = '';
+    rows.forEach(row => {
+        row.forEach(item => {
+            zplData += generateZplBarcode(item.sku, item.name);
+        });
+        zplData += '\n';
+    });
+    
+    // Print menggunakan Web USB API
+    async function printWithWebUSB() {
+        try {
+            // Request printer device (filter kosong)
+            const device = await navigator.usb.requestDevice({ filters: [] });
+            console.log(device);
+            await device.open();
+            await device.selectConfiguration(1);
+            await device.claimInterface(device.configuration.interfaces[0].interfaceNumber);
+            const encoder = new TextEncoder();
+            const data = encoder.encode(zplData);
+            await device.transferOut(1, data);
+            await device.close();
+            alert('Print berhasil!');
+        } catch (error) {
+            console.error('Print error:', error);
+            alert('Gagal print: ' + error.message);
+        }
+    }
+    
+    // Cek apakah Web USB API didukung
+    if (navigator.usb) {
+        printWithWebUSB();
+    } else {
+        alert('Browser Anda tidak mendukung Web USB API. Gunakan Chrome, Edge, atau Opera terbaru.');
+    }
+}
+
+function openPrintPreview(barcode, qty) {
+    printPreviewData.value = {
+        sku: barcode,
+        name: props.item?.name || '',
+        qty: qty || 1,
+    };
+    showPrintPreview.value = true;
+}
+
+function downloadZPL(sku, name) {
+    const zpl = generateZplBarcode(sku, name);
+    const blob = new Blob([zpl], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${sku}.zpl`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
+function downloadPDF(barcode, qty) {
+    // Setup label dan PDF
+    const labelWidth = 30; // 3cm
+    const labelHeight = 15; // 1.5cm
+    const gap = 3; // 0.3cm
+    const numLabels = qty || 1;
+    const numRows = Math.ceil(numLabels / 3);
+    const pdfWidth = 94; // 9.4cm
+    const pdfHeight = numRows * labelHeight;
+    const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: [pdfWidth, pdfHeight] });
+
+    // Generate array barcode sesuai qty
+    const barcodes = Array(numLabels).fill(barcode);
+    let y = 0;
+    for (let rowIdx = 0; rowIdx < numRows; rowIdx++) {
+        for (let colIdx = 0; colIdx < 3; colIdx++) {
+            const idx = rowIdx * 3 + colIdx;
+            if (idx >= barcodes.length) continue;
+            const x = colIdx * (labelWidth + gap);
+            const sku = barcodes[idx];
+            // Render barcode ke canvas proporsional, scale 3x
+            const areaBarcodeW = labelWidth - 4; // 26mm
+            const areaBarcodeH = 14; // mm
+            const scale = 3;
+            const canvas = document.createElement('canvas');
+            canvas.width = areaBarcodeW * scale;
+            canvas.height = areaBarcodeH * scale;
+            JsBarcode(canvas, sku, { width: 1.5 * scale, height: areaBarcodeH * scale, displayValue: false });
+            // Masukkan barcode ke PDF (ukuran asli)
+            doc.addImage(canvas, 'PNG', x + 2, y + 1.5, areaBarcodeW, areaBarcodeH);
+            doc.setFontSize(8);
+            doc.text(sku, x + labelWidth / 2, y + 13.5, { align: 'center' }); // SKU
+        }
+        y += labelHeight;
+    }
+    doc.save(`${barcode}_labels.pdf`);
 }
 </script>
 

@@ -282,6 +282,38 @@ const getCurrentDay = () => {
 
 // Check FO Schedule
 async function checkFOSchedule() {
+  if (selectedFOMode.value === 'RO Khusus') {
+    jadwalSiap.value = true;
+    loading.value = false;
+    loadingItems.value = false;
+    error.value = '';
+    // Fetch item khusus jika belum
+    if (!categories.value.length) {
+      loadingItems.value = true;
+      try {
+        const res = await axios.get('/api/items/by-fo-khusus', {
+          params: {
+            region_id: region_id.value,
+            outlet_id: outlet_id.value
+          }
+        });
+        itemsByFOSchedule.value = res.data.items || [];
+        // Kelompokkan per kategori
+        const grouped = {};
+        itemsByFOSchedule.value.forEach(item => {
+          if (!grouped[item.category_id]) grouped[item.category_id] = { id: item.category_id, name: item.category_name || '-', items: [] };
+          grouped[item.category_id].items.push({ ...item, qty: 0 });
+        });
+        categories.value = Object.values(grouped);
+      } catch (e) {
+        itemsByFOSchedule.value = [];
+        categories.value = [];
+      } finally {
+        loadingItems.value = false;
+      }
+    }
+    return;
+  }
   if (!selectedFOMode.value) {
     error.value = 'Silakan pilih mode FO terlebih dahulu';
     return;
@@ -692,7 +724,7 @@ const categorySubtotals = computed(() => {
         <i class="fas fa-spinner fa-spin text-blue-500 text-2xl"></i>
         <p class="mt-2 text-gray-600">Memeriksa jadwal RO...</p>
       </div>
-      <div v-if="error" class="bg-red-50 border-l-4 border-red-500 p-4 mb-6">
+      <div v-if="error && selectedFOMode !== 'RO Khusus'" class="bg-red-50 border-l-4 border-red-500 p-4 mb-6">
         <div class="flex">
           <div class="flex-shrink-0">
             <i class="fas fa-exclamation-circle text-red-500"></i>
@@ -702,7 +734,7 @@ const categorySubtotals = computed(() => {
           </div>
         </div>
       </div>
-      <div v-if="outletSchedules.length" class="bg-red-50 border-l-4 border-red-500 p-4 mb-6">
+      <div v-if="outletSchedules.length && selectedFOMode !== 'RO Khusus'" class="bg-red-50 border-l-4 border-red-500 p-4 mb-6">
         <div class="font-semibold text-gray-700 mb-1">Jadwal RO Outlet Anda:</div>
         <div v-for="(schedules, mode) in groupedSchedules" :key="mode" class="mb-3">
           <div class="font-bold text-blue-700 mb-1">{{ mode }}</div>

@@ -347,7 +347,7 @@ class WarehouseTransferController extends Controller
 
     public function show($id)
     {
-        $transfer = WarehouseTransfer::with(['items.item', 'warehouseFrom', 'warehouseTo', 'creator'])->findOrFail($id);
+        $transfer = WarehouseTransfer::with(['items.item', 'items.unit', 'warehouseFrom', 'warehouseTo', 'creator'])->findOrFail($id);
         return inertia('WarehouseTransfer/Show', [
             'transfer' => $transfer
         ]);

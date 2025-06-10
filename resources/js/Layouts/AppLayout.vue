@@ -65,6 +65,14 @@ const menuGroups = [
         menus: [
             { name: () => 'Request Order (RO)', icon: 'fa-solid fa-calendar-check', route: '/floor-order', code: 'floor_order' },
             { name: () => 'Outlet Good Receive', icon: 'fa-solid fa-truck-loading', route: '/outlet-food-good-receives', code: 'outlet_food_good_receive' },
+            { name: () => 'Outlet Stock Adjustment', icon: 'fa-solid fa-boxes-stacked', route: '/outlet-food-inventory-adjustment', code: 'outlet_stock_adjustment' },
+            { name: () => 'Laporan Stok Akhir Outlet', icon: 'fa-solid fa-clipboard-list', route: '/outlet-inventory/stock-position', code: 'outlet_inventory_stock_position' },
+            { name: () => 'Saldo Awal Stok Outlet', icon: 'fa-solid fa-warehouse', route: '/outlet-stock-balances', code: 'outlet_stock_balances' },
+            { name: () => 'Kartu Stok Outlet', icon: 'fa-solid fa-file-lines', route: '/outlet-inventory/stock-card', code: 'outlet_stock_card' },
+            { name: () => 'Laporan Nilai Persediaan Outlet', icon: 'fa-solid fa-coins', route: '/outlet-inventory/inventory-value-report', code: 'outlet_inventory_value_report' },
+            { name: () => 'Laporan Rekap Persediaan per Kategori Outlet', icon: 'fa-solid fa-chart-pie', route: '/outlet-inventory/category-recap-report', code: 'outlet_category_recap_report' },
+            { name: () => 'Internal Use & Waste Outlet', icon: 'fa-solid fa-trash', route: '/outlet-internal-use-waste', code: 'outlet_internal_use_waste' },
+            { name: () => 'Retail Food', icon: 'fa-solid fa-store', route: '/retail-food', code: 'view-retail-food' },
         ],
     },
     {

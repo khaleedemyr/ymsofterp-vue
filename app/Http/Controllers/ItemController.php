@@ -1677,4 +1677,69 @@ class ItemController extends Controller
             ], 500);
         }
     }
+
+    public function apiIndex()
+    {
+        $items = \App\Models\Item::with(['barcodes:id,item_id,barcode'])
+            ->select('id', 'name')
+            ->get();
+        return response()->json($items);
+    }
+
+    public function searchForOutletTransfer(Request $request)
+    {
+        $q = $request->q;
+        $outlet_id = $request->outlet_id;
+        $region_id = $request->region_id;
+
+        $items = \DB::table('item_availabilities')
+            ->join('items', 'item_availabilities.item_id', '=', 'items.id')
+            ->leftJoin('units as u_small', 'items.small_unit_id', '=', 'u_small.id')
+            ->leftJoin('units as u_medium', 'items.medium_unit_id', '=', 'u_medium.id')
+            ->leftJoin('units as u_large', 'items.large_unit_id', '=', 'u_large.id')
+            ->where(function($query) use ($outlet_id, $region_id) {
+                $query->where('item_availabilities.availability_type', 'all')
+                    ->orWhere(function($q) use ($region_id) {
+                        $q->where('item_availabilities.availability_type', 'region')
+                          ->where('item_availabilities.region_id', $region_id);
+                    })
+                    ->orWhere(function($q) use ($outlet_id) {
+                        $q->where('item_availabilities.availability_type', 'outlet')
+                          ->where('item_availabilities.outlet_id', $outlet_id);
+                    });
+            })
+            ->where(function($query) use ($q) {
+                $query->where('items.name', 'like', "%$q%")
+                      ->orWhere('items.sku', 'like', "%$q%");
+            })
+            ->select(
+                'items.id',
+                'items.name',
+                'items.sku',
+                'u_small.name as unit_small',
+                'u_medium.name as unit_medium',
+                'u_large.name as unit_large',
+                'items.small_unit_id',
+                'items.medium_unit_id',
+                'items.large_unit_id'
+            )
+            ->limit(20)
+            ->get();
+
+        \Log::info('searchForOutletTransfer', [
+            'q' => $q,
+            'outlet_id' => $outlet_id,
+            'region_id' => $region_id,
+            'result_count' => $items->count(),
+            'first_item' => $items->first(),
+        ]);
+
+        foreach ($items as $item) {
+            $item->unit_small = optional(\DB::table('units')->where('id', $item->small_unit_id)->first())->name;
+            $item->unit_medium = optional(\DB::table('units')->where('id', $item->medium_unit_id)->first())->name;
+            $item->unit_large = optional(\DB::table('units')->where('id', $item->large_unit_id)->first())->name;
+        }
+
+        return response()->json($items);
+    }
 } 

@@ -18,4 +18,9 @@ class WarehouseTransferItem extends Model
     {
         return $this->belongsTo(Item::class, 'item_id');
     }
+
+    public function unit()
+    {
+        return $this->belongsTo(\App\Models\Unit::class, 'unit_id');
+    }
 } 
