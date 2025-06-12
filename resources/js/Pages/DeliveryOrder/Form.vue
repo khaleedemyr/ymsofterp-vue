@@ -77,7 +77,10 @@
           <div class="mb-6 text-lg">Yakin ingin submit Delivery Order ini?</div>
           <div class="flex justify-end gap-3">
             <button @click="showConfirmModal = false" class="px-4 py-2 text-gray-700 bg-gray-100 rounded hover:bg-gray-200">Batal</button>
-            <button @click="submitDO" class="px-4 py-2 text-white bg-blue-600 rounded hover:bg-blue-700 font-bold">Submit</button>
+            <button @click="submitDO" :disabled="loadingSubmit" class="px-4 py-2 text-white bg-blue-600 rounded hover:bg-blue-700 font-bold">
+              <i v-if="loadingSubmit" class="fa fa-spinner fa-spin mr-2"></i>
+              Submit
+            </button>
           </div>
         </div>
       </div>
@@ -105,9 +108,6 @@
       </div>
     </div>
   </AppLayout>
-  <teleport to="body">
-    <PrintStruk v-if="printStrukData" v-bind="printStrukData" />
-  </teleport>
 </template>
 
 <script setup>
@@ -115,10 +115,10 @@ import { ref, reactive, onMounted, nextTick, computed, h, createApp } from 'vue'
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { router } from '@inertiajs/vue3';
 import axios from 'axios';
-import PrintStruk from './PrintStruk.vue';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import QRCode from 'qrcode';
+import Swal from 'sweetalert2';
 
 const props = defineProps({
   packingLists: Array,
@@ -143,8 +143,9 @@ const reasonOptions = [
 ];
 const selectedReason = ref('');
 const loadingSubmit = ref(false);
-const printStrukData = ref(null);
 const doNumber = ref('');
+const error = ref("");
+const isLoading = ref(false);
 
 const isReadyToSubmit = computed(() => packingListItems.length > 0 && packingListItems.some(i => i.qty_scan > 0));
 const selectedPackingList = computed(() => packingLists.value.find(pl => pl.id == selectedPackingListId.value) || null);
@@ -166,7 +167,7 @@ function onScanBarcode() {
   if (!input) return;
   let code = input;
   let qty = 1;
-  const match = input.match(/^(\S+)\s+(\d+)$/);
+  const match = input.match(/^([\S]+)\s+(\d+)$/);
   if (match) {
     code = match[1];
     qty = parseInt(match[2], 10) || 1;
@@ -204,6 +205,13 @@ function onScanBarcode() {
       return;
     }
     item.qty_scan = currentScan + qty;
+    // Simpan barcode hasil scan
+    if (!item.barcode) item.barcode = [];
+    if (Array.isArray(item.barcode)) {
+      for (let i = 0; i < qty; i++) item.barcode.push(code);
+    } else {
+      item.barcode = [item.barcode, ...Array(qty-1).fill(code)];
+    }
     scanFeedback.value = `✔️ ${item.name} (${item.qty_scan}/${item.qty})`;
     scanFeedbackClass.value = Number(item.qty_scan).toFixed(2) === Number(item.qty).toFixed(2) ? 'text-green-700' : (Number(item.qty_scan) > Number(item.qty) ? 'text-red-700' : 'text-yellow-700');
   } else {
@@ -271,36 +279,6 @@ function confirmSubmit() {
   showConfirmModal.value = true;
 }
 
-function printStrukToNewWindow(strukData) {
-  const printWindow = window.open('', '', 'width=400,height=600');
-  if (!printWindow) return;
-  // Inject root dan style
-  printWindow.document.write(`
-    <html><head>
-      <title>Print Struk</title>
-      <style>
-        html, body { width: 80mm !important; margin: 0 !important; padding: 0 !important; background: #fff !important; }
-        body * { visibility: hidden !important; }
-        #struk, #struk * { visibility: visible !important; }
-        #struk { position: absolute !important; left: 0 !important; top: 0 !important; width: 80mm !important; min-width: 80mm !important; max-width: 80mm !important; margin: 0 !important; padding: 0 !important; background: #fff !important; z-index: 99999 !important; }
-      </style>
-    </head><body><div id="print-root"></div></body></html>
-  `);
-  printWindow.document.close();
-  // Render komponen struk ke window baru
-  const app = createApp({
-    render() {
-      return h(PrintStruk, strukData);
-    }
-  });
-  app.mount(printWindow.document.getElementById('print-root'));
-  setTimeout(() => {
-    printWindow.focus();
-    printWindow.print();
-    setTimeout(() => printWindow.close(), 500);
-  }, 500);
-}
-
 async function getBase64FromUrl(url) {
   const response = await fetch(url);
   const blob = await response.blob();
@@ -363,27 +341,48 @@ async function generateStrukPDF({ orderNumber, date, outlet, items }) {
 
 async function submitDO() {
   error.value = '';
-  let res;
+  loadingSubmit.value = true;
   try {
-    res = await fetch(`/api/delivery-orders/validate?number=${encodeURIComponent(doNumber.value)}`);
-    console.log('VALIDATE DO RESPONSE', res);
-    console.log('Status:', res.status, 'Content-Type:', res.headers.get('content-type'));
-    if (!res.ok) {
-      const text = await res.text();
-      console.error('Response not OK:', text);
-      error.value = 'Terjadi kesalahan server.';
-      return;
-    }
-    const data = await res.json();
-    console.log('VALIDATE DO DATA', data);
-    if (data.success && data.delivery_order_id) {
-      router.visit(`/outlet-food-good-receives/create-from-do/${data.delivery_order_id}`);
+    // Generate nomor DO
+    const date = new Date().toISOString().slice(2,10).replace(/-/g,'');
+    const random = Math.random().toString(36).substring(2,6).toUpperCase();
+    doNumber.value = `DO${date}${random}`;
+    // Buat DO baru
+    const doRes = await axios.post('/delivery-order', {
+      packing_list_id: selectedPackingListId.value,
+      items: packingListItems.map(item => ({
+        id: item.id,
+        barcode: Array.isArray(item.barcode) && item.barcode.length > 0 ? item.barcode : (item.barcode ? [item.barcode] : []),
+        qty: item.qty,
+        qty_scan: item.qty_scan,
+        unit: item.unit
+      }))
+    });
+    showConfirmModal.value = false;
+    if (doRes.data.success) {
+      await Swal.fire({
+        icon: 'success',
+        title: 'Sukses',
+        text: 'Delivery Order berhasil disimpan!',
+        timer: 1500,
+        showConfirmButton: false
+      });
+      router.visit('/delivery-order');
     } else {
-      error.value = data.message || 'Delivery Order tidak ditemukan.';
+      await Swal.fire({
+        icon: 'error',
+        title: 'Gagal',
+        text: doRes.data.message || 'Gagal menyimpan Delivery Order'
+      });
     }
   } catch (e) {
-    console.error('VALIDATE DO ERROR', e, res);
-    error.value = 'Terjadi kesalahan server.';
+    await Swal.fire({
+      icon: 'error',
+      title: 'Error',
+      text: 'Terjadi kesalahan server.'
+    });
+  } finally {
+    loadingSubmit.value = false;
   }
 }
 </script>

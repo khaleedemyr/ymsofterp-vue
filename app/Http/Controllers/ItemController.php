@@ -227,17 +227,17 @@ class ItemController extends Controller
             ]));
             \Log::info('ItemController@store - Item created', ['item_id' => $item->id]);
 
-            // Insert SKU ke item_barcodes jika belum ada
-            if ($item->sku) {
-                $exists = DB::table('item_barcodes')->where('barcode', $item->sku)->exists();
-                if (!$exists) {
-                    DB::table('item_barcodes')->insert([
-                        'item_id' => $item->id,
-                        'barcode' => $item->sku,
-                        'created_at' => now(),
-                        'updated_at' => now(),
-                    ]);
-                }
+            // Generate barcode default jika kategori show_pos = '0' dan item belum punya barcode
+            $category = \DB::table('categories')->where('id', $item->category_id)->first();
+            $barcodeCount = \DB::table('item_barcodes')->where('item_id', $item->id)->count();
+            if ($category && $category->show_pos == '0' && $barcodeCount == 0) {
+                $barcode = $this->generateUniqueBarcode();
+                \DB::table('item_barcodes')->insert([
+                    'item_id' => $item->id,
+                    'barcode' => $barcode,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
             }
 
             // Handle image uploads
@@ -1030,17 +1030,17 @@ class ItemController extends Controller
                     'type' => $typeString,
                 ]);
 
-                // Insert SKU ke item_barcodes jika belum ada
-                if ($item->sku) {
-                    $exists = \DB::table('item_barcodes')->where('barcode', $item->sku)->exists();
-                    if (!$exists) {
-                        \DB::table('item_barcodes')->insert([
-                            'item_id' => $item->id,
-                            'barcode' => $item->sku,
-                            'created_at' => now(),
-                            'updated_at' => now(),
-                        ]);
-                    }
+                // Generate barcode default jika kategori show_pos = '0' dan item belum punya barcode
+                $category = \DB::table('categories')->where('id', $item->category_id)->first();
+                $barcodeCount = \DB::table('item_barcodes')->where('item_id', $item->id)->count();
+                if ($category && $category->show_pos == '0' && $barcodeCount == 0) {
+                    $barcode = $this->generateUniqueBarcode();
+                    \DB::table('item_barcodes')->insert([
+                        'item_id' => $item->id,
+                        'barcode' => $barcode,
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ]);
                 }
 
                 // Handle Modifier Options
@@ -1741,5 +1741,15 @@ class ItemController extends Controller
         }
 
         return response()->json($items);
+    }
+
+    // Tambahkan fungsi helper untuk generate barcode unik
+    private function generateUniqueBarcode()
+    {
+        do {
+            $barcode = str_pad(mt_rand(0, 99999999), 8, '0', STR_PAD_LEFT);
+            $exists = \DB::table('item_barcodes')->where('barcode', $barcode)->exists();
+        } while ($exists);
+        return $barcode;
     }
 } 

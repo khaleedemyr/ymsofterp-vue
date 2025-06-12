@@ -7,10 +7,10 @@
       <!-- Step 1: Pilih DO -->
       <div class="mb-6">
         <label class="block text-xs font-bold text-gray-600 mb-1">Pilih Delivery Order</label>
-        <input type="text" v-model="doSearch" @input="searchDO" placeholder="Cari nomor DO..." class="input input-bordered w-full" :disabled="selectedDO" />
-        <ul v-if="showDOSuggestions && doSuggestions.length" class="border rounded bg-white mt-1 max-h-40 overflow-auto">
-          <li v-for="doOpt in doSuggestions" :key="doOpt.id" @click="selectDO(doOpt)" class="px-3 py-2 hover:bg-blue-100 cursor-pointer">{{ doOpt.number }}</li>
-        </ul>
+        <select v-model="selectedDOId" @change="onDOChange" class="input input-bordered w-full">
+          <option value="">Pilih Nomor DO...</option>
+          <option v-for="doOpt in doOptions" :key="doOpt.id" :value="doOpt.id">{{ doOpt.number }}</option>
+        </select>
       </div>
       <!-- Step 2: Card Info -->
       <div v-if="doDetail">
@@ -77,7 +77,7 @@
 
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue'
-import { ref, computed } from 'vue'
+import { ref, computed, nextTick, onMounted } from 'vue'
 import axios from 'axios'
 import Swal from 'sweetalert2'
 
@@ -88,34 +88,34 @@ const selectedDO = ref(null)
 const doDetail = ref(null)
 const items = ref([])
 const scanBarcode = ref('')
+const scanFeedback = ref('')
+const scanFeedbackClass = ref('')
 const showQtyModal = ref(false)
 const inputQty = ref(0)
 const pendingBarcode = ref('')
 const goodReceiveId = ref(null)
+const doOptions = ref([])
+const selectedDOId = ref('')
 
-function searchDO() {
-  if (doSearch.value.length < 2) {
-    doSuggestions.value = []
-    showDOSuggestions.value = false
-    return
-  }
-  axios.get('/outlet-food-good-receives/available-dos', { params: { q: doSearch.value } })
-    .then(res => {
-      doSuggestions.value = res.data
-      showDOSuggestions.value = true
-    })
-}
-function selectDO(doOpt) {
+onMounted(() => {
+  // Ambil daftar DO untuk outlet ini
+  axios.get('/outlet-food-good-receives/available-dos').then(res => {
+    doOptions.value = res.data
+  })
+})
+
+function onDOChange() {
+  const doOpt = doOptions.value.find(opt => String(opt.id) === String(selectedDOId.value))
+  if (!doOpt) return
   selectedDO.value = doOpt
-  doSearch.value = doOpt.number
-  showDOSuggestions.value = false
   // Fetch detail DO
   axios.get(`/outlet-food-good-receives/do-detail/${doOpt.id}`)
     .then(res => {
       doDetail.value = res.data
-      items.value = res.data.items
+      items.value = res.data.items.map(item => ({ ...item, qty_scan: 0, barcode: item.barcode || null }))
     })
 }
+
 function formatDate(date) {
   if (!date) return '-';
   return new Date(date).toLocaleDateString('id-ID')
@@ -123,54 +123,61 @@ function formatDate(date) {
 
 function handleScan() {
   const barcode = scanBarcode.value.trim()
-  const item = items.value.find(i => i.barcode === barcode)
+  if (!barcode) return;
+  const item = items.value.find(i => Array.isArray(i.barcodes) ? i.barcodes.includes(barcode) : i.barcode === barcode)
   if (!item) {
-    Swal.fire('Barcode tidak ditemukan di DO!', '', 'error')
-    scanBarcode.value = ''
-    return
+    scanFeedback.value = '❌ Barcode tidak ditemukan di DO!';
+    scanFeedbackClass.value = 'text-red-600';
+    scanBarcode.value = '';
+    nextTick(() => document.querySelector('input[placeholder="Scan barcode..."]').focus());
+    return;
   }
   if (item.unit === 'pcs') {
-    postScan(barcode, 1)
+    item.qty_scan = (item.qty_scan || 0) + 1;
+    scanFeedback.value = `✔️ ${item.item_name} (${item.qty_scan}/${item.qty_packing_list})`;
+    scanFeedbackClass.value = Number(item.qty_scan).toFixed(2) === Number(item.qty_packing_list).toFixed(2) ? 'text-green-700' : (Number(item.qty_scan) > Number(item.qty_packing_list) ? 'text-red-700' : 'text-yellow-700');
   } else {
     // Kiloan, input qty
-    showQtyModal.value = true
-    pendingBarcode.value = barcode
+    showQtyModal.value = true;
+    pendingBarcode.value = barcode;
+    scanBarcode.value = '';
+    nextTick(() => document.querySelector('input[type="number"]').focus());
+    return;
   }
-  scanBarcode.value = ''
+  scanBarcode.value = '';
+  nextTick(() => document.querySelector('input[placeholder="Scan barcode..."]').focus());
 }
 function confirmQtyInput() {
   if (inputQty.value <= 0) {
-    Swal.fire('Qty harus lebih dari 0', '', 'error')
-    return
+    scanFeedback.value = '❌ Qty harus lebih dari 0';
+    scanFeedbackClass.value = 'text-red-600';
+    return;
   }
-  postScan(pendingBarcode.value, inputQty.value)
-  showQtyModal.value = false
-  inputQty.value = 0
-  pendingBarcode.value = ''
-}
-async function postScan(barcode, qty) {
-  try {
-    await axios.post('/outlet-food-good-receives/scan', {
-      good_receive_id: goodReceiveId.value,
-      barcode,
-      qty
-    })
-    // Refresh item list
-    if (selectedDO.value) {
-      const res = await axios.get(`/outlet-food-good-receives/do-detail/${selectedDO.value.id}`)
-      items.value = res.data.items
-    }
-  } catch (e) {
-    Swal.fire(e.response?.data?.message || 'Gagal scan', '', 'error')
+  const item = items.value.find(i => Array.isArray(i.barcodes) ? i.barcodes.includes(pendingBarcode.value) : i.barcode === pendingBarcode.value)
+  if (item) {
+    item.qty_scan = (item.qty_scan || 0) + Number(inputQty.value);
+    scanFeedback.value = `✔️ ${item.item_name} (${item.qty_scan}/${item.qty_packing_list})`;
+    scanFeedbackClass.value = Number(item.qty_scan).toFixed(2) === Number(item.qty_packing_list).toFixed(2) ? 'text-green-700' : (Number(item.qty_scan) > Number(item.qty_packing_list) ? 'text-red-700' : 'text-yellow-700');
   }
+  showQtyModal.value = false;
+  inputQty.value = 0;
+  pendingBarcode.value = '';
+  nextTick(() => document.querySelector('input[placeholder="Scan barcode..."]').focus());
 }
 const allScanned = computed(() => {
   return items.value.length && items.value.every(i => Number(i.qty_scan) >= Number(i.qty_packing_list))
 })
 async function submitGR() {
   if (!selectedDO.value) return;
+  if (!allScanned.value) {
+    Swal.fire('Semua item harus discan sesuai qty DO!', '', 'error');
+    return;
+  }
   try {
-    const res = await axios.post(`/outlet-food-good-receives/${selectedDO.value.id}/submit`);
+    // Kirim data qty_scan hasil scan ke backend
+    const res = await axios.post(`/outlet-food-good-receives/${selectedDO.value.id}/submit`, {
+      items: items.value.map(i => ({ id: i.id, qty_scan: i.qty_scan }))
+    });
     if (res.data && res.data.success) {
       Swal.fire('Berhasil', 'Good Receive berhasil disubmit!', 'success');
       setTimeout(() => {

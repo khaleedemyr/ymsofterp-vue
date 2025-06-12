@@ -5,4 +5,8 @@
   <div v-if="can('view-retail-food')" class="flex items-center gap-2 px-4 py-2 text-gray-600 hover:bg-blue-50 hover:text-blue-700 rounded-lg cursor-pointer" @click="router.visit('/retail-food')">
     <i class="fa-solid fa-store text-blue-500"></i>
     <span>Retail Food</span>
+  </div>
+  <div class="flex items-center gap-2 px-4 py-2 text-gray-600 hover:bg-blue-50 hover:text-blue-700 rounded-lg cursor-pointer" @click="router.visit('/item-supplier')">
+    <i class="fa-solid fa-link text-blue-500"></i>
+    <span>Items Supplier</span>
   </div> 

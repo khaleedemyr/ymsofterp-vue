@@ -447,7 +447,7 @@ function downloadPDF(barcode, qty) {
             const sku = barcodes[idx];
             // Render barcode ke canvas proporsional, scale 3x
             const areaBarcodeW = labelWidth - 4; // 26mm
-            const areaBarcodeH = 14; // mm
+            const areaBarcodeH = 10; // mm, diperkecil agar ada ruang untuk teks
             const scale = 3;
             const canvas = document.createElement('canvas');
             canvas.width = areaBarcodeW * scale;
@@ -456,7 +456,8 @@ function downloadPDF(barcode, qty) {
             // Masukkan barcode ke PDF (ukuran asli)
             doc.addImage(canvas, 'PNG', x + 2, y + 1.5, areaBarcodeW, areaBarcodeH);
             doc.setFontSize(8);
-            doc.text(sku, x + labelWidth / 2, y + 13.5, { align: 'center' }); // SKU
+            // Geser teks lebih ke bawah dari barcode
+            doc.text(sku, x + labelWidth / 2, y + areaBarcodeH + 4, { align: 'center' }); // Geser ke bawah
         }
         y += labelHeight;
     }

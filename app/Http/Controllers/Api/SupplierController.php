@@ -13,4 +13,14 @@ class SupplierController extends Controller
         $supplier = Supplier::findOrFail($id);
         return response()->json($supplier);
     }
+
+    public function index(Request $request)
+    {
+        $q = $request->input('q');
+        $query = Supplier::query()->where('status', 'active');
+        if ($q) {
+            $query->where('name', 'like', "%$q%") ;
+        }
+        return $query->limit(15)->get(['id', 'name']);
+    }
 }

@@ -61,6 +61,7 @@ use App\Http\Controllers\OutletInventoryReportController;
 use App\Http\Controllers\OutletStockBalanceController;
 use App\Http\Controllers\OutletInternalUseWasteController;
 use App\Http\Controllers\RetailFoodController;
+use Illuminate\Support\Facades\Mail;
 
 Route::get('/', function () {
     return Inertia::render('Welcome', [
@@ -606,5 +607,24 @@ Route::get('/outlet-internal-use-waste/report-waste-spoil', [\App\Http\Controlle
 
 Route::resource('retail-food', RetailFoodController::class);
 Route::get('retail-food/get-item-units/{itemId}', [\App\Http\Controllers\RetailFoodController::class, 'getItemUnits']);
+
+Route::resource('item-supplier', \App\Http\Controllers\ItemSupplierController::class);
+
+// API autocomplete untuk Item Supplier
+Route::get('/api/suppliers', [\App\Http\Controllers\Api\SupplierController::class, 'index']);
+Route::get('/api/items', [\App\Http\Controllers\Api\ItemController::class, 'index']);
+Route::get('/api/outlets', [\App\Http\Controllers\Api\OutletController::class, 'index']);
+
+Route::get('/test-email', function() {
+    try {
+        Mail::raw('Test email dari YM Soft ERP', function($message) {
+            $message->to('ymsofterp@gmail.com')
+                   ->subject('Test Email');
+        });
+        return 'Email berhasil dikirim!';
+    } catch (\Exception $e) {
+        return 'Error: ' . $e->getMessage();
+    }
+});
 
 require __DIR__.'/auth.php';

@@ -246,11 +246,17 @@ class OutletFoodGoodReceiveController extends Controller
     public function availableDOs(Request $request)
     {
         $q = $request->input('q');
+        $user = auth()->user();
+        $idOutlet = $user->id_outlet; // Ambil id_outlet user login
+
         $query = DB::table('delivery_orders as do')
             ->leftJoin('outlet_food_good_receives as gr', function($join) {
                 $join->on('gr.delivery_order_id', '=', 'do.id')->whereNull('gr.deleted_at');
             })
-            ->whereNull('gr.id');
+            ->leftJoin('food_floor_orders as fo', 'do.floor_order_id', '=', 'fo.id')
+            ->whereNull('gr.id')
+            ->where('fo.id_outlet', $idOutlet);
+
         if ($q) {
             $query->where('do.number', 'like', "%$q%");
         }

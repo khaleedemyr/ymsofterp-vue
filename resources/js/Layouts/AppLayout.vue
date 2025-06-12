@@ -55,6 +55,7 @@ const menuGroups = [
             { name: () => 'Regions', icon: 'fa-solid fa-globe-asia', route: '/regions', code: 'regions' },
             { name: () => 'Item Schedule', icon: 'fa-solid fa-calendar-days', route: '/item-schedules', code: 'item_schedules' },
             { name: () => 'RO Schedule', icon: 'fa-solid fa-calendar-days', route: '/fo-schedules', code: 'fo_schedules' },
+            { name: () => 'Items Supplier', icon: 'fa-solid fa-link', route: '/item-supplier', code: 'view-item-supplier' },
         ],
     },
     {
@@ -173,6 +174,8 @@ const menuGroups = [
     {
         title: () => 'Announcement',
         icon: 'fa-solid fa-bullhorn',
+        collapsible: true,
+        open: ref(false),
         menus: [
             { name: () => 'Announcement', icon: 'fa-solid fa-bullhorn', route: '/announcement', code: 'announcement' },
         ],

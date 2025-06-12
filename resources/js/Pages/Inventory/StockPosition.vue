@@ -43,11 +43,11 @@
                 <span v-else>-</span>
               </td>
               <td class="px-6 py-4 whitespace-nowrap text-sm text-right">
-                <span v-if="row.display_medium > 0">{{ displayQty(row.display_medium) }} <span v-if="row.medium_unit_name">{{ row.medium_unit_name }}</span></span>
+                <span v-if="row.display_medium > 0">{{ displayQty(row.display_medium, 2) }} <span v-if="row.medium_unit_name">{{ row.medium_unit_name }}</span></span>
                 <span v-else>-</span>
               </td>
               <td class="px-6 py-4 whitespace-nowrap text-sm text-right">
-                <span v-if="row.display_large > 0">{{ displayQty(row.display_large) }} <span v-if="row.large_unit_name">{{ row.large_unit_name }}</span></span>
+                <span v-if="row.display_large > 0">{{ displayQty(row.display_large, 2) }} <span v-if="row.large_unit_name">{{ row.large_unit_name }}</span></span>
                 <span v-else>-</span>
               </td>
               <td class="px-6 py-4 whitespace-nowrap text-sm">{{ row.updated_at ? new Date(row.updated_at).toLocaleString() : '-' }}</td>
@@ -107,9 +107,9 @@ function nextPage() {
 }
 watch([perPage, search], () => { page.value = 1; });
 
-function displayQty(val) {
+function displayQty(val, digits = 0) {
   if (!val || Number(val) === 0) return '-';
-  return Number(val).toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+  return Number(val).toLocaleString('id-ID', { minimumFractionDigits: digits, maximumFractionDigits: digits });
 }
 function displayValue(val) {
   if (!val || Number(val) === 0) return '-';

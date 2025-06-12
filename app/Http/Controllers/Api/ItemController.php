@@ -46,4 +46,14 @@ class ItemController extends Controller
         });
         return response()->json($result);
     }
+
+    public function index(Request $request)
+    {
+        $q = $request->input('q');
+        $query = Item::query()->where('status', 'active');
+        if ($q) {
+            $query->where('name', 'like', "%$q%") ;
+        }
+        return $query->limit(15)->get(['id', 'name']);
+    }
 } 

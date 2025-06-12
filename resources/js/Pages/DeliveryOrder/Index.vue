@@ -63,29 +63,39 @@ function formatDate(date) {
   return new Date(date).toLocaleDateString('id-ID');
 }
 
-function handleDelete(id) {
-  Swal.fire({
+async function handleDelete(id) {
+  const confirm = await Swal.fire({
     title: 'Hapus Delivery Order?',
-    text: 'Data dan seluruh pengaruh ke inventory akan di-rollback. Lanjutkan?',
+    text: 'Data dan rollback stok akan dikembalikan. Lanjutkan?',
     icon: 'warning',
     showCancelButton: true,
     confirmButtonText: 'Ya, Hapus',
     cancelButtonText: 'Batal',
-    reverseButtons: true,
-    allowOutsideClick: false,
-    allowEscapeKey: false,
-    showLoaderOnConfirm: true,
-    preConfirm: () => {
-      loadingDeleteId.value = id;
-      return router.delete(`/delivery-order/${id}`, {
-        onFinish: () => {
-          loadingDeleteId.value = null;
-        },
-        onError: () => {
-          loadingDeleteId.value = null;
-        }
-      });
-    }
   });
+  if (!confirm.isConfirmed) return;
+  loadingDeleteId.value = id;
+  try {
+    await router.delete(`/delivery-order/${id}`, {
+      onSuccess: async () => {
+        await Swal.fire({
+          icon: 'success',
+          title: 'Sukses',
+          text: 'Delivery Order berhasil dihapus dan stok dikembalikan!',
+          timer: 1500,
+          showConfirmButton: false
+        });
+      },
+      onError: async (err) => {
+        await Swal.fire({
+          icon: 'error',
+          title: 'Gagal',
+          text: err || 'Gagal menghapus Delivery Order',
+        });
+      },
+      preserveScroll: true,
+    });
+  } finally {
+    loadingDeleteId.value = null;
+  }
 }
 </script> 

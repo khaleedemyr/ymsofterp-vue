@@ -586,10 +586,7 @@ function triggerAutosave() {
         fo_mode: selectedFOMode.value,
         input_mode: mode.value,
         fo_schedule_id: form.value.fo_schedule_id,
-      }).then(res => {
-        draftId.value = res.data.id;
-        // router.visit(`/floor-order/edit/${draftId.value}`); // Dihapus agar tidak redirect
-      });
+      }).then(handleStoreResponse);
     }
   }, 2000);
 }
@@ -597,40 +594,67 @@ function triggerAutosave() {
 watch(form, triggerAutosave, { deep: true });
 
 function submitOrderWithLoading() {
-  if (!draftId.value) return;
+  console.log('SUBMIT ORDER DIPANGGIL', draftId.value);
+  if (!draftId.value) {
+    Swal.fire({
+      icon: 'error',
+      title: 'Tidak Bisa Submit',
+      text: 'Draft Order belum tersimpan. Silakan tunggu beberapa detik atau pastikan koneksi Anda stabil.',
+    });
+    return;
+  }
   Swal.fire({
-    icon: 'warning',
-    title: 'Konfirmasi RO',
-    html: `<div style="font-size:1.1em;">Ingat: Barang yang sudah selesai di-RO tidak dapat di batalkan dengan alasan apapun<br><br><b>Apakah RO ini sudah benar dan sesuai item barang-barang yang ingin dipesan?</b></div>`,
+    icon: 'question',
+    title: 'Konfirmasi Kirim RO',
+    html: `<div style="font-size:1.1em;">Setelah dikirim, RO tidak dapat diubah.<br><br><b>Apakah Anda yakin ingin mengirim RO ini?</b></div>`,
     showCancelButton: true,
-    confirmButtonText: 'Ya, sudah benar',
-    cancelButtonText: 'Cek Lagi',
+    confirmButtonText: 'Ya, Kirim',
+    cancelButtonText: 'Batal',
     focusCancel: true,
     reverseButtons: true,
   }).then((result) => {
     if (result.isConfirmed) {
       isSubmitting.value = true;
+      Swal.fire({
+        title: 'Mengirim...',
+        text: 'Mohon tunggu, RO sedang diproses.',
+        allowOutsideClick: false,
+        allowEscapeKey: false,
+        didOpen: () => {
+          Swal.showLoading();
+        }
+      });
       axios.post(`/floor-order/${draftId.value}/submit`).then(() => {
         isSubmitting.value = false;
+        Swal.close();
         showPreview.value = false;
         Swal.fire({
           icon: 'success',
           title: 'Berhasil!',
-          text: 'Floor Order berhasil disubmit.',
+          text: 'Floor Order berhasil dikirim.',
           confirmButtonColor: '#3085d6',
         }).then(() => {
           router.visit('/floor-order');
         });
       }).catch(() => {
         isSubmitting.value = false;
+        Swal.close();
         Swal.fire({
           icon: 'error',
           title: 'Gagal',
-          text: 'Terjadi kesalahan saat submit.',
+          text: 'Terjadi kesalahan saat mengirim RO.',
         });
       });
     }
   });
+}
+
+// Pastikan draftId di-set setelah autosave/store
+function handleStoreResponse(res) {
+  if (res && res.data && res.data.data && res.data.data.floor_order_id) {
+    draftId.value = res.data.data.floor_order_id;
+    console.log('DRAFT ID SET', draftId.value);
+  }
 }
 
 // Setelah fetchItemsByFOSchedule dan categories terisi, jika props.order dan mode tab, sinkronkan qty
