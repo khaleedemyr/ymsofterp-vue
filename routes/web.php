@@ -62,6 +62,7 @@ use App\Http\Controllers\OutletStockBalanceController;
 use App\Http\Controllers\OutletInternalUseWasteController;
 use App\Http\Controllers\RetailFoodController;
 use Illuminate\Support\Facades\Mail;
+use App\Http\Controllers\OutletFoodGoodReceiveController;
 
 Route::get('/', function () {
     return Inertia::render('Welcome', [
@@ -534,14 +535,14 @@ Route::post('/food-inventory-adjustment/{id}/approve', [\App\Http\Controllers\Fo
 Route::post('/food-inventory-adjustment/{id}/reject', [\App\Http\Controllers\FoodInventoryAdjustmentController::class, 'reject'])->name('food-inventory-adjustment.reject');
 
 Route::post('/outlet-food-good-receives/scan', [\App\Http\Controllers\OutletFoodGoodReceiveController::class, 'storeScan'])->name('outlet-food-good-receives.scan');
+Route::get('/outlet-food-good-receives/available-dos', [\App\Http\Controllers\OutletFoodGoodReceiveController::class, 'availableDOs']);
 Route::resource('outlet-food-good-receives', \App\Http\Controllers\OutletFoodGoodReceiveController::class);
 Route::get('/outlet-food-good-receives/scan-do', [\App\Http\Controllers\OutletFoodGoodReceiveController::class, 'scanDO'])->name('outlet-food-good-receives.scan-do');
 Route::get('/api/delivery-orders/validate', [\App\Http\Controllers\OutletFoodGoodReceiveController::class, 'validateDO']);
 Route::get('/outlet-food-good-receives/create-from-do/{delivery_order_id}', [\App\Http\Controllers\OutletFoodGoodReceiveController::class, 'createFromDO'])->name('outlet-food-good-receives.create-from-do');
-Route::get('/outlet-food-good-receives/available-dos', [OutletFoodGoodReceiveController::class, 'availableDOs']);
 Route::get('/outlet-food-good-receives/do-detail/{do_id}', [OutletFoodGoodReceiveController::class, 'doDetail']);
-Route::post('/outlet-food-good-receives/{id}/submit', [OutletFoodGoodReceiveController::class, 'submit']);
-Route::post('/outlet-food-good-receives/{id}/process-stock', [OutletFoodGoodReceiveController::class, 'processStock']);
+Route::post('/outlet-food-good-receives/{outlet_food_good_receive}/submit', [OutletFoodGoodReceiveController::class, 'submit']);
+Route::post('/outlet-food-good-receives/{outlet_food_good_receive}/process-stock', [OutletFoodGoodReceiveController::class, 'processStock']);
 
 Route::prefix('ops-kitchen')->group(function () {
     Route::get('/action-plan-guest-review', [ActionPlanGuestReviewController::class, 'index'])->name('ops-kitchen.action-plan-guest-review.index');

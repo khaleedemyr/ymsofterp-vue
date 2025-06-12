@@ -1,31 +1,33 @@
 <template>
   <AppLayout>
     <div class="max-w-4xl mx-auto py-8 px-2">
-      <h1 class="text-2xl font-bold mb-6 flex items-center gap-2 text-blue-700">
+      <h1 class="text-3xl font-extrabold mb-6 flex items-center gap-2 text-blue-700 drop-shadow-sm">
         <i class="fa-solid fa-truck text-blue-500"></i> Detail Good Receive Outlet
       </h1>
-      <div class="mb-4">
-        <div class="font-bold">Status: <span :class="statusClass(goodReceive.status)">{{ goodReceive.status }}</span></div>
-        <div class="text-sm text-gray-500">Tanggal: {{ formatDate(goodReceive.receive_date) }}</div>
-        <div class="text-sm text-gray-500">Nomor GR: {{ goodReceive.number }}</div>
-        <div class="text-sm text-gray-500">Outlet: {{ goodReceive.outlet?.name || '-' }}</div>
-        <div class="text-sm text-gray-500">Nomor DO: {{ goodReceive.deliveryOrder?.number || '-' }}</div>
+      <div class="mb-4 bg-white rounded-xl shadow p-6 flex flex-col gap-2 border border-blue-100">
+        <div class="font-bold text-lg">Status: <span :class="statusClass(goodReceive?.status)">{{ goodReceive?.status || '-' }}</span></div>
+        <div class="text-sm text-gray-500">Tanggal: {{ formatDate(goodReceive?.receive_date) }}</div>
+        <div class="text-sm text-gray-500">Nomor GR: {{ goodReceive?.number || '-' }}</div>
+        <div class="text-sm text-gray-500">Outlet: {{ goodReceive?.outlet_name || '-' }}</div>
+        <div class="text-sm text-gray-500">Nomor DO: {{ goodReceive?.delivery_order_number || '-' }}</div>
       </div>
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-        <div class="bg-white rounded shadow p-4">
-          <div class="font-bold mb-2">Floor Order</div>
-          <div v-if="goodReceive.deliveryOrder?.floor_order?.order_number">No: {{ goodReceive.deliveryOrder.floor_order.order_number }}</div>
-          <div v-if="goodReceive.deliveryOrder?.floor_order?.tanggal">Tanggal: {{ goodReceive.deliveryOrder.floor_order.tanggal }}</div>
-          <div v-if="goodReceive.deliveryOrder?.floor_order?.description">Keterangan: {{ goodReceive.deliveryOrder.floor_order.description }}</div>
+        <div class="bg-white rounded-xl shadow p-6 border border-blue-100 transition-all hover:shadow-lg">
+          <div class="font-bold mb-2 text-blue-700 flex items-center gap-2"><i class="fa-solid fa-list"></i> Floor Order</div>
+          <div v-if="props.deliveryOrder?.floor_order_number"><b>No:</b> {{ props.deliveryOrder.floor_order_number }}</div>
+          <div v-if="props.deliveryOrder?.floor_order_date"><b>Tanggal:</b> {{ props.deliveryOrder.floor_order_date }}</div>
+          <div v-if="props.deliveryOrder?.floor_order_desc"><b>Keterangan:</b> {{ props.deliveryOrder.floor_order_desc }}</div>
+          <div v-if="!props.deliveryOrder?.floor_order_number && !props.deliveryOrder?.floor_order_date && !props.deliveryOrder?.floor_order_desc">—</div>
         </div>
-        <div class="bg-white rounded shadow p-4">
-          <div class="font-bold mb-2">Packing List</div>
-          <div v-if="goodReceive.deliveryOrder?.packing_list?.packing_number">No: {{ goodReceive.deliveryOrder.packing_list.packing_number }}</div>
-          <div v-if="goodReceive.deliveryOrder?.packing_list?.reason">Alasan: {{ goodReceive.deliveryOrder.packing_list.reason }}</div>
+        <div class="bg-white rounded-xl shadow p-6 border border-blue-100 transition-all hover:shadow-lg">
+          <div class="font-bold mb-2 text-blue-700 flex items-center gap-2"><i class="fa-solid fa-box"></i> Packing List</div>
+          <div v-if="props.deliveryOrder?.packing_number"><b>No:</b> {{ props.deliveryOrder.packing_number }}</div>
+          <div v-if="props.deliveryOrder?.packing_reason"><b>Alasan:</b> {{ props.deliveryOrder.packing_reason }}</div>
+          <div v-if="!props.deliveryOrder?.packing_number && !props.deliveryOrder?.packing_reason">—</div>
         </div>
       </div>
-      <div class="bg-white rounded shadow p-4 mb-4">
-        <div class="font-bold mb-2">List Item DO</div>
+      <div class="bg-white rounded-xl shadow p-6 mb-4 border border-blue-100 transition-all hover:shadow-lg">
+        <div class="font-bold mb-2 text-blue-700 flex items-center gap-2"><i class="fa-solid fa-list-check"></i> List Item DO</div>
         <table class="min-w-full text-sm">
           <thead>
             <tr>
@@ -36,18 +38,15 @@
             </tr>
           </thead>
           <tbody>
-            <tr v-for="item in goodReceive.items" :key="item.id">
-              <td>{{ item.item?.name || '-' }}</td>
-              <td>{{ item.unit?.name || '-' }}</td>
+            <tr v-for="item in (goodReceive?.items || details)" :key="item.id">
+              <td>{{ item.item_name || item.item?.name || '-' }}</td>
+              <td>{{ item.unit_name || item.unit?.name || '-' }}</td>
               <td class="text-right">{{ item.qty }}</td>
               <td class="text-right">{{ item.received_qty }}</td>
             </tr>
           </tbody>
         </table>
       </div>
-      <button v-if="goodReceive.status === 'done' && allScanned" @click="processStock" class="btn bg-gradient-to-r from-green-500 to-green-700 text-white px-8 py-2 rounded-lg font-bold shadow hover:shadow-xl transition-all mb-4">
-        Proses ke Stok
-      </button>
       <button @click="goBack" class="btn btn-ghost px-6 py-2 rounded-lg">Kembali</button>
     </div>
   </AppLayout>
@@ -60,7 +59,18 @@ import Swal from 'sweetalert2'
 import { router } from '@inertiajs/vue3'
 
 const props = defineProps({
-  goodReceive: Object
+  goodReceive: {
+    type: Object,
+    default: () => ({})
+  },
+  details: {
+    type: Array,
+    default: () => []
+  },
+  deliveryOrder: {
+    type: Object,
+    default: () => null
+  }
 })
 
 function formatDate(date) {
@@ -69,19 +79,20 @@ function formatDate(date) {
 }
 function statusClass(status) {
   if (status === 'draft') return 'text-yellow-700 font-bold';
-  if (status === 'done') return 'text-blue-700 font-bold';
+  if (status === 'completed') return 'text-blue-700 font-bold';
   if (status === 'stocked') return 'text-green-700 font-bold';
   return 'text-gray-700';
 }
 const allScanned = computed(() => {
-  return props.goodReceive.items && props.goodReceive.items.length && props.goodReceive.items.every(i => Number(i.received_qty) >= Number(i.qty))
+  const items = props.goodReceive?.items || props.details || [];
+  return items.length && items.every(i => Number(i.received_qty) >= Number(i.qty))
 })
 function goBack() {
   router.visit(route('outlet-food-good-receives.index'))
 }
 async function processStock() {
   try {
-    const res = await axios.post(`/outlet-food-good-receives/${props.goodReceive.id}/process-stock`)
+    const res = await axios.post(`/outlet-food-good-receives/${props.goodReceive?.id}` + '/process-stock')
     if (res.data && res.data.success) {
       Swal.fire('Berhasil', 'Stok outlet sudah diupdate!', 'success')
       setTimeout(() => window.location.reload(), 1200)
