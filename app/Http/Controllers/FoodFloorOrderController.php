@@ -579,10 +579,10 @@ class FoodFloorOrderController extends Controller
         } else {
             // Default: ambil items dari relasi
             $order->load('items.category');
-            return Inertia::render('FloorOrder/Show', [
-                'order' => $order,
-                'user' => Auth::user()->load('outlet'),
-            ]);
+        return Inertia::render('FloorOrder/Show', [
+            'order' => $order,
+            'user' => Auth::user()->load('outlet'),
+        ]);
         }
     }
 

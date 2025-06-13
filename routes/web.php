@@ -64,6 +64,7 @@ use App\Http\Controllers\RetailFoodController;
 use Illuminate\Support\Facades\Mail;
 use App\Http\Controllers\OutletFoodGoodReceiveController;
 use App\Http\Controllers\GoodReceiveOutletSupplierController;
+use App\Http\Controllers\ReportController;
 
 
 Route::get('/', function () {
@@ -690,5 +691,15 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
 // API untuk dropdown RO Supplier (jika perlu)
 Route::get('/api/ro-suppliers', [GoodReceiveOutletSupplierController::class, 'getROSuppliers']);
+
+Route::middleware(['auth', 'verified'])->group(function () {
+    Route::get('/report-sales-per-category', [ReportController::class, 'reportSalesPerCategory'])->name('report.sales-per-category');
+    Route::get('/report-sales-per-tanggal', [\App\Http\Controllers\ReportController::class, 'reportSalesPerTanggal'])->name('report.sales-per-tanggal');
+    Route::get('/report-sales-all-item-all-outlet', [\App\Http\Controllers\ReportController::class, 'reportSalesAllItemAllOutlet'])->name('report.sales-all-item-all-outlet');
+    Route::get('/report-sales-pivot-per-outlet-sub-category', [\App\Http\Controllers\ReportController::class, 'reportSalesPivotPerOutletSubCategory'])->name('report.sales-pivot-per-outlet-sub-category');
+    Route::get('/report-sales-pivot-special', [\App\Http\Controllers\ReportController::class, 'reportSalesPivotSpecial'])->name('report.sales-pivot-special');
+    Route::get('/report-rekap-fj', [\App\Http\Controllers\ReportController::class, 'reportSalesPivotSpecial'])->name('report.rekap-fj');
+    Route::get('/report-good-receive-outlet', [\App\Http\Controllers\ReportController::class, 'reportGoodReceiveOutlet'])->name('report.good-receive-outlet');
+});
 
 require __DIR__.'/auth.php';

@@ -270,24 +270,24 @@ function selectItem(idx, item) {
     // Cek apakah item ada di supplier
     const supplierItem = supplierItems.value.find(i => i.id === item.id);
     if (!supplierItem) {
-      Swal.fire({
-        icon: 'error',
-        title: 'Item Tidak Valid',
-        text: 'RO Supplier hanya boleh berisi item dari supplier.',
-        confirmButtonColor: '#3085d6',
-      });
-      return;
-    }
-    // Lanjutkan jika item valid
-    form.value.items[idx].item_id = item.id;
-    form.value.items[idx].item_name = item.name;
+        Swal.fire({
+          icon: 'error',
+          title: 'Item Tidak Valid',
+          text: 'RO Supplier hanya boleh berisi item dari supplier.',
+          confirmButtonColor: '#3085d6',
+        });
+        return;
+      }
+      // Lanjutkan jika item valid
+      form.value.items[idx].item_id = item.id;
+      form.value.items[idx].item_name = item.name;
     form.value.items[idx].unit = item.unit || '';
     form.value.items[idx].price = item.price || 0;
-    form.value.items[idx].qty = '';
-    form.value.items[idx].subtotal = 0;
-    form.value.items[idx].suggestions = [];
-    form.value.items[idx].showDropdown = false;
-    form.value.items[idx].highlightedIndex = -1;
+      form.value.items[idx].qty = '';
+      form.value.items[idx].subtotal = 0;
+      form.value.items[idx].suggestions = [];
+      form.value.items[idx].showDropdown = false;
+      form.value.items[idx].highlightedIndex = -1;
   } else {
     // Untuk mode lain, langsung set item
     form.value.items[idx].item_id = item.id;

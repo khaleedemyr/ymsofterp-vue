@@ -430,7 +430,7 @@ function downloadPDF(barcode, qty) {
     const labelWidth = 30; // 3cm
     const labelHeight = 15; // 1.5cm
     const gap = 3; // 0.3cm
-    const marginLeft = 2; // mm, margin kiri untuk semua kolom
+    const marginLeft = 5; // mm, margin kiri untuk semua kolom (ditingkatkan)
     const numLabels = qty || 1;
     const numRows = Math.ceil(numLabels / 3);
     const pdfWidth = 94; // 9.4cm
