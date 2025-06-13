@@ -7,6 +7,8 @@ import Swal from 'sweetalert2';
 const props = defineProps({
   order: Object,
   user: Object,
+  itemsBySupplier: Array,
+  supplierHeaders: Array,
 });
 
 function formatRupiah(val) {
@@ -52,6 +54,13 @@ const grandTotal = computed(() =>
   props.order.items?.reduce((sum, item) => sum + (Number(item.subtotal) || 0), 0) || 0
 );
 
+const grandTotalSupplier = computed(() => {
+  if (!props.itemsBySupplier || !props.itemsBySupplier.length) return 0;
+  return props.itemsBySupplier.reduce((sum, group) => {
+    return sum + group.items.reduce((s, item) => s + (Number(item.subtotal) || 0), 0);
+  }, 0);
+});
+
 const isSuperadmin = computed(() =>
   props.user?.id_role === '5af56935b011a' && props.user?.status === 'A'
 );
@@ -59,7 +68,7 @@ const isExecutiveChef = computed(() =>
   props.user?.id_jabatan === 163 && props.user?.status === 'A'
 );
 const canApproveFO = computed(() =>
-  props.order.fo_mode === 'FO Khusus' &&
+  (props.order.fo_mode === 'RO Khusus' || props.order.fo_mode === 'RO Supplier') &&
   props.order.status === 'submitted' &&
   (isExecutiveChef.value || isSuperadmin.value)
 );
@@ -141,38 +150,70 @@ async function approveFO() {
         </div>
       </div>
       <div class="space-y-8">
-        <div v-for="(items, cat) in groupedItems" :key="cat" class="bg-blue-50 rounded-xl shadow p-4">
-          <h3 class="font-bold text-blue-700 text-lg mb-2 flex items-center gap-2"><i class="fa fa-layer-group"></i> {{ cat }}</h3>
-          <div class="overflow-x-auto">
-            <table class="w-full min-w-full divide-y divide-gray-200">
-              <thead class="bg-gradient-to-r from-blue-100 to-blue-200">
-                <tr>
-                  <th class="px-4 py-2 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Item</th>
-                  <th class="px-4 py-2 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Qty</th>
-                  <th class="px-4 py-2 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Unit</th>
-                  <th class="px-4 py-2 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Harga</th>
-                  <th class="px-4 py-2 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Subtotal</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="item in items" :key="item.id">
-                  <td class="px-4 py-2">{{ item.item_name }}</td>
-                  <td class="px-4 py-2">{{ item.qty }}</td>
-                  <td class="px-4 py-2">{{ item.unit }}</td>
-                  <td class="px-4 py-2">{{ formatRupiah(item.price) }}</td>
-                  <td class="px-4 py-2 font-semibold">{{ formatRupiah(item.subtotal) }}</td>
-                </tr>
-                <tr class="bg-blue-100 font-bold">
-                  <td colspan="4" class="text-right">Total {{ cat }}</td>
-                  <td>{{ formatRupiah(categorySubtotals[cat]) }}</td>
-                </tr>
-              </tbody>
-            </table>
+        <template v-if="itemsBySupplier && itemsBySupplier.length">
+          <div v-for="group in itemsBySupplier" :key="group.header.id" class="bg-blue-50 rounded-xl shadow p-4 mb-8">
+            <h3 class="font-bold text-blue-700 text-lg mb-2 flex items-center gap-2">
+              <i class="fa fa-truck"></i>
+              Supplier ID: {{ group.header.supplier_id }} | No. RO Supplier: {{ group.header.supplier_fo_number }}
+            </h3>
+            <div class="overflow-x-auto">
+              <table class="w-full min-w-full divide-y divide-gray-200">
+                <thead class="bg-gradient-to-r from-blue-100 to-blue-200">
+                  <tr>
+                    <th class="px-4 py-2 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Item</th>
+                    <th class="px-4 py-2 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Qty</th>
+                    <th class="px-4 py-2 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Unit</th>
+                    <th class="px-4 py-2 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Harga</th>
+                    <th class="px-4 py-2 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Subtotal</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="item in group.items" :key="item.id">
+                    <td class="px-4 py-2">{{ item.item_name }}</td>
+                    <td class="px-4 py-2">{{ item.qty }}</td>
+                    <td class="px-4 py-2">{{ item.unit }}</td>
+                    <td class="px-4 py-2">{{ formatRupiah(item.price) }}</td>
+                    <td class="px-4 py-2 font-semibold">{{ formatRupiah(item.subtotal) }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
+        </template>
+        <template v-else>
+          <div v-for="(items, cat) in groupedItems" :key="cat" class="bg-blue-50 rounded-xl shadow p-4">
+            <h3 class="font-bold text-blue-700 text-lg mb-2 flex items-center gap-2"><i class="fa fa-layer-group"></i> {{ cat }}</h3>
+            <div class="overflow-x-auto">
+              <table class="w-full min-w-full divide-y divide-gray-200">
+                <thead class="bg-gradient-to-r from-blue-100 to-blue-200">
+                  <tr>
+                    <th class="px-4 py-2 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Item</th>
+                    <th class="px-4 py-2 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Qty</th>
+                    <th class="px-4 py-2 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Unit</th>
+                    <th class="px-4 py-2 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Harga</th>
+                    <th class="px-4 py-2 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Subtotal</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="item in items" :key="item.id">
+                    <td class="px-4 py-2">{{ item.item_name }}</td>
+                    <td class="px-4 py-2">{{ item.qty }}</td>
+                    <td class="px-4 py-2">{{ item.unit }}</td>
+                    <td class="px-4 py-2">{{ formatRupiah(item.price) }}</td>
+                    <td class="px-4 py-2 font-semibold">{{ formatRupiah(item.subtotal) }}</td>
+                  </tr>
+                  <tr class="bg-blue-100 font-bold">
+                    <td colspan="4" class="text-right">Total {{ cat }}</td>
+                    <td>{{ formatRupiah(categorySubtotals[cat]) }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </template>
       </div>
       <div class="text-right font-bold text-xl mt-8">
-        Grand Total: {{ formatRupiah(grandTotal) }}
+        Grand Total: {{ formatRupiah(itemsBySupplier && itemsBySupplier.length ? grandTotalSupplier : grandTotal) }}
       </div>
     </div>
   </AppLayout>

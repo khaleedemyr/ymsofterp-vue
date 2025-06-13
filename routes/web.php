@@ -63,6 +63,8 @@ use App\Http\Controllers\OutletInternalUseWasteController;
 use App\Http\Controllers\RetailFoodController;
 use Illuminate\Support\Facades\Mail;
 use App\Http\Controllers\OutletFoodGoodReceiveController;
+use App\Http\Controllers\GoodReceiveOutletSupplierController;
+
 
 Route::get('/', function () {
     return Inertia::render('Welcome', [
@@ -281,6 +283,7 @@ Route::get('/api/items/last-price', [\App\Http\Controllers\PurchaseOrderFoodsCon
 Route::get('/api/inventory/stock', [\App\Http\Controllers\ItemController::class, 'getStock']);
 Route::get('/api/items/by-fo-khusus', [App\Http\Controllers\ItemController::class, 'getByFOKhusus']);
 Route::get('/api/items/autocomplete-pcs', [ItemController::class, 'autocompletePcs']);
+Route::get('/api/items/by-supplier', [ItemController::class, 'bySupplier']);
 Route::get('/api/items/{id}', [App\Http\Controllers\ItemController::class, 'show']);
 Route::get('/api/items/{id}/detail', [App\Http\Controllers\ItemController::class, 'apiDetail']);
 Route::get('/items/search-for-warehouse-transfer', [ItemController::class, 'searchForWarehouseTransfer']);
@@ -627,5 +630,65 @@ Route::get('/test-email', function() {
         return 'Error: ' . $e->getMessage();
     }
 });
+
+Route::get('/api/items/{id}/check-supplier', function ($id) {
+    $outletId = Request::get('outlet_id');
+    $isSupplier = \DB::table('item_supplier_outlet')
+        ->join('item_supplier', 'item_supplier_outlet.item_supplier_id', '=', 'item_supplier.id')
+        ->where('item_supplier_outlet.outlet_id', $outletId)
+        ->where('item_supplier.item_id', $id)
+        ->exists();
+    return response()->json(['is_supplier' => $isSupplier]);
+});
+
+Route::get('/api/items/search', function () {
+    $q = Request::get('q');
+    $outletId = Request::get('outlet_id');
+    $excludeSupplier = Request::get('exclude_supplier', false);
+
+    $query = \DB::table('items')
+        ->where(function($query) use ($q) {
+            $query->where('name', 'like', "%{$q}%")
+                  ->orWhere('sku', 'like', "%{$q}%");
+        });
+
+    if ($excludeSupplier) {
+        // Exclude items that are in item_supplier
+        $query->whereNotExists(function($subquery) use ($outletId) {
+            $subquery->select(\DB::raw(1))
+                    ->from('item_supplier')
+                    ->join('item_supplier_outlet', 'item_supplier.id', '=', 'item_supplier_outlet.item_supplier_id')
+                    ->whereRaw('items.id = item_supplier.item_id')
+                    ->where('item_supplier_outlet.outlet_id', $outletId);
+        });
+    }
+
+    $items = $query->limit(10)->get();
+    return response()->json(['items' => $items]);
+});
+
+Route::get('/api/suppliers/by-outlet', function () {
+    $outletId = Request::get('outlet_id');
+    $suppliers = \DB::table('suppliers')
+        ->join('item_supplier', 'suppliers.id', '=', 'item_supplier.supplier_id')
+        ->join('item_supplier_outlet', 'item_supplier.id', '=', 'item_supplier_outlet.item_supplier_id')
+        ->where('item_supplier_outlet.outlet_id', $outletId)
+        ->select('suppliers.*')
+        ->distinct()
+        ->get();
+    return response()->json(['suppliers' => $suppliers]);
+});
+
+// Index, create, store, show, delete, fetch RO, dsb
+Route::middleware(['auth', 'verified'])->group(function () {
+    Route::get('/good-receive-outlet-supplier', [GoodReceiveOutletSupplierController::class, 'index'])->name('good-receive-outlet-supplier.index');
+    Route::get('/good-receive-outlet-supplier/{id}', [GoodReceiveOutletSupplierController::class, 'show'])->name('good-receive-outlet-supplier.show');
+    Route::post('/good-receive-outlet-supplier', [GoodReceiveOutletSupplierController::class, 'store'])->name('good-receive-outlet-supplier.store');
+    Route::delete('/good-receive-outlet-supplier/{id}', [GoodReceiveOutletSupplierController::class, 'destroy'])->name('good-receive-outlet-supplier.destroy');
+    Route::post('/good-receive-outlet-supplier/fetch-ro', [GoodReceiveOutletSupplierController::class, 'fetchRO'])->name('good-receive-outlet-supplier.fetch-ro');
+});
+
+// API untuk dropdown RO Supplier (jika perlu)
+Route::get('/api/ro-suppliers', [GoodReceiveOutletSupplierController::class, 'getROSuppliers']);
 
 require __DIR__.'/auth.php';

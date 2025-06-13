@@ -92,8 +92,8 @@ function translateDay(day) {
 }
 
 function getSubtotal(order) {
-  if (!order.items) return 0;
-  return order.items.reduce((sum, item) => sum + (Number(item.subtotal) || 0), 0);
+  const items = Array.isArray(order.items) ? order.items : (order.items ? Object.values(order.items) : []);
+  return items.reduce((sum, item) => sum + (Number(item.subtotal) || 0), 0);
 }
 const grandTotal = computed(() =>
   props.floorOrders.data.reduce((sum, order) => sum + getSubtotal(order), 0)

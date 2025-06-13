@@ -15,7 +15,7 @@ class FloorOrderService
             throw new \Exception('Supplier tidak ditemukan');
         }
 
-        $prefix = 'RO';
+        $prefix = 'RO-SUPP';
         $supplierCode = strtoupper(substr($supplier->name, 0, 3));
         $date = now()->format('ymd');
         

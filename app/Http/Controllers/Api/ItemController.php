@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Models\Item;
 use App\Models\Unit;
+use Illuminate\Support\Facades\DB;
 
 class ItemController extends Controller
 {
@@ -55,5 +56,37 @@ class ItemController extends Controller
             $query->where('name', 'like', "%$q%") ;
         }
         return $query->limit(15)->get(['id', 'name']);
+    }
+
+    public function bySupplier(Request $request)
+    {
+        $supplierId = $request->get('supplier_id');
+        $outletId = $request->get('outlet_id');
+        $items = DB::table('items')
+            ->join('item_supplier', 'items.id', '=', 'item_supplier.item_id')
+            ->join('item_supplier_outlet', 'item_supplier.id', '=', 'item_supplier_outlet.item_supplier_id')
+            ->leftJoin('categories', 'items.category_id', '=', 'categories.id')
+            ->leftJoin('units', 'item_supplier.unit_id', '=', 'units.id')
+            ->where('item_supplier.supplier_id', $supplierId)
+            ->where('item_supplier_outlet.outlet_id', $outletId)
+            ->where('items.status', 'active')
+            ->select(
+                'items.id',
+                'items.name',
+                'items.sku',
+                'items.category_id',
+                'categories.name as category_name',
+                'item_supplier.price',
+                'units.name as unit',
+                'units.id as unit_id'
+            )
+            ->get();
+
+        // Jangan return error jika kosong, selalu return array items
+        // if ($items->isEmpty()) {
+        //     return response()->json(['error' => 'Item not found']);
+        // }
+
+        return response()->json(['items' => $items]);
     }
 } 

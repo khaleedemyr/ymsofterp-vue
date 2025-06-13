@@ -66,6 +66,7 @@ const menuGroups = [
         menus: [
             { name: () => 'Request Order (RO)', icon: 'fa-solid fa-calendar-check', route: '/floor-order', code: 'floor_order' },
             { name: () => 'Outlet Good Receive', icon: 'fa-solid fa-truck-loading', route: '/outlet-food-good-receives', code: 'outlet_food_good_receive' },
+            { name: () => 'Good Receive Outlet Supplier', icon: 'fa-solid fa-truck-arrow-right', route: '/good-receive-outlet-supplier', code: 'good_receive_outlet_supplier' },
             { name: () => 'Outlet Stock Adjustment', icon: 'fa-solid fa-boxes-stacked', route: '/outlet-food-inventory-adjustment', code: 'outlet_stock_adjustment' },
             { name: () => 'Laporan Stok Akhir Outlet', icon: 'fa-solid fa-clipboard-list', route: '/outlet-inventory/stock-position', code: 'outlet_inventory_stock_position' },
             { name: () => 'Saldo Awal Stok Outlet', icon: 'fa-solid fa-warehouse', route: '/outlet-stock-balances', code: 'outlet_stock_balances' },
