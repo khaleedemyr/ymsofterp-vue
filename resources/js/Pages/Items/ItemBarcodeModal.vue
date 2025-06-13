@@ -430,6 +430,7 @@ function downloadPDF(barcode, qty) {
     const labelWidth = 30; // 3cm
     const labelHeight = 15; // 1.5cm
     const gap = 3; // 0.3cm
+    const marginLeft = 2; // mm, margin kiri untuk semua kolom
     const numLabels = qty || 1;
     const numRows = Math.ceil(numLabels / 3);
     const pdfWidth = 94; // 9.4cm
@@ -443,7 +444,7 @@ function downloadPDF(barcode, qty) {
         for (let colIdx = 0; colIdx < 3; colIdx++) {
             const idx = rowIdx * 3 + colIdx;
             if (idx >= barcodes.length) continue;
-            const x = colIdx * (labelWidth + gap);
+            const x = marginLeft + colIdx * (labelWidth + gap);
             const sku = barcodes[idx];
             // Render barcode ke canvas proporsional, scale 3x
             const areaBarcodeW = labelWidth - 4; // 26mm
@@ -454,7 +455,7 @@ function downloadPDF(barcode, qty) {
             canvas.height = areaBarcodeH * scale;
             JsBarcode(canvas, sku, { width: 1.5 * scale, height: areaBarcodeH * scale, displayValue: false });
             // Masukkan barcode ke PDF (ukuran asli)
-            doc.addImage(canvas, 'PNG', x + 2, y + 1.5, areaBarcodeW, areaBarcodeH);
+            doc.addImage(canvas, 'PNG', x, y + 1.5, areaBarcodeW, areaBarcodeH);
             doc.setFontSize(8);
             // Geser teks lebih ke bawah dari barcode
             doc.text(sku, x + labelWidth / 2, y + areaBarcodeH + 4, { align: 'center' }); // Geser ke bawah
