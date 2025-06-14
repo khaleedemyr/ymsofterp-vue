@@ -86,6 +86,8 @@ const menuGroups = [
             { name: () => 'Contra Bon', icon: 'fa-solid fa-file-circle-xmark', route: '/contra-bons', code: 'contra_bon' },
             { name: () => 'Food Payment', icon: 'fa-solid fa-money-bill-transfer', route: '/food-payments', code: 'food_payment' },
             { name: () => 'MT PO Payment', icon: 'fa-solid fa-money-bill-wave', route: route('mt-po-payment.index'), code: 'mt_po_payment' },
+            { name: () => 'Outlet Payments', icon: 'fa-solid fa-money-bill', route: route('outlet-payments.index'), code: 'outlet_payments' },
+            { name: () => 'Outlet Payment Supplier', icon: 'fa-solid fa-money-bill', route: route('outlet-payment-suppliers.index'), code: 'outlet_payment_suppliers' },
             {
                 name: () => 'Report Penjualan Pivot per Outlet per Sub Kategori',
                 icon: 'fa-solid fa-table-columns',

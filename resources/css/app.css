@@ -1,3 +1,8 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Pastikan SweetAlert selalu di atas modal */
+.swal2-container {
+  z-index: 9999 !important;
+}

@@ -14,4 +14,19 @@ class DeliveryOrder extends Model
     {
         return $this->hasMany(DeliveryOrderItem::class, 'delivery_order_id');
     }
+
+    public function packingList()
+    {
+        return $this->belongsTo(FoodPackingList::class, 'packing_list_id');
+    }
+
+    public function floorOrder()
+    {
+        return $this->belongsTo(FoodFloorOrder::class, 'floor_order_id');
+    }
+
+    public function creator()
+    {
+        return $this->belongsTo(User::class, 'created_by');
+    }
 } 

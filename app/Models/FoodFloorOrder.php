@@ -48,4 +48,9 @@ class FoodFloorOrder extends Model
             'warehouse_division_id'   // foreign key di pivot mengarah ke division
         )->distinct();
     }
+
+    public function creator()
+    {
+        return $this->belongsTo(User::class, 'user_id');
+    }
 } 

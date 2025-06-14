@@ -25,6 +25,6 @@ class FoodPackingList extends Model
 
     public function creator()
     {
-        return $this->belongsTo(\App\Models\User::class, 'created_by', 'id');
+        return $this->belongsTo(User::class, 'created_by');
     }
 } 

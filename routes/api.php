@@ -26,6 +26,7 @@ use App\Http\Controllers\Api\GoodReceiveController;
 use App\Http\Controllers\Api\ItemController as ApiItemController;
 use App\Models\FoodGoodReceive;
 use App\Http\Controllers\Mobile\RegisterController;
+use App\Http\Controllers\DeliveryOrderController;
 
 
 
@@ -183,4 +184,6 @@ Route::get('/jabatan', function () {
 Route::get('/quotes/of-the-day', [QuoteController::class, 'getQuoteByDayOfYear']);
 
 Route::get('/items', [ItemController::class, 'apiIndex']);
+
+Route::get('/delivery-order/{id}/struk', [\App\Http\Controllers\DeliveryOrderController::class, 'strukData']);
 

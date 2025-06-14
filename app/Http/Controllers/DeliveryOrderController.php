@@ -271,7 +271,32 @@ class DeliveryOrderController extends Controller
             ]);
             DB::commit();
             Log::info('Sukses simpan Delivery Order');
-            return response()->json(['success' => true, 'message' => 'Delivery Order berhasil disimpan!']);
+            $kasirName = DB::table('users')->where('id', auth()->id())->value('nama_lengkap');
+            // Ambil warehouse division dan warehouse name
+            $packingListFull = DB::table('food_packing_lists as pl')
+                ->leftJoin('warehouse_division as wd', 'pl.warehouse_division_id', '=', 'wd.id')
+                ->leftJoin('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
+                ->leftJoin('food_floor_orders as fo', 'pl.food_floor_order_id', '=', 'fo.id')
+                ->leftJoin('users as u', 'fo.user_id', '=', 'u.id')
+                ->where('pl.id', $request->packing_list_id)
+                ->select(
+                    'wd.name as division_name',
+                    'w.name as warehouse_name',
+                    'fo.order_number as ro_number',
+                    'fo.tanggal as ro_date',
+                    'u.nama_lengkap as ro_creator_name'
+                )
+                ->first();
+            return response()->json([
+                'success' => true,
+                'message' => 'Delivery Order berhasil disimpan!',
+                'kasir_name' => $kasirName,
+                'division_name' => $packingListFull->division_name ?? null,
+                'warehouse_name' => $packingListFull->warehouse_name ?? null,
+                'ro_number' => $packingListFull->ro_number ?? null,
+                'ro_date' => $packingListFull->ro_date ?? null,
+                'ro_creator_name' => $packingListFull->ro_creator_name ?? null
+            ]);
         } catch (\Exception $e) {
             DB::rollBack();
             Log::error('Gagal simpan Delivery Order: ' . $e->getMessage(), ['trace' => $e->getTraceAsString()]);
@@ -443,5 +468,55 @@ class DeliveryOrderController extends Controller
             DB::rollBack();
             return redirect()->back()->with('error', $e->getMessage());
         }
+    }
+
+    public function strukData($id)
+    {
+        $order = DB::table('delivery_orders as do')
+            ->leftJoin('food_packing_lists as pl', 'do.packing_list_id', '=', 'pl.id')
+            ->leftJoin('warehouse_division as wd', 'pl.warehouse_division_id', '=', 'wd.id')
+            ->leftJoin('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
+            ->leftJoin('food_floor_orders as fo', 'pl.food_floor_order_id', '=', 'fo.id')
+            ->leftJoin('users as ufo', 'fo.user_id', '=', 'ufo.id')
+            ->leftJoin('users as kasir', 'do.created_by', '=', 'kasir.id')
+            ->leftJoin('tbl_data_outlet as o', 'fo.id_outlet', '=', 'o.id_outlet')
+            ->select(
+                'do.number as orderNumber',
+                'do.created_at as date',
+                'o.nama_outlet as outlet',
+                'kasir.nama_lengkap as kasirName',
+                'wd.name as divisionName',
+                'w.name as warehouseName',
+                'fo.order_number as roNumber',
+                'fo.tanggal as roDate',
+                'ufo.nama_lengkap as roCreatorName'
+            )
+            ->where('do.id', $id)
+            ->first();
+        if (!$order) return response()->json(['message' => 'Data tidak ditemukan'], 404);
+        $items = DB::table('delivery_order_items as doi')
+            ->leftJoin('items as i', 'doi.item_id', '=', 'i.id')
+            ->leftJoin('units as u', 'doi.unit', '=', 'u.name')
+            ->select(
+                'doi.id',
+                'i.name',
+                'doi.qty_scan',
+                'doi.unit',
+                'u.code as unit_code'
+            )
+            ->where('doi.delivery_order_id', $id)
+            ->get();
+        return response()->json([
+            'orderNumber' => $order->orderNumber,
+            'date' => $order->date ? date('d/m/Y', strtotime($order->date)) : '',
+            'outlet' => $order->outlet,
+            'kasirName' => $order->kasirName,
+            'divisionName' => $order->divisionName,
+            'warehouseName' => $order->warehouseName,
+            'roNumber' => $order->roNumber,
+            'roDate' => $order->roDate ? date('d/m/Y', strtotime($order->roDate)) : '',
+            'roCreatorName' => $order->roCreatorName,
+            'items' => $items
+        ]);
     }
 } 

@@ -27,12 +27,12 @@ class OutletFoodGoodReceive extends Model
 
     public function outlet()
     {
-        return $this->belongsTo(Outlet::class);
+        return $this->belongsTo(\App\Models\Outlet::class, 'outlet_id', 'id_outlet');
     }
 
     public function deliveryOrder()
     {
-        return $this->belongsTo(DeliveryOrder::class);
+        return $this->belongsTo(DeliveryOrder::class, 'delivery_order_id');
     }
 
     public function items()
@@ -53,5 +53,10 @@ class OutletFoodGoodReceive extends Model
     public function updater()
     {
         return $this->belongsTo(User::class, 'updated_by');
+    }
+
+    public function outletPayment()
+    {
+        return $this->hasOne(OutletPayment::class, 'gr_id');
     }
 } 

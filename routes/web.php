@@ -65,6 +65,8 @@ use Illuminate\Support\Facades\Mail;
 use App\Http\Controllers\OutletFoodGoodReceiveController;
 use App\Http\Controllers\GoodReceiveOutletSupplierController;
 use App\Http\Controllers\ReportController;
+use App\Http\Controllers\OutletPaymentController;
+use App\Http\Controllers\OutletPaymentSupplierController;
 
 
 Route::get('/', function () {
@@ -701,5 +703,29 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/report-rekap-fj', [\App\Http\Controllers\ReportController::class, 'reportSalesPivotSpecial'])->name('report.rekap-fj');
     Route::get('/report-good-receive-outlet', [\App\Http\Controllers\ReportController::class, 'reportGoodReceiveOutlet'])->name('report.good-receive-outlet');
 });
+
+// Outlet Payments
+Route::middleware(['auth', 'verified'])->group(function () {
+    Route::get('/outlet-payments', [OutletPaymentController::class, 'index'])->name('outlet-payments.index');
+    Route::get('/outlet-payments/create', [\App\Http\Controllers\OutletPaymentController::class, 'create'])->name('outlet-payments.create');
+    Route::post('/outlet-payments', [OutletPaymentController::class, 'store'])->name('outlet-payments.store');
+    Route::get('/outlet-payments/unpaid-gr', [\App\Http\Controllers\OutletPaymentController::class, 'unpaidGR'])->name('outlet-payments.unpaid-gr');
+    Route::put('/outlet-payments/{outletPayment}', [OutletPaymentController::class, 'update'])->name('outlet-payments.update');
+    Route::put('/outlet-payments/{outletPayment}/status', [OutletPaymentController::class, 'updateStatus'])->name('outlet-payments.status');
+    Route::get('/outlet-payments/{outletPayment}', [OutletPaymentController::class, 'show'])->name('outlet-payments.show');
+  
+    Route::delete('/outlet-payments/{outletPayment}', [OutletPaymentController::class, 'destroy'])->name('outlet-payments.destroy');
+  
+});
+
+// Outlet Payment Supplier
+Route::get('/outlet-payment-suppliers', [\App\Http\Controllers\OutletPaymentSupplierController::class, 'index'])->name('outlet-payment-suppliers.index');
+Route::get('/outlet-payment-suppliers/create', [\App\Http\Controllers\OutletPaymentSupplierController::class, 'create'])->name('outlet-payment-suppliers.create');
+Route::post('/outlet-payment-suppliers', [\App\Http\Controllers\OutletPaymentSupplierController::class, 'store'])->name('outlet-payment-suppliers.store');
+Route::get('/outlet-payment-suppliers/unpaid-gr', [\App\Http\Controllers\OutletPaymentSupplierController::class, 'unpaidGR'])->name('outlet-payment-suppliers.unpaid-gr');
+Route::get('/outlet-payment-suppliers/{outletPaymentSupplier}', [\App\Http\Controllers\OutletPaymentSupplierController::class, 'show'])->name('outlet-payment-suppliers.show');
+Route::put('/outlet-payment-suppliers/{outletPaymentSupplier}', [\App\Http\Controllers\OutletPaymentSupplierController::class, 'update'])->name('outlet-payment-suppliers.update');
+Route::put('/outlet-payment-suppliers/{outletPaymentSupplier}/status', [\App\Http\Controllers\OutletPaymentSupplierController::class, 'updateStatus'])->name('outlet-payment-suppliers.status');
+Route::delete('/outlet-payment-suppliers/{outletPaymentSupplier}', [\App\Http\Controllers\OutletPaymentSupplierController::class, 'destroy'])->name('outlet-payment-suppliers.destroy');
 
 require __DIR__.'/auth.php';

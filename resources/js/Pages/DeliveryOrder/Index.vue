@@ -35,6 +35,10 @@
                 <Link :href="`/delivery-order/${order.id}`" class="inline-flex items-center btn btn-xs bg-blue-100 text-blue-800 hover:bg-blue-200 rounded px-2 py-1 font-semibold transition">
                   <i class="fa fa-eye mr-1"></i> Detail
                 </Link>
+                <button @click="handleReprint(order.id)" :disabled="loadingReprintId === order.id" class="ml-2 inline-flex items-center btn btn-xs bg-green-100 text-green-800 hover:bg-green-200 rounded px-2 py-1 font-semibold transition disabled:opacity-50">
+                  <i v-if="loadingReprintId === order.id" class="fa fa-spinner fa-spin mr-1"></i>
+                  <i v-else class="fa fa-print mr-1"></i> Reprint
+                </button>
                 <button @click="handleDelete(order.id)" :disabled="loadingDeleteId === order.id" class="ml-2 inline-flex items-center btn btn-xs bg-red-100 text-red-800 hover:bg-red-200 rounded px-2 py-1 font-semibold transition disabled:opacity-50">
                   <i v-if="loadingDeleteId === order.id" class="fa fa-spinner fa-spin mr-1"></i>
                   <i v-else class="fa fa-trash mr-1"></i> Delete
@@ -54,9 +58,12 @@ import { Link } from '@inertiajs/vue3';
 import Swal from 'sweetalert2';
 import { router } from '@inertiajs/vue3';
 import { ref } from 'vue';
+import { generateStrukPDF } from './generateStrukPDF';
+import axios from 'axios';
 
 const props = defineProps({ orders: Array });
 const loadingDeleteId = ref(null);
+const loadingReprintId = ref(null);
 
 function formatDate(date) {
   if (!date) return '-';
@@ -96,6 +103,25 @@ async function handleDelete(id) {
     });
   } finally {
     loadingDeleteId.value = null;
+  }
+}
+
+async function handleReprint(orderId) {
+  loadingReprintId.value = orderId;
+  try {
+    const { data } = await axios.get(`/api/delivery-order/${orderId}/struk`);
+    await generateStrukPDF({
+      ...data,
+      showReprintLabel: true
+    });
+  } catch (e) {
+    await Swal.fire({
+      icon: 'error',
+      title: 'Gagal',
+      text: 'Gagal mengambil data struk. Coba lagi.'
+    });
+  } finally {
+    loadingReprintId.value = null;
   }
 }
 </script> 

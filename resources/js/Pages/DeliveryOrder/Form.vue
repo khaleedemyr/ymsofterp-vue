@@ -280,63 +280,75 @@ function confirmSubmit() {
 }
 
 async function getBase64FromUrl(url) {
-  const response = await fetch(url);
-  const blob = await response.blob();
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onloadend = () => resolve(reader.result);
-    reader.onerror = reject;
-    reader.readAsDataURL(blob);
-  });
+  try {
+    const response = await fetch(url);
+    const blob = await response.blob();
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  } catch (e) {
+    console.error('Gagal fetch logo:', e);
+    throw e;
+  }
 }
 
-async function generateStrukPDF({ orderNumber, date, outlet, items }) {
-  try {
-    // Ukuran 80mm = 226.77pt, tinggi dinamis
-    const pageWidth = 226.77; // 80mm
-    let y = 20;
-    const pdf = new jsPDF({ unit: 'pt', format: [pageWidth, 600], orientation: 'portrait' });
-    pdf.setFont('courier', 'normal');
-    pdf.setFontSize(13);
-    pdf.text('DELIVERY ORDER', pageWidth/2, y, { align: 'center' });
-    y += 18;
-    pdf.setFontSize(10);
-    pdf.text(`No: ${orderNumber}`, 10, y);
-    y += 13;
-    pdf.text(`Tanggal: ${date}`, 10, y);
-    y += 13;
-    pdf.text(`Outlet: ${outlet}`, 10, y);
-    y += 13;
-    pdf.line(10, y, pageWidth-10, y);
-    y += 8;
-    // Header tabel
-    pdf.text('Item', 10, y);
-    pdf.text('Qty', pageWidth/2, y, { align: 'center' });
-    pdf.text('Unit', pageWidth-10, y, { align: 'right' });
-    y += 10;
-    pdf.text('-------------------------------', 10, y);
-    y += 10;
-    // Isi item
-    items.forEach(i => {
-      pdf.text(i.name, 10, y);
-      pdf.text(String(i.qty_scan), pageWidth/2, y, { align: 'center' });
-      pdf.text(i.unit, pageWidth-10, y, { align: 'right' });
-      y += 12;
-    });
-    pdf.text('-------------------------------', 10, y);
-    y += 16;
-    pdf.text('Terima kasih', pageWidth/2, y, { align: 'center' });
-    y += 18;
-    pdf.setFontSize(9);
-    pdf.text('Cetak struk by jsPDF', pageWidth/2, y, { align: 'center' });
-    // Resize page height
-    pdf.internal.pageSize.setHeight(y+20);
-    pdf.autoPrint();
-    pdf.output('dataurlnewwindow');
-  } catch (err) {
-    console.error('Gagal generate PDF struk:', err);
-    alert('Gagal generate PDF struk. Cek console untuk detail error.');
+async function generateStrukPDF({ orderNumber, date, outlet, items, kasirName, divisionName, warehouseName, roNumber, roDate, roCreatorName }) {
+  const pdf = new jsPDF({ unit: 'mm', format: [80, 297] });
+  let y = 10;
+  // Judul rata tengah, font besar, bold
+  pdf.setFontSize(13);
+  pdf.setFont(undefined, 'bold');
+  pdf.text('DELIVERY ORDER', 40, y, { align: 'center' });
+  y += 7;
+  // JUSTUS GROUP di bawah judul
+  pdf.setFontSize(10);
+  pdf.text('JUSTUS GROUP', 40, y, { align: 'center' });
+  y += 6;
+  // Warehouse division/warehouse rata tengah, bold
+  pdf.setFont(undefined, 'bold');
+  if (divisionName || warehouseName) {
+    pdf.text(`${divisionName || ''}${divisionName && warehouseName ? ' - ' : ''}${warehouseName || ''}`, 40, y, { align: 'center' });
+    y += 6;
   }
+  pdf.setFont(undefined, 'normal'); // Kembalikan ke normal untuk info lain
+  // Info lain, font kecil
+  pdf.setFontSize(9);
+  pdf.text(`No: ${orderNumber}`, 2, y); y += 4.5;
+  pdf.text(`Tanggal: ${date}`, 2, y); y += 4.5;
+  pdf.text(`Outlet: ${outlet}`, 2, y); y += 4.5;
+  if (roNumber) { pdf.text(`RO: ${roNumber}`, 2, y); y += 4.5; }
+  if (roDate) { pdf.text(`Tgl RO: ${roDate}`, 2, y); y += 4.5; }
+  if (roCreatorName) { pdf.text(`Pembuat RO: ${roCreatorName}`, 2, y); y += 4.5; }
+  // Garis full width, spasi sebelum dan sesudah
+  y += 2;
+  pdf.setLineWidth(0.5);
+  pdf.line(2, y, 78, y);
+  y += 3;
+  // ITEM LIST
+  if (items && items.length) {
+    items.forEach(i => {
+      const itemLines = pdf.splitTextToSize(i.name, 60);
+      itemLines.forEach(line => {
+        pdf.text(line, 2, y);
+        y += 3.8;
+      });
+      pdf.text(`${i.qty_scan} ${i.unit_code || i.unit}`, 2, y);
+      y += 5;
+    });
+  } else {
+    pdf.text('TIDAK ADA ITEM', 2, y); y += 4.5;
+  }
+  // Garis full width sebelum kasir
+  y += 2;
+  pdf.setLineWidth(0.5);
+  pdf.line(2, y, 78, y);
+  y += 3;
+  if (kasirName) { pdf.text(`Kasir: ${kasirName}`, 2, y); y += 4.5; }
+  pdf.text('Terima kasih', 2, y);
+  pdf.output('dataurlnewwindow');
 }
 
 async function submitDO() {
@@ -360,6 +372,18 @@ async function submitDO() {
     });
     showConfirmModal.value = false;
     if (doRes.data.success) {
+      await generateStrukPDF({
+        orderNumber: doNumber.value,
+        date: new Date().toLocaleDateString('id-ID'),
+        outlet: selectedPackingList.value?.nama_outlet || '-',
+        items: packingListItems,
+        kasirName: doRes.data.kasir_name || '-',
+        divisionName: doRes.data.division_name || '',
+        warehouseName: doRes.data.warehouse_name || '',
+        roNumber: doRes.data.ro_number || '',
+        roDate: doRes.data.ro_date ? new Date(doRes.data.ro_date).toLocaleDateString('id-ID') : '',
+        roCreatorName: doRes.data.ro_creator_name || ''
+      });
       await Swal.fire({
         icon: 'success',
         title: 'Sukses',
