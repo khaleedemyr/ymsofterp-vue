@@ -36,9 +36,9 @@ watch(() => props.show, (val) => {
     form.status = props.category.status;
     form.show_pos = String(props.category.show_pos);
 
-    // Ambil outlet yang sudah terhubung
+    // Ambil outlet yang sudah terhubung (selalu isi selectedOutlets)
     const selectedOutletObjs = props.category.outlet_ids
-      ? props.outlets.filter(o => props.category.outlet_ids.includes(o.id))
+      ? props.outlets.filter(o => props.category.outlet_ids.map(String).includes(String(o.id)))
       : [];
     selectedOutlets.value = selectedOutletObjs;
 
@@ -111,6 +111,11 @@ async function submit() {
 
 function closeModal() {
   emit('close');
+}
+
+// Custom label untuk outlet (pakai name atau nama_outlet)
+function outletLabel(option) {
+  return option.name || option.nama_outlet || '-';
 }
 </script>
 
@@ -194,14 +199,8 @@ function closeModal() {
                 placeholder="Pilih Region"
                 class="mb-2"
               />
-              <div class="flex flex-wrap gap-2 mt-2">
-                <span v-for="r in selectedRegions" :key="r.id" class="inline-flex items-center bg-blue-100 text-blue-700 px-2 py-1 rounded-full text-xs font-semibold">
-                  {{ r.name }}
-                  <button type="button" class="ml-1 text-blue-500 hover:text-red-500" @click="selectedRegions = selectedRegions.filter(val => val.id !== r.id)">&times;</button>
-                </span>
-              </div>
             </div>
-            <div v-else>
+            <div v-if="availabilityType === 'byOutlet'">
               <label class="block text-xs text-gray-500 mb-1">Pilih Outlet</label>
               <Multiselect
                 v-model="selectedOutlets"
@@ -210,17 +209,17 @@ function closeModal() {
                 :close-on-select="false"
                 :clear-on-select="false"
                 :preserve-search="true"
-                label="nama_outlet"
+                :custom-label="outletLabel"
                 track-by="id"
                 placeholder="Pilih Outlet"
                 class="mb-2"
               />
-              <div class="flex flex-wrap gap-2 mt-2">
-                <span v-for="o in selectedOutlets" :key="o.id" class="inline-flex items-center bg-blue-100 text-blue-700 px-2 py-1 rounded-full text-xs font-semibold">
-                  {{ o.nama_outlet }}
-                  <button type="button" class="ml-1 text-blue-500 hover:text-red-500" @click="selectedOutlets = selectedOutlets.filter(val => val.id !== o.id)">&times;</button>
-                </span>
-              </div>
+            </div>
+            <!-- List outlet terpilih, selalu muncul jika ada -->
+            <div v-if="selectedOutlets.length" class="flex flex-wrap gap-2 mt-2">
+              <span v-for="o in selectedOutlets" :key="o.id" class="inline-flex items-center bg-green-100 text-green-800 px-2 py-1 rounded-full text-xs font-semibold">
+                {{ o.name || o.nama_outlet }}
+              </span>
             </div>
           </div>
         </form>

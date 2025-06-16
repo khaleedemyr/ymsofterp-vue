@@ -9,4 +9,8 @@
   <div class="flex items-center gap-2 px-4 py-2 text-gray-600 hover:bg-blue-50 hover:text-blue-700 rounded-lg cursor-pointer" @click="router.visit('/item-supplier')">
     <i class="fa-solid fa-link text-blue-500"></i>
     <span>Items Supplier</span>
+  </div>
+  <div class="flex items-center gap-2 px-4 py-2 text-gray-600 hover:bg-blue-50 hover:text-blue-700 rounded-lg cursor-pointer" @click="router.visit('/promos')">
+    <i class="fa-solid fa-tag text-blue-500"></i>
+    <span>Promos</span>
   </div> 

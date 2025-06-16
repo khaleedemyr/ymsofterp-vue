@@ -28,6 +28,7 @@
         <table class="min-w-full rounded-xl overflow-hidden shadow-xl">
           <thead class="bg-blue-100">
             <tr>
+              <th class="px-2 py-2 text-left text-xs font-bold text-blue-700 uppercase">SPS</th>
               <th class="px-4 py-2 text-left text-xs font-bold text-blue-700 uppercase">Nama Item</th>
               <th class="px-4 py-2 text-right text-xs font-bold text-blue-700 uppercase">Qty DO</th>
               <th class="px-4 py-2 text-left text-xs font-bold text-blue-700 uppercase">Unit</th>
@@ -37,6 +38,11 @@
           </thead>
           <tbody>
             <tr v-for="item in items" :key="item.delivery_order_item_id" :class="statusClass(item)">
+              <td class="px-2 py-2">
+                <button type="button" class="px-2 py-1 rounded bg-yellow-100 text-yellow-800 text-xs font-semibold hover:bg-yellow-200 border border-yellow-300 flex items-center gap-1" @click="openSpsModal(item)" :disabled="!item.item_id">
+                  <i class="fa fa-info-circle"></i> SPS
+                </button>
+              </td>
               <td class="px-4 py-2 text-base">{{ item.item_name }}</td>
               <td class="px-4 py-2 text-right text-lg">{{ item.qty_packing_list }}</td>
               <td class="px-4 py-2 text-base">{{ item.unit }}</td>
@@ -98,6 +104,34 @@
           <button @click="showReasonModal = false" class="px-4 py-2 text-gray-700 bg-gray-100 rounded hover:bg-gray-200 w-full">Batal</button>
         </div>
       </div>
+      <!-- Modal SPS -->
+      <Modal :show="spsModal" @close="closeSpsModal">
+        <div class="p-4 min-w-[320px] max-w-[90vw]">
+          <div class="flex justify-between items-center mb-2">
+            <h2 class="text-lg font-bold text-gray-700">Detail Item</h2>
+            <button @click="closeSpsModal" class="text-gray-400 hover:text-gray-700"><i class="fa fa-times"></i></button>
+          </div>
+          <div v-if="spsLoading" class="text-center py-8"><i class="fa fa-spinner fa-spin text-blue-400 text-2xl"></i></div>
+          <div v-else-if="spsItem && !spsItem.error">
+            <div class="mb-2"><span class="font-semibold">Nama:</span> {{ spsItem.name }}</div>
+            <div class="mb-2"><span class="font-semibold">Deskripsi:</span>
+              <span v-if="spsItem.description">{{ spsItem.description }}</span>
+              <span v-else class="italic text-gray-400">(Tidak ada deskripsi)</span>
+            </div>
+            <div class="mb-2"><span class="font-semibold">Spesifikasi:</span>
+              <span v-if="spsItem.specification">{{ spsItem.specification }}</span>
+              <span v-else class="italic text-gray-400">(Tidak ada spesifikasi)</span>
+            </div>
+            <div v-if="spsItem.images && spsItem.images.length" class="mb-2">
+              <span class="font-semibold">Gambar:</span>
+              <div class="flex flex-wrap gap-2 mt-1">
+                <img v-for="img in spsItem.images" :key="img.id" :src="img.path.startsWith('http') ? img.path : '/storage/' + img.path" class="w-24 h-24 object-contain border rounded bg-white" />
+              </div>
+            </div>
+          </div>
+          <div v-else-if="spsItem && spsItem.error" class="text-red-500 text-center py-4">{{ spsItem.error }}</div>
+        </div>
+      </Modal>
     </div>
   </AppLayout>
 </template>
@@ -107,6 +141,7 @@ import { ref, reactive, onMounted, nextTick, computed } from 'vue';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import axios from 'axios';
 import Swal from 'sweetalert2';
+import Modal from '@/Components/Modal.vue';
 
 const doOptions = ref([]);
 const selectedDOId = ref('');
@@ -129,6 +164,9 @@ const reasonOptions = [
 ];
 const selectedReason = ref('');
 const loadingSubmit = ref(false);
+const spsModal = ref(false);
+const spsItem = ref({});
+const spsLoading = ref(false);
 
 const isReadyToSubmit = computed(() => items.length > 0 && items.some(i => i.qty_scan > 0));
 
@@ -273,6 +311,25 @@ async function submitGR() {
 function selectReason(reason) {
   selectedReason.value = reason;
   showReasonModal.value = false;
+}
+
+async function openSpsModal(item) {
+  if (!item.item_id) return;
+  spsLoading.value = true;
+  spsModal.value = true;
+  try {
+    const res = await axios.get(`/api/items/${item.item_id}/detail`);
+    spsItem.value = res.data.item;
+  } catch (e) {
+    spsItem.value = { error: 'Gagal mengambil data item' };
+  } finally {
+    spsLoading.value = false;
+  }
+}
+
+function closeSpsModal() {
+  spsModal.value = false;
+  spsItem.value = {};
 }
 </script>
 

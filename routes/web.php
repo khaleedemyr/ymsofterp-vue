@@ -67,6 +67,10 @@ use App\Http\Controllers\GoodReceiveOutletSupplierController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\OutletPaymentController;
 use App\Http\Controllers\OutletPaymentSupplierController;
+use App\Http\Controllers\PromoController;
+use App\Http\Controllers\InvestorController;
+use App\Http\Controllers\InvestorPageController;
+use App\Http\Controllers\OfficerCheckController;
 
 
 Route::get('/', function () {
@@ -620,7 +624,7 @@ Route::resource('item-supplier', \App\Http\Controllers\ItemSupplierController::c
 // API autocomplete untuk Item Supplier
 Route::get('/api/suppliers', [\App\Http\Controllers\Api\SupplierController::class, 'index']);
 Route::get('/api/items', [\App\Http\Controllers\Api\ItemController::class, 'index']);
-Route::get('/api/outlets', [\App\Http\Controllers\Api\OutletController::class, 'index']);
+Route::get('/api/outlets', [\App\Http\Controllers\InvestorController::class, 'outlets']);
 
 Route::get('/test-email', function() {
     try {
@@ -717,7 +721,15 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::delete('/outlet-payments/{outletPayment}', [OutletPaymentController::class, 'destroy'])->name('outlet-payments.destroy');
   
 });
-
+Route::middleware(['auth', 'verified'])->group(function () {
+    Route::get('/promos', [PromoController::class, 'index'])->name('promos.index');
+    Route::get('/promos/create', [PromoController::class, 'create'])->name('promos.create');
+    Route::post('/promos', [PromoController::class, 'store'])->name('promos.store');
+    Route::get('/promos/{promo}', [PromoController::class, 'show'])->name('promos.show');
+    Route::get('/promos/{promo}/edit', [PromoController::class, 'edit'])->name('promos.edit');
+    Route::put('/promos/{promo}', [PromoController::class, 'update'])->name('promos.update');
+    Route::delete('/promos/{promo}', [PromoController::class, 'destroy'])->name('promos.destroy');
+});
 // Outlet Payment Supplier
 Route::get('/outlet-payment-suppliers', [\App\Http\Controllers\OutletPaymentSupplierController::class, 'index'])->name('outlet-payment-suppliers.index');
 Route::get('/outlet-payment-suppliers/create', [\App\Http\Controllers\OutletPaymentSupplierController::class, 'create'])->name('outlet-payment-suppliers.create');
@@ -727,5 +739,21 @@ Route::get('/outlet-payment-suppliers/{outletPaymentSupplier}', [\App\Http\Contr
 Route::put('/outlet-payment-suppliers/{outletPaymentSupplier}', [\App\Http\Controllers\OutletPaymentSupplierController::class, 'update'])->name('outlet-payment-suppliers.update');
 Route::put('/outlet-payment-suppliers/{outletPaymentSupplier}/status', [\App\Http\Controllers\OutletPaymentSupplierController::class, 'updateStatus'])->name('outlet-payment-suppliers.status');
 Route::delete('/outlet-payment-suppliers/{outletPaymentSupplier}', [\App\Http\Controllers\OutletPaymentSupplierController::class, 'destroy'])->name('outlet-payment-suppliers.destroy');
+
+Route::middleware(['auth', 'verified'])->group(function () {
+    Route::resource('promos', PromoController::class);
+});
+
+Route::middleware(['auth'])->group(function () {
+    // Halaman utama Data Investor Outlet (Inertia)
+    Route::get('/investors', [InvestorPageController::class, 'index']);
+});
+
+Route::get('/officer-check', [\App\Http\Controllers\OfficerCheckController::class, 'index']);
+Route::get('/api/officer-check', [\App\Http\Controllers\OfficerCheckController::class, 'getOCs']);
+Route::post('/api/officer-check', [\App\Http\Controllers\OfficerCheckController::class, 'store']);
+Route::put('/api/officer-check/{id}', [\App\Http\Controllers\OfficerCheckController::class, 'update']);
+Route::delete('/api/officer-check/{id}', [\App\Http\Controllers\OfficerCheckController::class, 'destroy']);
+Route::get('/api/officer-check/users', [\App\Http\Controllers\OfficerCheckController::class, 'users']);
 
 require __DIR__.'/auth.php';

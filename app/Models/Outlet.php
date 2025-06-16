@@ -4,6 +4,7 @@ use Illuminate\Database\Eloquent\Model;
 class Outlet extends Model {
     protected $table = 'tbl_data_outlet';
     protected $primaryKey = 'id_outlet';
+    public $incrementing = true;
     public $timestamps = false;
 
     protected $fillable = [
@@ -27,5 +28,10 @@ class Outlet extends Model {
     public function items()
     {
         return $this->belongsToMany(Item::class, 'item_availabilities', 'outlet_id', 'item_id', 'id_outlet', 'id');
+    }
+
+    public function getNameAttribute()
+    {
+        return $this->nama_outlet;
     }
 } 

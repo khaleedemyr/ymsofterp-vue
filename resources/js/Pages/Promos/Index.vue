@@ -1,0 +1,104 @@
+<template>
+  <AppLayout>
+    <div class="max-w-7xl mx-auto py-8 px-2">
+      <div class="flex justify-between items-center mb-6">
+        <h1 class="text-2xl font-bold text-gray-800 flex items-center gap-2">
+          <i class="fa-solid fa-gift text-pink-500"></i> Promo
+        </h1>
+        <Link
+          :href="route('promos.create')"
+          class="bg-gradient-to-r from-pink-500 to-pink-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold"
+        >
+          + Buat Promo
+        </Link>
+      </div>
+      <div class="bg-white rounded-2xl shadow-2xl overflow-x-auto transition-all">
+        <table class="w-full min-w-full divide-y divide-gray-200">
+          <thead class="bg-gradient-to-r from-pink-50 to-pink-100">
+            <tr>
+              <th class="px-6 py-3 text-left text-xs font-bold text-pink-700 uppercase tracking-wider rounded-tl-2xl">No</th>
+              <th class="px-6 py-3 text-left text-xs font-bold text-pink-700 uppercase tracking-wider">Nama Promo</th>
+              <th class="px-6 py-3 text-left text-xs font-bold text-pink-700 uppercase tracking-wider">Tipe</th>
+              <th class="px-6 py-3 text-left text-xs font-bold text-pink-700 uppercase tracking-wider">Value</th>
+              <th class="px-6 py-3 text-left text-xs font-bold text-pink-700 uppercase tracking-wider">Mulai</th>
+              <th class="px-6 py-3 text-left text-xs font-bold text-pink-700 uppercase tracking-wider">Akhir</th>
+              <th class="px-6 py-3 text-left text-xs font-bold text-pink-700 uppercase tracking-wider">Status</th>
+              <th class="px-6 py-3 text-left text-xs font-bold text-pink-700 uppercase tracking-wider rounded-tr-2xl">Aksi</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-if="!promos.length">
+              <td colspan="8" class="text-center py-10 text-pink-300">Tidak ada data Promo.</td>
+            </tr>
+            <tr v-for="(promo, idx) in promos" :key="promo.id" class="hover:bg-pink-50 transition shadow-sm">
+              <td class="px-6 py-3">{{ idx + 1 }}</td>
+              <td class="px-6 py-3">{{ promo.name }}</td>
+              <td class="px-6 py-3">{{ promo.type }}</td>
+              <td class="px-6 py-3">{{ promo.value }}</td>
+              <td class="px-6 py-3">{{ formatDate(promo.start_date) }}</td>
+              <td class="px-6 py-3">{{ formatDate(promo.end_date) }}</td>
+              <td class="px-6 py-3">
+                <span :class="promo.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-500'" class="px-2 py-1 rounded-full text-xs font-bold">
+                  {{ promo.status === 'active' ? 'Aktif' : 'Nonaktif' }}
+                </span>
+              </td>
+              <td class="px-6 py-3">
+                <Link :href="route('promos.show', promo.id)" class="inline-flex items-center btn btn-xs bg-pink-100 text-pink-800 hover:bg-pink-200 rounded px-2 py-1 font-semibold transition">
+                  <i class="fa fa-eye mr-1"></i> Detail
+                </Link>
+                <Link :href="route('promos.edit', promo.id)" class="ml-2 inline-flex items-center btn btn-xs bg-yellow-100 text-yellow-800 hover:bg-yellow-200 rounded px-2 py-1 font-semibold transition">
+                  <i class="fa fa-edit mr-1"></i> Edit
+                </Link>
+                <button @click="handleDelete(promo.id)" :disabled="loadingDeleteId === promo.id" class="ml-2 inline-flex items-center btn btn-xs bg-red-100 text-red-800 hover:bg-red-200 rounded px-2 py-1 font-semibold transition disabled:opacity-50">
+                  <i v-if="loadingDeleteId === promo.id" class="fa fa-spinner fa-spin mr-1"></i>
+                  <i v-else class="fa fa-trash mr-1"></i> Delete
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </AppLayout>
+</template>
+
+<script setup>
+import AppLayout from '@/Layouts/AppLayout.vue';
+import { Link, router } from '@inertiajs/vue3';
+import Swal from 'sweetalert2';
+import { ref } from 'vue';
+
+const props = defineProps({
+  promos: Array
+});
+
+const loadingDeleteId = ref(null);
+
+function formatDate(date) {
+  if (!date) return '-';
+  return new Date(date).toLocaleDateString('id-ID');
+}
+
+async function handleDelete(id) {
+  const confirm = await Swal.fire({
+    title: 'Hapus Promo?',
+    text: 'Data promo akan dihapus. Lanjutkan?',
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonText: 'Ya, Hapus',
+    cancelButtonText: 'Batal',
+  });
+  if (!confirm.isConfirmed) return;
+  loadingDeleteId.value = id;
+  router.delete(route('promos.destroy', id), {
+    onSuccess: () => {
+      loadingDeleteId.value = null;
+      Swal.fire('Sukses', 'Promo berhasil dihapus!', 'success');
+    },
+    onError: () => {
+      loadingDeleteId.value = null;
+      Swal.fire('Error', 'Gagal menghapus promo', 'error');
+    }
+  });
+}
+</script> 

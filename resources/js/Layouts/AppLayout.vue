@@ -56,6 +56,8 @@ const menuGroups = [
             { name: () => 'Item Schedule', icon: 'fa-solid fa-calendar-days', route: '/item-schedules', code: 'item_schedules' },
             { name: () => 'RO Schedule', icon: 'fa-solid fa-calendar-days', route: '/fo-schedules', code: 'fo_schedules' },
             { name: () => 'Items Supplier', icon: 'fa-solid fa-link', route: '/item-supplier', code: 'view-item-supplier' },
+            { name: () => 'Data Investor Outlet', icon: 'fa-solid fa-user-tie', route: '/investors', code: 'data_investor_outlet' },
+            { name: () => 'Officer Check', icon: 'fa-solid fa-user-check', route: '/officer-check', code: 'officer_check' },
         ],
     },
     {
@@ -197,6 +199,7 @@ const menuGroups = [
         open: ref(false),
         menus: [
             { name: () => 'Scrapper Google Review', icon: 'fa-brands fa-google', route: '/scrapper-google-review', code: 'scrapper_google_review' },
+            { name: () => 'Promo', icon: 'fa-solid fa-tag', route: '/promos', code: 'promos' },
         ],
     },
     {

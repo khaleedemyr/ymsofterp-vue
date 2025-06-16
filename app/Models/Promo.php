@@ -1,0 +1,54 @@
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+
+class Promo extends Model
+{
+    use HasFactory;
+
+    protected $fillable = [
+        'name',
+        'code',
+        'type',
+        'value',
+        'min_transaction',
+        'start_date',
+        'end_date',
+        'start_time',
+        'end_time',
+        'status',
+        'description',
+        'terms',
+        'banner',
+    ];
+
+    protected $casts = [
+        'start_date' => 'date',
+        'end_date' => 'date',
+        'value' => 'float',
+        'min_transaction' => 'float',
+    ];
+
+    public function categories()
+    {
+        return $this->belongsToMany(Category::class, 'promo_categories');
+    }
+
+    public function items()
+    {
+        return $this->belongsToMany(Item::class, 'promo_items');
+    }
+
+    public function outlets()
+    {
+        return $this->belongsToMany(Outlet::class, 'promo_outlets', 'promo_id', 'outlet_id', 'id', 'id_outlet');
+    }
+
+    public function regions()
+    {
+        return $this->belongsToMany(\App\Models\Region::class, 'promo_regions', 'promo_id', 'region_id');
+    }
+} 
