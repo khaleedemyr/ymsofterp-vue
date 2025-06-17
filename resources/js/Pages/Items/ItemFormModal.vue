@@ -41,7 +41,7 @@
               </div>
               <div v-if="hasSubCategories">
                 <label class="block text-sm font-medium text-gray-700">Sub Category</label>
-                <select v-model="form.sub_category_id" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" required>
+                <select v-model="form.sub_category_id" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
                   <option value="">Select Sub Category</option>
                   <option v-for="subCategory in filteredSubCategories" :key="subCategory.id" :value="subCategory.id">{{ subCategory.name }}</option>
                 </select>

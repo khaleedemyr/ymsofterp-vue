@@ -378,23 +378,23 @@ class OutletFoodGoodReceiveController extends Controller
 
                     if ($stock) {
                         // Calculate quantities to rollback
-                        $itemMaster = DB::table('items')->where('id', $item->item_id)->first();
-                        $smallConv = $itemMaster->small_conversion_qty ?: 1;
-                        $mediumConv = $itemMaster->medium_conversion_qty ?: 1;
+                $itemMaster = DB::table('items')->where('id', $item->item_id)->first();
+                $smallConv = $itemMaster->small_conversion_qty ?: 1;
+                $mediumConv = $itemMaster->medium_conversion_qty ?: 1;
                         $qty_small = 0; $qty_medium = 0; $qty_large = 0;
 
                         if ($item->unit_id == $itemMaster->small_unit_id) {
                             $qty_small = $item->received_qty;
-                            $qty_medium = $smallConv > 0 ? $qty_small / $smallConv : 0;
-                            $qty_large = ($smallConv > 0 && $mediumConv > 0) ? $qty_small / ($smallConv * $mediumConv) : 0;
+                    $qty_medium = $smallConv > 0 ? $qty_small / $smallConv : 0;
+                    $qty_large = ($smallConv > 0 && $mediumConv > 0) ? $qty_small / ($smallConv * $mediumConv) : 0;
                         } elseif ($item->unit_id == $itemMaster->medium_unit_id) {
                             $qty_medium = $item->received_qty;
-                            $qty_small = $qty_medium * $smallConv;
-                            $qty_large = $mediumConv > 0 ? $qty_medium / $mediumConv : 0;
+                    $qty_small = $qty_medium * $smallConv;
+                    $qty_large = $mediumConv > 0 ? $qty_medium / $mediumConv : 0;
                         } elseif ($item->unit_id == $itemMaster->large_unit_id) {
                             $qty_large = $item->received_qty;
-                            $qty_medium = $qty_large * $mediumConv;
-                            $qty_small = $qty_medium * $smallConv;
+                    $qty_medium = $qty_large * $mediumConv;
+                    $qty_small = $qty_medium * $smallConv;
                         }
 
                         // Get cost from floor order item
@@ -402,7 +402,7 @@ class OutletFoodGoodReceiveController extends Controller
                         $ffoi = DB::table('food_floor_order_items')
                             ->where('floor_order_id', $do->floor_order_id)
                             ->where('item_id', $item->item_id)
-                            ->first();
+                    ->first();
                         $cost = $ffoi ? $ffoi->price : 0;
 
                         // Calculate cost per unit
@@ -419,31 +419,31 @@ class OutletFoodGoodReceiveController extends Controller
                         $value_to_rollback = $qty_small * $cost_small;
 
                         // Update stock
-                        DB::table('outlet_food_inventory_stocks')
-                            ->where('id', $stock->id)
-                            ->update([
+                    DB::table('outlet_food_inventory_stocks')
+                        ->where('id', $stock->id)
+                        ->update([
                                 'qty_small' => $stock->qty_small - $qty_small,
                                 'qty_medium' => $stock->qty_medium - $qty_medium,
                                 'qty_large' => $stock->qty_large - $qty_large,
                                 'value' => $stock->value - $value_to_rollback,
-                                'updated_at' => now(),
-                            ]);
-                    }
+                            'updated_at' => now(),
+                        ]);
+                }
 
                     // Delete inventory cards
-                    DB::table('outlet_food_inventory_cards')
-                        ->where('reference_type', 'good_receive_outlet')
+                DB::table('outlet_food_inventory_cards')
+                    ->where('reference_type', 'good_receive_outlet')
                         ->where('reference_id', $outletFoodGoodReceive->id)
                         ->where('inventory_item_id', $inventoryItem->id)
-                        ->delete();
+                    ->delete();
 
                     // Delete cost histories
-                    DB::table('outlet_food_inventory_cost_histories')
-                        ->where('reference_type', 'good_receive_outlet')
+                DB::table('outlet_food_inventory_cost_histories')
+                    ->where('reference_type', 'good_receive_outlet')
                         ->where('reference_id', $outletFoodGoodReceive->id)
                         ->where('inventory_item_id', $inventoryItem->id)
-                        ->delete();
-                }
+                    ->delete();
+            }
             }
 
             // Delete good receive items

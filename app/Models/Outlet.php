@@ -15,6 +15,8 @@ class Outlet extends Model {
         'status',
     ];
 
+    protected $appends = ['name'];
+
     public function itemAvailabilities()
     {
         return $this->hasMany(ItemAvailability::class, 'outlet_id', 'id_outlet');

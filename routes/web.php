@@ -71,6 +71,7 @@ use App\Http\Controllers\PromoController;
 use App\Http\Controllers\InvestorController;
 use App\Http\Controllers\InvestorPageController;
 use App\Http\Controllers\OfficerCheckController;
+use App\Http\Controllers\WarehouseOutletController;
 
 
 Route::get('/', function () {
@@ -755,5 +756,10 @@ Route::post('/api/officer-check', [\App\Http\Controllers\OfficerCheckController:
 Route::put('/api/officer-check/{id}', [\App\Http\Controllers\OfficerCheckController::class, 'update']);
 Route::delete('/api/officer-check/{id}', [\App\Http\Controllers\OfficerCheckController::class, 'destroy']);
 Route::get('/api/officer-check/users', [\App\Http\Controllers\OfficerCheckController::class, 'users']);
+
+Route::middleware(['auth'])->group(function () {
+    Route::resource('warehouse-outlets', WarehouseOutletController::class);
+    Route::patch('warehouse-outlets/{warehouseOutlet}/toggle-status', [WarehouseOutletController::class, 'toggleStatus'])->name('warehouse-outlets.toggle-status');
+});
 
 require __DIR__.'/auth.php';

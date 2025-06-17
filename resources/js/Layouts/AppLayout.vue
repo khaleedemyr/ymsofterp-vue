@@ -48,6 +48,7 @@ const menuGroups = [
             { name: () => 'Modifiers', icon: 'fa-solid fa-sliders', route: '/modifiers', code: 'modifiers' },
             { name: () => 'Modifier Options', icon: 'fa-solid fa-sliders', route: '/modifier-options', code: 'modifier_options' },
             { name: () => 'Warehouses', icon: 'fa-solid fa-warehouse', route: '/warehouses', code: 'warehouses' },
+            { name: () => 'Warehouse Outlet', icon: 'fa-solid fa-store', route: '/warehouse-outlets', code: 'warehouse_outlets' },
             { name: () => 'Warehouse Division', icon: 'fa-solid fa-sitemap', route: '/warehouse-divisions', code: 'warehouse_divisions' },
             { name: () => 'Outlets', icon: 'fa-solid fa-store', route: '/outlets', code: 'outlets' },
             { name: () => 'Customers', icon: 'fa-solid fa-users', route: '/customers', code: 'customers' },

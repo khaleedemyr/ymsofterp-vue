@@ -41,7 +41,7 @@
               </div>
               <div v-if="hasSubCategories">
                 <label class="block text-sm font-medium text-gray-700">Sub Category</label>
-                <select v-model="form.sub_category_id" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" required>
+                <select v-model="form.sub_category_id" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
                   <option value="">Select Sub Category</option>
                   <option v-for="subCategory in filteredSubCategories" :key="subCategory.id" :value="subCategory.id">{{ subCategory.name }}</option>
                 </select>
@@ -686,8 +686,8 @@ const saveItem = () => {
   // Ensure all required fields are present
   const requiredFields = {
     category_id: form.category_id,
-    sub_category_id: form.sub_category_id,
-    warehouse_division_id: form.warehouse_division_id,
+    // sub_category_id: form.sub_category_id, // Tidak wajib
+    // warehouse_division_id: form.warehouse_division_id, // Tidak wajib
     sku: form.sku,
     type: form.type,
     name: form.name,
@@ -707,6 +707,12 @@ const saveItem = () => {
       title: 'Gagal',
       text: `Field berikut harus diisi: ${missingFields.join(', ')}`
     });
+    return;
+  }
+
+  // Validasi sub_category_id hanya jika ada sub kategori aktif
+  if (hasSubCategories.value && (!form.sub_category_id || !props.subCategories.find(sc => sc.id == form.sub_category_id))) {
+    Swal.fire({ icon: 'error', title: 'Gagal', text: 'Sub Category harus dipilih dan valid.' });
     return;
   }
 
@@ -748,12 +754,6 @@ const saveItem = () => {
     availabilities: form.availabilities
   });
 
-  // Validasi sub_category_id
-  if (!form.sub_category_id || !props.subCategories.find(sc => sc.id == form.sub_category_id)) {
-    Swal.fire({ icon: 'error', title: 'Gagal', text: 'Sub Category harus dipilih dan valid.' });
-    return;
-  }
-
   const newImages = (form.images || []).filter(img => img instanceof File);
   if (newImages.length) {
     // Kirim pakai FormData jika ada file baru
@@ -782,7 +782,11 @@ const saveItem = () => {
       } else if (Array.isArray(value)) {
         (value || []).forEach((v, idx) => formData.append(`${key}[${idx}]`, v));
       } else {
-        formData.append(key, value);
+        if (key === 'sub_category_id' && (!value || value === '')) {
+          // skip
+        } else {
+          formData.append(key, value);
+        }
       }
     });
 
