@@ -71,23 +71,25 @@ const isSubmitting = ref(false);
 
 async function submit() {
   let outletIds = [];
-  if (form.show_pos === '1') {
-    if (availabilityType.value === 'byRegion') {
-      if (selectedRegions.value.length === 0) {
-        Swal.fire('Pilih minimal satu region!');
-        isSubmitting.value = false;
-        return;
-      }
-      outletIds = props.outlets
-        .filter(o => selectedRegions.value.map(r => r.id).includes(o.region_id))
-        .map(o => o.id);
-    } else {
-      outletIds = selectedOutlets.value.map(o => o.id);
+  if (availabilityType.value === 'byRegion') {
+    if (selectedRegions.value.length === 0) {
+      Swal.fire('Pilih minimal satu region!');
+      isSubmitting.value = false;
+      return;
     }
-    form.availability_type = availabilityType.value;
+    outletIds = props.outlets
+      .filter(o => selectedRegions.value.map(r => r.id).includes(o.region_id))
+      .map(o => o.id);
   } else {
-    form.availability_type = '';
+    if (selectedOutlets.value.length === 0) {
+      Swal.fire('Pilih minimal satu outlet!');
+      isSubmitting.value = false;
+      return;
+    }
+    outletIds = selectedOutlets.value.map(o => o.id);
   }
+  // Selalu set availability_type sesuai radio
+  form.availability_type = availabilityType.value;
   form.outlet_ids = outletIds;
   form.selected_regions = selectedRegions.value.map(r => ({ id: r.id }));
   form.selected_outlets = selectedOutlets.value.map(o => ({ id: o.id }));
@@ -206,7 +208,7 @@ function closeModal() {
             </div>
 
             <!-- Availability Section -->
-            <div v-if="form.show_pos === '1'" class="mt-4">
+            <div class="mt-4">
               <label class="block text-sm font-medium text-gray-700 mb-1">Sub Category Availability</label>
               <div class="flex gap-4 mb-2">
                 <label class="inline-flex items-center">

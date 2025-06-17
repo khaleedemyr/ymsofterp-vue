@@ -53,4 +53,9 @@ class FoodFloorOrder extends Model
     {
         return $this->belongsTo(User::class, 'user_id');
     }
+
+    public function warehouseOutlet()
+    {
+        return $this->belongsTo(\App\Models\WarehouseOutlet::class, 'warehouse_outlet_id');
+    }
 } 

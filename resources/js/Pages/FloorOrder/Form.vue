@@ -34,6 +34,8 @@ const isSubmitting = ref(false);
 const selectedSupplier = ref(null);
 const suppliers = ref([]);
 const supplierItems = ref([]);
+const warehouseOutlets = ref([]);
+const selectedWarehouseOutlet = ref(null);
 
 // Set tanggal hari ini
 const today = new Date();
@@ -115,10 +117,13 @@ async function fetchItemsByFOSchedule(foScheduleId) {
     // Optional: Kelompokkan per kategori jika ingin di mode tab
     const grouped = {};
     itemsByFOSchedule.value.forEach(item => {
-      // Gunakan nama kategori default jika kosong/null
       const catName = item.category_name && item.category_name.trim() !== '' ? item.category_name : 'Tanpa Kategori';
       if (!grouped[item.category_id]) grouped[item.category_id] = { id: item.category_id, name: catName, items: [] };
-      grouped[item.category_id].items.push({ ...item, qty: 0 });
+      grouped[item.category_id].items.push({
+        ...item,
+        qty: 0,
+        unit: item.unit_medium_name || item.unit_medium || item.unit_small || item.unit || '-',
+      });
     });
     categories.value = Object.values(grouped);
     // Log hasil grouping
@@ -192,7 +197,7 @@ watch(selectedSupplier, (val) => {
           grouped[item.category_id].items.push({ 
             ...item, 
             qty: 0,
-            unit: item.unit || '',
+            unit: item.unit_medium_name || item.unit_medium || item.unit_small || item.unit || '-',
             price: item.price || 0,
             subtotal: 0
           });
@@ -281,21 +286,37 @@ function selectItem(idx, item) {
       // Lanjutkan jika item valid
       form.value.items[idx].item_id = item.id;
       form.value.items[idx].item_name = item.name;
-    form.value.items[idx].unit = item.unit || '';
-    form.value.items[idx].price = item.price || 0;
+      form.value.items[idx].unit = item.unit_medium_name || item.unit_medium || item.unit_small || item.unit || '-';
+      form.value.items[idx].price = item.price_medium !== undefined ? item.price_medium : (item.price !== undefined ? item.price : 0);
       form.value.items[idx].qty = '';
       form.value.items[idx].subtotal = 0;
+      form.value.items[idx].category_id = item.category_id;
+      form.value.items[idx].category_name = item.category_name || (item.category?.name ?? 'Tanpa Kategori');
       form.value.items[idx].suggestions = [];
       form.value.items[idx].showDropdown = false;
       form.value.items[idx].highlightedIndex = -1;
-  } else {
-    // Untuk mode lain, langsung set item
+  } else if (mode.value === 'tab') {
+    // Untuk mode tab, pakai unit_medium_name/unit_medium
+    form.value.items[idx].unit = item.unit_medium_name || item.unit_medium || item.unit_small || item.unit || '-';
     form.value.items[idx].item_id = item.id;
     form.value.items[idx].item_name = item.name;
-    form.value.items[idx].unit = item.unit_medium_name || item.unit_medium || item.unit_small || item.unit || '';
-    form.value.items[idx].price = item.price;
     form.value.items[idx].qty = '';
     form.value.items[idx].subtotal = 0;
+    form.value.items[idx].category_id = item.category_id;
+    form.value.items[idx].category_name = item.category_name || (item.category?.name ?? 'Tanpa Kategori');
+    form.value.items[idx].suggestions = [];
+    form.value.items[idx].showDropdown = false;
+    form.value.items[idx].highlightedIndex = -1;
+  } else {
+    // Untuk mode PC, pakai unit_medium_name/unit_medium dan harga medium (seperti mode tab)
+    form.value.items[idx].unit = item.unit_medium_name || item.unit_medium || item.unit_small || item.unit || '-';
+    form.value.items[idx].item_id = item.id;
+    form.value.items[idx].item_name = item.name;
+    form.value.items[idx].price = item.price_medium !== undefined ? item.price_medium : (item.price !== undefined ? item.price : 0);
+    form.value.items[idx].qty = '';
+    form.value.items[idx].subtotal = 0;
+    form.value.items[idx].category_id = item.category_id;
+    form.value.items[idx].category_name = item.category_name || (item.category?.name ?? 'Tanpa Kategori');
     form.value.items[idx].suggestions = [];
     form.value.items[idx].showDropdown = false;
     form.value.items[idx].highlightedIndex = -1;
@@ -397,7 +418,7 @@ function syncTabItemsToForm() {
           item_id: item.id,
           item_name: item.name,
           qty: item.qty,
-          unit: item.unit_medium_name || item.unit_medium || item.unit_small || item.unit || '',
+          unit: item.unit_medium_name || item.unit_medium || item.unit_small || item.unit || '-',
           price: item.price,
           subtotal: (Number(item.qty) || 0) * (Number(item.price) || 0),
         });
@@ -427,6 +448,29 @@ const getCurrentDay = () => {
 
 // Check FO Schedule
 async function checkFOSchedule() {
+  // 1. Validasi warehouse outlet harus dipilih
+  const wh = warehouseOutlets.value.find(w => w.id == selectedWarehouseOutlet.value);
+  if (!selectedWarehouseOutlet.value || !wh) {
+    await Swal.fire({
+      icon: 'warning',
+      title: 'Pilih Warehouse Outlet',
+      text: 'Silakan pilih warehouse outlet terlebih dahulu sebelum memeriksa jadwal.',
+      confirmButtonColor: '#3085d6',
+    });
+    return;
+  }
+  // 2. Konfirmasi warehouse
+  const confirm = await Swal.fire({
+    icon: 'question',
+    title: 'Konfirmasi Warehouse',
+    html: `<div style='font-size:1.1em;'>Warehouse yang dipilih:<br><b>${wh.name}</b><br><br>Apakah sudah benar?</div>`,
+    showCancelButton: true,
+    confirmButtonText: 'Ya, Benar',
+    cancelButtonText: 'Batal',
+    focusCancel: true,
+    reverseButtons: true,
+  });
+  if (!confirm.isConfirmed) return;
   if (selectedFOMode.value === 'RO Khusus') {
     jadwalSiap.value = true;
     showScheduleModal.value = false;
@@ -492,6 +536,7 @@ async function checkFOSchedule() {
             id_outlet: props.user.outlet.id_outlet,
             fo_mode: selectedFOMode.value,
             exclude_id: draftId.value,
+            warehouse_outlet_id: selectedWarehouseOutlet.value,
           });
           if (res.data.exists) {
             Swal.fire({
@@ -701,6 +746,7 @@ function handleF1Key(e) {
 
 onMounted(() => {
   window.addEventListener('keydown', handleF1Key);
+  fetchWarehouseOutlets();
 });
 onUnmounted(() => {
   window.removeEventListener('keydown', handleF1Key);
@@ -722,26 +768,44 @@ function triggerAutosave() {
       unit: item.unit,
       price: item.price,
       subtotal: item.subtotal,
+      category_id: item.category_id,
+      category_name: item.category_name,
     }));
     if (draftId.value) {
       axios.put(`/floor-order/${draftId.value}`, {
         ...form.value,
         items: cleanItems,
         fo_schedule_id: form.value.fo_schedule_id,
+        warehouse_outlet_id: form.value.warehouse_outlet_id,
       });
-    } else {
-      axios.post('/floor-order', {
-        ...form.value,
-        items: cleanItems,
-        fo_mode: selectedFOMode.value,
-        input_mode: mode.value,
-        fo_schedule_id: form.value.fo_schedule_id,
-      }).then(handleStoreResponse);
     }
   }, 2000);
 }
-
 watch(form, triggerAutosave, { deep: true });
+
+// Insert draft baru hanya setelah jadwalSiap true dan modal jadwal ditutup
+watch([jadwalSiap, showScheduleModal], ([val, modal]) => {
+  if (val && !modal && !draftId.value) {
+    const cleanItems = form.value.items.map(item => ({
+      item_id: item.item_id,
+      item_name: item.item_name,
+      qty: item.qty,
+      unit: item.unit,
+      price: item.price,
+      subtotal: item.subtotal,
+      category_id: item.category_id,
+      category_name: item.category_name,
+    }));
+    axios.post('/floor-order', {
+      ...form.value,
+      items: cleanItems,
+      fo_mode: selectedFOMode.value,
+      input_mode: mode.value,
+      fo_schedule_id: form.value.fo_schedule_id,
+      warehouse_outlet_id: form.value.warehouse_outlet_id,
+    }).then(handleStoreResponse);
+  }
+});
 
 function submitOrderWithLoading() {
   console.log('SUBMIT ORDER DIPANGGIL', draftId.value);
@@ -828,6 +892,7 @@ async function periksaJadwalFO() {
       id_outlet: props.user.outlet.id_outlet,
       fo_mode: selectedFOMode.value,
       exclude_id: draftId.value,
+      warehouse_outlet_id: selectedWarehouseOutlet.value,
     });
     if (res.data.exists) {
       Swal.fire({
@@ -853,18 +918,43 @@ async function periksaJadwalFO() {
 const itemsByCategory = computed(() => {
   const map = {};
   form.value.items.forEach(item => {
-    const cat = item.category_name || item.category || 'Tanpa Kategori';
+    const cat = item.category_name && item.category_name.trim() !== ''
+      ? item.category_name
+      : (item.category && item.category.name ? item.category.name : 'Tanpa Kategori');
     if (!map[cat]) map[cat] = [];
     map[cat].push(item);
   });
   return map;
 });
+
 const categorySubtotals = computed(() => {
-  const result = {};
-  Object.entries(itemsByCategory.value).forEach(([cat, items]) => {
-    result[cat] = items.reduce((sum, item) => sum + (Number(item.subtotal) || 0), 0);
+  const subtotals = {};
+  Object.entries(itemsByCategory.value).forEach(([catName, items]) => {
+    subtotals[catName] = items.reduce((sum, item) => sum + (Number(item.subtotal) || 0), 0);
   });
-  return result;
+  return subtotals;
+});
+
+// Fetch warehouse outlets untuk outlet user
+async function fetchWarehouseOutlets() {
+  if (!outlet_id.value) return;
+  try {
+    const res = await axios.get('/warehouse-outlets', {
+      params: { outlet_id: outlet_id.value, status: 'active' }
+    });
+    warehouseOutlets.value = Array.isArray(res.data) ? res.data : [];
+    // Auto-select jika hanya satu warehouse
+    if (warehouseOutlets.value.length === 1) {
+      selectedWarehouseOutlet.value = warehouseOutlets.value[0].id;
+    }
+  } catch (e) {
+    warehouseOutlets.value = [];
+  }
+}
+
+// Set warehouse_outlet_id ke form
+watch(selectedWarehouseOutlet, (val) => {
+  form.value.warehouse_outlet_id = val;
 });
 </script>
 <template>
@@ -899,6 +989,13 @@ const categorySubtotals = computed(() => {
             {{ mode.label }}
           </button>
         </div>
+      </div>
+      <div class="mb-6">
+        <label class="block text-sm font-medium text-gray-700 mb-2">Pilih Warehouse Outlet</label>
+        <select v-model="selectedWarehouseOutlet" class="w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" :required="warehouseOutlets.length > 1">
+          <option value="" disabled>Pilih Warehouse</option>
+          <option v-for="wh in warehouseOutlets" :key="wh.id" :value="wh.id">{{ wh.name }}</option>
+        </select>
       </div>
       <div v-if="selectedFOMode === 'RO Supplier'" class="mb-6">
         <label class="block text-sm font-medium text-gray-700 mb-2">Pilih Supplier</label>
@@ -1052,6 +1149,13 @@ const categorySubtotals = computed(() => {
                 <label class="block text-sm font-medium text-gray-700">Tanggal</label>
                 <input type="date" v-model="form.tanggal" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500" readonly />
               </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700">Warehouse Outlet</label>
+                <select v-model="selectedWarehouseOutlet" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" :required="warehouseOutlets.length > 1">
+                  <option value="" disabled>Pilih Warehouse</option>
+                  <option v-for="wh in warehouseOutlets" :key="wh.id" :value="wh.id">{{ wh.name }}</option>
+                </select>
+              </div>
             </div>
             <div class="mb-4">
               <label class="block text-sm font-medium text-gray-700">Keterangan</label>
@@ -1068,6 +1172,13 @@ const categorySubtotals = computed(() => {
                 <option v-for="supplier in suppliers" :key="supplier.id" :value="supplier.id">
                   {{ supplier.name }}
                 </option>
+              </select>
+            </div>
+            <div v-if="jadwalSiap && warehouseOutlets.length" class="mb-4">
+              <label class="block text-sm font-medium text-gray-700 mb-2">Pilih Warehouse Outlet</label>
+              <select v-model="selectedWarehouseOutlet" class="w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                <option value="">Pilih Warehouse</option>
+                <option v-for="wh in warehouseOutlets" :key="wh.id" :value="wh.id">{{ wh.name }}</option>
               </select>
             </div>
             <div>
@@ -1216,30 +1327,33 @@ const categorySubtotals = computed(() => {
         <div class="bg-white rounded-xl p-6 max-w-2xl w-full shadow-2xl" style="max-height: 90vh; overflow-y: auto;">
           <h2 class="text-xl font-bold mb-4">Preview Request Order (RO)</h2>
           <div class="mb-2"><b>Tanggal:</b> {{ form.tanggal }}</div>
+          <div class="mb-2"><b>Warehouse Outlet:</b> {{ (warehouseOutlets.find(w => w.id == selectedWarehouseOutlet) || {}).name || '-' }}</div>
           <div class="mb-2"><b>Keterangan:</b> {{ form.description }}</div>
           <div class="mb-2"><b>Items:</b></div>
-          <div v-for="(items, cat) in itemsByCategory" :key="cat" class="mb-2">
-            <div class="font-semibold text-blue-700 mb-1">{{ cat }}</div>
-            <table class="w-full mb-2">
-              <thead>
-                <tr>
-                  <th>Item</th><th>Qty</th><th>Unit</th><th>Harga</th><th>Subtotal</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="item in items" :key="item._rowKey">
-                  <td>{{ item.item_name }}</td>
-                  <td>{{ item.qty }}</td>
-                  <td>{{ item.unit }}</td>
-                  <td>{{ formatRupiah(item.price) }}</td>
-                  <td>{{ formatRupiah(item.subtotal) }}</td>
-                </tr>
-                <tr class="bg-blue-50 font-bold">
-                  <td colspan="4" class="text-right">Total {{ cat }}</td>
-                  <td>{{ formatRupiah(categorySubtotals[cat]) }}</td>
-                </tr>
-              </tbody>
-            </table>
+          <div class="mb-2" style="max-height:400px;overflow-y:auto;">
+            <div v-for="(items, cat) in itemsByCategory" :key="cat" class="mb-2">
+              <div class="font-semibold text-blue-700 mb-1">{{ cat }}</div>
+              <table class="w-full mb-2">
+                <thead>
+                  <tr>
+                    <th>Item</th><th>Qty</th><th>Unit</th><th>Harga</th><th>Subtotal</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="item in items" :key="item._rowKey || item.id">
+                    <td>{{ item.item_name }}</td>
+                    <td>{{ item.qty }}</td>
+                    <td>{{ item.unit }}</td>
+                    <td>{{ formatRupiah(item.price) }}</td>
+                    <td>{{ formatRupiah(item.subtotal) }}</td>
+                  </tr>
+                  <tr class="bg-blue-50 font-bold">
+                    <td colspan="4" class="text-right">Total {{ cat }}</td>
+                    <td>{{ formatRupiah(categorySubtotals[cat]) }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </div>
           <div class="text-right font-bold text-lg mb-4">Grand Total: {{ formatRupiah(grandTotalPC) }}</div>
           <div class="flex justify-end gap-2">

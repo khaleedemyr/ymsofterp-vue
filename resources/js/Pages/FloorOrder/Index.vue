@@ -144,6 +144,7 @@ function formatRupiah(val) {
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider rounded-tl-2xl">No. Request Order</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Tanggal</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Outlet</th>
+              <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Warehouse</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Requester</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Jadwal FO</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Status</th>
@@ -159,6 +160,7 @@ function formatRupiah(val) {
               <td class="px-6 py-3 font-mono font-semibold text-blue-700">{{ order.order_number }}</td>
               <td class="px-6 py-3">{{ new Date(order.tanggal).toLocaleDateString('id-ID') }}</td>
               <td class="px-6 py-3">{{ order.outlet?.nama_outlet }}</td>
+              <td class="px-6 py-3">{{ order.warehouse_outlet?.name }}</td>
               <td class="px-6 py-3">{{ order.requester?.nama_lengkap }}</td>
               <td class="px-6 py-3">
                 <span v-if="order.fo_schedule">

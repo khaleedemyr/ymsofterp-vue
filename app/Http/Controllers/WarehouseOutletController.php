@@ -93,4 +93,20 @@ class WarehouseOutletController extends Controller
 
         return redirect()->back();
     }
+
+    // API: List warehouse outlet by outlet_id (aktif saja)
+    public function apiListByOutlet(Request $request)
+    {
+        $outletId = $request->outlet_id;
+        $status = $request->status ?? 'active';
+        $query = WarehouseOutlet::query();
+        if ($outletId) {
+            $query->where('outlet_id', $outletId);
+        }
+        if ($status) {
+            $query->where('status', $status);
+        }
+        $data = $query->orderBy('name')->get(['id', 'code', 'name', 'outlet_id', 'location', 'status']);
+        return response()->json($data);
+    }
 } 

@@ -86,7 +86,7 @@ class SubCategoryController extends Controller
                 if (count($data)) {
                     SubCategoryAvailability::insert($data);
                 }
-            } else {
+            } else if ($request->availability_type === 'byOutlet') {
                 $data = [];
                 foreach ($request->selected_outlets as $outlet) {
                     $data[] = [
@@ -119,7 +119,14 @@ class SubCategoryController extends Controller
             'status' => 'required|in:active,inactive',
             'show_pos' => 'required|in:0,1',
             'category_id' => 'required|exists:categories,id',
-            'availability_type' => 'required_if:show_pos,1|in:byRegion,byOutlet',
+            'availability_type' => [
+                'nullable',
+                function($attribute, $value) use ($request) {
+                    if ($request->show_pos == '1' && !in_array($value, ['byRegion', 'byOutlet'])) {
+                        return __('The selected availability type is invalid.');
+                    }
+                }
+            ],
             'selected_regions' => 'required_if:availability_type,byRegion|array',
             'selected_regions.*.id' => 'required_if:availability_type,byRegion|exists:regions,id',
             'selected_outlets' => 'required_if:availability_type,byOutlet|array',
@@ -157,7 +164,7 @@ class SubCategoryController extends Controller
                 if (count($data)) {
                     SubCategoryAvailability::insert($data);
                 }
-            } else {
+            } else if ($request->availability_type === 'byOutlet') {
                 $data = [];
                 foreach ($request->selected_outlets as $outlet) {
                     $data[] = [

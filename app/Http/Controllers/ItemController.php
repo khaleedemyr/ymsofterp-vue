@@ -1776,12 +1776,88 @@ class ItemController extends Controller
                 'units.id as unit_id'
             )
             ->get();
-
-        // Jangan return error jika kosong!
-        // if ($items->isEmpty()) {
-        //     return response()->json(['error' => 'Item not found']);
-        // }
-
         return response()->json(['items' => $items]);
+    }
+
+    /**
+     * Search items for autocomplete (mode PC)
+     */
+    public function search(Request $request)
+    {
+        try {
+            $q = $request->get('q');
+            $outletId = $request->get('outlet_id');
+            $excludeSupplier = $request->get('exclude_supplier', false);
+
+            $query = Item::with(['category', 'smallUnit', 'mediumUnit', 'largeUnit'])
+                ->where(function($query) use ($q) {
+                    $query->where('name', 'like', "%{$q}%")
+                          ->orWhere('sku', 'like', "%{$q}%");
+                });
+
+            if ($excludeSupplier && $outletId) {
+                $query->whereNotExists(function($sub) use ($outletId) {
+                    $sub->select(\DB::raw(1))
+                        ->from('item_supplier')
+                        ->join('item_supplier_outlet', 'item_supplier.id', '=', 'item_supplier_outlet.item_supplier_id')
+                        ->whereRaw('items.id = item_supplier.item_id')
+                        ->where('item_supplier_outlet.outlet_id', $outletId);
+                });
+            }
+
+            $region_id = $request->get('region_id');
+            $outlet_id = $request->get('outlet_id');
+            $items = $query->limit(10)->get()->map(function($item) use ($region_id, $outlet_id) {
+                // Ambil harga medium (prioritas: outlet > region > all)
+                $price = \DB::table('item_prices')
+                    ->where('item_id', $item->id)
+                    ->where(function($q) use ($region_id, $outlet_id) {
+                        $q->where('availability_price_type', 'all');
+                        if ($region_id) {
+                            $q->orWhere(function($q2) use ($region_id) {
+                                $q2->where('availability_price_type', 'region')->where('region_id', $region_id);
+                            });
+                        }
+                        if ($outlet_id) {
+                            $q->orWhere(function($q2) use ($outlet_id) {
+                                $q2->where('availability_price_type', 'outlet')->where('outlet_id', $outlet_id);
+                            });
+                        }
+                    })
+                    ->orderByRaw("CASE 
+                        WHEN availability_price_type = 'outlet' THEN 1
+                        WHEN availability_price_type = 'region' THEN 2
+                        ELSE 3 END")
+                    ->orderByDesc('id')
+                    ->first();
+                $finalPrice = $price ? $price->price : 0;
+                return [
+                    'id' => $item->id,
+                    'name' => $item->name,
+                    'sku' => $item->sku,
+                    'category_id' => $item->category_id,
+                    'category_name' => optional($item->category)->name,
+                    'unit' => optional($item->smallUnit)->name,
+                    'unit_medium' => optional($item->mediumUnit)->name,
+                    'unit_medium_name' => optional($item->mediumUnit)->name,
+                    'unit_large' => optional($item->largeUnit)->name,
+                    'price_medium' => $finalPrice,
+                    'price' => $finalPrice,
+                ];
+            });
+
+            return response()->json(['items' => $items]);
+        } catch (\Exception $e) {
+            \Log::error('Error in search: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString(),
+                'q' => $q ?? 'null',
+                'outlet_id' => $outletId ?? 'null',
+                'exclude_supplier' => $excludeSupplier
+            ]);
+            return response()->json([
+                'error' => 'Failed to search items',
+                'message' => $e->getMessage()
+            ], 500);
+        }
     }
 } 

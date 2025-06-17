@@ -122,4 +122,12 @@ class Item extends Model
     {
         return $this->hasMany(\App\Models\ItemBarcode::class, 'item_id', 'id');
     }
+
+    // Relasi dengan Supplier melalui pivot table item_supplier dan item_supplier_outlet
+    public function suppliers()
+    {
+        return $this->belongsToMany(\App\Models\Supplier::class, 'item_supplier', 'item_id', 'supplier_id')
+            ->withPivot('id')
+            ->withTimestamps();
+    }
 } 

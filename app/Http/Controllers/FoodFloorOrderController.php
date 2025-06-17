@@ -11,6 +11,7 @@ use App\Models\Item;
 use Illuminate\Support\Facades\Mail;
 use App\Services\FloorOrderService;
 use Carbon\Carbon;
+use App\Models\WarehouseOutlet;
 
 class FoodFloorOrderController extends Controller
 {
@@ -232,10 +233,21 @@ class FoodFloorOrderController extends Controller
             $userId = auth()->id();
             $tanggal = $request->tanggal ?? now()->toDateString();
 
-            // Cek apakah sudah ada draft untuk user, tanggal, outlet, status draft
+            // --- VALIDASI warehouse_outlet_id ---
+            $warehouseOutletId = $request->warehouse_outlet_id;
+            $warehouseOutlet = \App\Models\WarehouseOutlet::where('id', $warehouseOutletId)
+                ->where('outlet_id', $idOutlet)
+                ->where('status', 'active')
+                ->first();
+            if (!$warehouseOutlet) {
+                throw new \Exception('Warehouse outlet tidak valid atau tidak aktif untuk outlet ini.');
+            }
+
+            // Cek apakah sudah ada draft untuk user, tanggal, outlet, warehouse, status draft
             $existingOrder = \DB::table('food_floor_orders')
                 ->where('user_id', $userId)
                 ->where('id_outlet', $idOutlet)
+                ->where('warehouse_outlet_id', $warehouseOutletId)
                 ->where('tanggal', $tanggal)
                 ->where('status', 'draft')
                 ->first();
@@ -247,6 +259,7 @@ class FoodFloorOrderController extends Controller
                     'fo_mode' => $request->fo_mode ?? 'RO Utama',
                     'input_mode' => $request->input_mode ?? 'pc',
                     'fo_schedule_id' => $request->fo_schedule_id ?? null,
+                    'warehouse_outlet_id' => $warehouseOutletId,
                     'updated_at' => now()
                 ]);
                 $floorOrderId = $existingOrder->id;
@@ -261,6 +274,7 @@ class FoodFloorOrderController extends Controller
                     'fo_schedule_id' => $request->fo_schedule_id ?? null,
                     'id_outlet' => $idOutlet,
                     'user_id' => $userId,
+                    'warehouse_outlet_id' => $warehouseOutletId,
                     'status' => 'draft',
                     'created_at' => now(),
                     'updated_at' => now()
@@ -362,7 +376,19 @@ class FoodFloorOrderController extends Controller
     {
         $order = FoodFloorOrder::findOrFail($id);
         $oldData = $order->toArray();
-        $order->update($request->only(['tanggal', 'description', 'fo_mode', 'input_mode', 'fo_schedule_id']));
+        // --- VALIDASI warehouse_outlet_id ---
+        $warehouseOutletId = $request->warehouse_outlet_id;
+        $warehouseOutlet = \App\Models\WarehouseOutlet::where('id', $warehouseOutletId)
+            ->where('outlet_id', $order->id_outlet)
+            ->where('status', 'active')
+            ->first();
+        if (!$warehouseOutlet) {
+            return response()->json(['success' => false, 'message' => 'Warehouse outlet tidak valid atau tidak aktif untuk outlet ini.'], 422);
+        }
+        $order->update(array_merge(
+            $request->only(['tanggal', 'description', 'fo_mode', 'input_mode', 'fo_schedule_id']),
+            ['warehouse_outlet_id' => $warehouseOutletId]
+        ));
 
         // Validasi dan pisahkan item berdasarkan supplier
         $validatedItems = $this->validateAndGroupItemsBySupplier($request->items, $order->id_outlet, $order->fo_mode);
@@ -532,12 +558,16 @@ class FoodFloorOrderController extends Controller
         $id_outlet = $request->id_outlet;
         $fo_mode = $request->fo_mode;
         $exclude_id = $request->exclude_id;
+        $warehouse_outlet_id = $request->warehouse_outlet_id;
 
         $query = \App\Models\FoodFloorOrder::where('tanggal', $tanggal)
             ->where('id_outlet', $id_outlet)
             ->where('fo_mode', $fo_mode)
             ->whereNotIn('status', ['rejected']);
 
+        if ($warehouse_outlet_id) {
+            $query->where('warehouse_outlet_id', $warehouse_outlet_id);
+        }
         if ($exclude_id) {
             $query->where('id', '!=', $exclude_id);
         }
@@ -548,7 +578,7 @@ class FoodFloorOrderController extends Controller
 
     public function show($id)
     {
-        $order = FoodFloorOrder::with(['outlet', 'requester', 'foSchedule', 'approver'])->findOrFail($id);
+        $order = FoodFloorOrder::with(['outlet', 'requester', 'foSchedule', 'approver', 'warehouseOutlet'])->findOrFail($id);
 
         if ($order->fo_mode === 'RO Supplier') {
             // Ambil semua header supplier untuk FO ini
@@ -643,7 +673,7 @@ class FoodFloorOrderController extends Controller
     public function index(Request $request)
     {
         $user = auth()->user()->load('outlet');
-        $query = FoodFloorOrder::with(['outlet', 'requester', 'foSchedule']);
+        $query = FoodFloorOrder::with(['outlet', 'requester', 'foSchedule', 'warehouseOutlet']);
         if ($request->search) {
             $search = $request->search;
             $query->where('order_number', 'like', "%$search%")
@@ -664,16 +694,22 @@ class FoodFloorOrderController extends Controller
 
         // Inject subtotal/grandtotal untuk RO Supplier
         $floorOrders->getCollection()->transform(function($order) {
+            \Log::info('DEBUG WAREHOUSE OUTLET', [
+                'order_id' => $order->id,
+                'warehouse_outlet_id' => $order->warehouse_outlet_id,
+                'warehouseOutlet' => $order->warehouseOutlet
+            ]);
+          
             if ($order->fo_mode === 'RO Supplier') {
                 $items = \DB::table('food_floor_order_supplier_items')->where('floor_order_id', $order->id)->get();
                 $order->setAttribute('items', $items->toArray());
             } else {
                 $order->loadMissing('items');
             }
-            // Pastikan field penting tetap ada
             $order->setRelation('outlet', $order->outlet);
             $order->setRelation('requester', $order->requester);
             $order->setRelation('foSchedule', $order->foSchedule);
+            $order->setRelation('warehouseOutlet', $order->warehouseOutlet);
             return $order;
         });
 
@@ -682,5 +718,9 @@ class FoodFloorOrderController extends Controller
             'floorOrders' => $floorOrders,
             'filters' => $request->only(['search', 'status', 'start_date', 'end_date']),
         ]);
+    }
+
+    public function warehouseOutlet() {
+        return $this->belongsTo(WarehouseOutlet::class, 'warehouse_outlet_id');
     }
 } 

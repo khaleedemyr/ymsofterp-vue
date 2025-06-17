@@ -286,7 +286,7 @@ Route::post('/items/bom/import/excel', [ItemController::class, 'importBom'])->na
 Route::get('/items/export/excel', [ItemController::class, 'exportExcel'])->name('items.export.excel');
 Route::get('/items/export/pdf', [ItemController::class, 'exportPdf'])->name('items.export.pdf');
 Route::post('/items/{id}/toggle-status', [ItemController::class, 'toggleStatus'])->name('items.toggleStatus');
-Route::get('/api/items/search-for-pr', [ItemController::class, 'searchForPr']);
+Route::get('/api/items/search', [ItemController::class, 'search']);
 Route::get('/api/items/last-price', [\App\Http\Controllers\PurchaseOrderFoodsController::class, 'getLastPrice']);
 Route::get('/api/inventory/stock', [\App\Http\Controllers\ItemController::class, 'getStock']);
 Route::get('/api/items/by-fo-khusus', [App\Http\Controllers\ItemController::class, 'getByFOKhusus']);
@@ -384,36 +384,7 @@ Route::resource('item-schedules', App\Http\Controllers\ItemScheduleController::c
 // FO Schedule routes
 Route::resource('fo-schedules', App\Http\Controllers\FOScheduleController::class);
 
-Route::get('/floor-order', function () {
-    $user = Auth::user()->load('outlet');
-    $query = \App\Models\FoodFloorOrder::with(['items', 'outlet', 'requester', 'foSchedule']);
-    
-    // Jika user bukan dari outlet 1, filter berdasarkan id_outlet user
-    if ($user->id_outlet != 1) {
-        $query->where('id_outlet', $user->id_outlet);
-    }
-    
-    // Filter tanggal
-    $start = Request::get('start_date');
-    $end = Request::get('end_date');
-    if ($start && $end) {
-        $query->whereBetween('created_at', [
-            $start . ' 00:00:00',
-            $end . ' 23:59:59'
-        ]);
-    }
-    
-    $orders = $query->orderByDesc('created_at')->paginate(10);
-    
-    return Inertia::render('FloorOrder/Index', [
-        'user' => $user,
-        'floorOrders' => $orders,
-        'filters' => [
-            'start_date' => $start,
-            'end_date' => $end,
-        ],
-    ]);
-})->name('floor-order.index');
+Route::get('/floor-order', [\App\Http\Controllers\FoodFloorOrderController::class, 'index'])->name('floor-order.index');
 
 Route::get('/floor-order/create', function () {
     $fo_mode = Request::get('fo_mode');
@@ -649,32 +620,6 @@ Route::get('/api/items/{id}/check-supplier', function ($id) {
     return response()->json(['is_supplier' => $isSupplier]);
 });
 
-Route::get('/api/items/search', function () {
-    $q = Request::get('q');
-    $outletId = Request::get('outlet_id');
-    $excludeSupplier = Request::get('exclude_supplier', false);
-
-    $query = \DB::table('items')
-        ->where(function($query) use ($q) {
-            $query->where('name', 'like', "%{$q}%")
-                  ->orWhere('sku', 'like', "%{$q}%");
-        });
-
-    if ($excludeSupplier) {
-        // Exclude items that are in item_supplier
-        $query->whereNotExists(function($subquery) use ($outletId) {
-            $subquery->select(\DB::raw(1))
-                    ->from('item_supplier')
-                    ->join('item_supplier_outlet', 'item_supplier.id', '=', 'item_supplier_outlet.item_supplier_id')
-                    ->whereRaw('items.id = item_supplier.item_id')
-                    ->where('item_supplier_outlet.outlet_id', $outletId);
-        });
-    }
-
-    $items = $query->limit(10)->get();
-    return response()->json(['items' => $items]);
-});
-
 Route::get('/api/suppliers/by-outlet', function () {
     $outletId = Request::get('outlet_id');
     $suppliers = \DB::table('suppliers')
@@ -761,5 +706,8 @@ Route::middleware(['auth'])->group(function () {
     Route::resource('warehouse-outlets', WarehouseOutletController::class);
     Route::patch('warehouse-outlets/{warehouseOutlet}/toggle-status', [WarehouseOutletController::class, 'toggleStatus'])->name('warehouse-outlets.toggle-status');
 });
+
+// Endpoint warehouse outlet untuk dropdown Floor Order
+Route::get('/warehouse-outlets', [\App\Http\Controllers\WarehouseOutletController::class, 'apiListByOutlet']);
 
 require __DIR__.'/auth.php';
