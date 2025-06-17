@@ -442,6 +442,11 @@ class ItemController extends Controller
     public function update(Request $request, Item $item)
     {
         $allowedTypes = \DB::table('menu_type')->pluck('type')->toArray();
+        if ($request->has('modifier_enabled')) {
+            $request->merge([
+                'modifier_enabled' => filter_var($request->modifier_enabled, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE)
+            ]);
+        }
         $validated = $request->validate([
             'category_id' => 'required|exists:categories,id',
             'sub_category_id' => 'nullable|exists:sub_categories,id',

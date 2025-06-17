@@ -784,8 +784,13 @@ const saveItem = () => {
       } else {
         if (key === 'sub_category_id' && (!value || value === '')) {
           // skip
-      } else {
-        formData.append(key, value);
+        } else {
+          // Pastikan boolean dikirim sebagai 1/0
+          if (typeof value === 'boolean') {
+            formData.append(key, value ? 1 : 0);
+          } else {
+            formData.append(key, value);
+          }
         }
       }
     });
