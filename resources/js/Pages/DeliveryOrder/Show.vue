@@ -12,12 +12,12 @@
             <div class="mb-2"><span class="font-semibold text-gray-600">Nomor DO:</span> <span class="text-blue-700">{{ order.number || '-' }}</span></div>
             <div class="mb-2"><span class="font-semibold text-gray-600">Tanggal:</span> {{ formatDate(order.created_at) }}</div>
             <div class="mb-2"><span class="font-semibold text-gray-600">User:</span> {{ order.created_by_name || '-' }}</div>
-            <div class="mb-2"><span class="font-semibold text-gray-600">Status:</span> {{ order.status || '-' }}</div>
+            <div class="mb-2"><span class="font-semibold text-gray-600">Status:</span> {{ order.do_status || '-' }}</div>
           </div>
           <div>
             <div class="mb-2"><span class="font-semibold text-gray-600">Packing List:</span> {{ order.packing_number || '-' }}</div>
             <div class="mb-2"><span class="font-semibold text-gray-600">Floor Order:</span> {{ order.floor_order_number || '-' }}</div>
-            <div class="mb-2"><span class="font-semibold text-gray-600">Tanggal Packing:</span> {{ order.packing_date ? formatDate(order.packing_date) : '-' }}</div>
+            <div class="mb-2"><span class="font-semibold text-gray-600">Tanggal Packing:</span> {{ formatDate(order.packing_date) }}</div>
           </div>
         </div>
       </div>
@@ -31,7 +31,6 @@
               <tr>
                 <th class="px-4 py-2 text-left text-xs font-bold text-blue-700 uppercase">No</th>
                 <th class="px-4 py-2 text-left text-xs font-bold text-blue-700 uppercase">Nama Item</th>
-                <th class="px-4 py-2 text-left text-xs font-bold text-blue-700 uppercase">Barcode</th>
                 <th class="px-4 py-2 text-right text-xs font-bold text-blue-700 uppercase">Qty Packing</th>
                 <th class="px-4 py-2 text-right text-xs font-bold text-blue-700 uppercase">Qty Scan</th>
                 <th class="px-4 py-2 text-left text-xs font-bold text-blue-700 uppercase">Unit</th>
@@ -39,12 +38,11 @@
             </thead>
             <tbody>
               <tr v-if="!items.length">
-                <td colspan="6" class="text-center py-8 text-blue-300">Tidak ada item.</td>
+                <td colspan="5" class="text-center py-8 text-blue-300">Tidak ada item.</td>
               </tr>
               <tr v-for="(item, idx) in items" :key="item.id" class="hover:bg-blue-50 transition">
                 <td class="px-4 py-2">{{ idx + 1 }}</td>
-                <td class="px-4 py-2">{{ item.name || '-' }}</td>
-                <td class="px-4 py-2">{{ item.barcode || '-' }}</td>
+                <td class="px-4 py-2">{{ item.item_name || '-' }}</td>
                 <td class="px-4 py-2 text-right">{{ item.qty_packing_list }}</td>
                 <td class="px-4 py-2 text-right">{{ item.qty_scan }}</td>
                 <td class="px-4 py-2">{{ item.unit || '-' }}</td>

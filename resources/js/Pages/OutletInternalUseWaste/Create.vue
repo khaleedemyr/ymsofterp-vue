@@ -14,6 +14,8 @@
                 <option value="internal_use">Internal Use</option>
                 <option value="spoil">Spoil</option>
                 <option value="waste">Waste</option>
+                <option value="r_and_d">R & D</option>
+                <option value="marketing">Marketing</option>
               </select>
             </div>
             <div>
@@ -25,6 +27,13 @@
               <select v-model="form.outlet_id" :disabled="outletDisabled" class="input input-bordered w-full" required>
                 <option value="">Pilih Outlet</option>
                 <option v-for="o in props.outlets" :key="o.id_outlet" :value="o.id_outlet">{{ o.nama_outlet }}</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-gray-600 mb-1">Warehouse Outlet</label>
+              <select v-model="form.warehouse_outlet_id" class="input input-bordered w-full" required>
+                <option value="">Pilih Warehouse Outlet</option>
+                <option v-for="wo in props.warehouse_outlets" :key="wo.id" :value="wo.id">{{ wo.name }}</option>
               </select>
             </div>
           </div>
@@ -136,7 +145,8 @@ import Swal from 'sweetalert2'
 
 const props = defineProps({
   outlets: Array,
-  items: Array
+  items: Array,
+  warehouse_outlets: Array
 })
 
 const page = usePage()
@@ -162,7 +172,8 @@ const form = ref({
   date: '',
   outlet_id: userOutletId.value == 1 ? '' : userOutletId.value,
   notes: '',
-  items: [newItem()]
+  items: [newItem()],
+  warehouse_outlet_id: ''
 })
 
 const outletDisabled = computed(() => userOutletId.value != 1)

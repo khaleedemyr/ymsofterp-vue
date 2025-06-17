@@ -6,11 +6,11 @@
       </h1>
       <div class="bg-white rounded-xl shadow-lg p-6">
         <div class="mb-4">
-          <div class="mb-2"><b>ID:</b> {{ data.id }}</div>
-          <div class="mb-2"><b>Tipe:</b> {{ typeLabel(data.type) }}</div>
-          <div class="mb-2"><b>Tanggal:</b> {{ formatDate(data.date) }}</div>
-          <div class="mb-2"><b>Outlet:</b> {{ data.outlet_name }}</div>
-          <div v-if="data.type === 'internal_use' && data.nama_ruko" class="mb-2"><b>Ruko:</b> {{ data.nama_ruko }}</div>
+          <div class="mb-2"><b>ID:</b> {{ header.id }}</div>
+          <div class="mb-2"><b>Tipe:</b> {{ typeLabel(header.type) }}</div>
+          <div class="mb-2"><b>Tanggal:</b> {{ formatDate(header.date) }}</div>
+          <div class="mb-2"><b>Outlet:</b> {{ header.outlet_name }}</div>
+          <div v-if="header.type === 'internal_use' && header.nama_ruko" class="mb-2"><b>Ruko:</b> {{ header.nama_ruko }}</div>
         </div>
         <div>
           <b>Detail Item:</b>
@@ -24,11 +24,11 @@
               </tr>
             </thead>
             <tbody>
-              <tr>
-                <td class="px-2 py-1 border">{{ data.item_name }}</td>
-                <td class="px-2 py-1 border">{{ formatNumber(data.qty) }}</td>
-                <td class="px-2 py-1 border">{{ data.unit_name }}</td>
-                <td class="px-2 py-1 border">{{ data.notes || '-' }}</td>
+              <tr v-for="item in details" :key="item.id">
+                <td class="px-2 py-1 border">{{ item.item_name }}</td>
+                <td class="px-2 py-1 border">{{ formatNumber(item.qty) }}</td>
+                <td class="px-2 py-1 border">{{ item.unit_name }}</td>
+                <td class="px-2 py-1 border">{{ item.note || '-' }}</td>
               </tr>
             </tbody>
           </table>
@@ -47,7 +47,8 @@ import { router } from '@inertiajs/vue3'
 
 const props = defineProps({
   id: [String, Number],
-  data: Object
+  header: Object,
+  details: Array
 })
 
 function typeLabel(type) {

@@ -1846,7 +1846,7 @@ class ItemController extends Controller
                 ];
             });
 
-            return response()->json(['items' => $items]);
+        return response()->json(['items' => $items]);
         } catch (\Exception $e) {
             \Log::error('Error in search: ' . $e->getMessage(), [
                 'trace' => $e->getTraceAsString(),

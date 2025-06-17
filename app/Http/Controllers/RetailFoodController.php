@@ -33,15 +33,19 @@ class RetailFoodController extends Controller
     public function index()
     {
         $user = auth()->user()->load('outlet');
-        // Validasi outlet user
         $userOutletId = $user->id_outlet;
         $outletExists = \DB::table('tbl_data_outlet')->where('id_outlet', $userOutletId)->exists();
         if (!$outletExists && $userOutletId != 1) {
             abort(403, 'Outlet tidak terdaftar');
         }
-        $query = RetailFood::with(['outlet', 'creator', 'items'])->orderByDesc('created_at');
+        // Query dengan join warehouse outlet
+        $query = RetailFood::query()
+            ->with(['outlet', 'creator', 'items'])
+            ->leftJoin('warehouse_outlets as wo', 'retail_food.warehouse_outlet_id', '=', 'wo.id')
+            ->addSelect('retail_food.*', 'wo.name as warehouse_outlet_name')
+            ->orderByDesc('retail_food.created_at');
         if ($userOutletId != 1) {
-            $query->where('outlet_id', $userOutletId);
+            $query->where('retail_food.outlet_id', $userOutletId);
         }
         $retailFoods = $query->paginate(10);
         return Inertia::render('RetailFood/Index', [
@@ -54,9 +58,11 @@ class RetailFoodController extends Controller
     {
         $user = auth()->user()->load('outlet');
         $outlets = Outlet::where('status', 'A')->orderBy('nama_outlet')->get(['id_outlet', 'nama_outlet']);
+        $warehouse_outlets = DB::table('warehouse_outlets')->select('id', 'name')->orderBy('name')->get();
         return Inertia::render('RetailFood/Form', [
             'user' => $user,
             'outlets' => $outlets,
+            'warehouse_outlets' => $warehouse_outlets,
         ]);
     }
 
@@ -93,11 +99,12 @@ class RetailFoodController extends Controller
             $retailFood = RetailFood::create([
                 'retail_number' => $retailNumber,
                 'outlet_id' => $request->outlet_id,
+                'warehouse_outlet_id' => $request->warehouse_outlet_id,
                 'created_by' => auth()->id(),
                 'transaction_date' => $request->transaction_date,
                 'total_amount' => $totalAmount,
                 'notes' => $request->notes,
-                'status' => 'draft'
+                'status' => 'approved'
             ]);
 
             // Simpan items dan proses inventory outlet
@@ -176,12 +183,14 @@ class RetailFoodController extends Controller
                             'last_cost_small' => $mac,
                             'last_cost_medium' => $cost_medium,
                             'last_cost_large' => $cost_large,
+                            'warehouse_outlet_id' => $request->warehouse_outlet_id,
                             'updated_at' => now(),
                         ]);
                 } else {
                     DB::table('outlet_food_inventory_stocks')->insert([
                         'inventory_item_id' => $inventoryItemId,
                         'id_outlet' => $request->outlet_id,
+                        'warehouse_outlet_id' => $request->warehouse_outlet_id,
                         'qty_small' => $qty_small,
                         'qty_medium' => $qty_medium,
                         'qty_large' => $qty_large,
@@ -213,6 +222,7 @@ class RetailFoodController extends Controller
                 DB::table('outlet_food_inventory_cards')->insert([
                     'inventory_item_id' => $inventoryItemId,
                     'id_outlet' => $request->outlet_id,
+                    'warehouse_outlet_id' => $request->warehouse_outlet_id,
                     'date' => $request->transaction_date,
                     'reference_type' => 'retail_food',
                     'reference_id' => $retailFood->id,
@@ -246,6 +256,7 @@ class RetailFoodController extends Controller
                 DB::table('outlet_food_inventory_cost_histories')->insert([
                     'inventory_item_id' => $inventoryItemId,
                     'id_outlet' => $request->outlet_id,
+                    'warehouse_outlet_id' => $request->warehouse_outlet_id,
                     'date' => $request->transaction_date,
                     'old_cost' => $old_cost,
                     'new_cost' => $cost_small,

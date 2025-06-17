@@ -226,7 +226,10 @@ function printFO() {
           <select v-model="selectedFO" class="w-full rounded border-gray-300">
             <option value="">Pilih Request Order (RO)</option>
             <option v-for="fo in props.floorOrders" :key="fo.id" :value="fo.id">
-              {{ fo.outlet?.nama_outlet }} - {{ fo.tanggal }} - {{ fo.fo_mode }} - {{ fo.order_number }}
+              {{ fo.outlet?.nama_outlet }}
+              <template v-if="fo.warehouse_outlet && fo.warehouse_outlet.name"> - {{ fo.warehouse_outlet.name }}</template>
+              <template v-else> -</template>
+              - {{ fo.tanggal }} - {{ fo.fo_mode }} - {{ fo.order_number }}
             </option>
           </select>
         </div>
@@ -245,6 +248,7 @@ function printFO() {
           <div class="font-bold text-blue-800 mb-1">Detail Request Order (RO)</div>
           <div v-if="foDetail">
             <div><b>Outlet:</b> {{ foDetail.outlet?.nama_outlet }}</div>
+            <div v-if="foDetail.warehouse_outlet && foDetail.warehouse_outlet.name"><b>Warehouse Outlet:</b> {{ foDetail.warehouse_outlet.name }}</div>
             <div><b>Tanggal:</b> {{ foDetail.tanggal }}</div>
             <div><b>RO Mode:</b> {{ foDetail.fo_mode }}</div>
             <div><b>Nomor:</b> {{ foDetail.order_number }}</div>

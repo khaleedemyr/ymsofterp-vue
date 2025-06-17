@@ -40,6 +40,7 @@ class DeliveryOrderController extends Controller
             ->leftJoin('users as u', 'pl.created_by', '=', 'u.id')
             ->leftJoin('warehouse_division as wd', 'pl.warehouse_division_id', '=', 'wd.id')
             ->leftJoin('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
+            ->leftJoin('warehouse_outlets as wo', 'fo.warehouse_outlet_id', '=', 'wo.id')
             ->whereNotIn('pl.id', $usedPackingListIds)
             ->select(
                 'pl.id',
@@ -50,7 +51,8 @@ class DeliveryOrderController extends Controller
                 'o.nama_outlet',
                 'u.nama_lengkap as creator_name',
                 'wd.name as division_name',
-                'w.name as warehouse_name'
+                'w.name as warehouse_name',
+                'wo.name as warehouse_outlet_name'
             )
             ->orderByDesc('pl.created_at')
             ->get();
@@ -61,8 +63,31 @@ class DeliveryOrderController extends Controller
 
     public function show($id)
     {
-        $order = DB::table('delivery_orders')->where('id', $id)->first();
-        $items = DB::table('delivery_order_items')->where('delivery_order_id', $id)->get();
+        $order = DB::table('delivery_orders as do')
+            ->leftJoin('food_packing_lists as pl', 'do.packing_list_id', '=', 'pl.id')
+            ->leftJoin('food_floor_orders as fo', 'do.floor_order_id', '=', 'fo.id')
+            ->leftJoin('users as u', 'do.created_by', '=', 'u.id')
+            ->select(
+                'do.*',
+                'pl.packing_number',
+                'fo.order_number as floor_order_number',
+                'pl.created_at as packing_date',
+                'fo.tanggal as floor_order_date',
+                'u.nama_lengkap as created_by_name'
+            )
+            ->where('do.id', $id)
+            ->first();
+        $items = DB::table('delivery_order_items as doi')
+            ->leftJoin('items as i', 'doi.item_id', '=', 'i.id')
+            ->select(
+                'doi.id',
+                'i.name as item_name',
+                'doi.qty_packing_list',
+                'doi.qty_scan',
+                'doi.unit'
+            )
+            ->where('doi.delivery_order_id', $id)
+            ->get();
         return Inertia::render('DeliveryOrder/Show', [
             'order' => $order,
             'items' => $items

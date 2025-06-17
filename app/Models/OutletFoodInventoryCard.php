@@ -12,6 +12,7 @@ class OutletFoodInventoryCard extends Model
     protected $fillable = [
         'inventory_item_id',
         'id_outlet',
+        'warehouse_outlet_id',
         'date',
         'reference_type',
         'reference_id',

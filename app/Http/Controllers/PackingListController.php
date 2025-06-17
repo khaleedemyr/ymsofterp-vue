@@ -31,7 +31,7 @@ class PackingListController extends Controller
     {
         // Ambil semua FO yang approved
         $floorOrders = FoodFloorOrder::where('status', 'approved')
-            ->with(['outlet', 'user', 'items.item.smallUnit', 'items.item.mediumUnit', 'items.item.largeUnit', 'warehouseDivisions'])
+            ->with(['outlet', 'user', 'items.item.smallUnit', 'items.item.mediumUnit', 'items.item.largeUnit', 'warehouseDivisions', 'warehouseOutlet'])
             ->orderByDesc('created_at')
             ->get();
 

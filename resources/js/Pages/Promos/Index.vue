@@ -12,6 +12,26 @@
           + Buat Promo
         </Link>
       </div>
+      <!-- Search & Filter -->
+      <form @submit.prevent="applyFilter" class="flex flex-wrap gap-2 mb-4 items-center">
+        <input
+          v-model="search"
+          type="text"
+          placeholder="Cari nama promo..."
+          class="border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-pink-200"
+          style="min-width:200px"
+        />
+        <select v-model="type" class="border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-pink-200">
+          <option value="">Semua Tipe</option>
+          <option value="percent">Percent</option>
+          <option value="nominal">Nominal</option>
+          <option value="bundle">Bundle</option>
+          <option value="bogo">Bogo</option>
+          <option value="harga_coret">Harga Coret</option>
+        </select>
+        <button type="submit" class="bg-pink-500 text-white px-4 py-2 rounded font-semibold hover:bg-pink-600 transition">Cari</button>
+        <button v-if="search || type" type="button" @click="resetFilter" class="ml-2 bg-gray-200 text-gray-700 px-3 py-2 rounded hover:bg-gray-300 transition">Reset</button>
+      </form>
       <div class="bg-white rounded-2xl shadow-2xl overflow-x-auto transition-all">
         <table class="w-full min-w-full divide-y divide-gray-200">
           <thead class="bg-gradient-to-r from-pink-50 to-pink-100">
@@ -69,8 +89,13 @@ import Swal from 'sweetalert2';
 import { ref } from 'vue';
 
 const props = defineProps({
-  promos: Array
+  promos: Array,
+  search: String,
+  type: String
 });
+
+const search = ref(props.search || '');
+const type = ref(props.type || '');
 
 const loadingDeleteId = ref(null);
 
@@ -100,5 +125,14 @@ async function handleDelete(id) {
       Swal.fire('Error', 'Gagal menghapus promo', 'error');
     }
   });
+}
+
+function applyFilter() {
+  router.get(route('promos.index'), { search: search.value, type: type.value }, { preserveState: true, replace: true });
+}
+function resetFilter() {
+  search.value = '';
+  type.value = '';
+  applyFilter();
 }
 </script> 

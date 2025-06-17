@@ -56,7 +56,12 @@
               <td class="px-6 py-4 whitespace-nowrap">{{ inv.name }}</td>
               <td class="px-6 py-4 whitespace-nowrap">{{ inv.email }}</td>
               <td class="px-6 py-4 whitespace-nowrap">{{ inv.phone }}</td>
-              <td class="px-6 py-4 whitespace-nowrap">{{ inv.outlets ? inv.outlets.map(o => o.name).join(', ') : '-' }}</td>
+              <td class="px-6 py-4 whitespace-nowrap">
+                <ul v-if="inv.outlets && inv.outlets.length" class="list-disc pl-4">
+                  <li v-for="o in inv.outlets" :key="o.id">{{ o.name }}</li>
+                </ul>
+                <span v-else>-</span>
+              </td>
               <td class="px-6 py-4 whitespace-nowrap text-center">
                 <button class="px-2 py-1 bg-yellow-400 rounded mr-2" @click="openEditModal(inv)">Edit</button>
                 <button class="px-2 py-1 bg-red-500 text-white rounded" @click="deleteInvestor(inv.id)">Hapus</button>

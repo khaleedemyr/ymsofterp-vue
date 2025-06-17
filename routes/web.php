@@ -475,13 +475,15 @@ Route::post('/google-review/fetch', [GoogleReviewController::class, 'scrapeRevie
 Route::get('/scraped-reviews', [GoogleReviewController::class, 'getScrapedReviews']);
 
 Route::get('/internal-use-waste', [InternalUseWasteController::class, 'index'])->name('internal-use-waste.index');
-Route::get('/internal-use-waste/create', [InternalUseWasteController::class, 'create'])->name('internal-use-waste.create');
-Route::post('/internal-use-waste', [InternalUseWasteController::class, 'store'])->name('internal-use-waste.store');
 Route::get('/internal-use-waste/report', [App\Http\Controllers\InternalUseWasteController::class, 'report'])->name('internal-use-waste.report');
 Route::get('/internal-use-waste/report-waste-spoil', [App\Http\Controllers\InternalUseWasteController::class, 'reportWasteSpoil'])->name('internal-use-waste.report-waste-spoil');
+Route::get('/internal-use-waste/create', [InternalUseWasteController::class, 'create'])->name('internal-use-waste.create');
+Route::post('/internal-use-waste', [InternalUseWasteController::class, 'store'])->name('internal-use-waste.store');
+
 Route::get('/internal-use-waste/{id}', [InternalUseWasteController::class, 'show'])->name('internal-use-waste.show');
 Route::delete('/internal-use-waste/{id}', [InternalUseWasteController::class, 'destroy'])->name('internal-use-waste.destroy');
 Route::get('/internal-use-waste/item/{id}/units', [App\Http\Controllers\InternalUseWasteController::class, 'getItemUnits']);
+
 
 Route::get('/delivery-order', [DeliveryOrderController::class, 'index'])->name('delivery-order.index');
 Route::get('/delivery-order/create', [DeliveryOrderController::class, 'create'])->name('delivery-order.create');
@@ -582,11 +584,14 @@ Route::get('/outlet-inventory/category-recap-report', [\App\Http\Controllers\Out
 Route::get('/outlet-internal-use-waste', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'index'])->name('outlet-internal-use-waste.index');
 Route::get('/outlet-internal-use-waste/create', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'create'])->name('outlet-internal-use-waste.create');
 Route::post('/outlet-internal-use-waste', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'store'])->name('outlet-internal-use-waste.store');
+Route::get('/outlet-internal-use-waste/report', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'report'])->name('outlet-internal-use-waste.report');
+Route::get('/outlet-internal-use-waste/report-waste-spoil', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'reportWasteSpoil'])->name('outlet-internal-use-waste.report-waste-spoil');
+Route::get('/outlet-internal-use-waste/report-universal', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'reportUniversal'])->name('outlet-internal-use-waste.report-universal');
+Route::get('/outlet-internal-use-waste/{id}/details', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'details']);
 Route::get('/outlet-internal-use-waste/{id}', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'show'])->name('outlet-internal-use-waste.show');
 Route::delete('/outlet-internal-use-waste/{id}', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'destroy'])->name('outlet-internal-use-waste.destroy');
 Route::get('/outlet-internal-use-waste/get-item-units/{id}', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'getItemUnits'])->name('outlet-internal-use-waste.get-item-units');
-Route::get('/outlet-internal-use-waste/report', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'report'])->name('outlet-internal-use-waste.report');
-Route::get('/outlet-internal-use-waste/report-waste-spoil', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'reportWasteSpoil'])->name('outlet-internal-use-waste.report-waste-spoil');
+
 
 Route::resource('retail-food', RetailFoodController::class);
 Route::get('retail-food/get-item-units/{itemId}', [\App\Http\Controllers\RetailFoodController::class, 'getItemUnits']);
@@ -709,5 +714,7 @@ Route::middleware(['auth'])->group(function () {
 
 // Endpoint warehouse outlet untuk dropdown Floor Order
 Route::get('/warehouse-outlets', [\App\Http\Controllers\WarehouseOutletController::class, 'apiListByOutlet']);
+
+Route::post('promos/api-item-prices', [App\Http\Controllers\PromoController::class, 'apiItemPrices'])->name('promos.apiItemPrices');
 
 require __DIR__.'/auth.php';

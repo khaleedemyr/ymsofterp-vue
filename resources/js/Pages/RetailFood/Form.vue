@@ -6,7 +6,7 @@
           <i class="fa-solid fa-store text-blue-500 text-3xl"></i> Input Retail Food
         </h1>
         <form @submit.prevent="submit" class="space-y-7">
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div>
               <label class="block text-xs font-bold text-gray-600 mb-2">Tanggal</label>
               <input type="date" v-model="form.transaction_date" class="input input-bordered w-full shadow-inner rounded-xl focus:ring-2 focus:ring-blue-300 transition-all duration-200" required />
@@ -16,6 +16,13 @@
               <select v-model="form.outlet_id" :disabled="outletDisabled" class="input input-bordered w-full shadow-inner rounded-xl focus:ring-2 focus:ring-blue-300 transition-all duration-200" required>
                 <option value="">Pilih Outlet</option>
                 <option v-for="o in props.outlets" :key="o.id_outlet" :value="o.id_outlet">{{ o.nama_outlet }}</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-gray-600 mb-2">Warehouse Outlet</label>
+              <select v-model="form.warehouse_outlet_id" class="input input-bordered w-full shadow-inner rounded-xl focus:ring-2 focus:ring-blue-300 transition-all duration-200" required>
+                <option value="">Pilih Warehouse Outlet</option>
+                <option v-for="w in props.warehouse_outlets" :key="w.id" :value="w.id">{{ w.name }}</option>
               </select>
             </div>
           </div>
@@ -149,7 +156,8 @@ import axios from 'axios'
 import Swal from 'sweetalert2'
 
 const props = defineProps({
-  outlets: Array
+  outlets: Array,
+  warehouse_outlets: Array
 })
 
 const page = usePage()
@@ -174,6 +182,7 @@ function newItem() {
 const form = ref({
   transaction_date: new Date().toISOString().split('T')[0],
   outlet_id: userOutletId.value == 1 ? '' : userOutletId.value,
+  warehouse_outlet_id: '',
   notes: '',
   items: [newItem()]
 })
@@ -321,6 +330,7 @@ async function submit() {
   try {
     const res = await axios.post('/retail-food', {
       outlet_id: form.value.outlet_id,
+      warehouse_outlet_id: form.value.warehouse_outlet_id,
       transaction_date: form.value.transaction_date,
       notes: form.value.notes,
       items: form.value.items.map(item => ({

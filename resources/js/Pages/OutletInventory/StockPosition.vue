@@ -12,6 +12,13 @@
           </select>
         </div>
         <div class="flex items-center gap-2">
+          <label class="text-sm">Warehouse Outlet</label>
+          <select v-model="selectedWarehouseOutlet" class="border border-gray-300 rounded-lg px-2 py-2 focus:ring-blue-500 focus:border-blue-500">
+            <option value="">Semua Warehouse Outlet</option>
+            <option v-for="w in warehouse_outlets" :key="w.id" :value="w.id">{{ w.name }}</option>
+          </select>
+        </div>
+        <div class="flex items-center gap-2">
           <label class="text-sm">Tampilkan</label>
           <select v-model="perPage" class="border border-gray-300 rounded-lg px-2 py-2 focus:ring-blue-500 focus:border-blue-500">
             <option v-for="n in [10, 25, 50, 100]" :key="n" :value="n">{{ n }}</option>
@@ -25,6 +32,7 @@
             <tr>
               <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Nama Barang</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Outlet</th>
+              <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Warehouse Outlet</th>
               <th class="px-6 py-3 text-right text-xs font-bold text-gray-700 uppercase tracking-wider">Qty Small</th>
               <th class="px-6 py-3 text-right text-xs font-bold text-gray-700 uppercase tracking-wider">Qty Medium</th>
               <th class="px-6 py-3 text-right text-xs font-bold text-gray-700 uppercase tracking-wider">Qty Large</th>
@@ -38,6 +46,7 @@
             <tr v-for="row in paginatedStocks" :key="row.item_id + '-' + row.outlet_id" class="hover:bg-gray-50 transition">
               <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ row.item_name }}</td>
               <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{{ row.outlet_name }}</td>
+              <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{{ row.warehouse_outlet_name || '-' }}</td>
               <td class="px-6 py-4 whitespace-nowrap text-sm text-right">
                 <span v-if="row.display_small > 0">{{ displayQty(row.display_small) }} <span v-if="row.small_unit_name">{{ row.small_unit_name }}</span></span>
                 <span v-else>-</span>
@@ -76,11 +85,13 @@ const props = defineProps({
   stocks: Array,
   outlets: Array,
   user_outlet_id: [String, Number],
+  warehouse_outlets: Array
 });
 const search = ref('');
 const perPage = ref(25);
 const page = ref(1);
 const selectedOutlet = ref('');
+const selectedWarehouseOutlet = ref('');
 
 // Set outlet filter sesuai user saat mount
 onMounted(() => {
@@ -95,6 +106,9 @@ const filteredStocks = computed(() => {
   let data = props.stocks;
   if (selectedOutlet.value) {
     data = data.filter(row => String(row.outlet_id) === String(selectedOutlet.value));
+  }
+  if (selectedWarehouseOutlet.value) {
+    data = data.filter(row => String(row.warehouse_outlet_id) === String(selectedWarehouseOutlet.value));
   }
   if (!search.value) return data;
   const s = search.value.toLowerCase();

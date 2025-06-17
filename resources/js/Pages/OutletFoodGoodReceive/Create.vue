@@ -22,6 +22,7 @@
         <div><b>Nomor Packing:</b> {{ doDetail.do.packing_number || '-' }}</div>
         <div><b>Nomor Floor Order:</b> {{ doDetail.do.floor_order_number || '-' }}</div>
         <div><b>Tanggal Floor Order:</b> {{ doDetail.do.floor_order_date || '-' }}</div>
+        <div><b>Warehouse Outlet:</b> {{ doDetail.do.warehouse_outlet_name || '-' }}</div>
       </div>
       <!-- Tabel Item DO -->
       <div v-if="items.length" class="mb-8 w-full max-w-3xl animate-fade-in">
@@ -272,6 +273,7 @@ async function submitGR() {
       delivery_order_id: selectedDOId.value,
       receive_date: doDetail.value?.do?.do_created_at ? doDetail.value.do.do_created_at.split('T')[0] : new Date().toISOString().split('T')[0],
       notes: '',
+      warehouse_outlet_id: doDetail.value?.do?.warehouse_outlet_id || null,
       items: items.map(i => ({
         item_id: i.item_id,
         qty: i.qty_packing_list,

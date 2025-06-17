@@ -6,11 +6,8 @@
           <i class="fa-solid fa-recycle text-green-500"></i> Internal Use & Waste Outlet
         </h1>
         <div class="flex gap-2">
-          <button @click="goReport" class="bg-blue-500 text-white px-4 py-2 rounded-xl shadow-lg hover:bg-blue-600 transition-all font-semibold">
-            <i class="fa fa-file-lines mr-1"></i> Laporan Internal Use
-          </button>
-          <button @click="goReportWasteSpoil" class="bg-yellow-500 text-white px-4 py-2 rounded-xl shadow-lg hover:bg-yellow-600 transition-all font-semibold">
-            <i class="fa fa-file-lines mr-1"></i> Laporan Spoil & Waste
+          <button @click="goReportUniversal" class="bg-blue-500 text-white px-4 py-2 rounded-xl shadow-lg hover:bg-blue-600 transition-all font-semibold">
+            <i class="fa fa-file-lines mr-1"></i> Laporan
           </button>
           <button @click="goCreate" class="bg-gradient-to-r from-green-500 to-green-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold">
             + Tambah Baru
@@ -26,10 +23,7 @@
                 <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Tanggal</th>
                 <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Tipe</th>
                 <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Outlet</th>
-                <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Item</th>
-                <th class="px-6 py-3 text-right text-xs font-bold text-gray-700 uppercase tracking-wider">Qty</th>
-                <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Unit</th>
-                <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Catatan</th>
+                <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Warehouse Outlet</th>
                 <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Aksi</th>
               </tr>
             </thead>
@@ -41,10 +35,7 @@
                 <td class="px-6 py-3">{{ formatDate(row.date) }}</td>
                 <td class="px-6 py-3">{{ typeLabel(row.type) }}</td>
                 <td class="px-6 py-3">{{ row.outlet_name }}</td>
-                <td class="px-6 py-3">{{ row.item_name }}</td>
-                <td class="px-6 py-3 text-right">{{ formatNumber(row.qty) }}</td>
-                <td class="px-6 py-3">{{ row.unit_name }}</td>
-                <td class="px-6 py-3">{{ row.notes }}</td>
+                <td class="px-6 py-3">{{ row.warehouse_outlet_name || '-' }}</td>
                 <td class="px-6 py-3">
                   <button class="inline-flex items-center btn btn-xs bg-green-100 text-green-800 hover:bg-green-200 rounded px-2 py-1 font-semibold transition" @click="goDetail(row.id)">
                     <i class="fa fa-eye mr-1"></i> Detail
@@ -79,8 +70,8 @@ function goCreate() {
   router.visit(route('outlet-internal-use-waste.create'))
 }
 
-function goReport() {
-  router.visit(route('outlet-internal-use-waste.report'))
+function goReportUniversal() {
+  router.visit(route('outlet-internal-use-waste.report-universal'))
 }
 
 function goReportWasteSpoil() {
@@ -145,6 +136,8 @@ function typeLabel(type) {
   if (type === 'internal_use') return 'Internal Use';
   if (type === 'spoil') return 'Spoil';
   if (type === 'waste') return 'Waste';
+  if (type === 'r_and_d') return 'R & D';
+  if (type === 'marketing') return 'Marketing';
   return type;
 }
 </script> 

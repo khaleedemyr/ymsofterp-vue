@@ -12,6 +12,7 @@ class OutletFoodInventoryCostHistory extends Model
     protected $fillable = [
         'inventory_item_id',
         'id_outlet',
+        'warehouse_outlet_id',
         'date',
         'old_cost',
         'new_cost',

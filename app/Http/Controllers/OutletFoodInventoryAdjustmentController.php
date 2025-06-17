@@ -18,7 +18,9 @@ class OutletFoodInventoryAdjustmentController extends Controller
     public function index(Request $request)
     {
         $user = auth()->user();
-        $query = OutletFoodInventoryAdjustment::with(['items', 'outlet', 'creator']);
+        $query = OutletFoodInventoryAdjustment::with(['items', 'outlet', 'creator'])
+            ->leftJoin('warehouse_outlets as wo', 'outlet_food_inventory_adjustments.warehouse_outlet_id', '=', 'wo.id')
+            ->select('outlet_food_inventory_adjustments.*', 'wo.name as warehouse_outlet_name');
         if ($request->search) {
             $search = $request->search;
             $query->whereHas('items', function($q) use ($search) {
@@ -70,11 +72,13 @@ class OutletFoodInventoryAdjustmentController extends Controller
             $outlet_selectable = false;
         }
         $items = Item::all();
+        $warehouse_outlets = DB::table('warehouse_outlets')->select('id', 'name')->orderBy('name')->get();
         return inertia('OutletFoodInventoryAdjustment/Form', [
             'outlets' => $outlets,
             'items' => $items,
             'outlet_selectable' => $outlet_selectable,
             'user_outlet_id' => $user->id_outlet,
+            'warehouse_outlets' => $warehouse_outlets,
         ]);
     }
 
@@ -87,6 +91,7 @@ class OutletFoodInventoryAdjustmentController extends Controller
                 'number' => $number,
                 'date' => $request->date,
                 'id_outlet' => $request->outlet_id,
+                'warehouse_outlet_id' => $request->warehouse_outlet_id,
                 'type' => $request->type,
                 'reason' => $request->reason,
                 'status' => 'waiting_cost_control',
@@ -131,7 +136,25 @@ class OutletFoodInventoryAdjustmentController extends Controller
 
     public function show($id)
     {
-        $adjustment = OutletFoodInventoryAdjustment::with(['items.item', 'outlet', 'creator'])->findOrFail($id);
+        $adjustment = DB::table('outlet_food_inventory_adjustments as adj')
+            ->leftJoin('tbl_data_outlet as o', 'adj.id_outlet', '=', 'o.id_outlet')
+            ->leftJoin('users as u', 'adj.created_by', '=', 'u.id')
+            ->leftJoin('warehouse_outlets as wo', 'adj.warehouse_outlet_id', '=', 'wo.id')
+            ->select(
+                'adj.*',
+                'o.nama_outlet',
+                'u.nama_lengkap as creator_nama_lengkap',
+                'wo.name as warehouse_outlet_name',
+                'wo.id as warehouse_outlet_id'
+            )
+            ->where('adj.id', $id)
+            ->first();
+        $items = DB::table('outlet_food_inventory_adjustment_items as i')
+            ->leftJoin('items as it', 'i.item_id', '=', 'it.id')
+            ->select('i.*', 'it.name as item_name')
+            ->where('i.adjustment_id', $id)
+            ->get();
+        $adjustment->items = $items;
         $user = auth()->user();
         return inertia('OutletFoodInventoryAdjustment/Show', [
             'adjustment' => $adjustment,
@@ -337,6 +360,8 @@ class OutletFoodInventoryAdjustmentController extends Controller
 
     private function processInventory($adjustmentId)
     {
+        $header = DB::table('outlet_food_inventory_adjustments')->where('id', $adjustmentId)->first();
+        $warehouseOutletId = $header ? $header->warehouse_outlet_id : null;
         $adj = OutletFoodInventoryAdjustment::with(['items', 'outlet'])->find($adjustmentId);
         if (!$adj) return;
         foreach ($adj->items as $item) {
@@ -380,7 +405,8 @@ class OutletFoodInventoryAdjustmentController extends Controller
             $stock = OutletFoodInventoryStock::firstOrCreate(
                 [
                     'inventory_item_id' => $inventory_item_id,
-                    'id_outlet' => $adj->id_outlet
+                    'id_outlet' => $adj->id_outlet,
+                    'warehouse_outlet_id' => $warehouseOutletId,
                 ],
                 [
                     'qty_small' => 0,
@@ -408,6 +434,7 @@ class OutletFoodInventoryAdjustmentController extends Controller
             OutletFoodInventoryCard::create([
                 'inventory_item_id' => $inventory_item_id,
                 'id_outlet' => $adj->id_outlet,
+                'warehouse_outlet_id' => $warehouseOutletId,
                 'date' => $adj->date,
                 'reference_type' => 'outlet_stock_adjustment',
                 'reference_id' => $adj->id,

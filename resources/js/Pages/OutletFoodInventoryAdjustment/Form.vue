@@ -19,6 +19,13 @@
                     </option>
                   </select>
                 </div>
+                <div>
+                  <label class="block text-sm font-medium text-gray-700">Warehouse Outlet</label>
+                  <select v-model="form.warehouse_outlet_id" class="mt-1 block w-full rounded-md border-gray-300" required>
+                    <option value="">Pilih Warehouse Outlet</option>
+                    <option v-for="wo in warehouse_outlets" :key="wo.id" :value="wo.id">{{ wo.name }}</option>
+                  </select>
+                </div>
               </div>
               <div class="mb-6">
                 <label class="block text-sm font-medium text-gray-700">Tipe Adjustment</label>
@@ -157,6 +164,7 @@ const props = defineProps({
   items: Array,
   outlet_selectable: Boolean,
   user_outlet_id: [String, Number],
+  warehouse_outlets: Array,
 })
 
 const form = useForm({
@@ -164,7 +172,8 @@ const form = useForm({
   outlet_id: props.outlet_selectable ? '' : String(props.user_outlet_id),
   type: '',
   reason: '',
-  items: [newItem()]
+  items: [newItem()],
+  warehouse_outlet_id: '',
 })
 
 const page = usePage();

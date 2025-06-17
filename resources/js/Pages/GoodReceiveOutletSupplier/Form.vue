@@ -19,7 +19,7 @@
             >
               <option value="">Pilih RO Supplier...</option>
               <option v-for="ro in roList" :key="ro.id" :value="ro.ro_number">
-                {{ ro.ro_number ? `${ro.ro_number} - ${ro.floor_order_number || ''} - ${ro.tanggal || ''}` : '-' }}
+                {{ ro.ro_number ? `${ro.ro_number} - ${ro.floor_order_number || ''} - ${ro.tanggal || ''}${ro.warehouse_outlet_name ? ' - ' + ro.warehouse_outlet_name : ''}` : '-' }}
               </option>
             </select>
           </div>
@@ -34,6 +34,8 @@
           <div class="text-sm mt-1">Nomor: <span class="font-mono">{{ ro.ro_number }}</span></div>
           <div class="text-sm">Tanggal: {{ ro.tanggal }}</div>
           <div class="text-sm">Supplier: {{ ro.supplier_name }}</div>
+          <div class="text-sm">Outlet: {{ ro.outlet_name || '-' }}</div>
+          <div class="text-sm">Warehouse Outlet: {{ ro.warehouse_outlet_name || '-' }}</div>
         </div>
 
         <!-- Tabel Item -->

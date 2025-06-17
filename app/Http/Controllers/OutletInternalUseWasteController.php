@@ -10,13 +10,19 @@ class OutletInternalUseWasteController extends Controller
 {
     public function index()
     {
+        $user = auth()->user();
         $data = DB::table('outlet_internal_use_waste_headers as h')
             ->leftJoin('tbl_data_outlet as o', 'h.outlet_id', '=', 'o.id_outlet')
+            ->leftJoin('warehouse_outlets as wo', 'h.warehouse_outlet_id', '=', 'wo.id')
             ->select(
                 'h.*',
-                'o.nama_outlet as outlet_name'
-            )
-            ->orderByDesc('h.date')
+                'o.nama_outlet as outlet_name',
+                'wo.name as warehouse_outlet_name'
+            );
+        if ($user->id_outlet != 1) {
+            $data->where('h.outlet_id', $user->id_outlet);
+        }
+        $data = $data->orderByDesc('h.date')
             ->orderByDesc('h.id')
             ->get();
         return inertia('OutletInternalUseWaste/Index', [
@@ -34,11 +40,13 @@ class OutletInternalUseWasteController extends Controller
         $items = DB::table('items')->where('status', 'active')->get();
         $units = DB::table('units')->get();
         $rukos = DB::table('tbl_data_ruko')->get();
+        $warehouse_outlets = DB::table('warehouse_outlets')->select('id', 'name')->orderBy('name')->get();
         return inertia('OutletInternalUseWaste/Create', [
             'outlets' => $outlets,
             'items' => $items,
             'units' => $units,
-            'rukos' => $rukos
+            'rukos' => $rukos,
+            'warehouse_outlets' => $warehouse_outlets,
         ]);
     }
 
@@ -50,6 +58,7 @@ class OutletInternalUseWasteController extends Controller
                 'type' => 'required|in:internal_use,spoil,waste',
                 'date' => 'required|date',
                 'outlet_id' => 'required|exists:tbl_data_outlet,id_outlet',
+                'warehouse_outlet_id' => 'required|exists:warehouse_outlets,id',
                 'notes' => 'nullable|string',
                 'items' => 'required|array|min:1',
                 'items.*.item_id' => 'required|exists:items,id',
@@ -63,6 +72,7 @@ class OutletInternalUseWasteController extends Controller
                 'type' => $request->type,
                 'date' => $request->date,
                 'outlet_id' => $request->outlet_id,
+                'warehouse_outlet_id' => $request->warehouse_outlet_id,
                 'notes' => $request->notes,
                 'created_at' => now(),
                 'updated_at' => now()
@@ -134,6 +144,7 @@ class OutletInternalUseWasteController extends Controller
                 DB::table('outlet_food_inventory_cards')->insert([
                     'inventory_item_id' => $inventoryItem->id,
                     'id_outlet' => $request->outlet_id,
+                    'warehouse_outlet_id' => $request->warehouse_outlet_id,
                     'date' => $request->date,
                     'reference_type' => 'outlet_internal_use_waste',
                     'reference_id' => $headerId,
@@ -383,5 +394,77 @@ class OutletInternalUseWasteController extends Controller
             'outlets' => $outlets,
             'filters' => $request->only(['from', 'to', 'outlet_id'])
         ]);
+    }
+
+    /**
+     * Universal report for internal use, spoil, waste (with filter type, warehouse, date, outlet)
+     */
+    public function reportUniversal(Request $request)
+    {
+        $user = auth()->user();
+        $type = $request->input('type');
+        $warehouse_outlet_id = $request->input('warehouse_outlet_id');
+        $from = $request->input('from');
+        $to = $request->input('to');
+
+        $query = DB::table('outlet_internal_use_waste_headers as h')
+            ->leftJoin('tbl_data_outlet as o', 'h.outlet_id', '=', 'o.id_outlet')
+            ->leftJoin('warehouse_outlets as wo', 'h.warehouse_outlet_id', '=', 'wo.id')
+            ->select(
+                'h.*',
+                'o.nama_outlet as outlet_name',
+                'wo.name as warehouse_outlet_name'
+            );
+        if ($user->id_outlet != 1) {
+            $query->where('h.outlet_id', $user->id_outlet);
+        } else if ($request->filled('outlet_id')) {
+            $query->where('h.outlet_id', $request->input('outlet_id'));
+        }
+        if ($type) {
+            $query->where('h.type', $type);
+        }
+        if ($warehouse_outlet_id) {
+            $query->where('h.warehouse_outlet_id', $warehouse_outlet_id);
+        }
+        if ($from) {
+            $query->where('h.date', '>=', $from);
+        }
+        if ($to) {
+            $query->where('h.date', '<=', $to);
+        }
+        $data = $query->orderByDesc('h.date')->orderByDesc('h.id')->get();
+
+        $types = [
+            ['value' => '', 'label' => 'Semua'],
+            ['value' => 'internal_use', 'label' => 'Internal Use'],
+            ['value' => 'spoil', 'label' => 'Spoil'],
+            ['value' => 'waste', 'label' => 'Waste'],
+            ['value' => 'r_and_d', 'label' => 'R & D'],
+            ['value' => 'marketing', 'label' => 'Marketing'],
+        ];
+        $warehouse_outlets = DB::table('warehouse_outlets')->select('id', 'name')->orderBy('name')->get();
+        $outlets = DB::table('tbl_data_outlet')->select('id_outlet as id', 'nama_outlet as name')->orderBy('nama_outlet')->get();
+
+        return inertia('OutletInternalUseWaste/ReportUniversal', [
+            'data' => $data,
+            'types' => $types,
+            'warehouse_outlets' => $warehouse_outlets,
+            'outlets' => $outlets,
+            'filters' => $request->only(['type', 'warehouse_outlet_id', 'from', 'to', 'outlet_id'])
+        ]);
+    }
+
+    /**
+     * Get detail items for a header (for report expand/collapse)
+     */
+    public function details($id)
+    {
+        $details = DB::table('outlet_internal_use_waste_details as d')
+            ->leftJoin('items as i', 'd.item_id', '=', 'i.id')
+            ->leftJoin('units as u', 'd.unit_id', '=', 'u.id')
+            ->select('d.*', 'i.name as item_name', 'u.name as unit_name')
+            ->where('d.header_id', $id)
+            ->get();
+        return response()->json(['details' => $details]);
     }
 } 

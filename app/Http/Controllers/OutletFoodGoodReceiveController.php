@@ -12,9 +12,11 @@ class OutletFoodGoodReceiveController extends Controller
 {
     public function index(Request $request)
     {
+        $user = auth()->user();
         $query = DB::table('outlet_food_good_receives as gr')
             ->leftJoin('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
             ->leftJoin('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
+            ->leftJoin('warehouse_outlets as wo', 'gr.warehouse_outlet_id', '=', 'wo.id')
             ->select(
                 'gr.id',
                 'gr.number',
@@ -23,14 +25,20 @@ class OutletFoodGoodReceiveController extends Controller
                 'gr.outlet_id',
                 'o.nama_outlet as outlet_name',
                 'gr.delivery_order_id',
-                'do.number as delivery_order_number'
+                'do.number as delivery_order_number',
+                'gr.warehouse_outlet_id',
+                'wo.name as warehouse_outlet_name'
             );
+        if ($user->id_outlet != 1) {
+            $query->where('gr.outlet_id', $user->id_outlet);
+        }
         if ($request->search) {
             $search = $request->search;
             $query->where(function($q) use ($search) {
                 $q->where('gr.number', 'like', "%$search%")
                   ->orWhere('do.number', 'like', "%$search%")
                   ->orWhere('o.nama_outlet', 'like', "%$search%")
+                  ->orWhere('wo.name', 'like', "%$search%")
                 ;
             });
         }
@@ -79,19 +87,20 @@ class OutletFoodGoodReceiveController extends Controller
             if (!$do) throw new \Exception('Delivery Order tidak ditemukan');
             $floorOrderId = $do->floor_order_id;
             $outletId = $user->id_outlet;
-            $warehouseId = null;
+            $warehouseOutletId = null;
             $floorOrder = DB::table('food_floor_orders')->where('id', $floorOrderId)->first();
-            if ($floorOrder && isset($floorOrder->warehouse_id)) {
-                $warehouseId = $floorOrder->warehouse_id;
+            if ($floorOrder && isset($floorOrder->warehouse_outlet_id)) {
+                $warehouseOutletId = $floorOrder->warehouse_outlet_id;
             }
             $today = date('Ymd');
             $countToday = DB::table('outlet_food_good_receives')->whereDate('created_at', now())->count();
             $number = 'OGR-' . $today . '-' . str_pad($countToday + 1, 4, '0', STR_PAD_LEFT);
-            \Log::info('DEBUG INSERT HEADER', compact('number', 'outletId', 'warehouseId'));
+            \Log::info('DEBUG INSERT HEADER', compact('number', 'outletId', 'warehouseOutletId'));
             $grId = DB::table('outlet_food_good_receives')->insertGetId([
                 'number' => $number,
             'delivery_order_id' => $validated['delivery_order_id'],
                 'outlet_id' => $outletId,
+            'warehouse_outlet_id' => $warehouseOutletId,
             'receive_date' => $validated['receive_date'],
                 'notes' => $validated['notes'] ?? null,
                 'status' => 'completed',
@@ -188,6 +197,7 @@ class OutletFoodGoodReceiveController extends Controller
                 $stock = DB::table('outlet_food_inventory_stocks')
                     ->where('inventory_item_id', $inventoryItemId)
                     ->where('id_outlet', $outletId)
+                    ->where('warehouse_outlet_id', $warehouseOutletId)
                     ->first();
                 $qty_lama = $stock ? $stock->qty_small : 0;
                 $nilai_lama = $stock ? $stock->value : 0;
@@ -213,6 +223,7 @@ class OutletFoodGoodReceiveController extends Controller
                     DB::table('outlet_food_inventory_stocks')->insert([
                         'inventory_item_id' => $inventoryItemId,
                         'id_outlet' => $outletId,
+                        'warehouse_outlet_id' => $warehouseOutletId,
                         'qty_small' => $qty_small,
                         'qty_medium' => $qty_medium,
                         'qty_large' => $qty_large,
@@ -229,6 +240,7 @@ class OutletFoodGoodReceiveController extends Controller
                 $lastCard = DB::table('outlet_food_inventory_cards')
                     ->where('inventory_item_id', $inventoryItemId)
                     ->where('id_outlet', $outletId)
+                    ->where('warehouse_outlet_id', $warehouseOutletId)
                     ->orderByDesc('date')
                     ->orderByDesc('id')
                     ->first();
@@ -244,6 +256,7 @@ class OutletFoodGoodReceiveController extends Controller
                 DB::table('outlet_food_inventory_cards')->insert([
                     'inventory_item_id' => $inventoryItemId,
                     'id_outlet' => $outletId,
+                    'warehouse_outlet_id' => $warehouseOutletId,
                     'date' => $validated['receive_date'],
                     'reference_type' => 'good_receive_outlet',
                     'reference_id' => $grId,
@@ -271,6 +284,7 @@ class OutletFoodGoodReceiveController extends Controller
                 $lastCostHistory = DB::table('outlet_food_inventory_cost_histories')
                     ->where('inventory_item_id', $inventoryItemId)
                     ->where('id_outlet', $outletId)
+                    ->where('warehouse_outlet_id', $warehouseOutletId)
                     ->orderByDesc('date')
                     ->orderByDesc('created_at')
                     ->first();
@@ -278,6 +292,7 @@ class OutletFoodGoodReceiveController extends Controller
                 DB::table('outlet_food_inventory_cost_histories')->insert([
                     'inventory_item_id' => $inventoryItemId,
                     'id_outlet' => $outletId,
+                    'warehouse_outlet_id' => $warehouseOutletId,
                     'date' => $validated['receive_date'],
                     'old_cost' => $old_cost,
                     'new_cost' => $cost_small,
@@ -291,6 +306,9 @@ class OutletFoodGoodReceiveController extends Controller
             }
             DB::commit();
             \Log::info('DEBUG STORE OUTLET GR SUCCESS');
+            DB::table('food_floor_orders')
+                ->where('id', $floorOrderId)
+                ->update(['status' => 'received']);
             return response()->json(['success' => true, 'message' => 'Good Receive Outlet berhasil disimpan']);
         } catch (\Throwable $e) {
             DB::rollBack();
@@ -374,6 +392,7 @@ class OutletFoodGoodReceiveController extends Controller
                     $stock = DB::table('outlet_food_inventory_stocks')
                         ->where('inventory_item_id', $inventoryItem->id)
                         ->where('id_outlet', $outletFoodGoodReceive->outlet_id)
+                        ->where('warehouse_outlet_id', $outletFoodGoodReceive->warehouse_outlet_id)
                         ->first();
 
                     if ($stock) {
@@ -638,11 +657,13 @@ class OutletFoodGoodReceiveController extends Controller
         $do = DB::table('delivery_orders as do')
             ->leftJoin('food_packing_lists as pl', 'do.packing_list_id', '=', 'pl.id')
             ->leftJoin('food_floor_orders as fo', 'do.floor_order_id', '=', 'fo.id')
+            ->leftJoin('warehouse_outlets as wo', 'fo.warehouse_outlet_id', '=', 'wo.id')
             ->select(
                 'do.id as do_id', 'do.number as do_number', 'do.packing_list_id', 'do.floor_order_id',
                 'pl.packing_number', 'pl.reason as packing_reason',
                 'fo.order_number as floor_order_number', 'fo.tanggal as floor_order_date', 'fo.description as floor_order_desc',
-                'do.created_at as do_created_at'
+                'do.created_at as do_created_at',
+                'fo.warehouse_outlet_id', 'wo.name as warehouse_outlet_name'
             )
             ->where('do.id', $do_id)
             ->first();
@@ -721,11 +742,13 @@ class OutletFoodGoodReceiveController extends Controller
                 $inventoryItem = DB::table('outlet_food_inventory_items')
                     ->where('item_id', $item->item_id)
                     ->where('outlet_id', $gr->outlet_id)
+                    ->where('warehouse_outlet_id', $gr->warehouse_outlet_id)
                     ->first();
                 if (!$inventoryItem) {
                     $inventoryItemId = DB::table('outlet_food_inventory_items')->insertGetId([
                         'item_id' => $item->item_id,
                         'outlet_id' => $gr->outlet_id,
+                        'warehouse_outlet_id' => $gr->warehouse_outlet_id,
                         'small_unit_id' => $itemMaster->small_unit_id,
                         'medium_unit_id' => $itemMaster->medium_unit_id,
                         'large_unit_id' => $itemMaster->large_unit_id,
@@ -765,6 +788,7 @@ class OutletFoodGoodReceiveController extends Controller
                 $stock = DB::table('outlet_food_inventory_stocks')
                     ->where('inventory_item_id', $inventoryItemId)
                     ->where('id_outlet', $gr->outlet_id)
+                    ->where('warehouse_outlet_id', $gr->warehouse_outlet_id)
                     ->first();
                 if ($stock) {
                     DB::table('outlet_food_inventory_stocks')
@@ -780,6 +804,7 @@ class OutletFoodGoodReceiveController extends Controller
                     DB::table('outlet_food_inventory_stocks')->insert([
                         'inventory_item_id' => $inventoryItemId,
                         'id_outlet' => $gr->outlet_id,
+                        'warehouse_outlet_id' => $gr->warehouse_outlet_id,
                         'qty_small' => $qty_small,
                         'qty_medium' => $qty_medium,
                         'qty_large' => $qty_large,
@@ -796,6 +821,7 @@ class OutletFoodGoodReceiveController extends Controller
                 DB::table('outlet_food_inventory_cards')->insert([
                     'inventory_item_id' => $inventoryItemId,
                     'id_outlet' => $gr->outlet_id,
+                    'warehouse_outlet_id' => $gr->warehouse_outlet_id,
                     'date' => $gr->receive_date,
                     'reference_type' => 'good_receive_outlet',
                     'reference_id' => $gr->id,

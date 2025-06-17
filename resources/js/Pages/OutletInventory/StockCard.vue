@@ -12,6 +12,13 @@
           </select>
         </div>
         <div class="flex items-center gap-2">
+          <label class="text-sm">Warehouse Outlet</label>
+          <select v-model="selectedWarehouseOutlet" class="border border-gray-300 rounded-lg px-2 py-2 focus:ring-blue-500 focus:border-blue-500">
+            <option value="">Semua Warehouse</option>
+            <option v-for="w in warehouse_outlets" :key="w.id" :value="w.id">{{ w.name }}</option>
+          </select>
+        </div>
+        <div class="flex items-center gap-2">
           <label class="text-sm">Barang</label>
           <select v-model="selectedItem" class="border border-gray-300 rounded-lg px-2 py-2 focus:ring-blue-500 focus:border-blue-500">
             <option value="" disabled>Pilih Barang</option>
@@ -48,6 +55,7 @@
                 <tr>
                   <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Tanggal</th>
                   <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Outlet</th>
+                  <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Warehouse Outlet</th>
                   <th class="px-6 py-3 text-right text-xs font-bold text-gray-700 uppercase tracking-wider">Masuk (Qty)</th>
                   <th class="px-6 py-3 text-right text-xs font-bold text-gray-700 uppercase tracking-wider">Keluar (Qty)</th>
                   <th class="px-6 py-3 text-right text-xs font-bold text-gray-700 uppercase tracking-wider">Saldo (Qty)</th>
@@ -62,6 +70,7 @@
                 <tr v-for="(row, index) in paginatedCards" :key="row.id" :class="[ 'hover:bg-gray-50 transition', index === paginatedCards.length - 1 ? 'bg-yellow-200 font-bold' : '' ]">
                   <td class="px-6 py-4 whitespace-nowrap text-sm">{{ row.date ? new Date(row.date).toLocaleDateString('id-ID') : '-' }}</td>
                   <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{{ row.outlet_name }}</td>
+                  <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{{ row.warehouse_outlet_name || '-' }}</td>
                   <td class="px-6 py-4 whitespace-nowrap text-sm text-right">{{ formatQty(row, 'in') }}</td>
                   <td class="px-6 py-4 whitespace-nowrap text-sm text-right">{{ formatQty(row, 'out') }}</td>
                   <td class="px-6 py-4 whitespace-nowrap text-sm text-right">{{ formatSaldoQty(row) }}</td>
@@ -96,7 +105,8 @@ import { usePage } from '@inertiajs/vue3';
 const props = defineProps({
   cards: Array,
   outlets: Array,
-  items: Array
+  items: Array,
+  warehouse_outlets: Array
 });
 const page = usePage();
 const userOutletId = computed(() => page.props.auth?.user?.id_outlet || '');
@@ -105,6 +115,7 @@ const perPage = ref(25);
 const pageNum = ref(1);
 const selectedOutlet = ref('');
 const selectedItem = ref('');
+const selectedWarehouseOutlet = ref('');
 const loadingReload = ref(false)
 const fromDate = ref('');
 const toDate = ref('');
@@ -123,6 +134,9 @@ const filteredCards = computed(() => {
   let data = props.cards;
   if (selectedOutlet.value) {
     data = data.filter(row => String(row.outlet_name) === String(props.outlets.find(o => o.id == selectedOutlet.value)?.name));
+  }
+  if (selectedWarehouseOutlet.value) {
+    data = data.filter(row => String(row.warehouse_outlet_id) === String(selectedWarehouseOutlet.value));
   }
   if (selectedItem.value) {
     data = data.filter(row => row.item_name === selectedItem.value);

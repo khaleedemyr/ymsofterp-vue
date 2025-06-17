@@ -14,6 +14,7 @@ class RetailFood extends Model
     protected $fillable = [
         'retail_number',
         'outlet_id',
+        'warehouse_outlet_id',
         'created_by',
         'transaction_date',
         'total_amount',

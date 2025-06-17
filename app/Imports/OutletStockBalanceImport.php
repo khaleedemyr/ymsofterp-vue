@@ -92,6 +92,7 @@ class OutletStockBalanceImport implements ToCollection, WithHeadingRow, WithVali
                                 'last_cost_medium' => $cost_medium,
                                 'last_cost_large' => $cost_large,
                                 'updated_at' => now(),
+                                'warehouse_outlet_id' => $row['warehouse_outlet_id'],
                             ]);
                     } else {
                         DB::table('outlet_food_inventory_stocks')->insert([
@@ -106,6 +107,7 @@ class OutletStockBalanceImport implements ToCollection, WithHeadingRow, WithVali
                             'last_cost_large' => $cost_large,
                             'created_at' => now(),
                             'updated_at' => now(),
+                            'warehouse_outlet_id' => $row['warehouse_outlet_id'],
                         ]);
                     }
                     // 5. Insert ke outlet_food_inventory_cards
@@ -133,6 +135,7 @@ class OutletStockBalanceImport implements ToCollection, WithHeadingRow, WithVali
                         'description' => $row['notes'] ?? 'Initial Stock Balance Outlet',
                         'created_at' => now(),
                         'updated_at' => now(),
+                        'warehouse_outlet_id' => $row['warehouse_outlet_id'],
                     ]);
                     // 6. Insert ke outlet_food_inventory_cost_histories
                     DB::table('outlet_food_inventory_cost_histories')->insert([
@@ -146,6 +149,7 @@ class OutletStockBalanceImport implements ToCollection, WithHeadingRow, WithVali
                         'reference_type' => 'initial_balance',
                         'reference_id' => 0,
                         'created_at' => now(),
+                        'warehouse_outlet_id' => $row['warehouse_outlet_id'],
                     ]);
                     $this->successCount++;
                 } catch (\Exception $e) {
@@ -176,6 +180,7 @@ class OutletStockBalanceImport implements ToCollection, WithHeadingRow, WithVali
             'quantity' => 'required|numeric|min:0',
             'cost' => 'required|numeric|min:0',
             'notes' => 'nullable|string',
+            'warehouse_outlet_id' => 'required|integer|exists:warehouse_outlets,id',
         ];
     }
     public function sheets(): array

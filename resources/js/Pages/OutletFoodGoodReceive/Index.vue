@@ -20,6 +20,7 @@
                 <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Tanggal</th>
                 <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Nomor GR</th>
                 <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Outlet</th>
+                <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Warehouse Outlet</th>
                 <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Nomor DO</th>
                 <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Status</th>
                 <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Aksi</th>
@@ -27,12 +28,13 @@
             </thead>
             <tbody class="bg-white divide-y divide-gray-200">
               <tr v-if="!props.goodReceives.length">
-                <td colspan="6" class="text-center py-10 text-blue-300">Tidak ada data.</td>
+                <td colspan="7" class="text-center py-10 text-blue-300">Tidak ada data.</td>
               </tr>
               <tr v-for="row in props.goodReceives" :key="row.id">
                 <td class="px-6 py-3">{{ formatDate(row.receive_date) }}</td>
                 <td class="px-6 py-3">{{ row.number }}</td>
                 <td class="px-6 py-3">{{ row.outlet_name }}</td>
+                <td class="px-6 py-3">{{ row.warehouse_outlet_name || '-' }}</td>
                 <td class="px-6 py-3">{{ row.delivery_order_number }}</td>
                 <td class="px-6 py-3">{{ row.status }}</td>
                 <td class="px-6 py-3">

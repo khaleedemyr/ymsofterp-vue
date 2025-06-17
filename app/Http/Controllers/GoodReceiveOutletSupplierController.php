@@ -14,10 +14,12 @@ class GoodReceiveOutletSupplierController extends Controller
     // List Good Receive
     public function index(Request $request)
     {
+        $user = auth()->user();
         $query = DB::table('good_receive_outlet_suppliers as gr')
             ->leftJoin('food_floor_order_supplier_headers as ro', 'gr.ro_supplier_id', '=', 'ro.id')
             ->leftJoin('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
             ->leftJoin('users as u', 'gr.received_by', '=', 'u.id')
+            ->leftJoin('warehouse_outlets as wo', 'gr.warehouse_outlet_id', '=', 'wo.id')
             ->select(
                 'gr.id',
                 'gr.receive_date',
@@ -25,28 +27,31 @@ class GoodReceiveOutletSupplierController extends Controller
                 'ro.supplier_fo_number as ro_number',
                 'o.nama_outlet as outlet_name',
                 'u.nama_lengkap as received_by_name',
-                'gr.status'
+                'gr.status',
+                'gr.warehouse_outlet_id',
+                'wo.name as warehouse_outlet_name'
             );
-
+        if ($user->id_outlet != 1) {
+            $query->where('gr.outlet_id', $user->id_outlet);
+        }
         if ($request->search) {
             $search = $request->search;
             $query->where(function($q) use ($search) {
                 $q->where('gr.gr_number', 'like', "%$search%")
                   ->orWhere('ro.supplier_fo_number', 'like', "%$search%")
                   ->orWhere('o.nama_outlet', 'like', "%$search%")
-                  ->orWhere('u.nama_lengkap', 'like', "%$search%");
+                  ->orWhere('u.nama_lengkap', 'like', "%$search%")
+                  ->orWhere('wo.name', 'like', "%$search%")
+                ;
             });
         }
-
         if ($request->from) {
             $query->whereDate('gr.receive_date', '>=', $request->from);
         }
         if ($request->to) {
             $query->whereDate('gr.receive_date', '<=', $request->to);
         }
-
         $list = $query->orderByDesc('gr.created_at')->paginate(10)->withQueryString();
-        
         return Inertia::render('GoodReceiveOutletSupplier/Index', [
             'goodReceives' => $list,
             'filters' => $request->only(['search', 'from', 'to']),
@@ -61,12 +66,16 @@ class GoodReceiveOutletSupplierController extends Controller
         $ro = DB::table('food_floor_order_supplier_headers as h')
             ->leftJoin('suppliers as s', 'h.supplier_id', '=', 's.id')
             ->leftJoin('food_floor_orders as f', 'h.floor_order_id', '=', 'f.id')
+            ->leftJoin('tbl_data_outlet as o', 'f.id_outlet', '=', 'o.id_outlet')
+            ->leftJoin('warehouse_outlets as wo', 'f.warehouse_outlet_id', '=', 'wo.id')
             ->where('h.supplier_fo_number', $request->ro_number)
             ->select(
                 'h.*',
                 's.name as supplier_name',
                 'h.supplier_fo_number as ro_number',
-                'f.tanggal'
+                'f.tanggal',
+                'o.nama_outlet as outlet_name',
+                'wo.name as warehouse_outlet_name'
             )
             ->first();
 
@@ -128,10 +137,21 @@ class GoodReceiveOutletSupplierController extends Controller
                 ->count();
             $grNumber = 'GRS-' . $dateStr . '-' . str_pad($countToday + 1, 4, '0', STR_PAD_LEFT);
 
+            // Ambil warehouse_outlet_id dari food_floor_orders
+            $warehouseOutletId = null;
+            $roHeader = DB::table('food_floor_order_supplier_headers')->where('id', $request->ro_supplier_id)->first();
+            if ($roHeader && $roHeader->floor_order_id) {
+                $floorOrder = DB::table('food_floor_orders')->where('id', $roHeader->floor_order_id)->first();
+                if ($floorOrder && isset($floorOrder->warehouse_outlet_id)) {
+                    $warehouseOutletId = $floorOrder->warehouse_outlet_id;
+                }
+            }
+
             $goodReceiveId = DB::table('good_receive_outlet_suppliers')->insertGetId([
                 'gr_number' => $grNumber,
                 'ro_supplier_id' => $request->ro_supplier_id,
                 'outlet_id' => $outletId,
+                'warehouse_outlet_id' => $warehouseOutletId,
                 'receive_date' => $request->receive_date,
                 'received_by' => $user->id,
                 'status' => 'completed',
@@ -224,6 +244,7 @@ class GoodReceiveOutletSupplierController extends Controller
                             'last_cost_small' => $mac,
                             'last_cost_medium' => $cost_medium,
                             'last_cost_large' => $cost_large,
+                            'warehouse_outlet_id' => $warehouseOutletId,
                             'updated_at' => now(),
                         ]);
                 } else {
@@ -237,6 +258,7 @@ class GoodReceiveOutletSupplierController extends Controller
                         'last_cost_small' => $cost_small,
                         'last_cost_medium' => $cost_medium,
                         'last_cost_large' => $cost_large,
+                        'warehouse_outlet_id' => $warehouseOutletId,
                         'created_at' => now(),
                         'updated_at' => now(),
                     ]);
@@ -279,6 +301,7 @@ class GoodReceiveOutletSupplierController extends Controller
                     'saldo_qty_large' => $saldo_qty_large,
                     'saldo_value' => $saldo_qty_small * $mac,
                     'description' => 'Good Receive Supplier',
+                    'warehouse_outlet_id' => $warehouseOutletId,
                     'created_at' => now(),
                     'updated_at' => now(),
                 ]);
@@ -300,6 +323,7 @@ class GoodReceiveOutletSupplierController extends Controller
                     'type' => 'good_receive_supplier',
                     'reference_type' => 'good_receive_supplier',
                     'reference_id' => $goodReceiveId,
+                    'warehouse_outlet_id' => $warehouseOutletId,
                     'created_at' => now(),
                 ]);
             }
@@ -321,6 +345,16 @@ class GoodReceiveOutletSupplierController extends Controller
                 'created_at' => now(),
             ]);
 
+            // Setelah DB::commit(); dan sebelum return response sukses
+            do {
+                $roHeader = DB::table('food_floor_order_supplier_headers')->where('id', $request->ro_supplier_id)->first();
+                if ($roHeader && $roHeader->floor_order_id) {
+                    DB::table('food_floor_orders')
+                        ->where('id', $roHeader->floor_order_id)
+                        ->update(['status' => 'received']);
+                }
+            } while (false);
+
             DB::commit();
             return response()->json(['success' => true, 'message' => 'Good Receive berhasil disimpan']);
         } catch (\Exception $e) {
@@ -335,6 +369,9 @@ class GoodReceiveOutletSupplierController extends Controller
             ->leftJoin('food_floor_order_supplier_headers as ro', 'gr.ro_supplier_id', '=', 'ro.id')
             ->leftJoin('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
             ->leftJoin('users as u', 'gr.received_by', '=', 'u.id')
+            ->leftJoin('food_floor_orders as f', 'ro.floor_order_id', '=', 'f.id')
+            ->leftJoin('warehouse_outlets as wo', 'f.warehouse_outlet_id', '=', 'wo.id')
+            ->leftJoin('suppliers as s', 'ro.supplier_id', '=', 's.id')
             ->select(
                 'gr.id',
                 'gr.gr_number',
@@ -343,7 +380,10 @@ class GoodReceiveOutletSupplierController extends Controller
                 'o.nama_outlet as outlet_name',
                 'u.nama_lengkap as received_by_name',
                 'gr.status',
-                'gr.notes'
+                'gr.notes',
+                'wo.name as warehouse_outlet_name',
+                's.name as supplier_name',
+                'f.tanggal as ro_date'
             )
             ->where('gr.id', $id)
             ->first();
@@ -438,6 +478,7 @@ class GoodReceiveOutletSupplierController extends Controller
 
         $query = DB::table('food_floor_order_supplier_headers as h')
             ->leftJoin('food_floor_orders as f', 'h.floor_order_id', '=', 'f.id')
+            ->leftJoin('warehouse_outlets as wo', 'f.warehouse_outlet_id', '=', 'wo.id')
             ->leftJoin('good_receive_outlet_suppliers as gr', 'h.id', '=', 'gr.ro_supplier_id')
             ->select(
                 'h.id',
@@ -445,7 +486,8 @@ class GoodReceiveOutletSupplierController extends Controller
                 'h.floor_order_id',
                 'f.order_number as floor_order_number',
                 'f.tanggal',
-                'h.supplier_id'
+                'h.supplier_id',
+                'wo.name as warehouse_outlet_name'
             )
             ->whereNull('gr.id');
 

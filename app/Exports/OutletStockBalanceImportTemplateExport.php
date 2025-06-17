@@ -60,6 +60,7 @@ class OutletInstructionsSheet implements FromArray, WithHeadings, WithTitle, Wit
             ['Quantity', 'Jumlah dalam unit terkecil. Wajib diisi. Contoh: 100'],
             ['Cost', 'Harga per unit terkecil. Wajib diisi. Contoh: 5000'],
             ['Notes', 'Catatan tambahan. Boleh dikosongkan. Contoh: Stok awal outlet Januari 2024'],
+            ['Warehouse Outlet ID', 'ID warehouse outlet. Wajib diisi. Contoh: 1'],
         ];
     }
 
@@ -101,7 +102,7 @@ class OutletStockBalanceSheet implements FromArray, WithHeadings, WithTitle, Wit
     public function array(): array
     {
         return [
-            ['ITM001', 'Nasi Goreng', 'Porsi', 'Justus Steak House', 100, 5000, 'Stok awal outlet Januari 2024']
+            ['ITM001', 'Nasi Goreng', 'Porsi', 'Justus Steak House', 100, 5000, 'Stok awal outlet Januari 2024', 1]
         ];
     }
 
@@ -114,7 +115,8 @@ class OutletStockBalanceSheet implements FromArray, WithHeadings, WithTitle, Wit
             'Outlet',
             'Quantity',
             'Cost',
-            'Notes'
+            'Notes',
+            'Warehouse Outlet ID'
         ];
     }
 

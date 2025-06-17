@@ -39,6 +39,10 @@ class FoodFloorOrderController extends Controller
         $nonSupplierItems = [];
 
         foreach ($items as $item) {
+            // Abaikan item kosong
+            if (empty($item['item_id']) || empty($item['item_name'])) {
+                continue;
+            }
             $itemSupplier = \DB::table('item_supplier_outlet')
                 ->join('item_supplier', 'item_supplier_outlet.item_supplier_id', '=', 'item_supplier.id')
                 ->where('item_supplier_outlet.outlet_id', $outletId)
@@ -674,6 +678,9 @@ class FoodFloorOrderController extends Controller
     {
         $user = auth()->user()->load('outlet');
         $query = FoodFloorOrder::with(['outlet', 'requester', 'foSchedule', 'warehouseOutlet']);
+        if ($user->id_outlet != 1) {
+            $query->where('id_outlet', $user->id_outlet);
+        }
         if ($request->search) {
             $search = $request->search;
             $query->where('order_number', 'like', "%$search%")

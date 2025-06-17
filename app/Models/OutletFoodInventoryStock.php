@@ -12,6 +12,7 @@ class OutletFoodInventoryStock extends Model
     protected $fillable = [
         'inventory_item_id',
         'id_outlet',
+        'warehouse_outlet_id',
         'qty_small',
         'qty_medium',
         'qty_large',

@@ -304,9 +304,9 @@ function selectItem(idx, item) {
     form.value.items[idx].subtotal = 0;
     form.value.items[idx].category_id = item.category_id;
     form.value.items[idx].category_name = item.category_name || (item.category?.name ?? 'Tanpa Kategori');
-    form.value.items[idx].suggestions = [];
-    form.value.items[idx].showDropdown = false;
-    form.value.items[idx].highlightedIndex = -1;
+      form.value.items[idx].suggestions = [];
+      form.value.items[idx].showDropdown = false;
+      form.value.items[idx].highlightedIndex = -1;
   } else {
     // Untuk mode PC, pakai unit_medium_name/unit_medium dan harga medium (seperti mode tab)
     form.value.items[idx].unit = item.unit_medium_name || item.unit_medium || item.unit_small || item.unit || '-';
@@ -796,15 +796,15 @@ watch([jadwalSiap, showScheduleModal], ([val, modal]) => {
       category_id: item.category_id,
       category_name: item.category_name,
     }));
-    axios.post('/floor-order', {
-      ...form.value,
-      items: cleanItems,
-      fo_mode: selectedFOMode.value,
-      input_mode: mode.value,
-      fo_schedule_id: form.value.fo_schedule_id,
+      axios.post('/floor-order', {
+        ...form.value,
+        items: cleanItems,
+        fo_mode: selectedFOMode.value,
+        input_mode: mode.value,
+        fo_schedule_id: form.value.fo_schedule_id,
       warehouse_outlet_id: form.value.warehouse_outlet_id,
-    }).then(handleStoreResponse);
-  }
+      }).then(handleStoreResponse);
+    }
 });
 
 function submitOrderWithLoading() {
@@ -1331,28 +1331,28 @@ watch(selectedWarehouseOutlet, (val) => {
           <div class="mb-2"><b>Keterangan:</b> {{ form.description }}</div>
           <div class="mb-2"><b>Items:</b></div>
           <div class="mb-2" style="max-height:400px;overflow-y:auto;">
-            <div v-for="(items, cat) in itemsByCategory" :key="cat" class="mb-2">
-              <div class="font-semibold text-blue-700 mb-1">{{ cat }}</div>
-              <table class="w-full mb-2">
-                <thead>
-                  <tr>
-                    <th>Item</th><th>Qty</th><th>Unit</th><th>Harga</th><th>Subtotal</th>
-                  </tr>
-                </thead>
-                <tbody>
+          <div v-for="(items, cat) in itemsByCategory" :key="cat" class="mb-2">
+            <div class="font-semibold text-blue-700 mb-1">{{ cat }}</div>
+            <table class="w-full mb-2">
+              <thead>
+                <tr>
+                  <th>Item</th><th>Qty</th><th>Unit</th><th>Harga</th><th>Subtotal</th>
+                </tr>
+              </thead>
+              <tbody>
                   <tr v-for="item in items" :key="item._rowKey || item.id">
-                    <td>{{ item.item_name }}</td>
-                    <td>{{ item.qty }}</td>
-                    <td>{{ item.unit }}</td>
-                    <td>{{ formatRupiah(item.price) }}</td>
-                    <td>{{ formatRupiah(item.subtotal) }}</td>
-                  </tr>
-                  <tr class="bg-blue-50 font-bold">
-                    <td colspan="4" class="text-right">Total {{ cat }}</td>
-                    <td>{{ formatRupiah(categorySubtotals[cat]) }}</td>
-                  </tr>
-                </tbody>
-              </table>
+                  <td>{{ item.item_name }}</td>
+                  <td>{{ item.qty }}</td>
+                  <td>{{ item.unit }}</td>
+                  <td>{{ formatRupiah(item.price) }}</td>
+                  <td>{{ formatRupiah(item.subtotal) }}</td>
+                </tr>
+                <tr class="bg-blue-50 font-bold">
+                  <td colspan="4" class="text-right">Total {{ cat }}</td>
+                  <td>{{ formatRupiah(categorySubtotals[cat]) }}</td>
+                </tr>
+              </tbody>
+            </table>
             </div>
           </div>
           <div class="text-right font-bold text-lg mb-4">Grand Total: {{ formatRupiah(grandTotalPC) }}</div>

@@ -784,8 +784,8 @@ const saveItem = () => {
       } else {
         if (key === 'sub_category_id' && (!value || value === '')) {
           // skip
-        } else {
-          formData.append(key, value);
+      } else {
+        formData.append(key, value);
         }
       }
     });

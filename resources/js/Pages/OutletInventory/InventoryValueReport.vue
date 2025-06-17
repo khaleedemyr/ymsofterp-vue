@@ -12,6 +12,13 @@
           </select>
         </div>
         <div class="flex items-center gap-2">
+          <label class="text-sm">Warehouse Outlet</label>
+          <select v-model="selectedWarehouseOutlet" class="border border-gray-300 rounded-lg px-2 py-2 focus:ring-blue-500 focus:border-blue-500">
+            <option value="">Semua Warehouse</option>
+            <option v-for="w in warehouse_outlets" :key="w.id" :value="w.id">{{ w.name }}</option>
+          </select>
+        </div>
+        <div class="flex items-center gap-2">
           <label class="text-sm">Kategori</label>
           <select v-model="selectedCategory" class="border border-gray-300 rounded-lg px-2 py-2 focus:ring-blue-500 focus:border-blue-500">
             <option value="">Semua Kategori</option>
@@ -44,6 +51,7 @@
             <tr>
               <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Barang</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Outlet</th>
+              <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Warehouse Outlet</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Kategori</th>
               <th class="px-6 py-3 text-right text-xs font-bold text-gray-700 uppercase tracking-wider">Qty Small</th>
               <th class="px-6 py-3 text-right text-xs font-bold text-gray-700 uppercase tracking-wider">Qty Medium</th>
@@ -62,6 +70,7 @@
             <tr v-for="row in paginatedStocks" :key="row.item_name + row.outlet_name" class="hover:bg-gray-50 transition">
               <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ row.item_name }}</td>
               <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{{ row.outlet_name }}</td>
+              <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{{ row.warehouse_outlet_name || '-' }}</td>
               <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{{ row.category_name || '-' }}</td>
               <td class="px-6 py-4 whitespace-nowrap text-sm text-right">{{ displayQty(row.qty_small) }}</td>
               <td class="px-6 py-4 whitespace-nowrap text-sm text-right">{{ displayQty(row.qty_medium) }}</td>
@@ -110,12 +119,16 @@ const page = ref(1);
 const selectedOutlet = ref('');
 const selectedCategory = ref('');
 const selectedItem = ref('');
+const selectedWarehouseOutlet = ref('');
 const loadingReload = ref(false)
 
 const filteredStocks = computed(() => {
   let data = props.stocks;
   if (selectedOutlet.value) {
     data = data.filter(row => String(row.outlet_name) === String(selectedOutlet.value));
+  }
+  if (selectedWarehouseOutlet.value) {
+    data = data.filter(row => String(row.warehouse_outlet_id) === String(selectedWarehouseOutlet.value));
   }
   if (selectedCategory.value) {
     data = data.filter(row => row.category_name === selectedCategory.value);

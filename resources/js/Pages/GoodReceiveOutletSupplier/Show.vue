@@ -27,8 +27,8 @@
           </div>
           <div>
             <div class="text-sm">Outlet: {{ gr.outlet_name }}</div>
+            <div class="text-sm">Warehouse Outlet: {{ gr.warehouse_outlet_name || '-' }}</div>
             <div class="text-sm">Diterima oleh: {{ gr.received_by_name }}</div>
-            <div class="text-sm">Dibuat: {{ gr.created_at }}</div>
           </div>
         </div>
       </div>
@@ -39,10 +39,10 @@
         <div class="grid grid-cols-2 gap-4 mt-2">
           <div>
             <div class="text-sm">Nomor RO: <span class="font-mono">{{ gr.ro_number }}</span></div>
-            <div class="text-sm">Tanggal RO: {{ gr.ro_date }}</div>
+            <div class="text-sm">Tanggal RO: {{ gr.ro_date || '-' }}</div>
           </div>
           <div>
-            <div class="text-sm">Supplier: {{ gr.supplier_name }}</div>
+            <div class="text-sm">Supplier: {{ gr.supplier_name || '-' }}</div>
           </div>
         </div>
       </div>

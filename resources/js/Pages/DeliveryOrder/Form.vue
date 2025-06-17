@@ -18,6 +18,7 @@
       <div v-if="selectedPackingList" class="mb-6 w-full max-w-xl bg-blue-50 border-l-4 border-blue-400 p-4 rounded animate-fade-in">
         <div class="font-bold text-blue-800 mb-1">Info Packing List</div>
         <div><b>Outlet:</b> {{ selectedPackingList.nama_outlet || '-' }}</div>
+        <div><b>Warehouse Outlet:</b> {{ selectedPackingList.warehouse_outlet_name || '-' }}</div>
         <div><b>Warehouse Division:</b> {{ selectedPackingList.division_name || '-' }}</div>
         <div><b>Warehouse:</b> {{ selectedPackingList.warehouse_name || '-' }}</div>
         <div><b>Tanggal Floor Order:</b> {{ selectedPackingList.floor_order_date ? new Date(selectedPackingList.floor_order_date).toLocaleDateString('id-ID') : '-' }}</div>
@@ -376,6 +377,7 @@ async function submitDO() {
         orderNumber: doNumber.value,
         date: new Date().toLocaleDateString('id-ID'),
         outlet: selectedPackingList.value?.nama_outlet || '-',
+        warehouseOutlet: selectedPackingList.value?.warehouse_outlet_name || '-',
         items: packingListItems,
         kasirName: doRes.data.kasir_name || '-',
         divisionName: doRes.data.division_name || '',

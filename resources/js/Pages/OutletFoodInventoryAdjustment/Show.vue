@@ -14,6 +14,7 @@
             <div><b>Nomor:</b> {{ adjustment.number }}</div>
             <div><b>Tanggal:</b> {{ adjustment.date }}</div>
             <div><b>Outlet:</b> {{ adjustment.outlet?.nama_outlet }}</div>
+            <div><b>Warehouse Outlet:</b> {{ adjustment.warehouse_outlet_name || '-' }} <span v-if="adjustment.warehouse_outlet_id">(ID: {{ adjustment.warehouse_outlet_id }})</span></div>
             <div><b>Tipe:</b> {{ adjustment.type }}</div>
             <div><b>Alasan:</b> {{ adjustment.reason }}</div>
           </div>
@@ -38,7 +39,7 @@
               </thead>
               <tbody class="bg-white divide-y divide-gray-200">
                 <tr v-for="item in adjustment.items" :key="item.id">
-                  <td class="px-3 py-2">{{ item.item?.name }}</td>
+                  <td class="px-3 py-2">{{ item.item_name || item.item?.name }}</td>
                   <td class="px-3 py-2">{{ item.qty }}</td>
                   <td class="px-3 py-2">{{ item.unit }}</td>
                   <td class="px-3 py-2">{{ item.note }}</td>

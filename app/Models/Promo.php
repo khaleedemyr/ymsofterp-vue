@@ -15,6 +15,7 @@ class Promo extends Model
         'type',
         'value',
         'min_transaction',
+        'max_transaction',
         'start_date',
         'end_date',
         'start_time',
@@ -23,6 +24,7 @@ class Promo extends Model
         'description',
         'terms',
         'banner',
+        'need_member',
     ];
 
     protected $casts = [
@@ -50,5 +52,10 @@ class Promo extends Model
     public function regions()
     {
         return $this->belongsToMany(\App\Models\Region::class, 'promo_regions', 'promo_id', 'region_id');
+    }
+
+    public function itemPrices()
+    {
+        return $this->hasMany(\App\Models\PromoItemPrice::class, 'promo_id');
     }
 } 

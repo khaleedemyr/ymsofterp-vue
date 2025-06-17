@@ -11,6 +11,7 @@
             <option v-for="w in warehouses" :key="w.id" :value="w.id">{{ w.name }}</option>
           </select>
         </div>
+       
         <div class="flex items-center gap-2">
           <label class="text-sm">Tampilkan</label>
           <select v-model="perPage" class="border border-gray-300 rounded-lg px-2 py-2 focus:ring-blue-500 focus:border-blue-500">
@@ -74,7 +75,8 @@ import AppLayout from '@/Layouts/AppLayout.vue';
 import { ref, computed, watch } from 'vue';
 const props = defineProps({
   stocks: Array,
-  warehouses: Array
+  warehouses: Array,
+  warehouse_outlets: Array
 });
 const search = ref('');
 const perPage = ref(25);
@@ -86,6 +88,7 @@ const filteredStocks = computed(() => {
   if (selectedWarehouse.value) {
     data = data.filter(row => String(row.warehouse_id) === String(selectedWarehouse.value));
   }
+
   if (!search.value) return data;
   const s = search.value.toLowerCase();
   return data.filter(row =>

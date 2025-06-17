@@ -18,6 +18,7 @@
                 <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Tanggal</th>
                 <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">No. Transaksi</th>
                 <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Outlet</th>
+                <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Warehouse Outlet</th>
                 <th class="px-6 py-3 text-right text-xs font-bold text-gray-700 uppercase tracking-wider">Total</th>
                 <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Status</th>
                 <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Aksi</th>
@@ -31,6 +32,7 @@
                 <td class="px-6 py-3">{{ formatDate(row.transaction_date) }}</td>
                 <td class="px-6 py-3">{{ row.retail_number }}</td>
                 <td class="px-6 py-3">{{ row.outlet?.nama_outlet || '-' }}</td>
+                <td class="px-6 py-3">{{ row.warehouse_outlet_name || '-' }}</td>
                 <td class="px-6 py-3 text-right">{{ formatRupiah(row.total_amount) }}</td>
                 <td class="px-6 py-3">
                   <span :class="{
