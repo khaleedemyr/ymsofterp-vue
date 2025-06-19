@@ -5,8 +5,10 @@
       <div class="bg-white rounded-2xl shadow-xl p-8 space-y-4">
         <div><b>Nama Promo:</b> {{ promo.name }}</div>
         <div><b>Kode Promo:</b> {{ promo.code || '-' }}</div>
-        <div><b>Tipe Promo:</b> {{ promo.type }}</div>
-        <div><b>Value:</b> {{ promo.value }}</div>
+        <div><b>Tipe Promo:</b> {{ getPromoTypeText(promo.type) }}</div>
+        <div><b>Value:</b> {{ promo.type === 'percent' || promo.type === 'bill_discount' ? promo.value + '%' : formatCurrency(promo.value) }}</div>
+        <div v-if="(promo.type === 'percent' || promo.type === 'bill_discount') && promo.max_discount"><b>Maximum Diskon:</b> {{ formatCurrency(promo.max_discount) }}</div>
+        <div><b>Berlaku Kelipatan:</b> {{ promo.is_multiple === 'Yes' ? 'Ya' : 'Tidak' }}</div>
         <div><b>Minimum Transaksi:</b> {{ promo.min_transaction || '-' }}</div>
         <div><b>Maximum Transaksi:</b> {{ promo.max_transaction || '-' }}</div>
         <div><b>Tanggal Mulai:</b> {{ formatDate(promo.start_date) }}</div>
@@ -90,6 +92,18 @@ import { ref } from 'vue';
 const props = defineProps({
   promo: Object
 });
+
+function getPromoTypeText(type) {
+  const types = {
+    'percent': 'Diskon Persen',
+    'nominal': 'Diskon Nominal',
+    'bundle': 'Bundling',
+    'bogo': 'Buy 1 Get 1',
+    'harga_coret': 'Harga Coret',
+    'bill_discount': 'Diskon Bill'
+  };
+  return types[type] || type;
+}
 
 function formatDate(date) {
   if (!date) return '-';

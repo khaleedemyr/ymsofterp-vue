@@ -15,11 +15,17 @@
             <option value="bundle">Bundling</option>
             <option value="bogo">Buy 1 Get 1</option>
             <option value="harga_coret">Harga Coret</option>
+            <option value="bill_discount">Diskon Bill</option>
           </select>
         </div>
-        <div v-if="form.type === 'percent' || form.type === 'nominal'">
+        <div v-if="form.type === 'percent' || form.type === 'nominal' || form.type === 'bill_discount'">
           <label class="block text-sm font-medium text-gray-700">Value</label>
           <input v-model="form.value" type="number" min="0" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:ring-pink-500 focus:border-pink-500" required />
+        </div>
+        <div v-if="form.type === 'percent' || form.type === 'bill_discount'">
+          <label class="block text-sm font-medium text-gray-700">Maximum Diskon</label>
+          <input v-model="form.max_discount" type="number" min="0" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:ring-pink-500 focus:border-pink-500" />
+          <p class="mt-1 text-sm text-gray-500">Kosongkan jika tidak ada batasan maksimum diskon</p>
         </div>
         <div v-if="form.type === 'bundle'">
           <label class="block text-sm font-medium text-gray-700">Harga Paket</label>
@@ -38,6 +44,13 @@
         <div>
           <label class="block text-sm font-medium text-gray-700">Maximum Transaksi</label>
           <input v-model="form.max_transaction" type="number" min="0" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:ring-pink-500 focus:border-pink-500" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Berlaku Kelipatan?</label>
+          <label class="inline-flex items-center cursor-pointer">
+            <input type="checkbox" v-model="form.is_multiple" true-value="Yes" false-value="No" class="form-checkbox h-5 w-5 text-pink-600">
+            <span class="ml-2">Ya, promo dapat digunakan berulang kali</span>
+          </label>
         </div>
         <!-- Pindahkan radio region/outlet dan multiselect ke atas -->
         <div>
@@ -210,6 +223,8 @@ const form = ref({
   status: props.promo?.status || 'active',
   regions: props.promo?.regions || [],
   need_member: props.promo?.need_member || 'No',
+  max_discount: props.promo?.max_discount || '',
+  is_multiple: props.promo?.is_multiple || 'No',
 });
 
 // Dummy data
@@ -281,59 +296,90 @@ async function submit() {
   });
   if (!confirm.isConfirmed) return;
   loading.value = true;
-  const payload = { ...form.value, status: 'active' };
-  if (form.type === 'bogo') {
-    payload.items = [];
-    payload.categories = [];
-    payload.buy_items = form.value.buy_items;
-    payload.get_items = form.value.get_items;
+
+  const formData = new FormData();
+  
+  // Add basic fields
+  Object.keys(form.value).forEach(key => {
+    if (key === 'banner' && form.value[key] instanceof File) {
+      formData.append('banner', form.value[key]);
+    } else if (key === 'categories' || key === 'items' || key === 'outlets' || key === 'regions') {
+      if (form.value[key] && form.value[key].length > 0) {
+        formData.append(key, JSON.stringify(form.value[key]));
+      }
+    } else if (key === 'buy_items' || key === 'get_items') {
+      if (form.value[key] && form.value[key].length > 0) {
+        formData.append(key, JSON.stringify(form.value[key]));
+      }
+    } else {
+      formData.append(key, form.value[key]);
+    }
+  });
+
+  // Add other fields
+  formData.append('status', 'active');
+  
+  if (form.value.type === 'bogo') {
+    formData.append('items', JSON.stringify([]));
+    formData.append('categories', JSON.stringify([]));
+    formData.append('buy_items', JSON.stringify(form.value.buy_items));
+    formData.append('get_items', JSON.stringify(form.value.get_items));
   } else if (byType.value === 'kategori') {
-    payload.items = [];
+    formData.append('items', JSON.stringify([]));
   } else {
-    payload.categories = [];
+    formData.append('categories', JSON.stringify([]));
   }
+
   if (outletType.value === 'region') {
-    payload.outlets = [];
+    formData.append('outlets', JSON.stringify([]));
   } else {
-    payload.regions = [];
+    formData.append('regions', JSON.stringify([]));
   }
+
   if (form.value.type === 'harga_coret') {
     if (hasInvalidPromoPrice.value) {
       Swal.fire('Error', 'Harga promo harus lebih kecil dari harga asli!', 'error');
       return;
     }
-    payload.item_prices = itemPriceRows.value.map(row => ({
+    formData.append('item_prices', JSON.stringify(itemPriceRows.value.map(row => ({
       item_id: row.item_id,
       outlet_id: row.outlet_id,
       region_id: row.region_id,
       old_price: row.old_price,
       new_price: row.new_price
-    }));
+    }))));
   }
-  if (props.isEdit) {
-    router.put(route('promos.update', props.promo.id), payload, {
-      forceFormData: true,
-      onSuccess: () => {
-        loading.value = false;
-        Swal.fire('Sukses', 'Promo berhasil diupdate!', 'success');
-      },
-      onError: () => {
-        loading.value = false;
-        Swal.fire('Gagal', 'Terjadi kesalahan saat update promo.', 'error');
-      }
-    });
-  } else {
-    router.post(route('promos.store'), payload, {
-      forceFormData: true,
-      onSuccess: () => {
-        loading.value = false;
-        Swal.fire('Sukses', 'Promo berhasil disimpan!', 'success');
-      },
-      onError: () => {
-        loading.value = false;
-        Swal.fire('Gagal', 'Terjadi kesalahan saat menyimpan promo.', 'error');
-      }
-    });
+
+  try {
+    if (props.isEdit) {
+      await router.put(route('promos.update', props.promo.id), formData, {
+        forceFormData: true,
+        onSuccess: () => {
+          loading.value = false;
+          Swal.fire('Sukses', 'Promo berhasil diupdate!', 'success');
+        },
+        onError: () => {
+          loading.value = false;
+          Swal.fire('Gagal', 'Terjadi kesalahan saat update promo.', 'error');
+        }
+      });
+    } else {
+      await router.post(route('promos.store'), formData, {
+        forceFormData: true,
+        onSuccess: () => {
+          loading.value = false;
+          Swal.fire('Sukses', 'Promo berhasil ditambahkan!', 'success');
+        },
+        onError: () => {
+          loading.value = false;
+          Swal.fire('Gagal', 'Terjadi kesalahan saat menyimpan promo.', 'error');
+        }
+      });
+    }
+  } catch (error) {
+    loading.value = false;
+    console.error('Error submitting form:', error);
+    Swal.fire('Error', 'Terjadi kesalahan saat menyimpan data.', 'error');
   }
 }
 

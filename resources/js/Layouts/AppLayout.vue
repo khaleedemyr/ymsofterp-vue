@@ -59,6 +59,7 @@ const menuGroups = [
             { name: () => 'Items Supplier', icon: 'fa-solid fa-link', route: '/item-supplier', code: 'view-item-supplier' },
             { name: () => 'Data Investor Outlet', icon: 'fa-solid fa-user-tie', route: '/investors', code: 'data_investor_outlet' },
             { name: () => 'Officer Check', icon: 'fa-solid fa-user-check', route: '/officer-check', code: 'officer_check' },
+            { name: () => 'Jenis Pembayaran', icon: 'fa-solid fa-money-bill', route: '/payment-types', code: 'payment_types' },
         ],
     },
     {
@@ -201,6 +202,7 @@ const menuGroups = [
         menus: [
             { name: () => 'Scrapper Google Review', icon: 'fa-brands fa-google', route: '/scrapper-google-review', code: 'scrapper_google_review' },
             { name: () => 'Promo', icon: 'fa-solid fa-tag', route: '/promos', code: 'promos' },
+            { name: () => 'Reservasi', icon: 'fa-solid fa-calendar-check', route: '/reservations', code: 'reservations' },
         ],
     },
     {

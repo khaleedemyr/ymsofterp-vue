@@ -72,6 +72,8 @@ use App\Http\Controllers\InvestorController;
 use App\Http\Controllers\InvestorPageController;
 use App\Http\Controllers\OfficerCheckController;
 use App\Http\Controllers\WarehouseOutletController;
+use App\Http\Controllers\ReservationController;
+use App\Http\Controllers\PaymentTypeController;
 
 
 Route::get('/', function () {
@@ -680,6 +682,14 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/promos/{promo}/edit', [PromoController::class, 'edit'])->name('promos.edit');
     Route::put('/promos/{promo}', [PromoController::class, 'update'])->name('promos.update');
     Route::delete('/promos/{promo}', [PromoController::class, 'destroy'])->name('promos.destroy');
+
+    Route::get('/payment-types', [PaymentTypeController::class, 'index'])->name('payment-types.index');
+    Route::get('/payment-types/create', [PaymentTypeController::class, 'create'])->name('payment-types.create');
+    Route::post('/payment-types', [PaymentTypeController::class, 'store'])->name('payment-types.store');
+    Route::get('/payment-types/{paymentType}', [PaymentTypeController::class, 'show'])->name('payment-types.show');
+    Route::get('/payment-types/{paymentType}/edit', [PaymentTypeController::class, 'edit'])->name('payment-types.edit');
+    Route::put('/payment-types/{paymentType}', [PaymentTypeController::class, 'update'])->name('payment-types.update');
+    Route::delete('/payment-types/{paymentType}', [PaymentTypeController::class, 'destroy'])->name('payment-types.destroy');
 });
 // Outlet Payment Supplier
 Route::get('/outlet-payment-suppliers', [\App\Http\Controllers\OutletPaymentSupplierController::class, 'index'])->name('outlet-payment-suppliers.index');
@@ -690,10 +700,6 @@ Route::get('/outlet-payment-suppliers/{outletPaymentSupplier}', [\App\Http\Contr
 Route::put('/outlet-payment-suppliers/{outletPaymentSupplier}', [\App\Http\Controllers\OutletPaymentSupplierController::class, 'update'])->name('outlet-payment-suppliers.update');
 Route::put('/outlet-payment-suppliers/{outletPaymentSupplier}/status', [\App\Http\Controllers\OutletPaymentSupplierController::class, 'updateStatus'])->name('outlet-payment-suppliers.status');
 Route::delete('/outlet-payment-suppliers/{outletPaymentSupplier}', [\App\Http\Controllers\OutletPaymentSupplierController::class, 'destroy'])->name('outlet-payment-suppliers.destroy');
-
-Route::middleware(['auth', 'verified'])->group(function () {
-    Route::resource('promos', PromoController::class);
-});
 
 Route::middleware(['auth'])->group(function () {
     // Halaman utama Data Investor Outlet (Inertia)
@@ -716,5 +722,16 @@ Route::middleware(['auth'])->group(function () {
 Route::get('/warehouse-outlets', [\App\Http\Controllers\WarehouseOutletController::class, 'apiListByOutlet']);
 
 Route::post('promos/api-item-prices', [App\Http\Controllers\PromoController::class, 'apiItemPrices'])->name('promos.apiItemPrices');
+
+// Reservation Routes
+Route::middleware(['auth', 'verified'])->group(function () {
+    Route::get('/reservations', [ReservationController::class, 'index'])->name('reservations.index');
+    Route::get('/reservations/create', [ReservationController::class, 'create'])->name('reservations.create');
+    Route::post('/reservations', [ReservationController::class, 'store'])->name('reservations.store');
+    Route::get('/reservations/{reservation}', [ReservationController::class, 'show'])->name('reservations.show');
+    Route::get('/reservations/{reservation}/edit', [ReservationController::class, 'edit'])->name('reservations.edit');
+    Route::put('/reservations/{reservation}', [ReservationController::class, 'update'])->name('reservations.update');
+    Route::delete('/reservations/{reservation}', [ReservationController::class, 'destroy'])->name('reservations.destroy');
+});
 
 require __DIR__.'/auth.php';

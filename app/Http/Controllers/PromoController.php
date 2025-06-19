@@ -11,6 +11,7 @@ use App\Models\Outlet;
 use App\Models\Region;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class PromoController extends Controller
 {
@@ -82,69 +83,89 @@ class PromoController extends Controller
     {
         try {
             $validated = $request->validate([
-                'name' => 'required|string|max:100',
-                'code' => 'nullable|string|max:50|unique:promos,code',
-                'type' => 'required|in:percent,nominal,bundle,bogo,harga_coret',
-                'value' => 'nullable|numeric|min:0',
-                'min_transaction' => 'nullable|numeric|min:0',
-                'max_transaction' => 'nullable|numeric|min:0',
+                'name' => 'required|string|max:255',
+                'code' => 'required|string|max:50|unique:promos,code',
+                'type' => 'required|in:diskon_persen,diskon_nominal,bogo,harga_coret,bill_discount',
+                'value' => 'required|numeric|min:0',
+                'max_discount' => 'nullable|numeric|min:0',
+                'is_multiple' => 'required|in:Yes,No',
                 'start_date' => 'required|date',
                 'end_date' => 'required|date|after_or_equal:start_date',
-                'start_time' => 'nullable',
-                'end_time' => 'nullable',
-                'status' => 'required|in:active,inactive',
-                'description' => 'nullable|string',
-                'terms' => 'nullable|string',
-                'banner' => 'nullable|file|image|mimes:jpeg,png,jpg,gif|max:2048',
-                'categories' => 'nullable|array',
-                'categories.*.id' => 'required|exists:categories,id',
-                'items' => 'nullable|array',
-                'items.*.id' => 'required|exists:items,id',
-                'outlets' => 'nullable|array',
-                'outlets.*.id' => 'required|exists:tbl_data_outlet,id_outlet',
-                'need_member' => 'required|in:Yes,No',
+                'banner' => 'nullable|image|mimes:jpeg,png,jpg|max:2048',
+                'categories' => 'required_if:by_type,kategori|array',
+                'items' => 'required_if:by_type,item|array',
+                'outlets' => 'required_if:outlet_type,outlet|array',
+                'regions' => 'required_if:outlet_type,region|array',
+                'buy_items' => 'required_if:type,bogo|array',
+                'get_items' => 'required_if:type,bogo|array',
+                'item_prices' => 'required_if:type,harga_coret|array',
+                'status' => 'required|in:active,inactive'
             ]);
 
-            // Generate code otomatis jika kosong
-            if (empty($validated['code'])) {
-                $validated['code'] = 'PRM-' . date('Ymd') . '-' . strtoupper(substr(uniqid(), -4));
-            }
+            DB::beginTransaction();
 
             // Handle banner upload
             if ($request->hasFile('banner')) {
-                // Pastikan folder ada
-                if (!Storage::disk('public')->exists('promo_banners')) {
-                    Storage::disk('public')->makeDirectory('promo_banners');
-                }
-                $validated['banner'] = $request->file('banner')->store('promo_banners', 'public');
+                $banner = $request->file('banner');
+                $bannerPath = $banner->store('promo-banners', 'public');
+                $validated['banner'] = $bannerPath;
             }
 
+            // Create promo
             $promo = Promo::create($validated);
 
-            if ($request->has('categories')) {
-                $promo->categories()->sync(collect($request->categories)->pluck('id'));
-            }
-            if ($request->has('items')) {
-                $promo->items()->sync(collect($request->items)->pluck('id'));
-            }
-            if ($request->has('outlets')) {
-                $promo->outlets()->sync(collect($request->outlets)->pluck('id'));
+            // Handle BOGO items
+            if ($request->type === 'bogo') {
+                $buyItems = json_decode($request->buy_items, true);
+                $getItems = json_decode($request->get_items, true);
+
+                if (count($buyItems) !== count($getItems)) {
+                    throw new \Exception('Jumlah item beli dan item gratis harus sama');
+                }
+
+                foreach ($buyItems as $index => $buyItemId) {
+                    $promo->bogoItems()->create([
+                        'buy_item_id' => $buyItemId,
+                        'get_item_id' => $getItems[$index]
+                    ]);
+                }
             }
 
+            // Handle other relationships
+            if ($request->by_type === 'kategori') {
+                $promo->categories()->attach(json_decode($request->categories, true));
+            } else {
+                $promo->items()->attach(json_decode($request->items, true));
+            }
+
+            if ($request->outlet_type === 'region') {
+                $promo->regions()->attach(json_decode($request->regions, true));
+            } else {
+                $promo->outlets()->attach(json_decode($request->outlets, true));
+            }
+
+            // Handle harga_coret
+            if ($request->type === 'harga_coret') {
+                $itemPrices = json_decode($request->item_prices, true);
+                foreach ($itemPrices as $price) {
+                    $promo->itemPrices()->create($price);
+                }
+            }
+
+            DB::commit();
+
             return redirect()->route('promos.index')
-                ->with('success', 'Promo berhasil ditambahkan!');
-        } catch (\Throwable $e) {
-            \Log::error('Gagal menyimpan promo: ' . $e->getMessage(), [
-                'trace' => $e->getTraceAsString(),
-                'request' => $request->all(),
-            ]);
-            return redirect()->back()->with('error', 'Terjadi kesalahan saat menyimpan promo.');
+                ->with('success', 'Promo berhasil ditambahkan');
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Failed to store promo: ' . $e->getMessage());
+            return back()->with('error', 'Gagal menambahkan promo: ' . $e->getMessage());
         }
     }
 
     public function show($id)
     {
-        $promo = Promo::with(['categories', 'items', 'outlets', 'regions', 'itemPrices'])->findOrFail($id);
+        $promo = Promo::with(['categories', 'items', 'outlets', 'regions', 'itemPrices', 'bogoItems.buyItem', 'bogoItems.getItem'])->findOrFail($id);
         return Inertia::render('Promos/Show', [
             'promo' => [
                 ...$promo->toArray(),
@@ -156,6 +177,16 @@ class PromoController extends Controller
                     'outlet_name' => $ip->outlet->nama_outlet ?? '',
                     'region_name' => $ip->region->name ?? '',
                     'new_price' => $ip->new_price,
+                ]),
+                'bogo_items' => $promo->bogoItems->map(fn($bogo) => [
+                    'buy_item' => [
+                        'id' => $bogo->buyItem->id,
+                        'name' => $bogo->buyItem->name,
+                    ],
+                    'get_item' => [
+                        'id' => $bogo->getItem->id,
+                        'name' => $bogo->getItem->name,
+                    ],
                 ]),
             ]
         ]);
@@ -202,63 +233,100 @@ class PromoController extends Controller
             'isEdit' => true
         ]);
     }
-    public function update(Request $request, $id)
+    public function update(Request $request, Promo $promo)
     {
-        $promo = Promo::findOrFail($id);
+        try {
+            $validated = $request->validate([
+                'name' => 'required|string|max:255',
+                'code' => 'required|string|max:50|unique:promos,code,' . $promo->id,
+                'type' => 'required|in:diskon_persen,diskon_nominal,bogo,harga_coret,bill_discount',
+                'value' => 'required|numeric|min:0',
+                'max_discount' => 'nullable|numeric|min:0',
+                'is_multiple' => 'required|in:Yes,No',
+                'start_date' => 'required|date',
+                'end_date' => 'required|date|after_or_equal:start_date',
+                'banner' => 'nullable|image|mimes:jpeg,png,jpg|max:2048',
+                'categories' => 'required_if:by_type,kategori|array',
+                'items' => 'required_if:by_type,item|array',
+                'outlets' => 'required_if:outlet_type,outlet|array',
+                'regions' => 'required_if:outlet_type,region|array',
+                'buy_items' => 'required_if:type,bogo|array',
+                'get_items' => 'required_if:type,bogo|array',
+                'item_prices' => 'required_if:type,harga_coret|array',
+                'status' => 'required|in:active,inactive'
+            ]);
 
-        $validated = $request->validate([
-            'name' => 'required|string|max:100',
-            'code' => 'nullable|string|max:50|unique:promos,code,' . $id,
-            'type' => 'required|in:percent,nominal,bundle,bogo,harga_coret',
-            'value' => 'required|numeric|min:0',
-            'min_transaction' => 'nullable|numeric|min:0',
-            'max_transaction' => 'nullable|numeric|min:0',
-            'start_date' => 'required|date',
-            'end_date' => 'required|date|after_or_equal:start_date',
-            'start_time' => 'nullable',
-            'end_time' => 'nullable',
-            'status' => 'required|in:active,inactive',
-            'description' => 'nullable|string',
-            'terms' => 'nullable|string',
-            'banner' => 'nullable|file|image|mimes:jpeg,png,jpg,gif|max:2048',
-            'categories' => 'nullable|array',
-            'categories.*.id' => 'required|exists:categories,id',
-            'items' => 'nullable|array',
-            'items.*.id' => 'required|exists:items,id',
-            'outlets' => 'nullable|array',
-            'outlets.*.id' => 'required|exists:tbl_data_outlet,id_outlet',
-            'need_member' => 'required|in:Yes,No',
-        ]);
+            DB::beginTransaction();
 
-        // Handle banner upload
-        if ($request->hasFile('banner')) {
-            // Hapus banner lama jika ada
-            if ($promo->banner) {
-                Storage::disk('public')->delete($promo->banner);
+            // Handle banner upload
+            if ($request->hasFile('banner')) {
+                // Delete old banner if exists
+                if ($promo->banner) {
+                    Storage::disk('public')->delete($promo->banner);
+                }
+                $banner = $request->file('banner');
+                $bannerPath = $banner->store('promo-banners', 'public');
+                $validated['banner'] = $bannerPath;
             }
-            // Pastikan folder ada
-            if (!Storage::disk('public')->exists('promo_banners')) {
-                Storage::disk('public')->makeDirectory('promo_banners');
+
+            // Update promo
+            $promo->update($validated);
+
+            // Handle BOGO items
+            if ($request->type === 'bogo') {
+                // Delete existing BOGO items
+                $promo->bogoItems()->delete();
+
+                $buyItems = json_decode($request->buy_items, true);
+                $getItems = json_decode($request->get_items, true);
+
+                if (count($buyItems) !== count($getItems)) {
+                    throw new \Exception('Jumlah item beli dan item gratis harus sama');
+                }
+
+                foreach ($buyItems as $index => $buyItemId) {
+                    $promo->bogoItems()->create([
+                        'buy_item_id' => $buyItemId,
+                        'get_item_id' => $getItems[$index]
+                    ]);
+                }
             }
-            $validated['banner'] = $request->file('banner')->store('promo_banners', 'public');
-        } else {
-            unset($validated['banner']); // Jaga agar banner lama tidak terhapus
-        }
 
-        $promo->update($validated);
+            // Handle other relationships
+            if ($request->by_type === 'kategori') {
+                $promo->categories()->sync(json_decode($request->categories, true));
+                $promo->items()->detach();
+            } else {
+                $promo->items()->sync(json_decode($request->items, true));
+                $promo->categories()->detach();
+            }
 
-        if ($request->has('categories')) {
-            $promo->categories()->sync(collect($request->categories)->pluck('id'));
-        }
-        if ($request->has('items')) {
-            $promo->items()->sync(collect($request->items)->pluck('id'));
-        }
-        if ($request->has('outlets')) {
-            $promo->outlets()->sync(collect($request->outlets)->pluck('id'));
-        }
+            if ($request->outlet_type === 'region') {
+                $promo->regions()->sync(json_decode($request->regions, true));
+                $promo->outlets()->detach();
+            } else {
+                $promo->outlets()->sync(json_decode($request->outlets, true));
+                $promo->regions()->detach();
+            }
 
-        return redirect()->route('promos.index')
-            ->with('success', 'Promo berhasil diupdate!');
+            // Handle harga_coret
+            if ($request->type === 'harga_coret') {
+                $promo->itemPrices()->delete();
+                $itemPrices = json_decode($request->item_prices, true);
+                foreach ($itemPrices as $price) {
+                    $promo->itemPrices()->create($price);
+                }
+            }
+
+            DB::commit();
+
+            return redirect()->route('promos.index')
+                ->with('success', 'Promo berhasil diupdate');
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Failed to update promo: ' . $e->getMessage());
+            return back()->with('error', 'Gagal mengupdate promo: ' . $e->getMessage());
+        }
     }
 
     public function destroy($id)

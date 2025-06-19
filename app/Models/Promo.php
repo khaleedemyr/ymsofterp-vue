@@ -14,6 +14,8 @@ class Promo extends Model
         'code',
         'type',
         'value',
+        'max_discount',
+        'is_multiple',
         'min_transaction',
         'max_transaction',
         'start_date',
@@ -32,6 +34,7 @@ class Promo extends Model
         'end_date' => 'date',
         'value' => 'float',
         'min_transaction' => 'float',
+        'max_discount' => 'float',
     ];
 
     public function categories()
@@ -57,5 +60,10 @@ class Promo extends Model
     public function itemPrices()
     {
         return $this->hasMany(\App\Models\PromoItemPrice::class, 'promo_id');
+    }
+
+    public function bogoItems()
+    {
+        return $this->hasMany(\App\Models\PromoBogoItem::class, 'promo_id');
     }
 } 
