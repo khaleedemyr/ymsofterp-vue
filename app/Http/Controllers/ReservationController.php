@@ -11,7 +11,7 @@ class ReservationController extends Controller
 {
     public function index(Request $request)
     {
-        $query = Reservation::with('outlet')
+        $query = Reservation::with(['outlet', 'creator'])
             ->when($request->search, function ($query, $search) {
                 $query->where('name', 'like', "%{$search}%");
             })
@@ -36,6 +36,7 @@ class ReservationController extends Controller
                 'number_of_guests' => $reservation->number_of_guests,
                 'smoking_preference' => $reservation->smoking_preference,
                 'status' => $reservation->status,
+                'created_by' => $reservation->creator ? $reservation->creator->name : '-',
             ];
         });
 
@@ -83,6 +84,9 @@ class ReservationController extends Controller
                 'status' => 'required|in:pending,confirmed,cancelled',
             ]);
 
+            // Add created_by with authenticated user ID
+            $validated['created_by'] = auth()->id();
+
             $reservation = Reservation::create($validated);
 
             return redirect()->route('reservations.index')
@@ -98,7 +102,7 @@ class ReservationController extends Controller
 
     public function show(Reservation $reservation)
     {
-        $reservation->load('outlet');
+        $reservation->load(['outlet', 'creator']);
         return Inertia::render('Reservations/Show', [
             'reservation' => $reservation
         ]);

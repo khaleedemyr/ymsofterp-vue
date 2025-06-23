@@ -68,12 +68,13 @@
               <th class="px-6 py-3 text-left text-xs font-bold text-pink-700 uppercase tracking-wider">Jumlah Tamu</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-pink-700 uppercase tracking-wider">Area</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-pink-700 uppercase tracking-wider">Status</th>
+              <th class="px-6 py-3 text-left text-xs font-bold text-pink-700 uppercase tracking-wider">Created By</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-pink-700 uppercase tracking-wider rounded-tr-2xl">Aksi</th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="!reservations.length">
-              <td colspan="9" class="text-center py-10 text-pink-300">Tidak ada data Reservasi.</td>
+              <td colspan="10" class="text-center py-10 text-pink-300">Tidak ada data Reservasi.</td>
             </tr>
             <tr v-for="(reservation, idx) in reservations" :key="reservation.id" class="hover:bg-pink-50 transition shadow-sm">
               <td class="px-6 py-3">{{ idx + 1 }}</td>
@@ -97,6 +98,7 @@
                   {{ getStatusText(reservation.status) }}
                 </span>
               </td>
+              <td class="px-6 py-3">{{ reservation.created_by }}</td>
               <td class="px-6 py-3">
                 <Link :href="route('reservations.show', { reservation: reservation.id })" class="inline-flex items-center btn btn-xs bg-pink-100 text-pink-800 hover:bg-pink-200 rounded px-2 py-1 font-semibold transition">
                   <i class="fa fa-eye mr-1"></i> Detail

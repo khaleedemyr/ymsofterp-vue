@@ -412,19 +412,19 @@ class ItemController extends Controller
         })->toArray();
         // Modifier options with name
         $itemData['modifier_option_ids'] = $item->modifierOptions->pluck('id')->toArray();
-        $itemData['modifiers'] = $modifiers->map(function($mod) use ($item) {
-            $selectedOptions = $mod->options->whereIn('id', $item->modifierOptions->pluck('id')->toArray());
+        // Send all modifiers with all options for the form
+        $itemData['modifiers'] = $modifiers->map(function($mod) {
             return [
                 'id' => $mod->id,
                 'name' => $mod->name,
-                'options' => $selectedOptions->map(function($opt) {
+                'options' => $mod->options->map(function($opt) {
                     return [
                         'id' => $opt->id,
                         'name' => $opt->name,
                     ];
                 })->values()->all(),
             ];
-        })->filter(fn($m) => count($m['options']) > 0)->values()->all();
+        })->values()->all();
         return Inertia::render('Items/Edit', [
             'item' => $itemData,
             'categories' => $categories,

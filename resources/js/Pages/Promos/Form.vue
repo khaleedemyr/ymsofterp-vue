@@ -285,7 +285,7 @@ function formatCurrency(val) {
   return Number(val).toLocaleString('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 });
 }
 
-async function submit() {
+const submit = async () => {
   const confirm = await Swal.fire({
     title: 'Simpan Promo?',
     text: 'Apakah Anda yakin ingin menyimpan data promo ini?',
@@ -295,93 +295,43 @@ async function submit() {
     cancelButtonText: 'Batal'
   });
   if (!confirm.isConfirmed) return;
-  loading.value = true;
-
-  const formData = new FormData();
   
-  // Add basic fields
-  Object.keys(form.value).forEach(key => {
-    if (key === 'banner' && form.value[key] instanceof File) {
-      formData.append('banner', form.value[key]);
-    } else if (key === 'categories' || key === 'items' || key === 'outlets' || key === 'regions') {
-      if (form.value[key] && form.value[key].length > 0) {
-        formData.append(key, JSON.stringify(form.value[key]));
-      }
-    } else if (key === 'buy_items' || key === 'get_items') {
-      if (form.value[key] && form.value[key].length > 0) {
-        formData.append(key, JSON.stringify(form.value[key]));
-      }
-    } else {
-      formData.append(key, form.value[key]);
+  loading.value = true;
+  
+  // Memproses data untuk dikirim
+  const data = {
+    ...form.value,
+    by_type: byType.value,
+    outlet_type: outletType.value,
+    categories: form.value.categories.map(c => c.id),
+    items: form.value.items.map(i => i.id),
+    outlets: form.value.outlets.map(o => o.id),
+    regions: form.value.regions.map(r => r.id),
+    buy_items: form.value.buy_items.map(i => i.id),
+    get_items: form.value.get_items.map(i => i.id),
+    item_prices: itemPriceRows.value,
+  };
+
+  const url = props.isEdit ? route('promos.update', { promo: props.promo.id }) : route('promos.store');
+  // Gunakan _method 'PUT' untuk update jika form dikirim via POST
+  if (props.isEdit) {
+    data._method = 'PUT';
+  }
+
+  router.post(url, data, {
+    forceFormData: true, // Penting untuk upload file
+    onSuccess: () => {
+      Swal.fire('Sukses!', 'Data promo berhasil disimpan.', 'success');
+    },
+    onError: (errors) => {
+      let errorMessages = Object.values(errors).join('<br>');
+      Swal.fire('Gagal', errorMessages, 'error');
+    },
+    onFinish: () => {
+      loading.value = false;
     }
   });
-
-  // Add other fields
-  formData.append('status', 'active');
-  
-  if (form.value.type === 'bogo') {
-    formData.append('items', JSON.stringify([]));
-    formData.append('categories', JSON.stringify([]));
-    formData.append('buy_items', JSON.stringify(form.value.buy_items));
-    formData.append('get_items', JSON.stringify(form.value.get_items));
-  } else if (byType.value === 'kategori') {
-    formData.append('items', JSON.stringify([]));
-  } else {
-    formData.append('categories', JSON.stringify([]));
-  }
-
-  if (outletType.value === 'region') {
-    formData.append('outlets', JSON.stringify([]));
-  } else {
-    formData.append('regions', JSON.stringify([]));
-  }
-
-  if (form.value.type === 'harga_coret') {
-    if (hasInvalidPromoPrice.value) {
-      Swal.fire('Error', 'Harga promo harus lebih kecil dari harga asli!', 'error');
-      return;
-    }
-    formData.append('item_prices', JSON.stringify(itemPriceRows.value.map(row => ({
-      item_id: row.item_id,
-      outlet_id: row.outlet_id,
-      region_id: row.region_id,
-      old_price: row.old_price,
-      new_price: row.new_price
-    }))));
-  }
-
-  try {
-    if (props.isEdit) {
-      await router.put(route('promos.update', props.promo.id), formData, {
-        forceFormData: true,
-        onSuccess: () => {
-          loading.value = false;
-          Swal.fire('Sukses', 'Promo berhasil diupdate!', 'success');
-        },
-        onError: () => {
-          loading.value = false;
-          Swal.fire('Gagal', 'Terjadi kesalahan saat update promo.', 'error');
-        }
-      });
-    } else {
-      await router.post(route('promos.store'), formData, {
-        forceFormData: true,
-        onSuccess: () => {
-          loading.value = false;
-          Swal.fire('Sukses', 'Promo berhasil ditambahkan!', 'success');
-        },
-        onError: () => {
-          loading.value = false;
-          Swal.fire('Gagal', 'Terjadi kesalahan saat menyimpan promo.', 'error');
-        }
-      });
-    }
-  } catch (error) {
-    loading.value = false;
-    console.error('Error submitting form:', error);
-    Swal.fire('Error', 'Terjadi kesalahan saat menyimpan data.', 'error');
-  }
-}
+};
 
 function onBannerChange(e) {
   const file = e.target.files[0];

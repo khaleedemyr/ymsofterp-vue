@@ -79,6 +79,7 @@ const menuGroups = [
             { name: () => 'Laporan Rekap Persediaan per Kategori Outlet', icon: 'fa-solid fa-chart-pie', route: '/outlet-inventory/category-recap-report', code: 'outlet_category_recap_report' },
             { name: () => 'Internal Use & Waste Outlet', icon: 'fa-solid fa-trash', route: '/outlet-internal-use-waste', code: 'outlet_internal_use_waste' },
             { name: () => 'Retail Food', icon: 'fa-solid fa-store', route: '/retail-food', code: 'view-retail-food' },
+            { name: () => 'Retail Non Food', icon: 'fa-solid fa-shopping-bag', route: '/retail-non-food', code: 'view-retail-non-food' },
         ],
     },
     {

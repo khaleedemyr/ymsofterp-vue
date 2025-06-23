@@ -119,10 +119,10 @@ watch(locale, () => {
                 :class="isNight ? 'bg-[#1a223a]/80 border-blue-900' : 'bg-white/70 border-blue-200 hover:shadow-blue-300'">
                 <!-- Avatar user -->
                 <div class="absolute left-6 top-6 flex items-center gap-2 z-20">
-                    <div v-if="user.avatar" class="w-14 h-14 rounded-full overflow-hidden border-4 border-white shadow-lg">
+                    <div v-if="user.avatar" class="w-24 h-24 rounded-full overflow-hidden border-4 border-white shadow-lg">
                         <img :src="user.avatar ? `/storage/${user.avatar}` : '/images/avatar-default.png'" alt="Avatar" class="w-full h-full object-cover" />
                     </div>
-                    <div v-else class="w-14 h-14 rounded-full bg-gradient-to-br from-blue-700 to-blue-400 flex items-center justify-center text-white text-2xl font-bold border-4 border-white shadow-lg">
+                    <div v-else class="w-24 h-24 rounded-full bg-gradient-to-br from-blue-700 to-blue-400 flex items-center justify-center text-white text-4xl font-bold border-4 border-white shadow-lg">
                         {{ getInitials(user.nama_lengkap) }}
                     </div>
                 </div>

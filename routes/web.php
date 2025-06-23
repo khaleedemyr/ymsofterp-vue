@@ -595,8 +595,13 @@ Route::delete('/outlet-internal-use-waste/{id}', [\App\Http\Controllers\OutletIn
 Route::get('/outlet-internal-use-waste/get-item-units/{id}', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'getItemUnits'])->name('outlet-internal-use-waste.get-item-units');
 
 
-Route::resource('retail-food', RetailFoodController::class);
-Route::get('retail-food/get-item-units/{itemId}', [\App\Http\Controllers\RetailFoodController::class, 'getItemUnits']);
+Route::middleware(['auth', 'verified'])->group(function () {
+    Route::resource('retail-food', RetailFoodController::class);
+    Route::get('retail-food/get-item-units/{itemId}', [\App\Http\Controllers\RetailFoodController::class, 'getItemUnits']);
+
+    Route::resource('retail-non-food', \App\Http\Controllers\RetailNonFoodController::class);
+    Route::get('retail-non-food/daily-total', [\App\Http\Controllers\RetailNonFoodController::class, 'dailyTotal']);
+});
 
 Route::resource('item-supplier', \App\Http\Controllers\ItemSupplierController::class);
 

@@ -156,7 +156,8 @@
                     :key="option.id"
                     :class="isOptionSelected(option.id) ? 'bg-blue-500 text-white' : 'bg-white text-blue-700 border-blue-500 border'"
                     class="px-3 py-1 rounded-full cursor-pointer transition select-none flex items-center gap-1"
-                    @click="toggleOption(option.id)">
+                    @click="toggleOption(option.id)"
+                  >
                     {{ option.name }}
                     <i v-if="isOptionSelected(option.id)" class="fa-solid fa-xmark ml-1 text-xs"></i>
                   </span>
@@ -351,8 +352,15 @@
                 <div v-for="modifier in validModifiers" :key="modifier.id" class="border-b pb-4">
                   <p class="font-medium text-yellow-800 mb-2">{{ modifier.name }}</p>
                   <div class="flex flex-wrap gap-2">
-                    <span v-for="option in getValidOptions(modifier.options)" :key="option.id" v-if="form.modifier_option_ids.includes(option.id)" class="bg-yellow-200 text-yellow-800 px-2 py-1 rounded text-sm">
+                    <span
+                      v-for="option in getValidOptions(modifier.options)"
+                      :key="option.id"
+                      :class="isOptionSelected(option.id) ? 'bg-blue-500 text-white' : 'bg-white text-blue-700 border-blue-500 border'"
+                      class="px-3 py-1 rounded-full cursor-pointer transition select-none flex items-center gap-1"
+                      @click="toggleOption(option.id)"
+                    >
                       {{ option.name }}
+                      <i v-if="isOptionSelected(option.id)" class="fa-solid fa-xmark ml-1 text-xs"></i>
                     </span>
                   </div>
                 </div>
@@ -518,7 +526,7 @@ const form = useForm({
   composition_type: 'single',
   bom: [],
   modifier_enabled: false,
-  modifier_option_ids: []
+  modifier_option_ids: [],
 });
 
 const previewImages = ref([]);
@@ -594,7 +602,7 @@ watch(() => props.show, (val) => {
         label: a.label
       })) : [],
       bom: props.item.bom ? JSON.parse(JSON.stringify(props.item.bom)) : [],
-      modifier_option_ids: props.item.modifier_option_ids ? [...props.item.modifier_option_ids] : [],
+      modifier_option_ids: Array.isArray(props.item.modifier_option_ids) ? [...props.item.modifier_option_ids] : [],
       modifier_enabled: props.item.modifier_enabled || false,
       composition_type: props.item.composition_type || 'single',
     });
@@ -607,6 +615,8 @@ watch(() => props.show, (val) => {
     previewImages.value = [];
     console.log('DEBUG [EditItemModal] form.prices:', form.prices);
     console.log('DEBUG [EditItemModal] form.availabilities:', form.availabilities);
+    console.log('DEBUG [EditItemModal] form.modifier_option_ids:', form.modifier_option_ids);
+    console.log('DEBUG [EditItemModal] props.modifiers:', props.modifiers);
   } else if (val) {
     form.reset();
     previewImages.value = [];
@@ -913,6 +923,7 @@ const getSmallUnit = (itemId) => {
 };
 
 const modifiers = props.modifiers || [];
+console.log('DEBUG EditItemModal - modifiers from props:', modifiers);
 const accordionOpen = ref({});
 const toggleAccordion = (id) => {
   accordionOpen.value[id] = !accordionOpen.value[id];
@@ -930,8 +941,13 @@ const toggleOption = (optionId) => {
 const validModifiers = computed(() =>
   (modifiers || []).filter(m => m && typeof m.id !== 'undefined' && Array.isArray(m.options))
 );
+console.log('DEBUG EditItemModal - validModifiers computed:', validModifiers.value);
+console.log('DEBUG EditItemModal - first modifier options:', validModifiers.value[0]?.options);
 function getValidOptions(options) {
-  return Array.isArray(options) ? options.filter(o => o && typeof o.id !== 'undefined') : [];
+  if (!Array.isArray(options)) {
+    return [];
+  }
+  return options.filter(o => o && typeof o === 'object' && typeof o.id !== 'undefined' && o.id !== null);
 }
 
 const addBomRow = () => {

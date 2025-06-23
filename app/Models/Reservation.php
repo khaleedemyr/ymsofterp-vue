@@ -20,6 +20,7 @@ class Reservation extends Model
         'smoking_preference',
         'special_requests',
         'status',
+        'created_by',
     ];
 
     protected $casts = [
@@ -31,5 +32,10 @@ class Reservation extends Model
     public function outlet()
     {
         return $this->belongsTo(Outlet::class, 'outlet_id', 'id_outlet');
+    }
+
+    public function creator()
+    {
+        return $this->belongsTo(User::class, 'created_by');
     }
 } 

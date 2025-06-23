@@ -84,13 +84,20 @@ class PromoController extends Controller
         try {
             $validated = $request->validate([
                 'name' => 'required|string|max:255',
-                'code' => 'required|string|max:50|unique:promos,code',
-                'type' => 'required|in:diskon_persen,diskon_nominal,bogo,harga_coret,bill_discount',
-                'value' => 'required|numeric|min:0',
+                'code' => 'nullable|string|max:50|unique:promos,code',
+                'type' => 'required|in:percent,nominal,bundle,bogo,harga_coret,bill_discount',
+                'value' => 'required_if:type,percent,nominal,bundle,bill_discount|nullable|numeric|min:0',
                 'max_discount' => 'nullable|numeric|min:0',
                 'is_multiple' => 'required|in:Yes,No',
+                'min_transaction' => 'nullable|numeric|min:0',
+                'max_transaction' => 'nullable|numeric|min:0',
                 'start_date' => 'required|date',
                 'end_date' => 'required|date|after_or_equal:start_date',
+                'start_time' => 'nullable|string',
+                'end_time' => 'nullable|string',
+                'description' => 'nullable|string',
+                'terms' => 'nullable|string',
+                'need_member' => 'required|in:Yes,No',
                 'banner' => 'nullable|image|mimes:jpeg,png,jpg|max:2048',
                 'categories' => 'required_if:by_type,kategori|array',
                 'items' => 'required_if:by_type,item|array',
@@ -103,6 +110,14 @@ class PromoController extends Controller
             ]);
 
             DB::beginTransaction();
+            
+            // Generate unique code if not provided
+            if (empty($validated['code'])) {
+                do {
+                    $newCode = strtoupper(substr($validated['name'], 0, 3) . random_int(100, 999));
+                } while (Promo::where('code', $newCode)->exists());
+                $validated['code'] = $newCode;
+            }
 
             // Handle banner upload
             if ($request->hasFile('banner')) {
@@ -116,8 +131,8 @@ class PromoController extends Controller
 
             // Handle BOGO items
             if ($request->type === 'bogo') {
-                $buyItems = json_decode($request->buy_items, true);
-                $getItems = json_decode($request->get_items, true);
+                $buyItems = $request->buy_items;
+                $getItems = $request->get_items;
 
                 if (count($buyItems) !== count($getItems)) {
                     throw new \Exception('Jumlah item beli dan item gratis harus sama');
@@ -133,20 +148,20 @@ class PromoController extends Controller
 
             // Handle other relationships
             if ($request->by_type === 'kategori') {
-                $promo->categories()->attach(json_decode($request->categories, true));
+                $promo->categories()->attach($request->categories);
             } else {
-                $promo->items()->attach(json_decode($request->items, true));
+                $promo->items()->attach($request->items);
             }
 
             if ($request->outlet_type === 'region') {
-                $promo->regions()->attach(json_decode($request->regions, true));
+                $promo->regions()->attach($request->regions);
             } else {
-                $promo->outlets()->attach(json_decode($request->outlets, true));
+                $promo->outlets()->attach($request->outlets);
             }
 
             // Handle harga_coret
             if ($request->type === 'harga_coret') {
-                $itemPrices = json_decode($request->item_prices, true);
+                $itemPrices = $request->item_prices;
                 foreach ($itemPrices as $price) {
                     $promo->itemPrices()->create($price);
                 }
@@ -239,12 +254,19 @@ class PromoController extends Controller
             $validated = $request->validate([
                 'name' => 'required|string|max:255',
                 'code' => 'required|string|max:50|unique:promos,code,' . $promo->id,
-                'type' => 'required|in:diskon_persen,diskon_nominal,bogo,harga_coret,bill_discount',
-                'value' => 'required|numeric|min:0',
+                'type' => 'required|in:percent,nominal,bundle,bogo,harga_coret,bill_discount',
+                'value' => 'required_if:type,percent,nominal,bundle,bill_discount|nullable|numeric|min:0',
                 'max_discount' => 'nullable|numeric|min:0',
                 'is_multiple' => 'required|in:Yes,No',
+                'min_transaction' => 'nullable|numeric|min:0',
+                'max_transaction' => 'nullable|numeric|min:0',
                 'start_date' => 'required|date',
                 'end_date' => 'required|date|after_or_equal:start_date',
+                'start_time' => 'nullable|string',
+                'end_time' => 'nullable|string',
+                'description' => 'nullable|string',
+                'terms' => 'nullable|string',
+                'need_member' => 'required|in:Yes,No',
                 'banner' => 'nullable|image|mimes:jpeg,png,jpg|max:2048',
                 'categories' => 'required_if:by_type,kategori|array',
                 'items' => 'required_if:by_type,item|array',
@@ -272,47 +294,42 @@ class PromoController extends Controller
             // Update promo
             $promo->update($validated);
 
-            // Handle BOGO items
-            if ($request->type === 'bogo') {
-                // Delete existing BOGO items
-                $promo->bogoItems()->delete();
-
-                $buyItems = json_decode($request->buy_items, true);
-                $getItems = json_decode($request->get_items, true);
-
-                if (count($buyItems) !== count($getItems)) {
-                    throw new \Exception('Jumlah item beli dan item gratis harus sama');
-                }
-
-                foreach ($buyItems as $index => $buyItemId) {
-                    $promo->bogoItems()->create([
-                        'buy_item_id' => $buyItemId,
-                        'get_item_id' => $getItems[$index]
-                    ]);
-                }
-            }
-
-            // Handle other relationships
+            // Sync relationships
             if ($request->by_type === 'kategori') {
-                $promo->categories()->sync(json_decode($request->categories, true));
-                $promo->items()->detach();
+                $promo->categories()->sync($request->categories);
+                $promo->items()->sync([]); 
             } else {
-                $promo->items()->sync(json_decode($request->items, true));
-                $promo->categories()->detach();
+                $promo->items()->sync($request->items);
+                $promo->categories()->sync([]);
             }
 
             if ($request->outlet_type === 'region') {
-                $promo->regions()->sync(json_decode($request->regions, true));
-                $promo->outlets()->detach();
+                $promo->regions()->sync($request->regions);
+                $promo->outlets()->sync([]);
             } else {
-                $promo->outlets()->sync(json_decode($request->outlets, true));
-                $promo->regions()->detach();
+                $promo->outlets()->sync($request->outlets);
+                $promo->regions()->sync([]);
             }
 
-            // Handle harga_coret
+            // Sync BOGO items
+            if ($request->type === 'bogo') {
+                $promo->bogoItems()->delete(); // Hapus yang lama
+                $buyItems = $request->buy_items;
+                $getItems = $request->get_items;
+                if (count($buyItems) === count($getItems)) {
+                    foreach ($buyItems as $index => $buyItemId) {
+                        $promo->bogoItems()->create([
+                            'buy_item_id' => $buyItemId,
+                            'get_item_id' => $getItems[$index]
+                        ]);
+                    }
+                }
+            }
+
+            // Sync Item Prices
             if ($request->type === 'harga_coret') {
-                $promo->itemPrices()->delete();
-                $itemPrices = json_decode($request->item_prices, true);
+                $promo->itemPrices()->delete(); // Hapus yang lama
+                $itemPrices = $request->item_prices;
                 foreach ($itemPrices as $price) {
                     $promo->itemPrices()->create($price);
                 }

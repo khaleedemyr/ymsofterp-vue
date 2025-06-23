@@ -17,6 +17,7 @@
           <div><b>Outlet:</b> {{ reservation.outlet?.nama_outlet }}</div>
           <div><b>Tanggal:</b> {{ formatDate(reservation.reservation_date) }}</div>
           <div><b>Waktu:</b> {{ formatTime(reservation.reservation_time) }}</div>
+          <div><b>Created By:</b> {{ reservation.creator?.name || '-' }}</div>
           <div class="mb-4">
             <div class="text-sm font-medium text-gray-500">Jumlah Tamu</div>
             <div class="mt-1">{{ reservation.number_of_guests }} orang</div>
