@@ -720,11 +720,12 @@ Route::get('/api/officer-check/users', [\App\Http\Controllers\OfficerCheckContro
 
 Route::middleware(['auth'])->group(function () {
     Route::resource('warehouse-outlets', WarehouseOutletController::class);
+    Route::post('/warehouse-outlets/{warehouseOutlet}', [WarehouseOutletController::class, 'update'])->name('warehouse-outlets.update');
     Route::patch('warehouse-outlets/{warehouseOutlet}/toggle-status', [WarehouseOutletController::class, 'toggleStatus'])->name('warehouse-outlets.toggle-status');
 });
 
-// Endpoint warehouse outlet untuk dropdown Floor Order
-Route::get('/warehouse-outlets', [\App\Http\Controllers\WarehouseOutletController::class, 'apiListByOutlet']);
+// Route API untuk fetch warehouse outlet (dropdown, dsb)
+Route::get('/api/warehouse-outlets', [\App\Http\Controllers\WarehouseOutletController::class, 'apiListByOutlet']);
 
 Route::post('promos/api-item-prices', [App\Http\Controllers\PromoController::class, 'apiItemPrices'])->name('promos.apiItemPrices');
 
