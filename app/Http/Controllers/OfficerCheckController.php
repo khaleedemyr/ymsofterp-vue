@@ -25,8 +25,12 @@ class OfficerCheckController extends Controller
 
     public function store(Request $request)
     {
+        // Ambil nama user
+        $user = DB::table('users')->where('id', $request->user_id)->first();
+        $userName = $user->nama_lengkap ?? $user->name ?? '';
         $id = DB::table('officer_checks')->insertGetId([
             'user_id' => $request->user_id,
+            'user_name' => $userName,
             'nilai' => $request->nilai,
             'created_at' => now(),
             'updated_at' => now(),
@@ -36,8 +40,12 @@ class OfficerCheckController extends Controller
 
     public function update(Request $request, $id)
     {
+        // Ambil nama user
+        $user = DB::table('users')->where('id', $request->user_id)->first();
+        $userName = $user->nama_lengkap ?? $user->name ?? '';
         DB::table('officer_checks')->where('id', $id)->update([
             'user_id' => $request->user_id,
+            'user_name' => $userName,
             'nilai' => $request->nilai,
             'updated_at' => now(),
         ]);

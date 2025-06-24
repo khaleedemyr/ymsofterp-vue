@@ -939,9 +939,7 @@ const categorySubtotals = computed(() => {
 async function fetchWarehouseOutlets() {
   if (!outlet_id.value) return;
   try {
-    const res = await axios.get('/warehouse-outlets', {
-      params: { outlet_id: outlet_id.value, status: 'active' }
-    });
+    const res = await axios.get('/api/warehouse-outlets', { params: { outlet_id: outlet_id.value, status: 'active' } });
     warehouseOutlets.value = Array.isArray(res.data) ? res.data : [];
     // Auto-select jika hanya satu warehouse
     if (warehouseOutlets.value.length === 1) {
