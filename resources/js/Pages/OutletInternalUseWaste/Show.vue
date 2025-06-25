@@ -2,7 +2,7 @@
   <AppLayout>
     <div class="max-w-xl mx-auto py-8 px-2">
       <h1 class="text-2xl font-bold mb-6 flex items-center gap-2">
-        <i class="fa-solid fa-recycle text-green-500"></i> Detail Internal Use & Waste Outlet
+        <i class="fa-solid fa-recycle text-green-500"></i> Detail Category Cost Outlet
       </h1>
       <div class="bg-white rounded-xl shadow-lg p-6">
         <div class="mb-4">

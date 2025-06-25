@@ -58,7 +58,21 @@ class RetailFoodController extends Controller
     {
         $user = auth()->user()->load('outlet');
         $outlets = Outlet::where('status', 'A')->orderBy('nama_outlet')->get(['id_outlet', 'nama_outlet']);
-        $warehouse_outlets = DB::table('warehouse_outlets')->select('id', 'name')->orderBy('name')->get();
+        // Ambil warehouse outlet hanya untuk outlet user dan status aktif
+        if ($user->id_outlet == 1) {
+            $warehouse_outlets = DB::table('warehouse_outlets')
+                ->where('status', 'active')
+                ->select('id', 'name', 'outlet_id')
+                ->orderBy('name')
+                ->get();
+        } else {
+            $warehouse_outlets = DB::table('warehouse_outlets')
+                ->where('outlet_id', $user->id_outlet)
+                ->where('status', 'active')
+                ->select('id', 'name', 'outlet_id')
+                ->orderBy('name')
+                ->get();
+        }
         return Inertia::render('RetailFood/Form', [
             'user' => $user,
             'outlets' => $outlets,

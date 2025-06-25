@@ -100,7 +100,9 @@ class FoodFloorOrderController extends Controller
             \Log::info('Mulai proses kirim email supplier', [
                 'floor_order_id' => $floorOrderId,
                 'total_suppliers' => count($groupedItems),
-                'supplier_ids' => array_keys($groupedItems->toArray())
+                'supplier_ids' => array_keys($groupedItems->toArray()),
+                'app_env' => config('app.env'),
+                'mail_driver' => config('mail.default')
             ]);
 
             // Ambil informasi order dan pembuat sekali saja
@@ -140,6 +142,7 @@ class FoodFloorOrderController extends Controller
                             ->where('floor_order_id', $floorOrderId)
                             ->where('supplier_id', $supplierId)
                             ->first();
+                        
                         if (!$header) {
                             $supplierFoNumber = $this->floorOrderService->generateSupplierFONumber($supplierId);
                             \Log::info('Generated FO Number', ['supplier_fo_number' => $supplierFoNumber]);
@@ -200,16 +203,54 @@ class FoodFloorOrderController extends Controller
                         'supplier_fo_number' => $data['supplierFoNumber'],
                         'total_items' => count($data['items'])
                     ]);
+                    
                     $itemsList = '';
                     foreach ($data['items'] as $item) {
                         $itemsList .= "- {$item['item_name']} ({$item['qty']} {$item['unit']})\n";
                     }
+                    
                     $emailContent = "\nRequest Order Supplier\n\n- Nomor RO: {$order->order_number}\n- Nomor RO Supplier: {$data['supplierFoNumber']}\nOutlet: {$outletName}\nDibuat oleh: {$creatorName}\nWaktu pembuatan: {$createdAt}\n\nDetail Items:\n{$itemsList}\n\nTerima kasih,\nYMSoft ERP\n";
+                    
+                    // Cek apakah di production environment
+                    if (config('app.env') === 'production') {
+                        // Di production, gunakan try-catch yang lebih robust
+                        try {
+                            Mail::raw($emailContent, function($message) use ($data) {
+                                $message->to($data['supplier']->email)
+                                       ->subject("Request Order Supplier - {$data['supplierFoNumber']}");
+                            });
+                            \Log::info('Email berhasil dikirim ke supplier (production)', ['email' => $data['supplier']->email]);
+                        } catch (\Exception $emailError) {
+                            \Log::error('Error saat kirim email di production', [
+                                'supplier_email' => $data['supplier']->email,
+                                'error' => $emailError->getMessage(),
+                                'mail_config' => [
+                                    'driver' => config('mail.default'),
+                                    'host' => config('mail.mailers.smtp.host'),
+                                    'port' => config('mail.mailers.smtp.port'),
+                                    'encryption' => config('mail.mailers.smtp.encryption'),
+                                    'username' => config('mail.mailers.smtp.username')
+                                ]
+                            ]);
+                            
+                            // Simpan ke log atau database untuk retry nanti
+                            \DB::table('email_logs')->insert([
+                                'to_email' => $data['supplier']->email,
+                                'subject' => "Request Order Supplier - {$data['supplierFoNumber']}",
+                                'content' => $emailContent,
+                                'error_message' => $emailError->getMessage(),
+                                'created_at' => now(),
+                                'updated_at' => now()
+                            ]);
+                        }
+                    } else {
+                        // Di local/development, gunakan cara biasa
                     Mail::raw($emailContent, function($message) use ($data) {
                         $message->to($data['supplier']->email)
                                ->subject("Request Order Supplier - {$data['supplierFoNumber']}");
                     });
-                    \Log::info('Email berhasil dikirim ke supplier', ['email' => $data['supplier']->email]);
+                        \Log::info('Email berhasil dikirim ke supplier (development)', ['email' => $data['supplier']->email]);
+                    }
                 } catch (\Exception $e) {
                     \Log::error('Error saat kirim email', [
                         'supplier_email' => $data['supplier']->email,

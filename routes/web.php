@@ -74,6 +74,7 @@ use App\Http\Controllers\OfficerCheckController;
 use App\Http\Controllers\WarehouseOutletController;
 use App\Http\Controllers\ReservationController;
 use App\Http\Controllers\PaymentTypeController;
+use App\Http\Controllers\RetailWarehouseSaleController;
 
 
 Route::get('/', function () {
@@ -726,6 +727,7 @@ Route::middleware(['auth'])->group(function () {
 
 // Route API untuk fetch warehouse outlet (dropdown, dsb)
 Route::get('/api/warehouse-outlets', [\App\Http\Controllers\WarehouseOutletController::class, 'apiListByOutlet']);
+Route::get('/api/warehouse-outlets/by-outlet/{outletId}', [\App\Http\Controllers\WarehouseOutletController::class, 'getByOutletId']);
 
 Route::post('promos/api-item-prices', [App\Http\Controllers\PromoController::class, 'apiItemPrices'])->name('promos.apiItemPrices');
 
@@ -739,5 +741,16 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::put('/reservations/{reservation}', [ReservationController::class, 'update'])->name('reservations.update');
     Route::delete('/reservations/{reservation}', [ReservationController::class, 'destroy'])->name('reservations.destroy');
 });
+
+// Retail Warehouse Sales
+Route::get('/retail-warehouse-sale', [App\Http\Controllers\RetailWarehouseSaleController::class, 'index'])->name('retail-warehouse-sale.index');
+Route::get('/retail-warehouse-sale/create', [App\Http\Controllers\RetailWarehouseSaleController::class, 'create'])->name('retail-warehouse-sale.create');
+Route::post('/retail-warehouse-sale', [App\Http\Controllers\RetailWarehouseSaleController::class, 'store'])->name('retail-warehouse-sale.store');
+Route::get('/retail-warehouse-sale/{id}', [App\Http\Controllers\RetailWarehouseSaleController::class, 'show'])->name('retail-warehouse-sale.show');
+Route::delete('/retail-warehouse-sale/{id}', [App\Http\Controllers\RetailWarehouseSaleController::class, 'destroy'])->name('retail-warehouse-sale.destroy');
+Route::post('/retail-warehouse-sale/search-items', [App\Http\Controllers\RetailWarehouseSaleController::class, 'searchItems'])->name('retail-warehouse-sale.search-items');
+Route::post('/retail-warehouse-sale/search-customers', [App\Http\Controllers\RetailWarehouseSaleController::class, 'searchCustomers'])->name('retail-warehouse-sale.search-customers');
+Route::post('/retail-warehouse-sale/store-customer', [App\Http\Controllers\RetailWarehouseSaleController::class, 'storeCustomer'])->name('retail-warehouse-sale.store-customer');
+Route::get('/api/retail-warehouse-sale/item-price', [App\Http\Controllers\RetailWarehouseSaleController::class, 'getItemPrice']);
 
 require __DIR__.'/auth.php';

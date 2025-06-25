@@ -13,7 +13,7 @@
         </div>
         <div class="flex items-center gap-2">
           <label class="text-sm">Outlet</label>
-          <select v-model="selectedOutlet" class="border border-gray-300 rounded-lg px-2 py-2 focus:ring-blue-500 focus:border-blue-500">
+          <select v-model="selectedOutlet" :disabled="!outletSelectable" class="border border-gray-300 rounded-lg px-2 py-2 focus:ring-blue-500 focus:border-blue-500">
             <option value="">Semua Outlet</option>
             <option v-for="o in outlets" :key="o.id_outlet" :value="o.nama_outlet">{{ o.nama_outlet }}</option>
           </select>
@@ -66,13 +66,14 @@
 
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue';
-import { ref, computed } from 'vue';
+import { ref, computed, watch, onMounted } from 'vue';
 
 const props = defineProps({
   recaps: Array,
   categories: Array,
   outlets: Array,
-  warehouse_outlets: Array
+  warehouse_outlets: Array,
+  user_outlet_id: [String, Number],
 });
 
 const search = ref('');
@@ -80,6 +81,16 @@ const selectedCategory = ref('');
 const selectedOutlet = ref('');
 const selectedWarehouseOutlet = ref('');
 const loadingReload = ref(false)
+const outletSelectable = computed(() => String(props.user_outlet_id) === '1');
+
+onMounted(() => {
+  if (!outletSelectable.value && props.user_outlet_id) {
+    const outletObj = props.outlets.find(o => String(o.id_outlet) === String(props.user_outlet_id));
+    if (outletObj) {
+      selectedOutlet.value = outletObj.nama_outlet;
+    }
+  }
+});
 
 const filteredRecaps = computed(() => {
   let data = props.recaps;

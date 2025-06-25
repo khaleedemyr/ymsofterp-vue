@@ -6,7 +6,7 @@
         <input v-model="search" type="text" placeholder="Cari barang, outlet, kategori..." class="px-4 py-2 border border-gray-300 rounded-lg w-full md:w-64 focus:ring-blue-500 focus:border-blue-500" />
         <div class="flex items-center gap-2">
           <label class="text-sm">Outlet</label>
-          <select v-model="selectedOutlet" class="border border-gray-300 rounded-lg px-2 py-2 focus:ring-blue-500 focus:border-blue-500">
+          <select v-model="selectedOutlet" :disabled="!outletSelectable" class="border border-gray-300 rounded-lg px-2 py-2 focus:ring-blue-500 focus:border-blue-500">
             <option value="">Semua Outlet</option>
             <option v-for="o in outlets" :key="o.id_outlet" :value="o.nama_outlet">{{ o.nama_outlet }}</option>
           </select>
@@ -15,7 +15,7 @@
           <label class="text-sm">Warehouse Outlet</label>
           <select v-model="selectedWarehouseOutlet" class="border border-gray-300 rounded-lg px-2 py-2 focus:ring-blue-500 focus:border-blue-500">
             <option value="">Semua Warehouse</option>
-            <option v-for="w in warehouse_outlets" :key="w.id" :value="w.id">{{ w.name }}</option>
+            <option v-for="w in props.warehouse_outlets" :key="w.id" :value="w.id">{{ w.name }}</option>
           </select>
         </div>
         <div class="flex items-center gap-2">
@@ -106,12 +106,14 @@
 
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue';
-import { ref, computed, watch } from 'vue';
+import { ref, computed, watch, onMounted } from 'vue';
 const props = defineProps({
   stocks: Array,
   outlets: Array,
   categories: Array,
-  items: Array
+  items: Array,
+  warehouse_outlets: Array,
+  user_outlet_id: [String, Number],
 });
 const search = ref('');
 const perPage = ref(25);
@@ -121,6 +123,7 @@ const selectedCategory = ref('');
 const selectedItem = ref('');
 const selectedWarehouseOutlet = ref('');
 const loadingReload = ref(false)
+const outletSelectable = computed(() => String(props.user_outlet_id) === '1');
 
 const filteredStocks = computed(() => {
   let data = props.stocks;
@@ -173,4 +176,15 @@ function reloadData() {
   loadingReload.value = true
   window.location.reload()
 }
+
+// Set default outlet jika bukan superadmin
+onMounted(() => {
+  if (!outletSelectable.value && props.user_outlet_id) {
+    // Cari outlet user berdasarkan id
+    const outletObj = props.outlets.find(o => String(o.id) === String(props.user_outlet_id));
+    if (outletObj) {
+      selectedOutlet.value = outletObj.nama_outlet;
+    }
+  }
+});
 </script> 

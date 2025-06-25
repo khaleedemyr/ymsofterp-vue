@@ -3,7 +3,7 @@
     <div class="max-w-7xl mx-auto py-8 px-2">
       <div class="flex justify-between items-center mb-6">
         <h1 class="text-2xl font-bold text-gray-800 flex items-center gap-2">
-          <i class="fa-solid fa-recycle text-green-500"></i> Internal Use & Waste Outlet
+          <i class="fa-solid fa-recycle text-green-500"></i> Category Cost Outlet
         </h1>
         <div class="flex gap-2">
           <button @click="goReportUniversal" class="bg-blue-500 text-white px-4 py-2 rounded-xl shadow-lg hover:bg-blue-600 transition-all font-semibold">

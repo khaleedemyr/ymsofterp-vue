@@ -6,8 +6,8 @@
         <div><b>Nama Promo:</b> {{ promo.name }}</div>
         <div><b>Kode Promo:</b> {{ promo.code || '-' }}</div>
         <div><b>Tipe Promo:</b> {{ getPromoTypeText(promo.type) }}</div>
-        <div><b>Value:</b> {{ promo.type === 'percent' || promo.type === 'bill_discount' ? promo.value + '%' : formatCurrency(promo.value) }}</div>
-        <div v-if="(promo.type === 'percent' || promo.type === 'bill_discount') && promo.max_discount"><b>Maximum Diskon:</b> {{ formatCurrency(promo.max_discount) }}</div>
+        <div><b>Value:</b> {{ promo.type === 'percent' || promo.type === 'bill_discount_percent' ? promo.value + '%' : formatCurrency(promo.value) }}</div>
+        <div v-if="(promo.type === 'percent' || promo.type === 'bill_discount_percent') && promo.max_discount"><b>Maximum Diskon:</b> {{ formatCurrency(promo.max_discount) }}</div>
         <div><b>Berlaku Kelipatan:</b> {{ promo.is_multiple === 'Yes' ? 'Ya' : 'Tidak' }}</div>
         <div><b>Minimum Transaksi:</b> {{ promo.min_transaction || '-' }}</div>
         <div><b>Maximum Transaksi:</b> {{ promo.max_transaction || '-' }}</div>
@@ -16,13 +16,13 @@
         <div><b>Status:</b> <span :class="promo.status === 'active' ? 'text-green-700' : 'text-gray-500'">{{ promo.status === 'active' ? 'Aktif' : 'Nonaktif' }}</span></div>
         <div><b>Perlu Member?:</b> {{ promo.need_member === 'Yes' ? 'Ya' : 'Tidak' }}</div>
         <div><b>Deskripsi:</b> {{ promo.description || '-' }}</div>
-        <div><b>Kategori Promo:</b>
+        <div v-if="promo.type !== 'bill_discount_percent' && promo.type !== 'bill_discount_nominal'"><b>Kategori Promo:</b>
           <span v-if="promo.categories && promo.categories.length">
             <span v-for="c in promo.categories" :key="c.id" class="inline-block bg-pink-100 text-pink-800 px-2 py-1 rounded-full text-xs font-semibold mr-1">{{ c.name }}</span>
           </span>
           <span v-else>-</span>
         </div>
-        <div><b>Item Promo:</b>
+        <div v-if="promo.type !== 'bill_discount_percent' && promo.type !== 'bill_discount_nominal'"><b>Item Promo:</b>
           <span v-if="promo.items && promo.items.length">
             <span v-for="i in promo.items" :key="i.id" class="inline-block bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-xs font-semibold mr-1">{{ i.name }}</span>
           </span>
@@ -100,7 +100,8 @@ function getPromoTypeText(type) {
     'bundle': 'Bundling',
     'bogo': 'Buy 1 Get 1',
     'harga_coret': 'Harga Coret',
-    'bill_discount': 'Diskon Bill'
+    'bill_discount_percent': 'Diskon Bill Persen',
+    'bill_discount_nominal': 'Diskon Bill Nominal'
   };
   return types[type] || type;
 }

@@ -15,14 +15,16 @@
             <option value="bundle">Bundling</option>
             <option value="bogo">Buy 1 Get 1</option>
             <option value="harga_coret">Harga Coret</option>
-            <option value="bill_discount">Diskon Bill</option>
+            <option value="bill_discount_percent">Diskon Bill Persen</option>
+            <option value="bill_discount_nominal">Diskon Bill Nominal</option>
           </select>
         </div>
-        <div v-if="form.type === 'percent' || form.type === 'nominal' || form.type === 'bill_discount'">
+        <div v-if="form.type === 'percent' || form.type === 'nominal' || form.type === 'bill_discount_percent' || form.type === 'bill_discount_nominal'">
           <label class="block text-sm font-medium text-gray-700">Value</label>
           <input v-model="form.value" type="number" min="0" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:ring-pink-500 focus:border-pink-500" required />
+          <p v-if="form.type === 'bill_discount_percent' || form.type === 'bill_discount_nominal'" class="mt-1 text-sm text-blue-600">Diskon bill berlaku untuk seluruh transaksi</p>
         </div>
-        <div v-if="form.type === 'percent' || form.type === 'bill_discount'">
+        <div v-if="form.type === 'percent' || form.type === 'bill_discount_percent'">
           <label class="block text-sm font-medium text-gray-700">Maximum Diskon</label>
           <input v-model="form.max_discount" type="number" min="0" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:ring-pink-500 focus:border-pink-500" />
           <p class="mt-1 text-sm text-gray-500">Kosongkan jika tidak ada batasan maksimum diskon</p>
@@ -69,7 +71,7 @@
           <multiselect v-if="outletType === 'outlet'" v-model="form.outlets" :options="outlets" :multiple="true" label="name" track-by="id" placeholder="Pilih Outlet" />
         </div>
         <!-- Radio item/kategori di bawahnya -->
-        <div class="flex gap-6 items-center mt-4">
+        <div v-if="form.type !== 'bill_discount_percent' && form.type !== 'bill_discount_nominal'" class="flex gap-6 items-center mt-4">
           <label class="inline-flex items-center">
             <input type="radio" value="kategori" v-model="byType" class="form-radio text-pink-600" />
             <span class="ml-2">By Kategori</span>
@@ -80,11 +82,11 @@
           </label>
         </div>
         <!-- Kategori atau Item -->
-        <div v-if="byType === 'kategori'">
+        <div v-if="byType === 'kategori' && form.type !== 'bill_discount_percent' && form.type !== 'bill_discount_nominal'">
           <label class="block text-sm font-medium text-gray-700">Kategori Promo</label>
           <multiselect v-model="form.categories" :options="categories" :multiple="true" label="name" track-by="id" placeholder="Pilih Kategori" />
         </div>
-        <div v-if="byType === 'item'">
+        <div v-if="byType === 'item' && form.type !== 'bill_discount_percent' && form.type !== 'bill_discount_nominal'">
           <label class="block text-sm font-medium text-gray-700">Item Promo</label>
           <multiselect v-model="form.items" :options="items" :multiple="true" label="name" track-by="id" placeholder="Pilih Item" />
         </div>
@@ -301,10 +303,10 @@ const submit = async () => {
   // Memproses data untuk dikirim
   const data = {
     ...form.value,
-    by_type: byType.value,
+    by_type: (form.value.type === 'bill_discount_percent' || form.value.type === 'bill_discount_nominal') ? null : byType.value,
     outlet_type: outletType.value,
-    categories: form.value.categories.map(c => c.id),
-    items: form.value.items.map(i => i.id),
+    categories: (form.value.type === 'bill_discount_percent' || form.value.type === 'bill_discount_nominal') ? [] : form.value.categories.map(c => c.id),
+    items: (form.value.type === 'bill_discount_percent' || form.value.type === 'bill_discount_nominal') ? [] : form.value.items.map(i => i.id),
     outlets: form.value.outlets.map(o => o.id),
     regions: form.value.regions.map(r => r.id),
     buy_items: form.value.buy_items.map(i => i.id),

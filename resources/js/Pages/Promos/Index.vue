@@ -28,7 +28,8 @@
           <option value="bundle">Bundling</option>
           <option value="bogo">Bogo</option>
           <option value="harga_coret">Harga Coret</option>
-          <option value="bill_discount">Diskon Bill</option>
+          <option value="bill_discount_percent">Diskon Bill Persen</option>
+          <option value="bill_discount_nominal">Diskon Bill Nominal</option>
         </select>
         <button type="submit" class="bg-pink-500 text-white px-4 py-2 rounded font-semibold hover:bg-pink-600 transition">Cari</button>
         <button v-if="search || type" type="button" @click="resetFilter" class="ml-2 bg-gray-200 text-gray-700 px-3 py-2 rounded hover:bg-gray-300 transition">Reset</button>
@@ -55,7 +56,7 @@
               <td class="px-6 py-3">{{ idx + 1 }}</td>
               <td class="px-6 py-3">{{ promo.name }}</td>
               <td class="px-6 py-3">{{ getPromoTypeText(promo.type) }}</td>
-              <td class="px-6 py-3">{{ promo.type === 'percent' || promo.type === 'bill_discount' ? promo.value + '%' : formatCurrency(promo.value) }}</td>
+              <td class="px-6 py-3">{{ promo.type === 'percent' || promo.type === 'bill_discount_percent' ? promo.value + '%' : formatCurrency(promo.value) }}</td>
               <td class="px-6 py-3">{{ formatDate(promo.start_date) }}</td>
               <td class="px-6 py-3">{{ formatDate(promo.end_date) }}</td>
               <td class="px-6 py-3">
@@ -144,7 +145,8 @@ function getPromoTypeText(type) {
     'bundle': 'Bundling',
     'bogo': 'Buy 1 Get 1',
     'harga_coret': 'Harga Coret',
-    'bill_discount': 'Diskon Bill'
+    'bill_discount_percent': 'Diskon Bill Persen',
+    'bill_discount_nominal': 'Diskon Bill Nominal'
   };
   return types[type] || type;
 }

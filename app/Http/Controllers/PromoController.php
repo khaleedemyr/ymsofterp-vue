@@ -85,8 +85,8 @@ class PromoController extends Controller
             $validated = $request->validate([
                 'name' => 'required|string|max:255',
                 'code' => 'nullable|string|max:50|unique:promos,code',
-                'type' => 'required|in:percent,nominal,bundle,bogo,harga_coret,bill_discount',
-                'value' => 'required_if:type,percent,nominal,bundle,bill_discount|nullable|numeric|min:0',
+                'type' => 'required|in:percent,nominal,bundle,bogo,harga_coret,bill_discount_percent,bill_discount_nominal',
+                'value' => 'required_if:type,percent,nominal,bundle,bill_discount_percent,bill_discount_nominal|nullable|numeric|min:0',
                 'max_discount' => 'nullable|numeric|min:0',
                 'is_multiple' => 'required|in:Yes,No',
                 'min_transaction' => 'nullable|numeric|min:0',
@@ -99,8 +99,9 @@ class PromoController extends Controller
                 'terms' => 'nullable|string',
                 'need_member' => 'required|in:Yes,No',
                 'banner' => 'nullable|image|mimes:jpeg,png,jpg|max:2048',
-                'categories' => 'required_if:by_type,kategori|array',
-                'items' => 'required_if:by_type,item|array',
+                'by_type' => 'required_if:type,percent,nominal,bundle,bogo,harga_coret|nullable|in:kategori,item',
+                'categories' => 'required_if:by_type,kategori|required_if:type,percent,nominal,bundle,bogo,harga_coret|array',
+                'items' => 'required_if:by_type,item|required_if:type,percent,nominal,bundle,bogo,harga_coret|array',
                 'outlets' => 'required_if:outlet_type,outlet|array',
                 'regions' => 'required_if:outlet_type,region|array',
                 'buy_items' => 'required_if:type,bogo|array',
@@ -147,10 +148,12 @@ class PromoController extends Controller
             }
 
             // Handle other relationships
-            if ($request->by_type === 'kategori') {
-                $promo->categories()->attach($request->categories);
-            } else {
-                $promo->items()->attach($request->items);
+            if ($request->type !== 'bill_discount_percent' && $request->type !== 'bill_discount_nominal') {
+                if ($request->by_type === 'kategori') {
+                    $promo->categories()->attach($request->categories);
+                } else if ($request->by_type === 'item') {
+                    $promo->items()->attach($request->items);
+                }
             }
 
             if ($request->outlet_type === 'region') {
@@ -235,11 +238,8 @@ class PromoController extends Controller
     
         return Inertia::render('Promos/Form', [
             'promo' => [
-                // ... field lain ...
-                // pastikan mapping ke array of objects
                 'regions' => $promo->regions->map(fn($r) => ['id' => $r->id, 'name' => $r->name])->values(),
                 'outlets' => $promo->outlets->map(fn($o) => ['id' => $o->id, 'name' => $o->name])->values(),
-                // field lain bisa pakai $promo->toArray() atau manual
             ] + $promo->toArray(),
             'categories' => $categories,
             'items' => $items,
@@ -248,14 +248,15 @@ class PromoController extends Controller
             'isEdit' => true
         ]);
     }
+
     public function update(Request $request, Promo $promo)
     {
         try {
             $validated = $request->validate([
                 'name' => 'required|string|max:255',
                 'code' => 'required|string|max:50|unique:promos,code,' . $promo->id,
-                'type' => 'required|in:percent,nominal,bundle,bogo,harga_coret,bill_discount',
-                'value' => 'required_if:type,percent,nominal,bundle,bill_discount|nullable|numeric|min:0',
+                'type' => 'required|in:percent,nominal,bundle,bogo,harga_coret,bill_discount_percent,bill_discount_nominal',
+                'value' => 'required_if:type,percent,nominal,bundle,bill_discount_percent,bill_discount_nominal|nullable|numeric|min:0',
                 'max_discount' => 'nullable|numeric|min:0',
                 'is_multiple' => 'required|in:Yes,No',
                 'min_transaction' => 'nullable|numeric|min:0',
@@ -268,8 +269,9 @@ class PromoController extends Controller
                 'terms' => 'nullable|string',
                 'need_member' => 'required|in:Yes,No',
                 'banner' => 'nullable|image|mimes:jpeg,png,jpg|max:2048',
-                'categories' => 'required_if:by_type,kategori|array',
-                'items' => 'required_if:by_type,item|array',
+                'by_type' => 'required_if:type,percent,nominal,bundle,bogo,harga_coret|nullable|in:kategori,item',
+                'categories' => 'required_if:by_type,kategori|required_if:type,percent,nominal,bundle,bogo,harga_coret|array',
+                'items' => 'required_if:by_type,item|required_if:type,percent,nominal,bundle,bogo,harga_coret|array',
                 'outlets' => 'required_if:outlet_type,outlet|array',
                 'regions' => 'required_if:outlet_type,region|array',
                 'buy_items' => 'required_if:type,bogo|array',
@@ -295,12 +297,14 @@ class PromoController extends Controller
             $promo->update($validated);
 
             // Sync relationships
-            if ($request->by_type === 'kategori') {
-                $promo->categories()->sync($request->categories);
-                $promo->items()->sync([]); 
-            } else {
-                $promo->items()->sync($request->items);
-                $promo->categories()->sync([]);
+            if ($request->type !== 'bill_discount_percent' && $request->type !== 'bill_discount_nominal') {
+                if ($request->by_type === 'kategori') {
+                    $promo->categories()->sync($request->categories);
+                    $promo->items()->sync([]); 
+                } else if ($request->by_type === 'item') {
+                    $promo->items()->sync($request->items);
+                    $promo->categories()->sync([]);
+                }
             }
 
             if ($request->outlet_type === 'region') {

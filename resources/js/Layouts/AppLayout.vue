@@ -19,7 +19,7 @@ const menuGroups = [
         icon: 'fa-solid fa-bars',
         menus: [
             { name: () => t('sidebar.dashboard'), icon: 'fa-solid fa-home', route: '/home', code: 'dashboard' },
-            { name: () => 'Dashboard Outlet', icon: 'fa-solid fa-map-location-dot', route: '/dashboard-outlet', code: 'dashboard_outlet' },
+            //{ name: () => 'Dashboard Outlet', icon: 'fa-solid fa-map-location-dot', route: '/dashboard-outlet', code: 'dashboard_outlet' },
         ],
     },
     {
@@ -77,7 +77,7 @@ const menuGroups = [
             { name: () => 'Kartu Stok Outlet', icon: 'fa-solid fa-file-lines', route: '/outlet-inventory/stock-card', code: 'outlet_stock_card' },
             { name: () => 'Laporan Nilai Persediaan Outlet', icon: 'fa-solid fa-coins', route: '/outlet-inventory/inventory-value-report', code: 'outlet_inventory_value_report' },
             { name: () => 'Laporan Rekap Persediaan per Kategori Outlet', icon: 'fa-solid fa-chart-pie', route: '/outlet-inventory/category-recap-report', code: 'outlet_category_recap_report' },
-            { name: () => 'Internal Use & Waste Outlet', icon: 'fa-solid fa-trash', route: '/outlet-internal-use-waste', code: 'outlet_internal_use_waste' },
+            { name: () => 'Category Cost Outlet', icon: 'fa-solid fa-trash', route: '/outlet-internal-use-waste', code: 'outlet_internal_use_waste' },
             { name: () => 'Retail Food', icon: 'fa-solid fa-store', route: '/retail-food', code: 'view-retail-food' },
             { name: () => 'Retail Non Food', icon: 'fa-solid fa-shopping-bag', route: '/retail-non-food', code: 'view-retail-non-food' },
         ],
@@ -120,6 +120,7 @@ const menuGroups = [
             { name: () => 'Stock Adjustment', icon: 'fa-solid fa-boxes-stacked', route: '/food-inventory-adjustment', code: 'stock_adjustment' },
             { name: () => 'Packing List', icon: 'fa-solid fa-box', route: '/packing-list', code: 'packing_list' },
             { name: () => 'Delivery Order', icon: 'fa-solid fa-truck-arrow-right', route: '/delivery-order', code: 'delivery_order' },
+            { name: () => 'Penjualan Warehouse Retail', icon: 'fa-solid fa-store', route: '/retail-warehouse-sale', code: 'retail_warehouse_sale' },
             { name: () => 'Saldo Awal Stok', icon: 'fa-solid fa-money-bill-wave', route: '/food-stock-balances', code: 'food_stock_balances' },
             { name: () => 'Laporan Stok Akhir', icon: 'fa-solid fa-clipboard-list', route: '/inventory/stock-position', code: 'inventory_stock_position' },
             { name: () => 'Laporan Kartu Stok', icon: 'fa-solid fa-file-lines', route: '/inventory/stock-card', code: 'inventory_stock_card' },

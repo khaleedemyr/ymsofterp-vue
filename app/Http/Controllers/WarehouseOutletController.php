@@ -109,4 +109,15 @@ class WarehouseOutletController extends Controller
         $data = $query->orderBy('name')->get(['id', 'code', 'name', 'outlet_id', 'location', 'status']);
         return response()->json($data);
     }
+
+    // API: Get warehouse outlets by outlet ID from URL path
+    public function getByOutletId($outletId)
+    {
+        $warehouseOutlets = WarehouseOutlet::where('outlet_id', $outletId)
+            ->where('status', 'active')
+            ->orderBy('name')
+            ->get(['id', 'name', 'outlet_id']);
+        
+        return response()->json($warehouseOutlets);
+    }
 } 

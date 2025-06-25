@@ -44,7 +44,21 @@ class OutletInventoryReportController extends Controller
             ->orderBy('i.name')
             ->get();
         $outlets = DB::table('tbl_data_outlet')->select('id_outlet as id', 'nama_outlet as name')->orderBy('nama_outlet')->get();
-        $warehouse_outlets = DB::table('warehouse_outlets')->select('id', 'name')->orderBy('name')->get();
+        $user = auth()->user();
+        if ($user->id_outlet == 1) {
+            $warehouse_outlets = DB::table('warehouse_outlets')
+                ->where('status', 'active')
+                ->select('id', 'name', 'outlet_id')
+                ->orderBy('name')
+                ->get();
+        } else {
+            $warehouse_outlets = DB::table('warehouse_outlets')
+                ->where('outlet_id', $user->id_outlet)
+                ->where('status', 'active')
+                ->select('id', 'name', 'outlet_id')
+                ->orderBy('name')
+                ->get();
+        }
 
         // Tampilkan qty langsung dari database
         $data = $data->map(function ($row) {
@@ -54,7 +68,6 @@ class OutletInventoryReportController extends Controller
             return $row;
         });
 
-        $user = auth()->user();
         return inertia('OutletInventory/StockPosition', [
             'stocks' => $data,
             'outlets' => $outlets,
@@ -136,7 +149,21 @@ class OutletInventoryReportController extends Controller
             }
         }
         $outlets = DB::table('tbl_data_outlet')->select('id_outlet as id', 'nama_outlet as name')->orderBy('nama_outlet')->get();
-        $warehouse_outlets = DB::table('warehouse_outlets')->select('id', 'name')->orderBy('name')->get();
+        $user = auth()->user();
+        if ($user->id_outlet == 1) {
+            $warehouse_outlets = DB::table('warehouse_outlets')
+                ->where('status', 'active')
+                ->select('id', 'name', 'outlet_id')
+                ->orderBy('name')
+                ->get();
+        } else {
+            $warehouse_outlets = DB::table('warehouse_outlets')
+                ->where('outlet_id', $user->id_outlet)
+                ->where('status', 'active')
+                ->select('id', 'name', 'outlet_id')
+                ->orderBy('name')
+                ->get();
+        }
         $items = DB::table('items')->select('id', 'name')->orderBy('name')->get();
         return inertia('OutletInventory/StockCard', [
             'cards' => $data,
@@ -201,7 +228,21 @@ class OutletInventoryReportController extends Controller
             ->get();
         $outlets = DB::table('tbl_data_outlet')->select('id_outlet', 'nama_outlet')->orderBy('nama_outlet')->get();
         $categories = DB::table('categories')->select('id', 'name')->orderBy('name')->get();
-        $warehouse_outlets = DB::table('warehouse_outlets')->select('id', 'name')->orderBy('name')->get();
+        $user = auth()->user();
+        if ($user->id_outlet == 1) {
+            $warehouse_outlets = DB::table('warehouse_outlets')
+                ->where('status', 'active')
+                ->select('id', 'name', 'outlet_id')
+                ->orderBy('name')
+                ->get();
+        } else {
+            $warehouse_outlets = DB::table('warehouse_outlets')
+                ->where('outlet_id', $user->id_outlet)
+                ->where('status', 'active')
+                ->select('id', 'name', 'outlet_id')
+                ->orderBy('name')
+                ->get();
+        }
         $items = DB::table('items')->select('id', 'name', 'small_unit_id', 'medium_unit_id', 'large_unit_id')->orderBy('name')->get();
         return inertia('OutletInventory/InventoryValueReport', [
             'stocks' => $data,
@@ -234,13 +275,27 @@ class OutletInventoryReportController extends Controller
                 'wo.name as warehouse_outlet_name',
                 's.warehouse_outlet_id'
             )
-            ->groupBy('c.name', 'o.nama_outlet')
+            ->groupBy('c.name', 'o.nama_outlet', 'wo.name', 's.warehouse_outlet_id')
             ->orderBy('c.name')
             ->orderBy('o.nama_outlet')
             ->get();
         $categories = DB::table('categories')->select('id', 'name')->orderBy('name')->get();
         $outlets = DB::table('tbl_data_outlet')->select('id_outlet', 'nama_outlet')->orderBy('nama_outlet')->get();
-        $warehouse_outlets = DB::table('warehouse_outlets')->select('id', 'name')->orderBy('name')->get();
+        $user = auth()->user();
+        if ($user->id_outlet == 1) {
+            $warehouse_outlets = DB::table('warehouse_outlets')
+                ->where('status', 'active')
+                ->select('id', 'name', 'outlet_id')
+                ->orderBy('name')
+                ->get();
+        } else {
+            $warehouse_outlets = DB::table('warehouse_outlets')
+                ->where('outlet_id', $user->id_outlet)
+                ->where('status', 'active')
+                ->select('id', 'name', 'outlet_id')
+                ->orderBy('name')
+                ->get();
+        }
         return inertia('OutletInventory/CategoryRecapReport', [
             'recaps' => $data,
             'categories' => $categories,

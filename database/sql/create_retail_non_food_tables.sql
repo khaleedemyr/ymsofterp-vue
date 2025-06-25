@@ -4,15 +4,15 @@
 
 -- Create retail_non_food table
 -- This table stores the main retail non food transactions
-CREATE TABLE `retail_non_food` (
-  `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+CREATE TABLE IF NOT EXISTS `retail_non_food` (
+  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
   `retail_number` varchar(255) NOT NULL COMMENT 'Auto generated number with prefix RNF',
-  `outlet_id` bigint(20) UNSIGNED NOT NULL COMMENT 'Reference to outlet',
-  `warehouse_outlet_id` bigint(20) UNSIGNED NULL COMMENT 'Reference to warehouse outlet',
-  `created_by` bigint(20) UNSIGNED NOT NULL COMMENT 'User who created the transaction',
+  `outlet_id` bigint(20) unsigned NOT NULL COMMENT 'Reference to outlet',
+  `warehouse_outlet_id` bigint(20) unsigned DEFAULT NULL COMMENT 'Reference to warehouse outlet',
+  `created_by` bigint(20) unsigned NOT NULL COMMENT 'User who created the transaction',
   `transaction_date` date NOT NULL COMMENT 'Date of transaction',
   `total_amount` decimal(15,2) NOT NULL DEFAULT 0.00 COMMENT 'Total amount of transaction',
-  `notes` text NULL COMMENT 'Additional notes',
+  `notes` text DEFAULT NULL COMMENT 'Additional notes',
   `status` enum('pending','approved','rejected') NOT NULL DEFAULT 'approved' COMMENT 'Transaction status',
   `created_at` timestamp NULL DEFAULT NULL,
   `updated_at` timestamp NULL DEFAULT NULL,
@@ -31,9 +31,9 @@ CREATE TABLE `retail_non_food` (
 
 -- Create retail_non_food_items table
 -- This table stores the items for each retail non food transaction
-CREATE TABLE `retail_non_food_items` (
-  `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT,
-  `retail_non_food_id` bigint(20) UNSIGNED NOT NULL COMMENT 'Reference to retail_non_food table',
+CREATE TABLE IF NOT EXISTS `retail_non_food_items` (
+  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `retail_non_food_id` bigint(20) unsigned NOT NULL COMMENT 'Reference to retail_non_food table',
   `item_name` varchar(255) NOT NULL COMMENT 'Name of the item (manual input)',
   `qty` decimal(10,2) NOT NULL COMMENT 'Quantity of the item',
   `unit` varchar(255) NOT NULL COMMENT 'Unit of measurement (manual input)',

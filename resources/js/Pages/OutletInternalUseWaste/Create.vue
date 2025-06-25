@@ -3,7 +3,7 @@
     <div class="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 md:px-8">
       <div class="w-full max-w-2xl bg-white rounded-2xl shadow-2xl p-8">
         <h1 class="text-2xl font-bold mb-8 flex items-center gap-2 text-green-700">
-          <i class="fa-solid fa-recycle text-green-500"></i> Input Internal Use & Waste Outlet
+          <i class="fa-solid fa-recycle text-green-500"></i> Input Category Cost Outlet
         </h1>
         <form @submit.prevent="submit" class="space-y-5">
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -33,7 +33,7 @@
               <label class="block text-xs font-bold text-gray-600 mb-1">Warehouse Outlet</label>
               <select v-model="form.warehouse_outlet_id" class="input input-bordered w-full" required>
                 <option value="">Pilih Warehouse Outlet</option>
-                <option v-for="wo in props.warehouse_outlets" :key="wo.id" :value="wo.id">{{ wo.name }}</option>
+                <option v-for="wo in filteredWarehouseOutlets" :key="wo.id" :value="wo.id">{{ wo.name }}</option>
               </select>
             </div>
           </div>
@@ -152,6 +152,9 @@ const props = defineProps({
 const page = usePage()
 const userOutletId = computed(() => page.props.auth?.user?.id_outlet || '')
 
+// Add filtered warehouse outlets computed property
+const filteredWarehouseOutlets = ref(props.warehouse_outlets || [])
+
 function newItem() {
   return {
     item_id: '',
@@ -178,6 +181,29 @@ const form = ref({
 
 const outletDisabled = computed(() => userOutletId.value != 1)
 const loading = ref(false)
+
+// Add watch function to monitor outlet changes
+watch(() => form.value.outlet_id, async (newOutletId) => {
+  // Reset warehouse outlet selection when outlet changes
+  form.value.warehouse_outlet_id = ''
+  
+  if (newOutletId && userOutletId.value == 1) {
+    // For superuser, fetch warehouse outlets for selected outlet
+    try {
+      const response = await axios.get(`/api/warehouse-outlets/by-outlet/${newOutletId}`)
+      filteredWarehouseOutlets.value = response.data
+    } catch (error) {
+      console.error('Error fetching warehouse outlets:', error)
+      filteredWarehouseOutlets.value = []
+    }
+  } else if (newOutletId && userOutletId.value != 1) {
+    // For regular user, filter from existing warehouse outlets
+    filteredWarehouseOutlets.value = props.warehouse_outlets.filter(wo => wo.outlet_id == newOutletId)
+  } else {
+    // No outlet selected, show empty
+    filteredWarehouseOutlets.value = []
+  }
+}, { immediate: true })
 
 function addItem() {
   form.value.items.push(newItem())

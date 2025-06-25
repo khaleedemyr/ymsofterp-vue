@@ -6,7 +6,7 @@
           <i class="fa-solid fa-shopping-bag text-green-500 text-3xl"></i> Input Retail Non Food
         </h1>
         <form @submit.prevent="submit" class="space-y-7">
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
               <label class="block text-xs font-bold text-gray-600 mb-2">Tanggal</label>
               <input type="date" v-model="form.transaction_date" class="input input-bordered w-full shadow-inner rounded-xl focus:ring-2 focus:ring-green-300 transition-all duration-200" required />
@@ -14,131 +14,89 @@
             <div>
               <label class="block text-xs font-bold text-gray-600 mb-2">Outlet</label>
               <select v-model="form.outlet_id" :disabled="outletDisabled" class="input input-bordered w-full shadow-inner rounded-xl focus:ring-2 focus:ring-green-300 transition-all duration-200" required>
-                <option value="">Pilih Outlet</option>
+                <option v-if="userOutletId == 1" value="">Pilih Outlet</option>
                 <option v-for="o in props.outlets" :key="o.id_outlet" :value="o.id_outlet">{{ o.nama_outlet }}</option>
               </select>
             </div>
-            <div>
-              <label class="block text-xs font-bold text-gray-600 mb-2">Warehouse Outlet</label>
-              <select v-model="form.warehouse_outlet_id" class="input input-bordered w-full shadow-inner rounded-xl focus:ring-2 focus:ring-green-300 transition-all duration-200">
-                <option value="">Pilih Warehouse</option>
-                <option v-for="wo in props.warehouse_outlets" :key="wo.id" :value="wo.id">{{ wo.name }}</option>
-              </select>
-            </div>
           </div>
 
-          <!-- Items Section -->
-          <div class="space-y-4">
-            <div class="flex justify-between items-center">
-              <h3 class="text-lg font-semibold text-gray-800">Items</h3>
-              <button type="button" @click="addItem" class="bg-green-500 text-white px-3 py-1 rounded-lg text-sm hover:bg-green-600 transition-colors">
-                <i class="fa-solid fa-plus mr-1"></i> Tambah Item
+          <div>
+            <label class="block text-xs font-bold text-gray-600 mb-1">Items</label>
+            <div class="overflow-x-auto">
+              <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                  <tr>
+                    <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Item</th>
+                    <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Qty</th>
+                    <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Unit</th>
+                    <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Harga</th>
+                    <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">Subtotal</th>
+                    <th class="px-3 py-2"></th>
+                  </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-gray-200">
+                  <tr v-for="(item, idx) in form.items" :key="idx">
+                    <td class="px-3 py-2 min-w-[200px]">
+                      <input
+                        type="text"
+                        v-model="item.item_name"
+                        class="input input-bordered w-full"
+                        required
+                        placeholder="Masukkan nama item..."
+                      />
+                    </td>
+                    <td class="px-3 py-2 min-w-[100px]">
+                      <input type="number" min="0.01" step="0.01" v-model.number="item.qty" @input="calculateSubtotal(idx)" class="input input-bordered w-full" required />
+                    </td>
+                    <td class="px-3 py-2 min-w-[100px]">
+                      <input type="text" v-model="item.unit" class="input input-bordered w-full" required placeholder="pcs, kg, dll" />
+                    </td>
+                    <td class="px-3 py-2 min-w-[150px]">
+                      <input type="number" min="0" step="0.01" v-model.number="item.price" @input="calculateSubtotal(idx)" class="input input-bordered w-full" required />
+                    </td>
+                    <td class="px-3 py-2 min-w-[150px] text-right">
+                      {{ formatRupiah(item.subtotal) }}
+                    </td>
+                    <td class="px-3 py-2">
+                      <button type="button" @click="removeItem(idx)" class="text-red-500 hover:text-red-700" :disabled="form.items.length === 1">
+                        <i class="fa-solid fa-trash"></i>
+                      </button>
+                    </td>
+                  </tr>
+                </tbody>
+                <tfoot>
+                  <tr>
+                    <td colspan="4" class="px-3 py-2 text-right font-bold">Total:</td>
+                    <td class="px-3 py-2 text-right font-bold">{{ formatRupiah(totalAmount) }}</td>
+                    <td></td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+            <div class="mt-2">
+              <button type="button" @click="addItem" class="text-green-500 hover:text-green-700">
+                <i class="fa fa-plus mr-1"></i> Tambah Item
               </button>
             </div>
-
-            <div v-for="(item, idx) in form.items" :key="idx" class="bg-gray-50 p-4 rounded-xl space-y-4">
-              <div class="flex justify-between items-center">
-                <h4 class="font-medium text-gray-700">Item {{ idx + 1 }}</h4>
-                <button v-if="form.items.length > 1" type="button" @click="removeItem(idx)" class="text-red-500 hover:text-red-700">
-                  <i class="fa-solid fa-trash"></i>
-                </button>
-              </div>
-
-              <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <div>
-                  <label class="block text-xs font-bold text-gray-600 mb-2">Nama Item</label>
-                  <input 
-                    type="text" 
-                    v-model="item.item_name" 
-                    class="input input-bordered w-full shadow-inner rounded-xl focus:ring-2 focus:ring-green-300 transition-all duration-200" 
-                    placeholder="Masukkan nama item"
-                    required 
-                  />
-                </div>
-                <div>
-                  <label class="block text-xs font-bold text-gray-600 mb-2">Qty</label>
-                  <input 
-                    type="number" 
-                    v-model="item.qty" 
-                    @input="calculateSubtotal(idx)"
-                    step="0.01"
-                    min="0"
-                    class="input input-bordered w-full shadow-inner rounded-xl focus:ring-2 focus:ring-green-300 transition-all duration-200" 
-                    required 
-                  />
-                </div>
-                <div>
-                  <label class="block text-xs font-bold text-gray-600 mb-2">Unit</label>
-                  <input 
-                    type="text" 
-                    v-model="item.unit" 
-                    class="input input-bordered w-full shadow-inner rounded-xl focus:ring-2 focus:ring-green-300 transition-all duration-200" 
-                    placeholder="pcs, kg, dll"
-                    required 
-                  />
-                </div>
-                <div>
-                  <label class="block text-xs font-bold text-gray-600 mb-2">Harga</label>
-                  <input 
-                    type="number" 
-                    v-model="item.price" 
-                    @input="calculateSubtotal(idx)"
-                    step="0.01"
-                    min="0"
-                    class="input input-bordered w-full shadow-inner rounded-xl focus:ring-2 focus:ring-green-300 transition-all duration-200" 
-                    required 
-                  />
-                </div>
-              </div>
-
-              <div class="flex justify-end">
-                <div class="text-right">
-                  <div class="text-sm text-gray-600">Subtotal:</div>
-                  <div class="text-lg font-bold text-green-600">{{ formatRupiah(item.subtotal) }}</div>
-                </div>
-              </div>
-            </div>
           </div>
 
-          <!-- Notes -->
           <div>
-            <label class="block text-xs font-bold text-gray-600 mb-2">Catatan</label>
-            <textarea v-model="form.notes" rows="3" class="input input-bordered w-full shadow-inner rounded-xl focus:ring-2 focus:ring-green-300 transition-all duration-200" placeholder="Tambahkan catatan jika diperlukan"></textarea>
+            <label class="block text-xs font-bold text-gray-600 mb-1">Catatan</label>
+            <textarea v-model="form.notes" class="input input-bordered w-full" rows="3"></textarea>
           </div>
 
-          <!-- Total Section -->
-          <div class="bg-green-50 p-6 rounded-xl">
-            <div class="flex justify-between items-center mb-4">
-              <h3 class="text-lg font-semibold text-gray-800">Total Transaksi</h3>
-              <div class="text-right">
-                <div class="text-2xl font-bold text-green-600">{{ formatRupiah(totalAmount) }}</div>
-                <div class="text-sm text-gray-600">Total hari ini: {{ formatRupiah(dailyTotal) }}</div>
-              </div>
-            </div>
-
-            <!-- Alert jika melebihi limit -->
-            <div v-if="showLimitAlert" class="bg-yellow-100 border border-yellow-400 text-yellow-700 px-4 py-3 rounded-lg">
-              <div class="flex">
-                <i class="fa-solid fa-exclamation-triangle mr-2"></i>
-                <div>
-                  <strong>Peringatan:</strong> Total pembelian hari ini sudah melebihi Rp 500.000
-                </div>
-              </div>
-            </div>
+          <div v-if="showLimitAlert" class="mb-4 p-4 rounded-xl bg-yellow-100 border border-yellow-300 text-yellow-800 shadow flex items-center gap-2 animate-pulse">
+            <i class="fa fa-triangle-exclamation text-xl"></i>
+            <span>Total transaksi retail non food outlet hari ini sudah melebihi Rp 500.000!</span>
           </div>
 
-          <!-- Buttons -->
-          <div class="flex justify-end gap-4">
-            <button type="button" @click="goBack" class="px-6 py-3 border border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors">
+          <div class="flex justify-end gap-2">
+            <button type="button" @click="goBack" class="btn px-6 py-2 rounded-lg font-bold bg-gradient-to-r from-gray-200 to-gray-400 text-gray-700 shadow-md hover:from-gray-300 hover:to-gray-500 active:scale-95 transition-all">
               Batal
             </button>
-            <button type="submit" :disabled="loading" class="px-6 py-3 bg-gradient-to-r from-green-500 to-green-700 text-white rounded-xl hover:from-green-600 hover:to-green-800 transition-all font-semibold disabled:opacity-50">
-              <span v-if="loading">
-                <i class="fa-solid fa-spinner fa-spin mr-2"></i> Menyimpan...
-              </span>
-              <span v-else>
-                <i class="fa-solid fa-save mr-2"></i> Simpan Transaksi
-              </span>
+            <button type="submit" class="btn px-6 py-2 rounded-lg font-bold bg-gradient-to-r from-green-500 to-green-700 text-white shadow-lg hover:from-green-600 hover:to-green-800 active:scale-95 transition-all flex items-center gap-2" :disabled="loading">
+              <span v-if="loading"><i class="fa fa-spinner fa-spin"></i> Menyimpan...</span>
+              <span v-else><i class="fa fa-save"></i> Simpan</span>
             </button>
           </div>
         </form>
@@ -172,18 +130,17 @@ function newItem() {
   }
 }
 
-const form = ref({
-  transaction_date: new Date().toISOString().split('T')[0],
-  outlet_id: userOutletId.value == 1 ? '' : userOutletId.value,
-  warehouse_outlet_id: '',
-  notes: '',
-  items: [newItem()]
-})
-
 const outletDisabled = computed(() => userOutletId.value != 1)
 const loading = ref(false)
 const dailyTotal = ref(0)
 const showLimitAlert = computed(() => (dailyTotal.value + totalAmount.value) >= 500000)
+
+const form = ref({
+  transaction_date: new Date().toISOString().split('T')[0],
+  outlet_id: userOutletId.value == 1 ? '' : userOutletId.value,
+  notes: '',
+  items: [newItem()]
+})
 
 function addItem() {
   form.value.items.push(newItem())
@@ -253,7 +210,6 @@ async function submit() {
   try {
     const res = await axios.post('/retail-non-food', {
       outlet_id: form.value.outlet_id,
-      warehouse_outlet_id: form.value.warehouse_outlet_id,
       transaction_date: form.value.transaction_date,
       notes: form.value.notes,
       items: form.value.items.map(item => ({

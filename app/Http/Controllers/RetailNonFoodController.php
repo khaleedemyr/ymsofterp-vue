@@ -42,12 +42,10 @@ class RetailNonFoodController extends Controller
         // Query dengan join warehouse outlet
         $query = RetailNonFood::query()
             ->with(['outlet', 'creator', 'items'])
-            ->leftJoin('warehouse_outlets as wo', 'retail_non_food.warehouse_outlet_id', '=', 'wo.id')
-            ->addSelect('retail_non_food.*', 'wo.name as warehouse_outlet_name')
-            ->orderByDesc('retail_non_food.created_at');
+            ->orderByDesc('created_at');
             
         if ($userOutletId != 1) {
-            $query->where('retail_non_food.outlet_id', $userOutletId);
+            $query->where('outlet_id', $userOutletId);
         }
         
         $retailNonFoods = $query->paginate(10);
@@ -61,13 +59,19 @@ class RetailNonFoodController extends Controller
     public function create()
     {
         $user = auth()->user()->load('outlet');
-        $outlets = Outlet::where('status', 'A')->orderBy('nama_outlet')->get(['id_outlet', 'nama_outlet']);
-        $warehouse_outlets = DB::table('warehouse_outlets')->select('id', 'name')->orderBy('name')->get();
-        
+        $userOutletId = $user->id_outlet;
+        $outletExists = \DB::table('tbl_data_outlet')->where('id_outlet', $userOutletId)->exists();
+        if (!$outletExists && $userOutletId != 1) {
+            abort(403, 'Outlet tidak terdaftar');
+        }
+        if ($userOutletId == 1) {
+            $outlets = Outlet::where('status', 'A')->orderBy('nama_outlet')->get(['id_outlet', 'nama_outlet']);
+        } else {
+            $outlets = Outlet::where('id_outlet', $userOutletId)->where('status', 'A')->get(['id_outlet', 'nama_outlet']);
+        }
         return Inertia::render('RetailNonFood/Form', [
             'user' => $user,
-            'outlets' => $outlets,
-            'warehouse_outlets' => $warehouse_outlets,
+            'outlets' => $outlets
         ]);
     }
 
@@ -104,7 +108,6 @@ class RetailNonFoodController extends Controller
             $retailNonFood = RetailNonFood::create([
                 'retail_number' => $retailNumber,
                 'outlet_id' => $request->outlet_id,
-                'warehouse_outlet_id' => $request->warehouse_outlet_id,
                 'created_by' => auth()->id(),
                 'transaction_date' => $request->transaction_date,
                 'total_amount' => $totalAmount,
@@ -150,7 +153,7 @@ class RetailNonFoodController extends Controller
 
     public function show($id)
     {
-        $retailNonFood = RetailNonFood::with(['outlet', 'creator', 'items'])
+        $retailNonFood = RetailNonFood::with(['outlet', 'creator', 'items', 'warehouseOutlet'])
             ->findOrFail($id);
 
         return Inertia::render('RetailNonFood/Detail', [
