@@ -753,4 +753,6 @@ Route::post('/retail-warehouse-sale/search-customers', [App\Http\Controllers\Ret
 Route::post('/retail-warehouse-sale/store-customer', [App\Http\Controllers\RetailWarehouseSaleController::class, 'storeCustomer'])->name('retail-warehouse-sale.store-customer');
 Route::get('/api/retail-warehouse-sale/item-price', [App\Http\Controllers\RetailWarehouseSaleController::class, 'getItemPrice']);
 
+Route::get('/report-invoice-outlet', [App\Http\Controllers\OutletPaymentController::class, 'reportInvoiceOutlet'])->name('report-invoice-outlet');
+
 require __DIR__.'/auth.php';

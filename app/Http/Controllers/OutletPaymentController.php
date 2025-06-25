@@ -473,4 +473,94 @@ class OutletPaymentController extends Controller
             'filters' => $request->only(['gr_search', 'gr_from', 'gr_to'])
         ]);
     }
+
+    public function reportInvoiceOutlet(Request $request)
+    {
+        $user = auth()->user();
+        $query = DB::table('outlet_payments as pay')
+            ->join('tbl_data_outlet as o', 'pay.outlet_id', '=', 'o.id_outlet')
+            ->join('outlet_food_good_receives as gr', 'pay.gr_id', '=', 'gr.id')
+            ->leftJoin('users as u', 'pay.created_by', '=', 'u.id')
+            ->join('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
+            ->leftJoin('food_packing_lists as pl', 'do.packing_list_id', '=', 'pl.id')
+            ->leftJoin('warehouse_division as wd', 'pl.warehouse_division_id', '=', 'wd.id')
+            ->leftJoin('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
+            ->select(
+                'pay.id as payment_id',
+                'pay.payment_number as payment_number',
+                'pay.date as payment_date',
+                'pay.total_amount as payment_total',
+                'o.id_outlet',
+                'o.nama_outlet as outlet_name',
+                'gr.id as gr_id',
+                'gr.number as gr_number',
+                'gr.receive_date as gr_date',
+                'gr.notes as gr_notes',
+                'pay.status as payment_status',
+                'u.nama_lengkap as created_by_name',
+                'w.name as warehouse_name',
+                'wd.name as warehouse_division_name'
+            );
+        // Filter outlet
+        if ($user->id_outlet != 1) {
+            $query->where('pay.outlet_id', $user->id_outlet);
+        } elseif ($request->filled('outlet_id')) {
+            $query->where('pay.outlet_id', $request->outlet_id);
+        }
+        // Filter tanggal
+        if ($request->from) {
+            $query->whereDate('pay.date', '>=', $request->from);
+        }
+        if ($request->to) {
+            $query->whereDate('pay.date', '<=', $request->to);
+        }
+        // Search
+        if ($request->search) {
+            $search = $request->search;
+            $query->where(function($q) use ($search) {
+                $q->where('pay.payment_number', 'like', "%$search%")
+                  ->orWhere('gr.number', 'like', "%$search%")
+                  ->orWhere('o.nama_outlet', 'like', "%$search%")
+                  ->orWhere('u.nama_lengkap', 'like', "%$search%")
+                ;
+            });
+        }
+        $data = $query->orderByDesc('pay.date')->get();
+        // Ambil detail item per payment/GR
+        $details = [];
+        $grIds = $data->pluck('gr_id')->unique()->values();
+        if ($grIds->count()) {
+            $itemRows = DB::table('outlet_food_good_receive_items as gri')
+                ->join('items as i', 'gri.item_id', '=', 'i.id')
+                ->join('units as u', 'gri.unit_id', '=', 'u.id')
+                ->join('outlet_food_good_receives as gr', 'gri.outlet_food_good_receive_id', '=', 'gr.id')
+                ->join('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
+                ->join('food_floor_order_items as ffoi', function($join) {
+                    $join->on('do.floor_order_id', '=', 'ffoi.floor_order_id')
+                         ->on('gri.item_id', '=', 'ffoi.item_id');
+                })
+                ->whereIn('gri.outlet_food_good_receive_id', $grIds)
+                ->select(
+                    'gri.outlet_food_good_receive_id as gr_id',
+                    'i.name as item_name',
+                    'gri.received_qty as qty',
+                    'u.name as unit_name',
+                    'ffoi.price as price',
+                    DB::raw('(gri.received_qty * ffoi.price) as subtotal')
+                )
+                ->get();
+            foreach ($itemRows as $row) {
+                $details[$row->gr_id][] = $row;
+            }
+        }
+        // Ambil daftar outlet untuk filter
+        $outlets = DB::table('tbl_data_outlet')->select('id_outlet as id', 'nama_outlet as name')->orderBy('nama_outlet')->get();
+        return Inertia::render('OutletPayment/ReportInvoiceOutlet', [
+            'data' => $data,
+            'details' => $details,
+            'outlets' => $outlets,
+            'filters' => $request->only(['search', 'from', 'to', 'outlet_id']),
+            'user_id_outlet' => $user->id_outlet,
+        ]);
+    }
 } 
