@@ -38,10 +38,9 @@ class OutletPaymentController extends Controller
         $grTo = request('gr_to');
 
         // Ambil GR yang belum dibuat payment, join outlet sekalian
-        $rawGrList = OutletFoodGoodReceive::whereDoesntHave('outletPayment')
-            ->orWhereHas('outletPayment', function ($q) {
-                $q->where('status', 'cancelled');
-            })
+        $rawGrList = OutletFoodGoodReceive::whereDoesntHave('outletPayment', function ($q) {
+            $q->where('status', '!=', 'cancelled');
+        })
             ->with([
                 'outlet',
                 'items',
@@ -133,6 +132,10 @@ class OutletPaymentController extends Controller
             $page,
             ['path' => request()->url(), 'pageName' => 'gr_page']
         );
+
+        foreach ($rawGrList as $gr) {
+            \Log::debug('GR: '.$gr->id.' | Payment: '.json_encode($gr->outletPayment));
+        }
 
         return Inertia::render('OutletPayment/Index', [
             'payments' => $payments,
@@ -367,10 +370,9 @@ class OutletPaymentController extends Controller
         $grFrom = $request->input('gr_from');
         $grTo = $request->input('gr_to');
 
-        $rawGrList = \App\Models\OutletFoodGoodReceive::whereDoesntHave('outletPayment')
-            ->orWhereHas('outletPayment', function ($q) {
-                $q->where('status', 'cancelled');
-            })
+        $rawGrList = \App\Models\OutletFoodGoodReceive::whereDoesntHave('outletPayment', function ($q) {
+            $q->where('status', '!=', 'cancelled');
+        })
             ->with([
                 'outlet',
                 'items',
@@ -461,6 +463,10 @@ class OutletPaymentController extends Controller
             $page,
             ['path' => $request->url(), 'pageName' => 'gr_page']
         );
+
+        foreach ($rawGrList as $gr) {
+            \Log::debug('GR: '.$gr->id.' | Payment: '.json_encode($gr->outletPayment));
+        }
 
         return Inertia::render('OutletPayment/UnpaidGR', [
             'grGroups' => $grGroupsPaginated,

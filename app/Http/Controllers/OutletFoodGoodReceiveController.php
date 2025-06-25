@@ -51,11 +51,14 @@ class OutletFoodGoodReceiveController extends Controller
         if ($request->to) {
             $query->whereDate('gr.receive_date', '<=', $request->to);
         }
-        $goodReceives = $query->orderBy('gr.created_at', 'desc')->get();
+        $page = $request->input('page', 1);
+        $perPage = 10;
+        $goodReceives = $query->orderBy('gr.created_at', 'desc')->paginate($perPage)->appends($request->all());
         return Inertia::render('OutletFoodGoodReceive/Index', [
             'goodReceives' => $goodReceives,
             'outlets' => Outlet::select('id_outlet as id', 'nama_outlet as name')->get(),
-            'filters' => $request->only(['search', 'outlet_id', 'from', 'to'])
+            'filters' => $request->only(['search', 'outlet_id', 'from', 'to']),
+            'user_id_outlet' => $user->id_outlet,
         ]);
     }
 
@@ -855,6 +858,97 @@ class OutletFoodGoodReceiveController extends Controller
         } catch (\Exception $e) {
             DB::rollBack();
             return response()->json(['success' => false, 'message' => $e->getMessage()]);
+        }
+    }
+
+    public function edit($id)
+    {
+        $gr = DB::table('outlet_food_good_receives as gr')
+            ->leftJoin('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
+            ->leftJoin('warehouse_outlets as wo', 'gr.warehouse_outlet_id', '=', 'wo.id')
+            ->select(
+                'gr.*',
+                'o.nama_outlet as outlet_name',
+                'wo.name as warehouse_outlet_name'
+            )
+            ->where('gr.id', $id)
+            ->first();
+        // Tidak boleh edit jika sudah ada payment
+        $hasPayment = DB::table('outlet_payments')->where('gr_id', $id)->exists();
+        if ($hasPayment) {
+            return redirect()->route('outlet-food-good-receives.index')->with('error', 'GR sudah di-payment, tidak bisa diedit!');
+        }
+        $items = \DB::table('outlet_food_good_receive_items as gri')
+            ->join('items as i', 'gri.item_id', '=', 'i.id')
+            ->join('units as u', 'gri.unit_id', '=', 'u.id')
+            ->where('gri.outlet_food_good_receive_id', $id)
+            ->select('gri.*', 'i.name as item_name', 'u.name as unit_name')
+            ->get();
+        return Inertia::render('OutletFoodGoodReceive/Edit', [
+            'goodReceive' => $gr,
+            'items' => $items,
+        ]);
+    }
+
+    public function update(Request $request, $id)
+    {
+        $gr = \App\Models\OutletFoodGoodReceive::with(['items', 'outletPayment'])->findOrFail($id);
+        if ($gr->outletPayment) {
+            return response()->json(['success' => false, 'message' => 'GR sudah di-payment, tidak bisa diedit!'], 400);
+        }
+        $validated = $request->validate([
+            'items' => 'required|array',
+            'items.*.id' => 'required|integer',
+            'items.*.qty' => 'required|numeric|min:0',
+        ]);
+        \DB::beginTransaction();
+        try {
+            // Rollback efek inventory lama
+            // 1. Ambil semua kartu stok dan cost history terkait GR ini
+            $cards = \DB::table('outlet_food_inventory_cards')
+                ->where('reference_type', 'good_receive_outlet')
+                ->where('reference_id', $gr->id)
+                ->get();
+            foreach ($cards as $card) {
+                // Rollback stok
+                $stock = \DB::table('outlet_food_inventory_stocks')
+                    ->where('inventory_item_id', $card->inventory_item_id)
+                    ->where('id_outlet', $gr->outlet_id)
+                    ->where('warehouse_outlet_id', $gr->warehouse_outlet_id)
+                    ->first();
+                if ($stock) {
+                    \DB::table('outlet_food_inventory_stocks')
+                        ->where('id', $stock->id)
+                        ->update([
+                            'qty_small' => $stock->qty_small - $card->in_qty_small,
+                            'qty_medium' => $stock->qty_medium - $card->in_qty_medium,
+                            'qty_large' => $stock->qty_large - $card->in_qty_large,
+                            'updated_at' => now(),
+                        ]);
+                }
+            }
+            // Hapus kartu stok dan cost history
+            \DB::table('outlet_food_inventory_cards')
+                ->where('reference_type', 'good_receive_outlet')
+                ->where('reference_id', $gr->id)
+                ->delete();
+            \DB::table('outlet_food_inventory_cost_histories')
+                ->where('reference_type', 'good_receive_outlet')
+                ->where('reference_id', $gr->id)
+                ->delete();
+            // Update qty di item GR
+            foreach ($validated['items'] as $item) {
+                \DB::table('outlet_food_good_receive_items')
+                    ->where('id', $item['id'])
+                    ->update(['received_qty' => $item['qty'], 'updated_at' => now()]);
+            }
+            // Proses ulang efek inventory dengan qty baru (reuse logic processStock)
+            $this->processStock($gr->id);
+            \DB::commit();
+            return response()->json(['success' => true, 'message' => 'Qty GR & inventory berhasil diupdate']);
+        } catch (\Throwable $e) {
+            \DB::rollBack();
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
         }
     }
 } 
