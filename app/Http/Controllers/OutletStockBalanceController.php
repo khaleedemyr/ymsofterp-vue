@@ -22,7 +22,9 @@ class OutletStockBalanceController extends Controller
             ->join('outlet_food_inventory_items as fi', 's.inventory_item_id', '=', 'fi.id')
             ->join('items as i', 'fi.item_id', '=', 'i.id')
             ->join('tbl_data_outlet as o', 's.id_outlet', '=', 'o.id_outlet')
-            ->leftJoin('units as u', 'i.small_unit_id', '=', 'u.id')
+            ->leftJoin('units as us', 'i.small_unit_id', '=', 'us.id')
+            ->leftJoin('units as um', 'i.medium_unit_id', '=', 'um.id')
+            ->leftJoin('units as ul', 'i.large_unit_id', '=', 'ul.id')
             ->select(
                 's.id',
                 'i.id as product_id',
@@ -30,9 +32,12 @@ class OutletStockBalanceController extends Controller
                 'i.sku as product_code',
                 'o.id_outlet',
                 'o.nama_outlet',
-                's.qty_small as quantity',
-                'u.id as unit_id',
-                'u.name as unit_name',
+                's.qty_small',
+                's.qty_medium',
+                's.qty_large',
+                'us.name as unit_name_small',
+                'um.name as unit_name_medium',
+                'ul.name as unit_name_large',
                 's.created_at',
                 's.updated_at'
             );

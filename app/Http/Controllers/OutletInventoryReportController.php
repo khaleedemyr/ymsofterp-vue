@@ -60,14 +60,6 @@ class OutletInventoryReportController extends Controller
                 ->get();
         }
 
-        // Tampilkan qty langsung dari database
-        $data = $data->map(function ($row) {
-            $row->display_small = $row->qty_small;
-            $row->display_medium = $row->qty_medium;
-            $row->display_large = $row->qty_large;
-            return $row;
-        });
-
         return inertia('OutletInventory/StockPosition', [
             'stocks' => $data,
             'outlets' => $outlets,
