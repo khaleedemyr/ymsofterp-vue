@@ -563,18 +563,18 @@ class ItemController extends Controller
 
             // Update BOM jika composition_type = 'composed'
             if ($request->has('bom')) {
-                \Log::info('ITEM UPDATE DEBUG - BEFORE BOM', $item->boms->toArray());
                 $item->boms()->delete();
-                \Log::info('ITEM UPDATE DEBUG - AFTER DELETE BOM', $item->boms->toArray());
-                if ($request->composition_type === 'composed' && $request->bom) {
+                // Hanya insert jika ada BOM valid
+                if ($request->composition_type === 'composed' && is_array($request->bom)) {
                     foreach ($request->bom as $bom) {
-                        $item->boms()->create([
-                            'material_item_id' => $bom['item_id'],
-                            'qty' => $bom['qty'],
-                            'unit_id' => $bom['unit_id'],
-                        ]);
+                        if (!empty($bom['item_id']) && !empty($bom['qty']) && !empty($bom['unit_id'])) {
+                            $item->boms()->create([
+                                'material_item_id' => $bom['item_id'],
+                                'qty' => $bom['qty'],
+                                'unit_id' => $bom['unit_id'],
+                            ]);
+                        }
                     }
-                    \Log::info('ITEM UPDATE DEBUG - AFTER INSERT BOM', $item->boms->toArray());
                 }
             }
 
