@@ -127,6 +127,18 @@ class RetailNonFoodController extends Controller
                 ]);
             }
 
+            // Setelah RetailNonFood berhasil dibuat
+            if ($request->hasFile('invoices')) {
+                foreach ($request->file('invoices') as $file) {
+                    if (in_array($file->extension(), ['jpg', 'jpeg', 'png'])) {
+                        $path = $file->store('retail_non_food_invoices', 'public');
+                        $retailNonFood->invoices()->create([
+                            'file_path' => $path
+                        ]);
+                    }
+                }
+            }
+
             DB::commit();
 
             // Cek apakah total hari ini sudah melebihi 500rb
@@ -153,7 +165,7 @@ class RetailNonFoodController extends Controller
 
     public function show($id)
     {
-        $retailNonFood = RetailNonFood::with(['outlet', 'creator', 'items', 'warehouseOutlet'])
+        $retailNonFood = RetailNonFood::with(['outlet', 'creator', 'items', 'warehouseOutlet', 'invoices'])
             ->findOrFail($id);
 
         return Inertia::render('RetailNonFood/Detail', [

@@ -22,7 +22,7 @@
               <label class="block text-xs font-bold text-gray-600 mb-2">Warehouse Outlet</label>
               <select v-model="form.warehouse_outlet_id" class="input input-bordered w-full shadow-inner rounded-xl focus:ring-2 focus:ring-blue-300 transition-all duration-200" required>
                 <option value="">Pilih Warehouse Outlet</option>
-                <option v-for="w in props.warehouse_outlets" :key="w.id" :value="w.id">{{ w.name }}</option>
+                <option v-for="w in filteredWarehouseOutlets" :key="w.id" :value="w.id">{{ w.name }}</option>
               </select>
             </div>
           </div>
@@ -126,6 +126,16 @@
           <div>
             <label class="block text-xs font-bold text-gray-600 mb-1">Catatan</label>
             <textarea v-model="form.notes" class="input input-bordered w-full" rows="3"></textarea>
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold text-gray-600 mb-1">Upload Bon/Invoice (jpg/png, bisa lebih dari 1)</label>
+            <input type="file" multiple accept="image/jpeg,image/png" @change="onFileChange" />
+            <div v-if="filePreviews.length" class="flex flex-wrap gap-2 mt-2">
+              <div v-for="(src, idx) in filePreviews" :key="idx" class="w-24 h-24 border rounded overflow-hidden flex items-center justify-center bg-gray-50">
+                <img :src="src" class="object-contain w-full h-full" />
+              </div>
+            </div>
           </div>
 
           <div v-if="showLimitAlert" class="mb-4 p-4 rounded-xl bg-yellow-100 border border-yellow-300 text-yellow-800 shadow flex items-center gap-2 animate-pulse">
@@ -312,6 +322,14 @@ watch([
   () => form.value.items.map(i => [i.qty, i.price])
 ], fetchDailyTotal, { immediate: true, deep: true })
 
+const files = ref([])
+const filePreviews = ref([])
+
+function onFileChange(e) {
+  files.value = Array.from(e.target.files)
+  filePreviews.value = files.value.map(file => URL.createObjectURL(file))
+}
+
 async function submit() {
   if (loading.value) return
   const confirm = await Swal.fire({
@@ -328,18 +346,23 @@ async function submit() {
   if (!confirm.isConfirmed) return
   loading.value = true
   try {
-    const res = await axios.post('/retail-food', {
-      outlet_id: form.value.outlet_id,
-      warehouse_outlet_id: form.value.warehouse_outlet_id,
-      transaction_date: form.value.transaction_date,
-      notes: form.value.notes,
-      items: form.value.items.map(item => ({
-        item_name: item.item_name,
-        qty: item.qty,
-        unit_id: item.unit_id,
-        unit: item.unitOptions.find(u => u.id === item.unit_id)?.name || '',
-        price: item.price
-      }))
+    const formData = new FormData()
+    formData.append('outlet_id', form.value.outlet_id)
+    formData.append('warehouse_outlet_id', form.value.warehouse_outlet_id)
+    formData.append('transaction_date', form.value.transaction_date)
+    formData.append('notes', form.value.notes)
+    form.value.items.forEach((item, idx) => {
+      formData.append(`items[${idx}][item_name]`, item.item_name)
+      formData.append(`items[${idx}][qty]`, item.qty)
+      formData.append(`items[${idx}][unit_id]`, item.unit_id)
+      formData.append(`items[${idx}][unit]`, item.unitOptions.find(u => u.id === item.unit_id)?.name || '')
+      formData.append(`items[${idx}][price]`, item.price)
+    })
+    files.value.forEach((file, idx) => {
+      formData.append('invoices[]', file)
+    })
+    const res = await axios.post('/retail-food', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
     })
     if (res.data.message) {
       await Swal.fire({
@@ -380,4 +403,9 @@ watch(
   },
   { immediate: true }
 )
+
+const filteredWarehouseOutlets = computed(() => {
+  if (!form.value.outlet_id) return []
+  return props.warehouse_outlets.filter(w => String(w.outlet_id) === String(form.value.outlet_id))
+})
 </script> 

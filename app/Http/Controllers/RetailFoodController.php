@@ -291,6 +291,18 @@ class RetailFoodController extends Controller
                 ]);
             }
 
+            // Setelah RetailFood berhasil dibuat
+            if ($request->hasFile('invoices')) {
+                foreach ($request->file('invoices') as $file) {
+                    if (in_array($file->extension(), ['jpg', 'jpeg', 'png'])) {
+                        $path = $file->store('retail_food_invoices', 'public');
+                        $retailFood->invoices()->create([
+                            'file_path' => $path
+                        ]);
+                    }
+                }
+            }
+
             DB::commit();
 
             // Cek apakah total hari ini sudah melebihi 500rb
@@ -317,7 +329,7 @@ class RetailFoodController extends Controller
 
     public function show($id)
     {
-        $retailFood = RetailFood::with(['outlet', 'creator', 'items'])
+        $retailFood = RetailFood::with(['outlet', 'creator', 'items', 'invoices'])
             ->findOrFail($id);
 
         return Inertia::render('RetailFood/Detail', [

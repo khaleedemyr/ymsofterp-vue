@@ -85,6 +85,16 @@
             <textarea v-model="form.notes" class="input input-bordered w-full" rows="3"></textarea>
           </div>
 
+          <div>
+            <label class="block text-xs font-bold text-gray-600 mb-1">Upload Bon/Invoice (jpg/png, bisa lebih dari 1)</label>
+            <input type="file" multiple accept="image/jpeg,image/png" @change="onFileChange" />
+            <div v-if="filePreviews.length" class="flex flex-wrap gap-2 mt-2">
+              <div v-for="(src, idx) in filePreviews" :key="idx" class="w-24 h-24 border rounded overflow-hidden flex items-center justify-center bg-gray-50">
+                <img :src="src" class="object-contain w-full h-full" />
+              </div>
+            </div>
+          </div>
+
           <div v-if="showLimitAlert" class="mb-4 p-4 rounded-xl bg-yellow-100 border border-yellow-300 text-yellow-800 shadow flex items-center gap-2 animate-pulse">
             <i class="fa fa-triangle-exclamation text-xl"></i>
             <span>Total transaksi retail non food outlet hari ini sudah melebihi Rp 500.000!</span>
@@ -142,6 +152,9 @@ const form = ref({
   items: [newItem()]
 })
 
+const files = ref([])
+const filePreviews = ref([])
+
 function addItem() {
   form.value.items.push(newItem())
 }
@@ -189,9 +202,13 @@ watch([
   () => form.value.items.map(i => [i.qty, i.price])
 ], fetchDailyTotal, { immediate: true, deep: true })
 
+function onFileChange(e) {
+  files.value = Array.from(e.target.files)
+  filePreviews.value = files.value.map(file => URL.createObjectURL(file))
+}
+
 async function submit() {
   if (loading.value) return
-  
   const confirm = await Swal.fire({
     title: 'Simpan Data?',
     text: 'Apakah Anda yakin ingin menyimpan transaksi ini?',
@@ -199,27 +216,29 @@ async function submit() {
     showCancelButton: true,
     confirmButtonText: 'Ya, Simpan',
     cancelButtonText: 'Batal',
-    confirmButtonColor: '#16a34a',
+    confirmButtonColor: '#2563eb',
     cancelButtonColor: '#6b7280',
     reverseButtons: true
   })
-  
   if (!confirm.isConfirmed) return
-  
   loading.value = true
   try {
-    const res = await axios.post('/retail-non-food', {
-      outlet_id: form.value.outlet_id,
-      transaction_date: form.value.transaction_date,
-      notes: form.value.notes,
-      items: form.value.items.map(item => ({
-        item_name: item.item_name,
-        qty: item.qty,
-        unit: item.unit,
-        price: item.price
-      }))
+    const formData = new FormData()
+    formData.append('outlet_id', form.value.outlet_id)
+    formData.append('transaction_date', form.value.transaction_date)
+    formData.append('notes', form.value.notes)
+    form.value.items.forEach((item, idx) => {
+      formData.append(`items[${idx}][item_name]`, item.item_name)
+      formData.append(`items[${idx}][qty]`, item.qty)
+      formData.append(`items[${idx}][unit]`, item.unit)
+      formData.append(`items[${idx}][price]`, item.price)
     })
-    
+    files.value.forEach((file, idx) => {
+      formData.append('invoices[]', file)
+    })
+    const res = await axios.post('/retail-non-food', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    })
     if (res.data.message) {
       await Swal.fire({
         icon: 'success',
@@ -230,11 +249,11 @@ async function submit() {
       })
       router.visit('/retail-non-food')
     }
-  } catch (error) {
+  } catch (e) {
     Swal.fire({
       icon: 'error',
       title: 'Gagal',
-      text: error.response?.data?.message || 'Terjadi kesalahan saat menyimpan data'
+      text: e.response?.data?.message || 'Gagal menyimpan transaksi'
     })
   } finally {
     loading.value = false

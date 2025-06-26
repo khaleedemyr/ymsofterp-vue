@@ -81,6 +81,17 @@
           <div class="bg-gray-50 p-4 rounded-lg">{{ props.retailFood.notes }}</div>
         </div>
 
+        <div v-if="props.retailFood.invoices && props.retailFood.invoices.length" class="mb-8">
+          <div class="text-sm text-gray-500 mb-1">Bon/Invoice</div>
+          <div class="flex flex-wrap gap-3">
+            <div v-for="inv in props.retailFood.invoices" :key="inv.id" class="w-32 h-32 border rounded overflow-hidden flex items-center justify-center bg-gray-50">
+              <a :href="`/storage/${inv.file_path}`" target="_blank" rel="noopener">
+                <img :src="`/storage/${inv.file_path}`" class="object-contain w-full h-full hover:scale-110 transition-transform duration-200" />
+              </a>
+            </div>
+          </div>
+        </div>
+
         <div v-if="props.retailFood.status === 'pending' && canApprove" class="flex justify-end gap-2">
           <button @click="reject" class="btn btn-error px-6 py-2 rounded-lg">
             <i class="fa fa-times mr-2"></i> Tolak

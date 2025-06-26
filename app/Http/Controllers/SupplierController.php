@@ -361,6 +361,12 @@ class SupplierController extends Controller
                 ];
                 $successCount++;
             } catch (\Exception $e) {
+                \Log::error('Import Supplier Error', [
+                    'row_number' => $rowNumber,
+                    'message' => $e->getMessage(),
+                    'data' => $data,
+                    'trace' => $e->getTraceAsString(),
+                ]);
                 $results[] = [
                     'row_number' => $rowNumber,
                     'status' => 'error',

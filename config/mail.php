@@ -47,6 +47,17 @@ return [
             'password' => env('MAIL_PASSWORD'),
             'timeout' => null,
             'local_domain' => env('MAIL_EHLO_DOMAIN', parse_url(env('APP_URL', 'http://localhost'), PHP_URL_HOST)),
+            'verify_peer' => env('MAIL_VERIFY_PEER', false),
+            'verify_peer_name' => env('MAIL_VERIFY_PEER_NAME', false),
+            'allow_self_signed' => env('MAIL_ALLOW_SELF_SIGNED', true),
+            'encryption' => env('MAIL_ENCRYPTION', 'ssl'),
+            'stream' => [
+                'ssl' => [
+                    'allow_self_signed' => true,
+                    'verify_peer' => false,
+                    'verify_peer_name' => false,
+                ],
+            ],
         ],
 
         'ses' => [

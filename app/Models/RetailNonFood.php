@@ -47,6 +47,11 @@ class RetailNonFood extends Model
         return $this->belongsTo(\App\Models\WarehouseOutlet::class, 'warehouse_outlet_id');
     }
 
+    public function invoices()
+    {
+        return $this->hasMany(RetailNonFoodInvoice::class);
+    }
+
     public static function getDailyTotal($date)
     {
         return self::whereDate('transaction_date', $date)

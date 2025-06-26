@@ -42,6 +42,11 @@ class RetailFood extends Model
         return $this->hasMany(RetailFoodItem::class);
     }
 
+    public function invoices()
+    {
+        return $this->hasMany(RetailFoodInvoice::class);
+    }
+
     public static function getDailyTotal($date)
     {
         return self::whereDate('transaction_date', $date)

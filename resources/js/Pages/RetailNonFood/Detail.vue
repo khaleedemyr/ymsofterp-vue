@@ -101,6 +101,18 @@
               <p class="text-gray-700">{{ props.retailNonFood.notes }}</p>
             </div>
           </div>
+
+          <!-- Invoices -->
+          <div v-if="props.retailNonFood.invoices && props.retailNonFood.invoices.length" class="mb-8">
+            <div class="text-sm text-gray-500 mb-1">Bon/Invoice</div>
+            <div class="flex flex-wrap gap-3">
+              <div v-for="inv in props.retailNonFood.invoices" :key="inv.id" class="w-32 h-32 border rounded overflow-hidden flex items-center justify-center bg-gray-50">
+                <a :href="`/storage/${inv.file_path}`" target="_blank" rel="noopener">
+                  <img :src="`/storage/${inv.file_path}`" class="object-contain w-full h-full hover:scale-110 transition-transform duration-200" />
+                </a>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
