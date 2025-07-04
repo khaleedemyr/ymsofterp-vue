@@ -1,40 +1,40 @@
 <template>
   <AppLayout>
-    <div class="max-w-7xl mx-auto py-8 px-4">
+    <div class="w-full min-h-screen bg-gray-50 py-4 px-0">
       <h1 class="text-2xl font-bold mb-6">Report Penjualan per Category</h1>
-      <div class="flex flex-col md:flex-row md:items-center gap-4 mb-4">
-        <input v-model="search" type="text" placeholder="Cari gudang, kategori..." class="px-4 py-2 border border-gray-300 rounded-lg w-full md:w-64 focus:ring-blue-500 focus:border-blue-500" />
+      <div class="w-full flex flex-wrap gap-3 items-center mb-4 px-2">
+        <input v-model="search" type="text" placeholder="Cari gudang, kategori..." class="px-4 py-2 border border-gray-300 rounded-lg flex-1 min-w-[180px] focus:ring-blue-500 focus:border-blue-500" />
         <div class="flex items-center gap-2">
           <label class="text-sm">Gudang</label>
-          <select v-model="selectedWarehouse" class="border border-gray-300 rounded-lg px-2 py-2 focus:ring-blue-500 focus:border-blue-500">
+          <select v-model="selectedWarehouse" class="border border-gray-300 rounded-lg px-2 py-2 focus:ring-blue-500 focus:border-blue-500 min-w-[140px]">
             <option value="">Semua Gudang</option>
             <option v-for="w in warehouses" :key="w.name" :value="w.name">{{ w.name }}</option>
           </select>
         </div>
         <div class="flex items-center gap-2">
           <label class="text-sm">Kategori</label>
-          <select v-model="selectedCategory" class="border border-gray-300 rounded-lg px-2 py-2 focus:ring-blue-500 focus:border-blue-500">
+          <select v-model="selectedCategory" class="border border-gray-300 rounded-lg px-2 py-2 focus:ring-blue-500 focus:border-blue-500 min-w-[140px]">
             <option value="">Semua Kategori</option>
             <option v-for="c in categories" :key="c.name" :value="c.name">{{ c.name }}</option>
           </select>
         </div>
         <div class="flex items-center gap-2">
           <label class="text-sm">Tahun</label>
-          <select v-model="selectedYear" class="border border-gray-300 rounded-lg px-2 py-2 focus:ring-blue-500 focus:border-blue-500">
+          <select v-model="selectedYear" class="border border-gray-300 rounded-lg px-2 py-2 focus:ring-blue-500 focus:border-blue-500 min-w-[100px]">
             <option value="">Semua Tahun</option>
             <option v-for="y in years" :key="y" :value="y">{{ y }}</option>
           </select>
         </div>
         <div class="flex items-center gap-2">
           <label class="text-sm">Bulan</label>
-          <select v-model="selectedMonth" class="border border-gray-300 rounded-lg px-2 py-2 focus:ring-blue-500 focus:border-blue-500">
+          <select v-model="selectedMonth" class="border border-gray-300 rounded-lg px-2 py-2 focus:ring-blue-500 focus:border-blue-500 min-w-[100px]">
             <option value="">Semua Bulan</option>
             <option v-for="(m, idx) in months" :key="idx" :value="idx+1">{{ m }}</option>
           </select>
         </div>
         <div class="flex items-center gap-2">
           <label class="text-sm">Tampilkan</label>
-          <select v-model="perPage" class="border border-gray-300 rounded-lg px-2 py-2 focus:ring-blue-500 focus:border-blue-500">
+          <select v-model="perPage" class="border border-gray-300 rounded-lg px-2 py-2 focus:ring-blue-500 focus:border-blue-500 min-w-[80px]">
             <option v-for="n in [10, 25, 50, 100]" :key="n" :value="n">{{ n }}</option>
           </select>
           <span class="text-sm">data</span>
@@ -45,7 +45,7 @@
           Load Data
         </button>
       </div>
-      <div class="bg-white rounded-xl shadow-lg overflow-x-auto">
+      <div class="bg-white rounded-xl shadow-lg overflow-x-auto w-full px-2">
         <table class="min-w-full border border-gray-300">
           <thead>
             <tr class="bg-yellow-300 text-gray-900">
@@ -60,10 +60,12 @@
             <tr v-if="!report.length">
               <td colspan="5" class="text-center py-10 text-gray-400">Tidak ada data.</td>
             </tr>
-            <tr v-for="row in report" :key="row.gudang + '-' + row.bulan + '-' + row.tahun + '-' + row.category">
+            <tr v-for="(row, idx) in report" :key="row.gudang + '-' + row.bulan + '-' + row.tahun + '-' + row.category">
               <td class="px-4 py-2 border border-gray-200">{{ row.gudang }}</td>
-              <td class="px-4 py-2 border border-gray-200">{{ months[row.bulan-1] }}</td>
-              <td class="px-4 py-2 border border-gray-200">{{ row.tahun }}</td>
+              <td v-if="isFirstOfGroup(report, idx, 'bulan', 'tahun')" :rowspan="rowspanCount(report, idx, 'bulan', 'tahun')" class="px-4 py-2 border border-gray-200 align-top">{{ months[row.bulan-1] }}</td>
+              <td v-else style="display:none"></td>
+              <td v-if="isFirstOfGroup(report, idx, 'tahun', 'bulan')" :rowspan="rowspanCount(report, idx, 'tahun', 'bulan')" class="px-4 py-2 border border-gray-200 align-top">{{ row.tahun }}</td>
+              <td v-else style="display:none"></td>
               <td class="px-4 py-2 border border-gray-200">{{ row.category }}</td>
               <td class="px-4 py-2 border border-gray-200 text-right">{{ formatRupiah(row.nilai) }}</td>
             </tr>
@@ -167,5 +169,20 @@ function formatRupiah(value) {
     currency: 'IDR',
     minimumFractionDigits: 0
   }).format(value || 0);
+}
+
+function isFirstOfGroup(arr, idx, key, key2) {
+  if (idx === 0) return true;
+  return arr[idx][key] !== arr[idx - 1][key] || arr[idx][key2] !== arr[idx - 1][key2];
+}
+function rowspanCount(arr, idx, key, key2) {
+  const val = arr[idx][key];
+  const val2 = arr[idx][key2];
+  let count = 1;
+  for (let i = idx + 1; i < arr.length; i++) {
+    if (arr[i][key] === val && arr[i][key2] === val2) count++;
+    else break;
+  }
+  return count;
 }
 </script> 

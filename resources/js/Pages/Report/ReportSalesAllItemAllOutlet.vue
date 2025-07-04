@@ -1,26 +1,32 @@
 <template>
   <AppLayout>
-    <div class="max-w-7xl mx-auto py-8 px-4">
+    <div class="w-full min-h-screen bg-gray-50 py-4 px-0">
       <h1 class="text-2xl font-bold mb-6">Report Penjualan All Item ke All Outlet</h1>
-      <div class="flex flex-col md:flex-row md:items-center gap-4 mb-4">
-        <input v-model="search" type="text" placeholder="Cari gudang, outlet, barang..." class="px-4 py-2 border border-gray-300 rounded-lg w-full md:w-64 focus:ring-blue-500 focus:border-blue-500" />
+      <div class="w-full flex flex-wrap gap-3 items-center mb-4 px-2">
+        <input v-model="search" type="text" placeholder="Cari gudang, outlet, barang..." class="px-4 py-2 border border-gray-300 rounded-lg flex-1 min-w-[180px] focus:ring-blue-500 focus:border-blue-500" />
         <div class="flex items-center gap-2">
           <label class="text-sm">Gudang</label>
-          <select v-model="selectedWarehouse" class="border border-gray-300 rounded-lg px-2 py-2 focus:ring-blue-500 focus:border-blue-500">
+          <select v-model="selectedWarehouse" class="border border-gray-300 rounded-lg px-2 py-2 focus:ring-blue-500 focus:border-blue-500 min-w-[140px]">
             <option value="">Semua Gudang</option>
             <option v-for="w in warehouses" :key="w.name" :value="w.name">{{ w.name }}</option>
           </select>
         </div>
         <div class="flex items-center gap-2">
           <label class="text-sm">Outlet</label>
-          <select v-model="selectedOutlet" class="border border-gray-300 rounded-lg px-2 py-2 focus:ring-blue-500 focus:border-blue-500">
+          <select v-model="selectedOutlet" class="border border-gray-300 rounded-lg px-2 py-2 focus:ring-blue-500 focus:border-blue-500 min-w-[160px]">
             <option value="">Semua Outlet</option>
             <option v-for="o in outlets" :key="o.nama_outlet" :value="o.nama_outlet">{{ o.nama_outlet }}</option>
           </select>
         </div>
         <div class="flex items-center gap-2">
+          <label class="text-sm">Dari</label>
+          <input v-model="dateFrom" type="date" class="border border-gray-300 rounded-lg px-2 py-2 focus:ring-blue-500 focus:border-blue-500 min-w-[120px]" />
+          <label class="text-sm">s/d</label>
+          <input v-model="dateTo" type="date" class="border border-gray-300 rounded-lg px-2 py-2 focus:ring-blue-500 focus:border-blue-500 min-w-[120px]" />
+        </div>
+        <div class="flex items-center gap-2">
           <label class="text-sm">Tampilkan</label>
-          <select v-model="perPage" class="border border-gray-300 rounded-lg px-2 py-2 focus:ring-blue-500 focus:border-blue-500">
+          <select v-model="perPage" class="border border-gray-300 rounded-lg px-2 py-2 focus:ring-blue-500 focus:border-blue-500 min-w-[80px]">
             <option v-for="n in [10, 25, 50, 100]" :key="n" :value="n">{{ n }}</option>
           </select>
           <span class="text-sm">data</span>
@@ -31,7 +37,7 @@
           Load Data
         </button>
       </div>
-      <div class="bg-white rounded-xl shadow-lg overflow-x-auto">
+      <div class="bg-white rounded-xl shadow-lg overflow-x-auto w-full px-2">
         <table class="min-w-full border border-gray-300">
           <thead>
             <tr class="bg-yellow-300 text-gray-900">
@@ -101,6 +107,8 @@ const selectedOutlet = ref(props.filters.outlet || '');
 const perPage = ref(props.perPage || 25);
 const page = ref(props.page || 1);
 const loadingReload = ref(false);
+const dateFrom = ref(props.filters?.dateFrom || '');
+const dateTo = ref(props.filters?.dateTo || '');
 
 const startIndex = computed(() => (page.value - 1) * perPage.value);
 const endIndex = computed(() => Math.min(startIndex.value + props.report.length, props.total));
@@ -132,7 +140,9 @@ function reloadData() {
       gudang: selectedWarehouse.value,
       outlet: selectedOutlet.value,
       perPage: perPage.value,
-      page: page.value
+      page: page.value,
+      dateFrom: dateFrom.value,
+      dateTo: dateTo.value
     },
     {
       preserveState: true,

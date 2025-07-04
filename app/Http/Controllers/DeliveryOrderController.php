@@ -12,8 +12,7 @@ class DeliveryOrderController extends Controller
 {
     public function index(Request $request)
     {
-        // List Delivery Order dengan join ke food_packing_lists, food_floor_orders, users
-        $orders = DB::table('delivery_orders as do')
+        $query = DB::table('delivery_orders as do')
             ->leftJoin('food_packing_lists as pl', 'do.packing_list_id', '=', 'pl.id')
             ->leftJoin('food_floor_orders as fo', 'pl.food_floor_order_id', '=', 'fo.id')
             ->leftJoin('users as u', 'do.created_by', '=', 'u.id')
@@ -22,11 +21,29 @@ class DeliveryOrderController extends Controller
                 'pl.packing_number',
                 'fo.order_number as floor_order_number',
                 'u.nama_lengkap as created_by_name'
-            )
-            ->orderByDesc('do.created_at')
-            ->get();
+            );
+
+        if ($request->filled('search')) {
+            $search = '%' . $request->search . '%';
+            $query->where(function($q) use ($search) {
+                $q->where('pl.packing_number', 'like', $search)
+                  ->orWhere('fo.order_number', 'like', $search)
+                  ->orWhere('u.nama_lengkap', 'like', $search);
+            });
+        }
+        if ($request->filled('dateFrom')) {
+            $query->whereDate('do.created_at', '>=', $request->dateFrom);
+        }
+        if ($request->filled('dateTo')) {
+            $query->whereDate('do.created_at', '<=', $request->dateTo);
+        }
+
+        $orders = $query->orderByDesc('do.created_at')->paginate(15)->withQueryString();
         return Inertia::render('DeliveryOrder/Index', [
-            'orders' => $orders
+            'orders' => $orders,
+            'search' => $request->search,
+            'dateFrom' => $request->dateFrom,
+            'dateTo' => $request->dateTo,
         ]);
     }
 

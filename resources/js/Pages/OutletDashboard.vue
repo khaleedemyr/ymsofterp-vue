@@ -333,8 +333,6 @@ async function fetchDashboard() {
       avg_order: { label: 'Average Check', value: summary.value.total_pax > 0 ? formatRupiah(Math.round(summary.value.total_sales / summary.value.total_pax)) : 'Rp 0', color: 'from-purple-400 to-purple-600' },
       total_discount: { label: 'Diskon', value: formatRupiah(summary.value.total_discount), color: 'from-pink-400 to-pink-600' },
       total_cashback: { label: 'Cashback', value: formatRupiah(summary.value.total_cashback), color: 'from-cyan-400 to-cyan-600' },
-      total_service: { label: 'Service Charged', value: formatRupiah(summary.value.total_service), color: 'from-orange-400 to-orange-600' },
-      total_tax: { label: 'PB1', value: formatRupiah(summary.value.total_tax), color: 'from-red-400 to-red-600' },
       total_commfee: { label: 'Commfee', value: formatRupiah(summary.value.total_commfee), color: 'from-indigo-400 to-indigo-600' },
       active_promos: { label: 'Promo Aktif', value: summary.value.active_promos, color: 'from-teal-400 to-teal-600' },
       investor_count: { label: 'Investor', value: summary.value.investor_count, color: 'from-gray-400 to-gray-600' },

@@ -718,6 +718,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/report-sales-pivot-special', [\App\Http\Controllers\ReportController::class, 'reportSalesPivotSpecial'])->name('report.sales-pivot-special');
     Route::get('/report-rekap-fj', [\App\Http\Controllers\ReportController::class, 'reportSalesPivotSpecial'])->name('report.rekap-fj');
     Route::get('/report-good-receive-outlet', [\App\Http\Controllers\ReportController::class, 'reportGoodReceiveOutlet'])->name('report.good-receive-outlet');
+    Route::post('/report/sales-pivot-outlet-detail', [\App\Http\Controllers\ReportController::class, 'salesPivotOutletDetail'])->name('report.sales-pivot-outlet-detail');
 });
 
 // Outlet Payments

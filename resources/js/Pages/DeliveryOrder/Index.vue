@@ -9,11 +9,20 @@
           + Buat Delivery Order
         </Link>
       </div>
+      <div class="flex flex-wrap gap-2 mb-4 items-center">
+        <input v-model="search" type="text" placeholder="Cari Packing List / Floor Order / User" class="border rounded px-3 py-2 focus:ring-2 focus:ring-blue-200 min-w-[220px]" />
+        <input v-model="dateFrom" type="date" class="border rounded px-3 py-2 focus:ring-2 focus:ring-blue-200" />
+        <span class="mx-1">s/d</span>
+        <input v-model="dateTo" type="date" class="border rounded px-3 py-2 focus:ring-2 focus:ring-blue-200" />
+        <button @click="applyFilter" class="bg-blue-500 text-white px-4 py-2 rounded font-semibold hover:bg-blue-600 transition">Filter</button>
+        <button v-if="search || dateFrom || dateTo" @click="resetFilter" type="button" class="ml-2 bg-gray-200 text-gray-700 px-3 py-2 rounded hover:bg-gray-300 transition">Reset</button>
+      </div>
       <div class="bg-white rounded-2xl shadow-2xl overflow-x-auto transition-all">
         <table class="w-full min-w-full divide-y divide-gray-200">
           <thead class="bg-gradient-to-r from-blue-50 to-blue-100">
             <tr>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider rounded-tl-2xl">No</th>
+              <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">No DO</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Tanggal</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Packing List</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Floor Order</th>
@@ -22,11 +31,12 @@
             </tr>
           </thead>
           <tbody>
-            <tr v-if="!orders.length">
-              <td colspan="6" class="text-center py-10 text-blue-300">Tidak ada data Delivery Order.</td>
+            <tr v-if="!orders.data.length">
+              <td colspan="7" class="text-center py-10 text-blue-300">Tidak ada data Delivery Order.</td>
             </tr>
-            <tr v-for="(order, idx) in orders" :key="order.id" class="hover:bg-blue-50 transition shadow-sm">
-              <td class="px-6 py-3">{{ idx + 1 }}</td>
+            <tr v-for="(order, idx) in orders.data" :key="order.id" class="hover:bg-blue-50 transition shadow-sm">
+              <td class="px-6 py-3">{{ (orders.current_page - 1) * orders.per_page + idx + 1 }}</td>
+              <td class="px-6 py-3">{{ order.number || '-' }}</td>
               <td class="px-6 py-3">{{ formatDate(order.created_at) }}</td>
               <td class="px-6 py-3">{{ order.packing_number || '-' }}</td>
               <td class="px-6 py-3">{{ order.floor_order_number || '-' }}</td>
@@ -48,6 +58,13 @@
           </tbody>
         </table>
       </div>
+      <div v-if="orders.total > orders.per_page" class="flex justify-center mt-6">
+        <nav class="inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
+          <button v-for="page in orders.last_page" :key="page" @click="goToPage(page)" :class="['px-3 py-1 border text-sm font-semibold', page === orders.current_page ? 'bg-blue-500 text-white' : 'bg-white text-blue-700 hover:bg-blue-100']">
+            {{ page }}
+          </button>
+        </nav>
+      </div>
     </div>
   </AppLayout>
 </template>
@@ -57,13 +74,19 @@ import AppLayout from '@/Layouts/AppLayout.vue';
 import { Link } from '@inertiajs/vue3';
 import Swal from 'sweetalert2';
 import { router } from '@inertiajs/vue3';
-import { ref } from 'vue';
+import { ref, watch } from 'vue';
 import { generateStrukPDF } from './generateStrukPDF';
 import axios from 'axios';
+import { usePage } from '@inertiajs/vue3';
 
 const props = defineProps({ orders: Array });
 const loadingDeleteId = ref(null);
 const loadingReprintId = ref(null);
+
+const page = usePage();
+const search = ref(page.props.search || '');
+const dateFrom = ref(page.props.dateFrom || '');
+const dateTo = ref(page.props.dateTo || '');
 
 function formatDate(date) {
   if (!date) return '-';
@@ -123,5 +146,28 @@ async function handleReprint(orderId) {
   } finally {
     loadingReprintId.value = null;
   }
+}
+
+function applyFilter() {
+  router.get(route('delivery-order.index'), {
+    search: search.value,
+    dateFrom: dateFrom.value,
+    dateTo: dateTo.value
+  }, { preserveState: true });
+}
+function resetFilter() {
+  search.value = '';
+  dateFrom.value = '';
+  dateTo.value = '';
+  applyFilter();
+}
+
+function goToPage(page) {
+  router.get(route('delivery-order.index'), {
+    search: search.value,
+    dateFrom: dateFrom.value,
+    dateTo: dateTo.value,
+    page
+  }, { preserveState: true });
 }
 </script> 

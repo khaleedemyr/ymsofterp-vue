@@ -19,7 +19,10 @@ class ReportController extends Controller
             ->join('food_packing_lists as pl', 'do.packing_list_id', '=', 'pl.id')
             ->join('warehouse_division as wd', 'pl.warehouse_division_id', '=', 'wd.id')
             ->join('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
-            ->join('food_floor_order_items as fo', 'i.item_id', '=', 'fo.item_id')
+            ->join('food_floor_order_items as fo', function($join) {
+                $join->on('i.item_id', '=', 'fo.item_id')
+                     ->on('fo.floor_order_id', '=', 'pl.food_floor_order_id');
+            })
             ->select(
                 'w.name as gudang',
                 DB::raw('MONTH(gr.receive_date) as bulan'),
@@ -97,7 +100,10 @@ class ReportController extends Controller
             ->join('food_packing_lists as pl', 'do.packing_list_id', '=', 'pl.id')
             ->join('warehouse_division as wd', 'pl.warehouse_division_id', '=', 'wd.id')
             ->join('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
-            ->join('food_floor_order_items as fo', 'i.item_id', '=', 'fo.item_id')
+            ->join('food_floor_order_items as fo', function($join) {
+                $join->on('i.item_id', '=', 'fo.item_id')
+                     ->on('fo.floor_order_id', '=', 'pl.food_floor_order_id');
+            })
             ->select(
                 'w.name as gudang',
                 DB::raw('DATE_FORMAT(gr.receive_date, "%d %M %Y") as tanggal'),
@@ -166,7 +172,10 @@ class ReportController extends Controller
             ->join('food_packing_lists as pl', 'do.packing_list_id', '=', 'pl.id')
             ->join('warehouse_division as wd', 'pl.warehouse_division_id', '=', 'wd.id')
             ->join('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
-            ->join('food_floor_order_items as fo', 'i.item_id', '=', 'fo.item_id')
+            ->join('food_floor_order_items as fo', function($join) {
+                $join->on('i.item_id', '=', 'fo.item_id')
+                     ->on('fo.floor_order_id', '=', 'pl.food_floor_order_id');
+            })
             ->join('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
             ->select(
                 DB::raw('DATE_FORMAT(gr.receive_date, "%d %M %Y") as tanggal'),
@@ -185,8 +194,11 @@ class ReportController extends Controller
         if ($request->filled('outlet')) {
             $query->where('o.nama_outlet', $request->outlet);
         }
-        if ($request->filled('tanggal')) {
-            $query->whereDate('gr.receive_date', $request->tanggal);
+        if ($request->filled('dateFrom')) {
+            $query->whereDate('gr.receive_date', '>=', $request->dateFrom);
+        }
+        if ($request->filled('dateTo')) {
+            $query->whereDate('gr.receive_date', '<=', $request->dateTo);
         }
         if ($request->filled('search')) {
             $search = '%' . $request->search . '%';
@@ -228,7 +240,8 @@ class ReportController extends Controller
                 'search' => $request->search,
                 'gudang' => $request->gudang,
                 'outlet' => $request->outlet,
-                'tanggal' => $request->tanggal,
+                'dateFrom' => $request->dateFrom,
+                'dateTo' => $request->dateTo,
                 'perPage' => $perPage,
                 'page' => $page,
             ],
@@ -256,7 +269,10 @@ class ReportController extends Controller
             ->join('food_packing_lists as pl', 'do.packing_list_id', '=', 'pl.id')
             ->join('warehouse_division as wd', 'pl.warehouse_division_id', '=', 'wd.id')
             ->join('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
-            ->join('food_floor_order_items as fo', 'i.item_id', '=', 'fo.item_id')
+            ->join('food_floor_order_items as fo', function($join) {
+                $join->on('i.item_id', '=', 'fo.item_id')
+                     ->on('fo.floor_order_id', '=', 'pl.food_floor_order_id');
+            })
             ->join('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
             ->where('sc.show_pos', '0')
             ->select(
@@ -283,7 +299,10 @@ class ReportController extends Controller
             ->join('food_packing_lists as pl', 'do.packing_list_id', '=', 'pl.id')
             ->join('warehouse_division as wd', 'pl.warehouse_division_id', '=', 'wd.id')
             ->join('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
-            ->join('food_floor_order_items as fo', 'i.item_id', '=', 'fo.item_id')
+            ->join('food_floor_order_items as fo', function($join) {
+                $join->on('i.item_id', '=', 'fo.item_id')
+                     ->on('fo.floor_order_id', '=', 'pl.food_floor_order_id');
+            })
             ->join('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
             ->where('sc.show_pos', '0')
             ->select(
@@ -343,7 +362,10 @@ class ReportController extends Controller
             ->join('food_packing_lists as pl', 'do.packing_list_id', '=', 'pl.id')
             ->join('warehouse_division as wd', 'pl.warehouse_division_id', '=', 'wd.id')
             ->join('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
-            ->join('food_floor_order_items as fo', 'i.item_id', '=', 'fo.item_id')
+            ->join('food_floor_order_items as fo', function($join) {
+                $join->on('i.item_id', '=', 'fo.item_id')
+                     ->on('fo.floor_order_id', '=', 'pl.food_floor_order_id');
+            })
             ->join('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
             ->select(
                 'o.nama_outlet as customer',
@@ -433,5 +455,49 @@ class ReportController extends Controller
                 'tanggal' => $tanggal,
             ],
         ]);
+    }
+
+    public function salesPivotOutletDetail(Request $request)
+    {
+        $request->validate([
+            'outlet' => 'required|string',
+            'tanggal' => 'required|date',
+        ]);
+        $items = DB::table('outlet_food_good_receives as gr')
+            ->join('outlet_food_good_receive_items as i', 'gr.id', '=', 'i.outlet_food_good_receive_id')
+            ->join('items as it', 'i.item_id', '=', 'it.id')
+            ->join('categories as cat', 'it.category_id', '=', 'cat.id')
+            ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
+            ->join('units as u', 'i.unit_id', '=', 'u.id')
+            ->join('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
+            ->join('food_packing_lists as pl', 'do.packing_list_id', '=', 'pl.id')
+            ->join('food_floor_order_items as fo', function($join) {
+                $join->on('i.item_id', '=', 'fo.item_id')
+                     ->on('fo.floor_order_id', '=', 'pl.food_floor_order_id');
+            })
+            ->join('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
+            ->where('o.nama_outlet', $request->outlet)
+            ->whereDate('gr.receive_date', $request->tanggal)
+            ->select(
+                'cat.name as category',
+                'sc.name as sub_category',
+                'it.name as item_name',
+                'i.received_qty',
+                'u.name as unit',
+                'fo.price',
+                DB::raw('(i.received_qty * fo.price) as subtotal')
+            )
+            ->orderBy('cat.name')
+            ->orderBy('sc.name')
+            ->orderBy('it.name')
+            ->get();
+        // Group by category
+        $grouped = [];
+        foreach ($items as $item) {
+            $cat = $item->category;
+            if (!isset($grouped[$cat])) $grouped[$cat] = [];
+            $grouped[$cat][] = $item;
+        }
+        return response()->json($grouped);
     }
 } 
