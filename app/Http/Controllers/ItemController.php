@@ -64,7 +64,10 @@ class ItemController extends Controller
 
         $items = $query->orderBy('created_at', 'desc')->paginate(10);
         $units = Unit::all();
-        $bomItems = \DB::table('items')->where('composition_type', 'single')->where('status', 'active')->orderBy('name')->get();
+        $itemsArr = $items->toArray();
+
+        $bomMaterialIds = collect($itemsArr['data'])->pluck('boms')->flatten(1)->pluck('material_item_id')->unique()->filter();
+        $bomItems = \App\Models\Item::whereIn('id', $bomMaterialIds)->get();
         $regions = \DB::table('regions')->where('status', 'active')->get()->keyBy('id');
         $outlets = \DB::table('tbl_data_outlet')->where('status', 'A')->get()->keyBy('id_outlet');
         $itemsArr = $items->toArray();
@@ -73,7 +76,8 @@ class ItemController extends Controller
             $item['modifier_option_ids'] = collect($item['item_modifier_options'] ?? [])->pluck('modifier_option_id')->toArray();
             // Map BOM
             $item['bom'] = collect($item['boms'] ?? [])->map(function($b) use ($bomItems, $units) {
-                $itemName = $b['material_item_id'] ? optional($bomItems->firstWhere('id', $b['material_item_id']))->name : null;
+                $itemObj = $bomItems->where('id', $b['material_item_id'])->first();
+                $itemName = $itemObj ? $itemObj->name : null;
                 $unitName = $b['unit_id'] ? optional($units->firstWhere('id', $b['unit_id']))->name : null;
                 return [
                     'item_id' => $b['material_item_id'],
@@ -349,9 +353,15 @@ class ItemController extends Controller
         $menuTypes = \DB::table('menu_type')->where('status', 'active')->get();
         $regions = \DB::table('regions')->where('status', 'active')->get()->keyBy('id');
         $outlets = \DB::table('tbl_data_outlet')->where('status', 'A')->get()->keyBy('id_outlet');
-        $bomItems = \DB::table('items')->where('composition_type', 'single')->where('status', 'active')->orderBy('name')->get();
+       // Ambil semua item yang menjadi child di BOM untuk item ini
+$bomMaterialIds = $item->boms->pluck('material_item_id')->unique()->filter();
+$bomItems = \App\Models\Item::whereIn('id', $bomMaterialIds)->get();
         $modifiers = Modifier::with('options')->get();
-        
+        \Log::info('BOM MATERIAL IDS', $bomMaterialIds->toArray());
+        \Log::info('BOM ITEMS', $bomItems->pluck('name', 'id')->toArray());
+        \Log::info('BOM RAW', $item['boms']);
+
+
         $item->load([
             'images',
             'prices',
@@ -400,13 +410,14 @@ class ItemController extends Controller
         })->toArray();
         // Map BOM with item/unit name
         $itemData['bom'] = $item->boms->map(function($b) use ($bomItems, $units) {
-            $itemName = $b->material_item_id ? optional($bomItems->firstWhere('id', $b->material_item_id))->name : null;
-            $unitName = $b->unit_id ? optional($units->firstWhere('id', $b->unit_id))->name : null;
+            $itemObj = $bomItems->where('id', $b['material_item_id'])->first();
+            $itemName = $itemObj ? $itemObj->name : null;
+            $unitName = $b['unit_id'] ? optional($units->firstWhere('id', $b['unit_id']))->name : null;
             return [
-                'item_id' => $b->material_item_id,
+                'item_id' => $b['material_item_id'],
                 'item_name' => $itemName,
-                'qty' => $b->qty,
-                'unit_id' => $b->unit_id,
+                'qty' => $b['qty'],
+                'unit_id' => $b['unit_id'],
                 'unit_name' => $unitName,
             ];
         })->toArray();
@@ -641,19 +652,22 @@ class ItemController extends Controller
 
     public function show($id)
     {
+        \Log::info('=== MASUK SHOW ITEM ===', ['id' => $id]);
         $item = \App\Models\Item::with(['images', 'prices', 'availabilities', 'modifierOptions', 'boms', 'category', 'subCategory', 'smallUnit', 'mediumUnit', 'largeUnit', 'warehouseDivision'])->find($id);
-        \Log::info('DEBUG MANUAL FIND', ['item' => $item]);
+
         if (!$item) {
             return response()->json(['error' => 'Item not found'], 404);
         }
         $units = Unit::all();
         $regions = \DB::table('regions')->where('status', 'active')->get()->keyBy('id');
         $outlets = \DB::table('tbl_data_outlet')->where('status', 'A')->get()->keyBy('id_outlet');
-        $bomItems = \DB::table('items')->where('composition_type', 'single')->where('status', 'active')->orderBy('name')->get();
+       // Ambil semua item yang menjadi child di BOM untuk item ini
+$bomMaterialIds = $item->boms->pluck('material_item_id')->unique()->filter();
+$bomItems = \App\Models\Item::whereIn('id', $bomMaterialIds)->get();
         $modifiers = Modifier::with('options')->get();
-        \Log::info('DEBUG $item->prices RAW', $item->prices->toArray());
-        \Log::info('DEBUG $regions', $regions->toArray());
-        \Log::info('DEBUG $outlets', $outlets->toArray());
+        \Log::info('BOM MATERIAL IDS', $bomMaterialIds->toArray());
+        \Log::info('BOM ITEMS', $bomItems->pluck('name', 'id')->toArray());
+        \Log::info('BOM RAW', $item['boms']);
         $mappedPrices = $item->prices->map(function($p) use ($regions, $outlets) {
             $regionId = $p->region_id !== null ? (int) $p->region_id : null;
             $outletId = $p->outlet_id !== null ? (int) $p->outlet_id : null;
@@ -682,6 +696,7 @@ class ItemController extends Controller
             ];
         })->toArray();
         \Log::info('DEBUG $item->prices MAPPED', $mappedPrices);
+        
         $itemData = [
             'id' => $item->id,
             'category_id' => $item->category_id,
@@ -730,13 +745,14 @@ class ItemController extends Controller
                 ];
             })->toArray(),
             'bom' => $item->boms->map(function($b) use ($bomItems, $units) {
-                $itemName = $b->material_item_id ? optional($bomItems->firstWhere('id', $b->material_item_id))->name : null;
-                $unitName = $b->unit_id ? optional($units->firstWhere('id', $b->unit_id))->name : null;
+                $itemObj = $bomItems->where('id', $b['material_item_id'])->first();
+                $itemName = $itemObj ? $itemObj->name : null;
+                $unitName = $b['unit_id'] ? optional($units->firstWhere('id', $b['unit_id']))->name : null;
                 return [
-                    'item_id' => $b->material_item_id,
+                    'item_id' => $b['material_item_id'],
                     'item_name' => $itemName,
-                    'qty' => $b->qty,
-                    'unit_id' => $b->unit_id,
+                    'qty' => $b['qty'],
+                    'unit_id' => $b['unit_id'],
                     'unit_name' => $unitName,
                 ];
             })->toArray(),
@@ -953,20 +969,20 @@ class ItemController extends Controller
                     }
                 }
                 if (!empty($missingFields)) {
-                    throw new \Exception('Data wajib tidak lengkap: ' . implode(', ', $missingFields));
+                    throw new \Exception('Baris ' . ($rowIdx + 2) . ': Data wajib tidak lengkap: ' . implode(', ', $missingFields));
                 }
 
                 // Cari relasi
                 $category = Category::where('name', $itemData['Category'])->first();
                 if (!$category) {
-                    throw new \Exception('Category tidak ditemukan');
+                    throw new \Exception('Baris ' . ($rowIdx + 2) . ': Category tidak ditemukan: ' . $itemData['Category']);
                 }
 
                 $subCategory = null;
                 if (!empty($itemData['Sub Category'])) {
                     $subCategory = SubCategory::where('name', $itemData['Sub Category'])->first();
                     if (!$subCategory) {
-                        throw new \Exception('Sub Category tidak ditemukan');
+                        throw new \Exception('Baris ' . ($rowIdx + 2) . ': Sub Category tidak ditemukan: ' . $itemData['Sub Category']);
                     }
                 }
 
@@ -975,30 +991,30 @@ class ItemController extends Controller
                 if (!empty($itemData['Warehouse Division'])) {
                     $warehouseDivision = WarehouseDivision::where('name', $itemData['Warehouse Division'])->first();
                     if (!$warehouseDivision) {
-                        throw new \Exception('Warehouse Division tidak ditemukan');
+                        throw new \Exception('Baris ' . ($rowIdx + 2) . ': Warehouse Division tidak ditemukan: ' . $itemData['Warehouse Division']);
                     }
                 }
 
                 $smallUnit = Unit::where('name', $itemData['Small Unit'])->first();
                 if (!$smallUnit) {
-                    throw new \Exception('Small Unit tidak ditemukan');
+                    throw new \Exception('Baris ' . ($rowIdx + 2) . ': Small Unit tidak ditemukan: ' . $itemData['Small Unit']);
                 }
 
                 $mediumUnit = Unit::where('name', $itemData['Medium Unit'])->first();
                 if (!$mediumUnit) {
-                    throw new \Exception('Medium Unit tidak ditemukan');
+                    throw new \Exception('Baris ' . ($rowIdx + 2) . ': Medium Unit tidak ditemukan: ' . $itemData['Medium Unit']);
                 }
 
                 $largeUnit = Unit::where('name', $itemData['Large Unit'])->first();
                 if (!$largeUnit) {
-                    throw new \Exception('Large Unit tidak ditemukan');
+                    throw new \Exception('Baris ' . ($rowIdx + 2) . ': Large Unit tidak ditemukan: ' . $itemData['Large Unit']);
                 }
 
                 $menuType = null;
                 if (!empty($itemData['Type'])) {
                     $menuType = DB::table('menu_type')->where('type', $itemData['Type'])->first();
                     if (!$menuType) {
-                        throw new \Exception('Menu Type tidak ditemukan');
+                        throw new \Exception('Baris ' . ($rowIdx + 2) . ': Menu Type tidak ditemukan: ' . $itemData['Type']);
                     }
                 }
 
@@ -1065,7 +1081,7 @@ class ItemController extends Controller
                                 'updated_at' => now(),
                             ]);
                         } else {
-                            throw new \Exception('Modifier Option tidak ditemukan: ' . $optionName);
+                            throw new \Exception('Baris ' . ($rowIdx + 2) . ': Modifier Option tidak ditemukan: ' . $optionName);
                         }
                     }
                 }
@@ -1091,113 +1107,9 @@ class ItemController extends Controller
                                     'created_at' => now(),
                                     'updated_at' => now(),
                                 ]);
-                            }
-                        }
-                    }
-                }
-
-                // Handle Prices
-                if (!empty($itemData['Prices'])) {
-                    $prices = array_map('trim', explode(';', $itemData['Prices']));
-                    foreach ($prices as $price) {
-                        if (preg_match('/^(.*?)=(.*?)$/', $price, $matches)) {
-                            $targetName = trim($matches[1]);
-                            $priceValue = (float)$matches[2];
-
-                            if (strtolower($targetName) === 'all') {
-                                DB::table('item_prices')->insert([
-                                    'item_id' => $item->id,
-                                    'region_id' => null,
-                                    'outlet_id' => null,
-                                    'price' => $priceValue,
-                                    'availability_price_type' => 'all',
-                                    'created_at' => now(),
-                                    'updated_at' => now(),
-                                ]);
                             } else {
-                                $region = DB::table('regions')->whereRaw('LOWER(TRIM(name)) = ?', [mb_strtolower($targetName)])->first();
-                                $outlet = DB::table('tbl_data_outlet')->whereRaw('LOWER(TRIM(nama_outlet)) = ?', [mb_strtolower($targetName)])->first();
-                                if ($region) {
-                                    DB::table('item_prices')->insert([
-                                        'item_id' => $item->id,
-                                        'region_id' => $region->id,
-                                        'outlet_id' => null,
-                                        'price' => $priceValue,
-                                        'availability_price_type' => 'region',
-                                        'created_at' => now(),
-                                        'updated_at' => now(),
-                                    ]);
-                                } elseif ($outlet) {
-                                    DB::table('item_prices')->insert([
-                                        'item_id' => $item->id,
-                                        'region_id' => null,
-                                        'outlet_id' => $outlet->id_outlet,
-                                        'price' => $priceValue,
-                                        'availability_price_type' => 'outlet',
-                                        'created_at' => now(),
-                                        'updated_at' => now(),
-                                    ]);
-                                } else {
-                                    \Log::warning('ImportExcel: Region/Outlet not found for price', ['targetName' => $targetName]);
-                                }
+                                throw new \Exception('Baris ' . ($rowIdx + 2) . ': BOM item atau unit tidak ditemukan: ' . $bomItem);
                             }
-                        }
-                    }
-                }
-
-                // Handle Availabilities
-                if (!empty($itemData['Availabilities'])) {
-                    $availabilities = array_map('trim', explode(';', $itemData['Availabilities']));
-                    foreach ($availabilities as $availability) {
-                        $targetName = trim($availability);
-                        if (strtolower($targetName) === 'all') {
-                            DB::table('item_availabilities')->insert([
-                                'item_id' => $item->id,
-                                'region_id' => null,
-                                'outlet_id' => null,
-                                'availability_type' => 'all',
-                                'created_at' => now(),
-                                'updated_at' => now(),
-                            ]);
-                        } else {
-                            $region = DB::table('regions')->whereRaw('LOWER(TRIM(name)) = ?', [mb_strtolower($targetName)])->first();
-                            $outlet = DB::table('tbl_data_outlet')->whereRaw('LOWER(TRIM(nama_outlet)) = ?', [mb_strtolower($targetName)])->first();
-                            if ($region) {
-                                DB::table('item_availabilities')->insert([
-                                    'item_id' => $item->id,
-                                    'region_id' => $region->id,
-                                    'outlet_id' => null,
-                                    'availability_type' => 'region',
-                                    'created_at' => now(),
-                                    'updated_at' => now(),
-                                ]);
-                            } elseif ($outlet) {
-                                DB::table('item_availabilities')->insert([
-                                    'item_id' => $item->id,
-                                    'region_id' => null,
-                                    'outlet_id' => $outlet->id_outlet,
-                                    'availability_type' => 'outlet',
-                                    'created_at' => now(),
-                                    'updated_at' => now(),
-                                ]);
-                            } else {
-                                throw new \Exception('Region/Outlet tidak ditemukan: ' . $targetName);
-                            }
-                        }
-                    }
-                }
-
-                // Handle Images
-                if (!empty($itemData['Images'])) {
-                    $imageUrls = array_map('trim', explode(',', $itemData['Images']));
-                    foreach ($imageUrls as $url) {
-                        if (filter_var($url, FILTER_VALIDATE_URL)) {
-                            DB::table('item_images')->insert([
-                                'item_id' => $item->id,
-                                'path' => $url,
-                                'created_at' => now(),
-                                'updated_at' => now(),
-                            ]);
                         }
                     }
                 }
@@ -1211,17 +1123,23 @@ class ItemController extends Controller
             }
 
             DB::commit();
-            } catch (\Exception $e) {
+            \Log::info('ItemController@importExcel - Import completed successfully', [
+                'total_rows' => count(array_slice($rows, 1)),
+                'success_count' => count($results)
+            ]);
+            
+            return response()->json(['results' => $results]);
+        } catch (\Exception $e) {
             DB::rollBack();
-                $results[] = [
-                'row' => $rowIdx + 2,
-                    'name' => $itemData['Name'] ?? '',
-                    'status' => 'error',
-                    'message' => $e->getMessage(),
-                ];
-            }
-
-        return response()->json(['results' => $results]);
+            \Log::error('ItemController@importExcel - Error during import, rolling back', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return response()->json([
+                'message' => $e->getMessage(),
+                'error' => true
+            ], 400);
+        }
     }
 
     public function searchForPr(Request $request)
@@ -1514,27 +1432,27 @@ class ItemController extends Controller
 
     public function previewBomImport(Request $request)
     {
+        \Log::info('ItemController@previewBomImport - Starting BOM preview');
+        
         $request->validate([
             'file' => 'required|file|mimes:xlsx,xls'
         ]);
 
         try {
             $data = \Maatwebsite\Excel\Facades\Excel::toArray(new \App\Imports\BomImport, $request->file('file'));
-            $bomSheet = [];
-            foreach ($data as $sheet) {
-                if (
-                    isset($sheet[0][0], $sheet[0][1], $sheet[0][2], $sheet[0][3]) &&
-                    strtolower(trim($sheet[0][0])) === 'parent item' &&
-                    strtolower(trim($sheet[0][1])) === 'child item' &&
-                    strtolower(trim($sheet[0][2])) === 'quantity' &&
-                    strtolower(trim($sheet[0][3])) === 'unit'
-                ) {
-                    $bomSheet = $sheet;
-                    break;
-                }
+            \Log::info('ItemController@previewBomImport - Excel data loaded', [
+                'sheets' => array_keys($data),
+                'bom_sheet_count' => count($data['BOM'] ?? [])
+            ]);
+            
+            $bomSheet = $data['BOM'] ?? [];
+            if (empty($bomSheet)) {
+                throw new \Exception('Sheet BOM tidak ditemukan atau kosong');
             }
+            
             $headers = array_shift($bomSheet);
             $preview = array_slice($bomSheet, 0, 5);
+            
             // Convert to array of object for frontend
             $previewObjects = [];
             foreach ($preview as $row) {
@@ -1544,65 +1462,92 @@ class ItemController extends Controller
                 }
                 $previewObjects[] = $obj;
             }
+            
+            \Log::info('ItemController@previewBomImport - Preview generated', [
+                'header_count' => count($headers),
+                'preview_count' => count($previewObjects)
+            ]);
+            
             return response()->json([
                 'header' => $headers,
                 'preview' => $previewObjects
             ]);
         } catch (\Exception $e) {
+            \Log::error('ItemController@previewBomImport - Error during preview', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
             return response()->json(['message' => $e->getMessage()], 422);
         }
     }
 
     public function importBom(Request $request)
     {
+        \Log::info('ItemController@importBom - Starting BOM import');
+        \Log::info('ItemController@importBom - File received', [
+            'original_name' => $request->file('file')->getClientOriginalName(),
+            'mime_type' => $request->file('file')->getMimeType(),
+            'size' => $request->file('file')->getSize()
+        ]);
+
         $request->validate([
             'file' => 'required|file|mimes:xlsx,xls'
         ]);
 
         try {
             $data = \Maatwebsite\Excel\Facades\Excel::toArray(new \App\Imports\BomImport, $request->file('file'));
-            $bomSheet = [];
-            foreach ($data as $sheet) {
-                if (
-                    isset($sheet[0][0], $sheet[0][1], $sheet[0][2], $sheet[0][3]) &&
-                    strtolower(trim($sheet[0][0])) === 'parent item' &&
-                    strtolower(trim($sheet[0][1])) === 'child item' &&
-                    strtolower(trim($sheet[0][2])) === 'quantity' &&
-                    strtolower(trim($sheet[0][3])) === 'unit'
-                ) {
-                    $bomSheet = $sheet;
-                    break;
-                }
+            \Log::info('ItemController@importBom - Excel data loaded', [
+                'sheets' => array_keys($data),
+                'bom_sheet_count' => count($data['BOM'] ?? [])
+            ]);
+            
+            $bomSheet = $data['BOM'] ?? [];
+            if (empty($bomSheet)) {
+                throw new \Exception('Sheet BOM tidak ditemukan atau kosong');
             }
+            
             array_shift($bomSheet); // Remove header
             $results = [];
-            foreach ($bomSheet as $index => $row) {
-                try {
+            
+            // Mulai transaction untuk rollback jika ada error
+            DB::beginTransaction();
+            
+            try {
+                foreach ($bomSheet as $index => $row) {
+                    \Log::info('ItemController@importBom - Processing row', [
+                        'row_index' => $index + 2,
+                        'row_data' => $row
+                    ]);
+                    
                     // Validasi minimal kolom BOM
                     if (empty($row[0]) || empty($row[1]) || empty($row[2]) || empty($row[3])) {
-                        throw new \Exception('Semua kolom wajib diisi');
+                        throw new \Exception('Baris ' . ($index + 2) . ': Semua kolom wajib diisi');
                     }
+                    
                     // Find parent item
                     $parentItem = \App\Models\Item::where('name', $row[0])
                         ->where('composition_type', 'composed')
                         ->where('status', 'active')
                         ->first();
                     if (!$parentItem) {
-                        throw new \Exception("Parent item not found or not active");
+                        throw new \Exception('Baris ' . ($index + 2) . ': Parent item not found or not active: ' . $row[0]);
                     }
+                    
                     // Find child item
                     $childItem = \App\Models\Item::where('name', $row[1])
-                        ->whereIn('type', ['Raw Materials', 'WIP'])
+                        ->whereIn('type', ['Raw Materials', 'WIP', 'Finish Goods'])
                         ->where('status', 'active')
                         ->first();
                     if (!$childItem) {
-                        throw new \Exception("Child item not found or not active");
+                        throw new \Exception('Baris ' . ($index + 2) . ': Child item not found or not active: ' . $row[1]);
                     }
+                    
                     // Find unit
                     $unit = \App\Models\Unit::where('name', $row[3])->first();
                     if (!$unit) {
-                        throw new \Exception("Unit not found");
+                        throw new \Exception('Baris ' . ($index + 2) . ': Unit not found: ' . $row[3]);
                     }
+                    
                     // Insert/update BOM
                     \DB::table('item_bom')->updateOrInsert(
                         [
@@ -1616,23 +1561,51 @@ class ItemController extends Controller
                             'updated_at' => now(),
                         ]
                     );
+                    
                     $results[] = [
                         'row' => $index + 2,
                         'name' => $row[0],
                         'status' => 'success',
                         'message' => 'Successfully imported'
                     ];
-                } catch (\Exception $e) {
-                    $results[] = [
-                        'row' => $index + 2,
-                        'name' => $row[0] ?? '',
-                        'status' => 'error',
-                        'message' => $e->getMessage()
-                    ];
+                    
+                    \Log::info('ItemController@importBom - Row processed successfully', [
+                        'row_index' => $index + 2,
+                        'parent_item' => $row[0],
+                        'child_item' => $row[1]
+                    ]);
                 }
+                
+                // Jika semua baris berhasil, commit transaction
+                DB::commit();
+                
+                \Log::info('ItemController@importBom - Import completed successfully', [
+                    'total_rows' => count($bomSheet),
+                    'success_count' => count($results)
+                ]);
+                
+                return response()->json(['results' => $results]);
+                
+            } catch (\Exception $e) {
+                // Rollback transaction jika ada error
+                DB::rollBack();
+                
+                \Log::error('ItemController@importBom - Error during import, rolling back', [
+                    'error' => $e->getMessage(),
+                    'row_index' => $index + 2 ?? 'unknown'
+                ]);
+                
+                return response()->json([
+                    'message' => $e->getMessage(),
+                    'error' => true
+                ], 422);
             }
-            return response()->json(['results' => $results]);
+            
         } catch (\Exception $e) {
+            \Log::error('ItemController@importBom - Error during file processing', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
             return response()->json(['message' => $e->getMessage()], 422);
         }
     }

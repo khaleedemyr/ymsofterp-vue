@@ -3,38 +3,38 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
+use App\Models\Outlet;
+use App\Models\Region;
 use App\Models\ActivityLog;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use SimpleSoftwareIO\QrCode\Facades\QrCode;
 
 class OutletController extends Controller
 {
     public function index(Request $request)
     {
-        $query = DB::table('tbl_data_outlet as o')
-            ->leftJoin('regions as r', 'o.region_id', '=', 'r.id')
-            ->select('o.*', 'r.name as region_name');
+        $query = Outlet::with(['region']);
         if ($request->filled('search')) {
             $search = $request->search;
             $query->where(function($q) use ($search) {
-                $q->where('o.nama_outlet', 'like', "%$search%")
-                  ->orWhere('o.lokasi', 'like', "%$search%")
-                ;
+                $q->where('nama_outlet', 'like', "%$search%")
+                  ->orWhere('lokasi', 'like', "%$search%")
+                  ->orWhere('qr_code', 'like', "%$search%");
             });
         }
         if ($request->filled('status')) {
-            $query->where('o.status', $request->status);
+            $status = $request->status === 'active' ? 'A' : 'N';
+            $query->where('status', $status);
         }
-        $outlets = $query->orderBy('o.id_outlet', 'desc')->paginate(10)->withQueryString();
-        $regions = DB::table('regions')->select('id', 'name')->orderBy('name')->get();
+        $outlets = $query->orderBy('id_outlet', 'desc')->paginate(10)->withQueryString();
+        
         return Inertia::render('Outlets/Index', [
             'outlets' => $outlets,
             'filters' => [
                 'search' => $request->search,
             ],
-            'regions' => $regions,
         ]);
     }
 
@@ -42,31 +42,26 @@ class OutletController extends Controller
     {
         $validated = $request->validate([
             'nama_outlet' => 'required|string|max:100',
-            'lokasi' => 'required|string|max:255',
-            'region_id' => 'required|exists:regions,id',
-            'status' => 'required|in:A,N',
+            'lokasi' => 'required|string',
             'qr_code' => 'nullable|string|max:255',
             'lat' => 'nullable|string|max:50',
             'long' => 'nullable|string|max:50',
-            'keterangan' => 'nullable|string|max:255',
+            'keterangan' => 'nullable|string',
+            'region_id' => 'required|exists:regions,id',
+            'status' => 'required|in:A,N',
+            'url_places' => 'nullable|string',
         ]);
-        $qrCode = $validated['qr_code'] ?? null;
-        if (!$qrCode) {
-            $qrCode = 'OUTLET-' . time();
+        
+        // Always set status to 'A' for new records
+        $validated['status'] = 'A';
+        
+        // Generate QR code if not provided
+        if (empty($validated['qr_code'])) {
+            $validated['qr_code'] = 'OUTLET-' . time();
         }
-        $id = DB::table('tbl_data_outlet')->insertGetId([
-            'nama_outlet' => $validated['nama_outlet'],
-            'lokasi' => $validated['lokasi'],
-            'region_id' => $validated['region_id'],
-            'status' => $validated['status'],
-            'qr_code' => $qrCode,
-            'lat' => $validated['lat'] ?? null,
-            'long' => $validated['long'] ?? null,
-            'keterangan' => $validated['keterangan'] ?? null,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
-        $outlet = DB::table('tbl_data_outlet')->where('id_outlet', $id)->first();
+        
+        $outlet = Outlet::create($validated);
+        
         ActivityLog::create([
             'user_id' => Auth::id(),
             'activity_type' => 'create',
@@ -75,8 +70,9 @@ class OutletController extends Controller
             'ip_address' => $request->ip(),
             'user_agent' => $request->userAgent(),
             'old_data' => null,
-            'new_data' => json_encode($outlet),
+            'new_data' => $outlet->toArray(),
         ]);
+        
         return redirect()->route('outlets.index')->with('success', 'Outlet berhasil ditambahkan!');
     }
 
@@ -84,92 +80,223 @@ class OutletController extends Controller
     {
         $validated = $request->validate([
             'nama_outlet' => 'required|string|max:100',
-            'lokasi' => 'required|string|max:255',
-            'region_id' => 'required|exists:regions,id',
-            'status' => 'required|in:A,N',
+            'lokasi' => 'required|string',
             'qr_code' => 'nullable|string|max:255',
             'lat' => 'nullable|string|max:50',
             'long' => 'nullable|string|max:50',
-            'keterangan' => 'nullable|string|max:255',
+            'keterangan' => 'nullable|string',
+            'region_id' => 'required|exists:regions,id',
+            'status' => 'required|in:A,N',
+            'url_places' => 'nullable|string',
         ]);
-        $outlet = DB::table('tbl_data_outlet')->where('id_outlet', $id)->first();
-        $oldData = $outlet;
-        $qrCode = $validated['qr_code'] ?? null;
-        if (!$qrCode) {
-            $qrCode = $outlet->qr_code ?: ('OUTLET-' . time());
+        
+        try {
+            $outlet = Outlet::find($id);
+            if (!$outlet) {
+                return redirect()->route('outlets.index')->with('error', 'Outlet tidak ditemukan!');
+            }
+            
+            $oldData = $outlet->toArray();
+            $outlet->update($validated);
+            
+            ActivityLog::create([
+                'user_id' => Auth::id(),
+                'activity_type' => 'update',
+                'module' => 'outlets',
+                'description' => 'Mengupdate outlet: ' . $outlet->nama_outlet,
+                'ip_address' => $request->ip(),
+                'user_agent' => $request->userAgent(),
+                'old_data' => $oldData,
+                'new_data' => $outlet->fresh()->toArray(),
+            ]);
+            
+            return redirect()->route('outlets.index')->with('success', 'Outlet berhasil diupdate!');
+        } catch (\Exception $e) {
+            \Log::error('Error updating outlet: ' . $e->getMessage(), [
+                'id' => $id,
+                'file' => $e->getFile(),
+                'line' => $e->getLine()
+            ]);
+            return redirect()->route('outlets.index')->with('error', 'Terjadi kesalahan saat mengupdate outlet!');
         }
-        DB::table('tbl_data_outlet')->where('id_outlet', $id)->update([
-            'nama_outlet' => $validated['nama_outlet'],
-            'lokasi' => $validated['lokasi'],
-            'region_id' => $validated['region_id'],
-            'status' => $validated['status'],
-            'qr_code' => $qrCode,
-            'lat' => $validated['lat'] ?? null,
-            'long' => $validated['long'] ?? null,
-            'keterangan' => $validated['keterangan'] ?? null,
-            'updated_at' => now(),
-        ]);
-        $newData = DB::table('tbl_data_outlet')->where('id_outlet', $id)->first();
-        ActivityLog::create([
-            'user_id' => Auth::id(),
-            'activity_type' => 'update',
-            'module' => 'outlets',
-            'description' => 'Mengupdate outlet: ' . $newData->nama_outlet,
-            'ip_address' => $request->ip(),
-            'user_agent' => $request->userAgent(),
-            'old_data' => json_encode($oldData),
-            'new_data' => json_encode($newData),
-        ]);
-        return redirect()->route('outlets.index')->with('success', 'Outlet berhasil diupdate!');
     }
 
     public function destroy($id)
     {
-        $outlet = DB::table('tbl_data_outlet')->where('id_outlet', $id)->first();
-        $oldData = $outlet;
-        DB::table('tbl_data_outlet')->where('id_outlet', $id)->update([
-            'status' => 'N',
-            'updated_at' => now(),
-        ]);
-        $newData = DB::table('tbl_data_outlet')->where('id_outlet', $id)->first();
-        ActivityLog::create([
-            'user_id' => Auth::id(),
-            'activity_type' => 'delete',
-            'module' => 'outlets',
-            'description' => 'Menonaktifkan outlet: ' . $outlet->nama_outlet,
-            'ip_address' => request()->ip(),
-            'user_agent' => request()->userAgent(),
-            'old_data' => json_encode($oldData),
-            'new_data' => json_encode($newData),
-        ]);
-        return redirect()->route('outlets.index')->with('success', 'Outlet berhasil dinonaktifkan!');
+        try {
+            $outlet = Outlet::find($id);
+            if (!$outlet) {
+                return redirect()->route('outlets.index')->with('error', 'Outlet tidak ditemukan!');
+            }
+            
+            $oldData = $outlet->toArray();
+            $outlet->update(['status' => 'N']);
+            
+            ActivityLog::create([
+                'user_id' => Auth::id(),
+                'activity_type' => 'delete',
+                'module' => 'outlets',
+                'description' => 'Menonaktifkan outlet: ' . $outlet->nama_outlet,
+                'ip_address' => request()->ip(),
+                'user_agent' => request()->userAgent(),
+                'old_data' => $oldData,
+                'new_data' => $outlet->fresh()->toArray(),
+            ]);
+            
+            return redirect()->route('outlets.index')->with('success', 'Outlet berhasil dinonaktifkan!');
+        } catch (\Exception $e) {
+            \Log::error('Error destroying outlet: ' . $e->getMessage(), [
+                'id' => $id,
+                'file' => $e->getFile(),
+                'line' => $e->getLine()
+            ]);
+            return redirect()->route('outlets.index')->with('error', 'Terjadi kesalahan saat menonaktifkan outlet!');
+        }
     }
 
     public function toggleStatus($id, Request $request)
     {
-        $outlet = DB::table('tbl_data_outlet')->where('id_outlet', $id)->first();
-        $oldData = $outlet;
-        DB::table('tbl_data_outlet')->where('id_outlet', $id)->update([
-            'status' => $request->status,
-            'updated_at' => now(),
-        ]);
-        $newData = DB::table('tbl_data_outlet')->where('id_outlet', $id)->first();
-        ActivityLog::create([
-            'user_id' => Auth::id(),
-            'activity_type' => 'status_toggle',
-            'module' => 'outlets',
-            'description' => 'Mengubah status outlet: ' . $outlet->nama_outlet . ' menjadi ' . $request->status,
-            'ip_address' => $request->ip(),
-            'user_agent' => $request->userAgent(),
-            'old_data' => json_encode($oldData),
-            'new_data' => json_encode($newData),
-        ]);
-        return response()->json(['success' => true]);
+        try {
+            $outlet = Outlet::find($id);
+            if (!$outlet) {
+                return response()->json(['success' => false, 'message' => 'Outlet tidak ditemukan'], 404);
+            }
+            
+            $newStatus = $outlet->status === 'A' ? 'N' : 'A';
+            $outlet->update(['status' => $newStatus]);
+            
+            return response()->json(['success' => true]);
+        } catch (\Exception $e) {
+            \Log::error('Error toggling outlet status: ' . $e->getMessage(), [
+                'id' => $id,
+                'file' => $e->getFile(),
+                'line' => $e->getLine()
+            ]);
+            return response()->json(['success' => false, 'message' => 'Terjadi kesalahan saat mengubah status'], 500);
+        }
+    }
+
+    public function getDropdownData()
+    {
+        try {
+            $regions = Region::where('status', 'active')
+                ->select('id', 'name')
+                ->orderBy('name')
+                ->get();
+
+            // Selalu return 200, walaupun data kosong
+            return response()->json([
+                'success' => true,
+                'regions' => $regions,
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Error fetching dropdown data: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Error fetching dropdown data',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function show($id)
+    {
+        try {
+            $outlet = Outlet::with(['region'])
+                ->find($id);
+            
+            if (!$outlet) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Outlet tidak ditemukan'
+                ], 404);
+            }
+            
+            return response()->json([
+                'success' => true,
+                'outlet' => $outlet
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Error fetching outlet: ' . $e->getMessage(), [
+                'id' => $id,
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Terjadi kesalahan saat mengambil data outlet',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function debugDatabase()
+    {
+        try {
+            $debug = [];
+            
+            // Check database connection
+            $debug['connection'] = 'Connected';
+            
+            // Check if tables exist
+            $tables = ['tbl_data_outlet', 'regions'];
+            foreach ($tables as $table) {
+                try {
+                    $count = DB::table($table)->count();
+                    $debug['tables'][$table] = [
+                        'exists' => true,
+                        'total_count' => $count,
+                        'active_count' => DB::table($table)->where('status', 'A')->count()
+                    ];
+                } catch (\Exception $e) {
+                    $debug['tables'][$table] = [
+                        'exists' => false,
+                        'error' => $e->getMessage()
+                    ];
+                }
+            }
+            
+            // Check model queries
+            try {
+                $debug['models']['outlet'] = [
+                    'total' => Outlet::count(),
+                    'active' => Outlet::where('status', 'A')->count(),
+                    'sample' => Outlet::where('status', 'A')->first()
+                ];
+            } catch (\Exception $e) {
+                $debug['models']['outlet'] = ['error' => $e->getMessage()];
+            }
+            
+            try {
+                $debug['models']['region'] = [
+                    'total' => Region::count(),
+                    'active' => Region::where('status', 'active')->count(),
+                    'sample' => Region::where('status', 'active')->first()
+                ];
+            } catch (\Exception $e) {
+                $debug['models']['region'] = ['error' => $e->getMessage()];
+            }
+            
+            return response()->json([
+                'success' => true,
+                'debug' => $debug
+            ]);
+            
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'error' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine()
+            ], 500);
+        }
     }
 
     public function downloadQr($id)
     {
-        $outlet = DB::table('tbl_data_outlet')->where('id_outlet', $id)->first();
+        $outlet = Outlet::find($id);
         if (!$outlet) {
             abort(404);
         }
@@ -182,9 +309,9 @@ class OutletController extends Controller
 
     public function apiList()
     {
-        $outlets = \DB::table('tbl_data_outlet')
-            ->where('status', 'A')
-            ->select('id_outlet', 'nama_outlet', 'lokasi', 'region_id', 'qr_code', 'lat', 'long', 'keterangan', 'status', 'created_at', 'updated_at')
+        $outlets = Outlet::where('status', 'A')
+            ->with('region')
+            ->select('id_outlet', 'nama_outlet', 'lokasi', 'region_id', 'qr_code', 'lat', 'long', 'keterangan', 'status', 'url_places', 'created_at', 'updated_at')
             ->orderBy('nama_outlet')
             ->get();
         return response()->json($outlets);

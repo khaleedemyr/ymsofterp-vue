@@ -261,7 +261,8 @@
       <div v-if="importPreviewModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40">
         <div class="bg-white rounded-xl shadow-2xl w-full max-w-4xl p-6 relative max-h-[90vh] overflow-y-auto">
           <h2 class="text-xl font-bold mb-4 flex items-center gap-2">
-            <i class="fa-solid fa-eye text-blue-500"></i> Preview Import Items
+            <i class="fa-solid fa-eye text-blue-500"></i> 
+            Preview Import {{ importType === 'bom' ? 'BOM' : 'Items' }}
           </h2>
           <button @click="closeImportPreview" class="absolute top-4 right-4 text-gray-400 hover:text-red-500">
             <i class="fa-solid fa-xmark text-2xl"></i>
@@ -312,8 +313,8 @@
             </div>
             <div class="flex justify-end gap-2 mt-4">
               <button @click="closeImportPreview" class="bg-gray-200 hover:bg-gray-300 text-gray-700 px-4 py-2 rounded-lg">Tutup</button>
-              <button v-if="!importUploading && !importResults.length" @click="handleImportUpload" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2">
-                <i class="fa-solid fa-upload"></i> Upload
+              <button v-if="!importUploading && !importResults.length" @click="importType === 'bom' ? handleBomImportUpload() : handleImportUpload()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2">
+                <i class="fa-solid fa-upload"></i> Upload {{ importType === 'bom' ? 'BOM' : 'Items' }}
               </button>
             </div>
           </div>
@@ -380,6 +381,7 @@ const importUploading = ref(false)
 const importProgress = ref(0)
 const importResults = ref([])
 const bomImportFileInput = ref(null)
+const importType = ref('') // 'items' atau 'bom'
 
 function goToPage(url) {
   if (url) router.visit(url, { preserveState: true, replace: true });
@@ -500,6 +502,7 @@ async function handleFileChange(e) {
   const file = e.target.files[0]
   if (file) {
     importFile.value = file
+    importType.value = 'items'
     importPreviewData.value = { header: [], preview: [] }
     importResults.value = []
     importProgress.value = 0
@@ -529,6 +532,7 @@ async function handleBomFileChange(e) {
   const file = e.target.files[0]
   if (file) {
     importFile.value = file
+    importType.value = 'bom'
     importPreviewData.value = { header: [], preview: [] }
     importResults.value = []
     importProgress.value = 0
@@ -563,30 +567,82 @@ async function handleImportUpload() {
         }
       }
     })
+    
+    // Jika ada error dari server
+    if (res.data.error) {
+      importUploading.value = false
+      Swal.fire({
+        title: 'Import Gagal',
+        text: res.data.message || 'Gagal import file',
+        icon: 'error',
+        confirmButtonText: 'OK'
+      })
+      return
+    }
+    
+    // Jika berhasil
     importResults.value = res.data.results || []
     importUploading.value = false
     importProgress.value = 100
-    if (res.data.error) {
-      Swal.fire('Error', res.data.message || 'Gagal import file', 'error')
+    
+    // Tampilkan hasil
+    const successCount = importResults.value.filter(r => r.status === 'success').length
+    const totalCount = importResults.value.length
+    
+    if (successCount === totalCount && totalCount > 0) {
+      Swal.fire({
+        title: 'Import Berhasil',
+        text: `Berhasil mengimport ${successCount} data items`,
+        icon: 'success',
+        confirmButtonText: 'OK'
+      }).then(() => {
+        reload()
+      })
     } else {
-      Swal.fire('Success', 'File berhasil diimport', 'success')
-      reload()
+      Swal.fire({
+        title: 'Import Selesai',
+        text: `Berhasil: ${successCount}, Gagal: ${totalCount - successCount}`,
+        icon: 'warning',
+        confirmButtonText: 'OK'
+      })
     }
+    
   } catch (err) {
     importUploading.value = false
     console.error('Import error:', err)
-    const errorMessage = err.response?.data?.message || err.message || 'Gagal import file'
-    Swal.fire('Error', errorMessage, 'error')
+    
+    let errorMessage = 'Gagal import file'
+    if (err.response?.data?.message) {
+      errorMessage = err.response.data.message
+    } else if (err.message) {
+      errorMessage = err.message
+    }
+    
+    Swal.fire({
+      title: 'Import Gagal',
+      text: errorMessage,
+      icon: 'error',
+      confirmButtonText: 'OK'
+    })
+    
+    importResults.value = [{ 
+      row: 0, 
+      name: 'Error', 
+      status: 'error', 
+      message: errorMessage 
+    }]
   }
 }
 
 async function handleBomImportUpload() {
+  console.log('BOM IMPORT UPLOAD CLICKED');
   if (!importFile.value) return
   importUploading.value = true
   importProgress.value = 0
   importResults.value = []
   const formData = new FormData()
   formData.append('file', importFile.value)
+  
   try {
     const res = await axios.post(route('items.bom.import.excel'), formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
@@ -596,18 +652,79 @@ async function handleBomImportUpload() {
         }
       }
     })
-    importResults.value = res.data.results
+    console.log('BOM Import response:', res)
+    
+    // Jika ada error dari server
+    if (res.data.error) {
+      importUploading.value = false
+      Swal.fire({
+        title: 'Import Gagal',
+        text: res.data.message || 'Gagal import BOM',
+        icon: 'error',
+        confirmButtonText: 'OK'
+      })
+      return
+    }
+    
+    // Jika berhasil
+    importResults.value = res.data.results || []
     importUploading.value = false
     importProgress.value = 100
-  } catch (err) {
+    
+    // Tampilkan hasil
+    const successCount = importResults.value.filter(r => r.status === 'success').length
+    const totalCount = importResults.value.length
+    
+    if (successCount === totalCount && totalCount > 0) {
+      Swal.fire({
+        title: 'Import Berhasil',
+        text: `Berhasil mengimport ${successCount} data BOM`,
+        icon: 'success',
+        confirmButtonText: 'OK'
+      }).then(() => {
+        reload()
+      })
+    } else {
+      Swal.fire({
+        title: 'Import Selesai',
+        text: `Berhasil: ${successCount}, Gagal: ${totalCount - successCount}`,
+        icon: 'warning',
+        confirmButtonText: 'OK'
+      })
+    }
+    
+  } catch (e) {
     importUploading.value = false
-    Swal.fire('Error', 'Gagal import file: ' + (err.response?.data?.message || err.message), 'error')
+    console.error('BOM Import error:', e)
+    console.error('BOM Import error response:', e.response)
+    
+    let errorMessage = 'Gagal import BOM'
+    if (e.response?.data?.message) {
+      errorMessage = e.response.data.message
+    } else if (e.message) {
+      errorMessage = e.message
+    }
+    
+    Swal.fire({
+      title: 'Import Gagal',
+      text: errorMessage,
+      icon: 'error',
+      confirmButtonText: 'OK'
+    })
+    
+    importResults.value = [{ 
+      row: 0, 
+      name: 'Error', 
+      status: 'error', 
+      message: errorMessage 
+    }]
   }
 }
 
 function closeImportPreview() {
   importPreviewModal.value = false
   importFile.value = null
+  importType.value = ''
   importPreviewData.value = { header: [], preview: [] }
   importResults.value = []
   importProgress.value = 0

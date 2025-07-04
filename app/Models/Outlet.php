@@ -1,21 +1,47 @@
 <?php
 namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+
 class Outlet extends Model {
+    use HasFactory;
+    
     protected $table = 'tbl_data_outlet';
     protected $primaryKey = 'id_outlet';
     public $incrementing = true;
-    public $timestamps = false;
+    public $timestamps = true;
 
     protected $fillable = [
         'nama_outlet',
-        'alamat',
-        'kota',
-        'telp',
+        'lokasi',
+        'qr_code',
+        'lat',
+        'long',
+        'keterangan',
+        'region_id',
         'status',
+        'url_places',
+    ];
+
+    protected $casts = [
+        'created_at' => 'datetime',
+        'updated_at' => 'datetime',
+        'status' => 'string'
     ];
 
     protected $appends = ['name'];
+
+    // Accessor to get status text
+    public function getStatusTextAttribute()
+    {
+        return $this->status === 'A' ? 'Active' : 'Inactive';
+    }
+
+    // Relationships
+    public function region()
+    {
+        return $this->belongsTo(Region::class, 'region_id', 'id');
+    }
 
     public function itemAvailabilities()
     {
@@ -35,5 +61,11 @@ class Outlet extends Model {
     public function getNameAttribute()
     {
         return $this->nama_outlet;
+    }
+
+    // Scope to get active records
+    public function scopeActive($query)
+    {
+        return $query->where('status', 'A');
     }
 } 

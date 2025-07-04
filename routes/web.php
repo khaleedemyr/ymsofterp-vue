@@ -17,6 +17,8 @@ use App\Http\Controllers\AnnouncementController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\SubCategoryController;
 use App\Http\Controllers\UnitController;
+use App\Http\Controllers\DataLevelController;
+use App\Http\Controllers\JabatanController;
 use App\Http\Controllers\RegionController;
 use App\Http\Controllers\WarehouseController;
 use App\Http\Controllers\OutletController;
@@ -75,6 +77,8 @@ use App\Http\Controllers\WarehouseOutletController;
 use App\Http\Controllers\ReservationController;
 use App\Http\Controllers\PaymentTypeController;
 use App\Http\Controllers\RetailWarehouseSaleController;
+use App\Http\Controllers\StockCutController;
+use App\Http\Controllers\OutletDashboardController;
 
 
 Route::get('/', function () {
@@ -111,6 +115,9 @@ Route::middleware('auth')->group(function () {
     })->name('dashboard.maintenance');
 
     Route::post('/announcement/{id}/publish', [AnnouncementController::class, 'publish'])->name('announcement.publish');
+
+    Route::resource('marketing-visit-checklist', \App\Http\Controllers\MarketingVisitChecklistController::class);
+    Route::get('marketing-visit-checklist/{id}/export', [\App\Http\Controllers\MarketingVisitChecklistController::class, 'export'])->name('marketing-visit-checklist.export');
 });
 
 // Action Plan Routes
@@ -199,6 +206,48 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/units/{id}', [UnitController::class, 'update'])->name('units.update');
     Route::patch('/units/{id}/toggle-status', [UnitController::class, 'toggleStatus'])->name('units.toggle-status');
 
+    // Data Level routes
+    Route::resource('data-levels', DataLevelController::class);
+    Route::put('/data-levels/{id}', [DataLevelController::class, 'update']);
+    Route::patch('/data-levels/{id}', [DataLevelController::class, 'update']);
+    Route::post('/data-levels/{id}', [DataLevelController::class, 'update'])->name('data-levels.update');
+    Route::patch('/data-levels/{id}/toggle-status', [DataLevelController::class, 'toggleStatus'])->name('data-levels.toggle-status');
+
+    // Jabatan dropdown and debug routes (PASTIKAN INI DI ATAS resource!)
+    Route::get('/jabatans/dropdown-data', [JabatanController::class, 'getDropdownData'])->name('jabatans.dropdown-data');
+    Route::get('/jabatans/test-dropdown', function() {
+        try {
+            $jabatans = \App\Models\Jabatan::where('status', 'A')->count();
+            $divisis = \App\Models\Divisi::where('status', 'A')->count();
+            $subDivisis = \App\Models\SubDivisi::where('status', 'A')->count();
+            $levels = \App\Models\DataLevel::where('status', 'A')->count();
+            
+            return response()->json([
+                'message' => 'Test successful',
+                'counts' => [
+                    'jabatans' => $jabatans,
+                    'divisis' => $divisis,
+                    'subDivisis' => $subDivisis,
+                    'levels' => $levels
+                ]
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'error' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine()
+            ], 500);
+        }
+    })->name('jabatans.test-dropdown');
+    Route::get('/jabatans/debug-database', [JabatanController::class, 'debugDatabase'])->name('jabatans.debug-database');
+
+    // Resource route harus SETELAH custom route!
+    Route::resource('jabatans', JabatanController::class);
+    Route::put('/jabatans/{id}', [JabatanController::class, 'update']);
+    Route::patch('/jabatans/{id}', [JabatanController::class, 'update']);
+    Route::post('/jabatans/{id}', [JabatanController::class, 'update'])->name('jabatans.update');
+    Route::patch('/jabatans/{id}/toggle-status', [JabatanController::class, 'toggleStatus'])->name('jabatans.toggle-status');
+
     // Region routes
     Route::get('/regions', [RegionController::class, 'index'])->name('regions.index');
     Route::post('/regions', [RegionController::class, 'store'])->name('regions.store');
@@ -214,6 +263,10 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/warehouses/{id}', [WarehouseController::class, 'update'])->name('warehouses.update');
     Route::delete('/warehouses/{id}', [WarehouseController::class, 'destroy'])->name('warehouses.destroy');
     Route::patch('/warehouses/{id}/toggle-status', [WarehouseController::class, 'toggleStatus'])->name('warehouses.toggle-status');
+
+    // Outlet dropdown and debug routes (PASTIKAN INI DI ATAS resource!)
+    Route::get('/outlets/dropdown-data', [OutletController::class, 'getDropdownData'])->name('outlets.dropdown-data');
+    Route::get('/outlets/debug-database', [OutletController::class, 'debugDatabase'])->name('outlets.debug-database');
 
     // Outlet routes
     Route::get('/outlets', [OutletController::class, 'index'])->name('outlets.index');
@@ -754,5 +807,36 @@ Route::post('/retail-warehouse-sale/store-customer', [App\Http\Controllers\Retai
 Route::get('/api/retail-warehouse-sale/item-price', [App\Http\Controllers\RetailWarehouseSaleController::class, 'getItemPrice']);
 
 Route::get('/report-invoice-outlet', [App\Http\Controllers\OutletPaymentController::class, 'reportInvoiceOutlet'])->name('report-invoice-outlet');
+
+Route::post('/stock-cut/order-items', [\App\Http\Controllers\StockCutController::class, 'potongStockOrderItems']);
+Route::post('/stock-cut/engineering', [\App\Http\Controllers\StockCutController::class, 'engineering']);
+
+Route::get('/stock-cut', function () {
+    return Inertia::render('StockCut');
+})->middleware(['auth', 'verified']);
+
+Route::get('/api/stock-cut/logs', [\App\Http\Controllers\StockCutController::class, 'getLogs']);
+Route::delete('/stock-cut/{id}', [\App\Http\Controllers\StockCutController::class, 'rollback']);
+
+Route::get('/stock-cut/form', function () {
+    // Ambil data outlet untuk dropdown
+    $outlets = \App\Models\Outlet::select('id_outlet', 'nama_outlet')->get()
+        ->map(function($o) {
+            return [
+                'id' => $o->id_outlet,
+                'name' => $o->nama_outlet,
+            ];
+        });
+    return Inertia::render('StockCut/Form', [
+        'outlets' => $outlets,
+    ]);
+})->name('stock-cut.form');
+
+// Route API untuk data dashboard outlet
+Route::get('/api/outlet-dashboard', [\App\Http\Controllers\OutletDashboardController::class, 'index']);
+// Route page inertia untuk dashboard outlet
+Route::get('/outlet-dashboard', function () {
+    return Inertia::render('OutletDashboard');
+});
 
 require __DIR__.'/auth.php';

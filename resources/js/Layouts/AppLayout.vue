@@ -63,11 +63,23 @@ const menuGroups = [
         ],
     },
     {
+        title: () => 'Human Resource',
+        icon: 'fa-solid fa-users-gear',
+        collapsible: true,
+        open: ref(false),
+        menus: [
+            { name: () => 'Data Level', icon: 'fa-solid fa-layer-group', route: '/data-levels', code: 'data_levels' },
+            { name: () => 'Data Jabatan', icon: 'fa-solid fa-user-tie', route: '/jabatans', code: 'data_jabatan' },
+            { name: () => 'Master Data Outlet', icon: 'fa-solid fa-store', route: '/outlets', code: 'master-data-outlet' },
+        ],
+    },
+    {
         title: () => 'Outlet Management',
         icon: 'fa-solid fa-store',
         collapsible: true,
         open: ref(false),
         menus: [
+            { name: 'Dashboard Sales Outlet', route: '/outlet-dashboard', icon: 'fa-store', group: 'Outlet Management', order: 0 },
             { name: () => 'Request Order (RO)', icon: 'fa-solid fa-calendar-check', route: '/floor-order', code: 'floor_order' },
             { name: () => 'Outlet Good Receive', icon: 'fa-solid fa-truck-loading', route: '/outlet-food-good-receives', code: 'outlet_food_good_receive' },
             { name: () => 'Good Receive Outlet Supplier', icon: 'fa-solid fa-truck-arrow-right', route: '/good-receive-outlet-supplier', code: 'good_receive_outlet_supplier' },
@@ -81,6 +93,7 @@ const menuGroups = [
             { name: () => 'Retail Food', icon: 'fa-solid fa-store', route: '/retail-food', code: 'view-retail-food' },
             { name: () => 'Retail Non Food', icon: 'fa-solid fa-shopping-bag', route: '/retail-non-food', code: 'view-retail-non-food' },
             { name: () => 'Report Invoice Outlet', icon: 'fa-solid fa-file-invoice', route: '/report-invoice-outlet', code: 'report_invoice_outlet' },
+            { name: () => 'Stock Cut', icon: 'fa-solid fa-scissors', route: '/stock-cut', code: 'stock_cut' },
         ],
     },
     {
@@ -205,6 +218,7 @@ const menuGroups = [
         menus: [
             { name: () => 'Scrapper Google Review', icon: 'fa-brands fa-google', route: '/scrapper-google-review', code: 'scrapper_google_review' },
             { name: () => 'Promo', icon: 'fa-solid fa-tag', route: '/promos', code: 'promos' },
+            { name: () => 'Marketing Visit Checklist', icon: 'fa-solid fa-clipboard-check', route: '/marketing-visit-checklist', code: 'marketing_visit_checklist_view' },
             { name: () => 'Reservasi', icon: 'fa-solid fa-calendar-check', route: '/reservations', code: 'reservations' },
         ],
     },

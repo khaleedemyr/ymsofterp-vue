@@ -33,7 +33,7 @@ class BomImportTemplateExport implements WithMultipleSheets
             })->toArray();
 
         // Get raw materials and WIP items (child items)
-        $childItems = Item::whereIn('type', ['Raw Materials', 'WIP'])
+        $childItems = Item::whereIn('type', ['Raw Materials', 'WIP', 'Finish Goods'])
             ->where('status', 'active')
             ->with('smallUnit')
             ->orderBy('name')
@@ -61,7 +61,7 @@ class InstructionsSheet implements FromArray, WithHeadings, WithTitle, WithStyle
     {
         return [
             ['Parent Item', 'Nama item parent (composed). Wajib diisi. Contoh: Nasi Goreng'],
-            ['Child Item', 'Nama item child (raw material/WIP). Wajib diisi. Contoh: Beras'],
+            ['Child Item', 'Nama item child (raw material/WIP/Finish Goods). Wajib diisi. Contoh: Beras'],
             ['Quantity', 'Jumlah item child yang dibutuhkan. Wajib diisi. Contoh: 2'],
             ['Unit', 'Unit dari item child. Wajib diisi. Contoh: Kg'],
         ];
