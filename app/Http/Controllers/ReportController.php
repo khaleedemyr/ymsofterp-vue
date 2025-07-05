@@ -500,4 +500,481 @@ class ReportController extends Controller
         }
         return response()->json($grouped);
     }
+
+    /**
+     * Sales Report Simple: filter by outlet and date range
+     */
+    public function reportSalesSimple(Request $request)
+    {
+        $outlet = $request->input('outlet');
+        $dateFrom = $request->input('date_from');
+        $dateTo = $request->input('date_to');
+
+        \Log::info('DEBUG FILTER', [
+            'outlet' => $outlet,
+            'dateFrom' => $dateFrom,
+            'dateTo' => $dateTo,
+        ]);
+
+        $query = \DB::table('orders')
+            ->select([
+                'orders.id',
+                'orders.nomor',
+                'orders.table',
+                'orders.pax',
+                'orders.total',
+                'orders.discount',
+                'orders.cashback',
+                'orders.dpp',
+                'orders.pb1',
+                'orders.service',
+                'orders.grand_total',
+                'orders.status',
+                'orders.created_at',
+                'orders.kode_outlet',
+                'tdo.nama_outlet',
+                'orders.manual_discount_amount',
+                'orders.manual_discount_reason',
+                'orders.waiters',
+                'orders.mode',
+            ])
+            ->leftJoin('tbl_data_outlet as tdo', 'orders.kode_outlet', '=', 'tdo.qr_code');
+
+        if ($outlet) {
+            $query->where('orders.kode_outlet', $outlet);
+        }
+        if ($dateFrom) {
+            $query->whereDate('orders.created_at', '>=', $dateFrom);
+        }
+        if ($dateTo) {
+            $query->whereDate('orders.created_at', '<=', $dateTo);
+        }
+        // Opsional: filter status jika dikirim
+        if ($request->has('status') && $request->status) {
+            $query->where('orders.status', $request->status);
+        }
+
+        $orders = $query->orderBy('orders.created_at')->get();
+        \Log::info('DEBUG ORDERS COUNT', ['count' => $orders->count()]);
+
+        // Tambahkan items dan promo ke setiap order
+        foreach ($orders as $order) {
+            // Items
+            $order->items = \DB::table('order_items')
+                ->leftJoin('items', 'order_items.item_id', '=', 'items.id')
+                ->where('order_items.order_id', $order->id)
+                ->select([
+                    'order_items.id',
+                    'order_items.item_id',
+                    'items.name as item_name',
+                    'order_items.qty',
+                    'order_items.price',
+                    'order_items.subtotal',
+                    'order_items.modifiers',
+                    'order_items.notes'
+                ])
+                ->get();
+            // Promo
+            $promo = \DB::table('order_promos as op')
+                ->join('promos as p', 'op.promo_id', '=', 'p.id')
+                ->where('op.order_id', $order->id)
+                ->select('p.id', 'p.name', 'p.code', 'p.type', 'p.value')
+                ->first();
+            $order->promo = $promo;
+            // Payments
+            $order->payments = \DB::table('order_payment')
+                ->where('order_id', $order->id)
+                ->select(['payment_code', 'amount'])
+                ->get();
+        }
+
+        // Summary
+        $summary = [
+            'total_sales' => $orders->sum('grand_total'),
+            'total_order' => $orders->count(),
+            'total_pax' => $orders->sum('pax'),
+            'total_discount' => $orders->sum('discount'),
+            'total_cashback' => $orders->sum('cashback'),
+            'total_service' => $orders->sum('service'),
+            'total_pb1' => $orders->sum('pb1'),
+            'total_commfee' => $orders->sum('commfee'),
+            'total_rounding' => $orders->sum('rounding'),
+            'total_promo_discount' => $orders->sum(function($order) {
+                return ($order->discount ?? 0) - ($order->manual_discount_amount ?? 0);
+            }),
+        ];
+
+        // Breakdown per hari
+        $perDay = $orders->groupBy(function($o) {
+            return \Carbon\Carbon::parse($o->created_at)->format('Y-m-d');
+        })->map(function($group) {
+            return [
+                'total_sales' => $group->sum('grand_total'),
+                'total_order' => $group->count(),
+                'total_pax' => $group->sum('pax'),
+                'total_discount' => $group->sum('discount'),
+                'total_cashback' => $group->sum('cashback'),
+                'total_service' => $group->sum('service'),
+                'total_pb1' => $group->sum('pb1'),
+                'total_commfee' => $group->sum('commfee'),
+                'total_rounding' => $group->sum('rounding'),
+                'total_promo_discount' => $group->sum(function($order) {
+                    return ($order->discount ?? 0) - ($order->manual_discount_amount ?? 0);
+                }),
+            ];
+        });
+
+        return response()->json([
+            'summary' => $summary,
+            'per_day' => $perDay,
+            'orders' => $orders,
+        ]);
+    }
+
+    /**
+     * API: Get all active outlets (for dropdown)
+     */
+    public function apiOutlets()
+    {
+        $outlets = \DB::table('tbl_data_outlet')
+            ->where('status', 'A')
+            ->whereNotNull('nama_outlet')
+            ->where('nama_outlet', '!=', '')
+            ->get(['id_outlet as id', 'nama_outlet as name', 'qr_code']);
+        return response()->json(['outlets' => $outlets]);
+    }
+
+    /**
+     * API: Get qr_code for current user's outlet
+     */
+    public function myOutletQr()
+    {
+        $user = auth()->user();
+        $qr_code = null;
+        if ($user && $user->id_outlet && $user->id_outlet != 1) {
+            $qr_code = \DB::table('tbl_data_outlet')->where('id_outlet', $user->id_outlet)->value('qr_code');
+        }
+        return response()->json(['qr_code' => $qr_code]);
+    }
+
+    public function reportItemEngineering(Request $request)
+    {
+        $outlet = $request->input('outlet');
+        $dateFrom = $request->input('date_from');
+        $dateTo = $request->input('date_to');
+
+        $query = \DB::table('order_items')
+            ->join('orders', 'order_items.order_id', '=', 'orders.id')
+            ->select([
+                'order_items.item_name',
+                \DB::raw('SUM(order_items.qty) as qty_terjual')
+            ]);
+        if ($outlet) {
+            $query->where('orders.kode_outlet', $outlet);
+        }
+        if ($dateFrom) {
+            $query->whereDate('orders.created_at', '>=', $dateFrom);
+        }
+        if ($dateTo) {
+            $query->whereDate('orders.created_at', '<=', $dateTo);
+        }
+        $query->groupBy('order_items.item_name')
+            ->orderByDesc('qty_terjual');
+
+        $items = $query->get();
+
+        // MODIFIER ENGINEERING
+        $orderItems = \DB::table('order_items')
+            ->join('orders', 'order_items.order_id', '=', 'orders.id')
+            ->select(['order_items.modifiers', 'order_items.qty'])
+            ->when($outlet, function($q) use ($outlet) {
+                $q->where('orders.kode_outlet', $outlet);
+            })
+            ->when($dateFrom, function($q) use ($dateFrom) {
+                $q->whereDate('orders.created_at', '>=', $dateFrom);
+            })
+            ->when($dateTo, function($q) use ($dateTo) {
+                $q->whereDate('orders.created_at', '<=', $dateTo);
+            })
+            ->get();
+        $modifierMap = [];
+        foreach ($orderItems as $oi) {
+            if (!$oi->modifiers) continue;
+            $mods = json_decode($oi->modifiers, true);
+            if (!is_array($mods)) continue;
+            foreach ($mods as $mod) {
+                $name = $mod['name'] ?? null;
+                $qty = $mod['qty'] ?? 1;
+                if ($name) {
+                    if (!isset($modifierMap[$name])) $modifierMap[$name] = 0;
+                    $modifierMap[$name] += $qty;
+                }
+            }
+        }
+        $modifiers = [];
+        foreach ($modifierMap as $name => $qty) {
+            $modifiers[] = [ 'name' => $name, 'qty' => $qty ];
+        }
+        usort($modifiers, function($a, $b) { return $b['qty'] <=> $a['qty']; });
+
+        return response()->json(['items' => $items, 'modifiers' => $modifiers]);
+    }
+
+    /**
+     * Receiving Sheet Report: Shows daily cost vs sales comparison
+     */
+    public function reportReceivingSheet(Request $request)
+    {
+        $outlet = $request->input('outlet');
+        $dateFrom = $request->input('date_from');
+        $dateTo = $request->input('date_to');
+
+        // Get user's outlet if not HO user
+        $user = auth()->user();
+        if ($user->id_outlet != 1) {
+            $outlet = $user->id_outlet;
+        }
+
+        // Get outlet QR code for sales query
+        $outletQrCode = null;
+        if ($outlet) {
+            $outletQrCode = DB::table('tbl_data_outlet')
+                ->where('id_outlet', $outlet)
+                ->value('qr_code');
+        }
+
+        // Query for cost data (GR items with floor order prices)
+        $costQuery = DB::table('outlet_food_good_receives as ofgr')
+            ->join('outlet_food_good_receive_items as ofgri', 'ofgr.id', '=', 'ofgri.outlet_food_good_receive_id')
+            ->join('delivery_orders as do', 'ofgr.delivery_order_id', '=', 'do.id')
+            ->join('food_packing_lists as fpl', 'do.packing_list_id', '=', 'fpl.id')
+            ->join('food_floor_orders as ffo', 'fpl.food_floor_order_id', '=', 'ffo.id')
+            ->join('food_floor_order_items as ffoi', function($join) {
+                $join->on('ffoi.floor_order_id', '=', 'ffo.id')
+                     ->on('ffoi.item_id', '=', 'ofgri.item_id');
+            })
+            ->select(
+                'ofgr.receive_date as tanggal',
+                DB::raw('SUM(ofgri.received_qty * ffoi.price) as cost')
+            );
+
+        // Apply filters
+        if ($outlet) {
+            $costQuery->where('ofgr.outlet_id', $outlet);
+        }
+        if ($dateFrom) {
+            $costQuery->whereDate('ofgr.receive_date', '>=', $dateFrom);
+        }
+        if ($dateTo) {
+            $costQuery->whereDate('ofgr.receive_date', '<=', $dateTo);
+        }
+
+        $costData = $costQuery
+            ->whereNull('ofgr.deleted_at')
+            ->groupBy('ofgr.receive_date')
+            ->get()
+            ->keyBy('tanggal');
+
+        // Query for retail_food cost (per tanggal & outlet)
+        $retailFoodQuery = DB::table('retail_food')
+            ->select('transaction_date as tanggal', DB::raw('SUM(total_amount) as retail_cost'))
+            ->where('status', 'approved')
+            ->whereNull('deleted_at');
+        if ($outlet) {
+            $retailFoodQuery->where('outlet_id', $outlet);
+        }
+        if ($dateFrom) {
+            $retailFoodQuery->whereDate('transaction_date', '>=', $dateFrom);
+        }
+        if ($dateTo) {
+            $retailFoodQuery->whereDate('transaction_date', '<=', $dateTo);
+        }
+        $retailFoodData = $retailFoodQuery
+            ->groupBy('transaction_date')
+            ->get()
+            ->keyBy('tanggal');
+
+        // Query for sales data (daily total from orders)
+        $salesQuery = DB::table('orders')
+            ->select(
+                DB::raw('DATE(created_at) as tanggal'),
+                DB::raw('SUM(grand_total) as omzet')
+            );
+
+        // Apply filters
+        if ($outletQrCode) {
+            $salesQuery->where('kode_outlet', $outletQrCode);
+        }
+        if ($dateFrom) {
+            $salesQuery->whereDate('created_at', '>=', $dateFrom);
+        }
+        if ($dateTo) {
+            $salesQuery->whereDate('created_at', '<=', $dateTo);
+        }
+
+        $salesData = $salesQuery
+            ->where('status', 'paid')
+            ->groupBy(DB::raw('DATE(created_at)'))
+            ->get()
+            ->keyBy('tanggal');
+
+        // Query for pembelanjaan ke supplier langsung (per tanggal & outlet)
+        $supplierDirectQuery = DB::table('good_receive_outlet_supplier_items as gri')
+            ->join('good_receive_outlet_suppliers as gr', 'gri.good_receive_id', '=', 'gr.id')
+            ->select('gr.receive_date as tanggal', DB::raw('SUM(gri.qty_received * gri.price) as supplier_cost'));
+        if ($outlet) {
+            $supplierDirectQuery->where('gr.outlet_id', $outlet);
+        }
+        if ($dateFrom) {
+            $supplierDirectQuery->whereDate('gr.receive_date', '>=', $dateFrom);
+        }
+        if ($dateTo) {
+            $supplierDirectQuery->whereDate('gr.receive_date', '<=', $dateTo);
+        }
+        $supplierDirectData = $supplierDirectQuery
+            ->groupBy('gr.receive_date')
+            ->get()
+            ->keyBy('tanggal');
+
+        // Query pembelanjaan per warehouse per tanggal
+        $warehouseSpendQuery = DB::table('outlet_food_good_receive_items as ofgri')
+            ->join('outlet_food_good_receives as ofgr', 'ofgri.outlet_food_good_receive_id', '=', 'ofgr.id')
+            ->join('delivery_orders as do', 'ofgr.delivery_order_id', '=', 'do.id')
+            ->join('food_packing_lists as fpl', 'do.packing_list_id', '=', 'fpl.id')
+            ->join('food_floor_orders as ffo', 'fpl.food_floor_order_id', '=', 'ffo.id')
+            ->join('food_floor_order_items as ffoi', function($join) {
+                $join->on('ffoi.floor_order_id', '=', 'ffo.id')
+                     ->on('ffoi.item_id', '=', 'ofgri.item_id');
+            })
+            ->join('warehouses as w', 'ofgr.warehouse_outlet_id', '=', 'w.id')
+            ->select(
+                'ofgr.receive_date as tanggal',
+                'w.id as warehouse_id',
+                'w.name as warehouse_name',
+                DB::raw('SUM(ofgri.received_qty * ffoi.price) as total')
+            );
+        if ($outlet) {
+            $warehouseSpendQuery->where('ofgr.outlet_id', $outlet);
+        }
+        if ($dateFrom) {
+            $warehouseSpendQuery->whereDate('ofgr.receive_date', '>=', $dateFrom);
+        }
+        if ($dateTo) {
+            $warehouseSpendQuery->whereDate('ofgr.receive_date', '<=', $dateTo);
+        }
+        $warehouseSpendData = $warehouseSpendQuery
+            ->whereNull('ofgr.deleted_at')
+            ->groupBy('ofgr.receive_date', 'w.id', 'w.name')
+            ->get();
+
+        // Ambil daftar warehouse yang muncul di data
+        $warehouses = $warehouseSpendData->map(function($row) {
+            return [
+                'id' => $row->warehouse_id,
+                'name' => $row->warehouse_name
+            ];
+        })->unique('id')->values();
+
+        // Index warehouse spend per tanggal per warehouse_id
+        $warehouseSpendByDate = [];
+        foreach ($warehouseSpendData as $row) {
+            $date = $row->tanggal;
+            $wid = $row->warehouse_id;
+            if (!isset($warehouseSpendByDate[$date])) $warehouseSpendByDate[$date] = [];
+            $warehouseSpendByDate[$date][$wid] = $row->total;
+        }
+
+        // Query pembelanjaan per supplier per tanggal
+        $supplierSpendQuery = DB::table('good_receive_outlet_supplier_items as gri')
+            ->join('good_receive_outlet_suppliers as gr', 'gri.good_receive_id', '=', 'gr.id')
+            ->join('suppliers as s', 'gr.ro_supplier_id', '=', 's.id')
+            ->select('gr.receive_date as tanggal', 's.id as supplier_id', 's.name as supplier_name', DB::raw('SUM(gri.qty_received * gri.price) as total'));
+        if ($outlet) {
+            $supplierSpendQuery->where('gr.outlet_id', $outlet);
+        }
+        if ($dateFrom) {
+            $supplierSpendQuery->whereDate('gr.receive_date', '>=', $dateFrom);
+        }
+        if ($dateTo) {
+            $supplierSpendQuery->whereDate('gr.receive_date', '<=', $dateTo);
+        }
+        $supplierSpendData = $supplierSpendQuery
+            ->groupBy('gr.receive_date', 's.id', 's.name')
+            ->get();
+
+        // Ambil daftar supplier yang muncul di data
+        $suppliers = $supplierSpendData->map(function($row) {
+            return [
+                'id' => $row->supplier_id,
+                'name' => $row->supplier_name
+            ];
+        })->unique('id')->values();
+
+        // Index supplier spend per tanggal per supplier_id
+        $supplierSpendByDate = [];
+        foreach ($supplierSpendData as $row) {
+            $date = $row->tanggal;
+            $sid = $row->supplier_id;
+            if (!isset($supplierSpendByDate[$date])) $supplierSpendByDate[$date] = [];
+            $supplierSpendByDate[$date][$sid] = $row->total;
+        }
+
+        // Combine data and calculate percentage
+        $report = [];
+        $allDates = collect($costData->keys())
+            ->merge($salesData->keys())
+            ->merge($retailFoodData->keys())
+            ->merge($supplierDirectData->keys())
+            ->merge(collect($warehouseSpendByDate)->keys())
+            ->merge(collect($supplierSpendByDate)->keys())
+            ->unique()->sort();
+
+        foreach ($allDates as $date) {
+            $cost = ($costData->get($date)?->cost ?? 0)
+                + ($retailFoodData->get($date)?->retail_cost ?? 0)
+                + ($supplierDirectData->get($date)?->supplier_cost ?? 0);
+            $omzet = $salesData->get($date)?->omzet ?? 0;
+            $persentase = $omzet > 0 ? ($cost / $omzet) * 100 : 0;
+            $row = [
+                'tanggal' => $date,
+                'omzet' => $omzet,
+                'persentase_cost' => round($persentase, 2),
+                'cost' => $cost,
+                'retail_food' => $retailFoodData->get($date)?->retail_cost ?? 0,
+                'supplier_direct' => $supplierDirectData->get($date)?->supplier_cost ?? 0,
+            ];
+            // Tambahkan pembelanjaan per warehouse
+            foreach ($warehouses as $wh) {
+                $row['warehouse_' . $wh['id']] = $warehouseSpendByDate[$date][$wh['id']] ?? 0;
+            }
+            // Tambahkan pembelanjaan per supplier
+            foreach ($suppliers as $sp) {
+                $row['supplier_' . $sp['id']] = $supplierSpendByDate[$date][$sp['id']] ?? 0;
+            }
+            $report[] = $row;
+        }
+
+        // Sort by date descending
+        $report = collect($report)->sortByDesc('tanggal')->values();
+
+        // Get outlets for filter
+        $outlets = DB::table('tbl_data_outlet')
+            ->where('status', 'A')
+            ->select('id_outlet', 'nama_outlet')
+            ->orderBy('nama_outlet')
+            ->get();
+
+        return Inertia::render('Report/ReceivingSheet', [
+            'report' => $report,
+            'outlets' => $outlets,
+            'warehouses' => $warehouses,
+            'suppliers' => $suppliers,
+            'filters' => [
+                'outlet' => $outlet,
+                'date_from' => $dateFrom,
+                'date_to' => $dateTo,
+            ],
+            'user' => $user,
+        ]);
+    }
 } 

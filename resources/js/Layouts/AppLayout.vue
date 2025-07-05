@@ -97,6 +97,17 @@ const menuGroups = [
         ],
     },
     {
+        title: () => 'Outlet Sales Report',
+        icon: 'fa-solid fa-chart-line',
+        collapsible: true,
+        open: ref(false),
+        menus: [
+        { name: () => 'Sales Report', icon: 'fa-solid fa-chart-line', route: '/report-sales-simple', code: 'outlet_sales_report' },
+            { name: () => 'Receiving Sheet', icon: 'fa-solid fa-receipt', route: '/report-receiving-sheet', code: 'receiving_sheet' },
+            { name: () => 'Item Engineering', icon: 'fa-solid fa-cogs', route: '/item-engineering', code: 'item_engineering' },
+        ],
+    },
+    {
         title: () => 'HO Finance',
         icon: 'fa-solid fa-building-columns',
         collapsible: true,

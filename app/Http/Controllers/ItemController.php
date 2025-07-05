@@ -1257,7 +1257,29 @@ $bomItems = \App\Models\Item::whereIn('id', $bomMaterialIds)->get();
 
     public function apiDetail($id)
     {
-        $item = \App\Models\Item::with('images')->findOrFail($id);
+        $item = \App\Models\Item::with(['images', 'smallUnit', 'mediumUnit', 'largeUnit'])->findOrFail($id);
+        $units = [];
+        if ($item->small_unit_id && $item->smallUnit) {
+            $units[] = [
+                'id' => $item->small_unit_id,
+                'name' => $item->smallUnit->name,
+                'type' => 'small',
+            ];
+        }
+        if ($item->medium_unit_id && $item->mediumUnit) {
+            $units[] = [
+                'id' => $item->medium_unit_id,
+                'name' => $item->mediumUnit->name,
+                'type' => 'medium',
+            ];
+        }
+        if ($item->large_unit_id && $item->largeUnit) {
+            $units[] = [
+                'id' => $item->large_unit_id,
+                'name' => $item->largeUnit->name,
+                'type' => 'large',
+            ];
+        }
         return response()->json([
             'item' => [
                 'id' => $item->id,
@@ -1270,6 +1292,7 @@ $bomItems = \App\Models\Item::whereIn('id', $bomMaterialIds)->get();
                         'path' => $img->path,
                     ];
                 })->toArray(),
+                'units' => $units,
             ]
         ]);
     }
@@ -1838,5 +1861,52 @@ $bomItems = \App\Models\Item::whereIn('id', $bomMaterialIds)->get();
                 'message' => $e->getMessage()
             ], 500);
         }
+    }
+
+    /**
+     * API: List item untuk BOM Modifier Option (status=active, kategori show_pos=0)
+     */
+    public function apiForModifierBom()
+    {
+        \Log::info('=== MASUK SHOW ITEM ===', ['id' => 'for-modifier-bom']);
+        
+        // Cek dulu semua items active
+        $allActiveItems = \DB::table('items')
+            ->where('status', 'active')
+            ->select('id', 'name', 'category_id')
+            ->get();
+            
+        \Log::info('=== ALL ACTIVE ITEMS ===', [
+            'count' => $allActiveItems->count(),
+            'sample' => $allActiveItems->take(5)->toArray()
+        ]);
+        
+        // Cek categories dengan show_pos = 0
+        $categoriesShowPos0 = \DB::table('categories')
+            ->where('show_pos', '0')
+            ->select('id', 'name', 'show_pos')
+            ->get();
+            
+        \Log::info('=== CATEGORIES SHOW_POS 0 ===', [
+            'count' => $categoriesShowPos0->count(),
+            'categories' => $categoriesShowPos0->toArray()
+        ]);
+        
+        // Query final
+        $items = \DB::table('items')
+            ->join('categories', 'items.category_id', '=', 'categories.id')
+            ->where('items.status', 'active')
+            ->where('categories.show_pos', '0')
+            ->select('items.id', 'items.name')
+            ->orderBy('items.name')
+            ->get();
+            
+        \Log::info('=== HASIL QUERY FINAL ===', [
+            'count' => $items->count(),
+            'first_item' => $items->first(),
+            'all_items' => $items->toArray()
+        ]);
+        
+        return response()->json(['items' => $items]);
     }
 } 

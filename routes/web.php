@@ -334,6 +334,7 @@ Route::middleware(['auth'])->group(function () {
 });
 
 Route::get('/items/import/template', [ItemController::class, 'downloadImportTemplate'])->name('items.import.template');
+Route::get('/api/items/for-modifier-bom', [App\Http\Controllers\ItemController::class, 'apiForModifierBom']);
 Route::get('/items/bom/import/template', [ItemController::class, 'downloadBomImportTemplate'])->name('items.bom.import.template');
 Route::post('/items/import/preview', [ItemController::class, 'previewImport'])->name('items.import.preview');
 Route::post('/items/bom/import/preview', [ItemController::class, 'previewBomImport'])->name('items.bom.import.preview');
@@ -350,6 +351,7 @@ Route::get('/api/items/autocomplete-pcs', [ItemController::class, 'autocompleteP
 Route::get('/api/items/by-supplier', [ItemController::class, 'bySupplier']);
 Route::get('/api/items/{id}', [App\Http\Controllers\ItemController::class, 'show']);
 Route::get('/api/items/{id}/detail', [App\Http\Controllers\ItemController::class, 'apiDetail']);
+
 Route::get('/items/search-for-warehouse-transfer', [ItemController::class, 'searchForWarehouseTransfer']);
 Route::get('/api/items/by-fo-schedule/{fo_schedule_id}', [App\Http\Controllers\ItemController::class, 'getByFOSchedule']);
 Route::get('/items/search-for-outlet-transfer', [ItemController::class, 'searchForOutletTransfer']);
@@ -718,6 +720,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/report-sales-pivot-special', [\App\Http\Controllers\ReportController::class, 'reportSalesPivotSpecial'])->name('report.sales-pivot-special');
     Route::get('/report-rekap-fj', [\App\Http\Controllers\ReportController::class, 'reportSalesPivotSpecial'])->name('report.rekap-fj');
     Route::get('/report-good-receive-outlet', [\App\Http\Controllers\ReportController::class, 'reportGoodReceiveOutlet'])->name('report.good-receive-outlet');
+    Route::get('/report-receiving-sheet', [\App\Http\Controllers\ReportController::class, 'reportReceivingSheet'])->name('report.receiving-sheet');
     Route::post('/report/sales-pivot-outlet-detail', [\App\Http\Controllers\ReportController::class, 'salesPivotOutletDetail'])->name('report.sales-pivot-outlet-detail');
 });
 
@@ -839,5 +842,22 @@ Route::get('/api/outlet-dashboard', [\App\Http\Controllers\OutletDashboardContro
 Route::get('/outlet-dashboard', function () {
     return Inertia::render('OutletDashboard');
 });
+
+Route::get('/report-sales-simple', function () {
+    return Inertia::render('Report/ReportSalesSimple');
+})->middleware(['auth']);
+
+Route::get('/api/outlets', [App\Http\Controllers\ReportController::class, 'apiOutlets']);
+
+Route::get('/api/report/sales-simple', [App\Http\Controllers\ReportController::class, 'reportSalesSimple']);
+
+Route::get('/api/my-outlet-qr', [App\Http\Controllers\ReportController::class, 'myOutletQr']);
+
+// API untuk item engineering
+Route::get('/api/report/item-engineering', [\App\Http\Controllers\ReportController::class, 'reportItemEngineering']);
+// Web route untuk halaman
+Route::get('/item-engineering', function () {
+    return Inertia::render('Report/ItemEngineering');
+})->middleware(['auth']);
 
 require __DIR__.'/auth.php';

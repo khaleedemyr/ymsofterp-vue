@@ -31,10 +31,13 @@ class ModifierOptionController extends Controller
 
     public function store(Request $request)
     {
+        \Log::info('STORE MODIFIER OPTION - REQUEST', $request->all());
         $validated = $request->validate([
             'modifier_id' => 'required|exists:modifiers,id',
             'name' => 'required|string|max:100',
+            'modifier_bom_json' => 'nullable|string',
         ]);
+        \Log::info('STORE MODIFIER OPTION - VALIDATED', $validated);
         $option = ModifierOption::create($validated);
         ActivityLog::create([
             'user_id' => Auth::id(),
@@ -51,10 +54,13 @@ class ModifierOptionController extends Controller
 
     public function update(Request $request, ModifierOption $modifierOption)
     {
+        \Log::info('UPDATE MODIFIER OPTION - REQUEST', $request->all());
         $validated = $request->validate([
             'modifier_id' => 'required|exists:modifiers,id',
             'name' => 'required|string|max:100',
+            'modifier_bom_json' => 'nullable|string',
         ]);
+        \Log::info('UPDATE MODIFIER OPTION - VALIDATED', $validated);
         $oldData = $modifierOption->toArray();
         $modifierOption->update($validated);
         ActivityLog::create([

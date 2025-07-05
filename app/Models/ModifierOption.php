@@ -14,6 +14,7 @@ class ModifierOption extends Model
     protected $fillable = [
         'modifier_id',
         'name',
+        'modifier_bom_json',
     ];
 
     public function modifier()

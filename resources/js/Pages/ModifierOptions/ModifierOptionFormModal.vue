@@ -1,7 +1,8 @@
 <script setup>
-import { ref, watch } from 'vue';
+import { ref, watch, reactive, onMounted } from 'vue';
 import { useForm } from '@inertiajs/vue3';
 import Swal from 'sweetalert2';
+import axios from 'axios';
 
 const props = defineProps({
   show: Boolean,
@@ -14,15 +15,79 @@ const emit = defineEmits(['close', 'success']);
 const form = useForm({
   modifier_id: '',
   name: '',
+  modifier_bom_json: '',
 });
 
-watch(() => props.show, (val) => {
-  if (val && props.mode === 'edit' && props.option) {
-    form.modifier_id = props.option.modifier_id;
-    form.name = props.option.name;
-  } else if (val && props.mode === 'create') {
-    form.modifier_id = '';
-    form.name = '';
+const bomRows = ref([]); // [{item_id, qty, unit_id}]
+const allItems = ref([]); // {id, name}
+const itemUnits = reactive({}); // item_id -> [{id, name, type}]
+const itemSearch = ref([]); // search keyword per baris
+
+async function fetchAllItems() {
+  try {
+    const res = await axios.get('/api/items/for-modifier-bom');
+    let items = [];
+    if (Array.isArray(res.data)) {
+      items = res.data;
+    } else if (Array.isArray(res.data.items)) {
+      items = res.data.items;
+    } else if (Array.isArray(res.data.data)) {
+      items = res.data.data;
+    }
+    allItems.value = items.map(i => ({ id: i.id, name: i.name }));
+  } catch (e) {
+    allItems.value = [];
+  }
+}
+
+async function fetchItemUnits(itemId) {
+  if (!itemId) return [];
+  if (itemUnits[itemId]) return itemUnits[itemId];
+  const res = await axios.get(`/api/items/${itemId}/detail`);
+  itemUnits[itemId] = res.data.item.units || [];
+  return itemUnits[itemId];
+}
+
+function addBomRow() {
+  bomRows.value.push({ item_id: '', qty: '', unit_id: '' });
+}
+function removeBomRow(idx) {
+  bomRows.value.splice(idx, 1);
+}
+
+function ensureItemSearchLength() {
+  while (itemSearch.value.length < bomRows.value.length) itemSearch.value.push('');
+  while (itemSearch.value.length > bomRows.value.length) itemSearch.value.pop();
+}
+
+watch(bomRows, ensureItemSearchLength, { deep: true });
+
+function filteredItems(idx) {
+  const keyword = (itemSearch.value[idx] || '').toLowerCase();
+  if (!keyword) return allItems.value;
+  return allItems.value.filter(i => i.name.toLowerCase().includes(keyword));
+}
+
+watch(() => props.show, async (val) => {
+  if (val) {
+    await fetchAllItems();
+    if (props.mode === 'edit' && props.option) {
+      form.modifier_id = props.option.modifier_id;
+      form.name = props.option.name;
+      if (props.option.modifier_bom_json) {
+        try {
+          bomRows.value = JSON.parse(props.option.modifier_bom_json);
+        } catch {
+          bomRows.value = [];
+        }
+      } else {
+        bomRows.value = [];
+      }
+    } else if (props.mode === 'create') {
+      form.modifier_id = '';
+      form.name = '';
+      bomRows.value = [];
+    }
   }
 });
 
@@ -30,6 +95,7 @@ const isSubmitting = ref(false);
 
 async function submit() {
   isSubmitting.value = true;
+  form.modifier_bom_json = JSON.stringify(bomRows.value);
   if (props.mode === 'create') {
     form.post(route('modifier-options.store'), {
       onSuccess: () => {
@@ -41,8 +107,7 @@ async function submit() {
       onFinish: () => isSubmitting.value = false,
     });
   } else if (props.mode === 'edit' && props.option) {
-    form._method = 'PUT';
-    form.post(route('modifier-options.update', props.option.id), {
+    form.put(route('modifier-options.update', props.option.id), {
       onSuccess: () => {
         Swal.fire('Berhasil', 'Option berhasil diupdate!', 'success');
         emit('success');
@@ -83,6 +148,48 @@ function closeModal() {
             <label class="block text-sm font-medium text-gray-700">Nama Option</label>
             <input v-model="form.name" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500" required maxlength="100" />
             <div v-if="form.errors.name" class="text-xs text-red-500 mt-1">{{ form.errors.name }}</div>
+          </div>
+
+          <!-- BOM Modifier Section -->
+          <div class="mt-6">
+            <div class="flex items-center gap-2 mb-2">
+              <span class="font-semibold text-gray-700">BOM Modifier (Potong Stok)</span>
+              <button type="button" @click="addBomRow" class="ml-auto bg-blue-500 text-white px-3 py-1 rounded shadow hover:bg-blue-700 text-xs">+ Tambah Baris</button>
+            </div>
+            <div v-if="bomRows.length === 0" class="text-gray-400 italic mb-2">Belum ada BOM</div>
+            <table v-if="bomRows.length" class="min-w-full text-sm rounded shadow mb-2">
+              <thead>
+                <tr class="bg-blue-100 text-blue-900">
+                  <th class="px-2 py-1">Item</th>
+                  <th class="px-2 py-1">Qty</th>
+                  <th class="px-2 py-1">Unit</th>
+                  <th class="px-2 py-1"></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="(row, idx) in bomRows" :key="idx" class="bg-white border-b last:border-b-0">
+                  <td class="px-2 py-1">
+                    <input v-model="itemSearch[idx]" placeholder="Cari item..." class="w-full mb-1 rounded border-gray-200 px-2 py-1 text-xs" />
+                    <select v-model="row.item_id" class="w-full rounded border-gray-300" @change="async e => { row.unit_id = ''; row.qty = ''; await fetchItemUnits(row.item_id) }">
+                      <option value="">Pilih Item</option>
+                      <option v-for="item in filteredItems(idx)" :key="item.id" :value="item.id">{{ item.name }}</option>
+                    </select>
+                  </td>
+                  <td class="px-2 py-1">
+                    <input v-model="row.qty" type="number" min="0" step="any" class="w-20 rounded border-gray-300" />
+                  </td>
+                  <td class="px-2 py-1">
+                    <select v-model="row.unit_id" class="w-full rounded border-gray-300">
+                      <option value="">Pilih Unit</option>
+                      <option v-for="unit in itemUnits[row.item_id] || []" :key="unit.id" :value="unit.id">{{ unit.name }} ({{ unit.type }})</option>
+                    </select>
+                  </td>
+                  <td class="px-2 py-1 text-center">
+                    <button type="button" @click="removeBomRow(idx)" class="text-red-500 hover:text-red-700"><i class="fa fa-trash"></i></button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
           </div>
         </form>
       </div>
