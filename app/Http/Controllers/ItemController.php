@@ -359,7 +359,7 @@ $bomItems = \App\Models\Item::whereIn('id', $bomMaterialIds)->get();
         $modifiers = Modifier::with('options')->get();
         \Log::info('BOM MATERIAL IDS', $bomMaterialIds->toArray());
         \Log::info('BOM ITEMS', $bomItems->pluck('name', 'id')->toArray());
-        \Log::info('BOM RAW', $item['boms']);
+        \Log::info('BOM RAW', $item['boms'] instanceof \Illuminate\Support\Collection ? $item['boms']->toArray() : (array) $item['boms']);
 
 
         $item->load([
@@ -667,7 +667,7 @@ $bomItems = \App\Models\Item::whereIn('id', $bomMaterialIds)->get();
         $modifiers = Modifier::with('options')->get();
         \Log::info('BOM MATERIAL IDS', $bomMaterialIds->toArray());
         \Log::info('BOM ITEMS', $bomItems->pluck('name', 'id')->toArray());
-        \Log::info('BOM RAW', $item['boms']);
+        \Log::info('BOM RAW', $item['boms'] instanceof \Illuminate\Support\Collection ? $item['boms']->toArray() : (array) $item['boms']);
         $mappedPrices = $item->prices->map(function($p) use ($regions, $outlets) {
             $regionId = $p->region_id !== null ? (int) $p->region_id : null;
             $outletId = $p->outlet_id !== null ? (int) $p->outlet_id : null;
@@ -715,6 +715,7 @@ $bomItems = \App\Models\Item::whereIn('id', $bomMaterialIds)->get();
             'min_stock' => $item->min_stock,
             'exp' => $item->exp,
             'status' => $item->status,
+            'composition_type' => $item->composition_type,
             'images' => $item->images,
             'prices' => $mappedPrices,
             'availabilities' => $item->availabilities->map(function($a) use ($regions, $outlets) {
