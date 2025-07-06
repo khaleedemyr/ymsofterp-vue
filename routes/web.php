@@ -79,6 +79,11 @@ use App\Http\Controllers\PaymentTypeController;
 use App\Http\Controllers\RetailWarehouseSaleController;
 use App\Http\Controllers\StockCutController;
 use App\Http\Controllers\OutletDashboardController;
+use App\Http\Controllers\UserController;
+use App\Http\Controllers\UserPinController;
+use App\Http\Controllers\ShiftController;
+use App\Http\Controllers\UserShiftController;
+use App\Http\Controllers\AttendanceReportController;
 
 
 Route::get('/', function () {
@@ -270,13 +275,13 @@ Route::middleware(['auth'])->group(function () {
 
     // Outlet routes
     Route::get('/outlets', [OutletController::class, 'index'])->name('outlets.index');
+    Route::get('/api/outlets', [\App\Http\Controllers\OutletController::class, 'apiList'])->name('outlets.list');
     Route::post('/outlets', [OutletController::class, 'store'])->name('outlets.store');
     Route::put('/outlets/{id}', [OutletController::class, 'update'])->name('outlets.update');
-    Route::post('/outlets/{id}', [OutletController::class, 'update'])->name('outlets.update');
     Route::delete('/outlets/{id}', [OutletController::class, 'destroy'])->name('outlets.destroy');
     Route::patch('/outlets/{id}/toggle-status', [OutletController::class, 'toggleStatus'])->name('outlets.toggle-status');
     Route::get('/outlets/{id}/download-qr', [OutletController::class, 'downloadQr'])->name('outlets.download-qr');
-    Route::get('/api/outlets', [\App\Http\Controllers\OutletController::class, 'apiList'])->name('outlets.list');
+   
 
     // Customer routes
     Route::get('/customers', [CustomerController::class, 'index'])->name('customers.index');
@@ -664,7 +669,7 @@ Route::resource('item-supplier', \App\Http\Controllers\ItemSupplierController::c
 // API autocomplete untuk Item Supplier
 Route::get('/api/suppliers', [\App\Http\Controllers\Api\SupplierController::class, 'index']);
 Route::get('/api/items', [\App\Http\Controllers\Api\ItemController::class, 'index']);
-Route::get('/api/outlets', [\App\Http\Controllers\InvestorController::class, 'outlets']);
+Route::get('/api/outlets/investor', [\App\Http\Controllers\InvestorController::class, 'outlets']);
 
 Route::get('/test-email', function() {
     try {
@@ -847,7 +852,7 @@ Route::get('/report-sales-simple', function () {
     return Inertia::render('Report/ReportSalesSimple');
 })->middleware(['auth']);
 
-Route::get('/api/outlets', [App\Http\Controllers\ReportController::class, 'apiOutlets']);
+Route::get('/api/outlets/report', [App\Http\Controllers\ReportController::class, 'apiOutlets']);
 
 Route::get('/api/report/sales-simple', [App\Http\Controllers\ReportController::class, 'reportSalesSimple']);
 
@@ -859,5 +864,45 @@ Route::get('/api/report/item-engineering', [\App\Http\Controllers\ReportControll
 Route::get('/item-engineering', function () {
     return Inertia::render('Report/ItemEngineering');
 })->middleware(['auth']);
+
+Route::get('/users/dropdown-data', [UserController::class, 'getDropdownData'])->name('users.dropdown-data');
+
+Route::resource('users', UserController::class);
+
+// Test route for dropdown data
+Route::get('/test/users-dropdown', function() {
+    return app('App\Http\Controllers\UserController')->getDropdownData();
+})->name('test.users-dropdown');
+
+Route::middleware(['auth'])->group(function () {
+    Route::prefix('users/{user}')->group(function () {
+        Route::get('pins', [UserPinController::class, 'index'])->name('users.pins.index');
+        Route::post('pins', [UserPinController::class, 'store'])->name('users.pins.store');
+    });
+    Route::put('user-pins/{id}', [UserPinController::class, 'update'])->name('users.pins.update');
+    Route::delete('user-pins/{id}', [UserPinController::class, 'destroy'])->name('users.pins.destroy');
+});
+
+Route::middleware(['auth'])->group(function () {
+    Route::resource('shifts', ShiftController::class);
+    Route::get('api/divisions', [ShiftController::class, 'apiDivisions']);
+});
+
+Route::middleware(['auth'])->group(function () {
+    Route::get('user-shifts/calendar', [UserShiftController::class, 'calendarView'])->name('user-shifts.calendar');
+    Route::resource('user-shifts', UserShiftController::class)->only(['index', 'store']);
+});
+
+Route::resource('kalender-perusahaan', App\Http\Controllers\KalenderPerusahaanController::class);
+
+Route::get('attendance-report', [App\Http\Controllers\AttendanceReportController::class, 'index']);
+Route::get('attendance-report/detail', [App\Http\Controllers\AttendanceReportController::class, 'detail']);
+Route::get('/attendance-report/shift-info', [\App\Http\Controllers\AttendanceReportController::class, 'shiftInfo']);
+Route::get('/api/attendance-report/employees', [\App\Http\Controllers\AttendanceReportController::class, 'getEmployees']);
+Route::get('attendance-report/export', [App\Http\Controllers\AttendanceReportController::class, 'exportExcel'])->name('attendance-report.export');
+
+Route::get('/report/sales-simple/export-order-detail', [\App\Http\Controllers\ReportController::class, 'exportOrderDetail'])->name('report.sales-simple.export-order-detail');
+
+Route::get('/report/item-engineering/export', [\App\Http\Controllers\ReportController::class, 'exportItemEngineering'])->name('report.item-engineering.export');
 
 require __DIR__.'/auth.php';

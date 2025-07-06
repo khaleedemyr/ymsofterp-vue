@@ -70,7 +70,13 @@ const menuGroups = [
         menus: [
             { name: () => 'Data Level', icon: 'fa-solid fa-layer-group', route: '/data-levels', code: 'data_levels' },
             { name: () => 'Data Jabatan', icon: 'fa-solid fa-user-tie', route: '/jabatans', code: 'data_jabatan' },
+            { name: () => 'Data Karyawan', icon: 'fa-solid fa-users', route: '/users', code: 'data_karyawan' },
             { name: () => 'Master Data Outlet', icon: 'fa-solid fa-store', route: '/outlets', code: 'master-data-outlet' },
+            { name: () => 'Master Jam Kerja', icon: 'fa-solid fa-clock', route: '/shifts', code: 'shift_view' },
+            { name: () => 'Input Shift Mingguan', icon: 'fa-solid fa-calendar-days', route: '/user-shifts', code: 'user_shift_view' },
+            { name: () => 'Kalender Jadwal Shift', icon: 'fa-solid fa-calendar-week', route: '/user-shifts/calendar', code: 'user_shift_calendar_view' },
+            { name: () => 'Libur Nasional', icon: 'fa-solid fa-calendar-day', route: '/kalender-perusahaan', code: 'libur_nasional' },
+            { name: () => 'Report Attendance', icon: 'fa-solid fa-fingerprint', route: '/attendance-report', code: 'attendance_report' },
         ],
     },
     {

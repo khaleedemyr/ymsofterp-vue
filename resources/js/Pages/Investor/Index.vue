@@ -150,7 +150,7 @@ const dataReady = ref(false);
 const isSubmitting = ref(false);
 
 onMounted(async () => {
-  const resOutlets = await axios.get('/api/outlets');
+  const resOutlets = await axios.get('/api/outlets/investor');
   outlets.value = resOutlets.data;
   await fetchInvestors();
   dataReady.value = true;

@@ -122,6 +122,9 @@
                     <button @click="openPerModeModal(tanggal)" class="bg-green-600 text-white px-4 py-1 ml-2 rounded-lg shadow hover:bg-green-700 transition font-bold text-sm">
                       <i class="fa-solid fa-layer-group"></i> Mode
                     </button>
+                    <button @click="exportOrderDetail(tanggal)" class="bg-yellow-500 text-white px-4 py-1 ml-2 rounded-lg shadow hover:bg-yellow-600 transition font-bold text-sm">
+                      <i class="fa-solid fa-file-excel"></i> Export
+                    </button>
                   </td>
                 </tr>
                 <tr v-if="expanded[tanggal]">
@@ -234,7 +237,7 @@ function ordersByDate(tanggal) {
 }
 
 const fetchOutlets = async () => {
-  const res = await axios.get('/api/outlets');
+  const res = await axios.get('/api/outlets/report');
   outlets.value = res.data.outlets || [];
 };
 
@@ -300,6 +303,17 @@ function openOrderDetail(order) {
 function openPerModeModal(tanggal) {
   selectedPerModeTanggal.value = tanggal;
   showPerModeModal.value = true;
+}
+
+function exportOrderDetail(tanggal) {
+  const params = {
+    outlet: filters.outlet,
+    date: tanggal,
+    date_from: filters.date_from,
+    date_to: filters.date_to,
+  };
+  const query = Object.entries(params).map(([k, v]) => `${k}=${encodeURIComponent(v||'')}`).join('&');
+  window.open(`/report/sales-simple/export-order-detail?${query}`, '_blank');
 }
 
 import { defineAsyncComponent } from 'vue';

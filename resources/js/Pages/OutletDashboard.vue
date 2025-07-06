@@ -15,6 +15,10 @@
             <option v-for="o in outlets" :key="o.id" :value="o.id">{{ o.name }}</option>
           </select>
         </div>
+        <div v-else>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Outlet</label>
+          <div class="rounded border border-gray-300 px-2 py-1 bg-gray-100 text-gray-700 min-w-[180px]">{{ user.nama_outlet }}</div>
+        </div>
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1">Tanggal Dari</label>
           <input type="date" v-model="dateFrom" class="rounded border-gray-300 px-2 py-1" />
@@ -206,6 +210,8 @@ onMounted(async () => {
     const res = await axios.get('/api/outlets')
     outlets.value = res.data.map(o => ({ id: o.id_outlet || o.id, name: o.nama_outlet || o.name }))
     if (!selectedOutlet.value && outlets.value.length) selectedOutlet.value = outlets.value[0].id
+  } else {
+    selectedOutlet.value = user.id_outlet
   }
   await fetchDashboard()
   paymentPieOptions.value = {

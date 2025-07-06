@@ -6,6 +6,11 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
+use App\Exports\OrderDetailExport;
+use App\Exports\ItemEngineeringExport;
+use App\Exports\ItemEngineeringMultiSheetExport;
+use App\Exports\ItemEngineeringSheetExport;
+use App\Exports\ModifierEngineeringSheetExport;
 
 class ReportController extends Controller
 {
@@ -528,6 +533,8 @@ class ReportController extends Controller
                 'orders.dpp',
                 'orders.pb1',
                 'orders.service',
+                'orders.commfee',
+                'orders.rounding',
                 'orders.grand_total',
                 'orders.status',
                 'orders.created_at',
@@ -556,6 +563,28 @@ class ReportController extends Controller
 
         $orders = $query->orderBy('orders.created_at')->get();
         \Log::info('DEBUG ORDERS COUNT', ['count' => $orders->count()]);
+        
+        // DEBUG: Log sample orders dengan commfee
+        $sampleOrders = $orders->take(5);
+        \Log::info('DEBUG SAMPLE ORDERS', [
+            'sample_orders' => $sampleOrders->map(function($order) {
+                return [
+                    'id' => $order->id,
+                    'nomor' => $order->nomor,
+                    'commfee' => $order->commfee,
+                    'rounding' => $order->rounding,
+                    'grand_total' => $order->grand_total,
+                ];
+            })->toArray()
+        ]);
+        
+        // DEBUG: Log total commfee dan rounding
+        \Log::info('DEBUG COMMFEE ROUNDING TOTALS', [
+            'total_commfee' => $orders->sum('commfee'),
+            'total_rounding' => $orders->sum('rounding'),
+            'orders_with_commfee' => $orders->where('commfee', '>', 0)->count(),
+            'orders_with_rounding' => $orders->where('rounding', '>', 0)->count(),
+        ]);
 
         // Tambahkan items dan promo ke setiap order
         foreach ($orders as $order) {
@@ -584,7 +613,7 @@ class ReportController extends Controller
             // Payments
             $order->payments = \DB::table('order_payment')
                 ->where('order_id', $order->id)
-                ->select(['payment_code', 'amount'])
+                ->select(['payment_code', 'amount', 'change'])
                 ->get();
         }
 
@@ -667,7 +696,9 @@ class ReportController extends Controller
             ->join('orders', 'order_items.order_id', '=', 'orders.id')
             ->select([
                 'order_items.item_name',
-                \DB::raw('SUM(order_items.qty) as qty_terjual')
+                \DB::raw('SUM(order_items.qty) as qty_terjual'),
+                \DB::raw('MAX(order_items.price) as harga_jual'),
+                \DB::raw('SUM(order_items.qty * order_items.price) as subtotal'),
             ]);
         if ($outlet) {
             $query->where('orders.kode_outlet', $outlet);
@@ -682,6 +713,7 @@ class ReportController extends Controller
             ->orderByDesc('qty_terjual');
 
         $items = $query->get();
+        $grand_total = $items->sum('subtotal');
 
         // MODIFIER ENGINEERING
         $orderItems = \DB::table('order_items')
@@ -702,12 +734,12 @@ class ReportController extends Controller
             if (!$oi->modifiers) continue;
             $mods = json_decode($oi->modifiers, true);
             if (!is_array($mods)) continue;
-            foreach ($mods as $mod) {
-                $name = $mod['name'] ?? null;
-                $qty = $mod['qty'] ?? 1;
-                if ($name) {
-                    if (!isset($modifierMap[$name])) $modifierMap[$name] = 0;
-                    $modifierMap[$name] += $qty;
+            foreach ($mods as $group) {
+                if (is_array($group)) {
+                    foreach ($group as $name => $qty) {
+                        if (!isset($modifierMap[$name])) $modifierMap[$name] = 0;
+                        $modifierMap[$name] += $qty;
+                    }
                 }
             }
         }
@@ -717,7 +749,7 @@ class ReportController extends Controller
         }
         usort($modifiers, function($a, $b) { return $b['qty'] <=> $a['qty']; });
 
-        return response()->json(['items' => $items, 'modifiers' => $modifiers]);
+        return response()->json(['items' => $items, 'modifiers' => $modifiers, 'grand_total' => $grand_total]);
     }
 
     /**
@@ -976,5 +1008,99 @@ class ReportController extends Controller
             ],
             'user' => $user,
         ]);
+    }
+
+    public function exportOrderDetail(Request $request)
+    {
+        $outlet = $request->input('outlet');
+        $date = $request->input('date');
+        // Query orders for the given date and outlet
+        $query = \DB::table('orders')
+            ->select([
+                'orders.id',
+                'orders.nomor',
+                'orders.table',
+                'orders.pax',
+                'orders.total',
+                'orders.discount',
+                'orders.cashback',
+                'orders.service',
+                'orders.pb1',
+                'orders.grand_total',
+                'orders.status',
+            ]);
+        if ($outlet) {
+            $query->where('orders.kode_outlet', $outlet);
+        }
+        if ($date) {
+            $query->whereDate('orders.created_at', $date);
+        }
+        $orders = $query->orderBy('orders.created_at')->get();
+        return new OrderDetailExport($orders, $date);
+    }
+
+    public function exportItemEngineering(Request $request)
+    {
+        $outlet = $request->input('outlet');
+        $dateFrom = $request->input('date_from');
+        $dateTo = $request->input('date_to');
+        $outletName = null;
+        if ($outlet) {
+            $outletName = \DB::table('tbl_data_outlet')->where('qr_code', $outlet)->value('nama_outlet');
+        }
+        $query = \DB::table('order_items')
+            ->join('orders', 'order_items.order_id', '=', 'orders.id')
+            ->select([
+                'order_items.item_name',
+                \DB::raw('SUM(order_items.qty) as qty_terjual'),
+                \DB::raw('MAX(order_items.price) as harga_jual'),
+                \DB::raw('SUM(order_items.qty * order_items.price) as subtotal'),
+            ]);
+        if ($outlet) {
+            $query->where('orders.kode_outlet', $outlet);
+        }
+        if ($dateFrom) {
+            $query->whereDate('orders.created_at', '>=', $dateFrom);
+        }
+        if ($dateTo) {
+            $query->whereDate('orders.created_at', '<=', $dateTo);
+        }
+        $query->groupBy('order_items.item_name')
+            ->orderByDesc('qty_terjual');
+        $items = $query->get();
+        // Get modifiers (same logic as in reportItemEngineering)
+        $orderItems = \DB::table('order_items')
+            ->join('orders', 'order_items.order_id', '=', 'orders.id')
+            ->select(['order_items.modifiers', 'order_items.qty'])
+            ->when($outlet, function($q) use ($outlet) {
+                $q->where('orders.kode_outlet', $outlet);
+            })
+            ->when($dateFrom, function($q) use ($dateFrom) {
+                $q->whereDate('orders.created_at', '>=', $dateFrom);
+            })
+            ->when($dateTo, function($q) use ($dateTo) {
+                $q->whereDate('orders.created_at', '<=', $dateTo);
+            })
+            ->get();
+        $modifierMap = [];
+        foreach ($orderItems as $oi) {
+            if (!$oi->modifiers) continue;
+            $mods = json_decode($oi->modifiers, true);
+            if (!is_array($mods)) continue;
+            foreach ($mods as $group) {
+                if (is_array($group)) {
+                    foreach ($group as $name => $qty) {
+                        if (!isset($modifierMap[$name])) $modifierMap[$name] = 0;
+                        $modifierMap[$name] += $qty;
+                    }
+                }
+            }
+        }
+        $modifiers = [];
+        foreach ($modifierMap as $name => $qty) {
+            $modifiers[] = [ 'name' => $name, 'qty' => $qty ];
+        }
+        usort($modifiers, function($a, $b) { return $b['qty'] <=> $a['qty']; });
+        return new ItemEngineeringMultiSheetExport($items, $modifiers, $outletName, $dateFrom, $dateTo);
     }
 } 

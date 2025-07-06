@@ -9,11 +9,20 @@
       <div class="border-b border-gray-200 mb-2"></div>
       <div class="space-y-2 text-base mb-4">
         <template v-for="(val, key) in order" :key="key">
-          <div v-if="key !== 'items' && key !== 'promo' && key !== 'manual_discount_amount' && key !== 'manual_discount_reason' && key !== 'id'" class="flex justify-between border-b last:border-b-0 py-1">
+          <div v-if="key !== 'items' && key !== 'promo' && key !== 'manual_discount_amount' && key !== 'manual_discount_reason' && key !== 'id' && key !== 'payments'" class="flex justify-between border-b last:border-b-0 py-1">
             <span class="font-semibold text-gray-600">{{ formatKey(key) }}</span>
             <span class="text-gray-800">{{ formatValue(key, val) }}</span>
           </div>
         </template>
+      </div>
+      <div v-if="order.payments && Array.isArray(order.payments) && order.payments.length" class="mb-4">
+        <div class="font-bold text-purple-700 mb-1">Payments</div>
+        <div class="bg-purple-50 rounded p-3 text-sm">
+          <div v-for="(payment, idx) in order.payments" :key="idx" class="flex justify-between">
+            <span class="font-semibold text-gray-600">{{ payment.payment_code }}</span>
+            <span class="text-gray-800">{{ formatCurrency(paymentAmount(payment)) }}</span>
+          </div>
+        </div>
       </div>
       <div v-if="manualDiscountVisible" class="mb-4">
         <div class="font-bold text-red-700 mb-1">Manual Discount</div>
@@ -116,6 +125,12 @@ function formatCurrency(val) {
   const num = Number(val);
   if (!isNaN(num)) return num.toLocaleString('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 });
   return val;
+}
+function paymentAmount(payment) {
+  // payment.amount - payment.change (if exists)
+  const amount = Number(payment.amount) || 0;
+  const change = Number(payment.change) || 0;
+  return amount - change;
 }
 const manualDiscountVisible = computed(() => {
   const val = props.order.manual_discount_amount;

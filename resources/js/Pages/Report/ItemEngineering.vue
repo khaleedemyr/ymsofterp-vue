@@ -36,6 +36,8 @@
                 <th class="px-6 py-3 text-left">No</th>
                 <th class="px-6 py-3 text-left">Nama Item</th>
                 <th class="px-6 py-3 text-right">Qty Terjual</th>
+                <th class="px-6 py-3 text-right">Harga Jual</th>
+                <th class="px-6 py-3 text-right">Subtotal</th>
               </tr>
             </thead>
             <tbody>
@@ -43,6 +45,12 @@
                 <td class="px-6 py-3">{{ idx + 1 }}</td>
                 <td class="px-6 py-3 font-semibold text-gray-800">{{ item.item_name }}</td>
                 <td class="px-6 py-3 text-right font-semibold">{{ item.qty_terjual }}</td>
+                <td class="px-6 py-3 text-right font-semibold">{{ formatCurrency(item.harga_jual) }}</td>
+                <td class="px-6 py-3 text-right font-semibold">{{ formatCurrency(item.subtotal) }}</td>
+              </tr>
+              <tr v-if="items.length">
+                <td colspan="4" class="px-6 py-3 text-right font-bold bg-blue-100">Grand Total</td>
+                <td class="px-6 py-3 text-right font-bold bg-blue-100">{{ formatCurrency(grandTotal) }}</td>
               </tr>
             </tbody>
           </table>
@@ -75,7 +83,7 @@
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue';
 defineOptions({ layout: AppLayout });
-import { ref, reactive, onMounted } from 'vue';
+import { ref, reactive, onMounted, computed } from 'vue';
 import axios from 'axios';
 import { usePage } from '@inertiajs/vue3';
 import * as XLSX from 'xlsx';
@@ -91,9 +99,18 @@ const modifiers = ref([]);
 const loading = ref(false);
 const outletDropdownEnabled = ref(false);
 const user = usePage().props.auth?.user || {};
+const grand_total = ref(0);
+const grandTotal = computed(() => grand_total.value);
+function formatCurrency(val) {
+  if (typeof val === 'number') return val.toLocaleString('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 });
+  if (!val) return '-';
+  const num = Number(val);
+  if (!isNaN(num)) return num.toLocaleString('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 });
+  return val;
+}
 
 const fetchOutlets = async () => {
-  const res = await axios.get('/api/outlets');
+  const res = await axios.get('/api/outlets/report');
   outlets.value = res.data.outlets || [];
 };
 
@@ -110,31 +127,20 @@ const fetchReport = async () => {
     const res = await axios.get('/api/report/item-engineering', { params: filters });
     items.value = res.data.items || [];
     modifiers.value = res.data.modifiers || [];
+    grand_total.value = res.data.grand_total || 0;
   } finally {
     loading.value = false;
   }
 };
 
 const exportExcel = () => {
-  const data = items.value.map((item, idx) => ({
-    'No': idx + 1,
-    'Nama Item': item.item_name,
-    'Qty Terjual': item.qty_terjual,
-  }));
-  const ws = XLSX.utils.json_to_sheet(data);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Item Engineering');
-  // Export juga modifier engineering
-  if (modifiers.value.length > 0) {
-    const modData = modifiers.value.map((mod, idx) => ({
-      'No': idx + 1,
-      'Nama Modifier': mod.name,
-      'Qty Terjual': mod.qty,
-    }));
-    const ws2 = XLSX.utils.json_to_sheet(modData);
-    XLSX.utils.book_append_sheet(wb, ws2, 'Modifier Engineering');
-  }
-  XLSX.writeFile(wb, 'item-engineering.xlsx');
+  const params = {
+    outlet: filters.outlet,
+    date_from: filters.date_from,
+    date_to: filters.date_to,
+  };
+  const query = Object.entries(params).map(([k, v]) => `${k}=${encodeURIComponent(v||'')}`).join('&');
+  window.open(`/report/item-engineering/export?${query}`, '_blank');
 };
 
 onMounted(async () => {

@@ -21,6 +21,8 @@ class Outlet extends Model {
         'region_id',
         'status',
         'url_places',
+        'sn',
+        'activation_code',
     ];
 
     protected $casts = [

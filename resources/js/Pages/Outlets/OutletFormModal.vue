@@ -23,6 +23,8 @@ const form = useForm({
   region_id: '',
   status: 'A',
   url_places: '',
+  sn: '',
+  activation_code: '',
 });
 
 watch(() => props.show, (val) => {
@@ -36,6 +38,8 @@ watch(() => props.show, (val) => {
     form.region_id = props.outlet.region_id;
     form.status = props.outlet.status;
     form.url_places = props.outlet.url_places || '';
+    form.sn = props.outlet.sn || '';
+    form.activation_code = props.outlet.activation_code || '';
   } else if (val && props.mode === 'create') {
     form.nama_outlet = '';
     form.lokasi = '';
@@ -46,6 +50,8 @@ watch(() => props.show, (val) => {
     form.region_id = '';
     form.status = 'A';
     form.url_places = '';
+    form.sn = '';
+    form.activation_code = '';
   }
 });
 
@@ -177,6 +183,18 @@ function closeModal() {
               <label class="block text-sm font-medium text-gray-700">Keterangan</label>
               <textarea v-model="form.keterangan" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500" rows="3" placeholder="Keterangan tambahan (opsional)"></textarea>
               <div v-if="form.errors.keterangan" class="text-xs text-red-500 mt-1">{{ form.errors.keterangan }}</div>
+            </div>
+            
+            <div>
+              <label class="block text-sm font-medium text-gray-700">Serial Number (SN)</label>
+              <input v-model="form.sn" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500" maxlength="100" placeholder="Serial Number" />
+              <div v-if="form.errors.sn" class="text-xs text-red-500 mt-1">{{ form.errors.sn }}</div>
+            </div>
+            
+            <div>
+              <label class="block text-sm font-medium text-gray-700">Activation Code</label>
+              <input v-model="form.activation_code" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500" maxlength="100" placeholder="Activation Code" />
+              <div v-if="form.errors.activation_code" class="text-xs text-red-500 mt-1">{{ form.errors.activation_code }}</div>
             </div>
           </div>
           

@@ -19,14 +19,14 @@ class User extends Authenticatable
      * @var list<string>
      */
     protected $fillable = [
-        'nik', 'no_ktp', 'nama_lengkap', 'email', 'password', 'hint_password', 'jenis_kelamin', 'tempat_lahir', 'tanggal_lahir',
-        'agama', 'status_pernikahan', 'alamat', 'alamat_ktp', 'golongan_darah', 'no_hp', 'nama_kontak_darurat',
-        'no_hp_kontak_darurat', 'hubungan_kontak_darurat', 'jumlah_anak', 'nomor_kk', 'nama_rekening', 'no_rekening',
+        'nik', 'no_ktp', 'nama_lengkap', 'email', 'password', 'hint_password', 'nama_panggilan', 'jenis_kelamin', 'tempat_lahir', 'tanggal_lahir',
+        'suku', 'agama', 'status_pernikahan', 'alamat', 'alamat_ktp', 'golongan_darah', 'no_hp', 'nama_kontak_darurat',
+        'no_hp_kontak_darurat', 'hubungan_kontak_darurat', 'nomor_kk', 'nama_rekening', 'no_rekening',
         'npwp_number', 'bpjs_health_number', 'bpjs_employment_number', 'last_education', 'name_school_college',
-        'school_college_major', 'position', 'foto_ktp', 'foto_kk', 'upload_latest_color_photo', 'imei',
-        'avatar', 'status', 'pin_pos', 'work_start_date',
+        'school_college_major', 'foto_ktp', 'foto_kk', 'upload_latest_color_photo', 'imei',
+        'status', 'pin_pos', 'tanggal_masuk',
         // field lama
-        'id_role', 'id_outlet', 'division_id',
+        'id_jabatan', 'id_outlet', 'division_id',
     ];
 
     /**
@@ -62,5 +62,10 @@ class User extends Authenticatable
     }
     public function outlet() {
         return $this->belongsTo(\App\Models\Outlet::class, 'id_outlet', 'id_outlet');
+    }
+
+    public function userPins()
+    {
+        return $this->hasMany(UserPin::class, 'user_id', 'id');
     }
 }

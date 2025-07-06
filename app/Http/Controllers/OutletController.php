@@ -50,6 +50,8 @@ class OutletController extends Controller
             'region_id' => 'required|exists:regions,id',
             'status' => 'required|in:A,N',
             'url_places' => 'nullable|string',
+            'sn' => 'nullable|string|max:100',
+            'activation_code' => 'nullable|string|max:100',
         ]);
         
         // Always set status to 'A' for new records
@@ -88,6 +90,8 @@ class OutletController extends Controller
             'region_id' => 'required|exists:regions,id',
             'status' => 'required|in:A,N',
             'url_places' => 'nullable|string',
+            'sn' => 'nullable|string|max:100',
+            'activation_code' => 'nullable|string|max:100',
         ]);
         
         try {
