@@ -6,3 +6,14 @@
 .swal2-container {
   z-index: 9999 !important;
 }
+
+/* Custom highlight for holiday */
+.holiday-header {
+  background-color: #dc2626 !important; /* Tailwind's bg-red-600 */
+  color: #fff !important;
+}
+.holiday-cell {
+  background-color: #fee2e2 !important; /* Tailwind's bg-red-100 */
+  color: #b91c1c !important;           /* Tailwind's text-red-700 */
+  border: 1px solid #fca5a5 !important;/* Tailwind's border-red-300 */
+}

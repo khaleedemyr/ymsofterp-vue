@@ -893,6 +893,8 @@ Route::middleware(['auth'])->group(function () {
     Route::resource('user-shifts', UserShiftController::class)->only(['index', 'store']);
 });
 
+Route::get('/user-shifts/calendar/export-excel', [\App\Http\Controllers\UserShiftController::class, 'exportCalendarExcel'])->name('user-shifts.calendar.export-excel');
+
 Route::resource('kalender-perusahaan', App\Http\Controllers\KalenderPerusahaanController::class);
 
 Route::get('attendance-report', [App\Http\Controllers\AttendanceReportController::class, 'index']);

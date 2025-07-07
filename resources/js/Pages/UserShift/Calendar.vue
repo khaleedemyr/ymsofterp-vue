@@ -118,6 +118,17 @@ function getBadgeColor(shiftName) {
   if (shiftName.toLowerCase().includes('siang')) return 'bg-green-400 text-white';
   return 'bg-blue-200 text-blue-900';
 }
+
+function exportExcel() {
+  const params = {
+    outlet_id: outletId.value,
+    division_id: divisionId.value,
+    month: month.value,
+    year: year.value,
+  };
+  const query = Object.entries(params).map(([k, v]) => `${k}=${encodeURIComponent(v||'')}`).join('&');
+  window.open(`/user-shifts/calendar/export-excel?${query}`, '_blank');
+}
 </script>
 
 <template>
@@ -161,6 +172,11 @@ function getBadgeColor(shiftName) {
             {{ monthNames[month-1] }} {{ year }}
           </div>
           <button @click="nextMonth" class="bg-blue-100 text-blue-700 px-3 py-2 rounded shadow hover:bg-blue-200 transition"><i class="fa-solid fa-chevron-right"></i></button>
+          <div class="flex gap-2">
+            <button @click="exportExcel" class="bg-green-600 text-white px-4 py-2 rounded-lg shadow hover:bg-green-700 transition font-bold text-sm">
+              <i class="fa-solid fa-file-excel"></i> Export to Excel
+            </button>
+          </div>
         </div>
         <div class="grid grid-cols-7 gap-2 mb-2">
           <div v-for="d in days" :key="d" class="text-center font-bold text-blue-800 text-lg uppercase drop-shadow-sm">{{ d }}</div>

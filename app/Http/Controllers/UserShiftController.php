@@ -6,6 +6,7 @@ use App\Models\Shift;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
+use App\Exports\UserShiftCalendarExport;
 
 class UserShiftController extends Controller
 {
@@ -62,6 +63,8 @@ class UserShiftController extends Controller
                 ->select('tgl_libur as date', 'keterangan as name')
                 ->get();
         }
+        \Log::info('USERSHIFT_INDEX_DATES', $dates);
+        \Log::info('USERSHIFT_INDEX_HOLIDAYS', $holidays->toArray());
         return Inertia::render('UserShift/Index', [
             'outlets' => $outlets,
             'divisions' => $divisions,
@@ -207,5 +210,64 @@ class UserShiftController extends Controller
                 'year' => $year,
             ],
         ]);
+    }
+
+    public function exportCalendarExcel(Request $request)
+    {
+        $outletId = $request->input('outlet_id');
+        $divisionId = $request->input('division_id');
+        $month = $request->input('month', date('m'));
+        $year = $request->input('year', date('Y'));
+        $outletName = $outletId ? DB::table('tbl_data_outlet')->where('id_outlet', $outletId)->value('nama_outlet') : 'Semua Outlet';
+        $divisionName = $divisionId ? DB::table('tbl_data_divisi')->where('id', $divisionId)->value('nama_divisi') : 'Semua Divisi';
+        // Ambil user
+        $users = DB::table('users')
+            ->where('status', 'A')
+            ->when($outletId, fn($q) => $q->where('id_outlet', $outletId))
+            ->when($divisionId, fn($q) => $q->where('division_id', $divisionId))
+            ->orderBy('nama_lengkap')
+            ->get();
+        // Ambil tanggal bulan tsb
+        $startDate = "$year-$month-01";
+        $endDate = date('Y-m-t', strtotime($startDate));
+        $dates = [];
+        $cur = strtotime($startDate);
+        $end = strtotime($endDate);
+        while ($cur <= $end) {
+            $dates[] = date('Y-m-d', $cur);
+            $cur = strtotime('+1 day', $cur);
+        }
+        // Ambil shift
+        $shiftData = DB::table('user_shifts')
+            ->leftJoin('shifts', 'user_shifts.shift_id', '=', 'shifts.id')
+            ->select('user_shifts.user_id', 'user_shifts.tanggal', 'shifts.shift_name')
+            ->whereBetween('user_shifts.tanggal', [$startDate, $endDate])
+            ->when($outletId, fn($q) => $q->where('user_shifts.outlet_id', $outletId))
+            ->when($divisionId, fn($q) => $q->where('user_shifts.division_id', $divisionId))
+            ->get();
+        $shiftMap = [];
+        foreach ($shiftData as $row) {
+            $shiftMap[$row->user_id][$row->tanggal] = $row->shift_name ?: 'OFF';
+        }
+        // Build data array
+        $headings = ['Nama Karyawan'];
+        foreach ($dates as $d) {
+            $headings[] = date('j', strtotime($d));
+        }
+        $data = [];
+        foreach ($users as $user) {
+            $row = [$user->nama_lengkap];
+            foreach ($dates as $d) {
+                $row[] = $shiftMap[$user->id][$d] ?? 'OFF';
+            }
+            $data[] = $row;
+        }
+        $meta = [
+            'outlet' => $outletName,
+            'divisi' => $divisionName,
+            'bulan' => date('F', strtotime($startDate)),
+            'tahun' => $year,
+        ];
+        return new UserShiftCalendarExport($data, $headings, $meta);
     }
 } 

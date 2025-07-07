@@ -26,6 +26,14 @@ function getDayName(dateStr) {
   return days[d.getDay()];
 }
 
+function formatDateLocal(dateStr) {
+  const d = new Date(dateStr);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 // Map userShifts: user_id + tanggal => shift_id
 const userShiftMap = computed(() => {
   const map = {};
@@ -39,13 +47,18 @@ const userShiftMap = computed(() => {
 const holidays = props.holidays || [];
 const holidayMap = computed(() => {
   const map = {};
-  holidays.forEach(h => { map[h.date] = h.name; });
+  holidays.forEach(h => {
+    const key = String(h.date).trim();
+    map[key] = h.name;
+  });
   return map;
 });
 
-console.log('holidays:', props.holidays);
-console.log('holidayMap:', holidayMap.value);
+const tglKey = (tgl) => String(formatDateLocal(tgl)).trim();
+
 console.log('dates:', props.dates);
+console.log('holidays:', holidays);
+console.log('holidayMap:', holidayMap.value);
 
 const form = useForm({
   outlet_id: outletId.value,
@@ -66,6 +79,10 @@ watch(() => [props.users, props.dates], () => {
 }, { immediate: true });
 
 function reloadFilter() {
+  if (!outletId.value || !divisionId.value || !startDate.value) {
+    Swal.fire('Lengkapi Filter', 'Silakan pilih outlet, divisi, dan tanggal mulai!', 'warning');
+    return;
+  }
   router.get('/user-shifts', {
     outlet_id: outletId.value,
     division_id: divisionId.value,
@@ -81,6 +98,26 @@ function submit() {
     onSuccess: () => Swal.fire('Berhasil', 'Jadwal shift berhasil disimpan!', 'success'),
   });
 }
+
+const isLibur = (tgl) => {
+  const key = tglKey(tgl);
+  return Object.keys(holidayMap.value).some(k => k === key);
+};
+
+const tooltipText = ref('');
+const tooltipVisible = ref(false);
+const tooltipX = ref(0);
+const tooltipY = ref(0);
+
+function showTooltip(text, event) {
+  tooltipText.value = text;
+  tooltipVisible.value = true;
+  tooltipX.value = event.clientX + 10;
+  tooltipY.value = event.clientY + 10;
+}
+function hideTooltip() {
+  tooltipVisible.value = false;
+}
 </script>
 
 <template>
@@ -90,7 +127,7 @@ function submit() {
         <i class="fa-solid fa-calendar-days text-blue-500"></i> Input Shift Mingguan Karyawan
       </h1>
       <div class="flex gap-4 mb-6">
-        <select v-model="outletId" class="form-input rounded-xl">
+        <select v-model="outletId" class="form-input rounded-xl" autofocus>
           <option value="">Pilih Outlet</option>
           <option v-for="o in outlets" :key="o.id" :value="o.id">{{ o.name }}</option>
         </select>
@@ -99,7 +136,13 @@ function submit() {
           <option v-for="d in divisions" :key="d.id" :value="d.id">{{ d.name }}</option>
         </select>
         <input v-model="startDate" type="date" class="form-input rounded-xl" placeholder="Tanggal Mulai (Senin)" />
-        <button @click="reloadFilter" class="bg-blue-600 text-white px-4 py-2 rounded-xl shadow hover:bg-blue-700">Tampilkan</button>
+        <button
+          @click="reloadFilter"
+          class="bg-blue-600 text-white px-4 py-2 rounded-xl shadow hover:bg-blue-700"
+          :disabled="!outletId || !divisionId || !startDate"
+        >
+          Tampilkan
+        </button>
       </div>
       <form @submit.prevent="submit">
         <div v-if="users.length && dates.length" class="bg-white rounded-2xl shadow-lg overflow-x-auto">
@@ -107,17 +150,30 @@ function submit() {
             <thead class="bg-blue-600 text-white">
               <tr>
                 <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">Nama Karyawan</th>
-                <th v-for="tgl in dates" :key="tgl" :class="holidayMap[tgl]?.trim() ? 'bg-red-600 text-white' : 'bg-blue-600 text-white'" class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">
+                <th v-for="tgl in dates" :key="tgl"
+                  :class="[
+                    'px-4 py-3 text-center text-xs font-bold uppercase tracking-wider',
+                    isLibur(tgl) ? 'holiday-header' : 'bg-blue-600 text-white'
+                  ]"
+                  @mouseenter="holidayMap.value && holidayMap.value[tglKey(tgl)] ? showTooltip(holidayMap.value[tglKey(tgl)], $event) : null"
+                  @mousemove="holidayMap.value && holidayMap.value[tglKey(tgl)] ? showTooltip(holidayMap.value[tglKey(tgl)], $event) : null"
+                  @mouseleave="hideTooltip"
+                >
                   {{ getDayName(tgl) }}<br/>
                   <span class="text-xs font-normal">{{ tgl }}</span>
-                  <span v-if="holidayMap[tgl]" class="block text-xs font-bold mt-1">{{ holidayMap[tgl] }}</span>
                 </th>
               </tr>
             </thead>
             <tbody>
               <tr v-for="user in users" :key="user.id" class="hover:bg-blue-50 transition">
                 <td class="px-4 py-2 whitespace-nowrap font-semibold">{{ user.nama_lengkap }}</td>
-                <td v-for="tgl in dates" :key="tgl" :class="holidayMap[tgl]?.trim() ? 'bg-red-100 text-red-700 border border-red-300' : ''" class="px-4 py-2 text-center" :title="holidayMap[tgl] || ''">
+                <td v-for="tgl in dates" :key="tgl"
+                  :class="[
+                    'px-4 py-2 text-center',
+                    isLibur(tgl) ? 'holiday-cell' : ''
+                  ]"
+                  :title="holidayMap.value && holidayMap.value[tglKey(tgl)] ? holidayMap.value[tglKey(tgl)] : ''"
+                >
                   <select v-model="form.shifts[user.id][tgl]" class="form-input rounded">
                     <option :value="null">OFF</option>
                     <option v-for="s in shifts" :key="s.id" :value="s.id">{{ s.shift_name }}</option>
@@ -134,6 +190,16 @@ function submit() {
           <button type="submit" class="bg-blue-600 text-white px-6 py-2 rounded-xl shadow hover:bg-blue-700" :disabled="!users.length || !dates.length">Simpan Jadwal</button>
         </div>
       </form>
+      <div v-if="tooltipVisible"
+           :style="{ position: 'fixed', left: tooltipX + 'px', top: tooltipY + 'px', background: '#222', color: '#fff', padding: '4px 8px', borderRadius: '4px', fontSize: '12px', zIndex: 9999 }">
+        {{ tooltipText }}
+      </div>
+      <div style="position:fixed;left:20px;top:20px;z-index:9999;background:#222;color:#fff;padding:8px;border-radius:4px;">
+        DEBUG TOOLTIP: {{ holidayMap.value && holidayMap.value['2025-08-17'] ? holidayMap.value['2025-08-17'] : (holidayMap.value ? JSON.stringify(holidayMap.value) : 'holidayMap not ready') }}
+      </div>
     </div>
   </AppLayout>
-</template> 
+</template>
+
+<!-- tailwind safelist: -->
+<span class="bg-red-600 bg-blue-600 bg-red-100 text-red-700 border border-red-300 text-white"></span> 

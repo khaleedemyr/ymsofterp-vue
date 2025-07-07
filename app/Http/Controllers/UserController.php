@@ -122,6 +122,18 @@ class UserController extends Controller
             'upload_latest_color_photo' => 'nullable|file|mimes:jpeg,png,jpg|max:2048',
         ]);
 
+        // Validasi unik pin_pos untuk karyawan aktif
+        if ($request->filled('pin_pos')) {
+            $exists = \App\Models\User::where('pin_pos', $request->pin_pos)
+                ->where('status', 'A')
+                ->exists();
+            if ($exists) {
+                throw ValidationException::withMessages([
+                    'pin_pos' => 'PIN POS sudah digunakan oleh karyawan aktif lain.',
+                ]);
+            }
+        }
+
         // Generate NIK
         $validated['nik'] = $this->generateNIK();
         $validated['status'] = 'A';
@@ -197,6 +209,18 @@ class UserController extends Controller
                 'foto_kk' => 'nullable|file|mimes:jpeg,png,jpg|max:2048',
                 'upload_latest_color_photo' => 'nullable|file|mimes:jpeg,png,jpg|max:2048',
             ]);
+            // Validasi unik pin_pos untuk karyawan aktif (kecuali diri sendiri)
+            if ($request->filled('pin_pos')) {
+                $exists = \App\Models\User::where('pin_pos', $request->pin_pos)
+                    ->where('status', 'A')
+                    ->where('id', '!=', $user->id)
+                    ->exists();
+                if ($exists) {
+                    throw ValidationException::withMessages([
+                        'pin_pos' => 'PIN POS sudah digunakan oleh karyawan aktif lain.',
+                    ]);
+                }
+            }
             \Log::info('UserController@update validated', $validated);
             // Handle file uploads
             if ($request->hasFile('foto_ktp')) {

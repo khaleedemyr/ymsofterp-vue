@@ -19,4 +19,8 @@ export default {
     },
 
     plugins: [forms],
+
+    safelist: [
+        'bg-red-600', 'bg-blue-600', 'bg-red-100', 'text-red-700', 'border', 'border-red-300', 'text-white'
+    ],
 };
