@@ -347,13 +347,15 @@ Route::post('/items/import/excel', [ItemController::class, 'importExcel'])->name
 Route::post('/items/bom/import/excel', [ItemController::class, 'importBom'])->name('items.bom.import.excel');
 Route::get('/items/export/excel', [ItemController::class, 'exportExcel'])->name('items.export.excel');
 Route::get('/items/export/pdf', [ItemController::class, 'exportPdf'])->name('items.export.pdf');
-Route::post('/items/{id}/toggle-status', [ItemController::class, 'toggleStatus'])->name('items.toggleStatus');
 Route::get('/api/items/search', [ItemController::class, 'search']);
 Route::get('/api/items/last-price', [\App\Http\Controllers\PurchaseOrderFoodsController::class, 'getLastPrice']);
 Route::get('/api/inventory/stock', [\App\Http\Controllers\ItemController::class, 'getStock']);
 Route::get('/api/items/by-fo-khusus', [App\Http\Controllers\ItemController::class, 'getByFOKhusus']);
 Route::get('/api/items/autocomplete-pcs', [ItemController::class, 'autocompletePcs']);
 Route::get('/api/items/by-supplier', [ItemController::class, 'bySupplier']);
+Route::get('/api/items/search-for-pr', [ItemController::class, 'searchForPr']);
+Route::post('/items/{id}/toggle-status', [ItemController::class, 'toggleStatus'])->name('items.toggleStatus');
+
 Route::get('/api/items/{id}', [App\Http\Controllers\ItemController::class, 'show']);
 Route::get('/api/items/{id}/detail', [App\Http\Controllers\ItemController::class, 'apiDetail']);
 
@@ -906,5 +908,7 @@ Route::get('attendance-report/export', [App\Http\Controllers\AttendanceReportCon
 Route::get('/report/sales-simple/export-order-detail', [\App\Http\Controllers\ReportController::class, 'exportOrderDetail'])->name('report.sales-simple.export-order-detail');
 
 Route::get('/report/item-engineering/export', [\App\Http\Controllers\ReportController::class, 'exportItemEngineering'])->name('report.item-engineering.export');
+
+Route::get('/api/items/search-for-pr', [ItemController::class, 'searchForPr']);
 
 require __DIR__.'/auth.php';

@@ -1,6 +1,6 @@
 <script setup>
-import { ref, computed, watch } from 'vue';
-import { router, useForm } from '@inertiajs/vue3';
+import { ref, computed, watch, nextTick } from 'vue';
+import { router, useForm, usePage } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import Swal from 'sweetalert2';
 
@@ -14,6 +14,9 @@ const props = defineProps({
   filter: Object,
   holidays: Array,
 });
+
+const page = usePage();
+const userOutletId = page.props.auth?.user?.id_outlet || '';
 
 const outletId = ref(props.filter?.outlet_id || '');
 const divisionId = ref(props.filter?.division_id || '');
@@ -44,10 +47,11 @@ const userShiftMap = computed(() => {
   return map;
 });
 
-const holidays = props.holidays || [];
+const loading = ref(false);
+
 const holidayMap = computed(() => {
   const map = {};
-  holidays.forEach(h => {
+  (props.holidays || []).forEach(h => {
     const key = String(h.date).trim();
     map[key] = h.name;
   });
@@ -57,7 +61,7 @@ const holidayMap = computed(() => {
 const tglKey = (tgl) => String(formatDateLocal(tgl)).trim();
 
 console.log('dates:', props.dates);
-console.log('holidays:', holidays);
+console.log('holidays:', props.holidays);
 console.log('holidayMap:', holidayMap.value);
 
 const form = useForm({
@@ -83,11 +87,18 @@ function reloadFilter() {
     Swal.fire('Lengkapi Filter', 'Silakan pilih outlet, divisi, dan tanggal mulai!', 'warning');
     return;
   }
+  loading.value = true;
   router.get('/user-shifts', {
     outlet_id: outletId.value,
     division_id: divisionId.value,
     start_date: startDate.value,
-  }, { preserveState: true, replace: true });
+  }, {
+    preserveState: true,
+    replace: true,
+    onFinish: () => {
+      nextTick(() => { loading.value = false; });
+    }
+  });
 }
 
 function submit() {
@@ -104,6 +115,12 @@ const isLibur = (tgl) => {
   return Object.keys(holidayMap.value).some(k => k === key);
 };
 
+const getKeteranganLibur = (tgl) => {
+  const key = tglKey(tgl);
+  const found = Object.entries(holidayMap.value).find(([k]) => k === key);
+  return found ? found[1] : '';
+};
+
 const tooltipText = ref('');
 const tooltipVisible = ref(false);
 const tooltipX = ref(0);
@@ -118,17 +135,25 @@ function showTooltip(text, event) {
 function hideTooltip() {
   tooltipVisible.value = false;
 }
+
+// Jika user bukan HO, set outletId ke outlet sendiri dan disable select
+if (userOutletId && userOutletId != 1) {
+  outletId.value = userOutletId;
+}
 </script>
 
 <template>
   <AppLayout title="Input Shift Mingguan Karyawan">
     <div class="max-w-6xl mx-auto py-8">
+      <div v-if="loading" class="fixed inset-0 bg-black bg-opacity-20 flex items-center justify-center z-50">
+        <div class="animate-spin rounded-full h-20 w-20 border-t-4 border-b-4 border-blue-500"></div>
+      </div>
       <h1 class="text-2xl font-bold text-blue-800 mb-6 flex items-center gap-2">
         <i class="fa-solid fa-calendar-days text-blue-500"></i> Input Shift Mingguan Karyawan
       </h1>
       <div class="flex gap-4 mb-6">
-        <select v-model="outletId" class="form-input rounded-xl" autofocus>
-          <option value="">Pilih Outlet</option>
+        <select v-model="outletId" class="form-input rounded-xl" :disabled="userOutletId != 1" autofocus>
+          <option v-if="userOutletId == 1" value="">Pilih Outlet</option>
           <option v-for="o in outlets" :key="o.id" :value="o.id">{{ o.name }}</option>
         </select>
         <select v-model="divisionId" class="form-input rounded-xl">
@@ -155,10 +180,13 @@ function hideTooltip() {
                     'px-4 py-3 text-center text-xs font-bold uppercase tracking-wider',
                     isLibur(tgl) ? 'holiday-header' : 'bg-blue-600 text-white'
                   ]"
-                  @mouseenter="holidayMap.value && holidayMap.value[tglKey(tgl)] ? showTooltip(holidayMap.value[tglKey(tgl)], $event) : null"
-                  @mousemove="holidayMap.value && holidayMap.value[tglKey(tgl)] ? showTooltip(holidayMap.value[tglKey(tgl)], $event) : null"
+                  @mouseenter="holidayMap.value && holidayMap.value[tglKey(tgl)] ? showTooltip(getKeteranganLibur(tgl), $event) : null"
+                  @mousemove="holidayMap.value && holidayMap.value[tglKey(tgl)] ? showTooltip(getKeteranganLibur(tgl), $event) : null"
                   @mouseleave="hideTooltip"
                 >
+                  <div v-if="isLibur(tgl)" class="block text-xs font-bold mb-1" style="white-space:normal;line-height:1.2;">
+                    {{ getKeteranganLibur(tgl) }}
+                  </div>
                   {{ getDayName(tgl) }}<br/>
                   <span class="text-xs font-normal">{{ tgl }}</span>
                 </th>
@@ -191,11 +219,23 @@ function hideTooltip() {
         </div>
       </form>
       <div v-if="tooltipVisible"
-           :style="{ position: 'fixed', left: tooltipX + 'px', top: tooltipY + 'px', background: '#222', color: '#fff', padding: '4px 8px', borderRadius: '4px', fontSize: '12px', zIndex: 9999 }">
+           :style="{
+             position: 'fixed',
+             left: tooltipX + 'px',
+             top: tooltipY + 'px',
+             background: 'linear-gradient(135deg, #fff 60%, #f87171 100%)',
+             color: '#b91c1c',
+             padding: '16px 24px',
+             borderRadius: '12px',
+             fontSize: '18px',
+             fontWeight: 'bold',
+             boxShadow: '0 8px 32px 0 rgba(31, 38, 135, 0.37), 0 2px 8px 0 #f87171',
+             border: '2px solid #f87171',
+             zIndex: 9999,
+             textShadow: '1px 1px 2px #fff'
+           }"
+      >
         {{ tooltipText }}
-      </div>
-      <div style="position:fixed;left:20px;top:20px;z-index:9999;background:#222;color:#fff;padding:8px;border-radius:4px;">
-        DEBUG TOOLTIP: {{ holidayMap.value && holidayMap.value['2025-08-17'] ? holidayMap.value['2025-08-17'] : (holidayMap.value ? JSON.stringify(holidayMap.value) : 'holidayMap not ready') }}
       </div>
     </div>
   </AppLayout>

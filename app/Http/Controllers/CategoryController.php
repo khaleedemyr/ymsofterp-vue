@@ -26,7 +26,7 @@ class CategoryController extends Controller
         if ($request->filled('status')) {
             $query->where('status', $request->status);
         }
-        $categories = Category::with(['availabilities.outlet'])->orderBy('id', 'desc')->paginate(10)->withQueryString();
+        $categories = $query->with(['availabilities.outlet'])->orderBy('id', 'desc')->paginate(10)->withQueryString();
         $regions = \DB::table('regions')->where('status', 'active')->select('id', 'code', 'name')->get();
         $outlets = \DB::table('tbl_data_outlet')->where('status', 'A')->select('id_outlet as id', 'nama_outlet', 'region_id')->get();
         return Inertia::render('Categories/Index', [
