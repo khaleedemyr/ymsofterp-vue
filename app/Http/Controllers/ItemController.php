@@ -24,6 +24,7 @@ use App\Models\FoodInventoryStock;
 use App\Models\FoodInventoryCard;
 use App\Exports\BomImportTemplateExport;
 use App\Imports\BomImport;
+use Illuminate\Validation\Rule;
 
 class ItemController extends Controller
 {
@@ -187,12 +188,16 @@ class ItemController extends Controller
         
         try {
             \Log::info('ItemController@store - Starting validation');
+            
+            // Get allowed types from menu_type table
+            $allowedTypes = \DB::table('menu_type')->pluck('type')->toArray();
+            
             $validated = $request->validate([
                 'category_id' => 'required|exists:categories,id',
                 'sub_category_id' => 'nullable|exists:sub_categories,id',
                 'warehouse_division_id' => 'nullable|string|max:255',
                 'sku' => 'required|string|max:255|unique:items',
-                'type' => 'nullable|in:Food,Beverages,Mod',
+                'type' => ['nullable', Rule::in($allowedTypes)],
                 'name' => 'required|string|max:255',
                 'description' => 'nullable|string',
                 'specification' => 'nullable|string',
@@ -463,7 +468,7 @@ $bomItems = \App\Models\Item::whereIn('id', $bomMaterialIds)->get();
             'sub_category_id' => 'nullable|exists:sub_categories,id',
             'warehouse_division_id' => 'nullable|string|max:255',
             'sku' => 'required|string|max:255|unique:items,sku,' . $item->id,
-            'type' => ['nullable', \Illuminate\Validation\Rule::in($allowedTypes)],
+            'type' => ['nullable', Rule::in($allowedTypes)],
             'name' => 'required|string|max:255',
             'description' => 'nullable|string',
             'specification' => 'nullable|string',

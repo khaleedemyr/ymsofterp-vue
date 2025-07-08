@@ -116,15 +116,20 @@
                   <td class="px-6 py-3 text-right font-semibold">{{ formatCurrency(row.total_rounding) }}</td>
                   <td class="px-6 py-3 text-right font-semibold">{{ formatCurrency(row.total_sales) }}</td>
                   <td class="px-6 py-3 text-center">
-                    <button @click="openEodModal(row, tanggal)" class="bg-blue-600 text-white px-4 py-1 rounded-lg shadow hover:bg-blue-700 transition font-bold text-sm">
-                      <i class="fa-solid fa-file-invoice"></i> EOD
-                    </button>
-                    <button @click="openPerModeModal(tanggal)" class="bg-green-600 text-white px-4 py-1 ml-2 rounded-lg shadow hover:bg-green-700 transition font-bold text-sm">
-                      <i class="fa-solid fa-layer-group"></i> Mode
-                    </button>
-                    <button @click="exportOrderDetail(tanggal)" class="bg-yellow-500 text-white px-4 py-1 ml-2 rounded-lg shadow hover:bg-yellow-600 transition font-bold text-sm">
-                      <i class="fa-solid fa-file-excel"></i> Export
-                    </button>
+                    <div class="flex flex-row justify-end items-center gap-2">
+                      <button @click="openEodModal(row, tanggal)" title="EOD" class="bg-blue-600 text-white p-2 rounded-lg shadow hover:bg-blue-700 transition font-bold text-sm">
+                        <i class="fa-solid fa-file-invoice"></i>
+                      </button>
+                      <button @click="openRevenueReport(tanggal)" title="Revenue Report" class="bg-orange-500 text-white p-2 rounded-lg shadow hover:bg-orange-600 transition font-bold text-sm">
+                        <i class="fa-solid fa-coins"></i>
+                      </button>
+                      <button @click="openPerModeModal(tanggal)" title="Mode" class="bg-green-600 text-white p-2 rounded-lg shadow hover:bg-green-700 transition font-bold text-sm">
+                        <i class="fa-solid fa-layer-group"></i>
+                      </button>
+                      <button @click="exportOrderDetail(tanggal)" title="Export" class="bg-yellow-500 text-white p-2 rounded-lg shadow hover:bg-yellow-600 transition font-bold text-sm">
+                        <i class="fa-solid fa-file-excel"></i>
+                      </button>
+                    </div>
                   </td>
                 </tr>
                 <tr v-if="expanded[tanggal]">
@@ -182,6 +187,7 @@
         <EodModal v-if="showEodModal" :summary="selectedEodRow" :show="showEodModal" @close="showEodModal = false" />
         <OrderDetailModal v-if="showOrderDetailModal" :order="selectedOrderDetail" @close="showOrderDetailModal = false" />
         <PerModeModal v-if="showPerModeModal" :tanggal="selectedPerModeTanggal" :orders="ordersByDate(selectedPerModeTanggal)" @close="showPerModeModal = false" />
+        <RevenueReportModal v-if="showRevenueReportModal" :tanggal="selectedRevenueTanggal" :orders="selectedRevenueOrders" :outlets="outlets" @close="showRevenueReportModal = false" />
       </div>
     </div>
   </div>
@@ -216,6 +222,9 @@ const user = usePage().props.auth?.user || {};
 const outletDropdownEnabled = ref(false);
 const showPerModeModal = ref(false);
 const selectedPerModeTanggal = ref(null);
+const showRevenueReportModal = ref(false);
+const selectedRevenueOrders = ref([]);
+const selectedRevenueTanggal = ref('');
 
 const avgCheckSummary = computed(() => {
   const sales = report.summary.total_sales || 0;
@@ -291,6 +300,7 @@ function openEodModal(row, tanggal) {
     total_pax: row.total_pax,
     ave_check: calcAvgCheck(row.total_sales, row.total_pax),
     total_order: row.total_order,
+    nama_outlet: report.orders[0]?.nama_outlet || '',
   };
   showEodModal.value = true;
 }
@@ -303,6 +313,12 @@ function openOrderDetail(order) {
 function openPerModeModal(tanggal) {
   selectedPerModeTanggal.value = tanggal;
   showPerModeModal.value = true;
+}
+
+function openRevenueReport(tanggal) {
+  selectedRevenueTanggal.value = tanggal;
+  selectedRevenueOrders.value = ordersByDate(tanggal);
+  showRevenueReportModal.value = true;
 }
 
 function exportOrderDetail(tanggal) {
@@ -320,6 +336,7 @@ import { defineAsyncComponent } from 'vue';
 const EodModal = defineAsyncComponent(() => import('./EodModal.vue'));
 const OrderDetailModal = defineAsyncComponent(() => import('./OrderDetailModal.vue'));
 const PerModeModal = defineAsyncComponent(() => import('./PerModeModal.vue'));
+const RevenueReportModal = defineAsyncComponent(() => import('./RevenueReportModal.vue'));
 </script>
 
 <style scoped>

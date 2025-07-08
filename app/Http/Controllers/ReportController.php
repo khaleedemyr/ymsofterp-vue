@@ -1103,4 +1103,83 @@ class ReportController extends Controller
         usort($modifiers, function($a, $b) { return $b['qty'] <=> $a['qty']; });
         return new ItemEngineeringMultiSheetExport($items, $modifiers, $outletName, $dateFrom, $dateTo);
     }
+
+    public function apiOutletExpenses(Request $request)
+    {
+        \Log::info('apiOutletExpenses called', [
+            'outlet_id' => $request->input('outlet_id'),
+            'date' => $request->input('date'),
+        ]);
+        $outletId = $request->input('outlet_id');
+        $date = $request->input('date');
+        // Retail Food
+        $retailFoods = \App\Models\RetailFood::with(['items', 'invoices'])
+            ->where('outlet_id', $outletId)
+            ->whereDate('transaction_date', $date)
+            ->where('status', 'approved')
+            ->get()
+            ->map(function($rf) {
+                return [
+                    'id' => $rf->id,
+                    'retail_number' => $rf->retail_number,
+                    'transaction_date' => $rf->transaction_date,
+                    'total_amount' => $rf->total_amount,
+                    'notes' => $rf->notes,
+                    'items' => $rf->items->map(function($item) {
+                        return [
+                            'id' => $item->id,
+                            'item_name' => $item->item_name ?? $item->nama_barang,
+                            'qty' => $item->qty,
+                            'harga_barang' => $item->harga_barang,
+                            'subtotal' => $item->subtotal,
+                        ];
+                    }),
+                    'invoices' => $rf->invoices->map(function($inv) {
+                        return [
+                            'file_path' => $inv->file_path ? (\Storage::disk('public')->url($inv->file_path)) : null
+                        ];
+                    }),
+                ];
+            });
+        // Retail Non Food
+        $retailNonFoods = \App\Models\RetailNonFood::with(['items', 'invoices'])
+            ->where('outlet_id', $outletId)
+            ->whereDate('transaction_date', $date)
+            ->where('status', 'approved')
+            ->get()
+            ->map(function($rnf) {
+                return [
+                    'id' => $rnf->id,
+                    'retail_number' => $rnf->retail_number,
+                    'transaction_date' => $rnf->transaction_date,
+                    'total_amount' => $rnf->total_amount,
+                    'notes' => $rnf->notes,
+                    'items' => $rnf->items->map(function($item) {
+                        return [
+                            'id' => $item->id,
+                            'item_name' => $item->item_name,
+                            'qty' => $item->qty,
+                            'unit' => $item->unit,
+                            'price' => $item->price,
+                            'subtotal' => $item->subtotal,
+                        ];
+                    }),
+                    'invoices' => $rnf->invoices->map(function($inv) {
+                        return [
+                            'file_path' => $inv->file_path ? (\Storage::disk('public')->url($inv->file_path)) : null
+                        ];
+                    }),
+                ];
+            });
+        \Log::info('apiOutletExpenses result', [
+            'retail_food_count' => $retailFoods->count(),
+            'retail_non_food_count' => $retailNonFoods->count(),
+            'retail_food_ids' => $retailFoods->pluck('id'),
+            'retail_non_food_ids' => $retailNonFoods->pluck('id'),
+        ]);
+        return response()->json([
+            'retail_food' => $retailFoods,
+            'retail_non_food' => $retailNonFoods,
+        ]);
+    }
 } 

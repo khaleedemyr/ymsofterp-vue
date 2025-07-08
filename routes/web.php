@@ -857,6 +857,7 @@ Route::get('/report-sales-simple', function () {
 Route::get('/api/outlets/report', [App\Http\Controllers\ReportController::class, 'apiOutlets']);
 
 Route::get('/api/report/sales-simple', [App\Http\Controllers\ReportController::class, 'reportSalesSimple']);
+Route::get('/api/outlet-expenses', [App\Http\Controllers\ReportController::class, 'apiOutletExpenses']);
 
 Route::get('/api/my-outlet-qr', [App\Http\Controllers\ReportController::class, 'myOutletQr']);
 
@@ -910,5 +911,7 @@ Route::get('/report/sales-simple/export-order-detail', [\App\Http\Controllers\Re
 Route::get('/report/item-engineering/export', [\App\Http\Controllers\ReportController::class, 'exportItemEngineering'])->name('report.item-engineering.export');
 
 Route::get('/api/items/search-for-pr', [ItemController::class, 'searchForPr']);
+
+
 
 require __DIR__.'/auth.php';
