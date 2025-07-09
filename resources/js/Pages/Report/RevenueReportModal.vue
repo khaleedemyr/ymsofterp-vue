@@ -158,14 +158,35 @@ function previewImage(url) {
 async function fetchExpenses() {
   console.log('fetchExpenses called', { orders: props.orders, tanggal: props.tanggal, outlets: props.outlets });
   if (!props.orders || !props.orders.length) return;
+  
   // Cari kode_outlet dari salah satu order
   const kodeOutlet = props.orders[0]?.kode_outlet;
   let outletId = null;
+  
   if (kodeOutlet && props.outlets) {
     const found = props.outlets.find(o => o.qr_code === kodeOutlet);
     outletId = found ? found.id : null;
   }
-  if (!outletId || !props.tanggal) return;
+  
+  // Jika tidak ditemukan di outlets array, coba ambil dari API
+  if (!outletId && kodeOutlet) {
+    try {
+      const res = await fetch(`/api/outlets/report`);
+      if (res.ok) {
+        const data = await res.json();
+        const found = data.outlets?.find(o => o.qr_code === kodeOutlet);
+        outletId = found ? found.id : null;
+      }
+    } catch (e) {
+      console.error('Error fetching outlets for outlet ID lookup:', e);
+    }
+  }
+  
+  if (!outletId || !props.tanggal) {
+    console.log('fetchExpenses: missing outletId or tanggal', { outletId, tanggal: props.tanggal });
+    return;
+  }
+  
   loadingExpenses.value = true;
   try {
     console.log('fetchExpenses: fetching', `/api/outlet-expenses?outlet_id=${encodeURIComponent(outletId)}&date=${encodeURIComponent(props.tanggal)}`);
@@ -176,9 +197,11 @@ async function fetchExpenses() {
       expenses.value = data;
     } else {
       console.log('fetchExpenses: response not ok', res.status);
+      expenses.value = { retail_food: [], retail_non_food: [] };
     }
   } catch (e) {
     console.error('fetchExpenses error', e);
+    expenses.value = { retail_food: [], retail_non_food: [] };
   } finally {
     loadingExpenses.value = false;
   }

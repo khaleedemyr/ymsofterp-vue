@@ -9,6 +9,10 @@
           <div class="summary-label">Total Sales</div>
           <div class="summary-value">{{ formatCurrency(report.summary.total_sales) }}</div>
         </div>
+        <div class="summary-card gradient-darkblue">
+          <div class="summary-label">Grand Total</div>
+          <div class="summary-value">{{ formatCurrency(report.summary.grand_total) }}</div>
+        </div>
         <div class="summary-card gradient-green">
           <div class="summary-label">Total Order</div>
           <div class="summary-value">{{ report.summary.total_order }}</div>
@@ -93,6 +97,7 @@
                 <th class="px-6 py-3 text-right">Commfee</th>
                 <th class="px-6 py-3 text-right">Rounding</th>
                 <th class="px-6 py-3 text-right">Total Sales</th>
+                <th class="px-6 py-3 text-right">Grand Total</th>
                 <th class="px-6 py-3 text-center">EOD</th>
               </tr>
             </thead>
@@ -107,7 +112,7 @@
                   <td class="px-6 py-3 font-semibold text-gray-800">{{ tanggal }}</td>
                   <td class="px-6 py-3 text-right font-semibold">{{ row.total_order }}</td>
                   <td class="px-6 py-3 text-right font-semibold">{{ row.total_pax }}</td>
-                  <td class="px-6 py-3 text-right font-semibold">{{ formatCurrency(calcAvgCheck(row.total_sales, row.total_pax)) }}</td>
+                  <td class="px-6 py-3 text-right font-semibold">{{ formatCurrency(row.avg_check ?? calcAvgCheck(row.total_sales, row.total_pax)) }}</td>
                   <td class="px-6 py-3 text-right font-semibold">{{ formatCurrency(row.total_discount) }}</td>
                   <td class="px-6 py-3 text-right font-semibold">{{ formatCurrency(row.total_cashback) }}</td>
                   <td v-if="user.id_outlet == 1" class="px-6 py-3 text-right font-semibold">{{ formatCurrency(row.total_service) }}</td>
@@ -115,6 +120,7 @@
                   <td class="px-6 py-3 text-right font-semibold">{{ formatCurrency(row.total_commfee) }}</td>
                   <td class="px-6 py-3 text-right font-semibold">{{ formatCurrency(row.total_rounding) }}</td>
                   <td class="px-6 py-3 text-right font-semibold">{{ formatCurrency(row.total_sales) }}</td>
+                  <td class="px-6 py-3 text-right font-semibold">{{ formatCurrency(row.grand_total) }}</td>
                   <td class="px-6 py-3 text-center">
                     <div class="flex flex-row justify-end items-center gap-2">
                       <button @click="openEodModal(row, tanggal)" title="EOD" class="bg-blue-600 text-white p-2 rounded-lg shadow hover:bg-blue-700 transition font-bold text-sm">
@@ -277,6 +283,8 @@ onMounted(async () => {
   } else {
     outletDropdownEnabled.value = false;
     await fetchMyOutletQr();
+    // Tetap fetch outlets untuk user non-superuser agar RevenueReportModal bisa mengakses outlet data
+    await fetchOutlets();
   }
 });
 
@@ -287,19 +295,8 @@ const formatCurrency = (val) => {
 
 function openEodModal(row, tanggal) {
   selectedEodRow.value = {
+    ...row,
     tanggal,
-    total_sales: row.total_sales,
-    total_discount: row.total_discount,
-    total_cashback: row.total_cashback,
-    net_sales: row.net_sales ?? (row.total_sales - row.total_discount - row.total_cashback),
-    total_pb1: row.total_pb1,
-    total_service: row.total_service,
-    total_commfee: row.total_commfee,
-    total_rounding: row.total_rounding,
-    grand_total: row.grand_total ?? (row.total_sales + row.total_pb1 + row.total_service + row.total_commfee + row.total_rounding),
-    total_pax: row.total_pax,
-    ave_check: calcAvgCheck(row.total_sales, row.total_pax),
-    total_order: row.total_order,
     nama_outlet: report.orders[0]?.nama_outlet || '',
   };
   showEodModal.value = true;
@@ -397,5 +394,8 @@ const RevenueReportModal = defineAsyncComponent(() => import('./RevenueReportMod
 }
 .gradient-white {
   background: linear-gradient(135deg, #fff 0%, #f3f4f6 100%);
+}
+.gradient-darkblue {
+  background: linear-gradient(135deg, #dbeafe 0%, #1e3a8a 100%);
 }
 </style> 

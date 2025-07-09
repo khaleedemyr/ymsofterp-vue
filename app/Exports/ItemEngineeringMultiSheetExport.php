@@ -28,7 +28,7 @@ class ItemEngineeringMultiSheetExport implements WithMultipleSheets, Responsable
     public function sheets(): array
     {
         return [
-            'Item Engineering' => new ItemEngineeringSheetExport($this->items),
+            'Item Engineering' => new ItemEngineeringGroupedSheetExport($this->items),
             'Modifier Engineering' => new ModifierEngineeringSheetExport($this->modifiers),
         ];
     }

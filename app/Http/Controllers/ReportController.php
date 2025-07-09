@@ -619,15 +619,30 @@ class ReportController extends Controller
 
         // Summary
         $summary = [
-            'total_sales' => $orders->sum('grand_total'),
-            'total_order' => $orders->count(),
-            'total_pax' => $orders->sum('pax'),
+            // 1. Sales (+): sum(total) from orders
+            'total_sales' => $orders->sum('total'),
+            // 2. Disc (-): sum(discount) from orders
             'total_discount' => $orders->sum('discount'),
+            // 3. Cashback: sum(cashback) from orders
             'total_cashback' => $orders->sum('cashback'),
-            'total_service' => $orders->sum('service'),
+            // 4. Net Sales: sum(total) - sum(discount) - sum(cashback)
+            'net_sales' => $orders->sum('total') - $orders->sum('discount') - $orders->sum('cashback'),
+            // 5. pb1: sum(pb1) from orders
             'total_pb1' => $orders->sum('pb1'),
+            // 6. service: sum(service) from orders
+            'total_service' => $orders->sum('service'),
+            // 7. commfee: sum(commfee) from orders
             'total_commfee' => $orders->sum('commfee'),
+            // 8. rounding: sum(rounding) from orders
             'total_rounding' => $orders->sum('rounding'),
+            // 9. Grand total: sum(grand_total) from orders
+            'grand_total' => $orders->sum('grand_total'),
+            // 10. jumlah pax: sum(pax) from orders
+            'total_pax' => $orders->sum('pax'),
+            // 11. avg check: sum(grand_total)/sum(pax) from orders
+            'avg_check' => $orders->sum('pax') > 0 ? round($orders->sum('grand_total') / $orders->sum('pax')) : 0,
+            // Existing fields (if needed)
+            'total_order' => $orders->count(),
             'total_promo_discount' => $orders->sum(function($order) {
                 return ($order->discount ?? 0) - ($order->manual_discount_amount ?? 0);
             }),
@@ -638,7 +653,8 @@ class ReportController extends Controller
             return \Carbon\Carbon::parse($o->created_at)->format('Y-m-d');
         })->map(function($group) {
             return [
-                'total_sales' => $group->sum('grand_total'),
+                // Sales (+): sum(total) from orders per day
+                'total_sales' => $group->sum('total'),
                 'total_order' => $group->count(),
                 'total_pax' => $group->sum('pax'),
                 'total_discount' => $group->sum('discount'),
@@ -650,6 +666,10 @@ class ReportController extends Controller
                 'total_promo_discount' => $group->sum(function($order) {
                     return ($order->discount ?? 0) - ($order->manual_discount_amount ?? 0);
                 }),
+                // Tambahkan net_sales, grand_total, avg_check jika perlu
+                'net_sales' => $group->sum('total') - $group->sum('discount') - $group->sum('cashback'),
+                'grand_total' => $group->sum('grand_total'),
+                'avg_check' => $group->sum('pax') > 0 ? round($group->sum('grand_total') / $group->sum('pax')) : 0,
             ];
         });
 
@@ -665,11 +685,18 @@ class ReportController extends Controller
      */
     public function apiOutlets()
     {
-        $outlets = \DB::table('tbl_data_outlet')
+        $user = auth()->user();
+        $query = \DB::table('tbl_data_outlet')
             ->where('status', 'A')
             ->whereNotNull('nama_outlet')
-            ->where('nama_outlet', '!=', '')
-            ->get(['id_outlet as id', 'nama_outlet as name', 'qr_code']);
+            ->where('nama_outlet', '!=', '');
+        
+        // Jika user bukan superuser (id_outlet != 1), hanya tampilkan outlet mereka sendiri
+        if ($user->id_outlet != 1) {
+            $query->where('id_outlet', $user->id_outlet);
+        }
+        
+        $outlets = $query->get(['id_outlet as id', 'nama_outlet as name', 'qr_code']);
         return response()->json(['outlets' => $outlets]);
     }
 
@@ -692,10 +719,14 @@ class ReportController extends Controller
         $dateFrom = $request->input('date_from');
         $dateTo = $request->input('date_to');
 
+        // Query untuk items dengan category
         $query = \DB::table('order_items')
             ->join('orders', 'order_items.order_id', '=', 'orders.id')
+            ->leftJoin('items', 'order_items.item_id', '=', 'items.id')
+            ->leftJoin('categories', 'items.category_id', '=', 'categories.id')
             ->select([
                 'order_items.item_name',
+                'categories.name as category_name',
                 \DB::raw('SUM(order_items.qty) as qty_terjual'),
                 \DB::raw('MAX(order_items.price) as harga_jual'),
                 \DB::raw('SUM(order_items.qty * order_items.price) as subtotal'),
@@ -709,11 +740,21 @@ class ReportController extends Controller
         if ($dateTo) {
             $query->whereDate('orders.created_at', '<=', $dateTo);
         }
-        $query->groupBy('order_items.item_name')
+        $query->groupBy('order_items.item_name', 'categories.name')
+            ->orderBy('categories.name')
             ->orderByDesc('qty_terjual');
 
         $items = $query->get();
         $grand_total = $items->sum('subtotal');
+
+        // Group items by category
+        $itemsByCategory = $items->groupBy('category_name')->map(function($categoryItems) {
+            return [
+                'items' => $categoryItems,
+                'total_qty' => $categoryItems->sum('qty_terjual'),
+                'total_subtotal' => $categoryItems->sum('subtotal'),
+            ];
+        });
 
         // MODIFIER ENGINEERING
         $orderItems = \DB::table('order_items')
@@ -749,7 +790,12 @@ class ReportController extends Controller
         }
         usort($modifiers, function($a, $b) { return $b['qty'] <=> $a['qty']; });
 
-        return response()->json(['items' => $items, 'modifiers' => $modifiers, 'grand_total' => $grand_total]);
+        return response()->json([
+            'items' => $items, 
+            'items_by_category' => $itemsByCategory,
+            'modifiers' => $modifiers, 
+            'grand_total' => $grand_total
+        ]);
     }
 
     /**
@@ -1048,10 +1094,15 @@ class ReportController extends Controller
         if ($outlet) {
             $outletName = \DB::table('tbl_data_outlet')->where('qr_code', $outlet)->value('nama_outlet');
         }
+        
+        // Query untuk items dengan category (sama seperti reportItemEngineering)
         $query = \DB::table('order_items')
             ->join('orders', 'order_items.order_id', '=', 'orders.id')
+            ->leftJoin('items', 'order_items.item_id', '=', 'items.id')
+            ->leftJoin('categories', 'items.category_id', '=', 'categories.id')
             ->select([
                 'order_items.item_name',
+                'categories.name as category_name',
                 \DB::raw('SUM(order_items.qty) as qty_terjual'),
                 \DB::raw('MAX(order_items.price) as harga_jual'),
                 \DB::raw('SUM(order_items.qty * order_items.price) as subtotal'),
@@ -1065,9 +1116,11 @@ class ReportController extends Controller
         if ($dateTo) {
             $query->whereDate('orders.created_at', '<=', $dateTo);
         }
-        $query->groupBy('order_items.item_name')
+        $query->groupBy('order_items.item_name', 'categories.name')
+            ->orderBy('categories.name')
             ->orderByDesc('qty_terjual');
         $items = $query->get();
+        
         // Get modifiers (same logic as in reportItemEngineering)
         $orderItems = \DB::table('order_items')
             ->join('orders', 'order_items.order_id', '=', 'orders.id')
@@ -1110,8 +1163,23 @@ class ReportController extends Controller
             'outlet_id' => $request->input('outlet_id'),
             'date' => $request->input('date'),
         ]);
+        
+        $user = auth()->user();
         $outletId = $request->input('outlet_id');
         $date = $request->input('date');
+        
+        // Validasi: user hanya bisa mengakses data outlet mereka sendiri, kecuali superuser (id_outlet = 1)
+        if ($user->id_outlet != 1 && $user->id_outlet != $outletId) {
+            \Log::warning('apiOutletExpenses: unauthorized access attempt', [
+                'user_id_outlet' => $user->id_outlet,
+                'requested_outlet_id' => $outletId,
+            ]);
+            return response()->json([
+                'retail_food' => [],
+                'retail_non_food' => [],
+            ]);
+        }
+        
         // Retail Food
         $retailFoods = \App\Models\RetailFood::with(['items', 'invoices'])
             ->where('outlet_id', $outletId)

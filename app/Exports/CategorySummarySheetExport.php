@@ -9,37 +9,41 @@ use Maatwebsite\Excel\Concerns\WithStyles;
 use Maatwebsite\Excel\Concerns\WithColumnWidths;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 
-class ItemEngineeringSheetExport implements FromCollection, WithHeadings, WithMapping, WithStyles, WithColumnWidths
+class CategorySummarySheetExport implements FromCollection, WithHeadings, WithMapping, WithStyles, WithColumnWidths
 {
-    private $items;
-    public function __construct($items)
+    private $itemsByCategory;
+    
+    public function __construct($itemsByCategory)
     {
-        $this->items = $items;
+        $this->itemsByCategory = $itemsByCategory;
     }
+    
     public function collection()
     {
-        return collect($this->items);
+        return collect($this->itemsByCategory);
     }
+    
     public function headings(): array
     {
-        return ['No', 'Category', 'Nama Item', 'Qty Terjual', 'Harga Jual', 'Subtotal'];
+        return ['No', 'Category', 'Total Qty', 'Total Sales', 'Item Count'];
     }
+    
     public function map($item): array
     {
         static $no = 0;
         $no++;
         return [
             $no,
-            $item->category_name ?? 'Uncategorized',
-            $item->item_name,
-            $item->qty_terjual,
-            $item->harga_jual,
-            $item->subtotal,
+            $item['category_name'],
+            $item['total_qty'],
+            $item['total_subtotal'],
+            $item['item_count'],
         ];
     }
+    
     public function styles(Worksheet $sheet)
     {
-        $sheet->getStyle('A1:F1')->applyFromArray([
+        $sheet->getStyle('A1:E1')->applyFromArray([
             'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF']],
             'fill' => [
                 'fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
@@ -51,12 +55,15 @@ class ItemEngineeringSheetExport implements FromCollection, WithHeadings, WithMa
         $sheet->getStyle('A1:' . $highestCol . $highestRow)->getBorders()->getAllBorders()->setBorderStyle(\PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN);
         return [];
     }
+    
     public function columnWidths(): array
     {
-        $widths = [];
-        foreach (range('A', 'F') as $col) {
-            $widths[$col] = 22;
-        }
-        return $widths;
+        return [
+            'A' => 10,
+            'B' => 30,
+            'C' => 15,
+            'D' => 20,
+            'E' => 15,
+        ];
     }
 } 

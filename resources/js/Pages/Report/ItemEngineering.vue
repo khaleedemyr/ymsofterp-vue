@@ -29,32 +29,79 @@
         <span class="text-gray-500">Loading...</span>
       </div>
       <div v-else>
-        <div class="overflow-x-auto mb-8">
-          <table class="min-w-full rounded-2xl overflow-hidden shadow-lg">
-            <thead>
-              <tr class="bg-[#2563eb] text-white font-bold text-base">
-                <th class="px-6 py-3 text-left">No</th>
-                <th class="px-6 py-3 text-left">Nama Item</th>
-                <th class="px-6 py-3 text-right">Qty Terjual</th>
-                <th class="px-6 py-3 text-right">Harga Jual</th>
-                <th class="px-6 py-3 text-right">Subtotal</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="(item, idx) in items" :key="item.item_name" class="bg-white border-b last:border-b-0 hover:bg-blue-50 transition">
-                <td class="px-6 py-3">{{ idx + 1 }}</td>
-                <td class="px-6 py-3 font-semibold text-gray-800">{{ item.item_name }}</td>
-                <td class="px-6 py-3 text-right font-semibold">{{ item.qty_terjual }}</td>
-                <td class="px-6 py-3 text-right font-semibold">{{ formatCurrency(item.harga_jual) }}</td>
-                <td class="px-6 py-3 text-right font-semibold">{{ formatCurrency(item.subtotal) }}</td>
-              </tr>
-              <tr v-if="items.length">
-                <td colspan="4" class="px-6 py-3 text-right font-bold bg-blue-100">Grand Total</td>
-                <td class="px-6 py-3 text-right font-bold bg-blue-100">{{ formatCurrency(grandTotal) }}</td>
-              </tr>
-            </tbody>
-          </table>
+        <!-- Category Grouping List -->
+        <div class="mb-8">
+          <h2 class="text-lg font-bold text-blue-800 mb-4 flex items-center gap-2">
+            <i class="fa-solid fa-list"></i> Item Engineering by Category
+          </h2>
+          <div class="space-y-4">
+            <div v-for="(categoryData, categoryName) in itemsByCategory" :key="categoryName" 
+                 class="border border-gray-200 rounded-lg overflow-hidden shadow-sm">
+              <!-- Category Header -->
+              <div class="bg-gradient-to-r from-blue-50 to-blue-100 px-6 py-4 cursor-pointer hover:bg-blue-200 transition"
+                   @click="toggleCategory(categoryName)">
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-4">
+                    <i :class="expandedCategories[categoryName] ? 'fa-solid fa-chevron-down' : 'fa-solid fa-chevron-right'" 
+                       class="text-blue-600"></i>
+                    <div>
+                      <h3 class="font-bold text-blue-800 text-lg">{{ categoryName || 'Uncategorized' }}</h3>
+                      <div class="flex gap-6 text-sm text-blue-700">
+                        <span>Total Qty: <span class="font-semibold">{{ categoryData.total_qty }}</span></span>
+                        <span>Total Sales: <span class="font-semibold">{{ formatCurrency(categoryData.total_subtotal) }}</span></span>
+                        <span>Items: <span class="font-semibold">{{ categoryData.items.length }}</span></span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              <!-- Category Items (Collapsible) -->
+              <div v-if="expandedCategories[categoryName]" class="bg-white">
+                <div class="overflow-x-auto">
+                  <table class="min-w-full">
+                    <thead>
+                      <tr class="bg-gray-50 border-b">
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">No</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nama Item</th>
+                        <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Qty Terjual</th>
+                        <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Harga Jual</th>
+                        <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Subtotal</th>
+                      </tr>
+                    </thead>
+                    <tbody class="bg-white divide-y divide-gray-200">
+                      <tr v-for="(item, idx) in categoryData.items" :key="item.item_name" 
+                          class="hover:bg-gray-50 transition">
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ idx + 1 }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ item.item_name }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{{ item.qty_terjual }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{{ formatCurrency(item.harga_jual) }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right font-semibold">{{ formatCurrency(item.subtotal) }}</td>
+                      </tr>
+                      <!-- Category Total Row -->
+                      <tr class="bg-blue-50 border-t-2 border-blue-200">
+                        <td colspan="4" class="px-6 py-3 text-right font-bold text-blue-800">Category Total</td>
+                        <td class="px-6 py-3 text-right font-bold text-blue-800">{{ formatCurrency(categoryData.total_subtotal) }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
+
+        <!-- Grand Total Summary -->
+        <div class="bg-gradient-to-r from-green-50 to-green-100 rounded-lg p-6 mb-8 border border-green-200">
+          <div class="flex items-center justify-between">
+            <h3 class="text-lg font-bold text-green-800">Grand Total Summary</h3>
+            <div class="text-right">
+              <div class="text-2xl font-bold text-green-800">{{ formatCurrency(grandTotal) }}</div>
+              <div class="text-sm text-green-600">Total dari semua categories</div>
+            </div>
+          </div>
+        </div>
+
         <!-- MODIFIER ENGINEERING TABLE -->
         <div class="overflow-x-auto mb-8">
           <h2 class="text-lg font-bold text-blue-800 mb-2 flex items-center gap-2"><i class="fa-solid fa-gears"></i> Modifier Engineering</h2>
@@ -95,18 +142,25 @@ const filters = reactive({
 });
 const outlets = ref([]);
 const items = ref([]);
+const itemsByCategory = ref({});
 const modifiers = ref([]);
 const loading = ref(false);
 const outletDropdownEnabled = ref(false);
 const user = usePage().props.auth?.user || {};
 const grand_total = ref(0);
 const grandTotal = computed(() => grand_total.value);
+const expandedCategories = ref({});
+
 function formatCurrency(val) {
   if (typeof val === 'number') return val.toLocaleString('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 });
   if (!val) return '-';
   const num = Number(val);
   if (!isNaN(num)) return num.toLocaleString('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 });
   return val;
+}
+
+function toggleCategory(categoryName) {
+  expandedCategories.value[categoryName] = !expandedCategories.value[categoryName];
 }
 
 const fetchOutlets = async () => {
@@ -126,8 +180,15 @@ const fetchReport = async () => {
   try {
     const res = await axios.get('/api/report/item-engineering', { params: filters });
     items.value = res.data.items || [];
+    itemsByCategory.value = res.data.items_by_category || {};
     modifiers.value = res.data.modifiers || [];
     grand_total.value = res.data.grand_total || 0;
+    
+    // Auto-expand first category by default
+    const categoryNames = Object.keys(itemsByCategory.value);
+    if (categoryNames.length > 0) {
+      expandedCategories.value[categoryNames[0]] = true;
+    }
   } finally {
     loading.value = false;
   }
