@@ -71,6 +71,7 @@ const menuGroups = [
             { name: () => 'Data Level', icon: 'fa-solid fa-layer-group', route: '/data-levels', code: 'data_levels' },
             { name: () => 'Data Jabatan', icon: 'fa-solid fa-user-tie', route: '/jabatans', code: 'data_jabatan' },
             { name: () => 'Data Karyawan', icon: 'fa-solid fa-users', route: '/users', code: 'data_karyawan' },
+            { name: () => 'Job Vacancy', icon: 'fa-solid fa-briefcase', route: '/admin/job-vacancy', code: 'job_vacancy' },
             { name: () => 'Master Data Outlet', icon: 'fa-solid fa-store', route: '/outlets', code: 'master-data-outlet' },
             { name: () => 'Master Jam Kerja', icon: 'fa-solid fa-clock', route: '/shifts', code: 'shift_view' },
             { name: () => 'Input Shift Mingguan', icon: 'fa-solid fa-calendar-days', route: '/user-shifts', code: 'user_shift_view' },

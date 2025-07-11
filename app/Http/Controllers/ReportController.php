@@ -613,7 +613,7 @@ class ReportController extends Controller
             // Payments
             $order->payments = \DB::table('order_payment')
                 ->where('order_id', $order->id)
-                ->select(['payment_code', 'amount', 'change'])
+                ->select(['payment_code', 'payment_type', 'amount', 'change'])
                 ->get();
         }
 

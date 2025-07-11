@@ -1,7 +1,10 @@
 <template>
   <div class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40" @click.self="$emit('close')">
-    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl p-8 relative animate-fadeIn overflow-y-auto" style="max-height: 90vh;">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl p-8 relative animate-fadeIn overflow-y-auto print-modal" style="max-height: 90vh;">
       <button @click="$emit('close')" class="absolute top-4 right-4 text-gray-400 hover:text-red-500 text-2xl font-bold">&times;</button>
+      <button @click="printModal" class="absolute top-4 right-16 text-gray-400 hover:text-blue-600 text-2xl font-bold" title="Print PDF">
+        <i class="fa-solid fa-print"></i>
+      </button>
       <div class="text-center mb-4">
         <div class="text-xl font-bold text-gray-800">Revenue Report</div>
         <div class="text-xs text-gray-400 mt-1">{{ tanggal }}</div>
@@ -16,15 +19,43 @@
         <table class="min-w-full text-sm rounded shadow mb-8">
           <thead>
             <tr class="bg-green-100 text-green-900">
+              <th class="px-2 py-2 w-8"></th>
               <th class="px-3 py-2">Metode Pembayaran</th>
               <th class="px-3 py-2 text-right">Total</th>
             </tr>
           </thead>
           <tbody>
-            <tr v-for="(total, paymode) in paymentBreakdown" :key="paymode" class="bg-white border-b last:border-b-0">
-              <td class="px-3 py-2">{{ paymode || '-' }}</td>
-              <td class="px-3 py-2 text-right">{{ formatCurrency(total) }}</td>
-            </tr>
+            <template v-for="(total, paymode) in paymentBreakdown" :key="paymode">
+              <tr class="bg-white border-b last:border-b-0">
+                <td class="px-2 py-2 text-center">
+                  <button @click="toggleExpandPaymode(paymode)" class="focus:outline-none">
+                    <i :class="expandedPaymode[paymode] ? 'fa-solid fa-chevron-down' : 'fa-solid fa-chevron-right'"></i>
+                  </button>
+                </td>
+                <td class="px-3 py-2">{{ paymode || '-' }}</td>
+                <td class="px-3 py-2 text-right">{{ formatCurrency(total) }}</td>
+              </tr>
+              <tr v-if="expandedPaymode[paymode]">
+                <td></td>
+                <td colspan="2" class="bg-blue-50 px-6 py-2">
+                  <div class="font-semibold mb-1">Detail {{ paymode }}</div>
+                  <table class="min-w-full text-xs mb-2">
+                    <thead>
+                      <tr class="bg-blue-100 text-blue-900">
+                        <th class="px-2 py-1">Payment Type</th>
+                        <th class="px-2 py-1 text-right">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr v-for="(ptotal, ptype) in paymentTypeBreakdown[paymode]" :key="ptype">
+                        <td class="px-2 py-1">{{ ptype || '-' }}</td>
+                        <td class="px-2 py-1 text-right">{{ formatCurrency(ptotal) }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </td>
+              </tr>
+            </template>
           </tbody>
         </table>
       </div>
@@ -34,7 +65,7 @@
         <div v-if="loadingExpenses" class="text-gray-400 italic">Loading...</div>
         <div v-else-if="expenses.retail_food && expenses.retail_food.length">
           <div v-for="trx in expenses.retail_food" :key="'rf-' + trx.id" class="mb-6 border rounded-lg p-4">
-            <div class="font-semibold text-gray-800 mb-1">No: {{ trx.retail_number }} | Tanggal: {{ trx.transaction_date }}</div>
+            <div class="font-semibold text-gray-800 mb-1">No: {{ trx.retail_number }} | Tanggal: {{ formatDateIndo(trx.transaction_date) }}</div>
             <div class="text-gray-600 mb-2">Total: <span class="font-bold">{{ formatCurrency(trx.total_amount) }}</span></div>
             <div class="mb-2">
               <span class="font-semibold">Items:</span>
@@ -61,7 +92,7 @@
         <div v-if="loadingExpenses" class="text-gray-400 italic">Loading...</div>
         <div v-else-if="expenses.retail_non_food && expenses.retail_non_food.length">
           <div v-for="trx in expenses.retail_non_food" :key="'rnf-' + trx.id" class="mb-6 border rounded-lg p-4">
-            <div class="font-semibold text-gray-800 mb-1">No: {{ trx.retail_number }} | Tanggal: {{ trx.transaction_date }}</div>
+            <div class="font-semibold text-gray-800 mb-1">No: {{ trx.retail_number }} | Tanggal: {{ formatDateIndo(trx.transaction_date) }}</div>
             <div class="text-gray-600 mb-2">Total: <span class="font-bold">{{ formatCurrency(trx.total_amount) }}</span></div>
             <div class="mb-2">
               <span class="font-semibold">Items:</span>
@@ -138,13 +169,46 @@ const paymentBreakdown = computed(() => {
     if (o.payments && Array.isArray(o.payments)) {
       o.payments.forEach(p => {
         const paymode = p.payment_code || '-';
-        const total = (Number(p.amount) || 0) + (Number(p.change) || 0);
+        // Ubah: cash = amount - change
+        const total = (Number(p.amount) || 0) - (Number(p.change) || 0);
         result[paymode] = (result[paymode] || 0) + total;
       });
     } else if (o.payment_code) {
       const paymode = o.payment_code || '-';
-      const total = (Number(o.amount) || 0) + (Number(o.change) || 0);
+      // Ubah: cash = amount - change
+      const total = (Number(o.amount) || 0) - (Number(o.change) || 0);
       result[paymode] = (result[paymode] || 0) + total;
+    }
+  });
+  return result;
+});
+const expandedPaymode = ref({});
+function toggleExpandPaymode(paymode) {
+  expandedPaymode.value[paymode] = !expandedPaymode.value[paymode];
+}
+// Breakdown per payment_type untuk setiap payment_code
+const paymentTypeBreakdown = computed(() => {
+  const result = {};
+  (props.orders || []).forEach(o => {
+    if (o.payments && Array.isArray(o.payments)) {
+      o.payments.forEach(p => {
+        const paymode = p.payment_code || '-';
+        let ptype = p.payment_type;
+        if (!ptype && o.payment_type) ptype = o.payment_type;
+        if (!ptype) ptype = 'Unknown';
+        ptype = String(ptype).toUpperCase(); // kapitalisasi
+        const total = (Number(p.amount) || 0) - (Number(p.change) || 0);
+        if (!result[paymode]) result[paymode] = {};
+        result[paymode][ptype] = (result[paymode][ptype] || 0) + total;
+      });
+    } else if (o.payment_code) {
+      const paymode = o.payment_code || '-';
+      let ptype = o.payment_type;
+      if (!ptype) ptype = 'Unknown';
+      ptype = String(ptype).toUpperCase(); // kapitalisasi
+      const total = (Number(o.amount) || 0) - (Number(o.change) || 0);
+      if (!result[paymode]) result[paymode] = {};
+      result[paymode][ptype] = (result[paymode][ptype] || 0) + total;
     }
   });
   return result;
@@ -214,6 +278,19 @@ function formatCurrency(val) {
   if (!isNaN(num)) return num.toLocaleString('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 });
   return val;
 }
+function formatDateIndo(dateStr) {
+  if (!dateStr) return '-';
+  const bulan = [
+    'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+    'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+  ];
+  const d = new Date(dateStr);
+  if (isNaN(d)) return dateStr;
+  return `${d.getDate().toString().padStart(2, '0')} ${bulan[d.getMonth()]} ${d.getFullYear()}`;
+}
+function printModal() {
+  window.print();
+}
 </script>
 
 <style scoped>
@@ -223,5 +300,22 @@ function formatCurrency(val) {
 }
 .animate-fadeIn {
   animation: fadeIn 0.25s;
+}
+@media print {
+  body * {
+    visibility: hidden !important;
+  }
+  .print-modal, .print-modal * {
+    visibility: visible !important;
+  }
+  .print-modal {
+    position: absolute !important;
+    left: 0; top: 0; width: 100vw; height: auto; background: #fff !important; box-shadow: none !important;
+    z-index: 9999 !important;
+    padding: 0 !important;
+  }
+  .print-modal button, .print-modal .fa-times, .print-modal .fa-print {
+    display: none !important;
+  }
 }
 </style> 

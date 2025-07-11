@@ -912,6 +912,19 @@ Route::get('/report/item-engineering/export', [\App\Http\Controllers\ReportContr
 
 Route::get('/api/items/search-for-pr', [ItemController::class, 'searchForPr']);
 
+// Job Vacancy Admin Panel
+Route::prefix('admin/job-vacancy')->middleware(['auth'])->group(function () {
+    Route::get('/', [\App\Http\Controllers\JobVacancyController::class, 'index']);
+    Route::post('/', [\App\Http\Controllers\JobVacancyController::class, 'store']);
+    Route::put('/{id}', [\App\Http\Controllers\JobVacancyController::class, 'update']);
+    Route::delete('/{id}', [\App\Http\Controllers\JobVacancyController::class, 'destroy']);
+    Route::patch('/{id}/set-active', [\App\Http\Controllers\JobVacancyController::class, 'setActive']);
+    Route::get('/{id}', [\App\Http\Controllers\JobVacancyController::class, 'show']);
+});
+
+// Job Vacancy Public List (Landing Page)
+Route::get('/job-vacancies', fn() => inertia('Landing/JobVacancyList'));
+Route::get('/api/job-vacancies', [\App\Http\Controllers\JobVacancyController::class, 'publicList']);
 
 
 require __DIR__.'/auth.php';
