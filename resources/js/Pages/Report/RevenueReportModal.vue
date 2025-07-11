@@ -1,6 +1,6 @@
 <template>
   <div class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40" @click.self="$emit('close')">
-    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl p-8 relative animate-fadeIn overflow-y-auto print-modal" style="max-height: 90vh;">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl p-8 relative animate-fadeIn overflow-y-auto print-modal" style="max-height: 90vh;" id="revenue-report-modal">
       <button @click="$emit('close')" class="absolute top-4 right-4 text-gray-400 hover:text-red-500 text-2xl font-bold">&times;</button>
       <button @click="printModal" class="absolute top-4 right-16 text-gray-400 hover:text-blue-600 text-2xl font-bold" title="Print PDF">
         <i class="fa-solid fa-print"></i>
@@ -289,11 +289,223 @@ function formatDateIndo(dateStr) {
   return `${d.getDate().toString().padStart(2, '0')} ${bulan[d.getMonth()]} ${d.getFullYear()}`;
 }
 function printModal() {
-  window.print();
+  setTimeout(() => {
+    const modalContent = document.getElementById('revenue-report-modal');
+    if (!modalContent) {
+      alert('Modal tidak ditemukan!');
+      return;
+    }
+    // Clone isi modal tanpa tombol
+    const cleanContent = modalContent.cloneNode(true);
+    const buttons = cleanContent.querySelectorAll('button, .fa-solid');
+    buttons.forEach(btn => btn.remove());
+
+    // Buka window baru
+    const printWindow = window.open('', '_blank', 'width=900,height=1200');
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>Revenue Report</title>
+          <style>
+            body {
+              font-family: 'Segoe UI', Arial, sans-serif;
+              margin: 0;
+              padding: 32px 24px;
+              background: #fff;
+              color: #222;
+            }
+            .report-title {
+              font-size: 2rem;
+              font-weight: bold;
+              color: #2563eb;
+              margin-bottom: 0.5rem;
+              text-align: center;
+            }
+            .report-date {
+              font-size: 1rem;
+              color: #888;
+              text-align: center;
+              margin-bottom: 1.5rem;
+            }
+            .summary-section {
+              display: flex;
+              flex-wrap: wrap;
+              gap: 32px;
+              margin-bottom: 2rem;
+              justify-content: center;
+            }
+            .summary-card {
+              background: #f3f6fa;
+              border-radius: 12px;
+              box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+              padding: 18px 32px;
+              min-width: 180px;
+              text-align: center;
+            }
+            .summary-label {
+              font-size: 1rem;
+              color: #666;
+              margin-bottom: 0.25rem;
+            }
+            .summary-value {
+              font-size: 1.5rem;
+              font-weight: bold;
+              color: #2563eb;
+            }
+            table {
+              width: 100%;
+              border-collapse: collapse;
+              margin-bottom: 1.5rem;
+            }
+            th, td {
+              padding: 8px 10px;
+              border-bottom: 1px solid #e5e7eb;
+            }
+            th {
+              background: #e0eaff;
+              color: #1e293b;
+              font-weight: bold;
+            }
+            .section-title {
+              font-size: 1.1rem;
+              font-weight: bold;
+              color: #2563eb;
+              margin: 2rem 0 0.5rem 0;
+            }
+            .expense-block {
+              border: 1px solid #e5e7eb;
+              border-radius: 8px;
+              padding: 12px 18px;
+              margin-bottom: 1rem;
+              background: #f9fafb;
+            }
+            .expense-title {
+              font-weight: bold;
+              color: #222;
+            }
+            .expense-items {
+              margin: 0.5rem 0 0.5rem 1rem;
+            }
+            .expense-total {
+              font-weight: bold;
+              color: #2563eb;
+            }
+            .cash-section {
+              background: #e0eaff;
+              border-radius: 8px;
+              padding: 16px 24px;
+              margin-top: 2rem;
+              font-size: 1.1rem;
+            }
+            .cash-row {
+              display: flex;
+              justify-content: space-between;
+              margin-bottom: 0.5rem;
+            }
+            .cash-label {
+              color: #222;
+            }
+            .cash-value {
+              font-weight: bold;
+            }
+            @media print {
+              body { margin: 0; }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="report-title">Revenue Report</div>
+          <div class="report-date">${props.tanggal || ''}</div>
+          <!-- Summary Section -->
+          <div class="summary-section">
+            <div class="summary-card">
+              <div class="summary-label">Total Sales</div>
+              <div class="summary-value">${formatCurrency(totalSales.value)}</div>
+            </div>
+            <div class="summary-card">
+              <div class="summary-label">Total Cash</div>
+              <div class="summary-value">${formatCurrency(totalCash.value)}</div>
+            </div>
+            <div class="summary-card">
+              <div class="summary-label">Total Pengeluaran</div>
+              <div class="summary-value">${formatCurrency(totalExpenses.value)}</div>
+            </div>
+            <div class="summary-card">
+              <div class="summary-label">Nilai Setor Cash</div>
+              <div class="summary-value">${formatCurrency(nilaiSetorCash.value)}</div>
+            </div>
+          </div>
+          <!-- Payment Breakdown -->
+          <div class="section-title">Breakdown by Payment Method</div>
+          <table>
+            <thead>
+              <tr>
+                <th>Metode Pembayaran</th>
+                <th>Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${Object.entries(paymentBreakdown.value).map(([paymode, total]) => `
+                <tr>
+                  <td>${paymode || '-'}</td>
+                  <td style="text-align:right">${formatCurrency(total)}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+          <!-- Pengeluaran Bahan Baku -->
+          <div class="section-title">Pengeluaran Bahan Baku</div>
+          ${(expenses.value.retail_food || []).length === 0 ? '<div style="color:#888">Tidak ada pengeluaran bahan baku.</div>' : ''}
+          ${(expenses.value.retail_food || []).map(trx => `
+            <div class="expense-block">
+              <div class="expense-title">No: ${trx.retail_number} | Tanggal: ${formatDateIndo(trx.transaction_date)}</div>
+              <div>Total: <span class="expense-total">${formatCurrency(trx.total_amount)}</span></div>
+              <div class="expense-items">
+                <ul>
+                  ${(trx.items || []).map(item => `
+                    <li>${item.item_name} - ${item.qty} x ${formatCurrency(item.harga_barang)} = <span class="expense-total">${formatCurrency(item.subtotal)}</span></li>
+                  `).join('')}
+                </ul>
+              </div>
+            </div>
+          `).join('')}
+          <!-- Pengeluaran Non Bahan Baku -->
+          <div class="section-title">Pengeluaran Non Bahan Baku</div>
+          ${(expenses.value.retail_non_food || []).length === 0 ? '<div style="color:#888">Tidak ada pengeluaran non bahan baku.</div>' : ''}
+          ${(expenses.value.retail_non_food || []).map(trx => `
+            <div class="expense-block">
+              <div class="expense-title">No: ${trx.retail_number} | Tanggal: ${formatDateIndo(trx.transaction_date)}</div>
+              <div>Total: <span class="expense-total">${formatCurrency(trx.total_amount)}</span></div>
+              <div class="expense-items">
+                <ul>
+                  ${(trx.items || []).map(item => `
+                    <li>${item.item_name} - ${item.qty} ${item.unit} x ${formatCurrency(item.price)} = <span class="expense-total">${formatCurrency(item.subtotal)}</span></li>
+                  `).join('')}
+                </ul>
+              </div>
+            </div>
+          `).join('')}
+          <!-- Nilai Setor Cash -->
+          <div class="cash-section">
+            <div class="cash-row"><span class="cash-label">Total Cash:</span><span class="cash-value">${formatCurrency(totalCash.value)}</span></div>
+            <div class="cash-row"><span class="cash-label">Total Pengeluaran:</span><span class="cash-value">${formatCurrency(totalExpenses.value)}</span></div>
+            <div class="cash-row" style="font-size:1.2rem;font-weight:bold;"><span class="cash-label">Nilai Setor Cash:</span><span class="cash-value">${formatCurrency(nilaiSetorCash.value)}</span></div>
+          </div>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+    setTimeout(() => {
+      printWindow.focus();
+      printWindow.print();
+      printWindow.close();
+    }, 500);
+  }, 100);
 }
 </script>
 
 <style scoped>
+/* CSS untuk animasi modal */
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(40px); }
   to { opacity: 1; transform: none; }
@@ -301,21 +513,99 @@ function printModal() {
 .animate-fadeIn {
   animation: fadeIn 0.25s;
 }
+
+/* CSS untuk print */
 @media print {
-  body * {
-    visibility: hidden !important;
+  /* Sembunyikan semua elemen kecuali modal */
+  body > *:not(.fixed) {
+    display: none !important;
   }
-  .print-modal, .print-modal * {
-    visibility: visible !important;
+  
+  /* Sembunyikan overlay background */
+  .fixed.inset-0 {
+    display: none !important;
   }
+  
+  /* Reset styling untuk modal saat print */
   .print-modal {
-    position: absolute !important;
-    left: 0; top: 0; width: 100vw; height: auto; background: #fff !important; box-shadow: none !important;
-    z-index: 9999 !important;
+    position: static !important;
+    left: auto !important;
+    top: auto !important;
+    width: 100% !important;
+    height: auto !important;
+    max-height: none !important;
+    background: #fff !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    z-index: auto !important;
+    padding: 20px !important;
+    margin: 0 !important;
+    overflow: visible !important;
+  }
+  
+  /* Sembunyikan tombol-tombol */
+  .print-modal button, 
+  .print-modal .fa-times, 
+  .print-modal .fa-print,
+  .print-modal .fa-solid {
+    display: none !important;
+  }
+  
+  /* Pastikan tabel tidak terpotong */
+  .print-modal table {
+    page-break-inside: avoid !important;
+  }
+  
+  /* Pastikan div tidak terpotong */
+  .print-modal div {
+    page-break-inside: avoid !important;
+  }
+  
+  /* Reset font size untuk print */
+  .print-modal {
+    font-size: 12px !important;
+  }
+  
+  .print-modal .text-3xl {
+    font-size: 18px !important;
+  }
+  
+  .print-modal .text-xl {
+    font-size: 16px !important;
+  }
+  
+  .print-modal .text-lg {
+    font-size: 14px !important;
+  }
+  
+  .print-modal .text-sm {
+    font-size: 11px !important;
+  }
+  
+  .print-modal .text-xs {
+    font-size: 10px !important;
+  }
+  
+  /* Pastikan tidak ada duplikasi */
+  .print-modal {
+    page-break-after: avoid !important;
+    page-break-before: avoid !important;
+  }
+  
+  /* Pastikan hanya satu instance yang di-print */
+  body {
+    margin: 0 !important;
     padding: 0 !important;
   }
-  .print-modal button, .print-modal .fa-times, .print-modal .fa-print {
+  
+  /* Sembunyikan elemen yang tidak perlu */
+  .print-modal .fixed.inset-0 {
     display: none !important;
+  }
+  
+  /* Pastikan tidak ada duplikasi halaman */
+  @page {
+    margin: 0.5in;
   }
 }
 </style> 

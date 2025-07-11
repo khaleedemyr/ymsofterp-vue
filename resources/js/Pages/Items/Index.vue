@@ -531,6 +531,7 @@ async function handleFileChange(e) {
 async function handleBomFileChange(e) {
   const file = e.target.files[0]
   if (file) {
+    console.log('BOM file selected:', file.name, file.size, file.type)
     importFile.value = file
     importType.value = 'bom'
     importPreviewData.value = { header: [], preview: [] }
@@ -541,10 +542,14 @@ async function handleBomFileChange(e) {
     const formData = new FormData()
     formData.append('file', file)
     try {
+      console.log('Sending BOM preview request...')
       const res = await axios.post(route('items.bom.import.preview'), formData, { headers: { 'Content-Type': 'multipart/form-data' } })
+      console.log('BOM preview response:', res.data)
       importPreviewData.value = res.data
       importPreviewModal.value = true
     } catch (err) {
+      console.error('BOM preview error:', err)
+      console.error('BOM preview error response:', err.response)
       Swal.fire('Error', 'Gagal membaca file: ' + (err.response?.data?.message || err.message), 'error')
     }
   }
@@ -637,6 +642,7 @@ async function handleImportUpload() {
 async function handleBomImportUpload() {
   console.log('BOM IMPORT UPLOAD CLICKED');
   if (!importFile.value) return
+  console.log('Import file:', importFile.value.name, importFile.value.size)
   importUploading.value = true
   importProgress.value = 0
   importResults.value = []
@@ -644,6 +650,7 @@ async function handleBomImportUpload() {
   formData.append('file', importFile.value)
   
   try {
+    console.log('Sending BOM import request...')
     const res = await axios.post(route('items.bom.import.excel'), formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
       onUploadProgress: (progressEvent) => {

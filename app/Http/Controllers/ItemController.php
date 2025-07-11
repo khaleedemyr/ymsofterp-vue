@@ -1479,27 +1479,24 @@ $bomItems = \App\Models\Item::whereIn('id', $bomMaterialIds)->get();
                 throw new \Exception('Sheet BOM tidak ditemukan atau kosong');
             }
             
-            $headers = array_shift($bomSheet);
-            $preview = array_slice($bomSheet, 0, 5);
-            
-            // Convert to array of object for frontend
-            $previewObjects = [];
-            foreach ($preview as $row) {
-                $obj = [];
-                foreach ($headers as $i => $h) {
-                    $obj[$h] = $row[$i] ?? null;
-                }
-                $previewObjects[] = $obj;
+            // Get headers from first row
+            $headers = array_keys($bomSheet[0] ?? []);
+            if (empty($headers)) {
+                throw new \Exception('Header tidak ditemukan di sheet BOM');
             }
+            
+            // Take first 5 rows for preview
+            $preview = array_slice($bomSheet, 0, 5);
             
             \Log::info('ItemController@previewBomImport - Preview generated', [
                 'header_count' => count($headers),
-                'preview_count' => count($previewObjects)
+                'preview_count' => count($preview),
+                'headers' => $headers
             ]);
             
             return response()->json([
                 'header' => $headers,
-                'preview' => $previewObjects
+                'preview' => $preview
             ]);
         } catch (\Exception $e) {
             \Log::error('ItemController@previewBomImport - Error during preview', [
@@ -1535,7 +1532,6 @@ $bomItems = \App\Models\Item::whereIn('id', $bomMaterialIds)->get();
                 throw new \Exception('Sheet BOM tidak ditemukan atau kosong');
             }
             
-            array_shift($bomSheet); // Remove header
             $results = [];
             
             // Mulai transaction untuk rollback jika ada error
@@ -1544,37 +1540,42 @@ $bomItems = \App\Models\Item::whereIn('id', $bomMaterialIds)->get();
             try {
                 foreach ($bomSheet as $index => $row) {
                     \Log::info('ItemController@importBom - Processing row', [
-                        'row_index' => $index + 2,
+                        'row_index' => $index + 1,
                         'row_data' => $row
                     ]);
                     
-                    // Validasi minimal kolom BOM
-                    if (empty($row[0]) || empty($row[1]) || empty($row[2]) || empty($row[3])) {
-                        throw new \Exception('Baris ' . ($index + 2) . ': Semua kolom wajib diisi');
+                    // Validasi minimal kolom BOM berdasarkan header
+                    $parentItemName = $row['Parent Item'] ?? $row['parent_item'] ?? $row[0] ?? null;
+                    $childItemName = $row['Child Item'] ?? $row['child_item'] ?? $row[1] ?? null;
+                    $quantity = $row['Quantity'] ?? $row['quantity'] ?? $row[2] ?? null;
+                    $unitName = $row['Unit'] ?? $row['unit'] ?? $row[3] ?? null;
+                    
+                    if (empty($parentItemName) || empty($childItemName) || empty($quantity) || empty($unitName)) {
+                        throw new \Exception('Baris ' . ($index + 1) . ': Semua kolom wajib diisi');
                     }
                     
                     // Find parent item
-                    $parentItem = \App\Models\Item::where('name', $row[0])
+                    $parentItem = \App\Models\Item::where('name', $parentItemName)
                         ->where('composition_type', 'composed')
                         ->where('status', 'active')
                         ->first();
                     if (!$parentItem) {
-                        throw new \Exception('Baris ' . ($index + 2) . ': Parent item not found or not active: ' . $row[0]);
+                        throw new \Exception('Baris ' . ($index + 1) . ': Parent item not found or not active: ' . $parentItemName);
                     }
                     
                     // Find child item
-                    $childItem = \App\Models\Item::where('name', $row[1])
+                    $childItem = \App\Models\Item::where('name', $childItemName)
                         ->whereIn('type', ['Raw Materials', 'WIP', 'Finish Goods'])
                         ->where('status', 'active')
                         ->first();
                     if (!$childItem) {
-                        throw new \Exception('Baris ' . ($index + 2) . ': Child item not found or not active: ' . $row[1]);
+                        throw new \Exception('Baris ' . ($index + 1) . ': Child item not found or not active: ' . $childItemName);
                     }
                     
                     // Find unit
-                    $unit = \App\Models\Unit::where('name', $row[3])->first();
+                    $unit = \App\Models\Unit::where('name', $unitName)->first();
                     if (!$unit) {
-                        throw new \Exception('Baris ' . ($index + 2) . ': Unit not found: ' . $row[3]);
+                        throw new \Exception('Baris ' . ($index + 1) . ': Unit not found: ' . $unitName);
                     }
                     
                     // Insert/update BOM
@@ -1584,7 +1585,7 @@ $bomItems = \App\Models\Item::whereIn('id', $bomMaterialIds)->get();
                             'material_item_id' => $childItem->id,
                         ],
                         [
-                            'qty' => $row[2],
+                            'qty' => $quantity,
                             'unit_id' => $unit->id,
                             'created_at' => now(),
                             'updated_at' => now(),
@@ -1592,16 +1593,16 @@ $bomItems = \App\Models\Item::whereIn('id', $bomMaterialIds)->get();
                     );
                     
                     $results[] = [
-                        'row' => $index + 2,
-                        'name' => $row[0],
+                        'row' => $index + 1,
+                        'name' => $parentItemName,
                         'status' => 'success',
                         'message' => 'Successfully imported'
                     ];
                     
                     \Log::info('ItemController@importBom - Row processed successfully', [
-                        'row_index' => $index + 2,
-                        'parent_item' => $row[0],
-                        'child_item' => $row[1]
+                        'row_index' => $index + 1,
+                        'parent_item' => $parentItemName,
+                        'child_item' => $childItemName
                     ]);
                 }
                 
@@ -1621,7 +1622,7 @@ $bomItems = \App\Models\Item::whereIn('id', $bomMaterialIds)->get();
                 
                 \Log::error('ItemController@importBom - Error during import, rolling back', [
                     'error' => $e->getMessage(),
-                    'row_index' => $index + 2 ?? 'unknown'
+                    'row_index' => $index + 1 ?? 'unknown'
                 ]);
                 
                 return response()->json([
