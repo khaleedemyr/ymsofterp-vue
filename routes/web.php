@@ -84,6 +84,7 @@ use App\Http\Controllers\UserPinController;
 use App\Http\Controllers\ShiftController;
 use App\Http\Controllers\UserShiftController;
 use App\Http\Controllers\AttendanceReportController;
+use App\Http\Controllers\PayrollController;
 
 
 Route::get('/', function () {
@@ -926,5 +927,9 @@ Route::prefix('admin/job-vacancy')->middleware(['auth'])->group(function () {
 Route::get('/job-vacancies', fn() => inertia('Landing/JobVacancyList'));
 Route::get('/api/job-vacancies', [\App\Http\Controllers\JobVacancyController::class, 'publicList']);
 
+Route::get('/payroll/master', [PayrollController::class, 'index'])->name('payroll.master');
+Route::post('/payroll/master', [PayrollController::class, 'store'])->name('payroll.master.store');
+Route::get('/payroll/master/template', [PayrollController::class, 'downloadTemplate'])->name('payroll.master.template');
+Route::post('/payroll/master/import', [PayrollController::class, 'importExcel'])->name('payroll.master.import');
 
 require __DIR__.'/auth.php';
