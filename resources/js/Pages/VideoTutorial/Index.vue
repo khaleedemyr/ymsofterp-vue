@@ -72,6 +72,7 @@ async function playVideo(video) {
         <video 
           src="${videoUrl}" 
           controls 
+          controlsList="nodownload"
           class="w-full h-full"
           preload="metadata"
           autoplay
@@ -296,5 +297,26 @@ watch([groupId, status], () => {
 
 :deep(.swal2-video-close:hover) {
   color: #374151;
+}
+
+/* Hide download button in video controls */
+video::-webkit-media-controls-download-button {
+  display: none !important;
+}
+
+video::-webkit-media-controls-enclosure {
+  overflow: hidden;
+}
+
+video::-webkit-media-controls-panel {
+  width: calc(100% + 30px);
+}
+
+/* For Firefox */
+video {
+  -moz-user-select: none;
+  -webkit-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
 }
 </style> 

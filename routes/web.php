@@ -19,6 +19,8 @@ use App\Http\Controllers\SubCategoryController;
 use App\Http\Controllers\UnitController;
 use App\Http\Controllers\DataLevelController;
 use App\Http\Controllers\JabatanController;
+use App\Http\Controllers\DivisiController;
+use App\Http\Controllers\ManPowerOutletController;
 use App\Http\Controllers\RegionController;
 use App\Http\Controllers\WarehouseController;
 use App\Http\Controllers\OutletController;
@@ -255,6 +257,16 @@ Route::middleware(['auth'])->group(function () {
     Route::patch('/jabatans/{id}', [JabatanController::class, 'update']);
     Route::post('/jabatans/{id}', [JabatanController::class, 'update'])->name('jabatans.update');
     Route::patch('/jabatans/{id}/toggle-status', [JabatanController::class, 'toggleStatus'])->name('jabatans.toggle-status');
+
+    // Divisi routes
+    Route::resource('divisis', DivisiController::class);
+    Route::put('/divisis/{id}', [DivisiController::class, 'update']);
+    Route::patch('/divisis/{id}', [DivisiController::class, 'update']);
+    Route::post('/divisis/{id}', [DivisiController::class, 'update'])->name('divisis.update');
+    Route::patch('/divisis/{id}/toggle-status', [DivisiController::class, 'toggleStatus'])->name('divisis.toggle-status');
+
+    // Man Power Outlet Report
+    Route::get('/man-power-outlet', [ManPowerOutletController::class, 'index'])->name('man-power-outlet.index');
 
     // Region routes
     Route::get('/regions', [RegionController::class, 'index'])->name('regions.index');

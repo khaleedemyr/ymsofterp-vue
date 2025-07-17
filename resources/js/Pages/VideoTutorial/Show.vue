@@ -93,6 +93,7 @@ console.log('Video path:', props.video.video_path);
               v-if="videoUrl" 
               :src="videoUrl" 
               controls 
+              controlsList="nodownload"
               class="w-full h-full"
               preload="metadata"
               @error="handleVideoError"
@@ -228,3 +229,26 @@ console.log('Video path:', props.video.video_path);
     </div>
   </AppLayout>
 </template> 
+
+<style scoped>
+/* Hide download button in video controls */
+video::-webkit-media-controls-download-button {
+  display: none !important;
+}
+
+video::-webkit-media-controls-enclosure {
+  overflow: hidden;
+}
+
+video::-webkit-media-controls-panel {
+  width: calc(100% + 30px);
+}
+
+/* For Firefox */
+video {
+  -moz-user-select: none;
+  -webkit-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+}
+</style> 

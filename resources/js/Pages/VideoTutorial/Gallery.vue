@@ -77,6 +77,7 @@ async function playVideo(video) {
         <video 
           src="${videoUrl}" 
           controls 
+          controlsList="nodownload"
           class="w-full h-full"
           preload="metadata"
           autoplay
@@ -391,6 +392,31 @@ const filteredGroups = computed(() => {
 </template>
 
 <style scoped>
+.bg-3d {
+  box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.15), 0 1.5px 4px 0 rgba(31, 38, 135, 0.08);
+}
+
+/* Hide download button in video controls */
+video::-webkit-media-controls-download-button {
+  display: none !important;
+}
+
+video::-webkit-media-controls-enclosure {
+  overflow: hidden;
+}
+
+video::-webkit-media-controls-panel {
+  width: calc(100% + 30px);
+}
+
+/* For Firefox */
+video {
+  -moz-user-select: none;
+  -webkit-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+}
+
 .line-clamp-2 {
   display: -webkit-box;
   -webkit-line-clamp: 2;
