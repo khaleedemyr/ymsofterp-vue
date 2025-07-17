@@ -365,6 +365,15 @@ Route::get('/api/items/by-fo-schedule/{fo_schedule_id}', [App\Http\Controllers\I
 Route::get('/items/search-for-outlet-transfer', [ItemController::class, 'searchForOutletTransfer']);
 
 Route::resource('items', ItemController::class);
+Route::get('/items/import/template', [ItemController::class, 'downloadImportTemplate'])->name('items.import.template');
+Route::post('/items/import/preview', [ItemController::class, 'previewImport'])->name('items.import.preview');
+Route::post('/items/import/excel', [ItemController::class, 'importExcel'])->name('items.import.excel');
+Route::get('/items/bom/import/template', [ItemController::class, 'downloadBomImportTemplate'])->name('items.bom.import.template');
+Route::post('/items/bom/import/preview', [ItemController::class, 'previewBomImport'])->name('items.bom.import.preview');
+Route::post('/items/bom/import/excel', [ItemController::class, 'importBom'])->name('items.bom.import.excel');
+Route::get('/items/price-update/template', [ItemController::class, 'downloadPriceUpdateTemplate'])->name('items.price-update.template');
+Route::post('/items/price-update/preview', [ItemController::class, 'previewPriceUpdate'])->name('items.price-update.preview');
+Route::post('/items/price-update/import', [ItemController::class, 'importPriceUpdate'])->name('items.price-update.import');
 Route::resource('modifiers', ModifierController::class);
 Route::resource('modifier-options', ModifierOptionController::class);
 Route::resource('pr-foods', PrFoodController::class);

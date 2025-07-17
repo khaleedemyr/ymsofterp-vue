@@ -1459,6 +1459,102 @@ $bomItems = \App\Models\Item::whereIn('id', $bomMaterialIds)->get();
         return Excel::download(new BomImportTemplateExport, 'bom_import_template.xlsx');
     }
 
+    public function downloadPriceUpdateTemplate(Request $request)
+    {
+        $regionId = $request->get('region_id');
+        $outletId = $request->get('outlet_id');
+        $priceType = $request->get('price_type', 'all');
+
+        return Excel::download(
+            new \App\Exports\PriceUpdateTemplateExport($regionId, $outletId, $priceType),
+            'price_update_template.xlsx'
+        );
+    }
+
+    public function previewPriceUpdate(Request $request)
+    {
+        \Log::info('ItemController@previewPriceUpdate - Starting preview');
+        
+        $request->validate([
+            'file' => 'required|file|mimes:xlsx,xls'
+        ]);
+
+        try {
+            $data = \Maatwebsite\Excel\Facades\Excel::toArray(new \App\Imports\PriceUpdateImport, $request->file('file'));
+            \Log::info('ItemController@previewPriceUpdate - Excel data loaded', [
+                'sheets_count' => count($data)
+            ]);
+            
+            $rows = $data[0] ?? [];
+            if (empty($rows)) {
+                throw new \Exception('File kosong atau tidak valid');
+            }
+            
+            // Get headers from first row
+            $headers = array_keys($rows[0] ?? []);
+            if (empty($headers)) {
+                throw new \Exception('Header tidak ditemukan');
+            }
+            
+            // Take first 5 rows for preview
+            $preview = array_slice($rows, 0, 5);
+            
+            \Log::info('ItemController@previewPriceUpdate - Preview generated', [
+                'header_count' => count($headers),
+                'preview_count' => count($preview),
+                'headers' => $headers
+            ]);
+            
+            return response()->json([
+                'header' => $headers,
+                'preview' => $preview
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('ItemController@previewPriceUpdate - Error during preview', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+    }
+
+    public function importPriceUpdate(Request $request)
+    {
+        \Log::info('ItemController@importPriceUpdate - Starting price update import');
+        
+        $request->validate([
+            'file' => 'required|file|mimes:xlsx,xls'
+        ]);
+
+        try {
+            $import = new \App\Imports\PriceUpdateImport;
+            \Maatwebsite\Excel\Facades\Excel::import($import, $request->file('file'));
+            
+            \Log::info('ItemController@importPriceUpdate - Import completed', [
+                'success_count' => $import->getSuccessCount(),
+                'error_count' => $import->getErrorCount()
+            ]);
+            
+            return response()->json([
+                'success' => true,
+                'message' => "Berhasil mengupdate {$import->getSuccessCount()} harga item",
+                'results' => $import->getResults(),
+                'errors' => $import->getErrors(),
+                'error_count' => $import->getErrorCount(),
+                'success_count' => $import->getSuccessCount()
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('ItemController@importPriceUpdate - Error during import', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage()
+            ], 422);
+        }
+    }
+
     public function previewBomImport(Request $request)
     {
         \Log::info('ItemController@previewBomImport - Starting BOM preview');
