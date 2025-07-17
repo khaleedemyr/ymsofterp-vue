@@ -20,7 +20,7 @@
         <div class="border-b border-gray-200 my-2"></div>
         <div class="flex justify-between font-bold text-lg"><span>Grand Total (=)</span><span>{{ format(summary.grand_total) }}</span></div>
         <div class="flex justify-between"><span>Jumlah Pax</span><span>{{ summary.total_pax }}</span></div>
-        <div class="flex justify-between"><span>Avg Check</span><span>{{ format(calcAvgCheck(summary.total_sales, summary.total_pax)) }}</span></div>
+        <div class="flex justify-between"><span>Avg Check</span><span>{{ format(calcAvgCheck(summary.grand_total, summary.total_pax)) }}</span></div>
       </div>
     </div>
   </div>

@@ -19,6 +19,7 @@ const menuGroups = [
         icon: 'fa-solid fa-bars',
         menus: [
             { name: () => t('sidebar.dashboard'), icon: 'fa-solid fa-home', route: '/home', code: 'dashboard' },
+            { name: () => 'Video Tutorial Gallery', icon: 'fa-solid fa-play-circle', route: '/video-tutorials/gallery' },
             //{ name: () => 'Dashboard Outlet', icon: 'fa-solid fa-map-location-dot', route: '/dashboard-outlet', code: 'dashboard_outlet' },
         ],
     },
@@ -60,6 +61,8 @@ const menuGroups = [
             { name: () => 'Data Investor Outlet', icon: 'fa-solid fa-user-tie', route: '/investors', code: 'data_investor_outlet' },
             { name: () => 'Officer Check', icon: 'fa-solid fa-user-check', route: '/officer-check', code: 'officer_check' },
             { name: () => 'Jenis Pembayaran', icon: 'fa-solid fa-money-bill', route: '/payment-types', code: 'payment_types' },
+            { name: () => 'Video Tutorial', icon: 'fa-solid fa-video', route: '/video-tutorials', code: 'master-data-video-tutorials' },
+            { name: () => 'Group Video Tutorial', icon: 'fa-solid fa-folder', route: '/video-tutorial-groups', code: 'master-data-video-tutorial-groups' },
         ],
     },
     {

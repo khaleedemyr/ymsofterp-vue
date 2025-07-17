@@ -85,6 +85,8 @@ use App\Http\Controllers\ShiftController;
 use App\Http\Controllers\UserShiftController;
 use App\Http\Controllers\AttendanceReportController;
 use App\Http\Controllers\PayrollController;
+use App\Http\Controllers\VideoTutorialController;
+use App\Http\Controllers\VideoTutorialGroupController;
 
 
 Route::get('/', function () {
@@ -881,6 +883,16 @@ Route::get('/item-engineering', function () {
 Route::get('/users/dropdown-data', [UserController::class, 'getDropdownData'])->name('users.dropdown-data');
 
 Route::resource('users', UserController::class);
+
+// Video Tutorial Routes
+Route::middleware(['auth', 'verified'])->group(function () {
+    Route::get('video-tutorials/gallery', [VideoTutorialController::class, 'gallery'])->name('video-tutorials.gallery');
+    Route::resource('video-tutorials', VideoTutorialController::class);
+    Route::patch('video-tutorials/{videoTutorial}/toggle-status', [VideoTutorialController::class, 'toggleStatus'])->name('video-tutorials.toggle-status');
+    
+    Route::resource('video-tutorial-groups', VideoTutorialGroupController::class);
+    Route::patch('video-tutorial-groups/{videoTutorialGroup}/toggle-status', [VideoTutorialGroupController::class, 'toggleStatus'])->name('video-tutorial-groups.toggle-status');
+});
 
 // Test route for dropdown data
 Route::get('/test/users-dropdown', function() {

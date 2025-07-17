@@ -25,10 +25,6 @@
           <div class="summary-label">Discount</div>
           <div class="summary-value">{{ formatCurrency(report.summary.total_discount) }}</div>
         </div>
-        <div class="summary-card gradient-red">
-          <div class="summary-label">Promo Discount</div>
-          <div class="summary-value">{{ formatCurrency(report.summary.total_promo_discount) }}</div>
-        </div>
         <div class="summary-card gradient-purple">
           <div class="summary-label">Cashback/Redeem</div>
           <div class="summary-value">{{ formatCurrency(report.summary.total_cashback) }}</div>
@@ -112,7 +108,7 @@
                   <td class="px-6 py-3 font-semibold text-gray-800">{{ tanggal }}</td>
                   <td class="px-6 py-3 text-right font-semibold">{{ row.total_order }}</td>
                   <td class="px-6 py-3 text-right font-semibold">{{ row.total_pax }}</td>
-                  <td class="px-6 py-3 text-right font-semibold">{{ formatCurrency(row.avg_check ?? calcAvgCheck(row.total_sales, row.total_pax)) }}</td>
+                  <td class="px-6 py-3 text-right font-semibold">{{ formatCurrency(row.avg_check ?? calcAvgCheck(row.grand_total, row.total_pax)) }}</td>
                   <td class="px-6 py-3 text-right font-semibold">{{ formatCurrency(row.total_discount) }}</td>
                   <td class="px-6 py-3 text-right font-semibold">{{ formatCurrency(row.total_cashback) }}</td>
                   <td v-if="user.id_outlet == 1" class="px-6 py-3 text-right font-semibold">{{ formatCurrency(row.total_service) }}</td>
@@ -139,7 +135,7 @@
                   </td>
                 </tr>
                 <tr v-if="expanded[tanggal]">
-                  <td :colspan="user.id_outlet == 1 ? 13 : 11" class="bg-blue-50 px-8 py-4">
+                  <td :colspan="user.id_outlet == 1 ? 14 : 12" class="bg-blue-50 px-8 py-4">
                     <div v-if="ordersByDate(tanggal).length">
                       <div class="font-bold mb-2 text-gray-700">Detail Order ({{ tanggal }})</div>
                       <div class="overflow-x-auto">
@@ -233,13 +229,13 @@ const selectedRevenueOrders = ref([]);
 const selectedRevenueTanggal = ref('');
 
 const avgCheckSummary = computed(() => {
-  const sales = report.summary.total_sales || 0;
+  const grandTotal = report.summary.grand_total || 0;
   const pax = report.summary.total_pax || 0;
-  return pax > 0 ? Math.round(sales / pax) : 0;
+  return pax > 0 ? Math.round(grandTotal / pax) : 0;
 });
 
-function calcAvgCheck(sales, pax) {
-  return pax > 0 ? Math.round(sales / pax) : 0;
+function calcAvgCheck(grandTotal, pax) {
+  return pax > 0 ? Math.round(grandTotal / pax) : 0;
 }
 
 function toggleExpand(tanggal) {
@@ -374,9 +370,7 @@ const RevenueReportModal = defineAsyncComponent(() => import('./RevenueReportMod
 .gradient-pink {
   background: linear-gradient(135deg, #ffe6f0 0%, #ffb2d6 100%);
 }
-.gradient-red {
-  background: linear-gradient(135deg, #ffeaea 0%, #ffb2b2 100%);
-}
+
 .gradient-purple {
   background: linear-gradient(135deg, #f3e6ff 0%, #d1b2ff 100%);
 }
