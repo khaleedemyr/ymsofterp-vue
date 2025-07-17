@@ -1861,6 +1861,22 @@ $bomItems = \App\Models\Item::whereIn('id', $bomMaterialIds)->get();
     {
         $supplierId = $request->get('supplier_id');
         $outletId = $request->get('outlet_id');
+        
+        \Log::info('bySupplier called', [
+            'supplier_id' => $supplierId,
+            'outlet_id' => $outletId
+        ]);
+        
+        // Ambil region_id dari outlet
+        $region_id = null;
+        if ($outletId) {
+            $region_id = DB::table('tbl_data_outlet')
+                ->where('id_outlet', $outletId)
+                ->value('region_id');
+        }
+        
+        \Log::info('Region ID found', ['region_id' => $region_id]);
+        
         $items = DB::table('items')
             ->join('item_supplier', 'items.id', '=', 'item_supplier.item_id')
             ->join('item_supplier_outlet', 'item_supplier.id', '=', 'item_supplier_outlet.item_supplier_id')
@@ -1875,11 +1891,76 @@ $bomItems = \App\Models\Item::whereIn('id', $bomMaterialIds)->get();
                 'items.sku',
                 'items.category_id',
                 'categories.name as category_name',
-                'item_supplier.price',
+                'item_supplier.price as supplier_price', // Rename untuk membedakan
                 'units.name as unit',
-                'units.id as unit_id'
+                'units.id as unit_id',
+                'items.small_unit_id',
+                'items.medium_unit_id',
+                'items.large_unit_id'
             )
             ->get();
+            
+        \Log::info('Raw items from database', [
+            'count' => $items->count(),
+            'first_item' => $items->first()
+        ]);
+        
+        $items = $items->map(function($item) use ($region_id, $outletId) {
+            // Ambil harga dari item_prices dengan prioritas outlet > region > all (sama seperti RO utama)
+            $price = \DB::table('item_prices')
+                ->where('item_id', $item->id)
+                ->where(function($q) use ($region_id, $outletId) {
+                    $q->where('availability_price_type', 'all');
+                    if ($region_id) {
+                        $q->orWhere(function($q2) use ($region_id) {
+                            $q2->where('availability_price_type', 'region')->where('region_id', $region_id);
+                        });
+                    }
+                    if ($outletId) {
+                        $q->orWhere(function($q2) use ($outletId) {
+                            $q2->where('availability_price_type', 'outlet')->where('outlet_id', $outletId);
+                        });
+                    }
+                })
+                ->orderByRaw("CASE 
+                    WHEN availability_price_type = 'outlet' THEN 1
+                    WHEN availability_price_type = 'region' THEN 2
+                    ELSE 3 END")
+                ->orderByDesc('id')
+                ->first();
+            
+            $finalPrice = $price ? $price->price : 0;
+            
+            // Tambahkan unit names untuk konsistensi dengan RO utama
+            $unit_small = DB::table('units')->where('id', $item->small_unit_id)->value('name');
+            $unit_medium = DB::table('units')->where('id', $item->medium_unit_id)->value('name');
+            $unit_large = DB::table('units')->where('id', $item->large_unit_id)->value('name');
+            
+            return [
+                'id' => $item->id,
+                'name' => $item->name,
+                'sku' => $item->sku,
+                'category_id' => $item->category_id,
+                'category_name' => $item->category_name,
+                'supplier_price' => $item->supplier_price, // Harga dari supplier (untuk referensi)
+                'price' => $finalPrice, // Harga yang digunakan (dari item_prices)
+                'unit' => $item->unit,
+                'unit_id' => $item->unit_id,
+                'unit_small' => $unit_small,
+                'unit_medium' => $unit_medium,
+                'unit_medium_name' => $unit_medium, // Untuk konsistensi dengan RO utama
+                'unit_large' => $unit_large,
+                'small_unit_id' => $item->small_unit_id,
+                'medium_unit_id' => $item->medium_unit_id,
+                'large_unit_id' => $item->large_unit_id
+            ];
+        });
+        
+        \Log::info('Final items processed', [
+            'count' => $items->count(),
+            'first_item' => $items->first()
+        ]);
+            
         return response()->json(['items' => $items]);
     }
 

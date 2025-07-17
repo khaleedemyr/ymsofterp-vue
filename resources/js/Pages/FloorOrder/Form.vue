@@ -198,7 +198,7 @@ watch(selectedSupplier, (val) => {
             ...item, 
             qty: 0,
             unit: item.unit_medium_name || item.unit_medium || item.unit_small || item.unit || '-',
-            price: item.price || 0,
+            price: item.price || 0, // Menggunakan price dari item_prices (sama dengan RO utama)
             subtotal: 0
           });
         });
@@ -287,7 +287,7 @@ function selectItem(idx, item) {
       form.value.items[idx].item_id = item.id;
       form.value.items[idx].item_name = item.name;
       form.value.items[idx].unit = item.unit_medium_name || item.unit_medium || item.unit_small || item.unit || '-';
-      form.value.items[idx].price = item.price_medium !== undefined ? item.price_medium : (item.price !== undefined ? item.price : 0);
+      form.value.items[idx].price = item.price || 0; // Menggunakan price dari item_prices (sama dengan RO utama)
       form.value.items[idx].qty = '';
       form.value.items[idx].subtotal = 0;
       form.value.items[idx].category_id = item.category_id;
