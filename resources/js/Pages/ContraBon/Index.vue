@@ -38,6 +38,7 @@
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Tanggal</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Supplier</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">No. PO</th>
+              <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">No Invoice Supplier</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Total</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Status</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Dibuat Oleh</th>
@@ -53,6 +54,7 @@
               <td class="px-6 py-3">{{ formatDate(cb.date) }}</td>
               <td class="px-6 py-3">{{ cb.supplier?.name }}</td>
               <td class="px-6 py-3">{{ cb.purchase_order?.number }}</td>
+              <td class="px-6 py-3">{{ cb.supplier_invoice_number || '-' }}</td>
               <td class="px-6 py-3">{{ formatCurrency(cb.total_amount) }}</td>
               <td class="px-6 py-3">
                 <span :class="{

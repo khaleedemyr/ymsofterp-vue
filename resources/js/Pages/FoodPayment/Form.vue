@@ -39,7 +39,12 @@
               <input type="checkbox" :value="cb.id" v-model="form.selected_contra_bon_ids" class="mr-2" />
               <div class="flex-1">
                 <div class="font-medium">{{ cb.number }}</div>
-                <div class="text-sm text-gray-600">Total: {{ formatCurrency(cb.total_amount) }}</div>
+                <div class="text-sm text-gray-600">
+                  <div>Total: {{ formatCurrency(cb.total_amount) }}</div>
+                  <div v-if="cb.supplier_invoice_number" class="text-xs text-gray-500">
+                    No. Invoice: {{ cb.supplier_invoice_number }}
+                  </div>
+                </div>
               </div>
             </div>
           </div>

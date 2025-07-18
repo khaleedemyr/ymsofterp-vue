@@ -11,6 +11,8 @@ use App\Exports\ItemEngineeringExport;
 use App\Exports\ItemEngineeringMultiSheetExport;
 use App\Exports\ItemEngineeringSheetExport;
 use App\Exports\ModifierEngineeringSheetExport;
+use App\Exports\SalesPivotPerOutletSubCategoryExport;
+use App\Exports\SalesPivotSpecialExport;
 
 class ReportController extends Controller
 {
@@ -356,6 +358,111 @@ class ReportController extends Controller
         ]);
     }
 
+    public function exportSalesPivotPerOutletSubCategory(Request $request)
+    {
+        try {
+            $tanggal = $request->input('tanggal');
+            
+            if (!$tanggal) {
+                return response()->json(['error' => 'Tanggal harus diisi'], 400);
+            }
+            
+            // Ambil semua sub kategori dengan show_pos = '0'
+            $subCategories = DB::table('sub_categories')
+                ->where('show_pos', '0')
+                ->orderBy('name')
+                ->get();
+
+            // Ambil data penjualan per outlet per sub kategori dengan show_pos = '0'
+            $salesQuery = DB::table('outlet_food_good_receives as gr')
+                ->join('outlet_food_good_receive_items as i', 'gr.id', '=', 'i.outlet_food_good_receive_id')
+                ->join('items as it', 'i.item_id', '=', 'it.id')
+                ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
+                ->join('units as u', 'i.unit_id', '=', 'u.id')
+                ->join('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
+                ->join('food_packing_lists as pl', 'do.packing_list_id', '=', 'pl.id')
+                ->join('warehouse_division as wd', 'pl.warehouse_division_id', '=', 'wd.id')
+                ->join('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
+                ->join('food_floor_order_items as fo', function($join) {
+                    $join->on('i.item_id', '=', 'fo.item_id')
+                         ->on('fo.floor_order_id', '=', 'pl.food_floor_order_id');
+                })
+                ->join('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
+                ->where('sc.show_pos', '0')
+                ->select(
+                    'o.nama_outlet as customer',
+                    'sc.name as sub_category',
+                    DB::raw('SUM(i.received_qty * fo.price) as nilai')
+                );
+            
+            $salesQuery->whereDate('gr.receive_date', $tanggal);
+            
+            $sales = $salesQuery
+                ->groupBy('o.nama_outlet', 'sc.name')
+                ->orderBy('o.nama_outlet')
+                ->orderBy('sc.name')
+                ->get();
+
+            // Ambil total per outlet dengan show_pos = '0'
+            $totalsQuery = DB::table('outlet_food_good_receives as gr')
+                ->join('outlet_food_good_receive_items as i', 'gr.id', '=', 'i.outlet_food_good_receive_id')
+                ->join('items as it', 'i.item_id', '=', 'it.id')
+                ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
+                ->join('units as u', 'i.unit_id', '=', 'u.id')
+                ->join('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
+                ->join('food_packing_lists as pl', 'do.packing_list_id', '=', 'pl.id')
+                ->join('warehouse_division as wd', 'pl.warehouse_division_id', '=', 'wd.id')
+                ->join('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
+                ->join('food_floor_order_items as fo', function($join) {
+                    $join->on('i.item_id', '=', 'fo.item_id')
+                         ->on('fo.floor_order_id', '=', 'pl.food_floor_order_id');
+                })
+                ->join('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
+                ->where('sc.show_pos', '0')
+                ->select(
+                    'o.nama_outlet as customer',
+                    DB::raw('SUM(i.received_qty * fo.price) as line_total')
+                );
+            
+            $totalsQuery->whereDate('gr.receive_date', $tanggal);
+            
+            $totals = $totalsQuery
+                ->groupBy('o.nama_outlet')
+                ->orderBy('o.nama_outlet')
+                ->get()
+                ->keyBy('customer');
+
+            // Bentuk pivot array
+            $pivot = [];
+            foreach ($sales as $row) {
+                $customer = $row->customer;
+                if (!isset($pivot[$customer])) {
+                    $pivot[$customer] = (object)[
+                        'customer' => $customer,
+                        'line_total' => 0,
+                    ];
+                }
+                $pivot[$customer]->{$row->sub_category} = $row->nilai;
+            }
+            
+            // Isi line_total dan pastikan semua sub kategori ada kolomnya
+            foreach ($pivot as $customer => $row) {
+                $row->line_total = $totals[$customer]->line_total ?? 0;
+                foreach ($subCategories as $sc) {
+                    if (!isset($row->{$sc->name})) {
+                        $row->{$sc->name} = 0;
+                    }
+                }
+            }
+
+            return new SalesPivotPerOutletSubCategoryExport(array_values($pivot), $subCategories, $tanggal);
+            
+        } catch (\Exception $e) {
+            \Log::error('Export error: ' . $e->getMessage());
+            return response()->json(['error' => 'Terjadi kesalahan saat export: ' . $e->getMessage()], 500);
+        }
+    }
+
     public function reportSalesPivotSpecial(Request $request)
     {
         $query = DB::table('outlet_food_good_receives as gr')
@@ -396,6 +503,53 @@ class ReportController extends Controller
                 'tanggal' => $request->tanggal,
             ],
         ]);
+    }
+
+    public function exportSalesPivotSpecial(Request $request)
+    {
+        try {
+            $tanggal = $request->input('tanggal');
+            
+            if (!$tanggal) {
+                return response()->json(['error' => 'Tanggal harus diisi'], 400);
+            }
+            
+            $query = DB::table('outlet_food_good_receives as gr')
+                ->join('outlet_food_good_receive_items as i', 'gr.id', '=', 'i.outlet_food_good_receive_id')
+                ->join('items as it', 'i.item_id', '=', 'it.id')
+                ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
+                ->join('units as u', 'i.unit_id', '=', 'u.id')
+                ->join('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
+                ->join('food_packing_lists as pl', 'do.packing_list_id', '=', 'pl.id')
+                ->join('warehouse_division as wd', 'pl.warehouse_division_id', '=', 'wd.id')
+                ->join('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
+                ->join('food_floor_order_items as fo', function($join) {
+                    $join->on('i.item_id', '=', 'fo.item_id')
+                         ->on('fo.floor_order_id', '=', 'pl.food_floor_order_id');
+                })
+                ->join('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
+                ->select(
+                    'o.nama_outlet as customer',
+                    DB::raw("SUM(CASE WHEN w.name = 'MAIN KITCHEN' THEN i.received_qty * fo.price ELSE 0 END) as main_kitchen"),
+                    DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name NOT IN ('Chemical', 'Stationary', 'Marketing') THEN i.received_qty * fo.price ELSE 0 END) as main_store"),
+                    DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Chemical' THEN i.received_qty * fo.price ELSE 0 END) as chemical"),
+                    DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Stationary' THEN i.received_qty * fo.price ELSE 0 END) as stationary"),
+                    DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Marketing' THEN i.received_qty * fo.price ELSE 0 END) as marketing"),
+                    DB::raw('SUM(i.received_qty * fo.price) as line_total')
+                );
+
+            $query->whereDate('gr.receive_date', $tanggal);
+
+            $report = $query->groupBy('o.nama_outlet')
+                ->orderBy('o.nama_outlet')
+                ->get();
+
+            return new SalesPivotSpecialExport($report, $tanggal);
+            
+        } catch (\Exception $e) {
+            \Log::error('Export error: ' . $e->getMessage());
+            return response()->json(['error' => 'Terjadi kesalahan saat export: ' . $e->getMessage()], 500);
+        }
     }
 
     public function reportGoodReceiveOutlet(Request $request)

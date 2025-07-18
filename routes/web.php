@@ -89,6 +89,14 @@ use App\Http\Controllers\AttendanceReportController;
 use App\Http\Controllers\PayrollController;
 use App\Http\Controllers\VideoTutorialController;
 use App\Http\Controllers\VideoTutorialGroupController;
+use App\Http\Controllers\LmsController;
+use App\Http\Controllers\LmsCategoryController;
+use App\Http\Controllers\LmsLessonController;
+use App\Http\Controllers\LmsEnrollmentController;
+use App\Http\Controllers\LmsQuizController;
+use App\Http\Controllers\LmsAssignmentController;
+use App\Http\Controllers\LmsCertificateController;
+use App\Http\Controllers\LmsDiscussionController;
 
 
 Route::get('/', function () {
@@ -748,8 +756,11 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/report-sales-per-tanggal', [\App\Http\Controllers\ReportController::class, 'reportSalesPerTanggal'])->name('report.sales-per-tanggal');
     Route::get('/report-sales-all-item-all-outlet', [\App\Http\Controllers\ReportController::class, 'reportSalesAllItemAllOutlet'])->name('report.sales-all-item-all-outlet');
     Route::get('/report-sales-pivot-per-outlet-sub-category', [\App\Http\Controllers\ReportController::class, 'reportSalesPivotPerOutletSubCategory'])->name('report.sales-pivot-per-outlet-sub-category');
+Route::get('/report-sales-pivot-per-outlet-sub-category/export', [\App\Http\Controllers\ReportController::class, 'exportSalesPivotPerOutletSubCategory'])->name('report.sales-pivot-per-outlet-sub-category.export');
     Route::get('/report-sales-pivot-special', [\App\Http\Controllers\ReportController::class, 'reportSalesPivotSpecial'])->name('report.sales-pivot-special');
-    Route::get('/report-rekap-fj', [\App\Http\Controllers\ReportController::class, 'reportSalesPivotSpecial'])->name('report.rekap-fj');
+Route::get('/report-sales-pivot-special/export', [\App\Http\Controllers\ReportController::class, 'exportSalesPivotSpecial'])->name('report.sales-pivot-special.export');
+Route::get('/report-rekap-fj', [\App\Http\Controllers\ReportController::class, 'reportSalesPivotSpecial'])->name('report.rekap-fj');
+Route::get('/report-rekap-fj/export', [\App\Http\Controllers\ReportController::class, 'exportSalesPivotSpecial'])->name('report.rekap-fj.export');
     Route::get('/report-good-receive-outlet', [\App\Http\Controllers\ReportController::class, 'reportGoodReceiveOutlet'])->name('report.good-receive-outlet');
     Route::get('/report-receiving-sheet', [\App\Http\Controllers\ReportController::class, 'reportReceivingSheet'])->name('report.receiving-sheet');
     Route::post('/report/sales-pivot-outlet-detail', [\App\Http\Controllers\ReportController::class, 'salesPivotOutletDetail'])->name('report.sales-pivot-outlet-detail');
@@ -964,5 +975,44 @@ Route::get('/payroll/master', [PayrollController::class, 'index'])->name('payrol
 Route::post('/payroll/master', [PayrollController::class, 'store'])->name('payroll.master.store');
 Route::get('/payroll/master/template', [PayrollController::class, 'downloadTemplate'])->name('payroll.master.template');
 Route::post('/payroll/master/import', [PayrollController::class, 'importExcel'])->name('payroll.master.import');
+
+// LMS Routes
+Route::middleware(['auth'])->prefix('lms')->name('lms.')->group(function () {
+    // Dashboard
+    Route::get('/dashboard', [App\Http\Controllers\LmsController::class, 'dashboard'])->name('dashboard');
+    
+    // Courses
+    Route::get('/courses', [App\Http\Controllers\LmsController::class, 'courses'])->name('courses.index');
+    Route::post('/courses', [App\Http\Controllers\LmsController::class, 'storeCourse'])->name('courses.store');
+    Route::get('/courses/{course}', [App\Http\Controllers\LmsController::class, 'showCourse'])->name('courses.show');
+    Route::post('/courses/{course}/enroll', [App\Http\Controllers\LmsController::class, 'enroll'])->name('courses.enroll');
+    
+    // My Courses
+    Route::get('/my-courses', [App\Http\Controllers\LmsController::class, 'myCourses'])->name('my-courses');
+    
+    // Reports
+    Route::get('/reports', [App\Http\Controllers\LmsController::class, 'reports'])->name('reports');
+    
+    // Categories
+    Route::resource('categories', App\Http\Controllers\LmsCategoryController::class);
+    
+    // Lessons
+    Route::resource('lessons', App\Http\Controllers\LmsLessonController::class);
+    
+    // Enrollments
+    Route::resource('enrollments', App\Http\Controllers\LmsEnrollmentController::class);
+    
+    // Quizzes
+    Route::resource('quizzes', App\Http\Controllers\LmsQuizController::class);
+    
+    // Assignments
+    Route::resource('assignments', App\Http\Controllers\LmsAssignmentController::class);
+    
+    // Certificates
+    Route::resource('certificates', App\Http\Controllers\LmsCertificateController::class);
+    
+    // Discussions
+    Route::resource('discussions', App\Http\Controllers\LmsDiscussionController::class);
+});
 
 require __DIR__.'/auth.php';

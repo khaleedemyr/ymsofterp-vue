@@ -21,6 +21,7 @@ class ContraBonController extends Controller
             $search = $request->search;
             $query->where(function($q) use ($search) {
                 $q->where('number', 'like', "%$search%")
+                  ->orWhere('supplier_invoice_number', 'like', "%$search%") // <-- Tambahkan ini
                   ->orWhereHas('supplier', function($q2) use ($search) {
                       $q2->where('name', 'like', "%$search%")
                          ;
@@ -71,6 +72,7 @@ class ContraBonController extends Controller
             'items.*.price' => 'required|numeric|min:0',
             'notes' => 'nullable|string',
             'image' => 'nullable|image|max:2048',
+            'supplier_invoice_number' => 'nullable|string|max:100', // <-- Tambahkan validasi
         ]);
 
         DB::beginTransaction();
@@ -107,7 +109,8 @@ class ContraBonController extends Controller
                 'notes' => $request->notes,
                 'image_path' => $imagePath,
                 'status' => 'draft',
-                'created_by' => Auth::id()
+                'created_by' => Auth::id(),
+                'supplier_invoice_number' => $request->supplier_invoice_number, // <-- Tambahkan simpan
             ]);
 
             // Create contra bon items

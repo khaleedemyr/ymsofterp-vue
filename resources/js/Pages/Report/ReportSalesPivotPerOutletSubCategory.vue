@@ -23,6 +23,10 @@
           <span class="mr-2"><i class="fas fa-sync-alt"></i></span>
           Load Data
         </button>
+        <button @click="exportToExcel" :disabled="!tanggal || !report.length" class="inline-flex items-center px-4 py-2 bg-green-600 text-white rounded-md font-semibold hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed">
+          <span class="mr-2"><i class="fas fa-file-excel"></i></span>
+          Export Excel
+        </button>
       </div>
       <div v-if="!tanggal" class="bg-white rounded-xl shadow-lg p-8 text-center text-gray-500 font-bold">
         Silakan pilih tanggal terlebih dahulu
@@ -202,6 +206,53 @@ async function showDetail(customer) {
     detailData.value = {};
   } finally {
     loadingDetail.value = false;
+  }
+}
+
+async function exportToExcel() {
+  if (!tanggal.value) {
+    alert('Silakan pilih tanggal terlebih dahulu');
+    return;
+  }
+  
+  try {
+    // Show loading state
+    const button = event.target;
+    const originalText = button.innerHTML;
+    button.innerHTML = '<span class="mr-2"><i class="fas fa-spinner fa-spin"></i></span>Exporting...';
+    button.disabled = true;
+    
+    // Use axios to download the file
+    const response = await axios.get(route('report.sales-pivot-per-outlet-sub-category.export'), {
+      params: { tanggal: tanggal.value },
+      responseType: 'blob'
+    });
+    
+    // Create blob and download
+    const blob = new Blob([response.data], { 
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+    });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `sales_pivot_per_outlet_sub_category_${tanggal.value}.xlsx`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+    
+    // Reset button
+    button.innerHTML = originalText;
+    button.disabled = false;
+    
+  } catch (error) {
+    console.error('Export error:', error);
+    alert('Terjadi kesalahan saat export. Silakan coba lagi.');
+    
+    // Reset button
+    const button = event.target;
+    button.innerHTML = '<span class="mr-2"><i class="fas fa-file-excel"></i></span>Export Excel';
+    button.disabled = false;
   }
 }
 </script>

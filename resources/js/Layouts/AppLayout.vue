@@ -266,6 +266,24 @@ const menuGroups = [
             { name: () => 'Announcement', icon: 'fa-solid fa-bullhorn', route: '/announcement', code: 'announcement' },
         ],
     },
+    {
+        title: () => 'Learning Management System',
+        icon: 'fa-solid fa-graduation-cap',
+        collapsible: true,
+        open: ref(false),
+        menus: [
+            { name: () => 'LMS Dashboard', icon: 'fa-solid fa-chart-line', route: '/lms/dashboard', code: 'lms-dashboard' },
+            { name: () => 'Kategori Training', icon: 'fa-solid fa-folder', route: '/lms/categories', code: 'lms-categories' },
+            { name: () => 'Training', icon: 'fa-solid fa-book', route: '/lms/courses', code: 'lms-courses' },
+            { name: () => 'Lesson', icon: 'fa-solid fa-play-circle', route: '/lms/lessons', code: 'lms-lessons' },
+            { name: () => 'Enrollment', icon: 'fa-solid fa-user-plus', route: '/lms/enrollments', code: 'lms-enrollments' },
+            { name: () => 'Quiz', icon: 'fa-solid fa-question-circle', route: '/lms/quizzes', code: 'lms-quizzes' },
+            { name: () => 'Assignment', icon: 'fa-solid fa-tasks', route: '/lms/assignments', code: 'lms-assignments' },
+            { name: () => 'Sertifikat', icon: 'fa-solid fa-certificate', route: '/lms/certificates', code: 'lms-certificates' },
+            { name: () => 'Diskusi', icon: 'fa-solid fa-comments', route: '/lms/discussions', code: 'lms-discussions' },
+            { name: () => 'Laporan LMS', icon: 'fa-solid fa-chart-bar', route: '/lms/reports', code: 'lms-reports' },
+        ],
+    },
 ];
 
 const filteredMenuGroups = computed(() =>

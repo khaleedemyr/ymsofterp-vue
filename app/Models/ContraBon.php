@@ -28,7 +28,8 @@ class ContraBon extends Model
         'finance_manager_note',
         'gm_finance_approved_at',
         'gm_finance_approved_by',
-        'gm_finance_note'
+        'gm_finance_note',
+        'supplier_invoice_number',
     ];
 
     protected $casts = [

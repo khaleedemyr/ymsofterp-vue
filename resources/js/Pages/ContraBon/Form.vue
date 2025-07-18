@@ -24,6 +24,7 @@ const form = useForm({
   po_id: props.contraBon?.po_id || '',
   gr_id: props.contraBon?.gr_id || '',
   notes: props.contraBon?.notes || '',
+  supplier_invoice_number: props.contraBon?.supplier_invoice_number || '', // <-- Tambahkan ini
   items: props.contraBon?.items?.map(i => ({
     gr_item_id: i.gr_item_id,
     item_id: i.item_id,
@@ -141,6 +142,7 @@ async function onSubmit() {
     fd.append('po_id', form.po_id);
     fd.append('gr_id', form.gr_id);
     fd.append('notes', form.notes);
+    fd.append('supplier_invoice_number', form.supplier_invoice_number); // Tambahkan ini
     fd.append('image', fileImage.value);
     form.items.forEach((item, idx) => {
       Object.keys(item).forEach(key => {
@@ -258,6 +260,12 @@ function goBack() {
           <div v-if="fileImagePreview" class="mt-2">
             <img :src="fileImagePreview" alt="Preview" class="max-w-xs rounded shadow" />
           </div>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-gray-700">No Invoice Supplier</label>
+          <input type="text" v-model="form.supplier_invoice_number" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500" placeholder="No Invoice dari Supplier" />
+          <div v-if="form.errors.supplier_invoice_number" class="text-xs text-red-500 mt-1">{{ form.errors.supplier_invoice_number }}</div>
         </div>
 
         <div>
