@@ -4,6 +4,9 @@ import './bootstrap';
 // Set timezone to Asia/Jakarta
 Intl.DateTimeFormat().resolvedOptions().timeZone = 'Asia/Jakarta';
 
+// Import SweetAlert2
+import Swal from 'sweetalert2';
+
 import { createInertiaApp } from '@inertiajs/vue3';
 import { resolvePageComponent } from 'laravel-vite-plugin/inertia-helpers';
 import { createApp, h } from 'vue';
@@ -32,7 +35,13 @@ createInertiaApp({
             import.meta.glob('./Pages/**/*.vue'),
         ),
     setup({ el, App, props, plugin }) {
-        return createApp({ render: () => h(App, props) })
+        const app = createApp({ render: () => h(App, props) });
+        
+        // Make Swal available globally
+        app.config.globalProperties.$swal = Swal;
+        window.Swal = Swal;
+        
+        return app
             .use(plugin)
             .use(ZiggyVue)
             .use(i18n)

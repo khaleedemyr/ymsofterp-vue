@@ -37,7 +37,45 @@ class PriceUpdateTemplateExport implements FromCollection, WithHeadings, WithSty
             $q->where('show_pos', '0');
         });
 
-        return $query->get();
+        $items = $query->get();
+        
+        // Transform items menjadi multiple rows (satu row per price)
+        $rows = [];
+        
+        foreach ($items as $item) {
+            // Jika item tidak memiliki prices, buat satu row dengan price type 'all'
+            if ($item->prices->isEmpty()) {
+                $rows[] = [
+                    'item' => $item,
+                    'price' => null,
+                    'price_type' => 'all',
+                    'region_outlet' => 'All',
+                    'current_price' => 0
+                ];
+            } else {
+                // Buat row untuk setiap price yang dimiliki item
+                foreach ($item->prices as $price) {
+                    $priceType = $price->availability_price_type;
+                    $regionOutlet = 'All';
+                    
+                    if ($priceType === 'region' && $price->region) {
+                        $regionOutlet = $price->region->name;
+                    } elseif ($priceType === 'outlet' && $price->outlet) {
+                        $regionOutlet = $price->outlet->nama_outlet;
+                    }
+                    
+                    $rows[] = [
+                        'item' => $item,
+                        'price' => $price,
+                        'price_type' => $priceType,
+                        'region_outlet' => $regionOutlet,
+                        'current_price' => $price->price
+                    ];
+                }
+            }
+        }
+        
+        return collect($rows);
     }
 
     public function headings(): array
@@ -52,12 +90,13 @@ class PriceUpdateTemplateExport implements FromCollection, WithHeadings, WithSty
         return $headers;
     }
 
-    public function map($item): array
+    public function map($row): array
     {
-        // Ambil harga saat ini berdasarkan filter
-        $currentPrice = $this->getCurrentPrice($item);
-        $priceType = $this->getPriceType($item);
-        $regionOutlet = $this->getRegionOutlet($item);
+        $item = $row['item'];
+        $price = $row['price'];
+        $priceType = $row['price_type'];
+        $regionOutlet = $row['region_outlet'];
+        $currentPrice = $row['current_price'];
 
         return [
             $item->id,
@@ -70,36 +109,6 @@ class PriceUpdateTemplateExport implements FromCollection, WithHeadings, WithSty
             $regionOutlet,
             $this->generateValidationHash($item) // Hash untuk validasi
         ];
-    }
-
-    private function getCurrentPrice($item)
-    {
-        $price = $item->prices->where('item_id', $item->id)->first();
-        return $price ? $price->price : 0;
-    }
-
-    private function getPriceType($item)
-    {
-        $price = $item->prices->where('item_id', $item->id)->first();
-        if (!$price) return 'all';
-        
-        if ($price->outlet_id) return 'outlet';
-        if ($price->region_id) return 'region';
-        return 'all';
-    }
-
-    private function getRegionOutlet($item)
-    {
-        $price = $item->prices->where('item_id', $item->id)->first();
-        if (!$price) return 'All';
-        
-        if ($price->outlet_id && $price->outlet) {
-            return $price->outlet->nama_outlet;
-        }
-        if ($price->region_id && $price->region) {
-            return $price->region->name;
-        }
-        return 'All';
     }
 
     private function generateValidationHash($item)

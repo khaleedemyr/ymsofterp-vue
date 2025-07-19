@@ -97,6 +97,9 @@ use App\Http\Controllers\LmsQuizController;
 use App\Http\Controllers\LmsAssignmentController;
 use App\Http\Controllers\LmsCertificateController;
 use App\Http\Controllers\LmsDiscussionController;
+use App\Http\Controllers\MemberController;
+use App\Http\Controllers\MemberReportsController;
+use App\Http\Controllers\PointManagementController;
 
 
 Route::get('/', function () {
@@ -906,6 +909,35 @@ Route::get('/item-engineering', function () {
 Route::get('/users/dropdown-data', [UserController::class, 'getDropdownData'])->name('users.dropdown-data');
 
 Route::resource('users', UserController::class);
+
+// Member Routes
+Route::middleware(['auth'])->group(function () {
+    Route::resource('members', MemberController::class);
+    Route::patch('members/{member}/toggle-status', [MemberController::class, 'toggleStatus'])->name('members.toggle-status');
+    Route::patch('members/{member}/toggle-block', [MemberController::class, 'toggleBlock'])->name('members.toggle-block');
+    Route::get('members/export', [MemberController::class, 'export'])->name('members.export');
+});
+
+// CRM Routes
+Route::middleware(['auth'])->group(function () {
+    Route::get('/crm/dashboard', [App\Http\Controllers\CrmDashboardController::class, 'index'])->name('crm.dashboard');
+    Route::get('/api/crm/chart-data', [App\Http\Controllers\CrmDashboardController::class, 'getChartData'])->name('crm.chart-data');
+    Route::get('/api/crm/redeem-details', [App\Http\Controllers\CrmDashboardController::class, 'getRedeemDetails'])->name('crm.redeem-details');
+    
+    // Customer Analytics Routes
+    Route::get('/crm/customer-analytics', [App\Http\Controllers\CustomerAnalyticsController::class, 'index'])->name('crm.customer-analytics');
+    Route::get('/crm/customer-analytics/transactions', [App\Http\Controllers\CustomerAnalyticsController::class, 'getCustomerTransactions'])->name('crm.customer-transactions');
+    
+    // Member Reports Routes
+    Route::get('/crm/member-reports', [App\Http\Controllers\MemberReportsController::class, 'index'])->name('crm.member-reports');
+    
+    // Point Management Routes
+    Route::get('/crm/point-management', [App\Http\Controllers\PointManagementController::class, 'index'])->name('crm.point-management');
+    Route::post('/crm/point-management', [App\Http\Controllers\PointManagementController::class, 'store'])->name('crm.point-management.store');
+    Route::delete('/crm/point-management/{id}', [App\Http\Controllers\PointManagementController::class, 'destroy'])->name('crm.point-management.destroy');
+    Route::get('/crm/point-management/search-customers', [App\Http\Controllers\PointManagementController::class, 'searchCustomers'])->name('crm.point-management.search-customers');
+    Route::get('/crm/point-management/cabang-list', [App\Http\Controllers\PointManagementController::class, 'getCabangList'])->name('crm.point-management.cabang-list');
+});
 
 // Video Tutorial Routes
 Route::middleware(['auth', 'verified'])->group(function () {

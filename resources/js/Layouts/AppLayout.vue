@@ -267,6 +267,19 @@ const menuGroups = [
         ],
     },
     {
+        title: () => 'CRM',
+        icon: 'fa-solid fa-handshake',
+        collapsible: true,
+        open: ref(false),
+        menus: [
+            { name: () => 'Data Member', icon: 'fa-solid fa-users', route: '/members', code: 'crm_members' },
+            { name: () => 'Dashboard CRM', icon: 'fa-solid fa-chart-line', route: '/crm/dashboard', code: 'crm_dashboard' },
+            { name: () => 'Customer Analytics', icon: 'fa-solid fa-chart-pie', route: '/crm/customer-analytics', code: 'crm_analytics' },
+            { name: () => 'Member Reports', icon: 'fa-solid fa-file-lines', route: '/crm/member-reports', code: 'crm_reports' },
+            { name: () => 'Point Management', icon: 'fa-solid fa-coins', route: '/crm/point-management', code: 'crm_point_management' },
+        ],
+    },
+    {
         title: () => 'Learning Management System',
         icon: 'fa-solid fa-graduation-cap',
         collapsible: true,
