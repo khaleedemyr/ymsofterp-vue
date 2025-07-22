@@ -100,6 +100,7 @@ use App\Http\Controllers\LmsDiscussionController;
 use App\Http\Controllers\MemberController;
 use App\Http\Controllers\MemberReportsController;
 use App\Http\Controllers\PointManagementController;
+use App\Http\Controllers\SharedDocumentController;
 
 
 Route::get('/', function () {
@@ -916,6 +917,19 @@ Route::middleware(['auth'])->group(function () {
     Route::patch('members/{member}/toggle-status', [MemberController::class, 'toggleStatus'])->name('members.toggle-status');
     Route::patch('members/{member}/toggle-block', [MemberController::class, 'toggleBlock'])->name('members.toggle-block');
     Route::get('members/export', [MemberController::class, 'export'])->name('members.export');
+});
+
+// Shared Documents Routes
+Route::middleware(['auth'])->group(function () {
+    Route::resource('shared-documents', SharedDocumentController::class);
+    Route::get('shared-documents/{id}/download', [SharedDocumentController::class, 'download'])->name('shared-documents.download');
+    Route::post('shared-documents/{id}/callback', [SharedDocumentController::class, 'callback'])->name('shared-documents.callback');
+    Route::post('shared-documents/{document}/share', [SharedDocumentController::class, 'share'])->name('shared-documents.share');
+    Route::delete('shared-documents/{document}/remove-share', [SharedDocumentController::class, 'removeShare'])->name('shared-documents.remove-share');
+    
+    // User search endpoints
+    Route::get('shared-documents/users/search', [SharedDocumentController::class, 'searchUsers'])->name('shared-documents.users.search');
+    Route::get('shared-documents/users/dropdown', [SharedDocumentController::class, 'getDropdownData'])->name('shared-documents.users.dropdown');
 });
 
 // CRM Routes

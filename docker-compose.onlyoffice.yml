@@ -1,0 +1,63 @@
+version: '3.8'
+
+services:
+  onlyoffice:
+    image: onlyoffice/documentserver:latest
+    container_name: onlyoffice-documentserver
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - onlyoffice_data:/var/www/onlyoffice/Data
+      - onlyoffice_logs:/var/log/onlyoffice
+      - onlyoffice_cache:/var/cache/onlyoffice
+    environment:
+      - JWT_ENABLED=false
+      - JWT_SECRET=your-secret-key-change-this-in-production
+      - WOPI_ENABLED=true
+      - STORAGE_PATH=/var/www/onlyoffice/Data
+    restart: unless-stopped
+    networks:
+      - onlyoffice-network
+
+  # Optional: Redis for caching (recommended for production)
+  redis:
+    image: redis:7-alpine
+    container_name: onlyoffice-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    networks:
+      - onlyoffice-network
+
+  # Optional: PostgreSQL for OnlyOffice (if you want to use external database)
+  # postgres:
+  #   image: postgres:15-alpine
+  #   container_name: onlyoffice-postgres
+  #   environment:
+  #     POSTGRES_DB: onlyoffice
+  #     POSTGRES_USER: onlyoffice
+  #     POSTGRES_PASSWORD: onlyoffice_password
+  #   volumes:
+  #     - postgres_data:/var/lib/postgresql/data
+  #   restart: unless-stopped
+  #   networks:
+  #     - onlyoffice-network
+
+volumes:
+  onlyoffice_data:
+    driver: local
+  onlyoffice_logs:
+    driver: local
+  onlyoffice_cache:
+    driver: local
+  redis_data:
+    driver: local
+  # postgres_data:
+  #   driver: local
+
+networks:
+  onlyoffice-network:
+    driver: bridge 

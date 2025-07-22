@@ -85,6 +85,11 @@ return [
     'faker_locale' => env('APP_FAKER_LOCALE', 'en_US'),
 
     /*
+     * OnlyOffice Configuration
+     */
+    'onlyoffice_url' => env('ONLYOFFICE_URL', 'http://localhost:80'),
+
+    /*
     |--------------------------------------------------------------------------
     | Encryption Key
     |--------------------------------------------------------------------------

@@ -13,6 +13,7 @@ const props = defineProps({
 
 const search = ref(props.filters?.search || '');
 const statusFilter = ref(props.filters?.status || '');
+const pointBalanceFilter = ref(props.filters?.point_balance || '');
 
 
 
@@ -20,6 +21,7 @@ const debouncedSearch = debounce(() => {
   router.get('/members', {
     search: search.value,
     status: statusFilter.value,
+    point_balance: pointBalanceFilter.value,
   }, { preserveState: true, replace: true });
 }, 400);
 
@@ -72,10 +74,29 @@ function reload() {
   router.reload({ preserveState: true, replace: true });
 }
 
-watch([statusFilter], () => {
+function changeSort(sortField) {
+  const currentSort = props.filters?.sort || 'created_at';
+  const currentDirection = props.filters?.direction || 'desc';
+  
+  let newDirection = 'desc';
+  if (currentSort === sortField) {
+    newDirection = currentDirection === 'desc' ? 'asc' : 'desc';
+  }
+  
   router.get('/members', {
     search: search.value,
     status: statusFilter.value,
+    point_balance: pointBalanceFilter.value,
+    sort: sortField,
+    direction: newDirection,
+  }, { preserveState: true, replace: true });
+}
+
+watch([statusFilter, pointBalanceFilter], () => {
+  router.get('/members', {
+    search: search.value,
+    status: statusFilter.value,
+    point_balance: pointBalanceFilter.value,
   }, { preserveState: true, replace: true });
 });
 
@@ -105,7 +126,8 @@ function formatNumber(number) {
       </div>
 
       <!-- Statistics Cards -->
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
+        <!-- Total Member -->
         <div class="bg-white rounded-xl shadow-lg p-4 border-l-4 border-blue-500">
           <div class="flex items-center">
             <div class="p-2 bg-blue-100 rounded-lg">
@@ -113,10 +135,12 @@ function formatNumber(number) {
             </div>
             <div class="ml-4">
               <p class="text-sm text-gray-600">Total Member</p>
-                             <p class="text-2xl font-bold text-gray-800">{{ formatNumber(stats.total_members) }}</p>
+              <p class="text-2xl font-bold text-gray-800">{{ formatNumber(stats.total_members) }}</p>
             </div>
           </div>
         </div>
+
+        <!-- Member Aktif -->
         <div class="bg-white rounded-xl shadow-lg p-4 border-l-4 border-green-500">
           <div class="flex items-center">
             <div class="p-2 bg-green-100 rounded-lg">
@@ -124,22 +148,78 @@ function formatNumber(number) {
             </div>
             <div class="ml-4">
               <p class="text-sm text-gray-600">Member Aktif</p>
-                             <p class="text-2xl font-bold text-gray-800">{{ formatNumber(stats.active_members) }}</p>
+              <p class="text-2xl font-bold text-gray-800">{{ formatNumber(stats.active_members) }}</p>
             </div>
           </div>
         </div>
+
+        <!-- Member Nonaktif -->
         <div class="bg-white rounded-xl shadow-lg p-4 border-l-4 border-orange-500">
           <div class="flex items-center">
             <div class="p-2 bg-orange-100 rounded-lg">
               <i class="fa-solid fa-user-clock text-orange-600 text-xl"></i>
             </div>
-                        <div class="ml-4">
+            <div class="ml-4">
               <p class="text-sm text-gray-600">Member Nonaktif</p>
               <p class="text-2xl font-bold text-gray-800">{{ formatNumber(stats.inactive_members) }}</p>
             </div>
           </div>
         </div>
-        
+
+        <!-- Total Saldo Point -->
+        <div class="bg-white rounded-xl shadow-lg p-4 border-l-4 border-purple-500">
+          <div class="flex items-center">
+            <div class="p-2 bg-purple-100 rounded-lg">
+              <i class="fa-solid fa-coins text-purple-600 text-xl"></i>
+            </div>
+            <div class="ml-4">
+              <p class="text-sm text-gray-600">Total Saldo Point</p>
+              <p class="text-2xl font-bold text-gray-800">{{ stats.total_point_balance_formatted }}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Point Statistics Cards -->
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+        <!-- Point Earned -->
+        <div class="bg-white rounded-xl shadow-lg p-4 border-l-4 border-green-500">
+          <div class="flex items-center">
+            <div class="p-2 bg-green-100 rounded-lg">
+              <i class="fa-solid fa-plus-circle text-green-600 text-xl"></i>
+            </div>
+            <div class="ml-4">
+              <p class="text-sm text-gray-600">Total Point Diperoleh</p>
+              <p class="text-xl font-bold text-gray-800">{{ stats.total_point_earned_formatted }}</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Point Redeemed -->
+        <div class="bg-white rounded-xl shadow-lg p-4 border-l-4 border-red-500">
+          <div class="flex items-center">
+            <div class="p-2 bg-red-100 rounded-lg">
+              <i class="fa-solid fa-minus-circle text-red-600 text-xl"></i>
+            </div>
+            <div class="ml-4">
+              <p class="text-sm text-gray-600">Total Point Diredeem</p>
+              <p class="text-xl font-bold text-gray-800">{{ stats.total_point_redeemed_formatted }}</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Members with Points -->
+        <div class="bg-white rounded-xl shadow-lg p-4 border-l-4 border-blue-500">
+          <div class="flex items-center">
+            <div class="p-2 bg-blue-100 rounded-lg">
+              <i class="fa-solid fa-user-coins text-blue-600 text-xl"></i>
+            </div>
+            <div class="ml-4">
+              <p class="text-sm text-gray-600">Member dengan Point</p>
+              <p class="text-xl font-bold text-gray-800">{{ formatNumber(stats.members_with_points) }}</p>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- Filters -->
@@ -150,6 +230,13 @@ function formatNumber(number) {
           <option value="inactive">Tidak Aktif</option>
         </select>
 
+        <select v-model="pointBalanceFilter" class="form-input rounded-xl">
+          <option value="">Semua Saldo Point</option>
+          <option value="positive">Saldo Positif</option>
+          <option value="negative">Saldo Negatif</option>
+          <option value="zero">Saldo Nol</option>
+          <option value="high">Saldo Tinggi (≥1000)</option>
+        </select>
 
         <input
           v-model="search"
@@ -170,6 +257,11 @@ function formatNumber(number) {
               <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">Nama</th>
               <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">Email</th>
               <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">Telepon</th>
+              <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider cursor-pointer" @click="changeSort('point_balance')">
+                Saldo Point
+                <i v-if="filters.sort === 'point_balance'" :class="filters.direction === 'desc' ? 'fa-solid fa-sort-down' : 'fa-solid fa-sort-up'" class="ml-1"></i>
+                <i v-else class="fa-solid fa-sort ml-1 text-gray-400"></i>
+              </th>
               <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">Status</th>
               <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">Eksklusif</th>
               <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Aksi</th>
@@ -182,6 +274,18 @@ function formatNumber(number) {
               <td class="px-4 py-2 whitespace-nowrap font-semibold">{{ member.name }}</td>
               <td class="px-4 py-2 whitespace-nowrap">{{ member.email || '-' }}</td>
               <td class="px-4 py-2 whitespace-nowrap">{{ member.telepon || '-' }}</td>
+              <td class="px-4 py-2 whitespace-nowrap">
+                <span :class="[
+                  'font-mono font-semibold text-sm px-2 py-1 rounded-full',
+                  member.point_balance > 0 
+                    ? 'bg-green-100 text-green-800' 
+                    : member.point_balance < 0 
+                    ? 'bg-red-100 text-red-800'
+                    : 'bg-gray-100 text-gray-800'
+                ]">
+                  {{ member.point_balance_formatted }}
+                </span>
+              </td>
               <td class="px-4 py-2 whitespace-nowrap">
                 <div class="flex items-center">
                   <div :class="[
@@ -229,7 +333,7 @@ function formatNumber(number) {
               </td>
             </tr>
             <tr v-if="members.data.length === 0">
-              <td colspan="6" class="text-center py-8 text-gray-400">Tidak ada data member</td>
+              <td colspan="9" class="text-center py-8 text-gray-400">Tidak ada data member</td>
             </tr>
           </tbody>
         </table>

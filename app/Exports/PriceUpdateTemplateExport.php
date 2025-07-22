@@ -81,7 +81,7 @@ class PriceUpdateTemplateExport implements FromCollection, WithHeadings, WithSty
     public function headings(): array
     {
         $headers = [
-            'Item ID', 'SKU', 'Item Name', 'Category', 'Current Price', 'New Price (Kosongkan jika tidak diupdate)', 'Price Type', 'Region/Outlet'
+            'Item ID', 'SKU', 'Item Name', 'Category', 'Current Price', 'New Price (Format: 14152.94 region)', 'Region/Outlet'
         ];
 
         // Tambahkan kolom untuk validasi
@@ -98,14 +98,17 @@ class PriceUpdateTemplateExport implements FromCollection, WithHeadings, WithSty
         $regionOutlet = $row['region_outlet'];
         $currentPrice = $row['current_price'];
 
+        // Format new price dengan price type: "14152.94 region" atau "14152.94 all"
+        // User bisa mengubah angka saja, misal: "15000 region" atau "15000 all"
+        $newPriceFormat = $currentPrice > 0 ? "{$currentPrice} {$priceType}" : '';
+
         return [
             $item->id,
             $item->sku,
             $item->name,
             $item->category->name ?? '',
             $currentPrice,
-            '', // New Price - kosong untuk diisi user
-            $priceType,
+            $newPriceFormat, // New Price dengan format yang benar
             $regionOutlet,
             $this->generateValidationHash($item) // Hash untuk validasi
         ];
@@ -141,10 +144,9 @@ class PriceUpdateTemplateExport implements FromCollection, WithHeadings, WithSty
             'C' => 30, // Item Name
             'D' => 20, // Category
             'E' => 15, // Current Price
-            'F' => 15, // New Price
-            'G' => 15, // Price Type
-            'H' => 25, // Region/Outlet
-            'I' => 50, // Validation
+            'F' => 25, // New Price (Format: 14152.94 region)
+            'G' => 25, // Region/Outlet
+            'H' => 50, // Validation
         ];
     }
 } 

@@ -2,6 +2,9 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Import Shared Documents CSS */
+@import './shared-documents.css';
+
 /* Custom animations for 3D effects */
 @keyframes float {
   0%, 100% {

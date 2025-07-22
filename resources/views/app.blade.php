@@ -21,6 +21,9 @@
         
         <!-- SweetAlert2 CDN -->
         <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+        
+        <!-- OnlyOffice Document Editor -->
+        <script type="text/javascript" src="{{ config('app.onlyoffice_url') }}/web-apps/apps/api/documents/api.js"></script>
     </head>
     <body class="font-sans antialiased">
         @inertia

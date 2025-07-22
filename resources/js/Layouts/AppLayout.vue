@@ -24,6 +24,16 @@ const menuGroups = [
         ],
     },
     {
+        title: () => 'Dokumen Bersama',
+        icon: 'fa-solid fa-file-alt',
+        collapsible: true,
+        open: ref(false),
+        menus: [
+            { name: () => 'Daftar Dokumen', icon: 'fa-solid fa-list', route: '/shared-documents', code: 'shared_documents_list' },
+            { name: () => 'Upload Dokumen', icon: 'fa-solid fa-upload', route: '/shared-documents/create', code: 'shared_documents_create' },
+        ],
+    },
+    {
         title: () => t('sidebar.maintenance'),
         icon: 'fa-solid fa-screwdriver-wrench',
         collapsible: true,

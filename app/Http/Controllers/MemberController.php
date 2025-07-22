@@ -38,13 +38,82 @@ class MemberController extends Controller
             }
         }
 
+        // Filter by point balance
+        if ($request->filled('point_balance')) {
+            $pointFilter = $request->point_balance;
+            // We'll apply this filter after calculating point balance
+        }
+
         // Sort
         $sort = $request->get('sort', 'created_at');
         $direction = $request->get('direction', 'desc');
-        $query->orderBy($sort, $direction);
+        
+        // Handle point balance sorting
+        if ($sort === 'point_balance') {
+            // For point balance sorting, we need to sort after calculating the balance
+            $query->orderBy('created_at', $direction);
+        } else {
+            $query->orderBy($sort, $direction);
+        }
 
         // Pagination
         $members = $query->paginate(15)->withQueryString();
+
+        // Calculate point balance for each member
+        $members->getCollection()->transform(function ($member) {
+            // Calculate point balance: sum(type=1) - sum(type=2)
+            $pointBalance = DB::connection('mysql_second')
+                ->table('point')
+                ->where('costumer_id', $member->id)
+                ->selectRaw('
+                    COALESCE(SUM(CASE WHEN type = "1" THEN point ELSE 0 END), 0) as total_earned,
+                    COALESCE(SUM(CASE WHEN type = "2" THEN point ELSE 0 END), 0) as total_redeemed
+                ')
+                ->first();
+
+            $member->point_balance = ($pointBalance->total_earned ?? 0) - ($pointBalance->total_redeemed ?? 0);
+            $member->point_balance_formatted = number_format($member->point_balance, 0, ',', '.');
+            
+            return $member;
+        });
+
+        // Sort by point balance if requested
+        if ($sort === 'point_balance') {
+            $members->getCollection()->sortBy(function ($member) use ($direction) {
+                return $direction === 'desc' ? -$member->point_balance : $member->point_balance;
+            });
+        }
+
+        // Filter by point balance after calculation
+        if ($request->filled('point_balance')) {
+            $pointFilter = $request->point_balance;
+            $members->getCollection()->transform(function ($member) use ($pointFilter) {
+                $showMember = true;
+                
+                switch ($pointFilter) {
+                    case 'positive':
+                        $showMember = $member->point_balance > 0;
+                        break;
+                    case 'negative':
+                        $showMember = $member->point_balance < 0;
+                        break;
+                    case 'zero':
+                        $showMember = $member->point_balance == 0;
+                        break;
+                    case 'high':
+                        $showMember = $member->point_balance >= 1000;
+                        break;
+                }
+                
+                $member->show_in_filter = $showMember;
+                return $member;
+            });
+            
+            // Filter out members that don't match the criteria
+            $members->setCollection($members->getCollection()->filter(function ($member) {
+                return $member->show_in_filter;
+            }));
+        }
 
         // Get statistics
         $stats = [
@@ -53,6 +122,26 @@ class MemberController extends Controller
             'inactive_members' => Customer::where('status_aktif', '0')->count(),
             'exclusive_members' => Customer::where('exclusive_member', 'Y')->count(),
         ];
+
+        // Calculate total point statistics
+        $pointStats = DB::connection('mysql_second')
+            ->table('point')
+            ->selectRaw('
+                COALESCE(SUM(CASE WHEN type = "1" THEN point ELSE 0 END), 0) as total_earned,
+                COALESCE(SUM(CASE WHEN type = "2" THEN point ELSE 0 END), 0) as total_redeemed,
+                COUNT(DISTINCT costumer_id) as members_with_points
+            ')
+            ->first();
+
+        $stats['total_point_earned'] = $pointStats->total_earned ?? 0;
+        $stats['total_point_redeemed'] = $pointStats->total_redeemed ?? 0;
+        $stats['total_point_balance'] = ($pointStats->total_earned ?? 0) - ($pointStats->total_redeemed ?? 0);
+        $stats['members_with_points'] = $pointStats->members_with_points ?? 0;
+
+        // Format numbers
+        $stats['total_point_earned_formatted'] = number_format($stats['total_point_earned'], 0, ',', '.');
+        $stats['total_point_redeemed_formatted'] = number_format($stats['total_point_redeemed'], 0, ',', '.');
+        $stats['total_point_balance_formatted'] = number_format($stats['total_point_balance'], 0, ',', '.');
 
         return Inertia::render('Members/Index', [
             'members' => $members,

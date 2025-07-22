@@ -21,6 +21,6 @@ class SupplierController extends Controller
         if ($q) {
             $query->where('name', 'like', "%$q%") ;
         }
-        return $query->limit(15)->get(['id', 'name']);
+        return $query->get(['id', 'name']);
     }
 }

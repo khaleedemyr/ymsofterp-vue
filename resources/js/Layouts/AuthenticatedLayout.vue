@@ -47,6 +47,12 @@ const showProfileModal = ref(false);
                                 >
                                     Dashboard Maintenance
                                 </NavLink>
+                                <NavLink
+                                    :href="route('shared-documents.index')"
+                                    :active="route().current('shared-documents.*')"
+                                >
+                                    Dokumen Bersama
+                                </NavLink>
                             </div>
                         </div>
 
@@ -157,6 +163,12 @@ const showProfileModal = ref(false);
                             :active="route().current('dashboard.maintenance')"
                         >
                             Dashboard Maintenance
+                        </ResponsiveNavLink>
+                        <ResponsiveNavLink
+                            :href="route('shared-documents.index')"
+                            :active="route().current('shared-documents.*')"
+                        >
+                            Dokumen Bersama
                         </ResponsiveNavLink>
                     </div>
 
