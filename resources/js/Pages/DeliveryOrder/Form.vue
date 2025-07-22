@@ -187,11 +187,14 @@ function onScanBarcode() {
       nextTick(() => barcodeInput.value?.focus());
       return;
     }
-    if (maxQty > 1 && qty === 1) {
-      // Tampilkan modal input qty
+    // Selalu tampilkan modal input qty jika scan tanpa qty (qty === 1, artinya user tidak input qty di barcode)
+    if (qty === 1) {
       qtyModalItem.value = item;
-      // Default minimal 0.01, maksimal sisa qty dan stock
-      qtyModalValue.value = Math.min(maxQty - currentScan, stock - currentScan, 1);
+      // Sisa qty yang bisa discan
+      const sisaQty = Math.min(maxQty - currentScan, stock - currentScan);
+      qtyModalValue.value = sisaQty < 1 ? sisaQty : 1;
+      // Jika sisaQty < 1, default minimal 0.01
+      if (qtyModalValue.value < 0.01) qtyModalValue.value = 0.01;
       showQtyModal.value = true;
       barcodeInputVal.value = '';
       nextTick(() => {
