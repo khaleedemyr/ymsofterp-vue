@@ -88,7 +88,7 @@
         <div class="bg-white rounded-xl shadow-2xl w-full max-w-xs p-8 relative animate-fade-in">
           <div class="font-bold text-xl mb-4 text-blue-700">Input Qty Scan</div>
           <div class="mb-4">Qty DO: <b>{{ qtyModalItem?.qty_packing_list }}</b></div>
-          <input id="qty-modal-input" v-model.number="qtyModalValue" type="number" min="1" :max="qtyModalItem?.qty_packing_list" class="w-full border-2 border-blue-400 rounded-lg px-4 py-2 text-xl text-center mb-4" @keydown="handleQtyModalKey" />
+          <input id="qty-modal-input" v-model.number="qtyModalValue" type="number" min="0.01" step="0.01" :max="qtyModalItem?.qty_packing_list" class="w-full border-2 border-blue-400 rounded-lg px-4 py-2 text-xl text-center mb-4" @keydown="handleQtyModalKey" />
           <div class="flex justify-end gap-3">
             <button @click="showQtyModal = false" class="px-4 py-2 text-gray-700 bg-gray-100 rounded hover:bg-gray-200">Batal</button>
             <button @click="confirmQtyModal" class="px-4 py-2 text-white bg-blue-600 rounded hover:bg-blue-700 font-bold">OK</button>
@@ -154,7 +154,7 @@ const scanFeedbackClass = ref('');
 const barcodeInput = ref(null);
 const showConfirmModal = ref(false);
 const showQtyModal = ref(false);
-const qtyModalValue = ref(1);
+const qtyModalValue = ref(0.01);
 const qtyModalItem = ref(null);
 const showReasonModal = ref(false);
 const reasonOptions = [
@@ -195,10 +195,10 @@ function onScanBarcode() {
   if (!input) return;
   let code = input;
   let qty = 1;
-  const match = input.match(/^([\S]+)\s+(\d+)$/);
+  const match = input.match(/^([\S]+)\s+(\d+(?:\.\d+)?)$/);
   if (match) {
     code = match[1];
-    qty = parseInt(match[2], 10) || 1;
+    qty = parseFloat(match[2]) || 1;
   }
   const item = items.find(i => Array.isArray(i.barcodes) ? i.barcodes.includes(code) : i.barcode === code);
   if (item) {
@@ -207,7 +207,9 @@ function onScanBarcode() {
     const currentScan = Number(item.qty_scan || 0);
     if (item.unit_type === 'kiloan') {
       qtyModalItem.value = item;
-      qtyModalValue.value = Math.min(maxQty - currentScan, maxQty - currentScan);
+      // Default value sesuai sisa qty yang belum di-scan, minimal 0.01
+      const remainingQty = maxQty - currentScan;
+      qtyModalValue.value = Math.max(0.01, remainingQty);
       showQtyModal.value = true;
       barcodeInputVal.value = '';
       nextTick(() => {
@@ -216,7 +218,11 @@ function onScanBarcode() {
       });
       return;
     }
-    qty = 1;
+    // Untuk item non-kiloan, qty default = 1 jika scan tanpa qty
+    if (qty === 1 && !input.match(/\s+\d/)) {
+      qty = 1;
+    }
+    
     if (currentScan + qty > maxQty) {
       scanFeedback.value = `❌ Qty scan tidak boleh lebih dari ${maxQty}`;
       scanFeedbackClass.value = 'text-red-600';
@@ -225,7 +231,7 @@ function onScanBarcode() {
       return;
     }
     item.qty_scan = currentScan + qty;
-    scanFeedback.value = `✔️ ${item.item_name} (${item.qty_scan}/${item.qty_packing_list})`;
+    scanFeedback.value = `✔️ ${item.item_name} (${item.qty_scan.toFixed(2)}/${item.qty_packing_list})`;
     scanFeedbackClass.value = Number(item.qty_scan).toFixed(2) === Number(item.qty_packing_list).toFixed(2) ? 'text-green-700' : (Number(item.qty_scan) > Number(item.qty_packing_list) ? 'text-red-700' : 'text-yellow-700');
   } else {
     scanFeedback.value = '❌ Barcode tidak ditemukan di DO!';
@@ -238,14 +244,25 @@ function onScanBarcode() {
 function confirmQtyModal() {
   const item = qtyModalItem.value;
   const maxQty = Number(item.qty_packing_list);
+  const currentScan = Number(item.qty_scan || 0);
   const inputQty = Number(qtyModalValue.value);
-  if (inputQty > maxQty) {
-    qtyModalValue.value = maxQty;
+  
+  // Validasi input minimal 0.01
+  if (inputQty < 0.01) {
+    qtyModalValue.value = 0.01;
     return;
   }
-  item.qty_scan = (item.qty_scan || 0) + inputQty;
+  
+  // Validasi tidak boleh melebihi sisa qty
+  const remainingQty = maxQty - currentScan;
+  if (inputQty > remainingQty) {
+    qtyModalValue.value = remainingQty;
+    return;
+  }
+  
+  item.qty_scan = currentScan + inputQty;
   showQtyModal.value = false;
-  scanFeedback.value = `✔️ ${item.item_name} (${item.qty_scan}/${item.qty_packing_list})`;
+  scanFeedback.value = `✔️ ${item.item_name} (${item.qty_scan.toFixed(2)}/${item.qty_packing_list})`;
   scanFeedbackClass.value = Number(item.qty_scan).toFixed(2) === Number(item.qty_packing_list).toFixed(2) ? 'text-green-700' : (Number(item.qty_scan) > Number(item.qty_packing_list) ? 'text-red-700' : 'text-yellow-700');
   nextTick(() => barcodeInput.value?.focus());
 }

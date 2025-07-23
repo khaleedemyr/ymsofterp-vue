@@ -190,11 +190,8 @@ function onScanBarcode() {
     // Selalu tampilkan modal input qty jika scan tanpa qty (qty === 1, artinya user tidak input qty di barcode)
     if (qty === 1) {
       qtyModalItem.value = item;
-      // Sisa qty yang bisa discan
-      const sisaQty = Math.min(maxQty - currentScan, stock - currentScan);
-      qtyModalValue.value = sisaQty < 1 ? sisaQty : 1;
-      // Jika sisaQty < 1, default minimal 0.01
-      if (qtyModalValue.value < 0.01) qtyModalValue.value = 0.01;
+      // Default value sesuai qty packing list
+      qtyModalValue.value = maxQty;
       showQtyModal.value = true;
       barcodeInputVal.value = '';
       nextTick(() => {
