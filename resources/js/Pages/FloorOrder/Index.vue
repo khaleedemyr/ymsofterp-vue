@@ -36,7 +36,11 @@ function doFilter() {
     replace: true,
   });
 }
-function goToPage(url) {}
+function goToPage(url) {
+  if (url) {
+    router.visit(url, { preserveState: true, replace: true });
+  }
+}
 function openCreate() {
   // Go directly to create form with default mode (e.g., FO Utama)
   window.location.href = '/floor-order/create?fo_mode=FO%20Utama&input_mode=pc';
