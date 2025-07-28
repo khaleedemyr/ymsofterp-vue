@@ -89,6 +89,7 @@
       <div v-if="showQtyModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40">
         <div class="bg-white rounded-xl shadow-2xl w-full max-w-xs p-8 relative animate-fade-in">
           <div class="font-bold text-xl mb-4 text-blue-700">Input Qty Scan</div>
+          <div class="mb-2 text-sm text-gray-600">Item: <b class="text-blue-800">{{ qtyModalItem?.name }}</b></div>
           <div class="mb-4">Qty Packing List: <b>{{ qtyModalItem?.qty }}</b></div>
           <input id="qty-modal-input" v-model.number="qtyModalValue" type="number" min="0.01" step="0.01" :max="qtyModalItem?.qty" class="w-full border-2 border-blue-400 rounded-lg px-4 py-2 text-xl text-center mb-4" @keydown="handleQtyModalKey" />
           <div class="flex justify-end gap-3">

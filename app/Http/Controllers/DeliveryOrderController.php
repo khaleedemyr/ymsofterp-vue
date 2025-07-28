@@ -361,6 +361,7 @@ class DeliveryOrderController extends Controller
             ->select('fpli.id', 'fpli.qty', 'fpli.unit', 'items.name', 'items.id as item_id')
             ->where('fpli.packing_list_id', $id)
             ->where('fpli.qty', '>', 0)
+            ->orderBy('items.name')
             ->get();
         // Ambil semua barcode untuk setiap item
         $itemIds = $items->pluck('item_id')->unique()->values();

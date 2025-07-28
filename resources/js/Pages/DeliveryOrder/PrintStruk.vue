@@ -100,20 +100,35 @@ const strukText = computed(() => {
   margin-top: 1px;
 }
 @media print {
-  html, body { width: 80mm !important; margin: 0 !important; padding: 0 !important; background: #fff !important; }
+  html, body { 
+    width: 80mm !important; 
+    margin: 0 !important; 
+    padding: 0 !important; 
+    background: #fff !important; 
+    height: auto !important;
+    min-height: auto !important;
+  }
   body * { visibility: hidden !important; }
   #struk, #struk * { visibility: visible !important; }
   #struk {
-    position: absolute !important;
+    position: relative !important;
     left: 0 !important;
     top: 0 !important;
     width: 80mm !important;
     min-width: 80mm !important;
     max-width: 80mm !important;
     margin: 0 !important;
-    padding: 0 !important;
+    padding: 5mm 0 10mm 4mm !important;
     background: #fff !important;
     z-index: 99999 !important;
+    page-break-after: always !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+  .struk-print {
+    width: 72mm !important;
+    margin: 0 !important;
+    padding: 0 !important;
   }
 }
 </style> 
