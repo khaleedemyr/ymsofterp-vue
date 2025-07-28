@@ -23,7 +23,7 @@ class User extends Authenticatable
         'suku', 'agama', 'status_pernikahan', 'alamat', 'alamat_ktp', 'golongan_darah', 'no_hp', 'nama_kontak_darurat',
         'no_hp_kontak_darurat', 'hubungan_kontak_darurat', 'nomor_kk', 'nama_rekening', 'no_rekening',
         'npwp_number', 'bpjs_health_number', 'bpjs_employment_number', 'last_education', 'name_school_college',
-        'school_college_major', 'foto_ktp', 'foto_kk', 'upload_latest_color_photo', 'imei',
+        'school_college_major', 'foto_ktp', 'foto_kk', 'upload_latest_color_photo', 'avatar', 'imei',
         'status', 'pin_pos', 'tanggal_masuk',
         // field lama
         'id_jabatan', 'id_outlet', 'division_id',

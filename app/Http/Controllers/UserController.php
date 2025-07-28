@@ -169,8 +169,11 @@ class UserController extends Controller
     public function update(Request $request, User $user)
     {
         \Log::info('UserController@update request', $request->all());
+        \Log::info('UserController@update user before update', $user->toArray());
+        
         try {
             $validated = $request->validate([
+                'nik' => 'nullable|string|max:50',
                 'no_ktp' => 'nullable|string|max:50',
                 'nama_lengkap' => 'required|string|max:255',
                 'email' => 'nullable|email|max:255|unique:users,email,' . $user->id,
@@ -208,7 +211,11 @@ class UserController extends Controller
                 'foto_ktp' => 'nullable|file|mimes:jpeg,png,jpg|max:2048',
                 'foto_kk' => 'nullable|file|mimes:jpeg,png,jpg|max:2048',
                 'upload_latest_color_photo' => 'nullable|file|mimes:jpeg,png,jpg|max:2048',
+                'avatar' => 'nullable|file|mimes:jpeg,png,jpg|max:2048',
             ]);
+            
+            \Log::info('UserController@update validated data', $validated);
+            
             // Validasi unik pin_pos untuk karyawan aktif (kecuali diri sendiri)
             if ($request->filled('pin_pos')) {
                 $exists = \App\Models\User::where('pin_pos', $request->pin_pos)
@@ -221,7 +228,7 @@ class UserController extends Controller
                     ]);
                 }
             }
-            \Log::info('UserController@update validated', $validated);
+            
             // Handle file uploads
             if ($request->hasFile('foto_ktp')) {
                 if ($user->foto_ktp && Storage::disk('public')->exists($user->foto_ktp)) {
@@ -241,13 +248,25 @@ class UserController extends Controller
                 }
                 $validated['upload_latest_color_photo'] = $request->file('upload_latest_color_photo')->store('users/photos', 'public');
             }
+            if ($request->hasFile('avatar')) {
+                if ($user->avatar && Storage::disk('public')->exists($user->avatar)) {
+                    Storage::disk('public')->delete($user->avatar);
+                }
+                $validated['avatar'] = $request->file('avatar')->store('users/avatars', 'public');
+            }
             if (!empty($validated['password'])) {
                 $validated['password'] = bcrypt($validated['password']);
             } else {
                 unset($validated['password']);
             }
+            
+            \Log::info('UserController@update final data to save', $validated);
+            
             $user->update($validated);
+            
+            \Log::info('UserController@update user after update', $user->fresh()->toArray());
             \Log::info('UserController@update success', $validated);
+            
             return redirect()->route('users.index')->with('success', 'Data karyawan berhasil diupdate');
         } catch (\Illuminate\Validation\ValidationException $ve) {
             \Log::error('UserController@update validation error', ['errors' => $ve->errors()]);
@@ -277,6 +296,9 @@ class UserController extends Controller
 
     public function show(User $user)
     {
+        // Load relationships
+        $user->load(['jabatan', 'outlet', 'divisi']);
+        
         return Inertia::render('Users/Show', [
             'user' => $user
         ]);

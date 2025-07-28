@@ -72,6 +72,7 @@ const form = useForm({
   alamat: props.user.alamat || '',
   alamat_ktp: props.user.alamat_ktp || '',
   foto_ktp: null,
+  avatar: null,
   nomor_kk: props.user.nomor_kk || '',
   foto_kk: null,
   no_hp: props.user.no_hp || '',
@@ -136,27 +137,31 @@ async function submit() {
   });
   if (!confirm.isConfirmed) return;
 
-  const fd = new FormData();
-  Object.entries(form).forEach(([key, value]) => {
-    if (value !== null && value !== undefined) fd.append(key, value);
-  });
-  console.log('FormData to send:', Array.from(fd.entries()));
-
   isSubmitting.value = true;
-  try {
-    await axios.post(route('users.update', props.user.id), fd, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-        'X-HTTP-Method-Override': 'PUT',
-      },
-    });
-    Swal.fire('Berhasil', 'Data karyawan berhasil diupdate!', 'success').then(() => router.visit('/users'));
-  } catch (e) {
-    Swal.fire('Gagal', 'Gagal update data karyawan!', 'error');
-    console.error('Update error:', e);
-  } finally {
-    isSubmitting.value = false;
-  }
+  
+  // Log form data before submission
+  console.log('Form data to submit:', form.data());
+  console.log('Form errors:', form.errors);
+  
+  // Gunakan Inertia form.put untuk lebih reliable
+  form.put(route('users.update', props.user.id), {
+    onSuccess: () => {
+      console.log('Update successful');
+      Swal.fire('Berhasil', 'Data karyawan berhasil diupdate!', 'success').then(() => {
+        router.visit('/users');
+      });
+    },
+    onError: (errors) => {
+      console.error('Update failed with errors:', errors);
+      Swal.fire('Gagal', 'Gagal update data karyawan!', 'error');
+      console.error('Update errors:', errors);
+    },
+    onFinish: () => {
+      console.log('Update finished');
+      isSubmitting.value = false;
+    },
+    preserveScroll: true,
+  });
 }
 
 function cancel() {
@@ -374,6 +379,15 @@ function cancel() {
         </div>
         
         <!-- File Uploads -->
+        <div>
+          <label class="block text-sm font-medium text-gray-700">Avatar</label>
+          <input type="file" @change="handleFileChange($event, 'avatar')" accept="image/*" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm" />
+          <p class="text-xs text-gray-500 mt-1">Format: JPG, PNG. Maksimal 2MB. Kosongkan jika tidak diubah</p>
+          <div v-if="user.avatar" class="mt-2">
+            <p class="text-xs text-blue-600">File saat ini: {{ user.avatar }}</p>
+          </div>
+        </div>
+        
         <div>
           <label class="block text-sm font-medium text-gray-700">Foto KTP</label>
           <input type="file" @change="handleFileChange($event, 'foto_ktp')" accept="image/*" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm" />
