@@ -13,10 +13,19 @@
         </div>
         <div class="flex items-center gap-2">
           <label class="text-sm">Barang</label>
-          <select v-model="selectedItem" class="border border-gray-300 rounded-lg px-2 py-2 focus:ring-blue-500 focus:border-blue-500">
-            <option value="" disabled>Pilih Barang</option>
-            <option v-for="i in items" :key="i.id" :value="i.name">{{ i.name }}</option>
-          </select>
+          <Multiselect
+            v-model="selectedItem"
+            :options="items"
+            :searchable="true"
+            :close-on-select="true"
+            :clear-on-select="false"
+            :preserve-search="true"
+            placeholder="Pilih atau cari barang..."
+            track-by="name"
+            label="name"
+            :preselect-first="false"
+            class="w-64"
+          />
         </div>
         <div class="flex items-center gap-2">
           <label class="text-sm">Tampilkan</label>
@@ -97,6 +106,8 @@
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { ref, computed, watch } from 'vue';
+import Multiselect from 'vue-multiselect';
+import 'vue-multiselect/dist/vue-multiselect.min.css';
 const props = defineProps({
   cards: Array,
   warehouses: Array,
@@ -189,7 +200,7 @@ const filteredCards = computed(() => {
     data = data.filter(row => String(row.warehouse_name) === String(props.warehouses.find(w => w.id == selectedWarehouse.value)?.name));
   }
   if (selectedItem.value) {
-    data = data.filter(row => row.item_name === selectedItem.value);
+    data = data.filter(row => row.item_name === selectedItem.value.name);
   }
   if (fromDate.value) {
     data = data.filter(row => new Date(row.date) >= new Date(fromDate.value));
@@ -286,7 +297,7 @@ const runningBalances = computed(() => {
 // Tambahkan summary saldo
 const saldoAwal = computed(() => {
   if (!selectedItem.value) return '-';
-  let data = props.cards.filter(row => row.item_name === selectedItem.value);
+  let data = props.cards.filter(row => row.item_name === selectedItem.value.name);
   if (selectedWarehouse.value) {
     data = data.filter(row => String(row.warehouse_name) === String(props.warehouses.find(w => w.id == selectedWarehouse.value)?.name));
   }
@@ -338,3 +349,55 @@ function reloadData() {
   window.location.reload()
 }
 </script>
+
+<style scoped>
+/* Custom styling for vue-multiselect */
+:deep(.multiselect) {
+  min-height: 38px;
+  border: 1px solid #d1d5db;
+  border-radius: 0.5rem;
+}
+
+:deep(.multiselect:focus-within) {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+:deep(.multiselect__placeholder) {
+  color: #6b7280;
+  font-size: 0.875rem;
+  padding: 8px 12px;
+}
+
+:deep(.multiselect__single) {
+  padding: 8px 12px;
+  font-size: 0.875rem;
+  color: #374151;
+}
+
+:deep(.multiselect__input) {
+  padding: 8px 12px;
+  font-size: 0.875rem;
+}
+
+:deep(.multiselect__content-wrapper) {
+  border: 1px solid #d1d5db;
+  border-radius: 0.5rem;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+}
+
+:deep(.multiselect__option) {
+  padding: 8px 12px;
+  font-size: 0.875rem;
+}
+
+:deep(.multiselect__option--highlight) {
+  background: #3b82f6;
+  color: white;
+}
+
+:deep(.multiselect__option--selected) {
+  background: #dbeafe;
+  color: #1e40af;
+}
+</style>

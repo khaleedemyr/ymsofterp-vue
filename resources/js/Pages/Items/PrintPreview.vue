@@ -8,6 +8,7 @@
               <svg :ref="el => setBarcodeRef(rowIdx * 3 + colIdx, el)" :key="'svg-' + rowIdx + '-' + colIdx"></svg>
             </div>
             <div class="barcode-text">{{ sku }}</div>
+            <div class="barcode-name">{{ props.name }}</div>
           </div>
         </div>
       </div>
@@ -97,29 +98,50 @@ async function downloadPDF() {
   // Ukuran kertas dalam mm (jsPDF default unit mm)
   const labelWidth = 30; // 3cm
   const labelHeight = 15; // 1.5cm
-  const gap = 3; // 0.3cm
-  const pdfWidth = 94; // 9.4cm
+  const gap = 3; // 0.3cm gap antar label
+  const marginLeft = 0; // mm, margin kiri dihilangkan
+  const pdfWidth = 94; // 9.4cm (tetap sama)
   const pdfHeight = numRows.value * labelHeight; // total tinggi
+  
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: [pdfWidth, pdfHeight] });
 
   let y = 0;
   for (let rowIdx = 0; rowIdx < rows.value.length; rowIdx++) {
     for (let colIdx = 0; colIdx < 3; colIdx++) {
-      const x = colIdx * (labelWidth + gap);
+      const x = marginLeft + colIdx * (labelWidth + gap);
       const sku = rows.value[rowIdx][colIdx];
       if (!sku) continue;
+      
       // Render barcode ke canvas proporsional, scale 3x
       const areaBarcodeW = labelWidth - 4; // 26mm
-      const areaBarcodeH = 14; // mm
+      const areaBarcodeH = 10; // mm, diperkecil agar ada ruang untuk 2 baris teks
       const scale = 3;
       const canvas = document.createElement('canvas');
       canvas.width = areaBarcodeW * scale;
       canvas.height = areaBarcodeH * scale;
       JsBarcode(canvas, sku, { width: 1.5 * scale, height: areaBarcodeH * scale, displayValue: false });
+      
       // Masukkan barcode ke PDF (ukuran asli)
-      doc.addImage(canvas, 'PNG', x + 2, y + 1.5, areaBarcodeW, areaBarcodeH);
-      doc.setFontSize(8);
-      doc.text(sku, x + labelWidth / 2, y + 13.5, { align: 'center' }); // SKU
+      doc.addImage(canvas, 'PNG', x + 2, y + 1, areaBarcodeW, areaBarcodeH);
+      
+      // SKU di bawah barcode
+      doc.setFontSize(6);
+      doc.text(sku, x + labelWidth / 2, y + areaBarcodeH + 2, { align: 'center' });
+      
+      // Nama item di bawah SKU (dipotong jika terlalu panjang)
+      const itemName = props.name || '';
+      const maxChars = 20; // Maksimal karakter per baris
+      doc.setFontSize(5);
+      if (itemName.length > maxChars) {
+        const firstLine = itemName.substring(0, maxChars);
+        const secondLine = itemName.substring(maxChars, maxChars * 2);
+        doc.text(firstLine, x + labelWidth / 2, y + areaBarcodeH + 4, { align: 'center' });
+        if (secondLine) {
+          doc.text(secondLine, x + labelWidth / 2, y + areaBarcodeH + 6, { align: 'center' });
+        }
+      } else {
+        doc.text(itemName, x + labelWidth / 2, y + areaBarcodeH + 4, { align: 'center' });
+      }
     }
     y += labelHeight;
   }
@@ -193,6 +215,16 @@ async function downloadPDF() {
   font-size: 0.38em;
   text-align: center;
   line-height: 1;
+}
+
+.barcode-name {
+  font-size: 0.32em;
+  text-align: center;
+  line-height: 1;
+  color: #666;
+  margin-top: 0.05cm;
+  word-wrap: break-word;
+  max-width: 2.8cm;
 }
 
 @media print {

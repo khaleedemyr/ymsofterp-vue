@@ -214,14 +214,16 @@ const exportExcel = () => {
           <i class="fa fa-file-excel-o"></i> Export to Excel
         </button>
       </div>
-      <div class="bg-white rounded-2xl shadow-lg overflow-x-auto">
-        <table class="min-w-full divide-y divide-blue-200">
+      <div class="bg-white rounded-2xl shadow-lg">
+        <table class="w-full divide-y divide-blue-200">
           <thead class="bg-blue-600 text-white">
             <tr>
               <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">Tanggal</th>
               <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">Nama Karyawan</th>
+              <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">Outlet</th>
               <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Jam Masuk</th>
               <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Jam Keluar</th>
+              <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">IN/OUT</th>
               <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Telat (menit)</th>
               <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Lembur (jam)</th>
               <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Aksi</th>
@@ -229,7 +231,7 @@ const exportExcel = () => {
             </tr>
           </thead>
           <tbody>
-            <tr v-for="(row, idx) in props.data" :key="row.tanggal + '-' + row.nama_lengkap"
+            <tr v-for="(row, idx) in props.data" :key="row.tanggal + '-' + row.nama_lengkap + '-' + (row.outlet_id || 'no-outlet')"
               :class="[
                 row.is_holiday ? 'bg-red-100 text-red-700 font-bold' : '',
                 !row.is_holiday && row.is_off ? 'bg-gray-200 text-gray-500 font-bold italic' : '',
@@ -240,6 +242,7 @@ const exportExcel = () => {
                 <span v-if="row.is_holiday && row.holiday_name" class="ml-1 text-xs font-semibold">({{ row.holiday_name }})</span>
               </td>
               <td class="px-4 py-2 whitespace-nowrap">{{ row.nama_lengkap }}</td>
+              <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-600">{{ row.nama_outlet || '-' }}</td>
               <td class="px-4 py-2 whitespace-nowrap text-center font-mono">
                 <span v-if="row.is_off">OFF</span>
                 <span v-else>{{ row.jam_masuk || '-' }}</span>
@@ -248,13 +251,26 @@ const exportExcel = () => {
                 <span v-if="row.is_off">OFF</span>
                 <span v-else>{{ row.jam_keluar || '-' }}</span>
               </td>
+              <td class="px-4 py-2 whitespace-nowrap text-center font-mono text-xs">
+                <span v-if="row.is_off">OFF</span>
+                <span v-else class="flex flex-col">
+                  <span class="text-green-600 font-semibold">{{ row.total_masuk || 0 }} IN</span>
+                  <span class="text-red-600 font-semibold">{{ row.total_keluar || 0 }} OUT</span>
+                </span>
+              </td>
               <td class="px-4 py-2 whitespace-nowrap text-center font-mono">
                 <span v-if="row.is_off">OFF</span>
                 <span v-else>{{ row.telat }}</span>
               </td>
               <td class="px-4 py-2 whitespace-nowrap text-center font-mono">
                 <span v-if="row.is_off">OFF</span>
-                <span v-else>{{ row.lembur }}</span>
+                <span v-else>
+                  {{ row.lembur }}
+                  <span v-if="row.is_cross_day" 
+                        class="text-xs text-orange-600 font-semibold ml-1" title="Cross-day overtime">
+                    🌙
+                  </span>
+                </span>
               </td>
               <td class="px-4 py-2 whitespace-nowrap text-center">
                 <button v-if="!row.is_off" @click="openDetail(row)" class="px-3 py-1 rounded bg-blue-100 text-blue-700 hover:bg-blue-200 transition text-xs font-semibold">
@@ -269,7 +285,7 @@ const exportExcel = () => {
               </td>
             </tr>
             <tr v-if="!props.data || props.data.length === 0">
-              <td colspan="8" class="text-center py-8 text-gray-400">
+              <td colspan="10" class="text-center py-8 text-gray-400">
                 <div class="flex flex-col items-center gap-2">
                   <i class="fa fa-search text-4xl text-gray-300"></i>
                   <div class="text-lg font-medium">Tidak ada data absensi</div>
@@ -289,18 +305,20 @@ const exportExcel = () => {
         </div>
       </div>
       <div v-if="showDetail" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-30">
-        <div class="bg-white rounded-2xl shadow-2xl p-10 w-full max-w-2xl min-w-[600px] relative animate-fade-in">
+        <div class="bg-white rounded-2xl shadow-2xl p-10 w-full max-w-4xl min-w-[800px] relative animate-fade-in">
           <div class="modal-detail-header">
             <i class="fa fa-list text-blue-500"></i>
             Detail Absensi
           </div>
           <div class="modal-detail-user">{{ detailUser }} | {{ detailTanggal }}</div>
-          <table class="min-w-full divide-y divide-blue-200 mb-4 modal-detail-table">
+          <table class="w-full divide-y divide-blue-200 mb-4 modal-detail-table">
             <thead>
               <tr>
                 <th class="px-4 py-2 text-left">Outlet</th>
                 <th class="px-4 py-2 text-center">Jam In</th>
                 <th class="px-4 py-2 text-center">Jam Out</th>
+                <th class="px-4 py-2 text-center">Total IN</th>
+                <th class="px-4 py-2 text-center">Total OUT</th>
               </tr>
             </thead>
             <tbody>
@@ -308,9 +326,11 @@ const exportExcel = () => {
                 <td class="px-4 py-2 whitespace-nowrap">{{ d.nama_outlet }}</td>
                 <td class="px-4 py-2 whitespace-nowrap text-center font-mono">{{ d.jam_in }}</td>
                 <td class="px-4 py-2 whitespace-nowrap text-center font-mono">{{ d.jam_out }}</td>
+                <td class="px-4 py-2 whitespace-nowrap text-center font-mono text-green-600 font-semibold">{{ d.total_in }}</td>
+                <td class="px-4 py-2 whitespace-nowrap text-center font-mono text-red-600 font-semibold">{{ d.total_out }}</td>
               </tr>
               <tr v-if="!detailRows.length">
-                <td colspan="3" class="text-center py-6 text-gray-400">Tidak ada data</td>
+                <td colspan="5" class="text-center py-6 text-gray-400">Tidak ada data</td>
               </tr>
             </tbody>
           </table>
@@ -463,5 +483,48 @@ const exportExcel = () => {
 }
 .modal-detail-btn:hover {
   background: #cbd5e1;
+}
+
+/* Ensure table is full width */
+table {
+  table-layout: auto;
+  width: 100%;
+}
+
+/* Main attendance table specific styles */
+.bg-white.rounded-2xl.shadow-lg table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.bg-white.rounded-2xl.shadow-lg th,
+.bg-white.rounded-2xl.shadow-lg td {
+  padding: 0.75rem 1rem;
+  text-align: left;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+/* Modal table specific styles */
+.modal-detail-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.modal-detail-table th,
+.modal-detail-table td {
+  padding: 0.75rem 1rem;
+  text-align: left;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+/* Responsive table */
+@media (max-width: 768px) {
+  table {
+    font-size: 0.875rem;
+  }
+  
+  th, td {
+    padding: 0.5rem 0.25rem;
+  }
 }
 </style> 

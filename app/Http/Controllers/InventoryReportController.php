@@ -79,6 +79,14 @@ class InventoryReportController extends Controller
                 $join->on('c.reference_id', '=', 'wt.id')
                      ->where('c.reference_type', '=', 'warehouse_transfer');
             })
+            ->leftJoin('delivery_orders as do', function($join) {
+                $join->on('c.reference_id', '=', 'do.id')
+                     ->where('c.reference_type', '=', 'delivery_order');
+            })
+            ->leftJoin('food_packing_lists as pl', 'do.packing_list_id', '=', 'pl.id')
+            ->leftJoin('food_floor_orders as fo', 'pl.food_floor_order_id', '=', 'fo.id')
+            ->leftJoin('tbl_data_outlet as o', 'fo.id_outlet', '=', 'o.id_outlet')
+            ->leftJoin('warehouse_outlets as wo', 'fo.warehouse_outlet_id', '=', 'wo.id')
             ->select(
                 'c.id',
                 'c.date',
@@ -103,6 +111,9 @@ class InventoryReportController extends Controller
                 'c.description',
                 'gr.gr_number as reference_number',
                 'wt.transfer_number as transfer_number',
+                'do.number as do_number',
+                'o.nama_outlet as outlet_name',
+                'wo.name as warehouse_outlet_name',
                 'us.name as small_unit_name',
                 'um.name as medium_unit_name',
                 'ul.name as large_unit_name',
@@ -115,6 +126,24 @@ class InventoryReportController extends Controller
         if ($to) $query->whereDate('c.date', '<=', $to);
         $query->orderBy('c.date')->orderBy('c.id');
         $data = $query->get();
+        
+        // Modifikasi description untuk delivery order
+        $data = $data->map(function($row) {
+            if ($row->reference_type === 'delivery_order' && $row->do_number) {
+                $description = 'Stock Out - Delivery Order';
+                if ($row->outlet_name || $row->warehouse_outlet_name) {
+                    $description .= ' - DO: ' . $row->do_number;
+                    if ($row->outlet_name) {
+                        $description .= ', Outlet: ' . $row->outlet_name;
+                    }
+                    if ($row->warehouse_outlet_name) {
+                        $description .= ', Warehouse Outlet: ' . $row->warehouse_outlet_name;
+                    }
+                }
+                $row->description = $description;
+            }
+            return $row;
+        });
         // Saldo awal: ambil saldo akhir transaksi terakhir sebelum tanggal from
         $saldoAwal = null;
         if ($from && $itemId) {
@@ -138,7 +167,12 @@ class InventoryReportController extends Controller
             }
         }
         $warehouses = DB::table('warehouses')->select('id', 'name')->orderBy('name')->get();
-        $items = DB::table('items')->select('id', 'name')->orderBy('name')->get();
+        $items = DB::table('items')
+            ->join('categories', 'items.category_id', '=', 'categories.id')
+            ->where('categories.show_pos', '0')
+            ->select('items.id', 'items.name')
+            ->orderBy('items.name')
+            ->get();
         return inertia('Inventory/StockCard', [
             'cards' => $data,
             'warehouses' => $warehouses,
@@ -194,7 +228,12 @@ class InventoryReportController extends Controller
             ->orderByDesc('c.id')
             ->get();
         $warehouses = DB::table('warehouses')->select('id', 'name')->orderBy('name')->get();
-        $items = DB::table('items')->select('id', 'name')->orderBy('name')->get();
+        $items = DB::table('items')
+            ->join('categories', 'items.category_id', '=', 'categories.id')
+            ->where('categories.show_pos', '0')
+            ->select('items.id', 'items.name')
+            ->orderBy('items.name')
+            ->get();
         $data = $data->map(function ($row) {
             $parts = [];
             if ($row->in_qty_large > 0) $parts[] = $row->in_qty_large . ' ' . $row->large_unit_name;
@@ -302,7 +341,12 @@ class InventoryReportController extends Controller
             ->get();
 
         $warehouses = DB::table('warehouses')->select('id', 'name')->get();
-        $items = DB::table('items')->select('id', 'name')->get();
+        $items = DB::table('items')
+            ->join('categories', 'items.category_id', '=', 'categories.id')
+            ->where('categories.show_pos', '0')
+            ->select('items.id', 'items.name')
+            ->orderBy('items.name')
+            ->get();
 
         return Inertia::render('Inventory/CostHistoryReport', [
             'histories' => $data,
@@ -329,7 +373,12 @@ class InventoryReportController extends Controller
             ->orderBy('i.name')
             ->get();
         $warehouses = DB::table('warehouses')->select('id', 'name')->orderBy('name')->get();
-        $items = DB::table('items')->select('id', 'name')->orderBy('name')->get();
+        $items = DB::table('items')
+            ->join('categories', 'items.category_id', '=', 'categories.id')
+            ->where('categories.show_pos', '0')
+            ->select('items.id', 'items.name')
+            ->orderBy('items.name')
+            ->get();
         return inertia('Inventory/MinimumStockReport', [
             'stocks' => $data,
             'warehouses' => $warehouses,
@@ -463,7 +512,12 @@ class InventoryReportController extends Controller
 
         $warehouses = DB::table('warehouses')->select('id', 'name')->orderBy('name')->get();
         $categories = DB::table('categories')->select('id', 'name')->orderBy('name')->get();
-        $items = DB::table('items')->select('id', 'name')->orderBy('name')->get();
+        $items = DB::table('items')
+            ->join('categories', 'items.category_id', '=', 'categories.id')
+            ->where('categories.show_pos', '0')
+            ->select('items.id', 'items.name')
+            ->orderBy('items.name')
+            ->get();
         return inertia('Inventory/AgingReport', [
             'agings' => $agings,
             'warehouses' => $warehouses,

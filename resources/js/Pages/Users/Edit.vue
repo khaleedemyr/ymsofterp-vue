@@ -153,12 +153,12 @@ async function submit() {
     },
     onError: (errors) => {
       console.error('Update failed with errors:', errors);
-      Swal.fire('Gagal', 'Gagal update data karyawan!', 'error');
+    Swal.fire('Gagal', 'Gagal update data karyawan!', 'error');
       console.error('Update errors:', errors);
     },
     onFinish: () => {
       console.log('Update finished');
-      isSubmitting.value = false;
+    isSubmitting.value = false;
     },
     preserveScroll: true,
   });

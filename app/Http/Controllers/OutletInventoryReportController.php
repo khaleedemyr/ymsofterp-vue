@@ -156,7 +156,12 @@ class OutletInventoryReportController extends Controller
                 ->orderBy('name')
                 ->get();
         }
-        $items = DB::table('items')->select('id', 'name')->orderBy('name')->get();
+        $items = DB::table('items')
+            ->join('categories', 'items.category_id', '=', 'categories.id')
+            ->where('categories.show_pos', '0')
+            ->select('items.id', 'items.name')
+            ->orderBy('items.name')
+            ->get();
         return inertia('OutletInventory/StockCard', [
             'cards' => $data,
             'outlets' => $outlets,
@@ -235,7 +240,12 @@ class OutletInventoryReportController extends Controller
                 ->orderBy('name')
                 ->get();
         }
-        $items = DB::table('items')->select('id', 'name', 'small_unit_id', 'medium_unit_id', 'large_unit_id')->orderBy('name')->get();
+        $items = DB::table('items')
+            ->join('categories', 'items.category_id', '=', 'categories.id')
+            ->where('categories.show_pos', '0')
+            ->select('items.id', 'items.name', 'items.small_unit_id', 'items.medium_unit_id', 'items.large_unit_id')
+            ->orderBy('items.name')
+            ->get();
         return inertia('OutletInventory/InventoryValueReport', [
             'stocks' => $data,
             'outlets' => $outlets,

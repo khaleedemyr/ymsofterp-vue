@@ -29,7 +29,7 @@ class AttendanceReportExport implements FromCollection, WithHeadings, WithMappin
     public function headings(): array
     {
         return [
-            'Tanggal', 'Nama Karyawan', 'Jam Masuk', 'Jam Keluar', 'Telat (menit)', 'Lembur (jam)', 'Status', 'Nama Libur', 'Detail', 'Shift'
+            'Tanggal', 'Nama Karyawan', 'Outlet', 'Jam Masuk', 'Jam Keluar', 'Total IN', 'Total OUT', 'Telat (menit)', 'Lembur (jam)', 'Status', 'Nama Libur', 'Detail', 'Shift'
         ];
     }
 
@@ -44,13 +44,22 @@ class AttendanceReportExport implements FromCollection, WithHeadings, WithMappin
         if (!empty($row->shift_time_start) && !empty($row->shift_time_end)) {
             $shift .= ' (' . $row->shift_time_start . ' - ' . $row->shift_time_end . ')';
         }
+        // Tambahkan indicator cross-day
+        $lembur_display = $row->lembur ?? 0;
+        if ($row->is_cross_day ?? false) {
+            $lembur_display .= ' 🌙';
+        }
+        
         return [
             $row->tanggal,
             $row->nama_lengkap,
+            $row->nama_outlet ?? '-',
             $row->jam_masuk ?? '-',
             $row->jam_keluar ?? '-',
+            $row->total_masuk ?? 0,
+            $row->total_keluar ?? 0,
             $row->telat ?? 0,
-            $row->lembur ?? 0,
+            $lembur_display,
             $status,
             $row->holiday_name ?? '',
             $detail,
@@ -61,57 +70,37 @@ class AttendanceReportExport implements FromCollection, WithHeadings, WithMappin
     public function styles(Worksheet $sheet)
     {
         // Header style
-        $sheet->getStyle('A1:J1')->applyFromArray([
+        $sheet->getStyle('A1:M1')->applyFromArray([
             'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF']],
             'fill' => [
                 'fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
                 'startColor' => ['rgb' => '0070C0']
             ],
         ]);
-        // Baris warna sesuai status
-        $highestRow = $sheet->getHighestRow();
-        for ($i = 2; $i <= $highestRow; $i++) {
-            $status = $sheet->getCell('G'.$i)->getValue();
-            if ($status === 'OFF') {
-                $sheet->getStyle('A'.$i.':J'.$i)->applyFromArray([
-                    'font' => ['italic' => true, 'color' => ['rgb' => '888888']],
-                    'fill' => [
-                        'fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
-                        'startColor' => ['rgb' => 'E5E7EB'] // abu-abu
-                    ],
-                ]);
-            } elseif ($status === 'LIBUR') {
-                $sheet->getStyle('A'.$i.':J'.$i)->applyFromArray([
-                    'font' => ['bold' => true, 'color' => ['rgb' => 'B91C1C']],
-                    'fill' => [
-                        'fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
-                        'startColor' => ['rgb' => 'FECACA'] // merah muda
-                    ],
-                ]);
-            } elseif ($status === 'MASUK') {
-                if ($i % 2 === 0) {
-                    $sheet->getStyle('A'.$i.':J'.$i)->applyFromArray([
-                        'fill' => [
-                            'fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
-                            'startColor' => ['rgb' => 'EFF6FF'] // biru muda
-                        ],
-                    ]);
-                }
-            }
+        
+        // Auto-size columns
+        foreach (range('A', 'M') as $column) {
+            $sheet->getColumnDimension($column)->setAutoSize(true);
         }
-        // Border semua cell
-        $highestCol = $sheet->getHighestColumn();
-        $sheet->getStyle('A1:' . $highestCol . $highestRow)->getBorders()->getAllBorders()->setBorderStyle(\PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN);
-        return [];
     }
 
     public function columnWidths(): array
     {
-        $widths = [];
-        foreach (range('A', 'J') as $col) {
-            $widths[$col] = 22;
-        }
-        return $widths;
+        return [
+            'A' => 12, // Tanggal
+            'B' => 25, // Nama Karyawan
+            'C' => 20, // Outlet
+            'D' => 10, // Jam Masuk
+            'E' => 10, // Jam Keluar
+            'F' => 8,  // Total IN
+            'G' => 8,  // Total OUT
+            'H' => 12, // Telat
+            'I' => 12, // Lembur
+            'J' => 10, // Status
+            'K' => 20, // Nama Libur
+            'L' => 40, // Detail
+            'M' => 25, // Shift
+        ];
     }
 
     public function toResponse($request)

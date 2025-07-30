@@ -339,18 +339,23 @@ function generateZplBarcode(sku, name) {
     
     // Barcode Code128
     zpl += `^FO10,10^BY2\n`; // Field Origin, Barcode field default
-    zpl += `^BCN,50,Y,N,N\n`; // Code128, height 50, print human readable, no check digit
+    zpl += `^BCN,40,Y,N,N\n`; // Code128, height 40, print human readable, no check digit
     zpl += `^FD${sku}^FS\n`; // Field Data, Field Separator
     
-    // Nama item (2 baris jika panjang)
+    // SKU di bawah barcode
+    zpl += `^FO10,55^A0N,12,12^FD${sku}^FS\n`;
+    
+    // Nama item di bawah SKU (2 baris jika panjang)
     const maxCharsPerLine = 20;
     if (name.length > maxCharsPerLine) {
         const firstLine = name.substring(0, maxCharsPerLine);
-        const secondLine = name.substring(maxCharsPerLine);
-        zpl += `^FO10,70^A0N,15,15^FD${firstLine}^FS\n`;
-        zpl += `^FO10,90^A0N,15,15^FD${secondLine}^FS\n`;
+        const secondLine = name.substring(maxCharsPerLine, maxCharsPerLine * 2);
+        zpl += `^FO10,70^A0N,10,10^FD${firstLine}^FS\n`;
+        if (secondLine) {
+            zpl += `^FO10,82^A0N,10,10^FD${secondLine}^FS\n`;
+        }
     } else {
-        zpl += `^FO10,70^A0N,15,15^FD${name}^FS\n`;
+        zpl += `^FO10,70^A0N,10,10^FD${name}^FS\n`;
     }
     
     return zpl;
@@ -430,11 +435,12 @@ function downloadPDF(barcode, qty) {
     const labelWidth = 30; // 3cm
     const labelHeight = 15; // 1.5cm
     const gap = 3; // 0.3cm
-    const marginLeft = 5; // mm, margin kiri untuk semua kolom (ditingkatkan)
+    const marginLeft = 0; // mm, margin kiri dihilangkan
     const numLabels = qty || 1;
     const numRows = Math.ceil(numLabels / 3);
-    const pdfWidth = 94; // 9.4cm
+    const pdfWidth = 94; // 9.4cm (tetap sama)
     const pdfHeight = numRows * labelHeight;
+    
     const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: [pdfWidth, pdfHeight] });
 
     // Generate array barcode sesuai qty
@@ -446,19 +452,37 @@ function downloadPDF(barcode, qty) {
             if (idx >= barcodes.length) continue;
             const x = marginLeft + colIdx * (labelWidth + gap);
             const sku = barcodes[idx];
+            
             // Render barcode ke canvas proporsional, scale 3x
             const areaBarcodeW = labelWidth - 4; // 26mm
-            const areaBarcodeH = 10; // mm, diperkecil agar ada ruang untuk teks
+            const areaBarcodeH = 8; // mm, diperkecil agar ada ruang untuk 2 baris teks
             const scale = 3;
             const canvas = document.createElement('canvas');
             canvas.width = areaBarcodeW * scale;
             canvas.height = areaBarcodeH * scale;
             JsBarcode(canvas, sku, { width: 1.5 * scale, height: areaBarcodeH * scale, displayValue: false });
+            
             // Masukkan barcode ke PDF (ukuran asli)
-            doc.addImage(canvas, 'PNG', x, y + 1.5, areaBarcodeW, areaBarcodeH);
-            doc.setFontSize(8);
-            // Geser teks lebih ke bawah dari barcode
-            doc.text(sku, x + labelWidth / 2, y + areaBarcodeH + 4, { align: 'center' }); // Geser ke bawah
+            doc.addImage(canvas, 'PNG', x + 2, y + 1, areaBarcodeW, areaBarcodeH);
+            
+            // SKU di bawah barcode
+            doc.setFontSize(6);
+            doc.text(sku, x + labelWidth / 2, y + areaBarcodeH + 2, { align: 'center' });
+            
+            // Nama item di bawah SKU (dipotong jika terlalu panjang)
+            const itemName = props.item?.name || '';
+            const maxChars = 20; // Maksimal karakter per baris
+            doc.setFontSize(5);
+            if (itemName.length > maxChars) {
+                const firstLine = itemName.substring(0, maxChars);
+                const secondLine = itemName.substring(maxChars, maxChars * 2);
+                doc.text(firstLine, x + labelWidth / 2, y + areaBarcodeH + 4, { align: 'center' });
+                if (secondLine) {
+                    doc.text(secondLine, x + labelWidth / 2, y + areaBarcodeH + 6, { align: 'center' });
+                }
+            } else {
+                doc.text(itemName, x + labelWidth / 2, y + areaBarcodeH + 4, { align: 'center' });
+            }
         }
         y += labelHeight;
     }
