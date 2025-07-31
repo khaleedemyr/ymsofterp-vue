@@ -81,7 +81,7 @@ class OutletFoodGoodReceiveController extends Controller
                 'items.*.item_id' => 'required|integer',
                 'items.*.qty' => 'required|numeric',
                 'items.*.unit_id' => 'required|integer',
-                'items.*.received_qty' => 'required|numeric',
+                'items.*.received_qty' => 'required|numeric|min:0',
             ]);
             \Log::info('DEBUG STORE OUTLET GR VALIDATED', ['validated' => $validated]);
             DB::beginTransaction();
@@ -114,6 +114,8 @@ class OutletFoodGoodReceiveController extends Controller
             \Log::info('DEBUG HEADER INSERTED', ['grId' => $grId]);
             foreach ($validated['items'] as $item) {
                 \Log::info('DEBUG INSERT DETAIL', $item);
+                
+                // Selalu insert ke outlet_food_good_receive_items
                 DB::table('outlet_food_good_receive_items')->insert([
                     'outlet_food_good_receive_id' => $grId,
                     'item_id' => $item['item_id'],
@@ -124,6 +126,13 @@ class OutletFoodGoodReceiveController extends Controller
                     'created_at' => now(),
                     'updated_at' => now(),
                 ]);
+                
+                // Jika received_qty = 0, skip proses inventory
+                if ($item['received_qty'] <= 0) {
+                    \Log::info('DEBUG SKIP INVENTORY - received_qty = 0', ['item_id' => $item['item_id']]);
+                    continue;
+                }
+                
                 $ffoi = DB::table('food_floor_order_items')
                     ->where('floor_order_id', $floorOrderId)
                     ->where('item_id', $item['item_id'])

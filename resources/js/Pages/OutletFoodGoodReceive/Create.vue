@@ -169,7 +169,7 @@ const spsModal = ref(false);
 const spsItem = ref({});
 const spsLoading = ref(false);
 
-const isReadyToSubmit = computed(() => items.length > 0 && items.some(i => i.qty_scan > 0));
+const isReadyToSubmit = computed(() => items.length > 0);
 
 onMounted(() => {
   axios.get('/outlet-food-good-receives/available-dos').then(res => {
@@ -290,15 +290,17 @@ async function confirmSubmit() {
     errors.push('Tidak ada item untuk diproses');
   }
   
-  // Cek apakah ada item yang belum di-scan
+  // Cek apakah ada item yang belum di-scan (hanya warning, bukan error)
   const unscannedItems = items.filter(item => Number(item.qty_scan) === 0);
-  if (unscannedItems.length > 0) {
-    errors.push(`${unscannedItems.length} item belum di-scan: ${unscannedItems.map(i => i.item_name).join(', ')}`);
-  }
+  const incompleteItems = items.filter(item => {
+    const qtyScan = Number(item.qty_scan);
+    const qtyDO = Number(item.qty_packing_list);
+    return qtyScan > 0 && qtyScan < qtyDO;
+  });
   
   if (errors.length > 0) {
     await Swal.fire({
-      icon: 'warning',
+      icon: 'error',
       title: 'Validasi Gagal',
       html: errors.map(err => `• ${err}`).join('<br>'),
       confirmButtonText: 'OK',
@@ -307,13 +309,22 @@ async function confirmSubmit() {
     return;
   }
   
+  // Tampilkan warning jika ada item yang belum di-scan atau incomplete
+  let warningMessage = '';
+  if (unscannedItems.length > 0) {
+    warningMessage += `<p><strong>⚠️ ${unscannedItems.length} item belum di-scan:</strong><br>${unscannedItems.map(i => i.item_name).join(', ')}</p>`;
+  }
+  if (incompleteItems.length > 0) {
+    warningMessage += `<p><strong>⚠️ ${incompleteItems.length} item qty scan kurang dari DO:</strong><br>${incompleteItems.map(i => `${i.item_name} (${i.qty_scan}/${i.qty_packing_list})`).join(', ')}</p>`;
+  }
+  
   // Tampilkan konfirmasi dengan detail
   const totalItems = items.length;
   const completedItems = items.filter(item => Number(item.qty_scan) > 0).length;
   const totalQty = items.reduce((sum, item) => sum + Number(item.qty_scan), 0);
   
   const result = await Swal.fire({
-    icon: 'question',
+    icon: warningMessage ? 'warning' : 'question',
     title: 'Konfirmasi Submit Good Receive',
     html: `
       <div class="text-left">
@@ -321,6 +332,7 @@ async function confirmSubmit() {
         <p><strong>Total Item:</strong> ${completedItems}/${totalItems}</p>
         <p><strong>Total Qty Scan:</strong> ${totalQty.toFixed(2)}</p>
         <p><strong>Warehouse Outlet:</strong> ${doDetail.value?.do?.warehouse_outlet_name || 'N/A'}</p>
+        ${warningMessage ? `<br><div class="bg-yellow-50 p-3 rounded border-l-4 border-yellow-400">${warningMessage}</div>` : ''}
         <br>
         <p class="text-sm text-gray-600">Data akan disimpan ke inventory dan tidak dapat diubah.</p>
       </div>
@@ -330,7 +342,7 @@ async function confirmSubmit() {
     cancelButtonText: 'Batal',
     confirmButtonColor: '#3085d6',
     cancelButtonColor: '#d33',
-    width: '500px'
+    width: '600px'
   });
   
   if (result.isConfirmed) {
@@ -398,8 +410,8 @@ async function submitGR() {
       if (!item.unit_id) {
         throw new Error(`Item ${i + 1}: Unit ID tidak boleh kosong`);
       }
-      if (item.received_qty <= 0) {
-        throw new Error(`Item ${i + 1}: Received Qty harus lebih dari 0`);
+      if (item.received_qty < 0) {
+        throw new Error(`Item ${i + 1}: Received Qty tidak boleh negatif`);
       }
       
       // Validasi tipe data
