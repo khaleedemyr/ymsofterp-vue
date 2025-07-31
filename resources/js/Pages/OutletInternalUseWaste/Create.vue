@@ -16,6 +16,8 @@
                 <option value="waste">Waste</option>
                 <option value="r_and_d">R & D</option>
                 <option value="marketing">Marketing</option>
+                <option value="non_commodity">Non Commodity</option>
+                <option value="guest_supplies">Guest Supplies</option>
               </select>
             </div>
             <div>

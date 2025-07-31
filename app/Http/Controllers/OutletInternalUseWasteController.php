@@ -69,7 +69,7 @@ class OutletInternalUseWasteController extends Controller
         \Log::info('OutletInternalUseWaste store method called with data:', $request->all());
         try {
             $request->validate([
-                'type' => 'required|in:internal_use,spoil,waste',
+                'type' => 'required|in:internal_use,spoil,waste,r_and_d,marketing,non_commodity,guest_supplies',
                 'date' => 'required|date',
                 'outlet_id' => 'required|exists:tbl_data_outlet,id_outlet',
                 'warehouse_outlet_id' => 'required|exists:warehouse_outlets,id',
@@ -502,6 +502,8 @@ class OutletInternalUseWasteController extends Controller
             ['value' => 'waste', 'label' => 'Waste'],
             ['value' => 'r_and_d', 'label' => 'R & D'],
             ['value' => 'marketing', 'label' => 'Marketing'],
+            ['value' => 'non_commodity', 'label' => 'Non Commodity'],
+            ['value' => 'guest_supplies', 'label' => 'Guest Supplies'],
         ];
         
         // Filter warehouse outlets based on selected outlet or user's outlet

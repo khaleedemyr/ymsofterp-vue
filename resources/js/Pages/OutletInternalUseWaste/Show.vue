@@ -55,6 +55,10 @@ function typeLabel(type) {
   if (type === 'internal_use') return 'Internal Use';
   if (type === 'spoil') return 'Spoil';
   if (type === 'waste') return 'Waste';
+  if (type === 'r_and_d') return 'R & D';
+  if (type === 'marketing') return 'Marketing';
+  if (type === 'non_commodity') return 'Non Commodity';
+  if (type === 'guest_supplies') return 'Guest Supplies';
   return type;
 }
 function formatDate(date) {

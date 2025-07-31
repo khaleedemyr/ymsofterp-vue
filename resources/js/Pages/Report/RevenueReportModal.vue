@@ -64,9 +64,8 @@
         <div class="font-bold text-red-700 mb-2">Pengeluaran Bahan Baku</div>
         <div v-if="loadingExpenses" class="text-gray-400 italic">Loading...</div>
         <div v-else-if="expenses.retail_food && expenses.retail_food.length">
-          <div v-for="trx in expenses.retail_food" :key="'rf-' + trx.id" class="mb-6 border rounded-lg p-4">
-            <div class="font-semibold text-gray-800 mb-1">No: {{ trx.retail_number }} | Tanggal: {{ formatDateIndo(trx.transaction_date) }}</div>
-            <div class="text-gray-600 mb-2">Total: <span class="font-bold">{{ formatCurrency(trx.total_amount) }}</span></div>
+          <div v-for="trx in expenses.retail_food" :key="'rf-' + trx.id" class="mb-3 border rounded-lg p-3">
+            <div class="font-semibold text-gray-800 mb-2">No: {{ trx.retail_number }}</div>
             <div class="mb-2">
               <span class="font-semibold">Items:</span>
               <ul class="list-disc ml-6">
@@ -91,9 +90,8 @@
         <div class="font-bold text-purple-700 mb-2">Pengeluaran Non Bahan Baku</div>
         <div v-if="loadingExpenses" class="text-gray-400 italic">Loading...</div>
         <div v-else-if="expenses.retail_non_food && expenses.retail_non_food.length">
-          <div v-for="trx in expenses.retail_non_food" :key="'rnf-' + trx.id" class="mb-6 border rounded-lg p-4">
-            <div class="font-semibold text-gray-800 mb-1">No: {{ trx.retail_number }} | Tanggal: {{ formatDateIndo(trx.transaction_date) }}</div>
-            <div class="text-gray-600 mb-2">Total: <span class="font-bold">{{ formatCurrency(trx.total_amount) }}</span></div>
+          <div v-for="trx in expenses.retail_non_food" :key="'rnf-' + trx.id" class="mb-3 border rounded-lg p-3">
+            <div class="font-semibold text-gray-800 mb-2">No: {{ trx.retail_number }}</div>
             <div class="mb-2">
               <span class="font-semibold">Items:</span>
               <ul class="list-disc ml-6">
@@ -306,165 +304,218 @@ function printModal() {
       <html>
         <head>
           <title>Revenue Report</title>
-          <style>
-            body {
-              font-family: 'Segoe UI', Arial, sans-serif;
-              margin: 0;
-              padding: 32px 24px;
-              background: #fff;
-              color: #222;
-            }
-            .report-title {
-              font-size: 2rem;
-              font-weight: bold;
-              color: #2563eb;
-              margin-bottom: 0.5rem;
-              text-align: center;
-            }
-            .report-date {
-              font-size: 1rem;
-              color: #888;
-              text-align: center;
-              margin-bottom: 1.5rem;
-            }
-            .summary-section {
-              display: flex;
-              flex-wrap: wrap;
-              gap: 32px;
-              margin-bottom: 2rem;
-              justify-content: center;
-            }
-            .summary-card {
-              background: #f3f6fa;
-              border-radius: 12px;
-              box-shadow: 0 2px 8px rgba(0,0,0,0.04);
-              padding: 18px 32px;
-              min-width: 180px;
-              text-align: center;
-            }
-            .summary-label {
-              font-size: 1rem;
-              color: #666;
-              margin-bottom: 0.25rem;
-            }
-            .summary-value {
-              font-size: 1.5rem;
-              font-weight: bold;
-              color: #2563eb;
-            }
-            table {
-              width: 100%;
-              border-collapse: collapse;
-              margin-bottom: 1.5rem;
-            }
-            th, td {
-              padding: 8px 10px;
-              border-bottom: 1px solid #e5e7eb;
-            }
-            th {
-              background: #e0eaff;
-              color: #1e293b;
-              font-weight: bold;
-            }
-            .section-title {
-              font-size: 1.1rem;
-              font-weight: bold;
-              color: #2563eb;
-              margin: 2rem 0 0.5rem 0;
-            }
-            .expense-block {
-              border: 1px solid #e5e7eb;
-              border-radius: 8px;
-              padding: 12px 18px;
-              margin-bottom: 1rem;
-              background: #f9fafb;
-            }
-            .expense-title {
-              font-weight: bold;
-              color: #222;
-            }
-            .expense-items {
-              margin: 0.5rem 0 0.5rem 1rem;
-            }
-            .expense-total {
-              font-weight: bold;
-              color: #2563eb;
-            }
-            .cash-section {
-              background: #e0eaff;
-              border-radius: 8px;
-              padding: 16px 24px;
-              margin-top: 2rem;
-              font-size: 1.1rem;
-            }
-            .cash-row {
-              display: flex;
-              justify-content: space-between;
-              margin-bottom: 0.5rem;
-            }
-            .cash-label {
-              color: #222;
-            }
-            .cash-value {
-              font-weight: bold;
-            }
-            @media print {
-              body { margin: 0; }
-            }
-          </style>
+                     <style>
+             body {
+               font-family: 'Segoe UI', Arial, sans-serif;
+               margin: 0;
+               padding: 16px 12px;
+               background: #fff;
+               color: #222;
+               font-size: 10px;
+               line-height: 1.2;
+             }
+             .report-title {
+               font-size: 1.2rem;
+               font-weight: bold;
+               color: #2563eb;
+               margin-bottom: 0.25rem;
+               text-align: center;
+             }
+             .report-date {
+               font-size: 0.8rem;
+               color: #888;
+               text-align: center;
+               margin-bottom: 0.75rem;
+             }
+             .summary-section {
+               display: flex;
+               flex-wrap: wrap;
+               gap: 16px;
+               margin-bottom: 1rem;
+               justify-content: center;
+             }
+             .summary-card {
+               background: #f3f6fa;
+               border-radius: 6px;
+               box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+               padding: 8px 16px;
+               min-width: 120px;
+               text-align: center;
+             }
+             .summary-label {
+               font-size: 0.7rem;
+               color: #666;
+               margin-bottom: 0.1rem;
+             }
+             .summary-value {
+               font-size: 1rem;
+               font-weight: bold;
+               color: #2563eb;
+             }
+             table {
+               width: 100%;
+               border-collapse: collapse;
+               margin-bottom: 0.75rem;
+               font-size: 9px;
+             }
+             th, td {
+               padding: 4px 6px;
+               border-bottom: 1px solid #e5e7eb;
+             }
+             th {
+               background: #e0eaff;
+               color: #1e293b;
+               font-weight: bold;
+               font-size: 9px;
+             }
+             .section-title {
+               font-size: 0.9rem;
+               font-weight: bold;
+               color: #2563eb;
+               margin: 1rem 0 0.25rem 0;
+             }
+             .expense-block {
+               border: 1px solid #e5e7eb;
+               border-radius: 4px;
+               padding: 6px 10px;
+               margin-bottom: 0.5rem;
+               background: #f9fafb;
+               font-size: 9px;
+             }
+             .expense-title {
+               font-weight: bold;
+               color: #222;
+               font-size: 9px;
+             }
+             .expense-items {
+               margin: 0.25rem 0 0.25rem 0.5rem;
+             }
+             .expense-items ul {
+               margin: 0;
+               padding-left: 1rem;
+             }
+             .expense-items li {
+               margin-bottom: 0.1rem;
+             }
+             .expense-total {
+               font-weight: bold;
+               color: #2563eb;
+             }
+             .cash-section {
+               background: #e0eaff;
+               border-radius: 4px;
+               padding: 8px 12px;
+               margin-top: 1rem;
+               font-size: 0.9rem;
+             }
+             .cash-row {
+               display: flex;
+               justify-content: space-between;
+               margin-bottom: 0.25rem;
+             }
+             .cash-label {
+               color: #222;
+             }
+             .cash-value {
+               font-weight: bold;
+             }
+                           @media print {
+                body { 
+                  margin: 0; 
+                  padding: 8px 6px;
+                }
+                @page {
+                  margin: 0.25in;
+                  size: A4;
+                }
+                /* Pastikan semua konten muat dalam 1 halaman */
+                .section-title {
+                  page-break-after: avoid;
+                  page-break-inside: avoid;
+                }
+                .expense-block {
+                  page-break-inside: avoid;
+                }
+                .cash-section {
+                  page-break-inside: avoid;
+                }
+                table {
+                  page-break-inside: avoid;
+                }
+                /* Kompres spacing lebih lanjut untuk print */
+                .summary-section {
+                  gap: 8px;
+                  margin-bottom: 0.5rem;
+                }
+                .summary-card {
+                  padding: 4px 8px;
+                  min-width: 100px;
+                }
+                .expense-block {
+                  padding: 4px 6px;
+                  margin-bottom: 0.25rem;
+                }
+                .cash-section {
+                  padding: 6px 8px;
+                  margin-top: 0.5rem;
+                }
+              }
+           </style>
         </head>
         <body>
           <div class="report-title">Revenue Report</div>
           <div class="report-date">${props.tanggal || ''}</div>
-          <!-- Summary Section -->
-          <div class="summary-section">
-            <div class="summary-card">
-              <div class="summary-label">Total Sales</div>
-              <div class="summary-value">${formatCurrency(totalSales.value)}</div>
-            </div>
-            <div class="summary-card">
-              <div class="summary-label">Total Cash</div>
-              <div class="summary-value">${formatCurrency(totalCash.value)}</div>
-            </div>
-            <div class="summary-card">
-              <div class="summary-label">Total Pengeluaran</div>
-              <div class="summary-value">${formatCurrency(totalExpenses.value)}</div>
-            </div>
-            <div class="summary-card">
-              <div class="summary-label">Nilai Setor Cash</div>
-              <div class="summary-value">${formatCurrency(nilaiSetorCash.value)}</div>
-            </div>
-          </div>
-          <!-- Payment Breakdown -->
-          <div class="section-title">Breakdown by Payment Method</div>
-          <table>
-            <thead>
-              <tr>
-                <th>Metode Pembayaran</th>
-                <th>Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${Object.entries(paymentBreakdown.value).map(([paymode, total]) => `
-                <tr>
-                  <td>${paymode || '-'}</td>
-                  <td style="text-align:right">${formatCurrency(total)}</td>
-                </tr>
-              `).join('')}
-            </tbody>
-          </table>
+                     <!-- Summary Section -->
+           <div class="summary-section">
+             <div class="summary-card">
+               <div class="summary-label">Total Sales</div>
+               <div class="summary-value">${formatCurrency(totalSales.value)}</div>
+             </div>
+           </div>
+                     <!-- Payment Breakdown -->
+           <div class="section-title">Breakdown by Payment Method</div>
+           <table>
+             <thead>
+               <tr>
+                 <th>Metode Pembayaran</th>
+                 <th>Payment Type</th>
+                 <th>Total</th>
+               </tr>
+             </thead>
+             <tbody>
+               ${Object.entries(paymentBreakdown.value).map(([paymode, total]) => {
+                 const paymentTypes = paymentTypeBreakdown.value[paymode] || {};
+                 const typeEntries = Object.entries(paymentTypes);
+                 
+                 if (typeEntries.length === 0) {
+                   return `<tr>
+                     <td>${paymode || '-'}</td>
+                     <td>-</td>
+                     <td style="text-align:right">${formatCurrency(total)}</td>
+                   </tr>`;
+                 }
+                 
+                 return typeEntries.map(([ptype, ptotal], index) => `
+                   <tr>
+                     <td>${index === 0 ? (paymode || '-') : ''}</td>
+                     <td>${ptype || '-'}</td>
+                     <td style="text-align:right">${formatCurrency(ptotal)}</td>
+                   </tr>
+                 `).join('');
+               }).join('')}
+             </tbody>
+           </table>
           <!-- Pengeluaran Bahan Baku -->
           <div class="section-title">Pengeluaran Bahan Baku</div>
           ${(expenses.value.retail_food || []).length === 0 ? '<div style="color:#888">Tidak ada pengeluaran bahan baku.</div>' : ''}
-          ${(expenses.value.retail_food || []).map(trx => `
+                    ${(expenses.value.retail_food || []).map(trx => `
             <div class="expense-block">
-              <div class="expense-title">No: ${trx.retail_number} | Tanggal: ${formatDateIndo(trx.transaction_date)}</div>
-              <div>Total: <span class="expense-total">${formatCurrency(trx.total_amount)}</span></div>
+              <div class="expense-title">No: ${trx.retail_number}</div>
               <div class="expense-items">
                 <ul>
                   ${(trx.items || []).map(item => `
                     <li>${item.item_name} - ${item.qty} x ${formatCurrency(item.harga_barang)} = <span class="expense-total">${formatCurrency(item.subtotal)}</span></li>
-                  `).join('')}
+                    `).join('')}
                 </ul>
               </div>
             </div>
@@ -472,25 +523,25 @@ function printModal() {
           <!-- Pengeluaran Non Bahan Baku -->
           <div class="section-title">Pengeluaran Non Bahan Baku</div>
           ${(expenses.value.retail_non_food || []).length === 0 ? '<div style="color:#888">Tidak ada pengeluaran non bahan baku.</div>' : ''}
-          ${(expenses.value.retail_non_food || []).map(trx => `
+                    ${(expenses.value.retail_non_food || []).map(trx => `
             <div class="expense-block">
-              <div class="expense-title">No: ${trx.retail_number} | Tanggal: ${formatDateIndo(trx.transaction_date)}</div>
-              <div>Total: <span class="expense-total">${formatCurrency(trx.total_amount)}</span></div>
+              <div class="expense-title">No: ${trx.retail_number}</div>
               <div class="expense-items">
                 <ul>
                   ${(trx.items || []).map(item => `
                     <li>${item.item_name} - ${item.qty} ${item.unit} x ${formatCurrency(item.price)} = <span class="expense-total">${formatCurrency(item.subtotal)}</span></li>
-                  `).join('')}
+                    `).join('')}
                 </ul>
               </div>
             </div>
-          `).join('')}
-          <!-- Nilai Setor Cash -->
-          <div class="cash-section">
-            <div class="cash-row"><span class="cash-label">Total Cash:</span><span class="cash-value">${formatCurrency(totalCash.value)}</span></div>
-            <div class="cash-row"><span class="cash-label">Total Pengeluaran:</span><span class="cash-value">${formatCurrency(totalExpenses.value)}</span></div>
-            <div class="cash-row" style="font-size:1.2rem;font-weight:bold;"><span class="cash-label">Nilai Setor Cash:</span><span class="cash-value">${formatCurrency(nilaiSetorCash.value)}</span></div>
-          </div>
+                     `).join('')}
+           <!-- Summary Section -->
+           <div class="section-title">Summary</div>
+           <div class="cash-section">
+             <div class="cash-row"><span class="cash-label">Total Cash:</span><span class="cash-value">${formatCurrency(totalCash.value)}</span></div>
+             <div class="cash-row"><span class="cash-label">Total Pengeluaran:</span><span class="cash-value">${formatCurrency(totalExpenses.value)}</span></div>
+             <div class="cash-row" style="font-size:1rem;font-weight:bold;"><span class="cash-label">Nilai Setor Cash:</span><span class="cash-value">${formatCurrency(nilaiSetorCash.value)}</span></div>
+           </div>
         </body>
       </html>
     `);
