@@ -512,6 +512,9 @@ Route::resource('packing-list', App\Http\Controllers\PackingListController::clas
 Route::get('/api/packing-list/available-items', [\App\Http\Controllers\PackingListController::class, 'availableItems']);
 Route::post('/api/packing-list/item-stocks', [\App\Http\Controllers\PackingListController::class, 'itemStocks']);
 Route::get('/api/packing-list/summary', [\App\Http\Controllers\PackingListController::class, 'summary']);
+Route::get('/api/packing-list/unpicked-floor-orders', [\App\Http\Controllers\PackingListController::class, 'unpickedFloorOrders']);
+Route::get('/api/packing-list/export-unpicked-floor-orders', [\App\Http\Controllers\PackingListController::class, 'exportUnpickedFloorOrders']);
+Route::get('/api/packing-list/export-summary', [\App\Http\Controllers\PackingListController::class, 'exportSummary']);
 
 // Food Stock Balance Routes
 Route::middleware(['auth', 'verified'])->group(function () {

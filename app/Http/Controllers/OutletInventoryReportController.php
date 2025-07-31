@@ -141,21 +141,13 @@ class OutletInventoryReportController extends Controller
             }
         }
         $outlets = DB::table('tbl_data_outlet')->select('id_outlet as id', 'nama_outlet as name')->orderBy('nama_outlet')->get();
-        $user = auth()->user();
-        if ($user->id_outlet == 1) {
-            $warehouse_outlets = DB::table('warehouse_outlets')
-                ->where('status', 'active')
-                ->select('id', 'name', 'outlet_id')
-                ->orderBy('name')
-                ->get();
-        } else {
-            $warehouse_outlets = DB::table('warehouse_outlets')
-                ->where('outlet_id', $user->id_outlet)
-                ->where('status', 'active')
-                ->select('id', 'name', 'outlet_id')
-                ->orderBy('name')
-                ->get();
-        }
+        
+        // Selalu kirim semua warehouse outlet untuk filtering di frontend
+        $warehouse_outlets = DB::table('warehouse_outlets')
+            ->where('status', 'active')
+            ->select('id', 'name', 'outlet_id')
+            ->orderBy('name')
+            ->get();
         $items = DB::table('items')
             ->join('categories', 'items.category_id', '=', 'categories.id')
             ->where('categories.show_pos', '0')

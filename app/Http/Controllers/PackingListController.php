@@ -7,6 +7,7 @@ use App\Models\FoodPackingList;
 use App\Models\FoodFloorOrder;
 use App\Models\WarehouseDivision;
 use App\Models\FoodPackingListItem;
+use Maatwebsite\Excel\Facades\Excel;
 
 class PackingListController extends Controller
 {
@@ -289,10 +290,10 @@ class PackingListController extends Controller
         // Get all floor orders that are approved but not yet fully packed
         $floorOrders = FoodFloorOrder::where('status', 'approved')
             ->whereDate('tanggal', $request->tanggal)
-            ->with(['items.item', 'items.item.smallUnit', 'items.item.mediumUnit', 'items.item.largeUnit'])
+            ->with(['items.item', 'items.item.smallUnit', 'items.item.mediumUnit', 'items.item.largeUnit', 'items.item.warehouseDivision'])
             ->get();
 
-        $summaryItems = [];
+        $summaryByDivision = [];
         foreach ($floorOrders as $fo) {
             foreach ($fo->items as $foItem) {
                 $item = $foItem->item;
@@ -304,22 +305,435 @@ class PackingListController extends Controller
                 })->where('food_floor_order_item_id', $foItem->id)->exists();
 
                 if (!$isPacked) {
-                    $key = $item->id;
-                    if (!isset($summaryItems[$key])) {
-                        $summaryItems[$key] = [
-                            'item_id' => $item->id,
-                            'item_name' => $item->name,
-                            'total_qty' => 0,
-                            'unit' => $item->smallUnit->name ?? '-',
+                    $divisionName = $item->warehouseDivision ? $item->warehouseDivision->name : 'Default';
+                    
+                    if (!isset($summaryByDivision[$divisionName])) {
+                        $summaryByDivision[$divisionName] = [
+                            'warehouse_division_name' => $divisionName,
+                            'items' => []
                         ];
                     }
-                    $summaryItems[$key]['total_qty'] += $foItem->qty;
+
+                    // Check if item already exists in this division
+                    $itemKey = $item->id;
+                    $existingItemIndex = null;
+                    
+                    // Find existing item by index
+                    if (isset($summaryByDivision[$divisionName]['items']) && is_array($summaryByDivision[$divisionName]['items'])) {
+                        foreach ($summaryByDivision[$divisionName]['items'] as $index => $existingItemData) {
+                            if (isset($existingItemData['item_id']) && $existingItemData['item_id'] == $itemKey && 
+                                isset($existingItemData['unit']) && $existingItemData['unit'] == $foItem->unit) {
+                                $existingItemIndex = $index;
+                                break;
+                            }
+                        }
+                    }
+
+                    if ($existingItemIndex !== null) {
+                        // Add to existing item
+                        if (isset($summaryByDivision[$divisionName]['items'][$existingItemIndex])) {
+                            $summaryByDivision[$divisionName]['items'][$existingItemIndex]['total_qty'] += $foItem->qty;
+                        }
+                    } else {
+                        // Create new item entry
+                        if (!isset($summaryByDivision[$divisionName]['items'])) {
+                            $summaryByDivision[$divisionName]['items'] = [];
+                        }
+                        $summaryByDivision[$divisionName]['items'][] = [
+                            'item_id' => $item->id,
+                            'item_name' => $item->name,
+                            'total_qty' => $foItem->qty,
+                            'unit' => $foItem->unit,
+                        ];
+                    }
                 }
             }
         }
 
         return response()->json([
-            'items' => array_values($summaryItems)
+            'divisions' => array_values($summaryByDivision)
         ]);
+    }
+
+    public function unpickedFloorOrders(Request $request)
+    {
+        $request->validate([
+            'tanggal' => 'required|date',
+        ]);
+
+        // Get all floor orders that are approved but not yet fully packed
+        $floorOrders = FoodFloorOrder::where('status', 'approved')
+            ->whereDate('tanggal', $request->tanggal)
+            ->with([
+                'outlet',
+                'requester',
+                'warehouseDivisions',
+                'warehouseOutlet',
+                'items.item',
+                'items.item.smallUnit',
+                'items.item.mediumUnit',
+                'items.item.largeUnit',
+                'items.item.warehouseDivision'
+            ])
+            ->get();
+
+        $result = [];
+        foreach ($floorOrders as $fo) {
+            $outletKey = $fo->outlet->nama_outlet;
+            
+            if (!isset($result[$outletKey])) {
+                $result[$outletKey] = [
+                    'outlet_name' => $outletKey,
+                    'tanggal' => $fo->tanggal,
+                    'warehouse_outlets' => []
+                ];
+            }
+
+            // Group by warehouse outlet
+            $warehouseOutletKey = $fo->warehouseOutlet ? $fo->warehouseOutlet->name : 'Default';
+            
+            if (!isset($result[$outletKey]['warehouse_outlets'][$warehouseOutletKey])) {
+                $result[$outletKey]['warehouse_outlets'][$warehouseOutletKey] = [
+                    'warehouse_outlet_name' => $warehouseOutletKey,
+                    'warehouse_divisions' => []
+                ];
+            }
+
+            // Group unpicked items by warehouse division
+            $unpickedItemsByDivision = [];
+            foreach ($fo->items as $foItem) {
+                $item = $foItem->item;
+                if (!$item) continue;
+
+                // Check if this item has been packed
+                $isPacked = FoodPackingListItem::whereHas('packingList', function($q) use ($fo) {
+                    $q->where('food_floor_order_id', $fo->id);
+                })->where('food_floor_order_item_id', $foItem->id)->exists();
+
+                if (!$isPacked) {
+                    $divisionName = $item->warehouseDivision ? $item->warehouseDivision->name : 'Default';
+                    
+                    if (!isset($unpickedItemsByDivision[$divisionName])) {
+                        $unpickedItemsByDivision[$divisionName] = [
+                            'warehouse_division_name' => $divisionName,
+                            'items' => []
+                        ];
+                    }
+                    
+                    $unpickedItemsByDivision[$divisionName]['items'][] = [
+                        'item_name' => $item->name,
+                        'qty' => $foItem->qty,
+                        'unit' => $foItem->unit,
+                        'warehouse_division' => $divisionName
+                    ];
+                }
+            }
+
+            // Only add FO if it has unpicked items
+            if (!empty($unpickedItemsByDivision)) {
+                $result[$outletKey]['warehouse_outlets'][$warehouseOutletKey]['warehouse_divisions'][] = [
+                    'fo_id' => $fo->id,
+                    'fo_number' => $fo->order_number,
+                    'requester' => $fo->requester ? $fo->requester->nama_lengkap : '-',
+                    'unpicked_items_by_division' => array_values($unpickedItemsByDivision)
+                ];
+            }
+        }
+
+        // Convert to array and filter out empty warehouse outlets
+        $finalResult = [];
+        foreach ($result as $outletData) {
+            $filteredWarehouseOutlets = [];
+            foreach ($outletData['warehouse_outlets'] as $woData) {
+                if (!empty($woData['warehouse_divisions'])) {
+                    $filteredWarehouseOutlets[] = $woData;
+                }
+            }
+            
+            if (!empty($filteredWarehouseOutlets)) {
+                $outletData['warehouse_outlets'] = $filteredWarehouseOutlets;
+                $finalResult[] = $outletData;
+            }
+        }
+
+        return response()->json([
+            'outlets' => $finalResult
+        ]);
+    }
+
+    public function exportUnpickedFloorOrders(Request $request)
+    {
+        $request->validate([
+            'tanggal' => 'required|date',
+        ]);
+
+        try {
+            // Set memory limit and timeout for this operation
+            ini_set('memory_limit', '1G');
+            set_time_limit(300); // 5 minutes timeout
+
+            // Get all floor orders that are approved but not yet fully packed
+            $floorOrders = FoodFloorOrder::where('status', 'approved')
+                ->whereDate('tanggal', $request->tanggal)
+                ->with([
+                    'outlet',
+                    'requester',
+                    'warehouseDivisions',
+                    'warehouseOutlet',
+                    'items.item',
+                    'items.item.smallUnit',
+                    'items.item.mediumUnit',
+                    'items.item.largeUnit',
+                    'items.item.warehouseDivision'
+                ])
+                ->get();
+
+            $result = [];
+            foreach ($floorOrders as $fo) {
+                $outletKey = $fo->outlet->nama_outlet;
+                
+                if (!isset($result[$outletKey])) {
+                    $result[$outletKey] = [
+                        'outlet_name' => $outletKey,
+                        'tanggal' => $fo->tanggal,
+                        'warehouse_outlets' => []
+                    ];
+                }
+
+                // Group by warehouse outlet
+                $warehouseOutletKey = $fo->warehouseOutlet ? $fo->warehouseOutlet->name : 'Default';
+                
+                if (!isset($result[$outletKey]['warehouse_outlets'][$warehouseOutletKey])) {
+                    $result[$outletKey]['warehouse_outlets'][$warehouseOutletKey] = [
+                        'warehouse_outlet_name' => $warehouseOutletKey,
+                        'warehouse_divisions' => []
+                    ];
+                }
+
+                // Group unpicked items by warehouse division
+                $unpickedItemsByDivision = [];
+                foreach ($fo->items as $foItem) {
+                    $item = $foItem->item;
+                    if (!$item) continue;
+
+                    // Check if this item has been packed
+                    $isPacked = FoodPackingListItem::whereHas('packingList', function($q) use ($fo) {
+                        $q->where('food_floor_order_id', $fo->id);
+                    })->where('food_floor_order_item_id', $foItem->id)->exists();
+
+                    if (!$isPacked) {
+                        $divisionName = $item->warehouseDivision ? $item->warehouseDivision->name : 'Default';
+                        
+                        if (!isset($unpickedItemsByDivision[$divisionName])) {
+                            $unpickedItemsByDivision[$divisionName] = [
+                                'warehouse_division_name' => $divisionName,
+                                'items' => []
+                            ];
+                        }
+                        
+                        $unpickedItemsByDivision[$divisionName]['items'][] = [
+                            'item_name' => $item->name,
+                            'qty' => $foItem->qty,
+                            'unit' => $foItem->unit,
+                            'warehouse_division' => $divisionName
+                        ];
+                    }
+                }
+
+                // Only add FO if it has unpicked items
+                if (!empty($unpickedItemsByDivision)) {
+                    $result[$outletKey]['warehouse_outlets'][$warehouseOutletKey]['warehouse_divisions'][] = [
+                        'fo_id' => $fo->id,
+                        'fo_number' => $fo->order_number,
+                        'requester' => $fo->requester ? $fo->requester->nama_lengkap : '-',
+                        'unpicked_items_by_division' => array_values($unpickedItemsByDivision)
+                    ];
+                }
+            }
+
+            // Convert to array and filter out empty warehouse outlets
+            $finalResult = [];
+            foreach ($result as $outletData) {
+                $filteredWarehouseOutlets = [];
+                foreach ($outletData['warehouse_outlets'] as $woData) {
+                    if (!empty($woData['warehouse_divisions'])) {
+                        $filteredWarehouseOutlets[] = $woData;
+                    }
+                }
+                
+                if (!empty($filteredWarehouseOutlets)) {
+                    $outletData['warehouse_outlets'] = $filteredWarehouseOutlets;
+                    $finalResult[] = $outletData;
+                }
+            }
+
+            // Prepare data for CSV export
+            $exportData = [];
+            $rowCount = 0;
+            foreach ($finalResult as $outlet) {
+                foreach ($outlet['warehouse_outlets'] as $warehouseOutlet) {
+                    foreach ($warehouseOutlet['warehouse_divisions'] as $floorOrder) {
+                        foreach ($floorOrder['unpicked_items_by_division'] as $division) {
+                            foreach ($division['items'] as $item) {
+                                $exportData[] = [
+                                    'Tanggal' => date('d/m/Y', strtotime($outlet['tanggal'])),
+                                    'Outlet' => $outlet['outlet_name'],
+                                    'Warehouse Outlet' => $warehouseOutlet['warehouse_outlet_name'],
+                                    'No. Floor Order' => $floorOrder['fo_number'],
+                                    'Pemohon' => $floorOrder['requester'],
+                                    'Warehouse Division' => $division['warehouse_division_name'],
+                                    'Nama Item' => $item['item_name'],
+                                    'Qty' => $item['qty'],
+                                    'Unit' => $item['unit'],
+                                ];
+                                $rowCount++;
+                                
+                                // Free memory every 50 rows
+                                if ($rowCount % 50 === 0) {
+                                    gc_collect_cycles();
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Debug: Log the export data count
+            \Log::info('Export data count: ' . count($exportData));
+            if (empty($exportData)) {
+                return response()->json(['error' => 'Tidak ada data untuk di-export'], 404);
+            }
+
+            // Generate filename
+            $filename = 'RO_Belum_di_Packing_' . date('Y-m-d', strtotime($request->tanggal)) . '.xlsx';
+
+            // Use Excel export
+            return Excel::download(new \App\Exports\UnpickedFloorOrdersExport($exportData), $filename);
+
+        } catch (\Exception $e) {
+            \Log::error('CSV export error: ' . $e->getMessage());
+            \Log::error('Memory usage: ' . memory_get_usage(true) / 1024 / 1024 . ' MB');
+            return response()->json(['error' => 'Gagal mengunduh file CSV: ' . $e->getMessage()], 500);
+        }
+    }
+
+    public function exportSummary(Request $request)
+    {
+        $request->validate([
+            'tanggal' => 'required|date',
+        ]);
+
+        try {
+            // Set memory limit and timeout for this operation
+            ini_set('memory_limit', '1G');
+            set_time_limit(300); // 5 minutes timeout
+
+            // Get all floor orders that are approved but not yet fully packed
+            $floorOrders = FoodFloorOrder::where('status', 'approved')
+                ->whereDate('tanggal', $request->tanggal)
+                ->with([
+                    'items.item',
+                    'items.item.warehouseDivision'
+                ])
+                ->get();
+
+            // Group items by warehouse division and aggregate quantities
+            $summaryByDivision = [];
+            
+            foreach ($floorOrders as $fo) {
+                foreach ($fo->items as $foItem) {
+                    $item = $foItem->item;
+                    if (!$item || !$item->warehouseDivision) continue;
+
+                    // Check if this item has been packed
+                    $isPacked = FoodPackingListItem::whereHas('packingList', function($q) use ($fo) {
+                        $q->where('food_floor_order_id', $fo->id);
+                    })->where('food_floor_order_item_id', $foItem->id)->exists();
+
+                    if (!$isPacked) {
+                        $divisionName = $item->warehouseDivision->name;
+                        
+                        if (!isset($summaryByDivision[$divisionName])) {
+                            $summaryByDivision[$divisionName] = [
+                                'warehouse_division_name' => $divisionName,
+                                'items' => []
+                            ];
+                        }
+
+                        // Check if item already exists in this division
+                        $itemKey = $item->id;
+                        $existingItemIndex = null;
+                        
+                        // Find existing item by index
+                        if (isset($summaryByDivision[$divisionName]['items']) && is_array($summaryByDivision[$divisionName]['items'])) {
+                            foreach ($summaryByDivision[$divisionName]['items'] as $index => $existingItemData) {
+                                if (isset($existingItemData['item_id']) && $existingItemData['item_id'] == $itemKey && 
+                                    isset($existingItemData['unit']) && $existingItemData['unit'] == $foItem->unit) {
+                                    $existingItemIndex = $index;
+                                    break;
+                                }
+                            }
+                        }
+
+                        if ($existingItemIndex !== null && isset($summaryByDivision[$divisionName]['items'][$existingItemIndex])) {
+                            // Add to existing item
+                            $summaryByDivision[$divisionName]['items'][$existingItemIndex]['total_qty'] += $foItem->qty;
+                        } else {
+                            // Create new item entry
+                            if (!isset($summaryByDivision[$divisionName]['items'])) {
+                                $summaryByDivision[$divisionName]['items'] = [];
+                            }
+                            $summaryByDivision[$divisionName]['items'][] = [
+                                'item_id' => $item->id,
+                                'item_name' => $item->name,
+                                'total_qty' => $foItem->qty,
+                                'unit' => $foItem->unit,
+                            ];
+                        }
+                    }
+                }
+            }
+
+            // Prepare data for CSV export
+            $csvData = [];
+            $csvData[] = ['Warehouse Division', 'Nama Item', 'Total Qty', 'Unit']; // Header
+            
+            foreach ($summaryByDivision as $division) {
+                foreach ($division['items'] as $item) {
+                    $csvData[] = [
+                        $division['warehouse_division_name'],
+                        $item['item_name'],
+                        $item['total_qty'],
+                        $item['unit'],
+                    ];
+                }
+            }
+
+            if (count($csvData) <= 1) { // Only header
+                return response()->json(['error' => 'Tidak ada data untuk di-export'], 404);
+            }
+
+            // Generate CSV content
+            $csvContent = '';
+            foreach ($csvData as $row) {
+                $csvContent .= '"' . implode('","', array_map(function($field) {
+                    return str_replace('"', '""', $field);
+                }, $row)) . '"' . "\n";
+            }
+
+            // Generate filename
+            $filename = 'Rangkuman_Packing_List_' . date('Y-m-d', strtotime($request->tanggal)) . '.csv';
+
+            // Return CSV response
+            return response($csvContent)
+                ->header('Content-Type', 'text/csv; charset=UTF-8')
+                ->header('Content-Disposition', 'attachment; filename="' . $filename . '"')
+                ->header('Content-Length', strlen($csvContent));
+
+        } catch (\Exception $e) {
+            \Log::error('Summary export error: ' . $e->getMessage());
+            \Log::error('Memory usage: ' . memory_get_usage(true) / 1024 / 1024 . ' MB');
+            return response()->json(['error' => 'Gagal mengunduh file CSV: ' . $e->getMessage()], 500);
+        }
     }
 } 

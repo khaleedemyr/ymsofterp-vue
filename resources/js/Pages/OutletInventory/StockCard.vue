@@ -15,7 +15,7 @@
           <label class="text-sm">Warehouse Outlet</label>
           <select v-model="selectedWarehouseOutlet" class="border border-gray-300 rounded-lg px-2 py-2 focus:ring-blue-500 focus:border-blue-500">
             <option value="">Semua Warehouse</option>
-            <option v-for="w in warehouse_outlets" :key="w.id" :value="w.id">{{ w.name }}</option>
+            <option v-for="w in filteredWarehouseOutlets" :key="w.id" :value="w.id">{{ w.name }}</option>
           </select>
         </div>
         <div class="flex items-center gap-2">
@@ -133,6 +133,28 @@ const toDate = ref('');
 
 // Validasi: hanya superadmin (id_outlet=1) yang bisa pilih outlet
 const outletSelectable = computed(() => String(userOutletId.value) === '1');
+
+// Filter warehouse outlet berdasarkan outlet yang dipilih
+const filteredWarehouseOutlets = computed(() => {
+  let warehouseOutlets = props.warehouse_outlets;
+  
+  // Jika bukan superadmin, hanya tampilkan warehouse outlet milik outlet user
+  if (!outletSelectable.value && userOutletId.value) {
+    warehouseOutlets = warehouseOutlets.filter(wo => String(wo.outlet_id) === String(userOutletId.value));
+  }
+  
+  // Jika outlet dipilih, filter berdasarkan outlet tersebut
+  if (selectedOutlet.value) {
+    warehouseOutlets = warehouseOutlets.filter(wo => String(wo.outlet_id) === String(selectedOutlet.value));
+  }
+  
+  return warehouseOutlets;
+});
+
+// Reset warehouse outlet selection ketika outlet berubah
+watch(selectedOutlet, (newOutlet) => {
+  selectedWarehouseOutlet.value = '';
+});
 
 // Set default outlet jika bukan superadmin
 onMounted(() => {
