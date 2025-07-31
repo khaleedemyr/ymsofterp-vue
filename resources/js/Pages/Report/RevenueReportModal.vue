@@ -161,6 +161,17 @@ const totalExpenses = computed(() => {
 const nilaiSetorCash = computed(() => {
   return totalCash.value - totalExpenses.value;
 });
+
+// Get outlet name from orders and outlets
+const outletName = computed(() => {
+  if (!props.orders || !props.orders.length) return '';
+  
+  const kodeOutlet = props.orders[0]?.kode_outlet;
+  if (!kodeOutlet || !props.outlets) return '';
+  
+  const found = props.outlets.find(o => o.qr_code === kodeOutlet);
+  return found ? found.name : '';
+});
 const paymentBreakdown = computed(() => {
   const result = {};
   (props.orders || []).forEach(o => {
@@ -327,6 +338,13 @@ function printModal() {
                text-align: center;
                margin-bottom: 0.75rem;
              }
+             .report-outlet {
+               font-size: 0.9rem;
+               color: #2563eb;
+               text-align: center;
+               margin-bottom: 0.5rem;
+               font-weight: 600;
+             }
              .summary-section {
                display: flex;
                flex-wrap: wrap;
@@ -464,6 +482,7 @@ function printModal() {
         </head>
         <body>
           <div class="report-title">Revenue Report</div>
+          ${outletName.value ? `<div class="report-outlet">${outletName.value}</div>` : ''}
           <div class="report-date">${props.tanggal || ''}</div>
                      <!-- Summary Section -->
            <div class="summary-section">
