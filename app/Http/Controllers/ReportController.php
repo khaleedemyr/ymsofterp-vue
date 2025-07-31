@@ -628,6 +628,79 @@ class ReportController extends Controller
         ]);
     }
 
+    public function exportGoodReceiveOutlet(Request $request)
+    {
+        $request->validate([
+            'tanggal' => 'required|date',
+        ]);
+
+        $tanggal = $request->tanggal;
+
+        // Ambil semua outlet aktif
+        $outlets = DB::table('tbl_data_outlet')
+            ->where('status', 'A')
+            ->orderBy('nama_outlet')
+            ->get();
+
+        // Ambil data GR per item, unit, outlet pada tanggal
+        $data = DB::table('outlet_food_good_receives as gr')
+            ->join('outlet_food_good_receive_items as i', 'gr.id', '=', 'i.outlet_food_good_receive_id')
+            ->join('items as it', 'i.item_id', '=', 'it.id')
+            ->join('units as u', 'i.unit_id', '=', 'u.id')
+            ->join('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
+            ->whereDate('gr.receive_date', $tanggal)
+            ->select(
+                'it.id as item_id',
+                'it.name as item_name',
+                'u.name as unit_name',
+                'o.id_outlet',
+                'o.nama_outlet',
+                DB::raw('SUM(i.received_qty) as qty')
+            )
+            ->groupBy('it.id', 'it.name', 'u.name', 'o.id_outlet', 'o.nama_outlet')
+            ->orderBy('it.name')
+            ->orderBy('u.name')
+            ->orderBy('o.nama_outlet')
+            ->get();
+
+        // Bentuk pivot: items = [{item_name, unit_name, outlet_name => qty, ...}]
+        $pivot = [];
+        foreach ($data as $row) {
+            $key = $row->item_id . '|' . $row->unit_name;
+            if (!isset($pivot[$key])) {
+                $pivot[$key] = [
+                    'item_name' => $row->item_name,
+                    'unit_name' => $row->unit_name,
+                ];
+            }
+            $pivot[$key][$row->nama_outlet] = $row->qty;
+        }
+
+        $items = array_values($pivot);
+
+        // Prepare data for export
+        $exportData = [];
+        foreach ($items as $item) {
+            $row = [
+                'Nama Items' => $item['item_name'],
+                'Unit' => $item['unit_name'],
+            ];
+            
+            foreach ($outlets as $outlet) {
+                $row[$outlet->nama_outlet] = isset($item[$outlet->nama_outlet]) ? number_format($item[$outlet->nama_outlet], 2) : '';
+            }
+            
+            $exportData[] = $row;
+        }
+
+        $filename = 'Report_Good_Receive_Outlet_' . date('Y-m-d', strtotime($tanggal)) . '.xlsx';
+
+        return \Maatwebsite\Excel\Facades\Excel::download(
+            new \App\Exports\GoodReceiveOutletExport($exportData, $outlets),
+            $filename
+        );
+    }
+
     public function salesPivotOutletDetail(Request $request)
     {
         $request->validate([

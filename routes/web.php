@@ -769,6 +769,7 @@ Route::get('/report-sales-pivot-special/export', [\App\Http\Controllers\ReportCo
 Route::get('/report-rekap-fj', [\App\Http\Controllers\ReportController::class, 'reportSalesPivotSpecial'])->name('report.rekap-fj');
 Route::get('/report-rekap-fj/export', [\App\Http\Controllers\ReportController::class, 'exportSalesPivotSpecial'])->name('report.rekap-fj.export');
     Route::get('/report-good-receive-outlet', [\App\Http\Controllers\ReportController::class, 'reportGoodReceiveOutlet'])->name('report.good-receive-outlet');
+    Route::get('/report-good-receive-outlet/export', [\App\Http\Controllers\ReportController::class, 'exportGoodReceiveOutlet'])->name('report.good-receive-outlet.export');
     Route::get('/report-receiving-sheet', [\App\Http\Controllers\ReportController::class, 'reportReceivingSheet'])->name('report.receiving-sheet');
     Route::post('/report/sales-pivot-outlet-detail', [\App\Http\Controllers\ReportController::class, 'salesPivotOutletDetail'])->name('report.sales-pivot-outlet-detail');
 });

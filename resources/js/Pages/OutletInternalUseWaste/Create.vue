@@ -100,10 +100,7 @@
                       <input type="number" min="0.01" step="0.01" v-model.number="item.qty" class="input input-bordered w-full" required />
                     </td>
                     <td class="px-3 py-2 min-w-[100px]">
-                      <select v-model="item.unit_id" class="input input-bordered w-full" required>
-                        <option value="">Pilih Unit</option>
-                        <option v-for="u in item.unitOptions" :key="u.id" :value="u.id">{{ u.name }}</option>
-                      </select>
+                      <input type="text" :value="getUnitName(item.unit_id)" class="input input-bordered w-full bg-gray-100" readonly />
                     </td>
                     <td class="px-3 py-2 min-w-[120px]">
                       <input type="text" v-model="item.note" class="input input-bordered w-full" />
@@ -260,7 +257,12 @@ async function fetchUnitOptions(idx, itemId) {
   if (itemId) {
     const res = await axios.get(`/outlet-internal-use-waste/get-item-units/${itemId}`)
     form.value.items[idx].unitOptions = res.data.units
-    form.value.items[idx].unit_id = ''
+    // Automatically select the first unit (small unit)
+    if (res.data.units && res.data.units.length > 0) {
+      form.value.items[idx].unit_id = res.data.units[0].id
+    } else {
+      form.value.items[idx].unit_id = ''
+    }
   } else {
     form.value.items[idx].unitOptions = []
     form.value.items[idx].unit_id = ''
@@ -347,6 +349,18 @@ function getDropdownStyle(idx) {
     width: `${rect.width}px`,
     zIndex: 99999
   };
+}
+
+function getUnitName(unitId) {
+  if (!unitId) return '';
+  // Find the unit name from any item's unitOptions
+  for (const item of form.value.items) {
+    if (item.unitOptions) {
+      const unit = item.unitOptions.find(u => u.id === unitId);
+      if (unit) return unit.name;
+    }
+  }
+  return '';
 }
 </script>
 

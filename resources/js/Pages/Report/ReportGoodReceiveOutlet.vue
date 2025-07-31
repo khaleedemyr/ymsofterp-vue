@@ -12,36 +12,48 @@
           </select>
           <span class="text-sm">data</span>
         </div>
-        <button @click="reloadData" class="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-md font-semibold hover:bg-blue-700">
-          <span class="mr-2"><i class="fas fa-sync-alt"></i></span>
-          Load Data
-        </button>
+                 <button @click="reloadData" class="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-md font-semibold hover:bg-blue-700">
+           <span class="mr-2"><i class="fas fa-sync-alt"></i></span>
+           Load Data
+         </button>
+         <button 
+           v-if="tanggal && filteredItems.length" 
+           @click="exportToExcel" 
+           :disabled="exporting"
+           class="inline-flex items-center px-4 py-2 bg-green-600 text-white rounded-md font-semibold hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+         >
+           <span class="mr-2" v-if="!exporting"><i class="fas fa-file-excel"></i></span>
+           <span class="mr-2" v-else><i class="fas fa-spinner fa-spin"></i></span>
+           {{ exporting ? 'Exporting...' : 'Export Excel' }}
+         </button>
       </div>
       <div v-if="!tanggal" class="bg-white rounded-xl shadow-lg p-8 text-center text-gray-500 font-bold">
         Silakan pilih tanggal terlebih dahulu
       </div>
-      <div v-else class="bg-white rounded-xl shadow-lg overflow-x-auto w-full">
-        <table class="w-full min-w-full border border-gray-300">
-          <thead>
-            <tr class="bg-yellow-300 text-gray-900">
-              <th class="px-4 py-2 border border-gray-300">Nama Items</th>
-              <th class="px-4 py-2 border border-gray-300">Unit</th>
-              <th v-for="outlet in outlets" :key="outlet.id_outlet" class="px-4 py-2 border border-gray-300 text-right">{{ outlet.nama_outlet }}</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-if="!paginatedItems.length">
-              <td :colspan="2 + outlets.length" class="text-center py-10 text-gray-400">Tidak ada data.</td>
-            </tr>
-            <tr v-for="row in paginatedItems" :key="row.item_name + '-' + row.unit_name">
-              <td class="px-4 py-2 border border-gray-200">{{ row.item_name }}</td>
-              <td class="px-4 py-2 border border-gray-200">{{ row.unit_name }}</td>
-              <td v-for="outlet in outlets" :key="outlet.id_outlet" class="px-4 py-2 border border-gray-200 text-right">
-                {{ row[outlet.nama_outlet] ? formatQty(row[outlet.nama_outlet]) : '' }}
-              </td>
-            </tr>
-          </tbody>
-        </table>
+      <div v-else class="bg-white rounded-xl shadow-lg w-full">
+        <div class="overflow-x-auto">
+          <table class="w-full border border-gray-300" style="min-width: max-content;">
+            <thead>
+              <tr class="bg-yellow-300 text-gray-900">
+                <th class="px-4 py-2 border border-gray-300 sticky left-0 z-20 bg-yellow-300" style="min-width: 200px; position: sticky; left: 0;">Nama Items</th>
+                <th class="px-4 py-2 border border-gray-300 sticky left-[200px] z-20 bg-yellow-300" style="min-width: 100px; position: sticky; left: 200px;">Unit</th>
+                <th v-for="outlet in outlets" :key="outlet.id_outlet" class="px-4 py-2 border border-gray-300 text-right" style="min-width: 150px;">{{ outlet.nama_outlet }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-if="!paginatedItems.length">
+                <td :colspan="2 + outlets.length" class="text-center py-10 text-gray-400">Tidak ada data.</td>
+              </tr>
+              <tr v-for="row in paginatedItems" :key="row.item_name + '-' + row.unit_name">
+                <td class="px-4 py-2 border border-gray-200 sticky left-0 z-10 bg-white" style="min-width: 200px; position: sticky; left: 0;">{{ row.item_name }}</td>
+                <td class="px-4 py-2 border border-gray-200 sticky left-[200px] z-10 bg-white" style="min-width: 100px; position: sticky; left: 200px;">{{ row.unit_name }}</td>
+                <td v-for="outlet in outlets" :key="outlet.id_outlet" class="px-4 py-2 border border-gray-200 text-right" style="min-width: 150px;">
+                  {{ row[outlet.nama_outlet] ? formatQty(row[outlet.nama_outlet]) : '' }}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
       <div v-if="tanggal && filteredItems.length" class="flex justify-between items-center mt-4">
         <div class="text-sm text-gray-600">
@@ -70,6 +82,7 @@ const tanggal = ref(props.filters?.tanggal || '');
 const search = ref('');
 const perPage = ref(25);
 const page = ref(1);
+const exporting = ref(false);
 
 const filteredItems = computed(() => {
   if (!search.value) return props.items;
@@ -97,5 +110,24 @@ function reloadData() {
 function formatQty(val) {
   if (val == null) return '';
   return Number(val).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+async function exportToExcel() {
+  if (!tanggal.value) {
+    alert('Silakan pilih tanggal terlebih dahulu');
+    return;
+  }
+
+  exporting.value = true;
+  
+  try {
+    const url = `/report-good-receive-outlet/export?tanggal=${tanggal.value}`;
+    window.open(url, '_blank');
+  } catch (error) {
+    console.error('Export error:', error);
+    alert('Terjadi kesalahan saat export data');
+  } finally {
+    exporting.value = false;
+  }
 }
 </script> 
