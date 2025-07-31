@@ -278,8 +278,70 @@ function statusClass(item) {
   return '';
 }
 
-function confirmSubmit() {
-  showConfirmModal.value = true;
+async function confirmSubmit() {
+  // Validasi sebelum submit
+  const errors = [];
+  
+  if (!selectedDOId.value) {
+    errors.push('Delivery Order belum dipilih');
+  }
+  
+  if (!items.value.length) {
+    errors.push('Tidak ada item untuk diproses');
+  }
+  
+  // Cek apakah ada item yang belum di-scan
+  const unscannedItems = items.value.filter(item => Number(item.qty_scan) === 0);
+  if (unscannedItems.length > 0) {
+    errors.push(`${unscannedItems.length} item belum di-scan: ${unscannedItems.map(i => i.item_name).join(', ')}`);
+  }
+  
+  // Cek apakah ada item dengan qty scan 0
+  const zeroQtyItems = items.value.filter(item => Number(item.qty_scan) === 0);
+  if (zeroQtyItems.length > 0) {
+    errors.push(`Beberapa item memiliki qty scan 0: ${zeroQtyItems.map(i => i.item_name).join(', ')}`);
+  }
+  
+  if (errors.length > 0) {
+    Swal.fire({
+      icon: 'warning',
+      title: 'Validasi Gagal',
+      html: errors.map(err => `• ${err}`).join('<br>'),
+      confirmButtonText: 'OK',
+      width: '500px'
+    });
+    return;
+  }
+  
+  // Tampilkan konfirmasi dengan detail
+  const totalItems = items.value.length;
+  const completedItems = items.value.filter(item => Number(item.qty_scan) > 0).length;
+  const totalQty = items.value.reduce((sum, item) => sum + Number(item.qty_scan), 0);
+  
+  const result = await Swal.fire({
+    icon: 'question',
+    title: 'Konfirmasi Submit Good Receive',
+    html: `
+      <div class="text-left">
+        <p><strong>Delivery Order:</strong> ${doDetail.value?.do?.do_number || 'N/A'}</p>
+        <p><strong>Total Item:</strong> ${completedItems}/${totalItems}</p>
+        <p><strong>Total Qty Scan:</strong> ${totalQty.toFixed(2)}</p>
+        <p><strong>Warehouse Outlet:</strong> ${doDetail.value?.do?.warehouse_outlet_name || 'N/A'}</p>
+        <br>
+        <p class="text-sm text-gray-600">Data akan disimpan ke inventory dan tidak dapat diubah.</p>
+      </div>
+    `,
+    showCancelButton: true,
+    confirmButtonText: 'Ya, Submit!',
+    cancelButtonText: 'Batal',
+    confirmButtonColor: '#3085d6',
+    cancelButtonColor: '#d33',
+    width: '500px'
+  });
+  
+  if (result.isConfirmed) {
+    showConfirmModal.value = true;
+  }
 }
 
 async function submitGR() {
@@ -298,30 +360,112 @@ async function submitGR() {
         received_qty: i.qty_scan
       }))
     };
+    
+    console.log('DEBUG: Submitting payload:', payload);
+    
     const res = await axios.post('/outlet-food-good-receives', payload);
     showConfirmModal.value = false;
+    
     if (res.data && res.data.success) {
       await Swal.fire({
         icon: 'success',
-        title: 'Sukses',
-        text: 'Good Receive berhasil disimpan!',
-        timer: 1500,
+        title: 'Berhasil!',
+        text: 'Good Receive berhasil disimpan dan inventory telah diperbarui!',
+        timer: 2000,
         showConfirmButton: false
       });
       window.location.href = '/outlet-food-good-receives';
     } else {
       await Swal.fire({
         icon: 'error',
-        title: 'Gagal',
-        text: res.data.message || 'Gagal menyimpan Good Receive'
+        title: 'Gagal Menyimpan',
+        text: res.data?.message || 'Gagal menyimpan Good Receive. Silakan coba lagi.',
+        confirmButtonText: 'OK'
       });
     }
   } catch (e) {
-    await Swal.fire({
-      icon: 'error',
-      title: 'Error',
-      text: 'Terjadi kesalahan server.'
-    });
+    console.error('Submit GR Error:', e);
+    
+    let errorMessage = 'Terjadi kesalahan server. Silakan coba lagi.';
+    let errorDetails = '';
+    let showDetails = false;
+    
+    // Handle different types of errors
+    if (e.response) {
+      // Server responded with error status
+      const status = e.response.status;
+      const data = e.response.data;
+      
+      if (status === 422) {
+        // Validation errors
+        const errors = data.errors;
+        if (errors) {
+          const errorList = Object.values(errors).flat().join('\n• ');
+          errorMessage = `Validasi gagal:\n• ${errorList}`;
+        } else {
+          errorMessage = data.message || 'Data tidak valid';
+        }
+        errorDetails = `Status: ${status}\nResponse: ${JSON.stringify(data, null, 2)}`;
+        showDetails = true;
+      } else if (status === 404) {
+        errorMessage = 'Delivery Order tidak ditemukan';
+        errorDetails = `Status: ${status}\nURL: ${e.config?.url}\nResponse: ${JSON.stringify(data, null, 2)}`;
+        showDetails = true;
+      } else if (status === 500) {
+        errorMessage = 'Terjadi kesalahan server. Silakan hubungi administrator.';
+        errorDetails = `Status: ${status}\nError: ${data?.message || 'Unknown server error'}\nFile: ${data?.file || 'Unknown'}\nLine: ${data?.line || 'Unknown'}\nTrace: ${data?.trace ? data.trace.slice(0, 3).join('\n') : 'No trace'}`;
+        showDetails = true;
+      } else {
+        errorMessage = data?.message || `Error ${status}: ${data?.error || 'Unknown error'}`;
+        errorDetails = `Status: ${status}\nResponse: ${JSON.stringify(data, null, 2)}`;
+        showDetails = true;
+      }
+    } else if (e.request) {
+      // Network error
+      errorMessage = 'Tidak dapat terhubung ke server. Periksa koneksi internet Anda.';
+      errorDetails = `Network Error\nRequest: ${JSON.stringify(e.request, null, 2)}`;
+      showDetails = true;
+    } else {
+      // Other errors
+      errorMessage = e.message || 'Terjadi kesalahan tidak diketahui';
+      errorDetails = `Error: ${e.message}\nStack: ${e.stack}`;
+      showDetails = true;
+    }
+    
+    // Tampilkan error dengan detail jika diperlukan
+    if (showDetails) {
+      const result = await Swal.fire({
+        icon: 'error',
+        title: 'Error',
+        html: `
+          <div class="text-left">
+            <div class="mb-3">
+              <strong>Pesan Error:</strong><br>
+              ${errorMessage.replace(/\n/g, '<br>')}
+            </div>
+            <details class="text-xs text-gray-600">
+              <summary class="cursor-pointer hover:text-gray-800 mb-2">
+                <strong>Detail Teknis (Klik untuk melihat)</strong>
+              </summary>
+              <pre class="bg-gray-100 p-2 rounded text-xs overflow-auto max-h-40">${errorDetails}</pre>
+            </details>
+          </div>
+        `,
+        confirmButtonText: 'OK',
+        width: '600px',
+        customClass: {
+          popup: 'swal-wide'
+        }
+      });
+    } else {
+      await Swal.fire({
+        icon: 'error',
+        title: 'Error',
+        html: errorMessage.replace(/\n/g, '<br>'),
+        confirmButtonText: 'OK',
+        width: '500px'
+      });
+    }
   } finally {
     loadingSubmit.value = false;
   }
@@ -359,5 +503,32 @@ function closeSpsModal() {
 }
 .animate-fade-in {
   animation: fade-in 0.5s;
+}
+
+/* Custom styling untuk SweetAlert detail error */
+:global(.swal-wide) {
+  max-width: 600px !important;
+}
+
+:global(.swal-wide details) {
+  margin-top: 10px;
+}
+
+:global(.swal-wide summary) {
+  padding: 5px;
+  background-color: #f3f4f6;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+:global(.swal-wide summary:hover) {
+  background-color: #e5e7eb;
+}
+
+:global(.swal-wide pre) {
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  font-family: 'Courier New', monospace;
+  line-height: 1.4;
 }
 </style> 
