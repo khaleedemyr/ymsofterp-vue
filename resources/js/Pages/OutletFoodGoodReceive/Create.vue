@@ -286,24 +286,18 @@ async function confirmSubmit() {
     errors.push('Delivery Order belum dipilih');
   }
   
-  if (!items.value.length) {
+  if (!items.length) {
     errors.push('Tidak ada item untuk diproses');
   }
   
   // Cek apakah ada item yang belum di-scan
-  const unscannedItems = items.value.filter(item => Number(item.qty_scan) === 0);
+  const unscannedItems = items.filter(item => Number(item.qty_scan) === 0);
   if (unscannedItems.length > 0) {
     errors.push(`${unscannedItems.length} item belum di-scan: ${unscannedItems.map(i => i.item_name).join(', ')}`);
   }
   
-  // Cek apakah ada item dengan qty scan 0
-  const zeroQtyItems = items.value.filter(item => Number(item.qty_scan) === 0);
-  if (zeroQtyItems.length > 0) {
-    errors.push(`Beberapa item memiliki qty scan 0: ${zeroQtyItems.map(i => i.item_name).join(', ')}`);
-  }
-  
   if (errors.length > 0) {
-    Swal.fire({
+    await Swal.fire({
       icon: 'warning',
       title: 'Validasi Gagal',
       html: errors.map(err => `• ${err}`).join('<br>'),
@@ -314,9 +308,9 @@ async function confirmSubmit() {
   }
   
   // Tampilkan konfirmasi dengan detail
-  const totalItems = items.value.length;
-  const completedItems = items.value.filter(item => Number(item.qty_scan) > 0).length;
-  const totalQty = items.value.reduce((sum, item) => sum + Number(item.qty_scan), 0);
+  const totalItems = items.length;
+  const completedItems = items.filter(item => Number(item.qty_scan) > 0).length;
+  const totalQty = items.reduce((sum, item) => sum + Number(item.qty_scan), 0);
   
   const result = await Swal.fire({
     icon: 'question',
@@ -347,23 +341,85 @@ async function confirmSubmit() {
 async function submitGR() {
   loadingSubmit.value = true;
   try {
+    // Debug: Log current state
+    console.log('DEBUG: Current state:', {
+      selectedDOId: selectedDOId.value,
+      selectedDOIdType: typeof selectedDOId.value,
+      doDetail: doDetail.value,
+      items: items,
+      itemsLength: items.length
+    });
+    
+    // Debug: Log sample item
+    if (items.length > 0) {
+      console.log('DEBUG: Sample item:', {
+        item_id: items[0].item_id,
+        item_id_type: typeof items[0].item_id,
+        unit_id: items[0].unit_id,
+        unit_id_type: typeof items[0].unit_id,
+        qty_scan: items[0].qty_scan,
+        qty_scan_type: typeof items[0].qty_scan
+      });
+    }
+    
     // Siapkan payload sesuai backend
     const payload = {
-      delivery_order_id: selectedDOId.value,
+      delivery_order_id: Number(selectedDOId.value),
       receive_date: doDetail.value?.do?.do_created_at ? doDetail.value.do.do_created_at.split('T')[0] : new Date().toISOString().split('T')[0],
       notes: '',
-      warehouse_outlet_id: doDetail.value?.do?.warehouse_outlet_id || null,
+      warehouse_outlet_id: doDetail.value?.do?.warehouse_outlet_id ? Number(doDetail.value.do.warehouse_outlet_id) : null,
       items: items.map(i => ({
-        item_id: i.item_id,
-        qty: i.qty_packing_list,
-        unit_id: i.unit_id,
-        received_qty: i.qty_scan
+        item_id: Number(i.item_id),
+        qty: Number(i.qty_packing_list),
+        unit_id: Number(i.unit_id),
+        received_qty: Number(i.qty_scan)
       }))
     };
     
     console.log('DEBUG: Submitting payload:', payload);
     
+    // Validasi payload sebelum kirim
+    if (!payload.delivery_order_id) {
+      throw new Error('Delivery Order ID tidak boleh kosong');
+    }
+    
+    if (!payload.items || payload.items.length === 0) {
+      throw new Error('Items tidak boleh kosong');
+    }
+    
+    // Validasi setiap item
+    for (let i = 0; i < payload.items.length; i++) {
+      const item = payload.items[i];
+      console.log(`DEBUG: Validating item ${i + 1}:`, item);
+      
+      if (!item.item_id) {
+        throw new Error(`Item ${i + 1}: Item ID tidak boleh kosong`);
+      }
+      if (!item.unit_id) {
+        throw new Error(`Item ${i + 1}: Unit ID tidak boleh kosong`);
+      }
+      if (item.received_qty <= 0) {
+        throw new Error(`Item ${i + 1}: Received Qty harus lebih dari 0`);
+      }
+      
+      // Validasi tipe data
+      if (typeof item.item_id !== 'number') {
+        throw new Error(`Item ${i + 1}: Item ID harus berupa angka`);
+      }
+      if (typeof item.unit_id !== 'number') {
+        throw new Error(`Item ${i + 1}: Unit ID harus berupa angka`);
+      }
+      if (typeof item.received_qty !== 'number') {
+        throw new Error(`Item ${i + 1}: Received Qty harus berupa angka`);
+      }
+    }
+    
+    console.log('DEBUG: Payload validation passed, sending request...');
+    console.log('DEBUG: Request URL:', '/outlet-food-good-receives');
+    console.log('DEBUG: Request method:', 'POST');
+    
     const res = await axios.post('/outlet-food-good-receives', payload);
+    console.log('DEBUG: Response received:', res);
     showConfirmModal.value = false;
     
     if (res.data && res.data.success) {
@@ -391,7 +447,12 @@ async function submitGR() {
     let showDetails = false;
     
     // Handle different types of errors
-    if (e.response) {
+    if (e.message && !e.response) {
+      // Custom validation error
+      errorMessage = e.message;
+      errorDetails = `Validation Error: ${e.message}`;
+      showDetails = true;
+    } else if (e.response) {
       // Server responded with error status
       const status = e.response.status;
       const data = e.response.data;
