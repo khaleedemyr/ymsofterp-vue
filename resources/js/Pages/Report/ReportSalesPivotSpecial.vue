@@ -16,13 +16,16 @@
           <span class="mr-2"><i class="fas fa-sync-alt"></i></span>
           Load Data
         </button>
-        <button @click="exportToExcel" :disabled="!tanggal || !report.length" class="inline-flex items-center px-4 py-2 bg-green-600 text-white rounded-md font-semibold hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed">
+        <button @click="exportToExcel" :disabled="!tanggal || !dataLoaded || !report.length" class="inline-flex items-center px-4 py-2 bg-green-600 text-white rounded-md font-semibold hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed">
           <span class="mr-2"><i class="fas fa-file-excel"></i></span>
           Export Excel
         </button>
       </div>
       <div v-if="!tanggal" class="bg-white rounded-xl shadow-lg p-8 text-center text-gray-500 font-bold">
         Silakan pilih tanggal terlebih dahulu
+      </div>
+      <div v-else-if="!dataLoaded" class="bg-white rounded-xl shadow-lg p-8 text-center text-gray-500 font-bold">
+        Silakan klik "Load Data" untuk menampilkan laporan
       </div>
       <div v-else class="bg-white rounded-xl shadow-lg overflow-x-auto relative">
         <div v-if="loading" class="absolute inset-0 bg-white/70 z-20 flex items-center justify-center">
@@ -72,7 +75,7 @@
           </tfoot>
         </table>
       </div>
-      <div v-if="tanggal && filteredReport.length" class="flex justify-between items-center mt-4">
+      <div v-if="tanggal && dataLoaded && filteredReport.length" class="flex justify-between items-center mt-4">
         <div class="text-sm text-gray-600">
           Menampilkan {{ startIndex + 1 }} - {{ endIndex }} dari {{ filteredReport.length }} data
         </div>
@@ -133,6 +136,7 @@ const tanggal = ref(props.filters?.tanggal || '');
 const search = ref('');
 const perPage = ref(25);
 const page = ref(1);
+const dataLoaded = ref(false);
 
 const filteredReport = computed(() => {
   let data = props.report;
@@ -155,6 +159,13 @@ function nextPage() {
   if (page.value < totalPages.value) page.value++;
 }
 watch([perPage, search], () => { page.value = 1; });
+watch(tanggal, (newTanggal, oldTanggal) => { 
+  // Reset dataLoaded when tanggal changes, unless it's the initial load
+  if (oldTanggal !== undefined) {
+    dataLoaded.value = false; 
+  }
+  page.value = 1; 
+});
 const loading = ref(false);
 
 onMounted(() => {
@@ -167,6 +178,7 @@ onUnmounted(() => {
 });
 
 function reloadData() {
+  dataLoaded.value = true;
   router.get('/report-rekap-fj', { tanggal: tanggal.value }, { preserveState: true, preserveScroll: true });
 }
 
@@ -207,6 +219,11 @@ async function showDetail(customer) {
 async function exportToExcel() {
   if (!tanggal.value) {
     alert('Silakan pilih tanggal terlebih dahulu');
+    return;
+  }
+  
+  if (!dataLoaded.value) {
+    alert('Silakan load data terlebih dahulu');
     return;
   }
   

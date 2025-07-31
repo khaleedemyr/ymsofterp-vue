@@ -481,12 +481,18 @@ class ReportController extends Controller
             ->join('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
             ->select(
                 'o.nama_outlet as customer',
-                DB::raw("SUM(CASE WHEN w.name = 'MAIN KITCHEN' THEN i.received_qty * fo.price ELSE 0 END) as main_kitchen"),
+                DB::raw("SUM(CASE WHEN w.name IN ('MK1 Hot Kitchen', 'MK2 Cold Kitchen') THEN i.received_qty * fo.price ELSE 0 END) as main_kitchen"),
                 DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name NOT IN ('Chemical', 'Stationary', 'Marketing') THEN i.received_qty * fo.price ELSE 0 END) as main_store"),
                 DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Chemical' THEN i.received_qty * fo.price ELSE 0 END) as chemical"),
                 DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Stationary' THEN i.received_qty * fo.price ELSE 0 END) as stationary"),
                 DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Marketing' THEN i.received_qty * fo.price ELSE 0 END) as marketing"),
-                DB::raw('SUM(i.received_qty * fo.price) as line_total')
+                DB::raw("(
+                    SUM(CASE WHEN w.name IN ('MK1 Hot Kitchen', 'MK2 Cold Kitchen') THEN i.received_qty * fo.price ELSE 0 END) +
+                    SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name NOT IN ('Chemical', 'Stationary', 'Marketing') THEN i.received_qty * fo.price ELSE 0 END) +
+                    SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Chemical' THEN i.received_qty * fo.price ELSE 0 END) +
+                    SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Stationary' THEN i.received_qty * fo.price ELSE 0 END) +
+                    SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Marketing' THEN i.received_qty * fo.price ELSE 0 END)
+                ) as line_total")
             );
 
         if ($request->filled('tanggal')) {
@@ -530,12 +536,18 @@ class ReportController extends Controller
                 ->join('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
                 ->select(
                     'o.nama_outlet as customer',
-                    DB::raw("SUM(CASE WHEN w.name = 'MAIN KITCHEN' THEN i.received_qty * fo.price ELSE 0 END) as main_kitchen"),
+                    DB::raw("SUM(CASE WHEN w.name IN ('MK1 Hot Kitchen', 'MK2 Cold Kitchen') THEN i.received_qty * fo.price ELSE 0 END) as main_kitchen"),
                     DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name NOT IN ('Chemical', 'Stationary', 'Marketing') THEN i.received_qty * fo.price ELSE 0 END) as main_store"),
                     DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Chemical' THEN i.received_qty * fo.price ELSE 0 END) as chemical"),
                     DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Stationary' THEN i.received_qty * fo.price ELSE 0 END) as stationary"),
                     DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Marketing' THEN i.received_qty * fo.price ELSE 0 END) as marketing"),
-                    DB::raw('SUM(i.received_qty * fo.price) as line_total')
+                    DB::raw("(
+                        SUM(CASE WHEN w.name IN ('MK1 Hot Kitchen', 'MK2 Cold Kitchen') THEN i.received_qty * fo.price ELSE 0 END) +
+                        SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name NOT IN ('Chemical', 'Stationary', 'Marketing') THEN i.received_qty * fo.price ELSE 0 END) +
+                        SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Chemical' THEN i.received_qty * fo.price ELSE 0 END) +
+                        SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Stationary' THEN i.received_qty * fo.price ELSE 0 END) +
+                        SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Marketing' THEN i.received_qty * fo.price ELSE 0 END)
+                    ) as line_total")
                 );
 
             $query->whereDate('gr.receive_date', $tanggal);
@@ -650,12 +662,12 @@ class ReportController extends Controller
             ->orderBy('sc.name')
             ->orderBy('it.name')
             ->get();
-        // Group by category
+        // Group by sub_category
         $grouped = [];
         foreach ($items as $item) {
-            $cat = $item->category;
-            if (!isset($grouped[$cat])) $grouped[$cat] = [];
-            $grouped[$cat][] = $item;
+            $subCat = $item->sub_category;
+            if (!isset($grouped[$subCat])) $grouped[$subCat] = [];
+            $grouped[$subCat][] = $item;
         }
         return response()->json($grouped);
     }
