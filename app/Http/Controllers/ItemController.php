@@ -1370,10 +1370,12 @@ $bomItems = \App\Models\Item::whereIn('id', $bomMaterialIds)->get();
                     ->orderByDesc('id')
                     ->first();
                 $finalPrice = $price ? $price->price : 0;
+                // Round up to nearest 100
+                $roundedPrice = ceil($finalPrice / 100) * 100;
                 return array_merge($item->toArray(), [
                     'category_name' => $item->category ? $item->category->name : '-',
                     'unit_medium_name' => $item->mediumUnit ? $item->mediumUnit->name : '-',
-                    'price' => $finalPrice,
+                    'price' => $roundedPrice,
                 ]);
             });
         // Log debug hasil akhir
@@ -1442,10 +1444,12 @@ $bomItems = \App\Models\Item::whereIn('id', $bomMaterialIds)->get();
                     ->orderByDesc('id')
                     ->first();
                 $finalPrice = $price ? $price->price : 0;
+                // Round up to nearest 100
+                $roundedPrice = ceil($finalPrice / 100) * 100;
                 return array_merge($item->toArray(), [
                     'category_name' => $item->category ? $item->category->name : '-',
                     'unit_medium_name' => $item->mediumUnit ? $item->mediumUnit->name : '-',
-                    'price' => $finalPrice,
+                    'price' => $roundedPrice,
                 ]);
             });
 
@@ -1930,6 +1934,8 @@ $bomItems = \App\Models\Item::whereIn('id', $bomMaterialIds)->get();
                 ->first();
             
             $finalPrice = $price ? $price->price : 0;
+            // Round up to nearest 100
+            $roundedPrice = ceil($finalPrice / 100) * 100;
             
             // Tambahkan unit names untuk konsistensi dengan RO utama
             $unit_small = DB::table('units')->where('id', $item->small_unit_id)->value('name');
@@ -1943,7 +1949,7 @@ $bomItems = \App\Models\Item::whereIn('id', $bomMaterialIds)->get();
                 'category_id' => $item->category_id,
                 'category_name' => $item->category_name,
                 'supplier_price' => $item->supplier_price, // Harga dari supplier (untuk referensi)
-                'price' => $finalPrice, // Harga yang digunakan (dari item_prices)
+                'price' => $roundedPrice, // Harga yang digunakan (dari item_prices) dengan rounding
                 'unit' => $item->unit,
                 'unit_id' => $item->unit_id,
                 'unit_small' => $unit_small,
@@ -2016,6 +2022,8 @@ $bomItems = \App\Models\Item::whereIn('id', $bomMaterialIds)->get();
                     ->orderByDesc('id')
                     ->first();
                 $finalPrice = $price ? $price->price : 0;
+                // Round up to nearest 100
+                $roundedPrice = ceil($finalPrice / 100) * 100;
                 return [
                     'id' => $item->id,
                     'name' => $item->name,
@@ -2026,8 +2034,8 @@ $bomItems = \App\Models\Item::whereIn('id', $bomMaterialIds)->get();
                     'unit_medium' => optional($item->mediumUnit)->name,
                     'unit_medium_name' => optional($item->mediumUnit)->name,
                     'unit_large' => optional($item->largeUnit)->name,
-                    'price_medium' => $finalPrice,
-                    'price' => $finalPrice,
+                    'price_medium' => $roundedPrice,
+                    'price' => $roundedPrice,
                 ];
             });
 

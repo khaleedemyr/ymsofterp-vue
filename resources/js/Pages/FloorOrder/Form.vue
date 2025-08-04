@@ -123,6 +123,7 @@ async function fetchItemsByFOSchedule(foScheduleId) {
         ...item,
         qty: 0,
         unit: item.unit_medium_name || item.unit_medium || item.unit_small || item.unit || '-',
+        price: roundUpToHundred(item.price || 0), // Apply rounding ke kelipatan Rp 100
       });
     });
     categories.value = Object.values(grouped);
@@ -198,7 +199,7 @@ watch(selectedSupplier, (val) => {
             ...item, 
             qty: 0,
             unit: item.unit_medium_name || item.unit_medium || item.unit_small || item.unit || '-',
-            price: item.price || 0, // Menggunakan price dari item_prices (sama dengan RO utama)
+            price: roundUpToHundred(item.price || 0), // Apply rounding ke kelipatan Rp 100
             subtotal: 0
           });
         });
@@ -287,7 +288,8 @@ function selectItem(idx, item) {
       form.value.items[idx].item_id = item.id;
       form.value.items[idx].item_name = item.name;
       form.value.items[idx].unit = item.unit_medium_name || item.unit_medium || item.unit_small || item.unit || '-';
-      form.value.items[idx].price = item.price || 0; // Menggunakan price dari item_prices (sama dengan RO utama)
+      const rawPrice = item.price || 0; // Menggunakan price dari item_prices (sama dengan RO utama)
+      form.value.items[idx].price = roundUpToHundred(rawPrice); // Apply rounding
       form.value.items[idx].qty = '';
       form.value.items[idx].subtotal = 0;
       form.value.items[idx].category_id = item.category_id;
@@ -312,7 +314,8 @@ function selectItem(idx, item) {
     form.value.items[idx].unit = item.unit_medium_name || item.unit_medium || item.unit_small || item.unit || '-';
     form.value.items[idx].item_id = item.id;
     form.value.items[idx].item_name = item.name;
-    form.value.items[idx].price = item.price_medium !== undefined ? item.price_medium : (item.price !== undefined ? item.price : 0);
+    const rawPrice = item.price_medium !== undefined ? item.price_medium : (item.price !== undefined ? item.price : 0);
+    form.value.items[idx].price = roundUpToHundred(rawPrice); // Apply rounding
     form.value.items[idx].qty = '';
     form.value.items[idx].subtotal = 0;
     form.value.items[idx].category_id = item.category_id;
@@ -755,6 +758,12 @@ onUnmounted(() => {
 function formatRupiah(val) {
   if (!val) return 'Rp 0';
   return 'Rp ' + Number(val).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+// Fungsi untuk rounding harga ke atas ke kelipatan Rp 100
+function roundUpToHundred(price) {
+  if (!price || price <= 0) return 0;
+  return Math.ceil(price / 100) * 100;
 }
 
 let autosaveTimeout = null;
