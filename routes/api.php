@@ -28,7 +28,10 @@ use App\Models\FoodGoodReceive;
 use App\Http\Controllers\Mobile\RegisterController;
 use App\Http\Controllers\DeliveryOrderController;
 use App\Http\Controllers\InvestorController;
-
+use App\Http\Controllers\ReportDailyOutletRevenueController;
+use App\Http\Controllers\ReportWeeklyOutletFbRevenueController;
+use App\Http\Controllers\ReportDailyRevenueForecastController;
+use App\Http\Controllers\ReportMonthlyFbRevenuePerformanceController;
 
 
 // Endpoint API untuk Kanban Maintenance Order
@@ -194,5 +197,15 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::put('/investors/{id}', [InvestorController::class, 'update']);
     Route::delete('/investors/{id}', [InvestorController::class, 'destroy']);
     Route::get('/outlets', [InvestorController::class, 'outlets']);
+});
+
+// Report routes
+Route::middleware(['auth:web'])->group(function () {
+    Route::get('/report/daily-outlet-revenue', [\App\Http\Controllers\ReportDailyOutletRevenueController::class, 'index']);
+    Route::get('/report/weekly-outlet-fb-revenue', [\App\Http\Controllers\ReportWeeklyOutletFbRevenueController3::class, 'index']);
+    Route::post('/report/weekly-outlet-fb-revenue/budget', [\App\Http\Controllers\ReportWeeklyOutletFbRevenueController3::class, 'storeBudget']);
+    Route::get('/report/daily-revenue-forecast', [\App\Http\Controllers\ReportDailyRevenueForecastController::class, 'index']);
+    Route::post('/report/daily-revenue-forecast/settings', [\App\Http\Controllers\ReportDailyRevenueForecastController::class, 'storeForecastSettings']);
+    Route::get('/report/monthly-fb-revenue-performance', [\App\Http\Controllers\ReportMonthlyFbRevenuePerformanceController::class, 'index']);
 });
 

@@ -897,6 +897,22 @@ Route::get('/report-sales-simple', function () {
     return Inertia::render('Report/ReportSalesSimple');
 })->middleware(['auth']);
 
+Route::get('/report-daily-outlet-revenue', function () {
+    return Inertia::render('Report/ReportDailyOutletRevenue');
+})->middleware(['auth']);
+
+Route::get('/report-weekly-outlet-fb-revenue', function () {
+    return Inertia::render('Report/ReportWeeklyOutletFbRevenue');
+})->middleware(['auth']);
+
+Route::get('/report-daily-revenue-forecast', function () {
+    return Inertia::render('Report/ReportDailyRevenueForecast');
+})->middleware(['auth']);
+
+Route::get('/report-monthly-fb-revenue-performance', function () {
+    return Inertia::render('Report/ReportMonthlyFbRevenuePerformance');
+})->middleware(['auth']);
+
 Route::get('/api/outlets/report', [App\Http\Controllers\ReportController::class, 'apiOutlets']);
 
 Route::get('/api/report/sales-simple', [App\Http\Controllers\ReportController::class, 'reportSalesSimple']);
