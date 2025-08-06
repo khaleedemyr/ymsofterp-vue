@@ -1451,7 +1451,7 @@ class ReportController extends Controller
                     }),
                     'invoices' => $rf->invoices->map(function($inv) {
                         return [
-                            'file_path' => $inv->file_path ? (\Storage::disk('public')->url($inv->file_path)) : null
+                            'file_path' => $inv->file_path
                         ];
                     }),
                 ];
@@ -1481,7 +1481,7 @@ class ReportController extends Controller
                     }),
                     'invoices' => $rnf->invoices->map(function($inv) {
                         return [
-                            'file_path' => $inv->file_path ? (\Storage::disk('public')->url($inv->file_path)) : null
+                            'file_path' => $inv->file_path
                         ];
                     }),
                 ];
