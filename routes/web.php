@@ -931,6 +931,21 @@ Route::get('/users/dropdown-data', [UserController::class, 'getDropdownData'])->
 
 Route::resource('users', UserController::class);
 
+// Roulette download template (no auth required)
+Route::get('/roulette/import/template', [\App\Http\Controllers\RouletteController::class, 'downloadTemplate'])->name('roulette.download-template');
+
+// Roulette Game (no auth required) - harus di atas route resource
+Route::get('roulette/game', [\App\Http\Controllers\RouletteController::class, 'game'])->name('roulette.game');
+Route::get('roulette/grid', [\App\Http\Controllers\RouletteController::class, 'grid'])->name('roulette.grid');
+
+// Roulette Routes
+Route::middleware(['auth'])->group(function () {
+    Route::resource('roulette', \App\Http\Controllers\RouletteController::class);
+    Route::post('roulette/import', [\App\Http\Controllers\RouletteController::class, 'import'])->name('roulette.import');
+});
+
+
+
 // Member Routes
 Route::middleware(['auth'])->group(function () {
     Route::resource('members', MemberController::class);

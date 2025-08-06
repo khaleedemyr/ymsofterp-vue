@@ -258,6 +258,7 @@ const menuGroups = [
             { name: () => 'Promo', icon: 'fa-solid fa-tag', route: '/promos', code: 'promos' },
             { name: () => 'Marketing Visit Checklist', icon: 'fa-solid fa-clipboard-check', route: '/marketing-visit-checklist', code: 'marketing_visit_checklist_view' },
             { name: () => 'Reservasi', icon: 'fa-solid fa-calendar-check', route: '/reservations', code: 'reservations' },
+            { name: () => 'Data Roulette', icon: 'fa-solid fa-dice', route: '/roulette', code: 'data_roulette' },
         ],
     },
     {
