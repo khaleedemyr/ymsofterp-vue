@@ -77,7 +77,7 @@
             <div class="flex flex-wrap gap-2 items-center mt-2">
               <span class="font-semibold">Invoice:</span>
               <template v-if="trx.invoices.length">
-                <img v-for="(inv, idx) in trx.invoices" :key="idx" :src="inv.file_path" alt="Invoice" class="w-20 h-20 object-cover rounded shadow cursor-pointer" @click="previewImage(inv.file_path)" />
+                <img v-for="(inv, idx) in trx.invoices" :key="idx" :src="getImageUrl(inv)" alt="Invoice" class="w-20 h-20 object-cover rounded shadow cursor-pointer" @click="openLightbox(trx.invoices, idx)" @error="(e) => e.target.style.display='none'" />
               </template>
               <span v-else class="italic text-gray-400">no image available</span>
             </div>
@@ -103,7 +103,7 @@
             <div class="flex flex-wrap gap-2 items-center mt-2">
               <span class="font-semibold">Invoice:</span>
               <template v-if="trx.invoices.length">
-                <img v-for="(inv, idx) in trx.invoices" :key="idx" :src="inv.file_path" alt="Invoice" class="w-20 h-20 object-cover rounded shadow cursor-pointer" @click="previewImage(inv.file_path)" />
+                <img v-for="(inv, idx) in trx.invoices" :key="idx" :src="getImageUrl(inv)" alt="Invoice" class="w-20 h-20 object-cover rounded shadow cursor-pointer" @click="openLightbox(trx.invoices, idx)" @error="(e) => e.target.style.display='none'" />
               </template>
               <span v-else class="italic text-gray-400">no image available</span>
             </div>
@@ -134,12 +134,21 @@
       <div v-if="imagePreview" class="fixed inset-0 z-60 flex items-center justify-center bg-black bg-opacity-70" @click.self="imagePreview = null">
         <img :src="imagePreview" class="max-w-full max-h-[80vh] rounded shadow-2xl border-4 border-white" />
       </div>
+      
+      <!-- Lightbox for Invoice Images -->
+      <VueEasyLightbox
+        :visible="lightboxVisible"
+        :imgs="lightboxImages"
+        :index="lightboxIndex"
+        @hide="lightboxVisible = false"
+      />
     </div>
   </div>
 </template>
 
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue';
+import VueEasyLightbox from 'vue-easy-lightbox';
 const props = defineProps({
   tanggal: String,
   orders: Array,
@@ -225,8 +234,33 @@ const paymentTypeBreakdown = computed(() => {
 const expenses = ref({ retail_food: [], retail_non_food: [] });
 const loadingExpenses = ref(false);
 const imagePreview = ref(null);
+
+// Lightbox state
+const lightboxVisible = ref(false);
+const lightboxImages = ref([]);
+const lightboxIndex = ref(0);
+
+// Add image handling function like in Index.vue
+const getImageUrl = (image) => {
+  if (!image || !image.file_path) return null;
+  try {
+    return `/storage/${image.file_path}`;
+  } catch (error) {
+    console.error('Error processing image:', error);
+    return null;
+  }
+}
+
 function previewImage(url) {
   imagePreview.value = url;
+}
+
+// Lightbox function for invoice images
+function openLightbox(invoices, startIndex = 0) {
+  if (!invoices || invoices.length === 0) return;
+  lightboxImages.value = invoices.map(inv => getImageUrl(inv)).filter(url => url);
+  lightboxIndex.value = startIndex;
+  lightboxVisible.value = true;
 }
 async function fetchExpenses() {
   console.log('fetchExpenses called', { orders: props.orders, tanggal: props.tanggal, outlets: props.outlets });
