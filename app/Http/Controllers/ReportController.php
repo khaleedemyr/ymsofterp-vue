@@ -860,12 +860,16 @@ class ReportController extends Controller
         $summary = [
             // 1. Sales (+): sum(total) from orders
             'total_sales' => $orders->sum('total'),
-            // 2. Disc (-): sum(discount) from orders
-            'total_discount' => $orders->sum('discount'),
+            // 2. Disc (-): sum(discount + manual_discount_amount) from orders
+            'total_discount' => $orders->sum(function($order) {
+                return ($order->discount ?? 0) + ($order->manual_discount_amount ?? 0);
+            }),
             // 3. Cashback: sum(cashback) from orders
             'total_cashback' => $orders->sum('cashback'),
-            // 4. Net Sales: sum(total) - sum(discount) - sum(cashback)
-            'net_sales' => $orders->sum('total') - $orders->sum('discount') - $orders->sum('cashback'),
+            // 4. Net Sales: sum(total) - sum(discount + manual_discount_amount) - sum(cashback)
+            'net_sales' => $orders->sum('total') - $orders->sum(function($order) {
+                return ($order->discount ?? 0) + ($order->manual_discount_amount ?? 0);
+            }) - $orders->sum('cashback'),
             // 5. pb1: sum(pb1) from orders
             'total_pb1' => $orders->sum('pb1'),
             // 6. service: sum(service) from orders
@@ -896,7 +900,9 @@ class ReportController extends Controller
                 'total_sales' => $group->sum('total'),
                 'total_order' => $group->count(),
                 'total_pax' => $group->sum('pax'),
-                'total_discount' => $group->sum('discount'),
+                'total_discount' => $group->sum(function($order) {
+                    return ($order->discount ?? 0) + ($order->manual_discount_amount ?? 0);
+                }),
                 'total_cashback' => $group->sum('cashback'),
                 'total_service' => $group->sum('service'),
                 'total_pb1' => $group->sum('pb1'),
@@ -906,7 +912,9 @@ class ReportController extends Controller
                     return ($order->discount ?? 0) - ($order->manual_discount_amount ?? 0);
                 }),
                 // Tambahkan net_sales, grand_total, avg_check jika perlu
-                'net_sales' => $group->sum('total') - $group->sum('discount') - $group->sum('cashback'),
+                'net_sales' => $group->sum('total') - $group->sum(function($order) {
+                    return ($order->discount ?? 0) + ($order->manual_discount_amount ?? 0);
+                }) - $group->sum('cashback'),
                 'grand_total' => $group->sum('grand_total'),
                 'avg_check' => $group->sum('pax') > 0 ? round($group->sum('grand_total') / $group->sum('pax')) : 0,
             ];

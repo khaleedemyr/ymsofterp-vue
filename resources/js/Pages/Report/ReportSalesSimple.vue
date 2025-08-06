@@ -163,7 +163,7 @@
                               <td class="px-3 py-2">{{ order.table }}</td>
                               <td class="px-3 py-2">{{ order.pax }}</td>
                               <td class="px-3 py-2 text-right">{{ formatCurrency(order.total) }}</td>
-                              <td class="px-3 py-2 text-right">{{ formatCurrency(order.discount) }}</td>
+                              <td class="px-3 py-2 text-right">{{ formatCurrency((order.discount || 0) + (order.manual_discount_amount || 0)) }}</td>
                               <td class="px-3 py-2 text-right">{{ formatCurrency(order.cashback) }}</td>
                               <td class="px-3 py-2 text-right">{{ formatCurrency(order.service) }}</td>
                               <td class="px-3 py-2 text-right">{{ formatCurrency(order.pb1) }}</td>

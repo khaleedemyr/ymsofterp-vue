@@ -178,14 +178,14 @@ const paymentBreakdown = computed(() => {
     if (o.payments && Array.isArray(o.payments)) {
       o.payments.forEach(p => {
         const paymode = p.payment_code || '-';
-        // Ubah: cash = amount - change
-        const total = (Number(p.amount) || 0) - (Number(p.change) || 0);
+        // Jangan kurangi change, gunakan amount saja
+        const total = (Number(p.amount) || 0);
         result[paymode] = (result[paymode] || 0) + total;
       });
     } else if (o.payment_code) {
       const paymode = o.payment_code || '-';
-      // Ubah: cash = amount - change
-      const total = (Number(o.amount) || 0) - (Number(o.change) || 0);
+      // Jangan kurangi change, gunakan amount saja
+      const total = (Number(o.amount) || 0);
       result[paymode] = (result[paymode] || 0) + total;
     }
   });
@@ -206,7 +206,7 @@ const paymentTypeBreakdown = computed(() => {
         if (!ptype && o.payment_type) ptype = o.payment_type;
         if (!ptype) ptype = 'Unknown';
         ptype = String(ptype).toUpperCase(); // kapitalisasi
-        const total = (Number(p.amount) || 0) - (Number(p.change) || 0);
+        const total = (Number(p.amount) || 0);
         if (!result[paymode]) result[paymode] = {};
         result[paymode][ptype] = (result[paymode][ptype] || 0) + total;
       });
@@ -215,7 +215,7 @@ const paymentTypeBreakdown = computed(() => {
       let ptype = o.payment_type;
       if (!ptype) ptype = 'Unknown';
       ptype = String(ptype).toUpperCase(); // kapitalisasi
-      const total = (Number(o.amount) || 0) - (Number(o.change) || 0);
+      const total = (Number(o.amount) || 0);
       if (!result[paymode]) result[paymode] = {};
       result[paymode][ptype] = (result[paymode][ptype] || 0) + total;
     }
