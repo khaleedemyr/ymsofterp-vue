@@ -283,4 +283,22 @@ class RouletteController extends Controller
             'roulettes' => $roulettes,
         ]);
     }
+
+    public function slot()
+    {
+        $roulettes = Roulette::all();
+        
+        return Inertia::render('Roulette/SlotMachine', [
+            'roulettes' => $roulettes,
+        ]);
+    }
+
+    public function lottery()
+    {
+        $roulettes = Roulette::all();
+        
+        return Inertia::render('Roulette/LotteryMachine', [
+            'roulettes' => $roulettes,
+        ]);
+    }
 } 

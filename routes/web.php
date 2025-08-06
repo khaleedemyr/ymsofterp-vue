@@ -937,6 +937,8 @@ Route::get('/roulette/import/template', [\App\Http\Controllers\RouletteControlle
 // Roulette Game (no auth required) - harus di atas route resource
 Route::get('roulette/game', [\App\Http\Controllers\RouletteController::class, 'game'])->name('roulette.game');
 Route::get('roulette/grid', [\App\Http\Controllers\RouletteController::class, 'grid'])->name('roulette.grid');
+Route::get('roulette/slot', [\App\Http\Controllers\RouletteController::class, 'slot'])->name('roulette.slot');
+Route::get('roulette/lottery', [\App\Http\Controllers\RouletteController::class, 'lottery'])->name('roulette.lottery');
 
 // Roulette Routes
 Route::middleware(['auth'])->group(function () {

@@ -76,6 +76,14 @@ function openRouletteGame() {
 function openGridGame() {
   window.open(route('roulette.grid'), '_blank');
 }
+
+function openSlotMachine() {
+  window.open(route('roulette.slot'), '_blank');
+}
+
+function openLotteryMachine() {
+  window.open(route('roulette.lottery'), '_blank');
+}
 </script>
 
 <template>
@@ -93,6 +101,14 @@ function openGridGame() {
           <button @click="openGridGame" class="bg-gradient-to-r from-purple-500 to-purple-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold flex items-center gap-2">
             <i class="fa-solid fa-th"></i>
             Grid Game
+          </button>
+          <button @click="openSlotMachine" class="bg-gradient-to-r from-yellow-500 to-orange-600 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold flex items-center gap-2">
+            <i class="fa-solid fa-slot-machine"></i>
+            Slot Machine
+          </button>
+          <button @click="openLotteryMachine" class="bg-gradient-to-r from-red-500 to-pink-600 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold flex items-center gap-2">
+            <i class="fa-solid fa-dice"></i>
+            Lottery Machine
           </button>
           <button @click="openImportModal" class="bg-green-500 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold flex items-center gap-2">
             <i class="fas fa-file-excel"></i>
