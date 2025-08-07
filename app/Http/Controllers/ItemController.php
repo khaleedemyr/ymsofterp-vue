@@ -1345,10 +1345,9 @@ $bomItems = \App\Models\Item::whereIn('id', $bomMaterialIds)->get();
             'availableItemIds' => $availableItemIds
         ]);
         
-        // Jika exclude_supplier true, kecualikan item yang ada di item_suppliers
+        // Jika exclude_supplier true, kecualikan item yang ada di item_supplier
         if ($exclude_supplier) {
-            $supplierItemIds = \DB::table('item_suppliers')
-                ->where('status', 'active')
+            $supplierItemIds = \DB::table('item_supplier')
                 ->pluck('item_id')
                 ->unique();
             $availableItemIds = $availableItemIds->diff($supplierItemIds);
@@ -1431,10 +1430,9 @@ $bomItems = \App\Models\Item::whereIn('id', $bomMaterialIds)->get();
             ->pluck('item_id')
             ->unique();
 
-        // Jika exclude_supplier true, kecualikan item yang ada di item_suppliers
+        // Jika exclude_supplier true, kecualikan item yang ada di item_supplier
         if ($exclude_supplier) {
-            $supplierItemIds = \DB::table('item_suppliers')
-                ->where('status', 'active')
+            $supplierItemIds = \DB::table('item_supplier')
                 ->pluck('item_id')
                 ->unique();
             $itemIds = $itemIds->diff($supplierItemIds);
@@ -2018,9 +2016,8 @@ $bomItems = \App\Models\Item::whereIn('id', $bomMaterialIds)->get();
             if ($excludeSupplier) {
                 $query->whereNotExists(function($sub) {
                     $sub->select(\DB::raw(1))
-                        ->from('item_suppliers')
-                        ->whereRaw('items.id = item_suppliers.item_id')
-                        ->where('item_suppliers.status', 'active');
+                        ->from('item_supplier')
+                        ->whereRaw('items.id = item_supplier.item_id');
                 });
             }
 
