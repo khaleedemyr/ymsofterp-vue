@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 import { router } from '@inertiajs/vue3';
 import { debounce } from 'lodash';
 import Swal from 'sweetalert2';
@@ -14,6 +14,39 @@ const search = ref(props.filters?.search || '');
 const selectedStatus = ref(props.filters?.status || '');
 const from = ref(props.filters?.from || '');
 const to = ref(props.filters?.to || '');
+
+// Computed untuk cek jadwal PR Foods
+const scheduleInfo = computed(() => {
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  
+  const startTime = new Date(today);
+  startTime.setHours(15, 0, 0, 0); // 15:00 hari ini
+  
+  const endTime = new Date(tomorrow);
+  endTime.setHours(10, 0, 0, 0); // 10:00 besok
+  
+  const isWithinSchedule = now >= startTime && now <= endTime;
+  
+  const formatTime = (date) => {
+    return date.toLocaleTimeString('id-ID', { 
+      hour: '2-digit', 
+      minute: '2-digit',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric'
+    });
+  };
+  
+  return {
+    isWithinSchedule,
+    startTime: formatTime(startTime),
+    endTime: formatTime(endTime),
+    now: formatTime(now)
+  };
+});
 
 const debouncedSearch = debounce(() => {
   router.get('/pr-foods', { search: search.value, status: selectedStatus.value, from: from.value, to: to.value }, { preserveState: true, replace: true });
@@ -32,7 +65,48 @@ function goToPage(url) {
   if (url) router.visit(url, { preserveState: true, replace: true });
 }
 function openCreate() {
-  router.visit('/pr-foods/create');
+  // Cek jadwal PR Foods (15:00 hari ini - 10:00 besok)
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  
+  const startTime = new Date(today);
+  startTime.setHours(15, 0, 0, 0); // 15:00 hari ini
+  
+  const endTime = new Date(tomorrow);
+  endTime.setHours(10, 0, 0, 0); // 10:00 besok
+  
+  // Cek apakah sekarang dalam jadwal yang diizinkan
+  if (now >= startTime && now <= endTime) {
+    router.visit('/pr-foods/create');
+  } else {
+    // Format waktu untuk display
+    const formatTime = (date) => {
+      return date.toLocaleTimeString('id-ID', { 
+        hour: '2-digit', 
+        minute: '2-digit',
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric'
+      });
+    };
+    
+    Swal.fire({
+      icon: 'warning',
+      title: 'Di Luar Jadwal',
+      html: `
+        <div class="text-left">
+          <p class="mb-3">Jadwal pembuatan PR Foods:</p>
+          <p class="mb-2"><strong>Buka:</strong> ${formatTime(startTime)}</p>
+          <p class="mb-2"><strong>Tutup:</strong> ${formatTime(endTime)}</p>
+          <p class="mt-3 text-sm text-gray-600">Silakan buat PR Foods pada jadwal yang ditentukan.</p>
+        </div>
+      `,
+      confirmButtonColor: '#3085d6',
+      confirmButtonText: 'OK'
+    });
+  }
 }
 function openEdit(id) {
   router.visit(`/pr-foods/${id}/edit`);
@@ -61,11 +135,36 @@ async function hapus(pr) {
   <AppLayout>
     <div class="w-full py-8 px-0">
       <div class="flex justify-between items-center mb-6">
-        <h1 class="text-2xl font-bold text-gray-800 flex items-center gap-2">
-          <i class="fa-solid fa-file-invoice text-blue-500"></i> Purchase Requisition Foods
-        </h1>
-        <button @click="openCreate" class="bg-gradient-to-r from-blue-500 to-blue-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold">
-          + Buat PR Foods Baru
+        <div>
+          <h1 class="text-2xl font-bold text-gray-800 flex items-center gap-2">
+            <i class="fa-solid fa-file-invoice text-blue-500"></i> Purchase Requisition Foods
+          </h1>
+          <!-- Info Jadwal -->
+          <div class="mt-2 flex items-center gap-2">
+            <div class="flex items-center gap-1 text-sm">
+              <i class="fa fa-clock text-blue-500"></i>
+              <span class="font-medium">Jadwal:</span>
+              <span class="text-gray-600">{{ scheduleInfo.startTime }} - {{ scheduleInfo.endTime }}</span>
+            </div>
+            <div class="flex items-center gap-1 text-sm">
+              <i class="fa fa-circle" :class="scheduleInfo.isWithinSchedule ? 'text-green-500' : 'text-red-500'"></i>
+              <span :class="scheduleInfo.isWithinSchedule ? 'text-green-600' : 'text-red-600'" class="font-medium">
+                {{ scheduleInfo.isWithinSchedule ? 'Buka' : 'Tutup' }}
+              </span>
+            </div>
+          </div>
+        </div>
+        <button 
+          @click="openCreate" 
+          :class="[
+            'px-4 py-2 rounded-xl shadow-lg transition-all font-semibold',
+            scheduleInfo.isWithinSchedule 
+              ? 'bg-gradient-to-r from-blue-500 to-blue-700 text-white hover:shadow-2xl' 
+              : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+          ]"
+          :disabled="!scheduleInfo.isWithinSchedule"
+        >
+          <i class="fa fa-clock mr-2"></i> + Buat PR Foods Baru
         </button>
       </div>
       <div class="flex flex-wrap gap-3 mb-4 items-center">

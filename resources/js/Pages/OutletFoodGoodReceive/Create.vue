@@ -209,6 +209,13 @@ function onScanBarcode() {
       qtyModalItem.value = item;
       // Default value sesuai sisa qty yang belum di-scan, minimal 0.01
       const remainingQty = maxQty - currentScan;
+      if (remainingQty <= 0) {
+        scanFeedback.value = `❌ Qty scan sudah mencapai maksimal (${maxQty})`;
+        scanFeedbackClass.value = 'text-red-600';
+        barcodeInputVal.value = '';
+        nextTick(() => barcodeInput.value?.focus());
+        return;
+      }
       qtyModalValue.value = Math.max(0.01, remainingQty);
       showQtyModal.value = true;
       barcodeInputVal.value = '';
@@ -223,16 +230,33 @@ function onScanBarcode() {
       qty = 1;
     }
     
+    // Jika scan akan melebihi qty DO, set ke qty DO maksimal
     if (currentScan + qty > maxQty) {
-      scanFeedback.value = `❌ Qty scan tidak boleh lebih dari ${maxQty}`;
-      scanFeedbackClass.value = 'text-red-600';
-      barcodeInputVal.value = '';
-      nextTick(() => barcodeInput.value?.focus());
-      return;
+      const remainingQty = maxQty - currentScan;
+      if (remainingQty <= 0) {
+        scanFeedback.value = `❌ Qty scan sudah mencapai maksimal (${maxQty})`;
+        scanFeedbackClass.value = 'text-red-600';
+        barcodeInputVal.value = '';
+        nextTick(() => barcodeInput.value?.focus());
+        return;
+      }
+      // Set qty scan ke maksimal yang diizinkan
+      qty = remainingQty;
     }
     item.qty_scan = currentScan + qty;
-    scanFeedback.value = `✔️ ${item.item_name} (${item.qty_scan.toFixed(2)}/${item.qty_packing_list})`;
-    scanFeedbackClass.value = Number(item.qty_scan).toFixed(2) === Number(item.qty_packing_list).toFixed(2) ? 'text-green-700' : (Number(item.qty_scan) > Number(item.qty_packing_list) ? 'text-red-700' : 'text-yellow-700');
+    const isExact = Number(item.qty_scan).toFixed(2) === Number(item.qty_packing_list).toFixed(2);
+    const isOver = Number(item.qty_scan) > Number(item.qty_packing_list);
+    
+    if (isExact) {
+      scanFeedback.value = `✅ ${item.item_name} (${item.qty_scan.toFixed(2)}/${item.qty_packing_list}) - LENGKAP!`;
+      scanFeedbackClass.value = 'text-green-700';
+    } else if (isOver) {
+      scanFeedback.value = `⚠️ ${item.item_name} (${item.qty_scan.toFixed(2)}/${item.qty_packing_list}) - LEBIH!`;
+      scanFeedbackClass.value = 'text-red-700';
+    } else {
+      scanFeedback.value = `✔️ ${item.item_name} (${item.qty_scan.toFixed(2)}/${item.qty_packing_list})`;
+      scanFeedbackClass.value = 'text-yellow-700';
+    }
   } else {
     scanFeedback.value = '❌ Barcode tidak ditemukan di DO!';
     scanFeedbackClass.value = 'text-red-600';
@@ -262,8 +286,20 @@ function confirmQtyModal() {
   
   item.qty_scan = currentScan + inputQty;
   showQtyModal.value = false;
-  scanFeedback.value = `✔️ ${item.item_name} (${item.qty_scan.toFixed(2)}/${item.qty_packing_list})`;
-  scanFeedbackClass.value = Number(item.qty_scan).toFixed(2) === Number(item.qty_packing_list).toFixed(2) ? 'text-green-700' : (Number(item.qty_scan) > Number(item.qty_packing_list) ? 'text-red-700' : 'text-yellow-700');
+  
+  const isExact = Number(item.qty_scan).toFixed(2) === Number(item.qty_packing_list).toFixed(2);
+  const isOver = Number(item.qty_scan) > Number(item.qty_packing_list);
+  
+  if (isExact) {
+    scanFeedback.value = `✅ ${item.item_name} (${item.qty_scan.toFixed(2)}/${item.qty_packing_list}) - LENGKAP!`;
+    scanFeedbackClass.value = 'text-green-700';
+  } else if (isOver) {
+    scanFeedback.value = `⚠️ ${item.item_name} (${item.qty_scan.toFixed(2)}/${item.qty_packing_list}) - LEBIH!`;
+    scanFeedbackClass.value = 'text-red-700';
+  } else {
+    scanFeedback.value = `✔️ ${item.item_name} (${item.qty_scan.toFixed(2)}/${item.qty_packing_list})`;
+    scanFeedbackClass.value = 'text-yellow-700';
+  }
   nextTick(() => barcodeInput.value?.focus());
 }
 

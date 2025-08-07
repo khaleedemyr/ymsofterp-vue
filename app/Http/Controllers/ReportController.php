@@ -495,8 +495,11 @@ class ReportController extends Controller
                 ) as line_total")
             );
 
-        if ($request->filled('tanggal')) {
-            $query->whereDate('gr.receive_date', $request->tanggal);
+        if ($request->filled('from')) {
+            $query->whereDate('gr.receive_date', '>=', $request->from);
+        }
+        if ($request->filled('to')) {
+            $query->whereDate('gr.receive_date', '<=', $request->to);
         }
 
         $report = $query->groupBy('o.nama_outlet')
@@ -506,7 +509,8 @@ class ReportController extends Controller
         return Inertia::render('Report/ReportSalesPivotSpecial', [
             'report' => $report,
             'filters' => [
-                'tanggal' => $request->tanggal,
+                'from' => $request->from,
+                'to' => $request->to,
             ],
         ]);
     }
@@ -514,10 +518,11 @@ class ReportController extends Controller
     public function exportSalesPivotSpecial(Request $request)
     {
         try {
-            $tanggal = $request->input('tanggal');
+            $from = $request->input('from');
+            $to = $request->input('to');
             
-            if (!$tanggal) {
-                return response()->json(['error' => 'Tanggal harus diisi'], 400);
+            if (!$from || !$to) {
+                return response()->json(['error' => 'Rentang tanggal harus diisi'], 400);
             }
             
             $query = DB::table('outlet_food_good_receives as gr')
@@ -550,13 +555,14 @@ class ReportController extends Controller
                     ) as line_total")
                 );
 
-            $query->whereDate('gr.receive_date', $tanggal);
+            $query->whereDate('gr.receive_date', '>=', $from);
+            $query->whereDate('gr.receive_date', '<=', $to);
 
             $report = $query->groupBy('o.nama_outlet')
                 ->orderBy('o.nama_outlet')
                 ->get();
 
-            return new SalesPivotSpecialExport($report, $tanggal);
+            return new SalesPivotSpecialExport($report, $from . ' - ' . $to);
             
         } catch (\Exception $e) {
             \Log::error('Export error: ' . $e->getMessage());
@@ -705,7 +711,8 @@ class ReportController extends Controller
     {
         $request->validate([
             'outlet' => 'required|string',
-            'tanggal' => 'required|date',
+            'from' => 'required|date',
+            'to' => 'required|date',
         ]);
         $items = DB::table('outlet_food_good_receives as gr')
             ->join('outlet_food_good_receive_items as i', 'gr.id', '=', 'i.outlet_food_good_receive_id')
@@ -721,7 +728,8 @@ class ReportController extends Controller
             })
             ->join('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
             ->where('o.nama_outlet', $request->outlet)
-            ->whereDate('gr.receive_date', $request->tanggal)
+            ->whereDate('gr.receive_date', '>=', $request->from)
+            ->whereDate('gr.receive_date', '<=', $request->to)
             ->select(
                 'cat.name as category',
                 'sc.name as sub_category',

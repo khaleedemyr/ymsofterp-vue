@@ -109,7 +109,11 @@ async function fetchItemsByFOSchedule(foScheduleId) {
   try {
     console.log('DEBUG region_id', region_id.value, 'outlet_id', outlet_id.value);
     const res = await axios.get(`/api/items/by-fo-schedule/${foScheduleId}`, {
-      params: { region_id: region_id.value, outlet_id: outlet_id.value }
+      params: { 
+        region_id: region_id.value, 
+        outlet_id: outlet_id.value,
+        exclude_supplier: true
+      }
     });
     itemsByFOSchedule.value = res.data.items || [];
     // Log hasil fetch
@@ -485,7 +489,8 @@ async function checkFOSchedule() {
         const res = await axios.get('/api/items/by-fo-khusus', {
           params: {
             region_id: region_id.value,
-            outlet_id: outlet_id.value
+            outlet_id: outlet_id.value,
+            exclude_supplier: true
           }
         });
         itemsByFOSchedule.value = res.data.items || [];
@@ -663,7 +668,8 @@ watch(selectedFOMode, async (val) => {
       const res = await axios.get('/api/items/by-fo-khusus', {
         params: {
           region_id: region_id.value,
-          outlet_id: outlet_id.value
+          outlet_id: outlet_id.value,
+          exclude_supplier: true
         }
       });
       itemsByFOSchedule.value = res.data.items || [];

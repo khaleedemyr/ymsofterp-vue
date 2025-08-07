@@ -1314,6 +1314,7 @@ $bomItems = \App\Models\Item::whereIn('id', $bomMaterialIds)->get();
         ]);
         $region_id = request('region_id');
         $outlet_id = request('outlet_id');
+        $exclude_supplier = request('exclude_supplier', false);
         $foSchedule = \App\Models\FOSchedule::with('warehouseDivisions')->findOrFail($fo_schedule_id);
         $warehouseDivisionIds = $foSchedule->warehouseDivisions->pluck('id');
         $itemIds = \App\Models\Item::whereIn('warehouse_division_id', $warehouseDivisionIds)
@@ -1343,6 +1344,20 @@ $bomItems = \App\Models\Item::whereIn('id', $bomMaterialIds)->get();
             'outlet_id' => $outlet_id,
             'availableItemIds' => $availableItemIds
         ]);
+        
+        // Jika exclude_supplier true, kecualikan item yang ada di item_suppliers
+        if ($exclude_supplier) {
+            $supplierItemIds = \DB::table('item_suppliers')
+                ->where('status', 'active')
+                ->pluck('item_id')
+                ->unique();
+            $availableItemIds = $availableItemIds->diff($supplierItemIds);
+            \Log::info('FO getByFOSchedule exclude supplier', [
+                'supplierItemIds' => $supplierItemIds,
+                'availableItemIds_after_exclude' => $availableItemIds
+            ]);
+        }
+        
         $items = Item::whereIn('id', $availableItemIds)
             ->with(['category', 'mediumUnit'])
             ->get()
@@ -1396,6 +1411,7 @@ $bomItems = \App\Models\Item::whereIn('id', $bomMaterialIds)->get();
         \Log::info('MASUK getByFOKhusus');
         $region_id = $request->region_id;
         $outlet_id = $request->outlet_id;
+        $exclude_supplier = $request->exclude_supplier ?? false;
 
         // Ambil item_id dari item_availabilities yang aktif
         $itemIds = \DB::table('item_availabilities')
@@ -1415,6 +1431,19 @@ $bomItems = \App\Models\Item::whereIn('id', $bomMaterialIds)->get();
             ->pluck('item_id')
             ->unique();
 
+        // Jika exclude_supplier true, kecualikan item yang ada di item_suppliers
+        if ($exclude_supplier) {
+            $supplierItemIds = \DB::table('item_suppliers')
+                ->where('status', 'active')
+                ->pluck('item_id')
+                ->unique();
+            $itemIds = $itemIds->diff($supplierItemIds);
+            \Log::info('FO Khusus exclude supplier', [
+                'supplierItemIds' => $supplierItemIds,
+                'itemIds_after_exclude' => $itemIds
+            ]);
+        }
+        
         // Ambil item yang status=active dan punya warehouse_division
         $items = \App\Models\Item::whereIn('id', $itemIds)
             ->where('status', 'active')
@@ -1986,13 +2015,12 @@ $bomItems = \App\Models\Item::whereIn('id', $bomMaterialIds)->get();
                           ->orWhere('sku', 'like', "%{$q}%");
                 });
 
-            if ($excludeSupplier && $outletId) {
-                $query->whereNotExists(function($sub) use ($outletId) {
+            if ($excludeSupplier) {
+                $query->whereNotExists(function($sub) {
                     $sub->select(\DB::raw(1))
-                        ->from('item_supplier')
-                        ->join('item_supplier_outlet', 'item_supplier.id', '=', 'item_supplier_outlet.item_supplier_id')
-                        ->whereRaw('items.id = item_supplier.item_id')
-                        ->where('item_supplier_outlet.outlet_id', $outletId);
+                        ->from('item_suppliers')
+                        ->whereRaw('items.id = item_suppliers.item_id')
+                        ->where('item_suppliers.status', 'active');
                 });
             }
 

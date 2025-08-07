@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { router } from '@inertiajs/vue3';
 import Swal from 'sweetalert2';
@@ -9,12 +9,13 @@ import dayjs from 'dayjs';
 const props = defineProps({
   user: Object,
   packingLists: Object,
+  filters: Object,
 });
 
-const search = ref('');
-const selectedStatus = ref('');
-const from = ref('');
-const to = ref('');
+const search = ref(props.filters?.search || '');
+const selectedStatus = ref(props.filters?.status || '');
+const from = ref(props.filters?.from || '');
+const to = ref(props.filters?.to || '');
 
 const showSummaryModal = ref(false);
 const summaryDate = ref(dayjs().format('YYYY-MM-DD'));
@@ -34,10 +35,40 @@ const expandedSummaryDivisions = ref(new Set());
 const exportLoading = ref(false);
 const summaryExportLoading = ref(false);
 
-function onSearchInput() {}
-function onStatusChange() {}
-function onDateChange() {}
-function goToPage(url) {}
+watch(
+  () => props.filters,
+  (filters) => {
+    search.value = filters?.search || '';
+    selectedStatus.value = filters?.status || '';
+    from.value = filters?.from || '';
+    to.value = filters?.to || '';
+  },
+  { immediate: true }
+);
+
+function debouncedSearch() {
+  router.get('/packing-list', { 
+    search: search.value, 
+    status: selectedStatus.value, 
+    from: from.value, 
+    to: to.value 
+  }, { preserveState: true, replace: true });
+}
+
+function onSearchInput() {
+  debouncedSearch();
+}
+
+function onStatusChange() {
+  debouncedSearch();
+}
+
+function onDateChange() {
+  debouncedSearch();
+}
+function goToPage(url) {
+  if (url) router.visit(url, { preserveState: true, replace: true });
+}
 function openCreate() {
   window.location.href = '/packing-list/create';
 }
