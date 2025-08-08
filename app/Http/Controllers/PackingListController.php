@@ -31,9 +31,12 @@ class PackingListController extends Controller
     public function create()
     {
         // Ambil semua FO yang approved
-        $floorOrders = FoodFloorOrder::where('status', 'approved')
+        $floorOrders = FoodFloorOrder::where('food_floor_orders.status', 'approved')
             ->with(['outlet', 'user', 'items.item.smallUnit', 'items.item.mediumUnit', 'items.item.largeUnit', 'warehouseDivisions', 'warehouseOutlet'])
-            ->orderByDesc('created_at')
+            ->join('tbl_data_outlet', 'food_floor_orders.id_outlet', '=', 'tbl_data_outlet.id_outlet')
+            ->orderBy('food_floor_orders.tanggal', 'desc')
+            ->orderBy('tbl_data_outlet.nama_outlet')
+            ->select('food_floor_orders.*')
             ->get();
 
         // Filter FO yang masih memiliki item yang belum di-packing untuk setiap warehouse division
