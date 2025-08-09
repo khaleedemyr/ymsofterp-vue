@@ -65,48 +65,7 @@ function goToPage(url) {
   if (url) router.visit(url, { preserveState: true, replace: true });
 }
 function openCreate() {
-  // Cek jadwal PR Foods (15:00 hari ini - 10:00 besok)
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const tomorrow = new Date(today);
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  
-  const startTime = new Date(today);
-  startTime.setHours(15, 0, 0, 0); // 15:00 hari ini
-  
-  const endTime = new Date(tomorrow);
-  endTime.setHours(10, 0, 0, 0); // 10:00 besok
-  
-  // Cek apakah sekarang dalam jadwal yang diizinkan
-  if (now >= startTime && now <= endTime) {
-    router.visit('/pr-foods/create');
-  } else {
-    // Format waktu untuk display
-    const formatTime = (date) => {
-      return date.toLocaleTimeString('id-ID', { 
-        hour: '2-digit', 
-        minute: '2-digit',
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric'
-      });
-    };
-    
-    Swal.fire({
-      icon: 'warning',
-      title: 'Di Luar Jadwal',
-      html: `
-        <div class="text-left">
-          <p class="mb-3">Jadwal pembuatan PR Foods:</p>
-          <p class="mb-2"><strong>Buka:</strong> ${formatTime(startTime)}</p>
-          <p class="mb-2"><strong>Tutup:</strong> ${formatTime(endTime)}</p>
-          <p class="mt-3 text-sm text-gray-600">Silakan buat PR Foods pada jadwal yang ditentukan.</p>
-        </div>
-      `,
-      confirmButtonColor: '#3085d6',
-      confirmButtonText: 'OK'
-    });
-  }
+  router.visit('/pr-foods/create');
 }
 function openEdit(id) {
   router.visit(`/pr-foods/${id}/edit`);
@@ -154,15 +113,9 @@ async function hapus(pr) {
             </div>
           </div>
         </div>
-        <button 
-          @click="openCreate" 
-          :class="[
-            'px-4 py-2 rounded-xl shadow-lg transition-all font-semibold',
-            scheduleInfo.isWithinSchedule 
-              ? 'bg-gradient-to-r from-blue-500 to-blue-700 text-white hover:shadow-2xl' 
-              : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-          ]"
-          :disabled="!scheduleInfo.isWithinSchedule"
+        <button
+          @click="openCreate"
+          class="px-4 py-2 rounded-xl shadow-lg transition-all font-semibold bg-gradient-to-r from-blue-500 to-blue-700 text-white hover:shadow-2xl"
         >
           <i class="fa fa-clock mr-2"></i> + Buat PR Foods Baru
         </button>
