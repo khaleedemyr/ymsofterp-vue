@@ -2,14 +2,13 @@
 
 namespace App\Exports;
 
-use Maatwebsite\Excel\Concerns\FromGenerator;
+use Maatwebsite\Excel\Concerns\FromArray;
 use Maatwebsite\Excel\Concerns\WithHeadings;
 use Maatwebsite\Excel\Concerns\WithStyles;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 use Maatwebsite\Excel\Concerns\WithColumnWidths;
-use Generator;
 
-class UnpickedFloorOrdersExport implements FromGenerator, WithHeadings, WithStyles, WithColumnWidths
+class UnpickedFloorOrdersExport implements FromArray, WithHeadings, WithStyles, WithColumnWidths
 {
     protected $data;
 
@@ -18,11 +17,9 @@ class UnpickedFloorOrdersExport implements FromGenerator, WithHeadings, WithStyl
         $this->data = $data;
     }
 
-    public function generator(): Generator
+    public function array(): array
     {
-        foreach ($this->data as $row) {
-            yield $row;
-        }
+        return $this->data ?? [];
     }
 
     public function headings(): array
@@ -42,8 +39,8 @@ class UnpickedFloorOrdersExport implements FromGenerator, WithHeadings, WithStyl
 
     public function styles(Worksheet $sheet)
     {
+        // Hanya style header; styling range dilakukan minimal untuk hindari error versi library
         return [
-            // Style the first row as bold text
             1 => [
                 'font' => [
                     'bold' => true,
@@ -55,19 +52,6 @@ class UnpickedFloorOrdersExport implements FromGenerator, WithHeadings, WithStyl
                 ],
                 'alignment' => [
                     'horizontal' => \PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER,
-                ],
-            ],
-            // Style all data rows
-            'A:I' => [
-                'alignment' => [
-                    'horizontal' => \PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_LEFT,
-                    'vertical' => \PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_CENTER,
-                ],
-                'borders' => [
-                    'allBorders' => [
-                        'borderStyle' => \PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN,
-                        'color' => ['rgb' => 'D1D5DB'],
-                    ],
                 ],
             ],
         ];

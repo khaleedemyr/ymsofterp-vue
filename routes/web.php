@@ -927,6 +927,9 @@ Route::get('/item-engineering', function () {
     return Inertia::render('Report/ItemEngineering');
 })->middleware(['auth']);
 
+    // Attendance Report per Outlet (summary)
+    Route::get('/attendance-report/outlet-summary', [AttendanceReportController::class, 'outletSummary'])->name('attendance-report.outlet-summary');
+
 Route::get('/users/dropdown-data', [UserController::class, 'getDropdownData'])->name('users.dropdown-data');
 
 Route::resource('users', UserController::class);

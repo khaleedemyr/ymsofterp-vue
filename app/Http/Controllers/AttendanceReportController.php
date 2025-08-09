@@ -943,4 +943,214 @@ class AttendanceReportController extends Controller
         $export->fileName = $fileName;
         return $export;
     }
+
+    // Ringkasan telat dan lembur per outlet dalam periode
+    public function outletSummary(Request $request)
+    {
+        $outletId = $request->input('outlet_id');
+        $divisionId = $request->input('division_id');
+        $bulan = $request->input('bulan') ?: date('m');
+        $tahun = $request->input('tahun') ?: date('Y');
+
+        $start = date('Y-m-d', strtotime("$tahun-$bulan-26 -1 month"));
+        $end = date('Y-m-d', strtotime("$tahun-$bulan-25"));
+
+        // Ambil raw scan data
+        $sub = DB::table('att_log as a')
+            ->join('tbl_data_outlet as o', 'a.sn', '=', 'o.sn')
+            ->join('user_pins as up', function($q) {
+                $q->on('a.pin', '=', 'up.pin')->on('o.id_outlet', '=', 'up.outlet_id');
+            })
+            ->join('users as u', 'up.user_id', '=', 'u.id')
+            ->select(
+                'a.scan_date',
+                'a.inoutmode',
+                'u.id as user_id',
+                'u.nama_lengkap',
+                'o.id_outlet',
+                'o.nama_outlet'
+            )
+            ->whereBetween(DB::raw('DATE(a.scan_date)'), [$start, $end]);
+        if (!empty($outletId)) {
+            $sub->where('o.id_outlet', $outletId);
+        }
+        if (!empty($divisionId)) {
+            $sub->where('u.division_id', $divisionId);
+        }
+        $rawData = $sub->orderBy('a.scan_date')->get();
+
+        // Proses data pairing IN/OUT dan cross-day seperti di index()
+        $processedData = [];
+        foreach ($rawData as $scan) {
+            $date = date('Y-m-d', strtotime($scan->scan_date));
+            $key = $scan->user_id . '_' . $scan->id_outlet . '_' . $date;
+            if (!isset($processedData[$key])) {
+                $processedData[$key] = [
+                    'tanggal' => $date,
+                    'user_id' => $scan->user_id,
+                    'nama_lengkap' => $scan->nama_lengkap,
+                    'id_outlet' => $scan->id_outlet,
+                    'nama_outlet' => $scan->nama_outlet,
+                    'scans' => []
+                ];
+            }
+            $processedData[$key]['scans'][] = [
+                'scan_date' => $scan->scan_date,
+                'inoutmode' => $scan->inoutmode
+            ];
+        }
+
+        // Step 2: tentukan jam_masuk/jam_keluar
+        $finalData = [];
+        foreach ($processedData as $key => $data) {
+            $scans = collect($data['scans'])->sortBy('scan_date');
+            $inScans = $scans->where('inoutmode', 1);
+            $outScans = $scans->where('inoutmode', 2);
+            $jamMasuk = $inScans->first()['scan_date'] ?? null;
+            $jamKeluar = null;
+            $isCrossDay = false;
+            if ($jamMasuk) {
+                $sameDayOut = $outScans->where('scan_date', '>', $jamMasuk)->first();
+                if ($sameDayOut) {
+                    $jamKeluar = $sameDayOut['scan_date'];
+                    $isCrossDay = false;
+                } else {
+                    $nextDay = date('Y-m-d', strtotime($data['tanggal'] . ' +1 day'));
+                    $nextDayKey = $data['user_id'] . '_' . $data['id_outlet'] . '_' . $nextDay;
+                    if (isset($processedData[$nextDayKey])) {
+                        $nextDayScans = collect($processedData[$nextDayKey]['scans'])->sortBy('scan_date');
+                        $nextDayOut = $nextDayScans->where('inoutmode', 2)->first();
+                        if ($nextDayOut) {
+                            $jamKeluar = $nextDayOut['scan_date'];
+                            $isCrossDay = true;
+                            // Hapus OUT di hari berikutnya seperti index()
+                            $processedData[$nextDayKey]['scans'] = $nextDayScans->where('inoutmode', '!=', 2)->values()->toArray();
+                        }
+                    }
+                }
+            }
+            $finalData[] = [
+                'tanggal' => $data['tanggal'],
+                'user_id' => $data['user_id'],
+                'nama_lengkap' => $data['nama_lengkap'],
+                'id_outlet' => $data['id_outlet'],
+                'nama_outlet' => $data['nama_outlet'],
+                'jam_masuk' => $jamMasuk,
+                'jam_keluar' => $jamKeluar,
+                'total_masuk' => $inScans->count(),
+                'total_keluar' => $outScans->count(),
+                'is_cross_day' => $isCrossDay,
+            ];
+        }
+
+        $dataRows = collect($finalData);
+
+        // Index data by tanggal & outlet sama seperti index()
+        $indexedData = [];
+        foreach ($dataRows as $row) {
+            $key = $row['tanggal'] . '_' . $row['id_outlet'];
+            if (!isset($indexedData[$key])) $indexedData[$key] = [];
+            $indexedData[$key][] = $row;
+        }
+
+        // Build period tanggal
+        $period = [];
+        $dt = new \DateTime($start);
+        $dtEnd = new \DateTime($end);
+        while ($dt <= $dtEnd) { $period[] = $dt->format('Y-m-d'); $dt->modify('+1 day'); }
+
+        // Ambil seluruh outlet
+        $allOutlets = DB::table('tbl_data_outlet')->select('id_outlet', 'nama_outlet')->get();
+
+        // Flatten sesuai tanggal x outlet
+        $flatten = [];
+        foreach ($period as $tgl) {
+            foreach ($allOutlets as $o) {
+                $key = $tgl . '_' . $o->id_outlet;
+                if (isset($indexedData[$key])) {
+                    foreach ($indexedData[$key] as $row) { $flatten[] = (object)$row; }
+                }
+            }
+        }
+        $dataRows = collect($flatten);
+
+        // Ambil libur
+        $holidays = DB::table('tbl_kalender_perusahaan')
+            ->whereBetween('tgl_libur', [$start, $end])
+            ->pluck('keterangan', 'tgl_libur');
+
+        // Hitung telat/lembur persis seperti index()
+        $rows = collect();
+        foreach ($period as $tanggal) {
+            $dayData = $dataRows->where('tanggal', $tanggal);
+            if ($dayData->count() > 0) {
+                foreach ($dayData as $row) {
+                    $jam_masuk = $row->jam_masuk ? date('H:i:s', strtotime($row->jam_masuk)) : null;
+                    $jam_keluar = $row->jam_keluar ? date('H:i:s', strtotime($row->jam_keluar)) : null;
+                    $telat = 0; $lembur = 0; $is_off = false; $shift_name = null;
+                    $shift = DB::table('user_shifts as us')
+                        ->leftJoin('shifts as s', 'us.shift_id', '=', 's.id')
+                        ->where('us.user_id', $row->user_id)
+                        ->where('us.tanggal', $tanggal)
+                        ->where('us.outlet_id', $row->id_outlet)
+                        ->select('s.time_start', 's.time_end', 's.shift_name', 'us.shift_id')
+                        ->first();
+                    if ($shift) {
+                        $shift_name = $shift->shift_name;
+                        if (is_null($shift->shift_id) || (strtolower($shift->shift_name ?? '') === 'off')) { $is_off = true; }
+                    }
+                    if (!$is_off) {
+                        if ($shift && $shift->time_start && $jam_masuk) {
+                            $startTs = strtotime($shift->time_start);
+                            $masukTs = strtotime($jam_masuk);
+                            $diff = $masukTs - $startTs; $telat = $diff > 0 ? round($diff/60) : 0;
+                        }
+                        if ($shift && $shift->time_end && $jam_keluar) {
+                            $shiftEndDateTime = date('Y-m-d', strtotime($tanggal)) . ' ' . $shift->time_end;
+                            $scanOutDateTime = $row->jam_keluar;
+                            $endTs = strtotime($shiftEndDateTime); $outTs = strtotime($scanOutDateTime);
+                            $diff = $outTs - $endTs; $lembur = $diff > 0 ? floor($diff/3600) : 0;
+                        }
+                    } else { $jam_masuk = null; $jam_keluar = null; $telat = 0; $lembur = 0; }
+
+                    $rows->push((object) [
+                        'tanggal' => $tanggal,
+                        'outlet_id' => $row->id_outlet,
+                        'nama_outlet' => $row->nama_outlet,
+                        'telat' => $telat,
+                        'lembur' => $lembur,
+                        'is_off' => $is_off,
+                        'is_holiday' => $holidays->has($tanggal),
+                    ]);
+                }
+            }
+        }
+
+        $byOutlet = $rows->groupBy('outlet_id')->map(function($g) {
+            $first = $g->first();
+            return [
+                'outlet_id' => $first->outlet_id ?? null,
+                'nama_outlet' => $first->nama_outlet ?? '-',
+                'total_telat' => $g->where('is_off', false)->sum('telat'),
+                'total_lembur' => $g->where('is_off', false)->sum('lembur'),
+            ];
+        })->values()->sortBy('nama_outlet')->values();
+
+        // Dropdowns
+        $outlets = DB::table('tbl_data_outlet')->select('id_outlet as id', 'nama_outlet as name')->orderBy('nama_outlet')->get();
+        $divisions = DB::table('tbl_data_divisi')->select('id', 'nama_divisi as name')->orderBy('nama_divisi')->get();
+
+        return Inertia::render('AttendanceReport/OutletSummary', [
+            'rows' => $byOutlet,
+            'outlets' => $outlets,
+            'divisions' => $divisions,
+            'filter' => [
+                'outlet_id' => $outletId,
+                'division_id' => $divisionId,
+                'bulan' => $bulan,
+                'tahun' => $tahun,
+            ],
+            'period' => [ 'start' => $start, 'end' => $end ],
+        ]);
+    }
 } 
