@@ -18,13 +18,11 @@ const canApproveSSD = computed(() =>
   && props.prFood.status === 'draft'
   && !props.prFood.ssd_manager_approved_at
 );
-const canApproveCOO = computed(() =>
-  ((user?.id_jabatan === 154 && user?.status === 'A') || isSuperadmin.value)
-  && props.prFood.status === 'draft'
-  && props.prFood.ssd_manager_approved_at
-);
+// COO approval dihilangkan
+const canApproveCOO = computed(() => false);
 
 const ssdNote = ref('');
+// COO note tidak digunakan lagi
 const cooNote = ref('');
 
 async function approveSSD(approved) {
@@ -45,23 +43,7 @@ async function approveSSD(approved) {
   }
 }
 
-async function approveCOO(approved) {
-  const { value: note } = await Swal.fire({
-    title: approved ? 'Approve PR?' : 'Reject PR?',
-    input: 'textarea',
-    inputLabel: 'Catatan (opsional)',
-    inputValue: '',
-    showCancelButton: true,
-    confirmButtonText: approved ? 'Approve' : 'Reject',
-    cancelButtonText: 'Batal',
-  });
-  if (note !== undefined) {
-    router.post(route('pr-foods.approve-vice-coo', props.prFood.id), {
-      approved,
-      vice_coo_note: note,
-    });
-  }
-}
+// Fungsi approve COO dihapus (tidak digunakan)
 </script>
 <template>
   <AppLayout>
@@ -125,24 +107,12 @@ async function approveCOO(approved) {
           </span>
           <span v-else class="text-gray-500">Belum di-approve</span>
         </div>
-        <div class="mb-2">
-          <b>Vice COO:</b>
-          <span v-if="prFood.vice_coo_approved_at">
-            <span class="text-green-600 font-semibold">Approved</span>
-            oleh <b>{{ prFood.vice_coo?.nama_lengkap || prFood.vice_coo_approved_by }}</b>
-            pada {{ new Date(prFood.vice_coo_approved_at).toLocaleString('id-ID') }}
-            <span v-if="prFood.vice_coo_note">- Note: {{ prFood.vice_coo_note }}</span>
-          </span>
-          <span v-else class="text-gray-500">Belum di-approve</span>
-        </div>
+        <!-- Bagian Vice COO dihilangkan -->
         <div v-if="canApproveSSD">
           <button @click="approveSSD(true)" class="px-4 py-2 rounded bg-green-600 text-white font-semibold hover:bg-green-700 mr-2">Approve (SSD Manager)</button>
           <button @click="approveSSD(false)" class="px-4 py-2 rounded bg-red-600 text-white font-semibold hover:bg-red-700">Reject</button>
         </div>
-        <div v-if="canApproveCOO">
-          <button @click="approveCOO(true)" class="px-4 py-2 rounded bg-green-600 text-white font-semibold hover:bg-green-700 mr-2">Approve (Vice COO)</button>
-          <button @click="approveCOO(false)" class="px-4 py-2 rounded bg-red-600 text-white font-semibold hover:bg-red-700">Reject</button>
-        </div>
+        <!-- Tombol approval Vice COO dihilangkan -->
       </div>
     </div>
   </AppLayout>

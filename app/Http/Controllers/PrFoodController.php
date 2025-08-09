@@ -229,9 +229,7 @@ class PrFoodController extends Controller
             'ssd_manager_approved_by' => Auth::id(),
             'ssd_manager_note' => $request->ssd_manager_note,
         ];
-        if (!$request->approved) {
-            $updateData['status'] = 'rejected';
-        }
+        $updateData['status'] = $request->approved ? 'approved' : 'rejected';
         $prFood->update($updateData);
         ActivityLog::create([
             'user_id' => Auth::id(),
@@ -247,13 +245,15 @@ class PrFoodController extends Controller
         $requester = $prFood->requester->nama_lengkap ?? '-';
         $warehouse = $prFood->warehouse->name ?? '-';
         if ($request->approved) {
-            // Notifikasi ke Vice COO
-            $viceCoos = DB::table('users')->where('id_jabatan', 154)->where('status', 'A')->pluck('id');
+            // Jika approved oleh SSD Manager, langsung info Purchasing untuk proses PO
+            $adminPurchasing = DB::table('users')->where('id_jabatan', 244)->where('status', 'A')->pluck('id');
+            $purchasingManagers = DB::table('users')->where('id_jabatan', 168)->where('status', 'A')->pluck('id');
+            $userIds = $adminPurchasing->merge($purchasingManagers);
             $this->sendNotification(
-                $viceCoos,
-                'pr_approval',
-                'Approval PR Foods',
-                "PR $no_pr dari $requester ($warehouse) sudah di-approve SSD Manager, menunggu approval Anda.",
+                $userIds,
+                'pr_po',
+                'Pembuatan PO',
+                "PR $no_pr dari $requester ($warehouse) sudah di-approve SSD Manager, silakan buat PO.",
                 route('pr-foods.show', $prFood->id)
             );
         } else {
