@@ -10,6 +10,7 @@ use App\Models\StockCard;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 
 class WarehouseSaleController extends Controller
@@ -33,6 +34,9 @@ class WarehouseSaleController extends Controller
 
     public function store(Request $request)
     {
+        Log::info('WarehouseSaleController@store START', [
+            'payload' => $request->all()
+        ]);
         $validated = $request->validate([
             'source_warehouse_id' => 'required|exists:warehouses,id',
             'target_warehouse_id' => 'required|exists:warehouses,id|different:source_warehouse_id',
@@ -47,14 +51,20 @@ class WarehouseSaleController extends Controller
 
         DB::beginTransaction();
         try {
-            // Generate number
+            // Generate unique number (consider soft-deleted too)
             $prefix = 'WHS';
             $date = date('ym', strtotime($validated['date']));
-            $lastNumber = WarehouseSale::where('number', 'like', $prefix . $date . '%')
+            $lastNumber = WarehouseSale::withTrashed()
+                ->where('number', 'like', $prefix . $date . '%')
                 ->orderBy('number', 'desc')
-                ->first();
-            $sequence = $lastNumber ? (int)substr($lastNumber->number, -4) + 1 : 1;
+                ->value('number');
+            $sequence = $lastNumber ? (int)substr($lastNumber, -4) + 1 : 1;
             $number = $prefix . $date . str_pad($sequence, 4, '0', STR_PAD_LEFT);
+            // Ensure uniqueness in case of race conditions
+            while (WarehouseSale::withTrashed()->where('number', $number)->exists()) {
+                $sequence++;
+                $number = $prefix . $date . str_pad($sequence, 4, '0', STR_PAD_LEFT);
+            }
 
             // Simpan header
             $sale = WarehouseSale::create([
@@ -225,9 +235,18 @@ class WarehouseSaleController extends Controller
                 ]);
             }
             DB::commit();
+            Log::info('WarehouseSaleController@store SUCCESS', [
+                'sale_id' => $sale->id,
+                'number' => $sale->number,
+            ]);
             return redirect()->route('warehouse-sales.index')->with('success', 'Penjualan antar gudang berhasil disimpan');
         } catch (\Exception $e) {
             DB::rollBack();
+            Log::error('WarehouseSaleController@store ERROR', [
+                'message' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+            ]);
             return redirect()->back()->with('error', 'Terjadi kesalahan: ' . $e->getMessage());
         }
     }
