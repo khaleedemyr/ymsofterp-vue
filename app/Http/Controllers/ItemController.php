@@ -1358,7 +1358,7 @@ $bomItems = \App\Models\Item::whereIn('id', $bomMaterialIds)->get();
         }
         
         $items = Item::whereIn('id', $availableItemIds)
-            ->with(['category', 'mediumUnit'])
+            ->with(['category', 'mediumUnit', 'smallUnit', 'largeUnit'])
             ->get()
             ->map(function($item) use ($region_id, $outlet_id) {
                 // Ambil harga prioritas: outlet > region > all
@@ -1386,9 +1386,24 @@ $bomItems = \App\Models\Item::whereIn('id', $bomMaterialIds)->get();
                 $finalPrice = $price ? $price->price : 0;
                 // Round up to nearest 100
                 $roundedPrice = ceil($finalPrice / 100) * 100;
+                
+                \Log::info('ItemController@getByFOSchedule - Item debug', [
+                    'item_id' => $item->id,
+                    'item_name' => $item->name,
+                    'price_found' => $price ? true : false,
+                    'final_price' => $finalPrice,
+                    'rounded_price' => $roundedPrice,
+                    'unit_medium' => $item->mediumUnit ? $item->mediumUnit->name : null,
+                    'unit_small' => $item->smallUnit ? $item->smallUnit->name : null,
+                    'unit_large' => $item->largeUnit ? $item->largeUnit->name : null
+                ]);
+                
                 return array_merge($item->toArray(), [
                     'category_name' => $item->category ? $item->category->name : '-',
                     'unit_medium_name' => $item->mediumUnit ? $item->mediumUnit->name : '-',
+                    'unit_medium' => $item->mediumUnit ? $item->mediumUnit->name : '-',
+                    'unit_small' => $item->smallUnit ? $item->smallUnit->name : '-',
+                    'unit_large' => $item->largeUnit ? $item->largeUnit->name : '-',
                     'price' => $roundedPrice,
                 ]);
             });
@@ -2023,6 +2038,14 @@ $bomItems = \App\Models\Item::whereIn('id', $bomMaterialIds)->get();
 
             $region_id = $request->get('region_id');
             $outlet_id = $request->get('outlet_id');
+            
+            \Log::info('ItemController@search - Debug params', [
+                'q' => $q,
+                'outlet_id' => $outlet_id,
+                'region_id' => $region_id,
+                'exclude_supplier' => $excludeSupplier
+            ]);
+            
             $items = $query->limit(10)->get()->map(function($item) use ($region_id, $outlet_id) {
                 // Ambil harga medium (prioritas: outlet > region > all)
                 $price = \DB::table('item_prices')
@@ -2046,9 +2069,19 @@ $bomItems = \App\Models\Item::whereIn('id', $bomMaterialIds)->get();
                         ELSE 3 END")
                     ->orderByDesc('id')
                     ->first();
+                    
                 $finalPrice = $price ? $price->price : 0;
                 // Round up to nearest 100
                 $roundedPrice = ceil($finalPrice / 100) * 100;
+                
+                \Log::info('ItemController@search - Item price debug', [
+                    'item_id' => $item->id,
+                    'item_name' => $item->name,
+                    'price_found' => $price ? true : false,
+                    'final_price' => $finalPrice,
+                    'rounded_price' => $roundedPrice
+                ]);
+                
                 return [
                     'id' => $item->id,
                     'name' => $item->name,

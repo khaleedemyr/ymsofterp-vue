@@ -45,6 +45,13 @@ class PurchaseOrderFoodsController extends Controller
         return inertia('PurchaseOrder/PurchaseOrderFoods', [
             'purchaseOrders' => $purchaseOrders,
             'filters' => request()->only(['search', 'status', 'from', 'to']),
+            'user' => [
+                'id' => auth()->user()->id,
+                'id_jabatan' => auth()->user()->id_jabatan,
+                'id_role' => auth()->user()->id_role,
+                'status' => auth()->user()->status,
+                'nama_lengkap' => auth()->user()->nama_lengkap,
+            ],
         ]);
     }
 
@@ -728,5 +735,32 @@ class PurchaseOrderFoodsController extends Controller
         $po->printed_at = now();
         $po->save();
         return response()->json(['success' => true, 'printed_at' => $po->printed_at]);
+    }
+
+    // Get PO yang pending GM Finance approval
+    public function getPendingGMFINANCEPOs()
+    {
+        $pos = PurchaseOrderFood::with(['supplier', 'creator', 'items.item', 'items.unit'])
+            ->where('status', 'draft')
+            ->whereNotNull('purchasing_manager_approved_at')
+            ->whereNull('gm_finance_approved_at')
+            ->orderBy('created_at', 'desc')
+            ->get()
+            ->map(function ($po) {
+                $prItemIds = $po->items->pluck('pr_food_item_id')->toArray();
+                $prIds = \App\Models\PurchaseRequisitionFoodItem::whereIn('id', $prItemIds)->pluck('pr_food_id')->unique()->toArray();
+                $prNumbers = \App\Models\PurchaseRequisitionFood::whereIn('id', $prIds)->pluck('pr_number')->unique()->toArray();
+                $po->pr_numbers = $prNumbers;
+                
+                // Ambil warehouse dari PR pertama untuk stock fetching
+                if (!empty($prIds)) {
+                    $firstPR = \App\Models\PurchaseRequisitionFood::find($prIds[0]);
+                    $po->warehouse_outlet_id = $firstPR ? $firstPR->warehouse_id : null;
+                }
+                
+                return $po;
+            });
+
+        return response()->json($pos);
     }
 } 

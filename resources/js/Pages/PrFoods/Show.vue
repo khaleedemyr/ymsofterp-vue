@@ -13,21 +13,44 @@ const user = usePage().props.auth?.user || {};
 const isSuperadmin = computed(() =>
   user?.id_role === '5af56935b011a' && user?.status === 'A'
 );
-const canApproveSSD = computed(() =>
-  ((user?.id_jabatan === 161 && user?.status === 'A') || isSuperadmin.value)
-  && props.prFood.status === 'draft'
-  && !props.prFood.ssd_manager_approved_at
-);
+
+// Check if warehouse is MK1 or MK2
+const isMKWarehouse = computed(() => {
+  const warehouseName = props.prFood.warehouse?.name;
+  return warehouseName === 'MK1 Hot Kitchen' || warehouseName === 'MK2 Cold Kitchen';
+});
+
+// Determine who can approve based on warehouse
+const canApproveSSD = computed(() => {
+  if (isMKWarehouse.value) {
+    // For MK warehouses, Sous Chef MK (id_jabatan=179) can approve
+    return ((user?.id_jabatan === 179 && user?.status === 'A') || isSuperadmin.value)
+      && props.prFood.status === 'draft'
+      && !props.prFood.ssd_manager_approved_at;
+  } else {
+    // For other warehouses, SSD Manager (id_jabatan=161) can approve
+    return ((user?.id_jabatan === 161 && user?.status === 'A') || isSuperadmin.value)
+      && props.prFood.status === 'draft'
+      && !props.prFood.ssd_manager_approved_at;
+  }
+});
+
 // COO approval dihilangkan
 const canApproveCOO = computed(() => false);
+
+// Get approver title based on warehouse
+const getApproverTitle = computed(() => {
+  return isMKWarehouse.value ? 'Sous Chef MK' : 'SSD Manager';
+});
 
 const ssdNote = ref('');
 // COO note tidak digunakan lagi
 const cooNote = ref('');
 
 async function approveSSD(approved) {
+  const approverTitle = getApproverTitle.value;
   const { value: note } = await Swal.fire({
-    title: approved ? 'Approve PR?' : 'Reject PR?',
+    title: approved ? `Approve PR?` : `Reject PR?`,
     input: 'textarea',
     inputLabel: 'Catatan (opsional)',
     inputValue: '',
@@ -98,7 +121,7 @@ async function approveSSD(approved) {
       <div class="bg-white rounded-2xl shadow p-6 mb-6">
         <h2 class="text-lg font-bold mb-2">Approval</h2>
         <div class="mb-2">
-          <b>SSD Manager:</b>
+          <b>{{ getApproverTitle }}:</b>
           <span v-if="prFood.ssd_manager_approved_at">
             <span class="text-green-600 font-semibold">Approved</span>
             oleh <b>{{ prFood.ssd_manager?.nama_lengkap || prFood.ssd_manager_approved_by }}</b>
@@ -109,7 +132,7 @@ async function approveSSD(approved) {
         </div>
         <!-- Bagian Vice COO dihilangkan -->
         <div v-if="canApproveSSD">
-          <button @click="approveSSD(true)" class="px-4 py-2 rounded bg-green-600 text-white font-semibold hover:bg-green-700 mr-2">Approve (SSD Manager)</button>
+          <button @click="approveSSD(true)" class="px-4 py-2 rounded bg-green-600 text-white font-semibold hover:bg-green-700 mr-2">Approve ({{ getApproverTitle }})</button>
           <button @click="approveSSD(false)" class="px-4 py-2 rounded bg-red-600 text-white font-semibold hover:bg-red-700">Reject</button>
         </div>
         <!-- Tombol approval Vice COO dihilangkan -->

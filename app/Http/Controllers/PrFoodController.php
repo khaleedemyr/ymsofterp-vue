@@ -129,18 +129,38 @@ class PrFoodController extends Controller
             'new_data' => $prFood->toArray(),
         ]);
         DB::commit();
-        // Notifikasi ke SSD Manager
-        $ssdManagers = DB::table('users')->where('id_jabatan', 161)->where('status', 'A')->pluck('id');
-        $no_pr = $prFood->pr_number;
-        $requester = $prFood->requester->nama_lengkap ?? '-';
-        $warehouse = $prFood->warehouse->name ?? '-';
-        $this->sendNotification(
-            $ssdManagers,
-            'pr_approval',
-            'Approval PR Foods',
-            "PR $no_pr dari $requester ($warehouse) menunggu approval Anda.",
-            route('pr-foods.show', $prFood->id)
-        );
+        
+        // Check if warehouse is MK1 or MK2 to determine approver
+        $isMKWarehouse = in_array($prFood->warehouse->name, ['MK1 Hot Kitchen', 'MK2 Cold Kitchen']);
+        
+        if ($isMKWarehouse) {
+            // Notifikasi ke Sous Chef MK (id_jabatan=179)
+            $sousChefMK = DB::table('users')->where('id_jabatan', 179)->where('status', 'A')->pluck('id');
+            $no_pr = $prFood->pr_number;
+            $requester = $prFood->requester->nama_lengkap ?? '-';
+            $warehouse = $prFood->warehouse->name ?? '-';
+            $this->sendNotification(
+                $sousChefMK,
+                'pr_approval',
+                'Approval PR Foods',
+                "PR $no_pr dari $requester ($warehouse) menunggu approval Sous Chef MK.",
+                route('pr-foods.show', $prFood->id)
+            );
+        } else {
+            // Notifikasi ke SSD Manager (id_jabatan=161)
+            $ssdManagers = DB::table('users')->where('id_jabatan', 161)->where('status', 'A')->pluck('id');
+            $no_pr = $prFood->pr_number;
+            $requester = $prFood->requester->nama_lengkap ?? '-';
+            $warehouse = $prFood->warehouse->name ?? '-';
+            $this->sendNotification(
+                $ssdManagers,
+                'pr_approval',
+                'Approval PR Foods',
+                "PR $no_pr dari $requester ($warehouse) menunggu approval SSD Manager.",
+                route('pr-foods.show', $prFood->id)
+            );
+        }
+        
         return redirect()->route('pr-foods.index');
     }
 
@@ -224,6 +244,11 @@ class PrFoodController extends Controller
     public function approveSsdManager(Request $request, $id)
     {
         $prFood = PrFood::with(['requester', 'warehouse'])->findOrFail($id);
+        
+        // Check if warehouse is MK1 or MK2
+        $isMKWarehouse = in_array($prFood->warehouse->name, ['MK1 Hot Kitchen', 'MK2 Cold Kitchen']);
+        $approverTitle = $isMKWarehouse ? 'Sous Chef MK' : 'SSD Manager';
+        
         $updateData = [
             'ssd_manager_approved_at' => now(),
             'ssd_manager_approved_by' => Auth::id(),
@@ -231,21 +256,24 @@ class PrFoodController extends Controller
         ];
         $updateData['status'] = $request->approved ? 'approved' : 'rejected';
         $prFood->update($updateData);
+        
         ActivityLog::create([
             'user_id' => Auth::id(),
             'activity_type' => $request->approved ? 'approve' : 'reject',
             'module' => 'pr_foods',
-            'description' => ($request->approved ? 'Approve' : 'Reject') . ' PR Foods (SSD Manager): ' . $prFood->pr_number,
+            'description' => ($request->approved ? 'Approve' : 'Reject') . " PR Foods ($approverTitle): " . $prFood->pr_number,
             'ip_address' => $request->ip(),
             'user_agent' => $request->userAgent(),
             'old_data' => null,
             'new_data' => $prFood->fresh()->toArray(),
         ]);
+        
         $no_pr = $prFood->pr_number;
         $requester = $prFood->requester->nama_lengkap ?? '-';
         $warehouse = $prFood->warehouse->name ?? '-';
+        
         if ($request->approved) {
-            // Jika approved oleh SSD Manager, langsung info Purchasing untuk proses PO
+            // Jika approved, langsung info Purchasing untuk proses PO
             $adminPurchasing = DB::table('users')->where('id_jabatan', 244)->where('status', 'A')->pluck('id');
             $purchasingManagers = DB::table('users')->where('id_jabatan', 168)->where('status', 'A')->pluck('id');
             $userIds = $adminPurchasing->merge($purchasingManagers);
@@ -253,7 +281,7 @@ class PrFoodController extends Controller
                 $userIds,
                 'pr_po',
                 'Pembuatan PO',
-                "PR $no_pr dari $requester ($warehouse) sudah di-approve SSD Manager, silakan buat PO.",
+                "PR $no_pr dari $requester ($warehouse) sudah di-approve $approverTitle, silakan buat PO.",
                 route('pr-foods.show', $prFood->id)
             );
         } else {
@@ -264,7 +292,7 @@ class PrFoodController extends Controller
                 [$requestedBy],
                 'pr_rejected',
                 'PR Foods Ditolak',
-                "PR $no_pr dari $requester ($warehouse) telah ditolak oleh SSD Manager.",
+                "PR $no_pr dari $requester ($warehouse) telah ditolak oleh $approverTitle.",
                 route('pr-foods.show', $prFood->id)
             );
             \Log::info('Notif reject sent', ['user_id' => $requestedBy, 'pr_id' => $prFood->id]);

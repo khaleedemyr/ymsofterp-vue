@@ -16,6 +16,7 @@ const poList = ref([]);
 const props = defineProps({
   purchaseOrders: Object,
   filters: Object,
+  user: Object,
 });
 
 const search = ref(props.filters?.search || '');
@@ -23,8 +24,19 @@ const selectedStatus = ref(props.filters?.status || '');
 const from = ref(props.filters?.from || '');
 const to = ref(props.filters?.to || '');
 
+// Modal state untuk pending GM Finance
+const showPendingGMFinanceModal = ref(false);
+const pendingGMFINANCEPOs = ref([]);
+const loadingPendingPOs = ref(false);
+const expandedPOsInModal = ref(new Set());
+
 const debouncedSearch = debounce(() => {
-  router.get('/po-foods', { search: search.value, status: selectedStatus.value, from: from.value, to: to.value }, { preserveState: true, replace: true });
+  router.get('/po-foods', { 
+    search: search.value, 
+    status: selectedStatus.value, 
+    from: from.value, 
+    to: to.value
+  }, { preserveState: true, replace: true });
 }, 400);
 
 function onSearchInput() {
@@ -36,6 +48,43 @@ function onStatusChange() {
 function onDateChange() {
   debouncedSearch();
 }
+
+// Fetch PO yang pending GM Finance approval
+async function fetchPendingGMFINANCEPOs() {
+  try {
+    loadingPendingPOs.value = true;
+    const response = await axios.get('/api/po-foods/pending-gm-finance');
+    pendingGMFINANCEPOs.value = response.data;
+  } catch (error) {
+    console.error('Error fetching pending GM Finance POs:', error);
+    Swal.fire('Error', 'Gagal mengambil data PO pending GM Finance', 'error');
+  } finally {
+    loadingPendingPOs.value = false;
+  }
+}
+
+// Toggle modal pending GM Finance
+async function togglePendingGMFINANCEModal() {
+  showPendingGMFinanceModal.value = !showPendingGMFinanceModal.value;
+  if (showPendingGMFinanceModal.value) {
+    await fetchPendingGMFINANCEPOs();
+  }
+}
+
+// Toggle expand PO di modal
+function toggleExpandPOInModal(poId) {
+  if (expandedPOsInModal.value.has(poId)) {
+    expandedPOsInModal.value.delete(poId);
+  } else {
+    expandedPOsInModal.value.add(poId);
+    // Fetch stock when expanding
+    const po = pendingGMFINANCEPOs.value.find(p => p.id === poId);
+    if (po) {
+      fetchStockForPO(po);
+    }
+  }
+}
+
 function goToPage(url) {
   if (url) router.visit(url, { preserveState: true, replace: true });
 }
@@ -63,6 +112,142 @@ async function hapus(po) {
   router.delete(route('po-foods.destroy', po.id), {
     onSuccess: () => Swal.fire('Berhasil', 'PO berhasil dihapus!', 'success'),
   });
+}
+
+async function approveGMFinance(po) {
+  const { value: note } = await Swal.fire({
+    title: 'Approve PO?',
+    input: 'textarea',
+    inputLabel: 'Catatan (opsional)',
+    inputValue: '',
+    showCancelButton: true,
+    confirmButtonText: 'Approve',
+    cancelButtonText: 'Batal',
+  });
+  
+  if (note !== undefined) {
+    try {
+      const response = await axios.post(route('po-foods.approve-gm-finance', po.id), { 
+        approved: true, 
+        note 
+      });
+      if (response.data.success) {
+        await Swal.fire({
+          icon: 'success',
+          title: 'Berhasil',
+          text: 'PO berhasil diapprove!',
+        });
+        // Refresh modal data
+        await fetchPendingGMFINANCEPOs();
+      }
+    } catch (e) {
+      Swal.fire('Gagal', 'Terjadi kesalahan saat approve', 'error');
+    }
+  }
+}
+
+async function rejectGMFinance(po) {
+  const { value: note } = await Swal.fire({
+    title: 'Reject PO?',
+    input: 'textarea',
+    inputLabel: 'Catatan (opsional)',
+    inputValue: '',
+    showCancelButton: true,
+    confirmButtonText: 'Reject',
+    cancelButtonText: 'Batal',
+  });
+  
+  if (note !== undefined) {
+    try {
+      const response = await axios.post(route('po-foods.approve-gm-finance', po.id), { 
+        approved: false, 
+        note 
+      });
+      if (response.data.success) {
+        await Swal.fire({
+          icon: 'success',
+          title: 'Berhasil',
+          text: 'PO berhasil direject!',
+        });
+        // Refresh modal data
+        await fetchPendingGMFINANCEPOs();
+      }
+    } catch (e) {
+      Swal.fire('Gagal', 'Terjadi kesalahan saat reject', 'error');
+    }
+  }
+}
+
+// Fetch stock untuk item PO
+async function fetchStockForPO(po) {
+  if (!po.items || po.items.length === 0) return;
+  
+  try {
+    const stockPromises = po.items.map(async (item) => {
+      if (!item.item_id || !po.warehouse_outlet_id) return item;
+      
+      const response = await axios.get('/api/inventory/stock', {
+        params: { 
+          item_id: item.item_id, 
+          warehouse_id: po.warehouse_outlet_id 
+        }
+      });
+      
+      return {
+        ...item,
+        stock: response.data
+      };
+    });
+    
+    const itemsWithStock = await Promise.all(stockPromises);
+    po.items_with_stock = itemsWithStock;
+  } catch (error) {
+    console.error('Error fetching stock for PO:', error);
+  }
+}
+
+// Format stock display seperti di PR Foods
+function formatStockDisplay(stock) {
+  if (!stock) return 'Stok: 0';
+  
+  const parts = [];
+  if (stock.qty_small !== undefined && stock.qty_small > 0) {
+    parts.push(`${Number(stock.qty_small).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${stock.unit_small || ''}`);
+  }
+  if (stock.qty_medium !== undefined && stock.qty_medium > 0) {
+    parts.push(`${Number(stock.qty_medium).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${stock.unit_medium || ''}`);
+  }
+  if (stock.qty_large !== undefined && stock.qty_large > 0) {
+    parts.push(`${Number(stock.qty_large).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${stock.unit_large || ''}`);
+  }
+  
+  return parts.length > 0 ? `Stok: ${parts.join(' | ')}` : 'Stok: 0';
+}
+
+// Check if user can approve GM Finance
+function canApproveGMFinance() {
+  return (props.user?.id_jabatan === 152 && props.user?.status === 'A') || 
+         (props.user?.id_role === '5af56935b011a' && props.user?.status === 'A');
+}
+
+// Helper functions for formatting and calculations
+function formatRupiah(value) {
+  if (typeof value !== 'number') value = Number(value) || 0;
+  return 'Rp ' + value.toLocaleString('id-ID');
+}
+
+function calculateTotal(po) {
+  if (!po.items) return 0;
+  return po.items.reduce((sum, item) => sum + (Number(item.total) || 0), 0);
+}
+
+function calculateGrandTotal(po) {
+  const subtotal = calculateTotal(po);
+  if (po.ppn_enabled) {
+    const ppnAmount = po.ppn_amount || (subtotal * 0.11);
+    return subtotal + ppnAmount;
+  }
+  return subtotal;
 }
 
 // Form untuk generate PO
@@ -202,6 +387,15 @@ onMounted(() => {
                     <input type="date" v-model="from" @change="onDateChange" class="px-2 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition" placeholder="Dari tanggal" />
                     <span>-</span>
                     <input type="date" v-model="to" @change="onDateChange" class="px-2 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition" placeholder="Sampai tanggal" />
+                    <!-- Tombol Pending GM Finance -->
+                    <button 
+                        v-if="canApproveGMFinance()"
+                        @click="togglePendingGMFINANCEModal" 
+                        class="px-4 py-2 rounded-xl bg-purple-100 text-purple-700 hover:bg-purple-200 font-semibold transition"
+                    >
+                        <i class="fas fa-clock mr-2"></i>
+                        Pending Approval GM
+                    </button>
                 </div>
             </div>
             <div class="py-12">
@@ -232,7 +426,7 @@ onMounted(() => {
                                     </thead>
                                     <tbody>
                                         <tr v-if="!purchaseOrders?.data || purchaseOrders.data.length === 0">
-                                            <td colspan="7" class="text-center py-10 text-gray-400">Tidak ada data PO Foods.</td>
+                                            <td colspan="9" class="text-center py-10 text-gray-400">Tidak ada data PO Foods.</td>
                                         </tr>
                                         <tr v-for="po in purchaseOrders?.data || []" :key="po.id" class="hover:bg-blue-50 transition shadow-sm">
                                             <td class="px-6 py-3 font-mono font-semibold text-blue-700">{{ po.number }}</td>
@@ -294,6 +488,130 @@ onMounted(() => {
                                         !link.url ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
                                     ]"
                                 />
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Modal Pending GM Finance Approval -->
+        <div v-if="showPendingGMFinanceModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div class="bg-white rounded-lg shadow-xl w-11/12 max-w-7xl max-h-[90vh] overflow-hidden">
+                <!-- Modal Header -->
+                <div class="flex justify-between items-center p-6 border-b border-gray-200">
+                    <h2 class="text-xl font-semibold text-gray-800">
+                        <i class="fas fa-clock text-purple-500 mr-2"></i>
+                        PO Pending GM Finance Approval
+                    </h2>
+                    <button 
+                        @click="togglePendingGMFINANCEModal"
+                        class="text-gray-400 hover:text-gray-600 text-2xl font-bold"
+                    >
+                        &times;
+                    </button>
+                </div>
+                
+                <!-- Modal Body -->
+                <div class="p-6 overflow-y-auto max-h-[calc(90vh-120px)]">
+                    <div v-if="loadingPendingPOs" class="flex justify-center items-center py-8">
+                        <svg class="animate-spin h-8 w-8 text-purple-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                    </div>
+                    
+                    <div v-else-if="pendingGMFINANCEPOs.length === 0" class="text-center py-8 text-gray-500">
+                        <i class="fas fa-check-circle text-4xl text-green-500 mb-4"></i>
+                        <p class="text-lg">Tidak ada PO yang pending GM Finance approval</p>
+                    </div>
+                    
+                    <div v-else class="space-y-4">
+                        <div v-for="po in pendingGMFINANCEPOs" :key="po.id" class="border border-gray-200 rounded-lg overflow-hidden">
+                            <!-- PO Header -->
+                            <div class="bg-gradient-to-r from-purple-50 to-purple-100 p-4">
+                                <div class="flex justify-between items-center">
+                                    <div class="flex items-center gap-4">
+                                        <button 
+                                            @click="toggleExpandPOInModal(po.id)" 
+                                            class="text-purple-600 hover:text-purple-800 transition"
+                                            :title="expandedPOsInModal.has(po.id) ? 'Sembunyikan detail' : 'Tampilkan detail'"
+                                        >
+                                            <i :class="expandedPOsInModal.has(po.id) ? 'fas fa-chevron-down' : 'fas fa-chevron-right'"></i>
+                                        </button>
+                                        <div>
+                                            <h3 class="font-semibold text-purple-800">{{ po.number }}</h3>
+                                            <p class="text-sm text-purple-600">{{ po.supplier?.name }}</p>
+                                        </div>
+                                    </div>
+                                    <div class="flex gap-2">
+                                        <button @click="approveGMFinance(po)" class="px-3 py-1 bg-green-100 text-green-700 rounded text-sm hover:bg-green-200 transition">
+                                            <i class="fas fa-check mr-1"></i>
+                                            Approve
+                                        </button>
+                                        <button @click="rejectGMFinance(po)" class="px-3 py-1 bg-red-100 text-red-700 rounded text-sm hover:bg-red-200 transition">
+                                            <i class="fas fa-times mr-1"></i>
+                                            Reject
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Expanded Detail -->
+                            <div v-if="expandedPOsInModal.has(po.id)" class="p-4 bg-gray-50">
+                                <div class="flex justify-between items-center mb-4">
+                                    <h4 class="text-lg font-semibold text-gray-800">Detail Item PO</h4>
+                                    <button 
+                                        @click="fetchStockForPO(po)" 
+                                        class="px-3 py-1 bg-blue-100 text-blue-700 rounded text-sm hover:bg-blue-200 transition"
+                                    >
+                                        <i class="fas fa-sync-alt mr-1"></i>
+                                        Refresh Stock
+                                    </button>
+                                </div>
+                                <div class="overflow-x-auto">
+                                    <table class="w-full text-sm">
+                                        <thead class="bg-white">
+                                            <tr>
+                                                <th class="px-4 py-2 text-left font-medium text-gray-700">Item</th>
+                                                <th class="px-4 py-2 text-left font-medium text-gray-700">Qty</th>
+                                                <th class="px-4 py-2 text-left font-medium text-gray-700">Unit</th>
+                                                <th class="px-4 py-2 text-left font-medium text-gray-700">Harga</th>
+                                                <th class="px-4 py-2 text-left font-medium text-gray-700">Total</th>
+                                                <th class="px-4 py-2 text-left font-medium text-gray-700">Last Stock</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody class="bg-white">
+                                            <tr v-for="item in (po.items_with_stock || po.items)" :key="item.id" class="border-b border-gray-100">
+                                                <td class="px-4 py-3">{{ item.item?.name }}</td>
+                                                <td class="px-4 py-3">{{ item.quantity }}</td>
+                                                <td class="px-4 py-3">{{ item.unit?.name }}</td>
+                                                <td class="px-4 py-3">{{ formatRupiah(item.price) }}</td>
+                                                <td class="px-4 py-3">{{ formatRupiah(item.total) }}</td>
+                                                <td class="px-4 py-3 text-xs text-gray-600">
+                                                    {{ formatStockDisplay(item.stock) }}
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                        <tfoot class="bg-gray-50">
+                                            <tr>
+                                                <td colspan="4" class="px-4 py-2 text-right font-medium">Subtotal:</td>
+                                                <td class="px-4 py-2 font-medium">{{ formatRupiah(po.subtotal || calculateTotal(po)) }}</td>
+                                                <td></td>
+                                            </tr>
+                                            <tr v-if="po.ppn_enabled">
+                                                <td colspan="4" class="px-4 py-2 text-right font-medium text-blue-600">PPN (11%):</td>
+                                                <td class="px-4 py-2 font-medium text-blue-600">{{ formatRupiah(po.ppn_amount || 0) }}</td>
+                                                <td></td>
+                                            </tr>
+                                            <tr class="bg-gray-100">
+                                                <td colspan="4" class="px-4 py-2 text-right font-bold">Grand Total:</td>
+                                                <td class="px-4 py-2 font-bold text-green-600">{{ formatRupiah(po.grand_total || calculateGrandTotal(po)) }}</td>
+                                                <td></td>
+                                            </tr>
+                                        </tfoot>
+                                    </table>
+                                </div>
                             </div>
                         </div>
                     </div>

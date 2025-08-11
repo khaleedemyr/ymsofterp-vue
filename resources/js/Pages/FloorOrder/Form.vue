@@ -117,6 +117,7 @@ async function fetchItemsByFOSchedule(foScheduleId) {
     });
     itemsByFOSchedule.value = res.data.items || [];
     // Log hasil fetch
+    console.log('DEBUG: FOSchedule API response', res.data);
     console.log('itemsByFOSchedule:', itemsByFOSchedule.value);
     // Optional: Kelompokkan per kategori jika ingin di mode tab
     const grouped = {};
@@ -256,18 +257,25 @@ function fetchItemSuggestions(idx, q) {
   }
 
   // Untuk mode lain, gunakan logika yang sudah ada
+  const searchParams = {
+    q: q,
+    outlet_id: outlet_id.value,
+    region_id: region_id.value,
+    exclude_supplier: true
+  };
+  
+  console.log('DEBUG: Search API params', searchParams);
+  
   axios.get(`/api/items/search`, {
-    params: {
-      q: q,
-      outlet_id: outlet_id.value,
-      exclude_supplier: true
-    }
+    params: searchParams
   }).then(res => {
+    console.log('DEBUG: Search API response', res.data);
     form.value.items[idx].suggestions = res.data.items;
     form.value.items[idx].showDropdown = true;
     form.value.items[idx].highlightedIndex = 0;
     form.value.items[idx].loading = false;
-  }).catch(() => {
+  }).catch((error) => {
+    console.error('DEBUG: Search API error', error);
     form.value.items[idx].suggestions = [];
     form.value.items[idx].showDropdown = false;
     form.value.items[idx].loading = false;
@@ -318,7 +326,7 @@ function selectItem(idx, item) {
     form.value.items[idx].unit = item.unit_medium_name || item.unit_medium || item.unit_small || item.unit || '-';
     form.value.items[idx].item_id = item.id;
     form.value.items[idx].item_name = item.name;
-    const rawPrice = item.price_medium !== undefined ? item.price_medium : (item.price !== undefined ? item.price : 0);
+    const rawPrice = item.price !== undefined ? item.price : 0; // Gunakan price yang sudah diambil dari API
     form.value.items[idx].price = roundUpToHundred(rawPrice); // Apply rounding
     form.value.items[idx].qty = '';
     form.value.items[idx].subtotal = 0;
@@ -1313,7 +1321,7 @@ watch(selectedWarehouseOutlet, (val) => {
                     <tbody>
                       <tr v-for="item in filteredItems(cat)" :key="item.id" :class="{ 'bg-lime-100 border-2 border-lime-500': isTodaySchedule(item.id) }">
                         <td class="py-2">{{ item.name }}</td>
-                        <td class="py-2">{{ item.unit || '-' }}</td>
+                        <td class="py-2">{{ item.unit_medium_name || item.unit_medium || item.unit || '-' }}</td>
                         <td class="py-2">
                           {{ formatRupiah(item.price) }}
                         </td>

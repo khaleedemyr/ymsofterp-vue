@@ -422,6 +422,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/api/pr-foods/available', [PurchaseOrderFoodsController::class, 'getAvailablePR'])->name('pr-foods.available');
     Route::post('/api/pr-foods/items', [PurchaseOrderFoodsController::class, 'getPRItems'])->name('pr-foods.items');
     Route::post('/api/po-foods/generate', [PurchaseOrderFoodsController::class, 'generatePO'])->name('po-foods.generate');
+    Route::get('/api/po-foods/pending-gm-finance', [PurchaseOrderFoodsController::class, 'getPendingGMFINANCEPOs'])->name('po-foods.pending-gm-finance');
 });
 
 Route::middleware(['auth', 'verified'])->group(function () {
