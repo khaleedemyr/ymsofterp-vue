@@ -163,7 +163,7 @@
                               <td class="px-3 py-2">{{ order.table }}</td>
                               <td class="px-3 py-2">{{ order.pax }}</td>
                               <td class="px-3 py-2 text-right">{{ formatCurrency(order.total) }}</td>
-                              <td class="px-3 py-2 text-right">{{ formatCurrency((order.discount || 0) + (order.manual_discount_amount || 0)) }}</td>
+                              <td class="px-3 py-2 text-right">{{ formatCurrency(calculateDiscount(order)) }}</td>
                               <td class="px-3 py-2 text-right">{{ formatCurrency(order.cashback) }}</td>
                               <td class="px-3 py-2 text-right">{{ formatCurrency(order.service) }}</td>
                               <td class="px-3 py-2 text-right">{{ formatCurrency(order.pb1) }}</td>
@@ -285,9 +285,38 @@ onMounted(async () => {
 });
 
 const formatCurrency = (val) => {
+  // Debug untuk memastikan nilai yang masuk
+  console.log('FORMAT CURRENCY INPUT:', { val, type: typeof val });
+  
   if (typeof val !== 'number') val = Number(val) || 0;
+  
+  // Debug untuk memastikan nilai setelah konversi
+  console.log('FORMAT CURRENCY AFTER CONVERSION:', { val, type: typeof val });
+  
   return val.toLocaleString('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 });
 };
+
+function calculateDiscount(order) {
+  // Pastikan konversi yang aman
+  const discount = Number(order.discount) || 0;
+  const manualDiscount = Number(order.manual_discount_amount) || 0;
+  
+  console.log('DEBUG DISCOUNT:', {
+    orderId: order.id,
+    nomor: order.nomor,
+    discount: order.discount,
+    manualDiscount: order.manual_discount_amount,
+    discountParsed: discount,
+    manualDiscountParsed: manualDiscount
+  });
+  
+  // Jika keduanya > 0, ambil yang terbesar
+  if (discount > 0 && manualDiscount > 0) {
+    return Math.max(discount, manualDiscount);
+  }
+  // Jika hanya salah satu yang > 0, gunakan yang ada
+  return discount + manualDiscount;
+}
 
 function openEodModal(row, tanggal) {
   selectedEodRow.value = {

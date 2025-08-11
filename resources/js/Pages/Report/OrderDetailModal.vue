@@ -138,9 +138,15 @@ const manualDiscountVisible = computed(() => {
 });
 
 const promoDiscountAmount = computed(() => {
-  const totalDiscount = Number(props.order.discount) || 0;
-  const manualDiscount = Number(props.order.manual_discount_amount) || 0;
-  return totalDiscount - manualDiscount;
+  const discount = parseInt(props.order.discount) || 0;
+  const manualDiscount = parseFloat(props.order.manual_discount_amount) || 0;
+  
+  // Jika keduanya > 0, ambil yang terbesar
+  if (discount > 0 && manualDiscount > 0) {
+    return Math.max(discount, manualDiscount);
+  }
+  // Jika hanya salah satu yang > 0, gunakan yang ada
+  return discount + manualDiscount;
 });
 
 const promoDiscountVisible = computed(() => {

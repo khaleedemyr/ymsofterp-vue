@@ -811,6 +811,20 @@ class ReportController extends Controller
         $orders = $query->orderBy('orders.created_at')->get();
         \Log::info('DEBUG ORDERS COUNT', ['count' => $orders->count()]);
         
+        // Debug untuk cek data orders yang dikirim
+        foreach ($orders as $order) {
+            if ($order->nomor === 'LBTEMP25080983') {
+                \Log::info('DEBUG ORDER LBTEMP25080983', [
+                    'id' => $order->id,
+                    'nomor' => $order->nomor,
+                    'total' => $order->total,
+                    'discount' => $order->discount,
+                    'manual_discount_amount' => $order->manual_discount_amount,
+                    'grand_total' => $order->grand_total
+                ]);
+            }
+        }
+        
         // DEBUG: Log sample orders dengan commfee
         $sampleOrders = $orders->take(5);
         \Log::info('DEBUG SAMPLE ORDERS', [
@@ -868,15 +882,41 @@ class ReportController extends Controller
         $summary = [
             // 1. Sales (+): sum(total) from orders
             'total_sales' => $orders->sum('total'),
-            // 2. Disc (-): sum(discount + manual_discount_amount) from orders
+            // 2. Disc (-): sum(discount atau manual_discount_amount, tidak keduanya) from orders
             'total_discount' => $orders->sum(function($order) {
-                return ($order->discount ?? 0) + ($order->manual_discount_amount ?? 0);
+                $discount = floatval($order->discount ?? 0);
+                $manualDiscount = floatval($order->manual_discount_amount ?? 0);
+                
+                // Debug log
+                \Log::info('DEBUG DISCOUNT CALCULATION', [
+                    'order_id' => $order->id,
+                    'nomor' => $order->nomor,
+                    'discount_raw' => $order->discount,
+                    'manual_discount_raw' => $order->manual_discount_amount,
+                    'discount_parsed' => $discount,
+                    'manual_discount_parsed' => $manualDiscount
+                ]);
+                
+                // Jika keduanya > 0, ambil yang terbesar
+                if ($discount > 0 && $manualDiscount > 0) {
+                    return max($discount, $manualDiscount);
+                }
+                // Jika hanya salah satu yang > 0, gunakan yang ada
+                return $discount + $manualDiscount;
             }),
             // 3. Cashback: sum(cashback) from orders
             'total_cashback' => $orders->sum('cashback'),
-            // 4. Net Sales: sum(total) - sum(discount + manual_discount_amount) - sum(cashback)
+            // 4. Net Sales: sum(total) - sum(discount) - sum(cashback)
             'net_sales' => $orders->sum('total') - $orders->sum(function($order) {
-                return ($order->discount ?? 0) + ($order->manual_discount_amount ?? 0);
+                $discount = intval($order->discount ?? 0);
+                $manualDiscount = floatval($order->manual_discount_amount ?? 0);
+                
+                // Jika keduanya > 0, ambil yang terbesar
+                if ($discount > 0 && $manualDiscount > 0) {
+                    return max($discount, $manualDiscount);
+                }
+                // Jika hanya salah satu yang > 0, gunakan yang ada
+                return $discount + $manualDiscount;
             }) - $orders->sum('cashback'),
             // 5. pb1: sum(pb1) from orders
             'total_pb1' => $orders->sum('pb1'),
@@ -895,7 +935,15 @@ class ReportController extends Controller
             // Existing fields (if needed)
             'total_order' => $orders->count(),
             'total_promo_discount' => $orders->sum(function($order) {
-                return ($order->discount ?? 0) - ($order->manual_discount_amount ?? 0);
+                $discount = intval($order->discount ?? 0);
+                $manualDiscount = floatval($order->manual_discount_amount ?? 0);
+                
+                // Jika keduanya > 0, ambil yang terbesar
+                if ($discount > 0 && $manualDiscount > 0) {
+                    return max($discount, $manualDiscount);
+                }
+                // Jika hanya salah satu yang > 0, gunakan yang ada
+                return $discount + $manualDiscount;
             }),
         ];
 
@@ -909,7 +957,15 @@ class ReportController extends Controller
                 'total_order' => $group->count(),
                 'total_pax' => $group->sum('pax'),
                 'total_discount' => $group->sum(function($order) {
-                    return ($order->discount ?? 0) + ($order->manual_discount_amount ?? 0);
+                    $discount = intval($order->discount ?? 0);
+                    $manualDiscount = floatval($order->manual_discount_amount ?? 0);
+                    
+                    // Jika keduanya > 0, ambil yang terbesar
+                    if ($discount > 0 && $manualDiscount > 0) {
+                        return max($discount, $manualDiscount);
+                    }
+                    // Jika hanya salah satu yang > 0, gunakan yang ada
+                    return $discount + $manualDiscount;
                 }),
                 'total_cashback' => $group->sum('cashback'),
                 'total_service' => $group->sum('service'),
@@ -917,11 +973,27 @@ class ReportController extends Controller
                 'total_commfee' => $group->sum('commfee'),
                 'total_rounding' => $group->sum('rounding'),
                 'total_promo_discount' => $group->sum(function($order) {
-                    return ($order->discount ?? 0) - ($order->manual_discount_amount ?? 0);
+                    $discount = intval($order->discount ?? 0);
+                    $manualDiscount = floatval($order->manual_discount_amount ?? 0);
+                    
+                    // Jika keduanya > 0, ambil yang terbesar
+                    if ($discount > 0 && $manualDiscount > 0) {
+                        return max($discount, $manualDiscount);
+                    }
+                    // Jika hanya salah satu yang > 0, gunakan yang ada
+                    return $discount + $manualDiscount;
                 }),
                 // Tambahkan net_sales, grand_total, avg_check jika perlu
                 'net_sales' => $group->sum('total') - $group->sum(function($order) {
-                    return ($order->discount ?? 0) + ($order->manual_discount_amount ?? 0);
+                    $discount = intval($order->discount ?? 0);
+                    $manualDiscount = floatval($order->manual_discount_amount ?? 0);
+                    
+                    // Jika keduanya > 0, ambil yang terbesar
+                    if ($discount > 0 && $manualDiscount > 0) {
+                        return max($discount, $manualDiscount);
+                    }
+                    // Jika hanya salah satu yang > 0, gunakan yang ada
+                    return $discount + $manualDiscount;
                 }) - $group->sum('cashback'),
                 'grand_total' => $group->sum('grand_total'),
                 'avg_check' => $group->sum('pax') > 0 ? round($group->sum('grand_total') / $group->sum('pax')) : 0,
