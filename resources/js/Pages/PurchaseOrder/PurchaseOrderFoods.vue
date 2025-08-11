@@ -30,6 +30,12 @@ const pendingGMFINANCEPOs = ref([]);
 const loadingPendingPOs = ref(false);
 const expandedPOsInModal = ref(new Set());
 
+// Filter state untuk modal
+const modalSearch = ref('');
+const modalStatusFilter = ref('');
+const modalDateFrom = ref('');
+const modalDateTo = ref('');
+
 const debouncedSearch = debounce(() => {
   router.get('/po-foods', { 
     search: search.value, 
@@ -53,7 +59,14 @@ function onDateChange() {
 async function fetchPendingGMFINANCEPOs() {
   try {
     loadingPendingPOs.value = true;
-    const response = await axios.get('/api/po-foods/pending-gm-finance');
+    const params = {
+      search: modalSearch.value,
+      status: modalStatusFilter.value,
+      from: modalDateFrom.value,
+      to: modalDateTo.value
+    };
+    
+    const response = await axios.get('/api/po-foods/pending-gm-finance', { params });
     pendingGMFINANCEPOs.value = response.data;
   } catch (error) {
     console.error('Error fetching pending GM Finance POs:', error);
@@ -61,6 +74,20 @@ async function fetchPendingGMFINANCEPOs() {
   } finally {
     loadingPendingPOs.value = false;
   }
+}
+
+// Apply filter di modal
+function applyModalFilter() {
+  fetchPendingGMFINANCEPOs();
+}
+
+// Reset filter di modal
+function resetModalFilter() {
+  modalSearch.value = '';
+  modalStatusFilter.value = '';
+  modalDateFrom.value = '';
+  modalDateTo.value = '';
+  fetchPendingGMFINANCEPOs();
 }
 
 // Toggle modal pending GM Finance
@@ -512,6 +539,58 @@ onMounted(() => {
                     </button>
                 </div>
                 
+                <!-- Filter Section -->
+                <div class="p-4 bg-gray-50 border-b border-gray-200">
+                    <div class="flex flex-wrap gap-3 items-center">
+                        <input
+                            v-model="modalSearch"
+                            @keyup.enter="applyModalFilter"
+                            type="text"
+                            placeholder="Cari nomor PO..."
+                            class="w-48 px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-purple-400 focus:border-purple-400 transition text-sm"
+                        />
+                        <select 
+                            v-model="modalStatusFilter" 
+                            @change="applyModalFilter"
+                            class="px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-purple-400 focus:border-purple-400 transition text-sm"
+                        >
+                            <option value="">Semua Status</option>
+                            <option value="draft">Draft</option>
+                            <option value="approved">Approved</option>
+                            <option value="rejected">Rejected</option>
+                        </select>
+                        <input 
+                            type="date" 
+                            v-model="modalDateFrom" 
+                            @change="applyModalFilter"
+                            class="px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-purple-400 focus:border-purple-400 transition text-sm"
+                            placeholder="Dari tanggal" 
+                        />
+                        <span class="text-gray-500">-</span>
+                        <input 
+                            type="date" 
+                            v-model="modalDateTo" 
+                            @change="applyModalFilter"
+                            class="px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-purple-400 focus:border-purple-400 transition text-sm"
+                            placeholder="Sampai tanggal" 
+                        />
+                        <button 
+                            @click="applyModalFilter"
+                            class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition text-sm font-semibold"
+                        >
+                            <i class="fas fa-search mr-1"></i>
+                            Filter
+                        </button>
+                        <button 
+                            @click="resetModalFilter"
+                            class="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition text-sm font-semibold"
+                        >
+                            <i class="fas fa-undo mr-1"></i>
+                            Reset
+                        </button>
+                    </div>
+                </div>
+                
                 <!-- Modal Body -->
                 <div class="p-6 overflow-y-auto max-h-[calc(90vh-120px)]">
                     <div v-if="loadingPendingPOs" class="flex justify-center items-center py-8">
@@ -526,91 +605,106 @@ onMounted(() => {
                         <p class="text-lg">Tidak ada PO yang pending GM Finance approval</p>
                     </div>
                     
-                    <div v-else class="space-y-4">
-                        <div v-for="po in pendingGMFINANCEPOs" :key="po.id" class="border border-gray-200 rounded-lg overflow-hidden">
-                            <!-- PO Header -->
-                            <div class="bg-gradient-to-r from-purple-50 to-purple-100 p-4">
-                                <div class="flex justify-between items-center">
-                                    <div class="flex items-center gap-4">
-                                        <button 
-                                            @click="toggleExpandPOInModal(po.id)" 
-                                            class="text-purple-600 hover:text-purple-800 transition"
-                                            :title="expandedPOsInModal.has(po.id) ? 'Sembunyikan detail' : 'Tampilkan detail'"
-                                        >
-                                            <i :class="expandedPOsInModal.has(po.id) ? 'fas fa-chevron-down' : 'fas fa-chevron-right'"></i>
-                                        </button>
-                                        <div>
-                                            <h3 class="font-semibold text-purple-800">{{ po.number }}</h3>
-                                            <p class="text-sm text-purple-600">{{ po.supplier?.name }}</p>
-                                        </div>
-                                    </div>
-                                    <div class="flex gap-2">
-                                        <button @click="approveGMFinance(po)" class="px-3 py-1 bg-green-100 text-green-700 rounded text-sm hover:bg-green-200 transition">
-                                            <i class="fas fa-check mr-1"></i>
-                                            Approve
-                                        </button>
-                                        <button @click="rejectGMFinance(po)" class="px-3 py-1 bg-red-100 text-red-700 rounded text-sm hover:bg-red-200 transition">
-                                            <i class="fas fa-times mr-1"></i>
-                                            Reject
-                                        </button>
-                                    </div>
+                    <div v-else>
+                        <!-- Summary -->
+                        <div class="mb-4 p-3 bg-purple-50 rounded-lg border border-purple-200">
+                            <div class="flex justify-between items-center">
+                                <div class="text-purple-800">
+                                    <span class="font-semibold">{{ pendingGMFINANCEPOs.length }}</span> PO ditemukan yang pending GM Finance approval
+                                </div>
+                                <div class="text-sm text-purple-600">
+                                    <i class="fas fa-info-circle mr-1"></i>
+                                    PO yang sudah di-approve Purchasing Manager
                                 </div>
                             </div>
-                            
-                            <!-- Expanded Detail -->
-                            <div v-if="expandedPOsInModal.has(po.id)" class="p-4 bg-gray-50">
-                                <div class="flex justify-between items-center mb-4">
-                                    <h4 class="text-lg font-semibold text-gray-800">Detail Item PO</h4>
-                                    <button 
-                                        @click="fetchStockForPO(po)" 
-                                        class="px-3 py-1 bg-blue-100 text-blue-700 rounded text-sm hover:bg-blue-200 transition"
-                                    >
-                                        <i class="fas fa-sync-alt mr-1"></i>
-                                        Refresh Stock
-                                    </button>
+                        </div>
+                        
+                        <div class="space-y-4">
+                            <div v-for="po in pendingGMFINANCEPOs" :key="po.id" class="border border-gray-200 rounded-lg overflow-hidden">
+                                <!-- PO Header -->
+                                <div class="bg-gradient-to-r from-purple-50 to-purple-100 p-4">
+                                    <div class="flex justify-between items-center">
+                                        <div class="flex items-center gap-4">
+                                            <button 
+                                                @click="toggleExpandPOInModal(po.id)" 
+                                                class="text-purple-600 hover:text-purple-800 transition"
+                                                :title="expandedPOsInModal.has(po.id) ? 'Sembunyikan detail' : 'Tampilkan detail'"
+                                            >
+                                                <i :class="expandedPOsInModal.has(po.id) ? 'fas fa-chevron-down' : 'fas fa-chevron-right'"></i>
+                                            </button>
+                                            <div>
+                                                <h3 class="font-semibold text-purple-800">{{ po.number }}</h3>
+                                                <p class="text-sm text-purple-600">{{ po.supplier?.name }}</p>
+                                            </div>
+                                        </div>
+                                        <div class="flex gap-2">
+                                            <button @click="approveGMFinance(po)" class="px-3 py-1 bg-green-100 text-green-700 rounded text-sm hover:bg-green-200 transition">
+                                                <i class="fas fa-check mr-1"></i>
+                                                Approve
+                                            </button>
+                                            <button @click="rejectGMFinance(po)" class="px-3 py-1 bg-red-100 text-red-700 rounded text-sm hover:bg-red-200 transition">
+                                                <i class="fas fa-times mr-1"></i>
+                                                Reject
+                                            </button>
+                                        </div>
+                                    </div>
                                 </div>
-                                <div class="overflow-x-auto">
-                                    <table class="w-full text-sm">
-                                        <thead class="bg-white">
-                                            <tr>
-                                                <th class="px-4 py-2 text-left font-medium text-gray-700">Item</th>
-                                                <th class="px-4 py-2 text-left font-medium text-gray-700">Qty</th>
-                                                <th class="px-4 py-2 text-left font-medium text-gray-700">Unit</th>
-                                                <th class="px-4 py-2 text-left font-medium text-gray-700">Harga</th>
-                                                <th class="px-4 py-2 text-left font-medium text-gray-700">Total</th>
-                                                <th class="px-4 py-2 text-left font-medium text-gray-700">Last Stock</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody class="bg-white">
-                                            <tr v-for="item in (po.items_with_stock || po.items)" :key="item.id" class="border-b border-gray-100">
-                                                <td class="px-4 py-3">{{ item.item?.name }}</td>
-                                                <td class="px-4 py-3">{{ item.quantity }}</td>
-                                                <td class="px-4 py-3">{{ item.unit?.name }}</td>
-                                                <td class="px-4 py-3">{{ formatRupiah(item.price) }}</td>
-                                                <td class="px-4 py-3">{{ formatRupiah(item.total) }}</td>
-                                                <td class="px-4 py-3 text-xs text-gray-600">
-                                                    {{ formatStockDisplay(item.stock) }}
-                                                </td>
-                                            </tr>
-                                        </tbody>
-                                        <tfoot class="bg-gray-50">
-                                            <tr>
-                                                <td colspan="4" class="px-4 py-2 text-right font-medium">Subtotal:</td>
-                                                <td class="px-4 py-2 font-medium">{{ formatRupiah(po.subtotal || calculateTotal(po)) }}</td>
-                                                <td></td>
-                                            </tr>
-                                            <tr v-if="po.ppn_enabled">
-                                                <td colspan="4" class="px-4 py-2 text-right font-medium text-blue-600">PPN (11%):</td>
-                                                <td class="px-4 py-2 font-medium text-blue-600">{{ formatRupiah(po.ppn_amount || 0) }}</td>
-                                                <td></td>
-                                            </tr>
-                                            <tr class="bg-gray-100">
-                                                <td colspan="4" class="px-4 py-2 text-right font-bold">Grand Total:</td>
-                                                <td class="px-4 py-2 font-bold text-green-600">{{ formatRupiah(po.grand_total || calculateGrandTotal(po)) }}</td>
-                                                <td></td>
-                                            </tr>
-                                        </tfoot>
-                                    </table>
+                                
+                                <!-- Expanded Detail -->
+                                <div v-if="expandedPOsInModal.has(po.id)" class="p-4 bg-gray-50">
+                                    <div class="flex justify-between items-center mb-4">
+                                        <h4 class="text-lg font-semibold text-gray-800">Detail Item PO</h4>
+                                        <button 
+                                            @click="fetchStockForPO(po)" 
+                                            class="px-3 py-1 bg-blue-100 text-blue-700 rounded text-sm hover:bg-blue-200 transition"
+                                        >
+                                            <i class="fas fa-sync-alt mr-1"></i>
+                                            Refresh Stock
+                                        </button>
+                                    </div>
+                                    <div class="overflow-x-auto">
+                                        <table class="w-full text-sm">
+                                            <thead class="bg-white">
+                                                <tr>
+                                                    <th class="px-4 py-2 text-left font-medium text-gray-700">Item</th>
+                                                    <th class="px-4 py-2 text-left font-medium text-gray-700">Qty</th>
+                                                    <th class="px-4 py-2 text-left font-medium text-gray-700">Unit</th>
+                                                    <th class="px-4 py-2 text-left font-medium text-gray-700">Harga</th>
+                                                    <th class="px-4 py-2 text-left font-medium text-gray-700">Total</th>
+                                                    <th class="px-4 py-2 text-left font-medium text-gray-700">Last Stock</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody class="bg-white">
+                                                <tr v-for="item in (po.items_with_stock || po.items)" :key="item.id" class="border-b border-gray-100">
+                                                    <td class="px-4 py-3">{{ item.item?.name }}</td>
+                                                    <td class="px-4 py-3">{{ item.quantity }}</td>
+                                                    <td class="px-4 py-3">{{ item.unit?.name }}</td>
+                                                    <td class="px-4 py-3">{{ formatRupiah(item.price) }}</td>
+                                                    <td class="px-4 py-3">{{ formatRupiah(item.total) }}</td>
+                                                    <td class="px-4 py-3 text-xs text-gray-600">
+                                                        {{ formatStockDisplay(item.stock) }}
+                                                    </td>
+                                                </tr>
+                                            </tbody>
+                                            <tfoot class="bg-gray-50">
+                                                <tr>
+                                                    <td colspan="4" class="px-4 py-2 text-right font-medium">Subtotal:</td>
+                                                    <td class="px-4 py-2 font-medium">{{ formatRupiah(po.subtotal || calculateTotal(po)) }}</td>
+                                                    <td></td>
+                                                </tr>
+                                                <tr v-if="po.ppn_enabled">
+                                                    <td colspan="4" class="px-4 py-2 text-right font-medium text-blue-600">PPN (11%):</td>
+                                                    <td class="px-4 py-2 font-medium text-blue-600">{{ formatRupiah(po.ppn_amount || 0) }}</td>
+                                                    <td></td>
+                                                </tr>
+                                                <tr class="bg-gray-100">
+                                                    <td colspan="4" class="px-4 py-2 text-right font-bold">Grand Total:</td>
+                                                    <td class="px-4 py-2 font-bold text-green-600">{{ formatRupiah(po.grand_total || calculateGrandTotal(po)) }}</td>
+                                                    <td></td>
+                                                </tr>
+                                            </tfoot>
+                                        </table>
+                                    </div>
                                 </div>
                             </div>
                         </div>

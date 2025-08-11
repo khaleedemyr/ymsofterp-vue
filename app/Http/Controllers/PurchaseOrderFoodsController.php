@@ -738,14 +738,29 @@ class PurchaseOrderFoodsController extends Controller
     }
 
     // Get PO yang pending GM Finance approval
-    public function getPendingGMFINANCEPOs()
+    public function getPendingGMFINANCEPOs(Request $request)
     {
-        $pos = PurchaseOrderFood::with(['supplier', 'creator', 'items.item', 'items.unit'])
+        $query = PurchaseOrderFood::with(['supplier', 'creator', 'items.item', 'items.unit'])
             ->where('status', 'draft')
             ->whereNotNull('purchasing_manager_approved_at')
             ->whereNull('gm_finance_approved_at')
-            ->orderBy('created_at', 'desc')
-            ->get()
+            ->orderBy('created_at', 'desc');
+
+        // Apply filters
+        if ($request->search) {
+            $query->where('number', 'like', '%' . $request->search . '%');
+        }
+        if ($request->status) {
+            $query->where('status', $request->status);
+        }
+        if ($request->from) {
+            $query->whereDate('date', '>=', $request->from);
+        }
+        if ($request->to) {
+            $query->whereDate('date', '<=', $request->to);
+        }
+
+        $pos = $query->get()
             ->map(function ($po) {
                 $prItemIds = $po->items->pluck('pr_food_item_id')->toArray();
                 $prIds = \App\Models\PurchaseRequisitionFoodItem::whereIn('id', $prItemIds)->pluck('pr_food_id')->unique()->toArray();
