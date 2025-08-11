@@ -25,10 +25,18 @@ class PurchaseOrderFood extends Model
         'gm_finance_approved_at',
         'gm_finance_approved_by',
         'gm_finance_note',
+        'ppn_enabled',
+        'ppn_amount',
+        'subtotal',
+        'grand_total',
     ];
 
     protected $casts = [
         'date' => 'datetime',
+        'ppn_enabled' => 'boolean',
+        'ppn_amount' => 'decimal:2',
+        'subtotal' => 'decimal:2',
+        'grand_total' => 'decimal:2',
     ];
 
     public function supplier()

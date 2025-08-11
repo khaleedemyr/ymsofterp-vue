@@ -16,6 +16,7 @@ const router = useRouter()
 // Form untuk generate PO
 const poForm = useForm({
     items_by_supplier: {}, // Akan diisi array per item
+    ppn_enabled: false, // PPN switch
 });
 
 // Fetch PR list yang belum di-PO
@@ -123,7 +124,8 @@ const generatePO = async () => {
         loading.value = true;
         const response = await axios.post('/api/po-foods/generate', {
             items_by_supplier: itemsBySupplier,
-            notes: notes.value
+            notes: notes.value,
+            ppn_enabled: poForm.ppn_enabled
         });
         Swal.fire('Success', 'PO has been generated successfully', 'success')
             .then(() => {
@@ -217,6 +219,30 @@ function goBack() {
     window.location.href = '/po-foods'
 }
 
+// Calculate total for all items
+const calculateTotal = () => {
+    let total = 0;
+    Object.values(poForm.items_by_supplier).forEach(splits => {
+        splits.forEach(split => {
+            if (split.price && split.qty) {
+                total += Number(split.price) * Number(split.qty);
+            }
+        });
+    });
+    return total;
+};
+
+// Calculate PPN amount
+const calculatePPN = () => {
+    if (!poForm.ppn_enabled) return 0;
+    return calculateTotal() * 0.11;
+};
+
+// Calculate grand total
+const calculateGrandTotal = () => {
+    return calculateTotal() + calculatePPN();
+};
+
 onMounted(() => {
     fetchPRList();
     fetchSuppliers();
@@ -244,6 +270,11 @@ onMounted(() => {
                         <div class="mb-6">
                             <label class="block text-sm font-medium text-gray-700 mb-1">Notes</label>
                             <textarea v-model="notes" rows="2" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-blue-500 focus:border-blue-500"></textarea>
+                        </div>
+                        <!-- PPN Switch -->
+                        <div class="mb-6 flex items-center">
+                            <input type="checkbox" id="ppnSwitch" v-model="poForm.ppn_enabled" class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded">
+                            <label for="ppnSwitch" class="ml-2 text-sm text-gray-700">Include PPN (11%)</label>
                         </div>
                         <!-- PR List -->
                         <div v-if="loading" class="flex justify-center items-center py-8">
@@ -335,6 +366,25 @@ onMounted(() => {
                                                 </template>
                                             </tbody>
                                         </table>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Total Calculation -->
+                            <div class="mt-6 bg-gray-50 p-4 rounded-lg">
+                                <h3 class="text-lg font-semibold mb-3">Total Calculation</h3>
+                                <div class="space-y-2">
+                                    <div class="flex justify-between">
+                                        <span class="text-gray-600">Subtotal:</span>
+                                        <span class="font-medium">{{ formatRupiah(calculateTotal()) }}</span>
+                                    </div>
+                                    <div v-if="poForm.ppn_enabled" class="flex justify-between">
+                                        <span class="text-gray-600">PPN (11%):</span>
+                                        <span class="font-medium text-blue-600">{{ formatRupiah(calculatePPN()) }}</span>
+                                    </div>
+                                    <div class="flex justify-between border-t pt-2">
+                                        <span class="text-lg font-semibold">Grand Total:</span>
+                                        <span class="text-lg font-bold text-green-600">{{ formatRupiah(calculateGrandTotal()) }}</span>
                                     </div>
                                 </div>
                             </div>

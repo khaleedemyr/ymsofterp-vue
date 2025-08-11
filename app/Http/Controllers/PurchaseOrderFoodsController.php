@@ -143,6 +143,8 @@ class PurchaseOrderFoodsController extends Controller
             'items_by_supplier.*.*.id' => 'required|exists:pr_food_items,id',
             'items_by_supplier.*.*.supplier_id' => 'required|exists:suppliers,id',
             'items_by_supplier.*.*.price' => 'required|numeric|min:0',
+            'ppn_enabled' => 'boolean',
+            'notes' => 'nullable|string',
         ]);
 
         try {
@@ -156,73 +158,134 @@ class PurchaseOrderFoodsController extends Controller
                 ->unique()
                 ->values();
 
-            // Group items by supplier_id and arrival_date
-            $groupedItems = [];
-            foreach ($request->items_by_supplier as $supplierId => $items) {
-                foreach ($items as $item) {
-                    $prItem = PurchaseRequisitionFoodItem::findOrFail($item['id']);
-                    $arrivalDate = $prItem->arrival_date;
-                    
-                    // Create unique key combining supplier_id and arrival_date
-                    $key = $supplierId . '_' . $arrivalDate;
-                    
-                    if (!isset($groupedItems[$key])) {
-                        $groupedItems[$key] = [
+            // Group items by supplier
+            $itemsBySupplier = collect($request->items_by_supplier)
+                ->map(function ($items, $supplierId) {
+                    return collect($items)->map(function ($item) use ($supplierId) {
+                        return [
+                            'pr_item_id' => $item['id'],
                             'supplier_id' => $supplierId,
-                            'arrival_date' => $arrivalDate,
-                            'items' => []
+                            'price' => $item['price'],
+                            'qty' => $item['qty'],
+                            'pr_id' => $item['pr_id'] ?? null,
                         ];
-                    }
-                    
-                    $groupedItems[$key]['items'][] = $item;
-                }
-            }
+                    });
+                });
 
-            // Create PO for each group
-            foreach ($groupedItems as $group) {
+            $createdPOs = [];
+
+            foreach ($itemsBySupplier as $supplierId => $items) {
+                if (empty($items)) continue;
+
                 // Generate PO number
-                $poNumber = 'PO-F/' . date('Ymd') . '/' . str_pad(PurchaseOrderFood::whereDate('created_at', Carbon::today())->count() + 1, 4, '0', STR_PAD_LEFT);
+                $prefix = 'POF';
+                $date = date('ym', strtotime(now()));
+                $lastNumber = PurchaseOrderFood::where('number', 'like', $prefix . $date . '%')
+                    ->orderBy('number', 'desc')
+                    ->value('number');
+
+                if ($lastNumber) {
+                    $lastSequence = intval(substr($lastNumber, -4));
+                    $sequence = $lastSequence + 1;
+                } else {
+                    $sequence = 1;
+                }
+
+                $poNumber = $prefix . $date . str_pad($sequence, 4, '0', STR_PAD_LEFT);
+
+                // Calculate subtotal for this PO
+                $subtotal = collect($items)->sum(function ($item) {
+                    return $item['price'] * $item['qty'];
+                });
+
+                // Calculate PPN if enabled
+                $ppnAmount = 0;
+                $grandTotal = $subtotal;
+                if ($request->ppn_enabled) {
+                    $ppnAmount = $subtotal * 0.11; // 11% PPN
+                    $grandTotal = $subtotal + $ppnAmount;
+                }
 
                 // Create PO
                 $po = PurchaseOrderFood::create([
                     'number' => $poNumber,
-                    'date' => Carbon::now(),
-                    'supplier_id' => $group['supplier_id'],
+                    'date' => now(),
+                    'supplier_id' => $supplierId,
                     'status' => 'draft',
                     'created_by' => auth()->id(),
-                    'notes' => $request->notes ?? null,
-                    'arrival_date' => $group['arrival_date'],
+                    'notes' => $request->notes,
+                    'ppn_enabled' => $request->ppn_enabled ?? false,
+                    'ppn_amount' => $ppnAmount,
+                    'subtotal' => $subtotal,
+                    'grand_total' => $grandTotal,
                 ]);
 
-                // Create PO items and check price changes
+                $createdPOs[] = $po;
+
+                // Get PR items for this supplier
+                $prItemIds = collect($items)->pluck('pr_item_id');
+                $prItems = PurchaseRequisitionFoodItem::with('item')
+                    ->whereIn('id', $prItemIds)
+                    ->get();
+
                 $priceChanges = [];
-                foreach ($group['items'] as $item) {
-                    $prItem = PurchaseRequisitionFoodItem::findOrFail($item['id']);
-                    $quantity = $item['qty'];
-                    $price = $item['price'];
+
+                foreach ($items as $itemData) {
+                    $prItem = $prItems->firstWhere('id', $itemData['pr_item_id']);
+                    if (!$prItem) continue;
+
+                    $quantity = $itemData['qty'];
+                    $price = $itemData['price'];
                     $total = $quantity * $price;
 
-                    // Cari unit_id berdasarkan nama unit
+                    // Get unit ID
                     $unitId = null;
                     if ($prItem->unit) {
-                        $unitId = \App\Models\Unit::where('name', $prItem->unit)->value('id');
-                    }
-                    if (!$unitId) {
-                        throw new \Exception('Unit ID tidak ditemukan untuk unit: ' . $prItem->unit);
+                        $unit = \App\Models\Unit::where('name', $prItem->unit)->first();
+                        $unitId = $unit ? $unit->id : null;
                     }
 
-                    // Cek harga terakhir dari PO sebelumnya
-                    $lastPOItem = PurchaseOrderFoodItem::where('item_id', $prItem->item_id)
-                        ->whereHas('purchaseOrder', function($q) use ($group) {
-                            $q->where('supplier_id', $group['supplier_id'])
-                              ->where('status', '!=', 'draft')
-                              ->orderBy('created_at', 'desc');
-                        })
-                        ->latest()
-                        ->first();
+                    // Check for price changes using the same logic as getLastPrice
+                    $lastPrice = null;
+                    
+                    // Cari inventory_item_id dari item_id
+                    $inventoryItem = \DB::table('food_inventory_items')->where('item_id', $prItem->item_id)->first();
+                    if ($inventoryItem) {
+                        $inventoryItemId = $inventoryItem->id;
+                        
+                        // Ambil item dan konversi unit
+                        $item = \App\Models\Item::with(['smallUnit', 'mediumUnit', 'largeUnit'])->find($prItem->item_id);
+                        
+                        if ($item) {
+                            // Ambil cost histories (cost per small unit)
+                            $lastCost = \DB::table('food_inventory_cost_histories')
+                                ->where('inventory_item_id', $inventoryItemId)
+                                ->orderBy('date', 'desc')
+                                ->value('new_cost');
+                            
+                            if ($lastCost) {
+                                // Ambil nama unit dari relasi
+                                $unitSmall = $item->smallUnit ? $item->smallUnit->name : null;
+                                $unitMedium = $item->mediumUnit ? $item->mediumUnit->name : null;
+                                $unitLarge = $item->largeUnit ? $item->largeUnit->name : null;
+                                $smallConv = $item->small_conversion_qty ?: 1;
+                                $mediumConv = $item->medium_conversion_qty ?: 1;
+                                
+                                // Konversi cost ke unit yang diminta
+                                if ($prItem->unit == $unitSmall) {
+                                    $lastPrice = $lastCost;
+                                } elseif ($prItem->unit == $unitMedium) {
+                                    $lastPrice = $lastCost * $smallConv;
+                                } elseif ($prItem->unit == $unitLarge) {
+                                    $lastPrice = $lastCost * $smallConv * $mediumConv;
+                                } else {
+                                    $lastPrice = $lastCost; // Default ke small unit
+                                }
+                            }
+                        }
+                    }
 
-                    if ($lastPOItem) {
-                        $lastPrice = $lastPOItem->price;
+                    if ($lastPrice && $lastPrice > 0) {
                         $priceDiff = $price - $lastPrice;
                         $priceDiffPercent = ($priceDiff / $lastPrice) * 100;
 
@@ -258,55 +321,49 @@ class PurchaseOrderFoodsController extends Controller
                         ->where('status', 'A')
                         ->pluck('id');
 
-                    foreach ($notifyUsers as $userId) {
-                        $message = "Perubahan harga pada PO {$po->number}:\n\n";
-                        foreach ($priceChanges as $change) {
-                            $direction = $change['price_diff'] > 0 ? 'naik' : 'turun';
-                            $message .= "Item: {$change['item_name']}\n";
-                            $message .= "Supplier: {$change['supplier_name']}\n";
-                            $message .= "Harga lama: " . number_format($change['last_price'], 2) . "\n";
-                            $message .= "Harga baru: " . number_format($change['new_price'], 2) . "\n";
-                            $message .= "Perubahan: {$direction} " . number_format(abs($change['price_diff_percent']), 2) . "%\n\n";
-                        }
-
-                        DB::table('notifications')->insert([
-                            'user_id' => $userId,
-                            'type' => 'price_change',
-                            'title' => 'Perubahan Harga PO',
-                            'message' => $message,
-                            'url' => '/po-foods/' . $po->id,
-                            'is_read' => 0,
-                            'created_at' => now(),
-                            'updated_at' => now(),
-                        ]);
+                    if ($notifyUsers->isNotEmpty()) {
+                        $this->sendNotification(
+                            $notifyUsers,
+                            'price_change',
+                            'Perubahan Harga Item',
+                            'Ada perubahan harga pada item di PO ' . $po->number,
+                            route('po-foods.show', $po->id)
+                        );
                     }
                 }
+
+                // Update PR status to 'in_po'
+                foreach ($prIds as $prId) {
+                    PurchaseRequisitionFood::where('id', $prId)->update(['status' => 'in_po']);
+                }
+
+                // Log activity
+                ActivityLog::create([
+                    'user_id' => Auth::id(),
+                    'activity_type' => 'create',
+                    'module' => 'purchase_order_foods',
+                    'description' => 'Create PO Foods: ' . $po->number,
+                    'ip_address' => $request->ip(),
+                    'user_agent' => $request->userAgent(),
+                    'old_data' => null,
+                    'new_data' => $po->toArray(),
+                ]);
             }
 
-            // Update PR status to 'po' for all processed PRs
-            PurchaseRequisitionFood::whereIn('id', $prIds)
-                ->update(['status' => 'po']);
+            DB::commit();
 
-            // Log activity
-            ActivityLog::create([
-                'user_id' => auth()->id(),
-                'activity_type' => 'create',
-                'module' => 'purchase_order_foods',
-                'description' => 'Create PO Foods from PR: ' . implode(', ', $prIds->toArray()),
-                'ip_address' => $request->ip(),
-                'user_agent' => $request->userAgent(),
-                'old_data' => null,
-                'new_data' => [
-                    'pr_ids' => $prIds,
-                    'status' => 'po'
-                ],
+            return response()->json([
+                'success' => true,
+                'message' => 'PO berhasil dibuat',
+                'data' => $createdPOs
             ]);
 
-            DB::commit();
-            return response()->json(['message' => 'PO generated successfully']);
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json(['error' => $e->getMessage()], 500);
+            return response()->json([
+                'success' => false,
+                'message' => 'Terjadi kesalahan: ' . $e->getMessage()
+            ], 500);
         }
     }
 
@@ -564,6 +621,7 @@ class PurchaseOrderFoodsController extends Controller
 
         $request->validate([
             'notes' => 'nullable|string',
+            'ppn_enabled' => 'boolean',
             'items' => 'required|array',
             'items.*.id' => 'required|exists:purchase_order_food_items,id',
             'items.*.price' => 'required|numeric|min:0',
@@ -573,9 +631,24 @@ class PurchaseOrderFoodsController extends Controller
         try {
             DB::beginTransaction();
 
-            // Update PO notes
+            // Calculate subtotal
+            $subtotal = collect($request->items)->sum('total');
+            
+            // Calculate PPN if enabled
+            $ppnAmount = 0;
+            $grandTotal = $subtotal;
+            if ($request->ppn_enabled) {
+                $ppnAmount = $subtotal * 0.11; // 11% PPN
+                $grandTotal = $subtotal + $ppnAmount;
+            }
+
+            // Update PO notes and PPN
             $po->update([
-                'notes' => $request->notes
+                'notes' => $request->notes,
+                'ppn_enabled' => $request->ppn_enabled ?? false,
+                'ppn_amount' => $ppnAmount,
+                'subtotal' => $subtotal,
+                'grand_total' => $grandTotal,
             ]);
 
             // Update items
@@ -584,7 +657,6 @@ class PurchaseOrderFoodsController extends Controller
                     ->update([
                         'price' => $item['price'],
                         'total' => $item['total'],
-                        'subtotal' => $item['total']
                     ]);
             }
 

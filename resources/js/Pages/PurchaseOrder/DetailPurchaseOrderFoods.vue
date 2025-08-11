@@ -65,8 +65,16 @@
                   </tbody>
                   <tfoot>
                     <tr class="bg-gray-50">
-                      <td colspan="4" class="px-6 py-4 text-right font-medium">Total:</td>
-                      <td class="px-6 py-4 font-medium">{{ formatRupiah(calculateTotal()) }}</td>
+                      <td colspan="4" class="px-6 py-4 text-right font-medium">Subtotal:</td>
+                      <td class="px-6 py-4 font-medium">{{ formatRupiah(po.subtotal || calculateTotal()) }}</td>
+                    </tr>
+                    <tr v-if="po.ppn_enabled" class="bg-gray-50">
+                      <td colspan="4" class="px-6 py-4 text-right font-medium text-blue-600">PPN (11%):</td>
+                      <td class="px-6 py-4 font-medium text-blue-600">{{ formatRupiah(po.ppn_amount || 0) }}</td>
+                    </tr>
+                    <tr class="bg-gray-100">
+                      <td colspan="4" class="px-6 py-4 text-right font-bold text-lg">Grand Total:</td>
+                      <td class="px-6 py-4 font-bold text-lg text-green-600">{{ formatRupiah(po.grand_total || calculateGrandTotal()) }}</td>
                     </tr>
                   </tfoot>
                 </table>
@@ -192,6 +200,15 @@ const getStatusClass = (status) => {
 const calculateTotal = () => {
   return props.po.items.reduce((sum, item) => sum + (Number(item.total) || 0), 0)
 }
+
+const calculateGrandTotal = () => {
+  const subtotal = calculateTotal();
+  if (props.po.ppn_enabled) {
+    const ppnAmount = subtotal * 0.11; // 11% PPN
+    return subtotal + ppnAmount;
+  }
+  return subtotal;
+};
 
 const formatRupiah = (value) => {
   if (typeof value !== 'number') value = Number(value) || 0;

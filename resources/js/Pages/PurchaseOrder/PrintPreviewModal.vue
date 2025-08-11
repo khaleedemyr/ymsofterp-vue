@@ -52,8 +52,16 @@
             </tbody>
             <tfoot>
               <tr>
-                <td colspan="5" class="border px-2 py-1 text-right"><strong>Total:</strong></td>
-                <td class="border px-2 py-1 text-right"><strong>{{ formatPrice(po.items.reduce((sum, item) => sum + (Number(item.total) || 0), 0)) }}</strong></td>
+                <td colspan="5" class="border px-2 py-1 text-right"><strong>Subtotal:</strong></td>
+                <td class="border px-2 py-1 text-right"><strong>{{ formatPrice(po.subtotal || po.items.reduce((sum, item) => sum + (Number(item.total) || 0), 0)) }}</strong></td>
+              </tr>
+              <tr v-if="po.ppn_enabled">
+                <td colspan="5" class="border px-2 py-1 text-right"><strong>PPN (11%):</strong></td>
+                <td class="border px-2 py-1 text-right"><strong>{{ formatPrice(po.ppn_amount || 0) }}</strong></td>
+              </tr>
+              <tr>
+                <td colspan="5" class="border px-2 py-1 text-right"><strong>Grand Total:</strong></td>
+                <td class="border px-2 py-1 text-right"><strong>{{ formatPrice(po.grand_total || calculateGrandTotal()) }}</strong></td>
               </tr>
             </tfoot>
           </table>
@@ -121,14 +129,19 @@ const fetchOutlets = async () => {
   }
 };
 
-function formatPrice(price) {
-  return new Intl.NumberFormat('id-ID', {
-    style: 'currency',
-    currency: 'IDR',
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0
-  }).format(price);
+const formatPrice = (value) => {
+  if (typeof value !== 'number') value = Number(value) || 0;
+  return 'Rp ' + value.toLocaleString('id-ID');
 }
+
+const calculateGrandTotal = () => {
+  const subtotal = props.po.subtotal || props.po.items.reduce((sum, item) => sum + (Number(item.total) || 0), 0);
+  if (props.po.ppn_enabled) {
+    const ppnAmount = props.po.ppn_amount || (subtotal * 0.11);
+    return subtotal + ppnAmount;
+  }
+  return subtotal;
+};
 
 function generateQRCode() {
   if (!props.po?.number) return;

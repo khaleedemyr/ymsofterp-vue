@@ -46,6 +46,18 @@
                 </div>
               </div>
 
+              <!-- Notes Input -->
+              <div class="mb-6">
+                <label class="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+                <textarea v-model="form.notes" rows="2" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-blue-500 focus:border-blue-500"></textarea>
+              </div>
+
+              <!-- PPN Switch -->
+              <div class="mb-6 flex items-center">
+                <input type="checkbox" id="ppnSwitch" v-model="form.ppn_enabled" class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded">
+                <label for="ppnSwitch" class="ml-2 text-sm text-gray-700">Include PPN (11%)</label>
+              </div>
+
               <!-- Items Table -->
               <div class="mb-6">
                 <h3 class="text-lg font-semibold mb-4">Daftar Item</h3>
@@ -98,8 +110,18 @@
                     </tbody>
                     <tfoot>
                       <tr class="bg-gray-50">
-                        <td colspan="4" class="px-6 py-4 text-right font-medium">Total:</td>
+                        <td colspan="4" class="px-6 py-4 text-right font-medium">Subtotal:</td>
                         <td class="px-6 py-4 font-medium">{{ formatRupiah(calculateTotal()) }}</td>
+                        <td></td>
+                      </tr>
+                      <tr v-if="form.ppn_enabled" class="bg-gray-50">
+                        <td colspan="4" class="px-6 py-4 text-right font-medium text-blue-600">PPN (11%):</td>
+                        <td class="px-6 py-4 font-medium text-blue-600">{{ formatRupiah(calculatePPN()) }}</td>
+                        <td></td>
+                      </tr>
+                      <tr class="bg-gray-100">
+                        <td colspan="4" class="px-6 py-4 text-right font-bold text-lg">Grand Total:</td>
+                        <td class="px-6 py-4 font-bold text-lg text-green-600">{{ formatRupiah(calculateGrandTotal()) }}</td>
                         <td></td>
                       </tr>
                     </tfoot>
@@ -149,6 +171,7 @@ const props = defineProps({
 const form = ref({
   supplier_id: props.po.supplier_id || props.po.supplier?.id || '',
   notes: props.po.notes || '',
+  ppn_enabled: props.po.ppn_enabled || false,
   items: props.po.items.map(item => ({
     ...item,
     price: item.price,
@@ -189,7 +212,16 @@ const removeItem = (index) => {
 }
 
 const calculateTotal = () => {
-  return form.value.items.reduce((sum, item) => sum + item.total, 0)
+  return form.value.items.reduce((sum, item) => sum + (Number(item.total) || 0), 0)
+}
+
+const calculatePPN = () => {
+  if (!form.value.ppn_enabled) return 0;
+  return calculateTotal() * 0.11;
+}
+
+const calculateGrandTotal = () => {
+  return calculateTotal() + calculatePPN();
 }
 
 const handleSubmit = async () => {
