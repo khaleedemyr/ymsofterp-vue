@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\User;
+use App\Models\ActivityLog;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Illuminate\Support\Facades\DB;
@@ -16,6 +17,7 @@ class UserController extends Controller
         $search = $request->input('search');
         $outletId = $request->input('outlet_id');
         $divisionId = $request->input('division_id');
+        $status = $request->input('status', 'A'); // Default to active users
 
         $query = User::query()
             ->leftJoin('tbl_data_jabatan', 'users.id_jabatan', '=', 'tbl_data_jabatan.id_jabatan')
@@ -25,6 +27,17 @@ class UserController extends Controller
                 'tbl_data_jabatan.nama_jabatan',
                 'tbl_data_outlet.nama_outlet'
             );
+        
+        // Filter by status
+        if ($status === 'A') {
+            $query->where('users.status', 'A'); // Active users only
+        } elseif ($status === 'N') {
+            $query->where('users.status', 'N'); // Non-active users only
+        } elseif ($status === 'B') {
+            $query->where('users.status', 'B'); // New users only
+        }
+        // If status is 'all', don't filter by status (show all)
+        
         if ($search) {
             $query->where(function($q) use ($search) {
                 $q->where('users.nama_lengkap', 'like', "%$search%")
@@ -53,6 +66,7 @@ class UserController extends Controller
                 'search' => $search,
                 'outlet_id' => $outletId,
                 'division_id' => $divisionId,
+                'status' => $status,
             ],
             'outlets' => $outlets,
             'divisions' => $divisions,
@@ -279,19 +293,48 @@ class UserController extends Controller
 
     public function destroy(User $user)
     {
-        // Delete associated files
-        if ($user->foto_ktp && Storage::disk('public')->exists($user->foto_ktp)) {
-            Storage::disk('public')->delete($user->foto_ktp);
-        }
-        if ($user->foto_kk && Storage::disk('public')->exists($user->foto_kk)) {
-            Storage::disk('public')->delete($user->foto_kk);
-        }
-        if ($user->upload_latest_color_photo && Storage::disk('public')->exists($user->upload_latest_color_photo)) {
-            Storage::disk('public')->delete($user->upload_latest_color_photo);
-        }
+        // Set status to 'N' (Non-aktif) instead of deleting
+        $oldData = $user->toArray();
+        $user->update(['status' => 'N']);
+        
+        // Log activity
+        ActivityLog::create([
+            'user_id' => auth()->id(),
+            'activity_type' => 'status_change',
+            'module' => 'users',
+            'description' => 'Menonaktifkan karyawan: ' . $user->nama_lengkap,
+            'ip_address' => request()->ip(),
+            'user_agent' => request()->userAgent(),
+            'old_data' => $oldData,
+            'new_data' => $user->fresh()->toArray()
+        ]);
 
-        $user->delete();
-        return redirect()->back();
+        return redirect()->back()->with('success', 'Karyawan berhasil dinonaktifkan!');
+    }
+
+    public function toggleStatus(User $user)
+    {
+        $oldData = $user->toArray();
+        $newStatus = $user->status === 'A' ? 'N' : 'A';
+        $user->update(['status' => $newStatus]);
+        
+        // Log activity
+        ActivityLog::create([
+            'user_id' => auth()->id(),
+            'activity_type' => 'status_change',
+            'module' => 'users',
+            'description' => ($newStatus === 'A' ? 'Mengaktifkan' : 'Menonaktifkan') . ' karyawan: ' . $user->nama_lengkap,
+            'ip_address' => request()->ip(),
+            'user_agent' => request()->userAgent(),
+            'old_data' => $oldData,
+            'new_data' => $user->fresh()->toArray()
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Status karyawan berhasil diubah!',
+            'new_status' => $newStatus
+        ]);
     }
 
     public function show(User $user)

@@ -811,19 +811,7 @@ class ReportController extends Controller
         $orders = $query->orderBy('orders.created_at')->get();
         \Log::info('DEBUG ORDERS COUNT', ['count' => $orders->count()]);
         
-        // Debug untuk cek data orders yang dikirim
-        foreach ($orders as $order) {
-            if ($order->nomor === 'LBTEMP25080983') {
-                \Log::info('DEBUG ORDER LBTEMP25080983', [
-                    'id' => $order->id,
-                    'nomor' => $order->nomor,
-                    'total' => $order->total,
-                    'discount' => $order->discount,
-                    'manual_discount_amount' => $order->manual_discount_amount,
-                    'grand_total' => $order->grand_total
-                ]);
-            }
-        }
+
         
         // DEBUG: Log sample orders dengan commfee
         $sampleOrders = $orders->take(5);

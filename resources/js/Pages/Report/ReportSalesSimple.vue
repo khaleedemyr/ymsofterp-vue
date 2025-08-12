@@ -285,14 +285,7 @@ onMounted(async () => {
 });
 
 const formatCurrency = (val) => {
-  // Debug untuk memastikan nilai yang masuk
-  console.log('FORMAT CURRENCY INPUT:', { val, type: typeof val });
-  
   if (typeof val !== 'number') val = Number(val) || 0;
-  
-  // Debug untuk memastikan nilai setelah konversi
-  console.log('FORMAT CURRENCY AFTER CONVERSION:', { val, type: typeof val });
-  
   return val.toLocaleString('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 });
 };
 

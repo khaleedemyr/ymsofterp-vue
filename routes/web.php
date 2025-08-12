@@ -389,6 +389,7 @@ Route::get('/api/items/{id}/detail', [App\Http\Controllers\ItemController::class
 Route::get('/items/search-for-warehouse-transfer', [ItemController::class, 'searchForWarehouseTransfer']);
 Route::get('/api/items/by-fo-schedule/{fo_schedule_id}', [App\Http\Controllers\ItemController::class, 'getByFOSchedule']);
 Route::get('/items/search-for-outlet-transfer', [ItemController::class, 'searchForOutletTransfer']);
+Route::get('/items/search-for-internal-warehouse-transfer', [ItemController::class, 'searchForInternalWarehouseTransfer']);
 
 Route::resource('items', ItemController::class);
 Route::get('/items/import/template', [ItemController::class, 'downloadImportTemplate'])->name('items.import.template');
@@ -479,6 +480,24 @@ Route::middleware(['auth'])->group(function () {
     Route::delete('/warehouse-transfer/{id}', [\App\Http\Controllers\WarehouseTransferController::class, 'destroy'])->name('warehouse-transfer.destroy');
     Route::get('/warehouse-transfer/{id}/edit', [\App\Http\Controllers\WarehouseTransferController::class, 'edit'])->name('warehouse-transfer.edit');
     Route::put('/warehouse-transfer/{id}', [\App\Http\Controllers\WarehouseTransferController::class, 'update'])->name('warehouse-transfer.update');
+    
+    // Outlet Transfer Routes
+    Route::get('/outlet-transfer', [\App\Http\Controllers\OutletTransferController::class, 'index'])->name('outlet-transfer.index');
+    Route::get('/outlet-transfer/create', [\App\Http\Controllers\OutletTransferController::class, 'create'])->name('outlet-transfer.create');
+    Route::post('/outlet-transfer', [\App\Http\Controllers\OutletTransferController::class, 'store'])->name('outlet-transfer.store');
+    Route::get('/outlet-transfer/{id}', [\App\Http\Controllers\OutletTransferController::class, 'show'])->name('outlet-transfer.show');
+    Route::delete('/outlet-transfer/{id}', [\App\Http\Controllers\OutletTransferController::class, 'destroy'])->name('outlet-transfer.destroy');
+    Route::get('/outlet-transfer/{id}/edit', [\App\Http\Controllers\OutletTransferController::class, 'edit'])->name('outlet-transfer.edit');
+    Route::put('/outlet-transfer/{id}', [\App\Http\Controllers\OutletTransferController::class, 'update'])->name('outlet-transfer.update');
+    
+    // Internal Warehouse Transfer Routes
+    Route::get('/internal-warehouse-transfer', [\App\Http\Controllers\InternalWarehouseTransferController::class, 'index'])->name('internal-warehouse-transfer.index');
+    Route::get('/internal-warehouse-transfer/create', [\App\Http\Controllers\InternalWarehouseTransferController::class, 'create'])->name('internal-warehouse-transfer.create');
+    Route::post('/internal-warehouse-transfer', [\App\Http\Controllers\InternalWarehouseTransferController::class, 'store'])->name('internal-warehouse-transfer.store');
+    Route::get('/internal-warehouse-transfer/{id}', [\App\Http\Controllers\InternalWarehouseTransferController::class, 'show'])->name('internal-warehouse-transfer.show');
+    Route::delete('/internal-warehouse-transfer/{id}', [\App\Http\Controllers\InternalWarehouseTransferController::class, 'destroy'])->name('internal-warehouse-transfer.destroy');
+    Route::get('/internal-warehouse-transfer/{id}/edit', [\App\Http\Controllers\InternalWarehouseTransferController::class, 'edit'])->name('internal-warehouse-transfer.edit');
+    Route::put('/internal-warehouse-transfer/{id}', [\App\Http\Controllers\InternalWarehouseTransferController::class, 'update'])->name('internal-warehouse-transfer.update');
 });
 
 Route::resource('item-schedules', App\Http\Controllers\ItemScheduleController::class);
@@ -934,6 +953,7 @@ Route::get('/item-engineering', function () {
 Route::get('/users/dropdown-data', [UserController::class, 'getDropdownData'])->name('users.dropdown-data');
 
 Route::resource('users', UserController::class);
+Route::patch('users/{user}/toggle-status', [UserController::class, 'toggleStatus'])->name('users.toggle-status');
 
 // Roulette download template (no auth required)
 Route::get('/roulette/import/template', [\App\Http\Controllers\RouletteController::class, 'downloadTemplate'])->name('roulette.download-template');

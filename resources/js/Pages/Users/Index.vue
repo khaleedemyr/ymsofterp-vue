@@ -26,12 +26,14 @@ const pinUserId = ref(null);
 const pinUserName = ref('');
 const outletId = ref(props.filters?.outlet_id || '');
 const divisionId = ref(props.filters?.division_id || '');
+const status = ref(props.filters?.status || 'A');
 
 const debouncedSearch = debounce(() => {
   router.get('/users', {
     search: search.value,
     outlet_id: outletId.value,
     division_id: divisionId.value,
+    status: status.value,
   }, { preserveState: true, replace: true });
 }, 400);
 
@@ -82,19 +84,44 @@ function closePinModal() {
 
 async function hapus(user) {
   const result = await Swal.fire({
-    title: 'Hapus Karyawan?',
-    text: `Yakin ingin menghapus karyawan "${user.nama_lengkap}"?`,
+    title: 'Nonaktifkan Karyawan?',
+    text: `Yakin ingin menonaktifkan karyawan "${user.nama_lengkap}"?`,
     icon: 'warning',
     showCancelButton: true,
     confirmButtonColor: '#d33',
     cancelButtonColor: '#3085d6',
-    confirmButtonText: 'Ya, Hapus!',
+    confirmButtonText: 'Ya, Nonaktifkan!',
     cancelButtonText: 'Batal',
   });
   if (!result.isConfirmed) return;
   router.delete(route('users.destroy', user.id), {
-    onSuccess: () => Swal.fire('Berhasil', 'Karyawan berhasil dihapus!', 'success'),
+    onSuccess: () => Swal.fire('Berhasil', 'Karyawan berhasil dinonaktifkan!', 'success'),
   });
+}
+
+async function toggleStatus(user) {
+  const action = user.status === 'A' ? 'menonaktifkan' : 'mengaktifkan';
+  const result = await Swal.fire({
+    title: `${user.status === 'A' ? 'Nonaktifkan' : 'Aktifkan'} Karyawan?`,
+    text: `Yakin ingin ${action} karyawan "${user.nama_lengkap}"?`,
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonColor: '#3085d6',
+    cancelButtonColor: '#d33',
+    confirmButtonText: `Ya, ${user.status === 'A' ? 'Nonaktifkan' : 'Aktifkan'}!`,
+    cancelButtonText: 'Batal',
+  });
+  if (!result.isConfirmed) return;
+  
+  try {
+    const response = await axios.patch(route('users.toggle-status', user.id));
+    if (response.data.success) {
+      Swal.fire('Berhasil', response.data.message, 'success');
+      reload();
+    }
+  } catch (error) {
+    Swal.fire('Error', 'Gagal mengubah status karyawan', 'error');
+  }
 }
 
 function reload() {
@@ -105,11 +132,12 @@ function closeModal() {
   showModal.value = false;
 }
 
-watch([outletId, divisionId], () => {
+watch([outletId, divisionId, status], () => {
   router.get('/users', {
     search: search.value,
     outlet_id: outletId.value,
     division_id: divisionId.value,
+    status: status.value,
   }, { preserveState: true, replace: true });
 });
 </script>
@@ -126,6 +154,12 @@ watch([outletId, divisionId], () => {
         </button>
       </div>
       <div class="mb-4 flex gap-4">
+        <select v-model="status" class="form-input rounded-xl">
+          <option value="A">Aktif</option>
+          <option value="N">Non-Aktif</option>
+          <option value="B">Baru</option>
+          <option value="all">Semua Status</option>
+        </select>
         <select v-model="outletId" class="form-input rounded-xl">
           <option value="">Semua Outlet</option>
           <option v-for="o in outlets" :key="o.id_outlet" :value="o.id_outlet">{{ o.nama_outlet }}</option>
@@ -153,6 +187,7 @@ watch([outletId, divisionId], () => {
               <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">Outlet</th>
               <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">Email</th>
               <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">No HP</th>
+              <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Status</th>
               <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Aksi</th>
             </tr>
           </thead>
@@ -165,6 +200,16 @@ watch([outletId, divisionId], () => {
               <td class="px-4 py-2 whitespace-nowrap">{{ user.nama_outlet || '-' }}</td>
               <td class="px-4 py-2 whitespace-nowrap">{{ user.email }}</td>
               <td class="px-4 py-2 whitespace-nowrap">{{ user.no_hp }}</td>
+              <td class="px-4 py-2 whitespace-nowrap text-center">
+                <span :class="[
+                  'px-2 py-1 rounded-full text-xs font-semibold',
+                  user.status === 'A' ? 'bg-green-100 text-green-800' : 
+                  user.status === 'N' ? 'bg-red-100 text-red-800' : 
+                  'bg-yellow-100 text-yellow-800'
+                ]">
+                  {{ user.status === 'A' ? 'Aktif' : user.status === 'N' ? 'Non-Aktif' : 'Baru' }}
+                </span>
+              </td>
               <td class="px-4 py-2 whitespace-nowrap text-center flex gap-2 justify-center">
                 <button @click="openShow(user)" class="px-2 py-1 rounded bg-blue-100 text-blue-700 hover:bg-blue-200 transition" title="Detail">
                   <i class="fa-solid fa-eye"></i>
@@ -172,8 +217,11 @@ watch([outletId, divisionId], () => {
                 <button @click="openEdit(user)" class="px-2 py-1 rounded bg-yellow-200 text-yellow-900 hover:bg-yellow-300 transition" title="Edit">
                   <i class="fa-solid fa-pen-to-square"></i>
                 </button>
-                <button @click="hapus(user)" class="px-2 py-1 rounded bg-red-500 text-white hover:bg-red-600 transition" title="Hapus">
-                  <i class="fa-solid fa-trash"></i>
+                <button @click="toggleStatus(user)" :class="[
+                  'px-2 py-1 rounded transition',
+                  user.status === 'A' ? 'bg-red-500 text-white hover:bg-red-600' : 'bg-green-500 text-white hover:bg-green-600'
+                ]" :title="user.status === 'A' ? 'Nonaktifkan' : 'Aktifkan'">
+                  <i :class="user.status === 'A' ? 'fa-solid fa-user-slash' : 'fa-solid fa-user-check'"></i>
                 </button>
                 <button @click="openPinModal(user)" class="px-2 py-1 rounded bg-green-100 text-green-700 hover:bg-green-200 transition" title="Kelola PIN">
                   <i class="fa-solid fa-key"></i>
@@ -181,7 +229,7 @@ watch([outletId, divisionId], () => {
               </td>
             </tr>
             <tr v-if="users.data.length === 0">
-              <td colspan="8" class="text-center py-8 text-gray-400">Tidak ada data karyawan</td>
+              <td colspan="9" class="text-center py-8 text-gray-400">Tidak ada data karyawan</td>
             </tr>
           </tbody>
         </table>
