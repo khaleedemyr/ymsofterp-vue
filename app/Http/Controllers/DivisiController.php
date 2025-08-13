@@ -65,7 +65,7 @@ class DivisiController extends Controller
             'nama_divisi' => 'required|string|max:255|unique:tbl_data_divisi,nama_divisi',
             'nominal_lembur' => 'required|integer|min:0',
             'nominal_uang_makan' => 'required|integer|min:0',
-            'nominal_ph' => 'required|integer|min:0',
+            'nominal_ph' => 'nullable|integer|min:0',
         ], [
             'nama_divisi.required' => 'Nama divisi wajib diisi',
             'nama_divisi.unique' => 'Nama divisi sudah ada',
@@ -73,15 +73,22 @@ class DivisiController extends Controller
             'nominal_lembur.integer' => 'Nominal lembur harus berupa angka',
             'nominal_uang_makan.required' => 'Nominal uang makan wajib diisi',
             'nominal_uang_makan.integer' => 'Nominal uang makan harus berupa angka',
-            'nominal_ph.required' => 'Nominal PH wajib diisi',
             'nominal_ph.integer' => 'Nominal PH harus berupa angka',
         ]);
 
         if ($validator->fails()) {
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validation failed',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+            
             return back()->withErrors($validator)->withInput();
         }
 
-        Divisi::create([
+        $divisi = Divisi::create([
             'nama_divisi' => $request->nama_divisi,
             'nominal_lembur' => $request->nominal_lembur,
             'nominal_uang_makan' => $request->nominal_uang_makan,
@@ -89,11 +96,28 @@ class DivisiController extends Controller
             'status' => 'A',
         ]);
 
-        return redirect()->route('divisis.index')->with('success', 'Divisi berhasil dibuat!');
+        if ($request->expectsJson()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Divisi berhasil dibuat!',
+                'data' => $divisi
+            ]);
+        }
+
+        // Untuk Inertia, gunakan back() dengan success message
+        return back()->with('success', 'Divisi berhasil dibuat!');
     }
 
     public function update(Request $request, $id)
     {
+        \Log::info('Divisi update request received', [
+            'id' => $id,
+            'data' => $request->all(),
+            'method' => $request->method(),
+            'url' => $request->url(),
+            'headers' => $request->headers->all()
+        ]);
+
         $divisi = Divisi::findOrFail($id);
 
         $validator = Validator::make([
@@ -105,7 +129,7 @@ class DivisiController extends Controller
             'nama_divisi' => 'required|string|max:255|unique:tbl_data_divisi,nama_divisi,' . $id . ',id',
             'nominal_lembur' => 'required|integer|min:0',
             'nominal_uang_makan' => 'required|integer|min:0',
-            'nominal_ph' => 'required|integer|min:0',
+            'nominal_ph' => 'nullable|integer|min:0',
         ], [
             'nama_divisi.required' => 'Nama divisi wajib diisi',
             'nama_divisi.unique' => 'Nama divisi sudah ada',
@@ -113,11 +137,22 @@ class DivisiController extends Controller
             'nominal_lembur.integer' => 'Nominal lembur harus berupa angka',
             'nominal_uang_makan.required' => 'Nominal uang makan wajib diisi',
             'nominal_uang_makan.integer' => 'Nominal uang makan harus berupa angka',
-            'nominal_ph.required' => 'Nominal PH wajib diisi',
             'nominal_ph.integer' => 'Nominal PH harus berupa angka',
         ]);
 
         if ($validator->fails()) {
+            \Log::error('Divisi update validation failed', [
+                'errors' => $validator->errors()
+            ]);
+            
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validation failed',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+            
             return back()->withErrors($validator)->withInput();
         }
 
@@ -128,7 +163,21 @@ class DivisiController extends Controller
             'nominal_ph' => $request->nominal_ph,
         ]);
 
-        return redirect()->route('divisis.index')->with('success', 'Divisi berhasil diperbarui!');
+        \Log::info('Divisi updated successfully', [
+            'id' => $id,
+            'updated_data' => $divisi->fresh()->toArray()
+        ]);
+
+        if ($request->expectsJson()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Divisi berhasil diperbarui!',
+                'data' => $divisi->fresh()
+            ]);
+        }
+
+        // Untuk Inertia, gunakan back() dengan success message
+        return back()->with('success', 'Divisi berhasil diperbarui!');
     }
 
     public function destroy($id)
@@ -136,7 +185,7 @@ class DivisiController extends Controller
         $divisi = Divisi::findOrFail($id);
         $divisi->delete();
 
-        return redirect()->route('divisis.index')->with('success', 'Divisi berhasil dihapus!');
+        return back()->with('success', 'Divisi berhasil dihapus!');
     }
 
     public function toggleStatus($id)
@@ -146,6 +195,6 @@ class DivisiController extends Controller
             'status' => $divisi->status === 'A' ? 'N' : 'A'
         ]);
 
-        return redirect()->route('divisis.index')->with('success', 'Status divisi berhasil diubah!');
+        return back()->with('success', 'Status divisi berhasil diubah!');
     }
 } 

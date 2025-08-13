@@ -3,6 +3,8 @@ import { ref, watch, computed } from 'vue';
 import { router, useForm } from '@inertiajs/vue3';
 import { Dialog, DialogPanel, DialogTitle, TransitionChild, TransitionRoot } from '@headlessui/vue';
 import { XMarkIcon } from '@heroicons/vue/24/outline';
+import axios from 'axios'; // Added axios import
+import Swal from 'sweetalert2'; // Added Swal import
 
 const props = defineProps({
   show: Boolean,
@@ -19,6 +21,8 @@ const form = useForm({
   nominal_ph: '',
 });
 
+console.log('Form initialized with:', form.data());
+
 const isSubmitting = ref(false);
 
 const modalTitle = computed(() => {
@@ -30,14 +34,32 @@ const submitButtonText = computed(() => {
 });
 
 watch(() => props.show, (show) => {
+  console.log('Modal show changed:', show);
+  console.log('Props divisi:', props.divisi);
+  
   if (show && props.divisi) {
     // Edit mode - populate form
+    console.log('Populating form with divisi data:', {
+      nama_divisi: props.divisi.nama_divisi,
+      nominal_lembur: props.divisi.nominal_lembur,
+      nominal_uang_makan: props.divisi.nominal_uang_makan,
+      nominal_ph: props.divisi.nominal_ph,
+    });
+    
     form.nama_divisi = props.divisi.nama_divisi;
-    form.nominal_lembur = props.divisi.nominal_lembur;
-    form.nominal_uang_makan = props.divisi.nominal_uang_makan;
-    form.nominal_ph = props.divisi.nominal_ph;
+    form.nominal_lembur = formatNumber(String(props.divisi.nominal_lembur || ''));
+    form.nominal_uang_makan = formatNumber(String(props.divisi.nominal_uang_makan || ''));
+    form.nominal_ph = props.divisi.nominal_ph ? formatNumber(String(props.divisi.nominal_ph)) : '';
+    
+    console.log('Form after population:', {
+      nama_divisi: form.nama_divisi,
+      nominal_lembur: form.nominal_lembur,
+      nominal_uang_makan: form.nominal_uang_makan,
+      nominal_ph: form.nominal_ph,
+    });
   } else if (show && !props.divisi) {
     // Create mode - reset form
+    console.log('Resetting form for create mode');
     form.reset();
   }
 });
@@ -47,51 +69,131 @@ function closeModal() {
   form.reset();
 }
 
+function reloadPage() {
+  window.location.reload();
+}
+
 function submit() {
   isSubmitting.value = true;
+  
+  console.log('Submitting form:', {
+    mode: props.mode,
+    divisiId: props.divisi?.id,
+    formData: form.data()
+  });
+  
+  console.log('Form values before cleaning:', {
+    nama_divisi: form.nama_divisi,
+    nominal_lembur: form.nominal_lembur,
+    nominal_uang_makan: form.nominal_uang_makan,
+    nominal_ph: form.nominal_ph,
+  });
   
   // Clean nominal values before sending
   const cleanForm = {
     nama_divisi: form.nama_divisi,
-    nominal_lembur: form.nominal_lembur.replace(/\./g, ''),
-    nominal_uang_makan: form.nominal_uang_makan.replace(/\./g, ''),
-    nominal_ph: form.nominal_ph.replace(/\./g, ''),
+    nominal_lembur: String(form.nominal_lembur || '').replace(/\./g, ''),
+    nominal_uang_makan: String(form.nominal_uang_makan || '').replace(/\./g, ''),
+    nominal_ph: form.nominal_ph ? String(form.nominal_ph).replace(/\./g, '') : null,
   };
   
+  console.log('Clean form data:', cleanForm);
+  
+  // Get CSRF token
+  const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+  console.log('CSRF Token:', csrfToken);
+  
   if (props.mode === 'create') {
-    form.post(route('divisis.store'), {
-      data: cleanForm,
-      onSuccess: () => {
-        closeModal();
-        emit('success');
-      },
-      onFinish: () => {
-        isSubmitting.value = false;
+    // Use axios for debugging
+    console.log('Sending POST request to: /divisis');
+    
+    axios.post('/divisis', cleanForm, {
+      headers: {
+        'X-CSRF-TOKEN': csrfToken,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
       }
-    });
+    })
+      .then(response => {
+        console.log('Create success:', response);
+        Swal.fire('Berhasil', response.data.message, 'success').then(() => {
+          setTimeout(() => {
+            reloadPage();
+          }, 100);
+        });
+      })
+      .catch(error => {
+        console.error('Create error:', error);
+        console.error('Error response:', error.response);
+        if (error.response?.data?.errors) {
+          // Handle validation errors
+          Object.keys(error.response.data.errors).forEach(field => {
+            form.setError(field, error.response.data.errors[field][0]);
+          });
+        } else {
+          Swal.fire('Error', error.response?.data?.message || 'Terjadi kesalahan', 'error');
+        }
+      })
+      .finally(() => {
+        isSubmitting.value = false;
+      });
   } else {
-    form.put(route('divisis.update', props.divisi.id), {
-      data: cleanForm,
-      onSuccess: () => {
-        closeModal();
-        emit('success');
-      },
-      onFinish: () => {
-        isSubmitting.value = false;
+    // Use axios for debugging
+    console.log('Sending PUT request to:', `/divisis/${props.divisi.id}`);
+    
+    // Add _method field for PUT request
+    const formData = { ...cleanForm, _method: 'PUT' };
+    
+    axios.post(`/divisis/${props.divisi.id}`, formData, {
+      headers: {
+        'X-CSRF-TOKEN': csrfToken,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
       }
-    });
+    })
+      .then(response => {
+        console.log('Update success:', response);
+        Swal.fire('Berhasil', response.data.message, 'success').then(() => {
+          setTimeout(() => {
+            reloadPage();
+          }, 100);
+        });
+      })
+      .catch(error => {
+        console.error('Update error:', error);
+        console.error('Error response:', error.response);
+        if (error.response?.data?.errors) {
+          // Handle validation errors
+          Object.keys(error.response.data.errors).forEach(field => {
+            form.setError(field, error.response.data.errors[field][0]);
+          });
+        } else {
+          Swal.fire('Error', error.response?.data?.message || 'Terjadi kesalahan', 'error');
+        }
+      })
+      .finally(() => {
+        isSubmitting.value = false;
+      });
   }
 }
 
 function formatNumber(value) {
-  // Remove non-numeric characters
-  const numericValue = value.replace(/[^\d]/g, '');
+  // Handle null, undefined, or empty values
+  if (!value && value !== 0) return '';
+  
+  // Convert to string and remove non-numeric characters
+  const numericValue = String(value).replace(/[^\d]/g, '');
+  
+  // If no numeric value, return empty string
+  if (!numericValue) return '';
+  
   // Format with thousand separators
   return numericValue.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
 }
 
 function handleNominalInput(field, event) {
-  const formatted = formatNumber(event.target.value);
+  const value = event.target.value || '';
+  const formatted = formatNumber(value);
   form[field] = formatted;
 }
 </script>
@@ -188,7 +290,7 @@ function handleNominalInput(field, event) {
                       <!-- Nominal PH -->
                       <div>
                         <label for="nominal_ph" class="block text-sm font-medium text-gray-700 mb-1">
-                          Nominal PH <span class="text-red-500">*</span>
+                          Nominal PH
                         </label>
                         <div class="relative">
                           <span class="absolute left-3 top-2 text-gray-500">Rp</span>

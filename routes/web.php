@@ -272,9 +272,6 @@ Route::middleware(['auth'])->group(function () {
 
     // Divisi routes
     Route::resource('divisis', DivisiController::class);
-    Route::put('/divisis/{id}', [DivisiController::class, 'update']);
-    Route::patch('/divisis/{id}', [DivisiController::class, 'update']);
-    Route::post('/divisis/{id}', [DivisiController::class, 'update'])->name('divisis.update');
     Route::patch('/divisis/{id}/toggle-status', [DivisiController::class, 'toggleStatus'])->name('divisis.toggle-status');
 
     // Man Power Outlet Report

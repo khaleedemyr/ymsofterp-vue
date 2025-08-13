@@ -10,6 +10,7 @@ import DivisiFormModal from './DivisiFormModal.vue';
 const props = defineProps({
   divisis: Object, // { data, links, meta }
   filters: Object,
+  success: String,
 });
 
 const search = ref(props.filters?.search || '');
@@ -25,6 +26,14 @@ const debouncedSearch = debounce(() => {
 watch(showInactive, (val) => {
   router.get('/divisis', { search: search.value, status: val ? 'inactive' : 'active' }, { preserveState: true, replace: true });
 });
+
+// Watch for success message
+watch(() => props.success, (message) => {
+  console.log('Success message received:', message);
+  if (message) {
+    Swal.fire('Berhasil', message, 'success');
+  }
+}, { immediate: true });
 
 function onSearchInput() {
   debouncedSearch();
