@@ -7,6 +7,8 @@ use App\Models\PurchaseOrderFood;
 use App\Models\PurchaseOrderFoodItem;
 use App\Models\PurchaseRequisitionFoodItem;
 use App\Models\Supplier;
+use App\Models\Item;
+use App\Models\Unit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
@@ -17,11 +19,17 @@ class PurchaseOrderFoodsController extends Controller
 {
     public function index()
     {
-        $query = PurchaseOrderFood::with(['supplier', 'creator', 'items'])
+        $query = PurchaseOrderFood::with(['supplier', 'creator', 'items', 'purchasing_manager', 'gm_finance'])
             ->orderBy('created_at', 'desc');
 
         if (request('search')) {
-            $query->where('number', 'like', '%' . request('search') . '%');
+            $search = request('search');
+            $query->where(function($q) use ($search) {
+                $q->where('number', 'like', '%' . $search . '%')
+                  ->orWhereHas('supplier', function($supplierQuery) use ($search) {
+                      $supplierQuery->where('name', 'like', '%' . $search . '%');
+                  });
+            });
         }
         if (request('status')) {
             $query->where('status', request('status'));
@@ -33,7 +41,8 @@ class PurchaseOrderFoodsController extends Controller
             $query->whereDate('date', '<=', request('to'));
         }
 
-        $purchaseOrders = $query->paginate(10)->withQueryString();
+        $perPage = request('perPage', 10);
+        $purchaseOrders = $query->paginate($perPage)->withQueryString();
         $purchaseOrders->getCollection()->transform(function ($po) {
             $prItemIds = $po->items->pluck('pr_food_item_id')->toArray();
             $prIds = \App\Models\PurchaseRequisitionFoodItem::whereIn('id', $prItemIds)->pluck('pr_food_id')->unique()->toArray();
@@ -44,7 +53,7 @@ class PurchaseOrderFoodsController extends Controller
 
         return inertia('PurchaseOrder/PurchaseOrderFoods', [
             'purchaseOrders' => $purchaseOrders,
-            'filters' => request()->only(['search', 'status', 'from', 'to']),
+            'filters' => request()->only(['search', 'status', 'from', 'to', 'perPage']),
             'user' => [
                 'id' => auth()->user()->id,
                 'id_jabatan' => auth()->user()->id_jabatan,
@@ -90,13 +99,15 @@ class PurchaseOrderFoodsController extends Controller
             })
             ->with(['items' => function($q) use ($poPrItemIds) {
                 $q->whereNotIn('id', $poPrItemIds);
-            }, 'items.item'])
+            }, 'items.item', 'warehouse'])
             ->get()
             ->map(function ($pr) {
                 return [
                     'id' => $pr->id,
                     'number' => $pr->pr_number,
                     'date' => \Carbon\Carbon::parse($pr->tanggal)->format('d/m/Y'),
+                    'warehouse_id' => $pr->warehouse_id,
+                    'warehouse_name' => $pr->warehouse ? $pr->warehouse->name : 'Unknown Warehouse',
                     'items' => $pr->items->map(function ($item) {
                         return [
                             'id' => $item->id,
@@ -248,7 +259,7 @@ class PurchaseOrderFoodsController extends Controller
                     // Get unit ID
                     $unitId = null;
                     if ($prItem->unit) {
-                        $unit = \App\Models\Unit::where('name', $prItem->unit)->first();
+                        $unit = Unit::where('name', $prItem->unit)->first();
                         $unitId = $unit ? $unit->id : null;
                     }
 
@@ -630,16 +641,58 @@ class PurchaseOrderFoodsController extends Controller
             'notes' => 'nullable|string',
             'ppn_enabled' => 'boolean',
             'items' => 'required|array',
-            'items.*.id' => 'required|exists:purchase_order_food_items,id',
+            'items.*.id' => 'nullable|exists:purchase_order_food_items,id',
             'items.*.price' => 'required|numeric|min:0',
             'items.*.total' => 'required|numeric|min:0',
+            'new_items' => 'nullable|array',
+            'new_items.*.item.id' => 'required|exists:items,id',
+            'new_items.*.quantity' => 'required|numeric|min:1',
+            'new_items.*.price' => 'required|numeric|min:0',
+            'deleted_items' => 'nullable|array',
+            'deleted_items.*' => 'exists:purchase_order_food_items,id',
         ]);
 
         try {
             DB::beginTransaction();
 
-            // Calculate subtotal
-            $subtotal = collect($request->items)->sum('total');
+            // Handle deleted items
+            if ($request->deleted_items) {
+                PurchaseOrderFoodItem::whereIn('id', $request->deleted_items)->delete();
+            }
+
+            // Update existing items
+            foreach ($request->items as $item) {
+                if ($item['id']) {
+                    PurchaseOrderFoodItem::where('id', $item['id'])
+                        ->update([
+                            'price' => $item['price'],
+                            'total' => $item['total'],
+                        ]);
+                }
+            }
+
+            // Add new items
+            if ($request->new_items) {
+                foreach ($request->new_items as $newItem) {
+                    // Get item details
+                    $item = Item::find($newItem['item']['id']);
+                    
+                    PurchaseOrderFoodItem::create([
+                        'purchase_order_food_id' => $po->id,
+                        'item_id' => $item->id,
+                        'quantity' => $newItem['quantity'],
+                        'price' => $newItem['price'],
+                        'total' => $newItem['quantity'] * $newItem['price'],
+                        'unit_id' => $item->small_unit_id,
+                        'created_by' => auth()->id(),
+                        'pr_food_item_id' => $newItem['pr_food_item_id'] ?? null, // Reference to PR item if available
+                    ]);
+                }
+            }
+
+            // Recalculate totals
+            $allItems = PurchaseOrderFoodItem::where('purchase_order_food_id', $po->id)->get();
+            $subtotal = $allItems->sum('total');
             
             // Calculate PPN if enabled
             $ppnAmount = 0;
@@ -657,15 +710,6 @@ class PurchaseOrderFoodsController extends Controller
                 'subtotal' => $subtotal,
                 'grand_total' => $grandTotal,
             ]);
-
-            // Update items
-            foreach ($request->items as $item) {
-                PurchaseOrderFoodItem::where('id', $item['id'])
-                    ->update([
-                        'price' => $item['price'],
-                        'total' => $item['total'],
-                    ]);
-            }
 
             // Log activity
             ActivityLog::create([
@@ -740,7 +784,7 @@ class PurchaseOrderFoodsController extends Controller
     // Get PO yang pending GM Finance approval
     public function getPendingGMFINANCEPOs(Request $request)
     {
-        $query = PurchaseOrderFood::with(['supplier', 'creator', 'items.item', 'items.unit'])
+        $query = PurchaseOrderFood::with(['supplier', 'creator', 'items.item', 'items.unit', 'purchasing_manager'])
             ->where('status', 'draft')
             ->whereNotNull('purchasing_manager_approved_at')
             ->whereNull('gm_finance_approved_at')
@@ -748,7 +792,13 @@ class PurchaseOrderFoodsController extends Controller
 
         // Apply filters
         if ($request->search) {
-            $query->where('number', 'like', '%' . $request->search . '%');
+            $search = $request->search;
+            $query->where(function($q) use ($search) {
+                $q->where('number', 'like', '%' . $search . '%')
+                  ->orWhereHas('supplier', function($supplierQuery) use ($search) {
+                      $supplierQuery->where('name', 'like', '%' . $search . '%');
+                  });
+            });
         }
         if ($request->status) {
             $query->where('status', $request->status);

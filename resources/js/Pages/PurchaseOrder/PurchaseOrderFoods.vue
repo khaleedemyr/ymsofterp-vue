@@ -23,6 +23,7 @@ const search = ref(props.filters?.search || '');
 const selectedStatus = ref(props.filters?.status || '');
 const from = ref(props.filters?.from || '');
 const to = ref(props.filters?.to || '');
+const perPage = ref(props.filters?.perPage || 10);
 
 // Modal state untuk pending GM Finance
 const showPendingGMFinanceModal = ref(false);
@@ -41,7 +42,8 @@ const debouncedSearch = debounce(() => {
     search: search.value, 
     status: selectedStatus.value, 
     from: from.value, 
-    to: to.value
+    to: to.value,
+    perPage: perPage.value
   }, { preserveState: true, replace: true });
 }, 400);
 
@@ -52,6 +54,10 @@ function onStatusChange() {
   debouncedSearch();
 }
 function onDateChange() {
+  debouncedSearch();
+}
+
+function onPerPageChange() {
   debouncedSearch();
 }
 
@@ -400,7 +406,7 @@ onMounted(() => {
                         v-model="search"
                         @input="onSearchInput"
                         type="text"
-                        placeholder="Cari nomor PO..."
+                        placeholder="Cari nomor PO atau nama supplier..."
                         class="w-64 px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition"
                     />
                     <select v-model="selectedStatus" @change="onStatusChange" class="px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition">
@@ -414,6 +420,12 @@ onMounted(() => {
                     <input type="date" v-model="from" @change="onDateChange" class="px-2 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition" placeholder="Dari tanggal" />
                     <span>-</span>
                     <input type="date" v-model="to" @change="onDateChange" class="px-2 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition" placeholder="Sampai tanggal" />
+                    <select v-model="perPage" @change="onPerPageChange" class="px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition">
+                        <option value="10">10 data</option>
+                        <option value="25">25 data</option>
+                        <option value="50">50 data</option>
+                        <option value="100">100 data</option>
+                    </select>
                     <!-- Tombol Pending GM Finance -->
                     <button 
                         v-if="canApproveGMFinance()"
@@ -447,13 +459,15 @@ onMounted(() => {
                                             <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Tgl Kedatangan</th>
                                             <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Tanggal Print</th>
                                             <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Created By</th>
+                                            <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Purchasing Manager</th>
+                                            <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">GM Finance</th>
                                             <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Status</th>
                                             <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider rounded-tr-2xl">Aksi</th>
                                         </tr>
                                     </thead>
                                     <tbody>
                                         <tr v-if="!purchaseOrders?.data || purchaseOrders.data.length === 0">
-                                            <td colspan="9" class="text-center py-10 text-gray-400">Tidak ada data PO Foods.</td>
+                                            <td colspan="11" class="text-center py-10 text-gray-400">Tidak ada data PO Foods.</td>
                                         </tr>
                                         <tr v-for="po in purchaseOrders?.data || []" :key="po.id" class="hover:bg-blue-50 transition shadow-sm">
                                             <td class="px-6 py-3 font-mono font-semibold text-blue-700">{{ po.number }}</td>
@@ -470,6 +484,22 @@ onMounted(() => {
                                             <td class="px-6 py-3">{{ po.arrival_date ? new Date(po.arrival_date).toLocaleDateString('id-ID') : '-' }}</td>
                                             <td class="px-6 py-3">{{ po.printed_at ? new Date(po.printed_at).toLocaleDateString('id-ID') + ' ' + new Date(po.printed_at).toLocaleTimeString('id-ID') : '-' }}</td>
                                             <td class="px-6 py-3">{{ po.creator?.nama_lengkap }}</td>
+                                            <td class="px-6 py-3">
+                                                <div v-if="po.purchasing_manager_approved_at" class="text-xs">
+                                                    <div class="font-semibold text-green-700">{{ po.purchasing_manager?.nama_lengkap }}</div>
+                                                    <div class="text-gray-600">{{ new Date(po.purchasing_manager_approved_at).toLocaleDateString('id-ID') }}</div>
+                                                    <div class="text-gray-500">{{ new Date(po.purchasing_manager_approved_at).toLocaleTimeString('id-ID') }}</div>
+                                                </div>
+                                                <div v-else class="text-xs text-gray-400">-</div>
+                                            </td>
+                                            <td class="px-6 py-3">
+                                                <div v-if="po.gm_finance_approved_at" class="text-xs">
+                                                    <div class="font-semibold text-green-700">{{ po.gm_finance?.nama_lengkap }}</div>
+                                                    <div class="text-gray-600">{{ new Date(po.gm_finance_approved_at).toLocaleDateString('id-ID') }}</div>
+                                                    <div class="text-gray-500">{{ new Date(po.gm_finance_approved_at).toLocaleTimeString('id-ID') }}</div>
+                                                </div>
+                                                <div v-else class="text-xs text-gray-400">-</div>
+                                            </td>
                                             <td class="px-6 py-3">
                                                 <span :class="{
                                                     'bg-gray-100 text-gray-700': po.status === 'draft',
@@ -546,7 +576,7 @@ onMounted(() => {
                             v-model="modalSearch"
                             @keyup.enter="applyModalFilter"
                             type="text"
-                            placeholder="Cari nomor PO..."
+                            placeholder="Cari nomor PO atau nama supplier..."
                             class="w-48 px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-purple-400 focus:border-purple-400 transition text-sm"
                         />
                         <select 
@@ -635,6 +665,10 @@ onMounted(() => {
                                             <div>
                                                 <h3 class="font-semibold text-purple-800">{{ po.number }}</h3>
                                                 <p class="text-sm text-purple-600">{{ po.supplier?.name }}</p>
+                                                <div v-if="po.purchasing_manager_approved_at" class="text-xs text-green-600 mt-1">
+                                                    <i class="fas fa-check-circle mr-1"></i>
+                                                    Approved by {{ po.purchasing_manager?.nama_lengkap }} on {{ new Date(po.purchasing_manager_approved_at).toLocaleDateString('id-ID') }} {{ new Date(po.purchasing_manager_approved_at).toLocaleTimeString('id-ID') }}
+                                                </div>
                                             </div>
                                         </div>
                                         <div class="flex gap-2">

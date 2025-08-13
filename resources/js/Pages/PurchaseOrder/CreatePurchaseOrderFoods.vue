@@ -1,15 +1,18 @@
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, computed } from 'vue';
 import { useForm } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import axios from 'axios';
 import Swal from 'sweetalert2';
 import { useRouter } from 'vue-router'
+import Multiselect from 'vue-multiselect';
+import 'vue-multiselect/dist/vue-multiselect.min.css';
 
 const prList = ref([]);
 const suppliers = ref([]);
 const loading = ref(false);
 const expandedPRs = ref({});
+const expandedWarehouses = ref({});
 const notes = ref('');
 const router = useRouter()
 
@@ -30,7 +33,7 @@ const fetchPRList = async () => {
                 if (!poForm.items_by_supplier[item.id]) {
                     // Default: satu baris, qty penuh
                     poForm.items_by_supplier[item.id] = [{
-                        supplier_id: '',
+                        supplier_id: null,
                         qty: item.quantity,
                         price: '',
                         last_price: '',
@@ -49,6 +52,25 @@ const fetchPRList = async () => {
     }
 };
 
+// Group PRs by warehouse
+const groupedPRs = computed(() => {
+    const grouped = {};
+    prList.value.forEach(pr => {
+        const warehouseId = pr.warehouse_id || 'unknown';
+        const warehouseName = pr.warehouse_name || 'Unknown Warehouse';
+        
+        if (!grouped[warehouseId]) {
+            grouped[warehouseId] = {
+                id: warehouseId,
+                name: warehouseName,
+                prs: []
+            };
+        }
+        grouped[warehouseId].prs.push(pr);
+    });
+    return grouped;
+});
+
 // Fetch suppliers
 const fetchSuppliers = async () => {
     try {
@@ -65,10 +87,15 @@ const togglePR = (prId) => {
     expandedPRs.value[prId] = !expandedPRs.value[prId];
 };
 
+// Toggle expand/collapse warehouse
+const toggleWarehouse = (warehouseId) => {
+    expandedWarehouses.value[warehouseId] = !expandedWarehouses.value[warehouseId];
+};
+
 // Tambah baris split untuk item tertentu
 function addSplit(itemId) {
     poForm.items_by_supplier[itemId].push({
-        supplier_id: '',
+        supplier_id: null,
         qty: 0,
         price: '',
         last_price: '',
@@ -89,14 +116,24 @@ function totalQtyUsed(itemId, exceptIdx = -1) {
         .reduce((sum, split) => sum + Number(split.qty || 0), 0);
 }
 
-function validateSplitQty() {
+async function validateSplitQty() {
     for (const [itemId, splits] of Object.entries(poForm.items_by_supplier)) {
         const total = splits.reduce((sum, s) => sum + Number(s.qty || 0), 0);
         // Cari item di prList
         const item = prList.value.flatMap(pr => pr.items).find(i => i.id == itemId);
         if (item && total > item.quantity) {
-            Swal.fire('Error', `Total qty split untuk item "${item.name}" melebihi qty PR (${item.quantity})`, 'error');
-            return false;
+            // Show warning instead of error, allowing user to proceed
+            const result = await Swal.fire({
+                title: 'Quantity Exceeds PR',
+                text: `Total qty split untuk item "${item.name}" (${total}) melebihi qty PR (${item.quantity}). Apakah Anda yakin ingin melanjutkan?`,
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#3085d6',
+                cancelButtonColor: '#d33',
+                confirmButtonText: 'Ya, Lanjutkan',
+                cancelButtonText: 'Batal'
+            });
+            return result.isConfirmed;
         }
     }
     return true;
@@ -104,16 +141,17 @@ function validateSplitQty() {
 
 // Generate PO berdasarkan supplier
 const generatePO = async () => {
-    if (!validateSplitQty()) return;
+    if (!(await validateSplitQty())) return;
     // Hanya kirim field yang diperlukan
     const itemsBySupplier = {};
     Object.entries(poForm.items_by_supplier).forEach(([itemId, splits]) => {
         splits.forEach(split => {
-            if (!split.supplier_id || !split.price || !split.qty || split.qty <= 0) return;
-            if (!itemsBySupplier[split.supplier_id]) itemsBySupplier[split.supplier_id] = [];
-            itemsBySupplier[split.supplier_id].push({
+            const supplierId = split.supplier_id ? split.supplier_id.id : null;
+            if (!supplierId || !split.price || !split.qty || split.qty <= 0) return;
+            if (!itemsBySupplier[supplierId]) itemsBySupplier[supplierId] = [];
+            itemsBySupplier[supplierId].push({
                 id: Number(itemId),
-                supplier_id: split.supplier_id,
+                supplier_id: supplierId,
                 qty: split.qty,
                 price: split.price
             });
@@ -166,7 +204,8 @@ function convertPrice(priceSmall, item) {
 }
 
 const onSupplierChange = async (item) => {
-    const supplierId = poForm.items_by_supplier[item.id][0].supplier_id;
+    const supplier = poForm.items_by_supplier[item.id][0].supplier_id;
+    const supplierId = supplier ? supplier.id : null;
     if (!supplierId) {
         poForm.items_by_supplier[item.id].forEach(split => {
             split.price = '';
@@ -284,88 +323,122 @@ onMounted(() => {
                             </svg>
                         </div>
                         <div v-else>
-                            <div v-for="pr in prList" :key="pr.id" class="mb-4 border rounded-lg overflow-hidden">
-                                <!-- PR Header -->
+                            <!-- Warehouse Groups -->
+                            <div v-for="warehouse in Object.values(groupedPRs)" :key="warehouse.id" class="mb-6 border rounded-lg overflow-hidden">
+                                <!-- Warehouse Header -->
                                 <div 
-                                    class="bg-gray-50 px-4 py-3 flex justify-between items-center cursor-pointer hover:bg-gray-100"
-                                    @click="togglePR(pr.id)"
+                                    class="bg-blue-50 px-4 py-3 flex justify-between items-center cursor-pointer hover:bg-blue-100 border-b"
+                                    @click="toggleWarehouse(warehouse.id)"
                                 >
                                     <div class="flex items-center">
                                         <svg 
                                             class="w-5 h-5 mr-2 transition-transform"
-                                            :class="{ 'transform rotate-90': expandedPRs[pr.id] }"
+                                            :class="{ 'transform rotate-90': expandedWarehouses[warehouse.id] }"
                                             fill="none" 
                                             stroke="currentColor" 
                                             viewBox="0 0 24 24"
                                         >
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
                                         </svg>
-                                        <span class="font-medium">{{ pr.number }} - {{ pr.date }}</span>
+                                        <span class="font-semibold text-blue-800">{{ warehouse.name }}</span>
+                                        <span class="ml-2 text-sm text-blue-600">({{ warehouse.prs.length }} PR)</span>
                                     </div>
                                 </div>
 
-                                <!-- PR Items -->
-                                <div v-if="expandedPRs[pr.id]" class="p-4 border-t overflow-x-auto">
-                                    <div class="overflow-x-auto">
-                                        <table class="min-w-full divide-y divide-gray-200">
-                                            <thead class="bg-gray-50">
-                                                <tr>
-                                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Item</th>
-                                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Quantity</th>
-                                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Unit</th>
-                                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tgl Kedatangan</th>
-                                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Supplier</th>
-                                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Price</th>
-                                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Subtotal</th>
-                                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Aksi</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody class="bg-white divide-y divide-gray-200">
-                                                <template v-for="item in pr.items" :key="item.id">
-                                                    <tr v-for="(split, idx) in poForm.items_by_supplier[item.id]" :key="idx">
-                                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ item.name }}</td>
-                                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                                            <input type="number" v-model="split.qty" :max="item.quantity - totalQtyUsed(item.id, idx)" class="w-20 border rounded px-2 py-1" />
-                                                        </td>
-                                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ item.unit }}</td>
-                                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ item.arrival_date ? new Date(item.arrival_date).toLocaleDateString('id-ID') : '-' }}</td>
-                                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                                            <select v-model="split.supplier_id" @change="onSupplierChange(item)" class="w-40 mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md">
-                                                                <option value="">Select Supplier</option>
-                                                                <option v-for="supplier in suppliers" :key="supplier.id" :value="supplier.id">
-                                                                    {{ supplier.name }}
-                                                                </option>
-                                                            </select>
-                                                        </td>
-                                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                                            <input type="number" v-model="split.price" placeholder="Enter price" class="w-24 border rounded px-2 py-1" />
-                                                            <div>
-                                                                <small class="text-gray-400">
-                                                                    Last: {{ formatRupiah(split.last_price ?? 0) }} |
-                                                                    Min: {{ formatRupiah(split.min_price ?? 0) }} |
-                                                                    Max: {{ formatRupiah(split.max_price ?? 0) }}
-                                                                </small>
-                                                            </div>
-                                                            <div v-if="split.price_medium || split.price_large" class="text-xs text-blue-500 mt-1">
-                                                                <div v-if="split.price_medium">
-                                                                    Medium: {{ formatRupiah(split.price_medium) }} <span v-if="item.medium_unit_name">/ {{ item.medium_unit_name }}</span>
-                                                                </div>
-                                                                <div v-if="split.price_large">
-                                                                    Large: {{ formatRupiah(split.price_large) }} <span v-if="item.large_unit_name">/ {{ item.large_unit_name }}</span>
-                                                                </div>
-                                                            </div>
-                                                        </td>
-                                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                                            {{ formatRupiah((split.price || 0) * split.qty) }}
-                                                        </td>
-                                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                                            <button type="button" @click="addSplit(item.id)" class="bg-blue-100 hover:bg-blue-200 text-blue-700 px-2 py-1 rounded text-xs mr-1">Split</button>
-                                                            <button v-if="poForm.items_by_supplier[item.id].length > 1" type="button" @click="removeSplit(item.id, idx)" class="bg-red-100 hover:bg-red-200 text-red-700 px-2 py-1 rounded text-xs">Hapus</button>
-                                                        </td>
-                                                    </tr>
-                                                </template>
-                                            </tbody>
-                                        </table>
+                                <!-- PR List for this Warehouse -->
+                                <div v-if="expandedWarehouses[warehouse.id]">
+                                    <div v-for="pr in warehouse.prs" :key="pr.id" class="border-b last:border-b-0">
+                                        <!-- PR Header -->
+                                        <div 
+                                            class="bg-gray-50 px-4 py-3 flex justify-between items-center cursor-pointer hover:bg-gray-100"
+                                            @click="togglePR(pr.id)"
+                                        >
+                                            <div class="flex items-center">
+                                                <svg 
+                                                    class="w-5 h-5 mr-2 transition-transform"
+                                                    :class="{ 'transform rotate-90': expandedPRs[pr.id] }"
+                                                    fill="none" 
+                                                    stroke="currentColor" 
+                                                    viewBox="0 0 24 24"
+                                                >
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                                                </svg>
+                                                <span class="font-medium">{{ pr.number }} - {{ pr.date }}</span>
+                                            </div>
+                                        </div>
+
+                                        <!-- PR Items -->
+                                        <div v-if="expandedPRs[pr.id]" class="p-4 border-t overflow-x-auto">
+                                            <div class="overflow-x-auto">
+                                                <table class="min-w-full divide-y divide-gray-200">
+                                                    <thead class="bg-gray-50">
+                                                        <tr>
+                                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Item</th>
+                                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Quantity</th>
+                                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Unit</th>
+                                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tgl Kedatangan</th>
+                                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Supplier</th>
+                                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Price</th>
+                                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Subtotal</th>
+                                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Aksi</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody class="bg-white divide-y divide-gray-200">
+                                                        <template v-for="item in pr.items" :key="item.id">
+                                                            <tr v-for="(split, idx) in poForm.items_by_supplier[item.id]" :key="idx">
+                                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ item.name }}</td>
+                                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                                                    <input type="number" v-model="split.qty" :max="item.quantity - totalQtyUsed(item.id, idx)" class="w-20 border rounded px-2 py-1" />
+                                                                </td>
+                                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ item.unit }}</td>
+                                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ item.arrival_date ? new Date(item.arrival_date).toLocaleDateString('id-ID') : '-' }}</td>
+                                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                                                    <Multiselect
+                                                                        v-model="split.supplier_id"
+                                                                        :options="suppliers"
+                                                                        :searchable="true"
+                                                                        :close-on-select="true"
+                                                                        :clear-on-select="false"
+                                                                        :preserve-search="true"
+                                                                        placeholder="Pilih atau cari supplier..."
+                                                                        track-by="id"
+                                                                        label="name"
+                                                                        :preselect-first="false"
+                                                                        @input="onSupplierChange(item)"
+                                                                        class="w-40"
+                                                                    />
+                                                                </td>
+                                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                                                    <input type="number" v-model="split.price" placeholder="Enter price" class="w-24 border rounded px-2 py-1" />
+                                                                    <div>
+                                                                        <small class="text-gray-400">
+                                                                            Last: {{ formatRupiah(split.last_price ?? 0) }} |
+                                                                            Min: {{ formatRupiah(split.min_price ?? 0) }} |
+                                                                            Max: {{ formatRupiah(split.max_price ?? 0) }}
+                                                                        </small>
+                                                                    </div>
+                                                                    <div v-if="split.price_medium || split.price_large" class="text-xs text-blue-500 mt-1">
+                                                                        <div v-if="split.price_medium">
+                                                                            Medium: {{ formatRupiah(split.price_medium) }} <span v-if="item.medium_unit_name">/ {{ item.medium_unit_name }}</span>
+                                                                        </div>
+                                                                        <div v-if="split.price_large">
+                                                                            Large: {{ formatRupiah(split.price_large) }} <span v-if="item.large_unit_name">/ {{ item.large_unit_name }}</span>
+                                                                        </div>
+                                                                    </div>
+                                                                </td>
+                                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                                                    {{ formatRupiah((split.price || 0) * split.qty) }}
+                                                                </td>
+                                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                                                    <button type="button" @click="addSplit(item.id)" class="bg-blue-100 hover:bg-blue-200 text-blue-700 px-2 py-1 rounded text-xs mr-1">Split</button>
+                                                                    <button v-if="poForm.items_by_supplier[item.id].length > 1" type="button" @click="removeSplit(item.id, idx)" class="bg-red-100 hover:bg-red-200 text-red-700 px-2 py-1 rounded text-xs">Hapus</button>
+                                                                </td>
+                                                            </tr>
+                                                        </template>
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -409,4 +482,56 @@ onMounted(() => {
             </div>
         </div>
     </AppLayout>
-</template> 
+</template>
+
+<style scoped>
+/* Custom styling for vue-multiselect */
+:deep(.multiselect) {
+  min-height: 38px;
+  border: 1px solid #d1d5db;
+  border-radius: 0.5rem;
+}
+
+:deep(.multiselect:focus-within) {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+:deep(.multiselect__placeholder) {
+  color: #6b7280;
+  font-size: 0.875rem;
+  padding: 8px 12px;
+}
+
+:deep(.multiselect__single) {
+  padding: 8px 12px;
+  font-size: 0.875rem;
+  color: #374151;
+}
+
+:deep(.multiselect__input) {
+  padding: 8px 12px;
+  font-size: 0.875rem;
+}
+
+:deep(.multiselect__content-wrapper) {
+  border: 1px solid #d1d5db;
+  border-radius: 0.5rem;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+}
+
+:deep(.multiselect__option) {
+  padding: 8px 12px;
+  font-size: 0.875rem;
+}
+
+:deep(.multiselect__option--highlight) {
+  background: #3b82f6;
+  color: white;
+}
+
+:deep(.multiselect__option--selected) {
+  background: #dbeafe;
+  color: #1e40af;
+}
+</style> 
