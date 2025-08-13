@@ -64,8 +64,11 @@ class FoodGoodReceiveController extends Controller
         $items = DB::table('purchase_order_food_items as poi')
             ->leftJoin('items as i', 'poi.item_id', '=', 'i.id')
             ->leftJoin('units as u', 'poi.unit_id', '=', 'u.id')
+            ->leftJoin('pr_food_items as pfi', 'poi.pr_food_item_id', '=', 'pfi.id')
+            ->leftJoin('pr_foods as pf', 'pfi.pr_food_id', '=', 'pf.id')
+            ->leftJoin('warehouse_division as wd', 'pf.warehouse_division_id', '=', 'wd.id')
             ->where('poi.purchase_order_food_id', $po->id)
-            ->select('poi.*', 'i.name as item_name', 'u.name as unit_name')
+            ->select('poi.*', 'i.name as item_name', 'u.name as unit_name', 'wd.name as warehouse_division_name')
             ->get();
         return response()->json([
             'po' => $po,
@@ -119,11 +122,12 @@ class FoodGoodReceiveController extends Controller
                 ]);
 
                 // === INVENTORY LOGIC ===
-                // Ambil warehouse_id dari PR terkait item
+                // Ambil warehouse_id dan warehouse_division_id dari PR terkait item
                 $poItem = DB::table('purchase_order_food_items')->where('id', $item['po_item_id'])->first();
                 $prFoodItem = $poItem ? DB::table('pr_food_items')->where('id', $poItem->pr_food_item_id)->first() : null;
                 $pr = $prFoodItem ? DB::table('pr_foods')->where('id', $prFoodItem->pr_food_id)->first() : null;
                 $warehouseId = $pr ? $pr->warehouse_id : null;
+                $warehouseDivisionId = $pr ? $pr->warehouse_division_id : null;
                 if (!$warehouseId) {
                     throw new \Exception('warehouse_id tidak ditemukan di PR terkait item');
                 }
