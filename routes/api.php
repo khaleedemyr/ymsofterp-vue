@@ -150,6 +150,19 @@ Route::get('/warehouse-outlets/by-outlet', function (Request $request) {
     return response()->json($warehouse_outlets);
 });
 
+Route::get('/warehouse-divisions/by-warehouse', function (Request $request) {
+    $warehouse_id = $request->get('warehouse_id');
+    
+    $warehouse_divisions = DB::table('warehouse_division')
+        ->where('warehouse_id', $warehouse_id)
+        ->where('status', 'active')
+        ->select('id', 'name', 'warehouse_id')
+        ->orderBy('name')
+        ->get();
+    
+    return response()->json($warehouse_divisions);
+});
+
 Route::get('/fo-schedules/check', [\App\Http\Controllers\FOScheduleController::class, 'check']);
 
 Route::get('fo-schedules/outlet-schedules', [\App\Http\Controllers\FOScheduleController::class, 'getOutletSchedules']);

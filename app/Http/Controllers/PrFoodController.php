@@ -17,7 +17,7 @@ class PrFoodController extends Controller
 {
     public function index(Request $request)
     {
-        $query = PrFood::with(['warehouse', 'requester'])
+        $query = PrFood::with(['warehouse', 'warehouseDivision', 'requester'])
             ->orderByDesc('id');
         if ($request->search) {
             $query->where('pr_number', 'like', "%{$request->search}%");
@@ -90,6 +90,7 @@ class PrFoodController extends Controller
         $validated = $request->validate([
             'tanggal' => 'required|date',
             'warehouse_id' => 'required|exists:warehouses,id',
+            'warehouse_division_id' => 'nullable|exists:warehouse_division,id',
             'description' => 'nullable|string',
             'items' => 'required|array|min:1',
             'items.*.item_id' => 'required|exists:items,id',
@@ -106,6 +107,7 @@ class PrFoodController extends Controller
             'status' => 'draft',
             'requested_by' => Auth::id(),
             'warehouse_id' => $validated['warehouse_id'],
+            'warehouse_division_id' => $validated['warehouse_division_id'] ?? null,
             'description' => $validated['description'] ?? null,
         ]);
         foreach ($validated['items'] as $item) {
@@ -182,6 +184,7 @@ class PrFoodController extends Controller
         $validated = $request->validate([
             'tanggal' => 'required|date',
             'warehouse_id' => 'required|exists:warehouses,id',
+            'warehouse_division_id' => 'nullable|exists:warehouse_division,id',
             'description' => 'nullable|string',
             'items' => 'required|array|min:1',
             'items.*.item_id' => 'required|exists:items,id',
@@ -195,6 +198,7 @@ class PrFoodController extends Controller
         $prFood->update([
             'tanggal' => $validated['tanggal'],
             'warehouse_id' => $validated['warehouse_id'],
+            'warehouse_division_id' => $validated['warehouse_division_id'] ?? null,
             'description' => $validated['description'] ?? null,
         ]);
         $prFood->items()->delete();

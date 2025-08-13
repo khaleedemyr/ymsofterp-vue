@@ -264,6 +264,7 @@ class FoodGoodReceiveController extends Controller
                 DB::table('food_inventory_cost_histories')->insert([
                     'inventory_item_id' => $inventoryItemId,
                     'warehouse_id' => $warehouseId,
+                    'warehouse_division_id' => $warehouseDivisionId,
                     'date' => $request->receive_date,
                     'old_cost' => $old_cost,
                     'new_cost' => $cost_small, // Harga pembelian terakhir

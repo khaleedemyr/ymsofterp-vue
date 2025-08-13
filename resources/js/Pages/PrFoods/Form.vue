@@ -17,6 +17,7 @@ const isEdit = computed(() => !!props.prFood);
 const form = useForm({
   tanggal: props.prFood?.tanggal ? props.prFood.tanggal.substring(0, 10) : '',
   warehouse_id: props.prFood?.warehouse_id || '',
+  warehouse_division_id: props.prFood?.warehouse_division_id || '',
   description: props.prFood?.description || '',
   items: props.prFood?.items?.map(i => ({
     item_id: i.item_id,
@@ -37,6 +38,10 @@ const form = useForm({
   ],
 });
 
+// State untuk warehouse divisions
+const warehouseDivisions = ref([]);
+const loadingDivisions = ref(false);
+
 const itemInputRefs = ref([]);
 
 // Reset refs jika jumlah item berubah
@@ -50,7 +55,34 @@ watch(() => form.warehouse_id, (newVal) => {
   form.items.forEach((item, idx) => {
     if (item.item_id && newVal) fetchStock(idx);
   });
+  
+  // Reset warehouse division ketika warehouse berubah
+  form.warehouse_division_id = '';
+  warehouseDivisions.value = [];
+  
+  // Fetch warehouse divisions jika warehouse dipilih
+  if (newVal) {
+    fetchWarehouseDivisions(newVal);
+  }
 });
+
+// Function untuk fetch warehouse divisions
+async function fetchWarehouseDivisions(warehouseId) {
+  if (!warehouseId) return;
+  
+  loadingDivisions.value = true;
+  try {
+    const response = await axios.get('/api/warehouse-divisions/by-warehouse', {
+      params: { warehouse_id: warehouseId }
+    });
+    warehouseDivisions.value = response.data;
+  } catch (error) {
+    console.error('Error fetching warehouse divisions:', error);
+    warehouseDivisions.value = [];
+  } finally {
+    loadingDivisions.value = false;
+  }
+}
 
 function addItem() {
   form.items.push({ item_id: '', item_name: '', qty: '', unit: '', note: '', arrival_date: '', suggestions: [], showDropdown: false, loading: false, highlightedIndex: -1, available_units: [], selected_unit: '', _rowKey: Date.now() + '-' + Math.random() });
@@ -325,6 +357,11 @@ onMounted(() => {
     const day = String(today.getDate()).padStart(2, '0');
     form.tanggal = `${year}-${month}-${day}`;
   }
+  
+  // Jika mode edit dan ada warehouse_id, fetch warehouse divisions
+  if (isEdit.value && form.warehouse_id) {
+    fetchWarehouseDivisions(form.warehouse_id);
+  }
 });
 onUnmounted(() => {
   window.removeEventListener('keydown', handleF1Focus);
@@ -361,7 +398,7 @@ function handleF1Focus(e) {
         </h1>
       </div>
       <form @submit.prevent="onSubmit" class="space-y-6">
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
             <label class="block text-sm font-medium text-gray-700">Tanggal</label>
             <input type="date" v-model="form.tanggal" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500" required />
@@ -374,6 +411,17 @@ function handleF1Focus(e) {
               <option v-for="w in warehouses" :key="w.id" :value="w.id">{{ w.name }}</option>
             </select>
             <div v-if="form.errors.warehouse_id" class="text-xs text-red-500 mt-1">{{ form.errors.warehouse_id }}</div>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700">Warehouse Division</label>
+            <select v-model="form.warehouse_division_id" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500" :disabled="!form.warehouse_id || loadingDivisions">
+              <option value="">Pilih Warehouse Division</option>
+              <option v-for="wd in warehouseDivisions" :key="wd.id" :value="wd.id">{{ wd.name }}</option>
+            </select>
+            <div v-if="loadingDivisions" class="text-xs text-blue-500 mt-1">
+              <i class="fa fa-spinner fa-spin"></i> Loading divisions...
+            </div>
+            <div v-if="form.errors.warehouse_division_id" class="text-xs text-red-500 mt-1">{{ form.errors.warehouse_division_id }}</div>
           </div>
         </div>
         <div>

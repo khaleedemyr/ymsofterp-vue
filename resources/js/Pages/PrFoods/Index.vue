@@ -148,6 +148,7 @@ async function hapus(pr) {
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider rounded-tl-2xl">No. PR</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Tanggal</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Warehouse</th>
+              <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Warehouse Division</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Requester</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Status</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider rounded-tr-2xl">Aksi</th>
@@ -155,12 +156,13 @@ async function hapus(pr) {
           </thead>
           <tbody>
             <tr v-if="prFoods.data.length === 0">
-              <td colspan="6" class="text-center py-10 text-gray-400">Tidak ada data PR Foods.</td>
+              <td colspan="7" class="text-center py-10 text-gray-400">Tidak ada data PR Foods.</td>
             </tr>
             <tr v-for="pr in prFoods.data" :key="pr.id" class="hover:bg-blue-50 transition shadow-sm">
               <td class="px-6 py-3 font-mono font-semibold text-blue-700">{{ pr.pr_number }}</td>
               <td class="px-6 py-3">{{ new Date(pr.tanggal).toLocaleDateString('id-ID') }}</td>
               <td class="px-6 py-3">{{ pr.warehouse?.name }}</td>
+              <td class="px-6 py-3">{{ pr.warehouse_division?.name || '-' }}</td>
               <td class="px-6 py-3">{{ pr.requester?.nama_lengkap }}</td>
               <td class="px-6 py-3">
                 <span :class="{

@@ -413,7 +413,7 @@ async function submitGR() {
     // Siapkan payload sesuai backend
     const payload = {
       delivery_order_id: Number(selectedDOId.value),
-      receive_date: doDetail.value?.do?.do_created_at ? doDetail.value.do.do_created_at.split('T')[0] : new Date().toISOString().split('T')[0],
+      receive_date: new Date().toISOString().split('T')[0], // Gunakan tanggal hari ini
       notes: '',
       warehouse_outlet_id: doDetail.value?.do?.warehouse_outlet_id ? Number(doDetail.value.do.warehouse_outlet_id) : null,
       items: items.map(i => ({

@@ -123,6 +123,7 @@ class OutletFoodGoodReceiveController extends Controller
                     'qty' => $item['qty'],
                     'received_qty' => $item['received_qty'],
                     'remaining_qty' => $item['qty'] - $item['received_qty'],
+                    'receive_date' => $validated['receive_date'], // Tambahkan receive_date yang sama dengan header
                     'created_at' => now(),
                     'updated_at' => now(),
                 ]);

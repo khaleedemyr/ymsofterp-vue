@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use App\Models\WarehouseDivision;
 
 class PrFood extends Model
 {
@@ -11,7 +12,7 @@ class PrFood extends Model
 
     protected $table = 'pr_foods';
     protected $fillable = [
-        'pr_number', 'tanggal', 'status', 'requested_by', 'warehouse_id',
+        'pr_number', 'tanggal', 'status', 'requested_by', 'warehouse_id', 'warehouse_division_id',
         'ssd_manager_approved_at', 'ssd_manager_approved_by', 'ssd_manager_note',
         'vice_coo_approved_at', 'vice_coo_approved_by', 'vice_coo_note', 'description'
     ];
@@ -24,6 +25,11 @@ class PrFood extends Model
     public function warehouse()
     {
         return $this->belongsTo(Warehouse::class);
+    }
+
+    public function warehouseDivision()
+    {
+        return $this->belongsTo(WarehouseDivision::class);
     }
 
     public function requester()

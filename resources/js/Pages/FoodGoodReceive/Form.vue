@@ -35,40 +35,48 @@
           <div class="text-sm text-gray-600 mb-2">Supplier: {{ po.supplier_id }} | Tanggal: {{ po.date }}</div>
         </div>
         <form @submit.prevent="submit">
-          <table class="min-w-full divide-y divide-gray-200 mb-4">
-            <thead class="bg-gray-50">
-              <tr>
-                <th class="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase">Barang</th>
-                <th class="px-2 py-1 text-right text-xs font-medium text-gray-500 uppercase">Qty PO</th>
-                <th class="px-2 py-1 text-right text-xs font-medium text-gray-500 uppercase">Qty Diterima</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="(item, idx) in items" :key="item.id">
-                <td class="px-2 py-1">
-                  {{ item.item_name }} <span class='text-xs text-gray-400'>({{ item.unit_name }})</span>
-                  <button type="button" class="ml-1 px-2 py-1 rounded bg-yellow-100 text-yellow-800 text-xs font-semibold hover:bg-yellow-200 border border-yellow-300 flex items-center gap-1" @click="openSpsModal(item)" :disabled="!item.item_id">
-                    <i class="fa fa-info-circle"></i> SPS
-                  </button>
-                </td>
-                <td class="px-2 py-1 text-right">{{ item.quantity }}</td>
-                <td class="px-2 py-1 text-right">
-                  <input 
-                    v-model.number="item.qty_received" 
-                    type="number" 
-                    min="0" 
-                    :max="item.quantity" 
-                    step="0.01"
-                    class="w-20 px-2 py-1 border rounded" 
-                    :class="{'border-red-500': item.qty_error}"
-                    required 
-                    @input="validateQty(item)"
-                  />
-                  <div v-if="item.qty_error" class="text-red-500 text-xs mt-1">{{ item.qty_error }}</div>
-                </td>
-              </tr>
-            </tbody>
-          </table>
+          <div v-for="(divisionGroup, divisionName) in groupedItems" :key="divisionName" class="mb-6">
+            <div class="bg-blue-50 border-l-4 border-blue-400 p-3 mb-3">
+              <h3 class="text-sm font-semibold text-blue-800">
+                <i class="fa fa-building mr-2"></i>
+                {{ divisionName || 'Tanpa Division' }}
+              </h3>
+            </div>
+            <table class="min-w-full divide-y divide-gray-200 mb-4">
+              <thead class="bg-gray-50">
+                <tr>
+                  <th class="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase">Barang</th>
+                  <th class="px-2 py-1 text-right text-xs font-medium text-gray-500 uppercase">Qty PO</th>
+                  <th class="px-2 py-1 text-right text-xs font-medium text-gray-500 uppercase">Qty Diterima</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="(item, idx) in divisionGroup" :key="item.id">
+                  <td class="px-2 py-1">
+                    {{ item.item_name }} <span class='text-xs text-gray-400'>({{ item.unit_name }})</span>
+                    <button type="button" class="ml-1 px-2 py-1 rounded bg-yellow-100 text-yellow-800 text-xs font-semibold hover:bg-yellow-200 border border-yellow-300 flex items-center gap-1" @click="openSpsModal(item)" :disabled="!item.item_id">
+                      <i class="fa fa-info-circle"></i> SPS
+                    </button>
+                  </td>
+                  <td class="px-2 py-1 text-right">{{ item.quantity }}</td>
+                  <td class="px-2 py-1 text-right">
+                    <input 
+                      v-model.number="item.qty_received" 
+                      type="number" 
+                      min="0" 
+                      :max="item.quantity" 
+                      step="0.01"
+                      class="w-20 px-2 py-1 border rounded" 
+                      :class="{'border-red-500': item.qty_error}"
+                      required 
+                      @input="validateQty(item)"
+                    />
+                    <div v-if="item.qty_error" class="text-red-500 text-xs mt-1">{{ item.qty_error }}</div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
           <div class="flex justify-end gap-2 mt-4">
             <button type="button" @click="handleClose" class="bg-gray-200 hover:bg-gray-300 text-gray-700 px-4 py-2 rounded-lg">Batal</button>
             <button type="submit" :disabled="loading" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2">
@@ -118,7 +126,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onBeforeUnmount, watch } from 'vue';
+import { ref, onMounted, onBeforeUnmount, watch, computed } from 'vue';
 import axios from 'axios';
 import Swal from 'sweetalert2';
 import Modal from '@/Components/Modal.vue';
@@ -138,6 +146,19 @@ const spsModal = ref(false);
 const spsItem = ref({});
 const spsLoading = ref(false);
 let html5QrCode = null;
+
+// Computed property untuk grouping items berdasarkan warehouse division
+const groupedItems = computed(() => {
+  const groups = {};
+  items.value.forEach(item => {
+    const divisionName = item.warehouse_division_name || 'Tanpa Division';
+    if (!groups[divisionName]) {
+      groups[divisionName] = [];
+    }
+    groups[divisionName].push(item);
+  });
+  return groups;
+});
 
 const fetchPO = async () => {
   error.value = '';
