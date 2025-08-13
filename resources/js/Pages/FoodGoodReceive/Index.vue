@@ -89,6 +89,8 @@
 import { ref } from 'vue';
 import { router } from '@inertiajs/vue3';
 import { debounce } from 'lodash';
+import axios from 'axios';
+import Swal from 'sweetalert2';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import FormGoodReceive from './Form.vue';
 import ModalDetailGoodReceive from './ModalDetailGoodReceive.vue';
@@ -138,8 +140,54 @@ async function openEdit(id) {
     alert('Gagal mengambil detail Good Receive');
   }
 }
-function hapus(id) {
-  // Implement hapus logic here
+async function hapus(id) {
+  const result = await Swal.fire({
+    title: 'Yakin hapus data ini?',
+    text: 'Data Good Receive dan semua data inventory terkait akan dihapus permanen!',
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonText: 'Ya, hapus',
+    cancelButtonText: 'Batal',
+    reverseButtons: true,
+    confirmButtonColor: '#d33',
+    cancelButtonColor: '#3085d6'
+  });
+
+  if (result.isConfirmed) {
+    try {
+      const response = await axios.delete(`/food-good-receive/${id}`);
+      
+      if (response.data.success) {
+        await Swal.fire({
+          icon: 'success',
+          title: 'Berhasil!',
+          text: 'Good Receive berhasil dihapus',
+          timer: 2000,
+          showConfirmButton: false
+        });
+        
+        // Reload halaman dengan filter yang sama
+        router.get('/food-good-receive', { 
+          search: search.value, 
+          from: from.value, 
+          to: to.value 
+        }, { 
+          preserveState: true, 
+          replace: true 
+        });
+      } else {
+        throw new Error(response.data.message || 'Gagal menghapus data');
+      }
+    } catch (error) {
+      console.error('Error deleting good receive:', error);
+      await Swal.fire({
+        icon: 'error',
+        title: 'Gagal!',
+        text: error.response?.data?.message || error.message || 'Terjadi kesalahan saat menghapus data',
+        confirmButtonColor: '#3085d6'
+      });
+    }
+  }
 }
 function closeDetailModal() {
   showDetailModal.value = false;

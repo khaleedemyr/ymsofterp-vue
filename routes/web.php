@@ -354,6 +354,7 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/food-good-receive/store', [FoodGoodReceiveController::class, 'store'])->name('food-good-receive.store');
     Route::get('/food-good-receive/{id}', [FoodGoodReceiveController::class, 'show'])->name('food-good-receive.show');
     Route::put('/food-good-receive/{id}', [FoodGoodReceiveController::class, 'update'])->name('food-good-receive.update');
+    Route::delete('/food-good-receive/{id}', [FoodGoodReceiveController::class, 'destroy'])->name('food-good-receive.destroy');
 
     // Food Payment
     Route::get('/food-payments', [\App\Http\Controllers\FoodPaymentController::class, 'index'])->name('food-payments.index');

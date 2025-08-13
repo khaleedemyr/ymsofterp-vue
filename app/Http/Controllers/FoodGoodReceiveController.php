@@ -579,38 +579,104 @@ class FoodGoodReceiveController extends Controller
             if (!$gr) {
                 return response()->json(['success' => false, 'message' => 'Good Receive tidak ditemukan'], 404);
             }
+            
             // Ambil semua item GR
             $items = DB::table('food_good_receive_items')->where('good_receive_id', $id)->get();
+            
             foreach ($items as $item) {
                 // Get PO item untuk warehouse
                 $poItem = DB::table('purchase_order_food_items')->where('id', $item->po_item_id)->first();
                 $prFoodItem = $poItem ? DB::table('pr_food_items')->where('id', $poItem->pr_food_item_id)->first() : null;
                 $pr = $prFoodItem ? DB::table('pr_foods')->where('id', $prFoodItem->pr_food_id)->first() : null;
                 $warehouseId = $pr ? $pr->warehouse_id : null;
-                $inventoryItem = DB::table('food_inventory_items')->where('item_id', $item->item_id)->first();
-                if ($inventoryItem && $warehouseId) {
-                    DB::table('food_inventory_stocks')
-                        ->where('inventory_item_id', $inventoryItem->id)
-                        ->where('warehouse_id', $warehouseId)
-                        ->delete();
+                
+                if (!$warehouseId) {
+                    throw new \Exception('Warehouse ID tidak ditemukan untuk item: ' . $item->item_id);
                 }
+                
+                $inventoryItem = DB::table('food_inventory_items')->where('item_id', $item->item_id)->first();
+                if (!$inventoryItem) {
+                    continue; // Skip jika item tidak ada di inventory
+                }
+                
+                // === ROLLBACK INVENTORY LOGIC ===
+                // 1. Ambil data item master untuk konversi unit
+                $itemMaster = DB::table('items')->where('id', $item->item_id)->first();
+                if (!$itemMaster) continue;
+                
+                // 2. Konversi qty received ke small unit untuk rollback
+                $unitId = $item->unit_id;
+                $qtyReceived = $item->qty_received;
+                $qty_small_to_rollback = 0;
+                
+                $smallConv = $itemMaster->small_conversion_qty ?: 1;
+                $mediumConv = $itemMaster->medium_conversion_qty ?: 1;
+                
+                if ($unitId == $itemMaster->small_unit_id) {
+                    $qty_small_to_rollback = $qtyReceived;
+                } elseif ($unitId == $itemMaster->medium_unit_id) {
+                    $qty_small_to_rollback = $qtyReceived * $smallConv;
+                } elseif ($unitId == $itemMaster->large_unit_id) {
+                    $qty_small_to_rollback = $qtyReceived * $smallConv * $mediumConv;
+                } else {
+                    $qty_small_to_rollback = $qtyReceived;
+                }
+                
+                // 3. Rollback inventory stocks
+                $currentStock = DB::table('food_inventory_stocks')
+                    ->where('inventory_item_id', $inventoryItem->id)
+                    ->where('warehouse_id', $warehouseId)
+                    ->first();
+                
+                if ($currentStock) {
+                    $newQtySmall = max(0, $currentStock->qty_small - $qty_small_to_rollback);
+                    $newQtyMedium = max(0, $currentStock->qty_medium - ($qty_small_to_rollback / $smallConv));
+                    $newQtyLarge = max(0, $currentStock->qty_large - ($qty_small_to_rollback / ($smallConv * $mediumConv)));
+                    
+                    // Update atau delete stock
+                    if ($newQtySmall <= 0 && $newQtyMedium <= 0 && $newQtyLarge <= 0) {
+                        DB::table('food_inventory_stocks')
+                            ->where('inventory_item_id', $inventoryItem->id)
+                            ->where('warehouse_id', $warehouseId)
+                            ->delete();
+                    } else {
+                        DB::table('food_inventory_stocks')
+                            ->where('inventory_item_id', $inventoryItem->id)
+                            ->where('warehouse_id', $warehouseId)
+                            ->update([
+                                'qty_small' => $newQtySmall,
+                                'qty_medium' => $newQtyMedium,
+                                'qty_large' => $newQtyLarge,
+                                'value' => $newQtySmall * ($currentStock->last_cost_small ?: 0),
+                                'updated_at' => now()
+                            ]);
+                    }
+                }
+                
+                // 4. Hapus kartu stok terkait GR ini
                 DB::table('food_inventory_cards')
                     ->where('reference_type', 'good_receive')
                     ->where('reference_id', $id)
-                    ->where('inventory_item_id', $inventoryItem ? $inventoryItem->id : 0)
+                    ->where('inventory_item_id', $inventoryItem->id)
                     ->delete();
+                
+                // 5. Hapus cost history terkait GR ini
                 DB::table('food_inventory_cost_histories')
                     ->where('reference_type', 'good_receive')
                     ->where('reference_id', $id)
-                    ->where('inventory_item_id', $inventoryItem ? $inventoryItem->id : 0)
+                    ->where('inventory_item_id', $inventoryItem->id)
                     ->delete();
             }
+            
             // Hapus detail GR
             DB::table('food_good_receive_items')->where('good_receive_id', $id)->delete();
+            
             // Hapus GR
             DB::table('food_good_receives')->where('id', $id)->delete();
-            // Update status PO menjadi approved
+            
+            // Update status PO menjadi approved (karena GR dihapus)
             DB::table('purchase_order_foods')->where('id', $gr->po_id)->update(['status' => 'approved']);
+            
             // Log activity
             ActivityLog::create([
                 'user_id' => Auth::id(),
@@ -623,10 +689,15 @@ class FoodGoodReceiveController extends Controller
                 'new_data' => null,
                 'created_at' => now(),
             ]);
+            
             DB::commit();
-            return response()->json(['success' => true, 'message' => 'Good Receive berhasil dihapus']);
+            return response()->json(['success' => true, 'message' => 'Good Receive berhasil dihapus dan inventory telah di-rollback']);
         } catch (\Exception $e) {
             DB::rollBack();
+            \Log::error('Error deleting good receive: ' . $e->getMessage(), [
+                'good_receive_id' => $id,
+                'trace' => $e->getTraceAsString()
+            ]);
             return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
         }
     }

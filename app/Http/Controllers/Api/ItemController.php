@@ -62,6 +62,26 @@ class ItemController extends Controller
     {
         $supplierId = $request->get('supplier_id');
         $outletId = $request->get('outlet_id');
+        
+        \Log::info('bySupplier API called', [
+            'supplier_id' => $supplierId,
+            'outlet_id' => $outletId
+        ]);
+        
+        // Debug: Cek data di tabel item_supplier
+        $itemSupplierCount = DB::table('item_supplier')
+            ->where('supplier_id', $supplierId)
+            ->count();
+        \Log::info('item_supplier count', ['count' => $itemSupplierCount]);
+        
+        // Debug: Cek data di tabel item_supplier_outlet
+        $itemSupplierOutletCount = DB::table('item_supplier_outlet')
+            ->join('item_supplier', 'item_supplier_outlet.item_supplier_id', '=', 'item_supplier.id')
+            ->where('item_supplier.supplier_id', $supplierId)
+            ->where('item_supplier_outlet.outlet_id', $outletId)
+            ->count();
+        \Log::info('item_supplier_outlet count', ['count' => $itemSupplierOutletCount]);
+        
         $items = DB::table('items')
             ->join('item_supplier', 'items.id', '=', 'item_supplier.item_id')
             ->join('item_supplier_outlet', 'item_supplier.id', '=', 'item_supplier_outlet.item_supplier_id')
@@ -82,10 +102,10 @@ class ItemController extends Controller
             )
             ->get();
 
-        // Jangan return error jika kosong, selalu return array items
-        // if ($items->isEmpty()) {
-        //     return response()->json(['error' => 'Item not found']);
-        // }
+        \Log::info('Final items result', [
+            'count' => $items->count(),
+            'first_item' => $items->first()
+        ]);
 
         return response()->json(['items' => $items]);
     }

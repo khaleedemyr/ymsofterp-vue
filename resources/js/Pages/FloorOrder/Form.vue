@@ -175,15 +175,23 @@ async function fetchSupplierItems() {
   }
   loadingItems.value = true;
   try {
+    console.log('DEBUG fetchSupplierItems params:', {
+      supplier_id: selectedSupplier.value,
+      outlet_id: outlet_id.value
+    });
+    
     const res = await axios.get('/api/items/by-supplier', {
       params: {
         supplier_id: selectedSupplier.value,
         outlet_id: outlet_id.value
       }
     });
+    
+    console.log('DEBUG fetchSupplierItems response:', res.data);
     supplierItems.value = Array.isArray(res.data.items) ? res.data.items : [];
     console.log('DEBUG supplierItems', supplierItems.value);
   } catch (e) {
+    console.error('DEBUG fetchSupplierItems error:', e);
     supplierItems.value = [];
   } finally {
     loadingItems.value = false;
