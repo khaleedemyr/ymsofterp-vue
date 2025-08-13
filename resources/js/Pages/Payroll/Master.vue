@@ -41,6 +41,70 @@ const importFileInput = ref(null);
 const selectedFileName = ref('');
 const hasSelectedFile = ref(false);
 
+// Utility functions for number formatting
+function formatNumber(value) {
+  if (!value) return '';
+  // Remove all non-digit characters
+  const num = value.toString().replace(/\D/g, '');
+  // Add thousand separators
+  return num.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+}
+
+function parseNumber(value) {
+  if (!value) return '';
+  // Remove all non-digit characters and return as number
+  return value.toString().replace(/\D/g, '');
+}
+
+function handleNumberInput(event, field, userId) {
+  const input = event.target;
+  const rawValue = input.value;
+  const numericValue = parseNumber(rawValue);
+  
+  // Update the model with numeric value
+  if (userId) {
+    // For individual user inputs
+    const userData = payrollData.value.find(item => item.user_id === userId);
+    if (userData) {
+      userData[field] = numericValue;
+    }
+  } else {
+    // For fill all inputs
+    fillAll.value[field] = numericValue;
+  }
+  
+  // Format the display value
+  input.value = formatNumber(numericValue);
+}
+
+function handleNumberFocus(event) {
+  const input = event.target;
+  const rawValue = input.value;
+  const numericValue = parseNumber(rawValue);
+  input.value = numericValue; // Show raw number when focused
+}
+
+function handleNumberBlur(event, field, userId) {
+  const input = event.target;
+  const rawValue = input.value;
+  const numericValue = parseNumber(rawValue);
+  
+  // Update the model with numeric value
+  if (userId) {
+    // For individual user inputs
+    const userData = payrollData.value.find(item => item.user_id === userId);
+    if (userData) {
+      userData[field] = numericValue;
+    }
+  } else {
+    // For fill all inputs
+    fillAll.value[field] = numericValue;
+  }
+  
+  // Format the display value
+  input.value = formatNumber(numericValue);
+}
+
 function onFileChange() {
   selectedFileName.value = importFileInput.value?.files[0]?.name || '';
   hasSelectedFile.value = !!importFileInput.value?.files.length;
@@ -279,10 +343,28 @@ async function importPayroll() {
                   <td class="text-right pr-2 font-bold">Isi Semua:</td>
                   <td></td>
                   <td class="px-2 py-1 text-center">
-                    <input type="number" v-model="fillAll.gaji" class="form-input text-blue-900 font-bold text-center w-20" min="0" @change="fillAllColumn('gaji', fillAll.gaji)" />
+                    <input 
+                      type="text" 
+                      :value="formatNumber(fillAll.gaji)" 
+                      class="form-input text-blue-900 font-bold text-center w-24" 
+                      @input="handleNumberInput($event, 'gaji')"
+                      @focus="handleNumberFocus($event)"
+                      @blur="handleNumberBlur($event, 'gaji')"
+                      @change="fillAllColumn('gaji', fillAll.gaji)" 
+                      placeholder="0"
+                    />
                   </td>
                   <td class="px-2 py-1 text-center">
-                    <input type="number" v-model="fillAll.tunjangan" class="form-input text-blue-900 font-bold text-center w-20" min="0" @change="fillAllColumn('tunjangan', fillAll.tunjangan)" />
+                    <input 
+                      type="text" 
+                      :value="formatNumber(fillAll.tunjangan)" 
+                      class="form-input text-blue-900 font-bold text-center w-24" 
+                      @input="handleNumberInput($event, 'tunjangan')"
+                      @focus="handleNumberFocus($event)"
+                      @blur="handleNumberBlur($event, 'tunjangan')"
+                      @change="fillAllColumn('tunjangan', fillAll.tunjangan)" 
+                      placeholder="0"
+                    />
                   </td>
                   <td class="px-2 py-1 text-center">
                     <input type="checkbox" v-model="fillAll.ot" @change="fillAllColumn('ot', fillAll.ot)" />
@@ -315,10 +397,26 @@ async function importPayroll() {
                   <td class="px-4 py-2">{{ user.jabatan }}</td>
                   <template v-if="getPayrollDataByUserId[user.id]">
                     <td class="px-2 py-2 text-center">
-                      <input type="number" v-model="getPayrollDataByUserId[user.id].gaji" class="form-input text-blue-900 font-bold text-center w-28" min="0" />
+                      <input 
+                        type="text" 
+                        :value="formatNumber(getPayrollDataByUserId[user.id].gaji)" 
+                        class="form-input text-blue-900 font-bold text-center w-32" 
+                        @input="handleNumberInput($event, 'gaji', user.id)"
+                        @focus="handleNumberFocus($event)"
+                        @blur="handleNumberBlur($event, 'gaji', user.id)"
+                        placeholder="0"
+                      />
                     </td>
                     <td class="px-2 py-2 text-center">
-                      <input type="number" v-model="getPayrollDataByUserId[user.id].tunjangan" class="form-input text-blue-900 font-bold text-center w-28" min="0" />
+                      <input 
+                        type="text" 
+                        :value="formatNumber(getPayrollDataByUserId[user.id].tunjangan)" 
+                        class="form-input text-blue-900 font-bold text-center w-32" 
+                        @input="handleNumberInput($event, 'tunjangan', user.id)"
+                        @focus="handleNumberFocus($event)"
+                        @blur="handleNumberBlur($event, 'tunjangan', user.id)"
+                        placeholder="0"
+                      />
                     </td>
                     <td class="px-2 py-2 text-center">
                       <input type="checkbox" v-model="getPayrollDataByUserId[user.id].ot" />
@@ -405,5 +503,18 @@ thead {
 .flex.justify-end {
   position: relative;
   z-index: 5;
+}
+
+/* Number input formatting */
+.form-input[type="text"] {
+  font-family: 'Courier New', monospace;
+  font-weight: bold;
+  text-align: center;
+}
+
+/* Ensure proper spacing for formatted numbers */
+.form-input[type="text"]:focus {
+  outline: 2px solid #3b82f6;
+  outline-offset: -2px;
 }
 </style> 

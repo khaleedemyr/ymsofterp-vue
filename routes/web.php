@@ -1084,6 +1084,16 @@ Route::post('/payroll/master/import', [PayrollController::class, 'importExcel'])
 // Payroll Report Routes
 Route::get('/payroll/report', [App\Http\Controllers\PayrollReportController::class, 'index'])->name('payroll.report');
 Route::get('/payroll/report/export', [App\Http\Controllers\PayrollReportController::class, 'export'])->name('payroll.report.export');
+Route::get('/payroll/report/attendance-detail', [App\Http\Controllers\PayrollReportController::class, 'getAttendanceDetail'])->name('payroll.report.attendance-detail');
+
+// Custom Payroll Items Routes
+Route::post('/payroll/report/custom-item/add', [App\Http\Controllers\PayrollReportController::class, 'addCustomItem'])->name('payroll.report.custom-item.add');
+Route::delete('/payroll/report/custom-item/delete', [App\Http\Controllers\PayrollReportController::class, 'deleteCustomItem'])->name('payroll.report.custom-item.delete');
+Route::get('/payroll/report/custom-items', [App\Http\Controllers\PayrollReportController::class, 'getCustomItems'])->name('payroll.report.custom-items');
+
+// Print Payroll Route
+Route::get('/payroll/report/print', [App\Http\Controllers\PayrollReportController::class, 'printPayroll'])->name('payroll.report.print');
+
 
 // LMS Routes
 Route::middleware(['auth'])->prefix('lms')->name('lms.')->group(function () {
