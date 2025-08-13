@@ -1081,6 +1081,10 @@ Route::post('/payroll/master', [PayrollController::class, 'store'])->name('payro
 Route::get('/payroll/master/template', [PayrollController::class, 'downloadTemplate'])->name('payroll.master.template');
 Route::post('/payroll/master/import', [PayrollController::class, 'importExcel'])->name('payroll.master.import');
 
+// Payroll Report Routes
+Route::get('/payroll/report', [App\Http\Controllers\PayrollReportController::class, 'index'])->name('payroll.report');
+Route::get('/payroll/report/export', [App\Http\Controllers\PayrollReportController::class, 'export'])->name('payroll.report.export');
+
 // LMS Routes
 Route::middleware(['auth'])->prefix('lms')->name('lms.')->group(function () {
     // Dashboard

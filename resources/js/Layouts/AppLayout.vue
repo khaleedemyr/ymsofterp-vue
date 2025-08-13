@@ -95,6 +95,7 @@ const menuGroups = [
             { name: () => 'Report Attendance', icon: 'fa-solid fa-fingerprint', route: '/attendance-report', code: 'attendance_report' },
             { name: () => 'Attendance per Outlet', icon: 'fa-solid fa-fingerprint', route: '/attendance-report/outlet-summary', code: 'attendance_outlet_summary' },
             { name: () => 'Master Payroll', icon: 'fa-solid fa-money-check-dollar', route: '/payroll/master', code: 'payroll_master' },
+            { name: () => 'Laporan Payroll', icon: 'fa-solid fa-file-invoice-dollar', route: '/payroll/report', code: 'payroll_report' },
         ],
     },
     {

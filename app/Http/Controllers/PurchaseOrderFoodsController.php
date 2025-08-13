@@ -252,9 +252,9 @@ class PurchaseOrderFoodsController extends Controller
                     $prItem = $prItems->firstWhere('id', $itemData['pr_item_id']);
                     if (!$prItem) continue;
 
-                    $quantity = $itemData['qty'];
-                    $price = $itemData['price'];
-                    $total = $quantity * $price;
+                    $quantity = floatval($itemData['qty']);
+                    $price = floatval($itemData['price']);
+                    $total = round($quantity * $price, 2); // Ensure proper decimal precision
 
                     // Get unit ID
                     $unitId = null;
@@ -682,7 +682,7 @@ class PurchaseOrderFoodsController extends Controller
                         'item_id' => $item->id,
                         'quantity' => $newItem['quantity'],
                         'price' => $newItem['price'],
-                        'total' => $newItem['quantity'] * $newItem['price'],
+                        'total' => round(floatval($newItem['quantity']) * floatval($newItem['price']), 2),
                         'unit_id' => $item->small_unit_id,
                         'created_by' => auth()->id(),
                         'pr_food_item_id' => $newItem['pr_food_item_id'] ?? null, // Reference to PR item if available
