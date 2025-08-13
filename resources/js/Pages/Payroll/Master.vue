@@ -47,7 +47,12 @@ function onFileChange() {
 }
 
 function initPayrollData(val) {
-  payrollData.value = (val || []).map(u => {
+  if (!val || !Array.isArray(val)) {
+    payrollData.value = [];
+    return;
+  }
+  
+  payrollData.value = val.map(u => {
     const p = props.payrollMaster?.[u.id] || {};
     return {
       user_id: u.id,
@@ -63,6 +68,15 @@ function initPayrollData(val) {
     };
   });
 }
+
+// Computed property to get payroll data by user ID for safer access
+const getPayrollDataByUserId = computed(() => {
+  const dataMap = {};
+  payrollData.value.forEach(item => {
+    dataMap[item.user_id] = item;
+  });
+  return dataMap;
+});
 
 watch(() => props.users, (val) => {
   users.value = val || [];
@@ -107,6 +121,11 @@ function resetFillAll() {
 }
 
 async function simpanPayroll() {
+  if (!users.value.length || !payrollData.value.length) {
+    Swal.fire('Peringatan', 'Tidak ada data untuk disimpan', 'warning');
+    return;
+  }
+
   const confirm = await Swal.fire({
     title: 'Konfirmasi',
     text: 'Apakah Anda yakin ingin menyimpan data payroll ini?',
@@ -117,6 +136,7 @@ async function simpanPayroll() {
     reverseButtons: true,
   });
   if (!confirm.isConfirmed) return;
+  
   saving.value = true;
   Swal.fire({
     title: 'Menyimpan...',
@@ -125,6 +145,7 @@ async function simpanPayroll() {
     allowEscapeKey: false,
     didOpen: () => { Swal.showLoading(); }
   });
+  
   try {
     const res = await fetch('/payroll/master', {
       method: 'POST',
@@ -146,6 +167,7 @@ async function simpanPayroll() {
       Swal.fire('Gagal', data.message || 'Gagal menyimpan data payroll', 'error');
     }
   } catch (e) {
+    console.error('Error saving payroll:', e);
     Swal.fire('Error', 'Terjadi kesalahan saat menyimpan data payroll', 'error');
   } finally {
     saving.value = false;
@@ -178,6 +200,7 @@ async function importPayroll() {
       Swal.fire('Gagal', data.message || 'Import payroll gagal', 'error');
     }
   } catch (e) {
+    console.error('Error importing payroll:', e);
     Swal.fire('Error', 'Terjadi kesalahan saat import payroll', 'error');
   } finally {
     importing.value = false;
@@ -233,108 +256,117 @@ async function importPayroll() {
       </div>
       <div class="flex-1 w-full overflow-auto">
         <div v-if="users.length" class="w-full h-full">
-          <table class="w-full min-w-[1200px] h-full divide-y divide-blue-200 bg-white rounded-2xl shadow-2xl animate-fade-in-up">
-            <thead class="bg-gradient-to-r from-blue-600 to-green-400 text-white sticky top-0 z-10">
-              <tr>
-                <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">NIK</th>
-                <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">Nama Karyawan</th>
-                <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">Jabatan</th>
-                <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">GAJI<br/>(EARN)</th>
-                <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">TUNJANGAN<br/>(EARN)</th>
-                <th class="px-2 py-3 text-center text-xs font-bold uppercase tracking-wider">OT<br/>(EARN)</th>
-                <th class="px-2 py-3 text-center text-xs font-bold uppercase tracking-wider">UM<br/>(EARN)</th>
-                <th class="px-2 py-3 text-center text-xs font-bold uppercase tracking-wider">PH<br/>(EARN)</th>
-                <th class="px-2 py-3 text-center text-xs font-bold uppercase tracking-wider">SC<br/>(EARN)</th>
-                <th class="px-2 py-3 text-center text-xs font-bold uppercase tracking-wider">BPJS JKN<br/>(DEDUCTION)</th>
-                <th class="px-2 py-3 text-center text-xs font-bold uppercase tracking-wider">BPJS TK<br/>(DEDUCTION)</th>
-                <th class="px-2 py-3 text-center text-xs font-bold uppercase tracking-wider">L & B<br/>(DEDUCTION)</th>
-              </tr>
-              <!-- Baris isi semua -->
-              <tr class="bg-gradient-to-r from-blue-100 to-green-100 text-blue-900 text-xs">
-                <td></td>
-                <td class="text-right pr-2 font-bold">Isi Semua:</td>
-                <td></td>
-                <td class="px-2 py-1 text-center">
-                  <input type="number" v-model="fillAll.gaji" class="form-input text-blue-900 font-bold text-center w-20" min="0" @change="fillAllColumn('gaji', fillAll.gaji)" />
-                </td>
-                <td class="px-2 py-1 text-center">
-                  <input type="number" v-model="fillAll.tunjangan" class="form-input text-blue-900 font-bold text-center w-20" min="0" @change="fillAllColumn('tunjangan', fillAll.tunjangan)" />
-                </td>
-                <td class="px-2 py-1 text-center">
-                  <input type="checkbox" v-model="fillAll.ot" @change="fillAllColumn('ot', fillAll.ot)" />
-                </td>
-                <td class="px-2 py-1 text-center">
-                  <input type="checkbox" v-model="fillAll.um" @change="fillAllColumn('um', fillAll.um)" />
-                </td>
-                <td class="px-2 py-1 text-center">
-                  <input type="checkbox" v-model="fillAll.ph" @change="fillAllColumn('ph', fillAll.ph)" />
-                </td>
-                <td class="px-2 py-1 text-center">
-                  <input type="checkbox" v-model="fillAll.sc" @change="fillAllColumn('sc', fillAll.sc)" />
-                </td>
-                <td class="px-2 py-1 text-center">
-                  <input type="checkbox" v-model="fillAll.bpjs_jkn" @change="fillAllColumn('bpjs_jkn', fillAll.bpjs_jkn)" />
-                </td>
-                <td class="px-2 py-1 text-center">
-                  <input type="checkbox" v-model="fillAll.bpjs_tk" @change="fillAllColumn('bpjs_tk', fillAll.bpjs_tk)" />
-                </td>
-                <td class="px-2 py-1 text-center flex items-center justify-center gap-2">
-                  <input type="checkbox" v-model="fillAll.lb" @change="fillAllColumn('lb', fillAll.lb)" />
-                  <button @click="resetFillAll" class="ml-2 text-red-500 hover:text-red-700" title="Reset Isi Semua"><i class="fa fa-eraser"></i></button>
-                </td>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="(user, idx) in users" :key="user.id" class="hover:scale-[1.01] hover:shadow-xl transition-all duration-200 bg-white/80 hover:bg-blue-50 cursor-pointer border-b border-blue-100">
-                <td class="px-4 py-2">{{ user.nik }}</td>
-                <td class="px-4 py-2 font-semibold">{{ user.nama_lengkap }}</td>
-                <td class="px-4 py-2">{{ user.jabatan }}</td>
-                <template v-if="payrollData[idx]">
-                  <td class="px-2 py-2 text-center">
-                    <input type="number" v-model="payrollData[idx].gaji" class="form-input text-blue-900 font-bold text-center w-28" min="0" />
+          <div class="overflow-x-auto">
+            <table class="w-full min-w-[1200px] divide-y divide-blue-200 bg-white rounded-2xl shadow-2xl animate-fade-in-up">
+              <thead class="bg-gradient-to-r from-blue-600 to-green-400 text-white sticky top-0 z-10">
+                <tr>
+                  <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">NIK</th>
+                  <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">Nama Karyawan</th>
+                  <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">Jabatan</th>
+                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">GAJI<br/>(EARN)</th>
+                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">TUNJANGAN<br/>(EARN)</th>
+                  <th class="px-2 py-3 text-center text-xs font-bold uppercase tracking-wider">OT<br/>(EARN)</th>
+                  <th class="px-2 py-3 text-center text-xs font-bold uppercase tracking-wider">UM<br/>(EARN)</th>
+                  <th class="px-2 py-3 text-center text-xs font-bold uppercase tracking-wider">PH<br/>(EARN)</th>
+                  <th class="px-2 py-3 text-center text-xs font-bold uppercase tracking-wider">SC<br/>(EARN)</th>
+                  <th class="px-2 py-3 text-center text-xs font-bold uppercase tracking-wider">BPJS JKN<br/>(DEDUCTION)</th>
+                  <th class="px-2 py-3 text-center text-xs font-bold uppercase tracking-wider">BPJS TK<br/>(DEDUCTION)</th>
+                  <th class="px-2 py-3 text-center text-xs font-bold uppercase tracking-wider">L & B<br/>(DEDUCTION)</th>
+                </tr>
+                <!-- Baris isi semua -->
+                <tr class="bg-gradient-to-r from-blue-100 to-green-100 text-blue-900 text-xs">
+                  <td></td>
+                  <td class="text-right pr-2 font-bold">Isi Semua:</td>
+                  <td></td>
+                  <td class="px-2 py-1 text-center">
+                    <input type="number" v-model="fillAll.gaji" class="form-input text-blue-900 font-bold text-center w-20" min="0" @change="fillAllColumn('gaji', fillAll.gaji)" />
                   </td>
-                  <td class="px-2 py-2 text-center">
-                    <input type="number" v-model="payrollData[idx].tunjangan" class="form-input text-blue-900 font-bold text-center w-28" min="0" />
+                  <td class="px-2 py-1 text-center">
+                    <input type="number" v-model="fillAll.tunjangan" class="form-input text-blue-900 font-bold text-center w-20" min="0" @change="fillAllColumn('tunjangan', fillAll.tunjangan)" />
                   </td>
-                  <td class="px-2 py-2 text-center">
-                    <input type="checkbox" v-model="payrollData[idx].ot" />
+                  <td class="px-2 py-1 text-center">
+                    <input type="checkbox" v-model="fillAll.ot" @change="fillAllColumn('ot', fillAll.ot)" />
                   </td>
-                  <td class="px-2 py-2 text-center">
-                    <input type="checkbox" v-model="payrollData[idx].um" />
+                  <td class="px-2 py-1 text-center">
+                    <input type="checkbox" v-model="fillAll.um" @change="fillAllColumn('um', fillAll.um)" />
                   </td>
-                  <td class="px-2 py-2 text-center">
-                    <input type="checkbox" v-model="payrollData[idx].ph" />
+                  <td class="px-2 py-1 text-center">
+                    <input type="checkbox" v-model="fillAll.ph" @change="fillAllColumn('ph', fillAll.ph)" />
                   </td>
-                  <td class="px-2 py-2 text-center">
-                    <input type="checkbox" v-model="payrollData[idx].sc" />
+                  <td class="px-2 py-1 text-center">
+                    <input type="checkbox" v-model="fillAll.sc" @change="fillAllColumn('sc', fillAll.sc)" />
                   </td>
-                  <td class="px-2 py-2 text-center">
-                    <input type="checkbox" v-model="payrollData[idx].bpjs_jkn" />
+                  <td class="px-2 py-1 text-center">
+                    <input type="checkbox" v-model="fillAll.bpjs_jkn" @change="fillAllColumn('bpjs_jkn', fillAll.bpjs_jkn)" />
                   </td>
-                  <td class="px-2 py-2 text-center">
-                    <input type="checkbox" v-model="payrollData[idx].bpjs_tk" />
+                  <td class="px-2 py-1 text-center">
+                    <input type="checkbox" v-model="fillAll.bpjs_tk" @change="fillAllColumn('bpjs_tk', fillAll.bpjs_tk)" />
                   </td>
-                  <td class="px-2 py-2 text-center">
-                    <input type="checkbox" v-model="payrollData[idx].lb" />
+                  <td class="px-2 py-1 text-center flex items-center justify-center gap-2">
+                    <input type="checkbox" v-model="fillAll.lb" @change="fillAllColumn('lb', fillAll.lb)" />
+                    <button @click="resetFillAll" class="ml-2 text-red-500 hover:text-red-700" title="Reset Isi Semua"><i class="fa fa-eraser"></i></button>
                   </td>
-                </template>
-                <template v-else>
-                  <td colspan="9"></td>
-                </template>
-              </tr>
-            </tbody>
-          </table>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="user in users" :key="user.id" class="hover:scale-[1.01] hover:shadow-xl transition-all duration-200 bg-white/80 hover:bg-blue-50 cursor-pointer border-b border-blue-100">
+                  <td class="px-4 py-2">{{ user.nik }}</td>
+                  <td class="px-4 py-2 font-semibold">{{ user.nama_lengkap }}</td>
+                  <td class="px-4 py-2">{{ user.jabatan }}</td>
+                  <template v-if="getPayrollDataByUserId[user.id]">
+                    <td class="px-2 py-2 text-center">
+                      <input type="number" v-model="getPayrollDataByUserId[user.id].gaji" class="form-input text-blue-900 font-bold text-center w-28" min="0" />
+                    </td>
+                    <td class="px-2 py-2 text-center">
+                      <input type="number" v-model="getPayrollDataByUserId[user.id].tunjangan" class="form-input text-blue-900 font-bold text-center w-28" min="0" />
+                    </td>
+                    <td class="px-2 py-2 text-center">
+                      <input type="checkbox" v-model="getPayrollDataByUserId[user.id].ot" />
+                    </td>
+                    <td class="px-2 py-2 text-center">
+                      <input type="checkbox" v-model="getPayrollDataByUserId[user.id].um" />
+                    </td>
+                    <td class="px-2 py-2 text-center">
+                      <input type="checkbox" v-model="getPayrollDataByUserId[user.id].ph" />
+                    </td>
+                    <td class="px-2 py-2 text-center">
+                      <input type="checkbox" v-model="getPayrollDataByUserId[user.id].sc" />
+                    </td>
+                    <td class="px-2 py-2 text-center">
+                      <input type="checkbox" v-model="getPayrollDataByUserId[user.id].bpjs_jkn" />
+                    </td>
+                    <td class="px-2 py-2 text-center">
+                      <input type="checkbox" v-model="getPayrollDataByUserId[user.id].bpjs_tk" />
+                    </td>
+                    <td class="px-2 py-2 text-center">
+                      <input type="checkbox" v-model="getPayrollDataByUserId[user.id].lb" />
+                    </td>
+                  </template>
+                  <template v-else>
+                    <td colspan="9" class="text-center text-gray-400">Data tidak tersedia</td>
+                  </template>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
         <div v-else class="text-center text-gray-400 py-12">
           Silakan pilih outlet atau divisi, lalu klik <b>Lihat Data</b>.
         </div>
-        <div class="flex justify-end mt-6">
-          <button @click="simpanPayroll" :disabled="saving" class="bg-blue-600 text-white px-8 py-2 rounded-xl shadow hover:bg-blue-700 font-bold text-lg flex items-center gap-2">
-            <span v-if="saving"><i class="fa fa-spinner fa-spin"></i></span>
-            <span v-else><i class="fa-solid fa-floppy-disk"></i></span>
-            Simpan
-          </button>
-        </div>
+      </div>
+      
+      <!-- Tombol Simpan di luar list -->
+      <div class="flex justify-end mt-6" v-if="users.length && payrollData.length">
+        <button 
+          @click="simpanPayroll" 
+          :disabled="saving" 
+          class="bg-blue-600 text-white px-8 py-2 rounded-xl shadow hover:bg-blue-700 font-bold text-lg flex items-center gap-2 transition-all duration-300"
+          :class="{ 'opacity-50 cursor-not-allowed': saving }"
+        >
+          <span v-if="saving"><i class="fa fa-spinner fa-spin"></i></span>
+          <span v-else><i class="fa-solid fa-floppy-disk"></i></span>
+          Simpan
+        </button>
       </div>
     </div>
   </AppLayout>
@@ -347,5 +379,31 @@ async function importPayroll() {
 }
 .animate-fade-in-up {
   animation: fade-in-up 0.6s cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+/* Fix table layout issues */
+.overflow-x-auto {
+  overflow-x: auto;
+  overflow-y: visible;
+}
+
+/* Ensure form inputs don't break layout */
+.form-input {
+  box-sizing: border-box;
+  max-width: 100%;
+}
+
+/* Fix sticky header issues */
+thead {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: linear-gradient(to right, #2563eb, #22c55e);
+}
+
+/* Ensure save button is always visible when there's data */
+.flex.justify-end {
+  position: relative;
+  z-index: 5;
 }
 </style> 
