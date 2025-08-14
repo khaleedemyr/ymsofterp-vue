@@ -953,6 +953,12 @@ Route::get('/users/dropdown-data', [UserController::class, 'getDropdownData'])->
 Route::resource('users', UserController::class);
 Route::patch('users/{user}/toggle-status', [UserController::class, 'toggleStatus'])->name('users.toggle-status');
 
+// Employee Movement Routes
+Route::get('employee-movements/search/employee', [\App\Http\Controllers\EmployeeMovementController::class, 'searchEmployee'])->name('employee-movements.search-employee');
+Route::get('employee-movements/employee/{id}', [\App\Http\Controllers\EmployeeMovementController::class, 'getEmployeeDetails'])->name('employee-movements.employee-details');
+Route::get('employee-movements/dropdown-data', [\App\Http\Controllers\EmployeeMovementController::class, 'getDropdownData'])->name('employee-movements.dropdown-data');
+Route::resource('employee-movements', \App\Http\Controllers\EmployeeMovementController::class);
+
 // Roulette download template (no auth required)
 Route::get('/roulette/import/template', [\App\Http\Controllers\RouletteController::class, 'downloadTemplate'])->name('roulette.download-template');
 

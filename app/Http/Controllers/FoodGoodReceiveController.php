@@ -128,8 +128,33 @@ class FoodGoodReceiveController extends Controller
                 $pr = $prFoodItem ? DB::table('pr_foods')->where('id', $prFoodItem->pr_food_id)->first() : null;
                 $warehouseId = $pr ? $pr->warehouse_id : null;
                 $warehouseDivisionId = $pr ? $pr->warehouse_division_id : null;
+                
+                // Log untuk debugging
+                \Log::info('DEBUG: Warehouse ID Check', [
+                    'po_item_id' => $item['po_item_id'],
+                    'poItem' => $poItem ? $poItem->id : 'null',
+                    'pr_food_item_id' => $poItem ? $poItem->pr_food_item_id : 'null',
+                    'prFoodItem' => $prFoodItem ? $prFoodItem->id : 'null',
+                    'pr_food_id' => $prFoodItem ? $prFoodItem->pr_food_id : 'null',
+                    'pr' => $pr ? $pr->id : 'null',
+                    'warehouse_id' => $warehouseId,
+                    'item_id' => $item['item_id']
+                ]);
+                
+                // Jika warehouse_id tidak ditemukan, coba ambil dari warehouse default atau berikan error yang lebih informatif
                 if (!$warehouseId) {
-                    throw new \Exception('warehouse_id tidak ditemukan di PR terkait item');
+                    // Coba ambil warehouse default (warehouse pertama)
+                    $defaultWarehouse = DB::table('warehouses')->first();
+                    if ($defaultWarehouse) {
+                        $warehouseId = $defaultWarehouse->id;
+                        \Log::warning('Using default warehouse for item', [
+                            'item_id' => $item['item_id'],
+                            'po_item_id' => $item['po_item_id'],
+                            'default_warehouse_id' => $warehouseId
+                        ]);
+                    } else {
+                        throw new \Exception('warehouse_id tidak ditemukan di PR terkait item. Item ID: ' . $item['item_id'] . ', PO Item ID: ' . $item['po_item_id'] . '. Silakan periksa data PR terkait.');
+                    }
                 }
                 // 1. Cek/insert food_inventory_items
                 $itemMaster = DB::table('items')->where('id', $item['item_id'])->first();
@@ -407,6 +432,21 @@ class FoodGoodReceiveController extends Controller
                 $prFoodItem = $poItem ? DB::table('pr_food_items')->where('id', $poItem->pr_food_item_id)->first() : null;
                 $pr = $prFoodItem ? DB::table('pr_foods')->where('id', $prFoodItem->pr_food_id)->first() : null;
                 $warehouseId = $pr ? $pr->warehouse_id : null;
+                
+                // Jika warehouse_id tidak ditemukan, coba ambil dari warehouse default
+                if (!$warehouseId) {
+                    $defaultWarehouse = DB::table('warehouses')->first();
+                    if ($defaultWarehouse) {
+                        $warehouseId = $defaultWarehouse->id;
+                        \Log::warning('Using default warehouse for update item', [
+                            'item_id' => $currentItem->item_id,
+                            'po_item_id' => $currentItem->po_item_id,
+                            'default_warehouse_id' => $warehouseId
+                        ]);
+                    } else {
+                        throw new \Exception('warehouse_id tidak ditemukan di PR terkait item untuk update. Item ID: ' . $currentItem->item_id . ', PO Item ID: ' . $currentItem->po_item_id);
+                    }
+                }
                 $itemMaster = DB::table('items')->where('id', $currentItem->item_id)->first();
                 $inventoryItem = DB::table('food_inventory_items')->where('item_id', $currentItem->item_id)->first();
                 if (!$inventoryItem) {
@@ -594,8 +634,19 @@ class FoodGoodReceiveController extends Controller
                 $pr = $prFoodItem ? DB::table('pr_foods')->where('id', $prFoodItem->pr_food_id)->first() : null;
                 $warehouseId = $pr ? $pr->warehouse_id : null;
                 
+                // Jika warehouse_id tidak ditemukan, coba ambil dari warehouse default
                 if (!$warehouseId) {
-                    throw new \Exception('Warehouse ID tidak ditemukan untuk item: ' . $item->item_id);
+                    $defaultWarehouse = DB::table('warehouses')->first();
+                    if ($defaultWarehouse) {
+                        $warehouseId = $defaultWarehouse->id;
+                        \Log::warning('Using default warehouse for destroy item', [
+                            'item_id' => $item->item_id,
+                            'po_item_id' => $item->po_item_id,
+                            'default_warehouse_id' => $warehouseId
+                        ]);
+                    } else {
+                        throw new \Exception('Warehouse ID tidak ditemukan untuk item: ' . $item->item_id . '. PO Item ID: ' . $item->po_item_id);
+                    }
                 }
                 
                 $inventoryItem = DB::table('food_inventory_items')->where('item_id', $item->item_id)->first();
