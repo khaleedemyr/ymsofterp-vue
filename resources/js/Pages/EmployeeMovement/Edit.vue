@@ -163,11 +163,97 @@ const submit = () => {
   const tunjangan = unformatCurrency(form.tunjangan_to);
   form.salary_to = (parseInt(gajiPokok) || 0) + (parseInt(tunjangan) || 0);
   
-  form.put(route('employee-movements.update', props.movement.id), {
-    onSuccess: () => {
-      // Success handled by Inertia
+  // Extract string values from multiselect objects
+  const positionToValue = form.position_to?.id || '';
+  const levelToValue = form.level_to?.id || '';
+  const divisionToValue = form.division_to?.id || '';
+  const unitPropertyToValue = form.unit_property_to?.id || '';
+
+  // Create summary for confirmation
+  const summary = {
+    employee: form.employee_name,
+    employment_type: form.employment_type,
+    effective_date: form.employment_effective_date,
+    position_change: form.position_change ? 'Yes' : 'No',
+    position_to: form.position_to?.name || '-',
+    level_change: form.level_change ? 'Yes' : 'No',
+    level_to: form.level_to?.name || '-',
+    salary_change: form.salary_change ? 'Yes' : 'No',
+    salary_to: form.salary_to ? formatCurrency(form.salary_to) : '-',
+    division_change: form.division_change ? 'Yes' : 'No',
+    division_to: form.division_to?.name || '-',
+    unit_property_change: form.unit_property_change ? 'Yes' : 'No',
+    unit_property_to: form.unit_property_to?.name || '-',
+    adjustment_effective_date: form.adjustment_effective_date,
+    comments: form.comments || '-'
+  };
+
+  // Update form values to use string IDs instead of objects
+  form.position_to = positionToValue;
+  form.level_to = levelToValue;
+  form.division_to = divisionToValue;
+  form.unit_property_to = unitPropertyToValue;
+
+  // Show confirmation dialog with summary
+  Swal.fire({
+    title: 'Confirm Employee Movement Update',
+    html: `
+      <div class="text-left">
+        <h3 class="font-bold text-lg mb-3">Summary:</h3>
+        <div class="space-y-2 text-sm">
+          <div><strong>Employee:</strong> ${summary.employee}</div>
+          <div><strong>Employment Type:</strong> ${summary.employment_type}</div>
+          <div><strong>Effective Date:</strong> ${summary.effective_date || '-'}</div>
+          <hr class="my-2">
+          <div><strong>Position Change:</strong> ${summary.position_change}</div>
+          <div><strong>New Position:</strong> ${summary.position_to}</div>
+          <div><strong>Level Change:</strong> ${summary.level_change}</div>
+          <div><strong>New Level:</strong> ${summary.level_to}</div>
+          <div><strong>Salary Change:</strong> ${summary.salary_change}</div>
+          <div><strong>New Salary:</strong> ${summary.salary_to}</div>
+          <div><strong>Division Change:</strong> ${summary.division_change}</div>
+          <div><strong>New Division:</strong> ${summary.division_to}</div>
+          <div><strong>Unit/Property Change:</strong> ${summary.unit_property_change}</div>
+          <div><strong>New Unit/Property:</strong> ${summary.unit_property_to}</div>
+          <div><strong>Adjustment Effective Date:</strong> ${summary.adjustment_effective_date || '-'}</div>
+          <hr class="my-2">
+          <div><strong>Comments:</strong> ${summary.comments}</div>
+        </div>
+      </div>
+    `,
+    icon: 'question',
+    showCancelButton: true,
+    confirmButtonColor: '#3085d6',
+    cancelButtonColor: '#d33',
+    confirmButtonText: 'Yes, Update Employee Movement',
+    cancelButtonText: 'Cancel',
+    showLoaderOnConfirm: true,
+    preConfirm: () => {
+      return new Promise((resolve) => {
+        form.put(route('employee-movements.update', props.movement.id), {
+          onSuccess: () => {
+            resolve();
+          },
+          onError: (errors) => {
+            Swal.showValidationMessage(`Request failed: ${Object.values(errors).join(', ')}`);
+            resolve(false);
+          },
+          forceFormData: true,
+        });
+      });
     },
-    forceFormData: true,
+    allowOutsideClick: () => !Swal.isLoading()
+  }).then((result) => {
+    if (result.isConfirmed) {
+      Swal.fire({
+        title: 'Success!',
+        text: 'Employee Movement has been updated successfully.',
+        icon: 'success',
+        confirmButtonText: 'OK'
+      }).then(() => {
+        router.visit('/employee-movements');
+      });
+    }
   });
 };
 
@@ -729,21 +815,7 @@ const goBack = () => {
               </div>
             </div>
 
-            <!-- Status Section -->
-            <div class="mb-8">
-              <h3 class="text-lg font-medium text-gray-900 mb-4">Status</h3>
-              <div class="bg-gray-50 p-4 rounded-md">
-                <select
-                  v-model="form.status"
-                  class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="draft">Draft</option>
-                  <option value="pending">Pending</option>
-                  <option value="approved">Approved</option>
-                  <option value="rejected">Rejected</option>
-                </select>
-              </div>
-            </div>
+
 
             <!-- Form Actions -->
             <div class="flex justify-end space-x-4">

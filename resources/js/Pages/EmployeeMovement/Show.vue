@@ -56,6 +56,35 @@ function formatCurrency(amount) {
     currency: 'IDR'
   }).format(amount);
 }
+
+function getEmploymentTypeText(type) {
+  switch (type) {
+    case 'extend_contract_without_adjustment':
+      return 'Extend contract without adjustment';
+    case 'extend_contract_with_adjustment':
+      return 'Extend contract with adjustment';
+    case 'promotion':
+      return 'Promotion';
+    case 'demotion':
+      return 'Demotion';
+    case 'mutation':
+      return 'Mutation';
+    case 'termination':
+      return 'Termination';
+    default:
+      return type || '-';
+  }
+}
+
+function getFileName(path) {
+  if (!path) return '-';
+  return path.split('/').pop();
+}
+
+function downloadFile(path) {
+  if (!path) return;
+  window.open(`/storage/${path}`, '_blank');
+}
 </script>
 
 <template>
@@ -122,61 +151,9 @@ function formatCurrency(amount) {
             <div class="mb-8">
               <h3 class="text-lg font-medium text-gray-900 mb-4 bg-gray-100 p-3 rounded-md">Employment & Renewal</h3>
               <div class="bg-gray-50 p-4 rounded-md">
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                  <div class="flex items-center">
-                    <input
-                      :checked="movement.extend_contract_without_adjustment"
-                      type="checkbox"
-                      disabled
-                      class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                    />
-                    <label class="ml-2 text-sm text-gray-700">Extend contract without adjustment</label>
-                  </div>
-                  <div class="flex items-center">
-                    <input
-                      :checked="movement.extend_contract_with_adjustment"
-                      type="checkbox"
-                      disabled
-                      class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                    />
-                    <label class="ml-2 text-sm text-gray-700">Extend contract with adjustment</label>
-                  </div>
-                  <div class="flex items-center">
-                    <input
-                      :checked="movement.promotion"
-                      type="checkbox"
-                      disabled
-                      class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                    />
-                    <label class="ml-2 text-sm text-gray-700">Promotion</label>
-                  </div>
-                  <div class="flex items-center">
-                    <input
-                      :checked="movement.demotion"
-                      type="checkbox"
-                      disabled
-                      class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                    />
-                    <label class="ml-2 text-sm text-gray-700">Demotion</label>
-                  </div>
-                  <div class="flex items-center">
-                    <input
-                      :checked="movement.mutation"
-                      type="checkbox"
-                      disabled
-                      class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                    />
-                    <label class="ml-2 text-sm text-gray-700">Mutation</label>
-                  </div>
-                  <div class="flex items-center">
-                    <input
-                      :checked="movement.termination"
-                      type="checkbox"
-                      disabled
-                      class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                    />
-                    <label class="ml-2 text-sm text-gray-700">Termination</label>
-                  </div>
+                <div class="mb-4">
+                  <label class="block text-sm font-medium text-gray-700 mb-2">Employment Type</label>
+                  <div class="p-2 bg-white rounded-md">{{ getEmploymentTypeText(movement.employment_type) }}</div>
                 </div>
                 <div>
                   <label class="block text-sm font-medium text-gray-700">Effective Date</label>
@@ -189,42 +166,111 @@ function formatCurrency(amount) {
             <div class="mb-8">
               <h3 class="text-lg font-medium text-gray-900 mb-4 bg-gray-100 p-3 rounded-md">Supporting Documents</h3>
               <div class="bg-gray-50 p-4 rounded-md">
-                <div class="space-y-4">
-                  <div class="flex items-center justify-between">
-                    <div class="flex items-center">
-                      <input
-                        :checked="movement.kpi_required"
-                        type="checkbox"
-                        disabled
-                        class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                      />
-                      <label class="ml-2 text-sm text-gray-700">Key Performance Indicators (KPI)</label>
+                <div class="space-y-6">
+                  <!-- KPI Section -->
+                  <div class="border-b border-gray-200 pb-4">
+                    <div class="flex items-center justify-between mb-3">
+                      <div class="flex items-center">
+                        <input
+                          :checked="movement.kpi_required"
+                          type="checkbox"
+                          disabled
+                          class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                        />
+                        <label class="ml-2 text-sm font-medium text-gray-700">Key Performance Indicators (KPI)</label>
+                      </div>
+                      <div class="p-2 bg-white rounded-md">{{ formatDate(movement.kpi_date) }}</div>
                     </div>
-                    <div class="p-2 bg-white rounded-md">{{ formatDate(movement.kpi_date) }}</div>
+                    <div class="ml-6">
+                      <label class="block text-sm text-gray-600 mb-2">KPI Document</label>
+                      <div v-if="movement.kpi_attachment" class="flex items-center space-x-2">
+                        <span class="text-sm text-gray-600">{{ getFileName(movement.kpi_attachment) }}</span>
+                        <button
+                          @click="downloadFile(movement.kpi_attachment)"
+                          class="text-blue-600 hover:text-blue-800 text-sm underline"
+                        >
+                          Download
+                        </button>
+                      </div>
+                      <div v-else class="text-sm text-gray-500">No file uploaded</div>
+                    </div>
                   </div>
-                  <div class="flex items-center justify-between">
-                    <div class="flex items-center">
-                      <input
-                        :checked="movement.psikotest_required"
-                        type="checkbox"
-                        disabled
-                        class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                      />
-                      <label class="ml-2 text-sm text-gray-700">Psikotest Result by Training Manager: score = {{ movement.psikotest_score || '-' }}</label>
+
+                  <!-- Psikotest Section -->
+                  <div class="border-b border-gray-200 pb-4">
+                    <div class="flex items-center justify-between mb-3">
+                      <div class="flex items-center">
+                        <input
+                          :checked="movement.psikotest_required"
+                          type="checkbox"
+                          disabled
+                          class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                        />
+                        <label class="ml-2 text-sm font-medium text-gray-700">Psikotest Result by Training Manager: score = {{ movement.psikotest_score || '-' }}</label>
+                      </div>
+                      <div class="p-2 bg-white rounded-md">{{ formatDate(movement.psikotest_date) }}</div>
                     </div>
-                    <div class="p-2 bg-white rounded-md">{{ formatDate(movement.psikotest_date) }}</div>
+                    <div class="ml-6">
+                      <label class="block text-sm text-gray-600 mb-2">Psikotest Result</label>
+                      <div v-if="movement.psikotest_attachment" class="flex items-center space-x-2">
+                        <span class="text-sm text-gray-600">{{ getFileName(movement.psikotest_attachment) }}</span>
+                        <button
+                          @click="downloadFile(movement.psikotest_attachment)"
+                          class="text-blue-600 hover:text-blue-800 text-sm underline"
+                        >
+                          Download
+                        </button>
+                      </div>
+                      <div v-else class="text-sm text-gray-500">No file uploaded</div>
+                    </div>
                   </div>
-                  <div class="flex items-center justify-between">
-                    <div class="flex items-center">
-                      <input
-                        :checked="movement.training_attendance_required"
-                        type="checkbox"
-                        disabled
-                        class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                      />
-                      <label class="ml-2 text-sm text-gray-700">Training Attendance Record by Training Manager</label>
+
+                  <!-- Training Attendance Section -->
+                  <div class="border-b border-gray-200 pb-4">
+                    <div class="flex items-center justify-between mb-3">
+                      <div class="flex items-center">
+                        <input
+                          :checked="movement.training_attendance_required"
+                          type="checkbox"
+                          disabled
+                          class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                        />
+                        <label class="ml-2 text-sm font-medium text-gray-700">Training Attendance Record by Training Manager</label>
+                      </div>
+                      <div class="p-2 bg-white rounded-md">{{ formatDate(movement.training_attendance_date) }}</div>
                     </div>
-                    <div class="p-2 bg-white rounded-md">{{ formatDate(movement.training_attendance_date) }}</div>
+                    <div class="ml-6">
+                      <label class="block text-sm text-gray-600 mb-2">Training Record</label>
+                      <div v-if="movement.training_attachment" class="flex items-center space-x-2">
+                        <span class="text-sm text-gray-600">{{ getFileName(movement.training_attachment) }}</span>
+                        <button
+                          @click="downloadFile(movement.training_attachment)"
+                          class="text-blue-600 hover:text-blue-800 text-sm underline"
+                        >
+                          Download
+                        </button>
+                      </div>
+                      <div v-else class="text-sm text-gray-500">No file uploaded</div>
+                    </div>
+                  </div>
+
+                  <!-- Other Attachments Section -->
+                  <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-3">Other Supporting Documents</label>
+                    <div class="ml-6">
+                      <div v-if="movement.other_attachments" class="space-y-2">
+                        <div v-for="(file, index) in JSON.parse(movement.other_attachments || '[]')" :key="index" class="flex items-center space-x-2">
+                          <span class="text-sm text-gray-600">{{ getFileName(file) }}</span>
+                          <button
+                            @click="downloadFile(file)"
+                            class="text-blue-600 hover:text-blue-800 text-sm underline"
+                          >
+                            Download
+                          </button>
+                        </div>
+                      </div>
+                      <div v-else class="text-sm text-gray-500">No files uploaded</div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -279,22 +325,6 @@ function formatCurrency(amount) {
                     </div>
                     <div class="p-2 bg-white rounded-md">{{ formatCurrency(movement.salary_from) }}</div>
                     <div class="p-2 bg-white rounded-md">{{ formatCurrency(movement.salary_to) }}</div>
-                    <div></div>
-                    <div></div>
-                  </div>
-                  
-                  <div class="grid grid-cols-1 md:grid-cols-5 gap-4 items-center">
-                    <div class="flex items-center">
-                      <input
-                        :checked="movement.department_change"
-                        type="checkbox"
-                        disabled
-                        class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                      />
-                      <label class="ml-2 text-sm text-gray-700">Department</label>
-                    </div>
-                    <div class="p-2 bg-white rounded-md">{{ movement.department_from || '-' }}</div>
-                    <div class="p-2 bg-white rounded-md">{{ movement.department_to || '-' }}</div>
                     <div></div>
                     <div></div>
                   </div>

@@ -5,6 +5,8 @@ import { debounce } from 'lodash';
 import Swal from 'sweetalert2';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import axios from 'axios';
+import Multiselect from 'vue-multiselect';
+import 'vue-multiselect/dist/vue-multiselect.min.css';
 
 const props = defineProps({
   movements: Object, // { data, links, meta }
@@ -14,13 +16,32 @@ const props = defineProps({
 
 const search = ref(props.filters?.search || '');
 const status = ref(props.filters?.status || 'all');
-const employeeId = ref(props.filters?.employee_id || '');
+const selectedEmployee = ref(null);
+
+// Convert employees array to multiselect format
+const employeeOptions = ref(props.employees.map(emp => ({
+  id: emp.id,
+  name: `${emp.nama_lengkap} (${emp.nik})`,
+  nik: emp.nik
+})));
+
+// Set selected employee if filter is applied
+if (props.filters?.employee_id) {
+  const employee = props.employees.find(emp => emp.id == props.filters.employee_id);
+  if (employee) {
+    selectedEmployee.value = {
+      id: employee.id,
+      name: `${employee.nama_lengkap} (${employee.nik})`,
+      nik: employee.nik
+    };
+  }
+}
 
 const debouncedSearch = debounce(() => {
   router.get('/employee-movements', {
     search: search.value,
     status: status.value,
-    employee_id: employeeId.value,
+    employee_id: selectedEmployee.value?.id || '',
   }, { preserveState: true, replace: true });
 }, 400);
 
@@ -29,6 +50,10 @@ function onSearchInput() {
 }
 
 function onFilterChange() {
+  debouncedSearch();
+}
+
+function onEmployeeChange() {
   debouncedSearch();
 }
 
@@ -115,9 +140,10 @@ function getStatusText(status) {
               <h3 class="text-lg font-medium text-gray-900">Daftar Employee Movement</h3>
               <button
                 @click="openCreate"
-                class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium"
+                class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium flex items-center space-x-2"
               >
-                Tambah Employee Movement
+                <i class="fas fa-plus"></i>
+                <span>Tambah Employee Movement</span>
               </button>
             </div>
           </div>
@@ -153,23 +179,23 @@ function getStatusText(status) {
                 </select>
               </div>
 
-              <!-- Employee Filter -->
+              <!-- Employee Filter with Multiselect -->
               <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1">Employee</label>
-                <select
-                  v-model="employeeId"
-                  @change="onFilterChange"
-                  class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="">Semua Employee</option>
-                  <option
-                    v-for="employee in employees"
-                    :key="employee.id"
-                    :value="employee.id"
-                  >
-                    {{ employee.nama_lengkap }} ({{ employee.nik }})
-                  </option>
-                </select>
+                <Multiselect
+                  v-model="selectedEmployee"
+                  :options="employeeOptions"
+                  :searchable="true"
+                  :clear-on-select="false"
+                  :close-on-select="true"
+                  :show-labels="false"
+                  track-by="id"
+                  label="name"
+                  placeholder="Pilih employee..."
+                  @select="onEmployeeChange"
+                  @remove="onEmployeeChange"
+                  class="w-full"
+                />
               </div>
             </div>
           </div>
@@ -200,7 +226,7 @@ function getStatusText(status) {
                 </tr>
               </thead>
               <tbody class="bg-white divide-y divide-gray-200">
-                <tr v-for="movement in movements.data" :key="movement.id">
+                <tr v-for="movement in movements.data" :key="movement.id" class="hover:bg-gray-50">
                   <td class="px-6 py-4 whitespace-nowrap">
                     <div>
                       <div class="text-sm font-medium text-gray-900">
@@ -234,20 +260,26 @@ function getStatusText(status) {
                     <div class="flex space-x-2">
                       <button
                         @click="openShow(movement)"
-                        class="text-blue-600 hover:text-blue-900"
+                        class="inline-flex items-center px-3 py-1 border border-transparent text-xs leading-4 font-medium rounded-md text-blue-700 bg-blue-100 hover:bg-blue-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors duration-200"
+                        title="Detail"
                       >
+                        <i class="fas fa-eye mr-1"></i>
                         Detail
                       </button>
                       <button
                         @click="openEdit(movement)"
-                        class="text-indigo-600 hover:text-indigo-900"
+                        class="inline-flex items-center px-3 py-1 border border-transparent text-xs leading-4 font-medium rounded-md text-indigo-700 bg-indigo-100 hover:bg-indigo-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors duration-200"
+                        title="Edit"
                       >
+                        <i class="fas fa-edit mr-1"></i>
                         Edit
                       </button>
                       <button
                         @click="hapus(movement)"
-                        class="text-red-600 hover:text-red-900"
+                        class="inline-flex items-center px-3 py-1 border border-transparent text-xs leading-4 font-medium rounded-md text-red-700 bg-red-100 hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition-colors duration-200"
+                        title="Hapus"
                       >
+                        <i class="fas fa-trash mr-1"></i>
                         Hapus
                       </button>
                     </div>
@@ -257,29 +289,74 @@ function getStatusText(status) {
             </table>
           </div>
 
-          <!-- Pagination -->
-          <div v-if="movements.links && movements.links.length > 3" class="px-6 py-4 border-t border-gray-200">
+          <!-- Enhanced Pagination -->
+          <div v-if="movements.links && movements.links.length > 3" class="px-6 py-4 border-t border-gray-200 bg-gray-50">
             <div class="flex items-center justify-between">
               <div class="text-sm text-gray-700">
-                Showing {{ movements.from }} to {{ movements.to }} of {{ movements.total }} results
+                <span class="font-medium">{{ movements.from }}</span>
+                to
+                <span class="font-medium">{{ movements.to }}</span>
+                of
+                <span class="font-medium">{{ movements.total }}</span>
+                results
               </div>
-              <div class="flex space-x-2">
+              <div class="flex items-center space-x-1">
+                <!-- Previous Page -->
                 <button
-                  v-for="link in movements.links"
-                  :key="link.label"
-                  @click="goToPage(link.url)"
-                  :disabled="!link.url"
-                  :class="[
-                    'px-3 py-2 text-sm font-medium rounded-md',
-                    link.active
-                      ? 'bg-blue-600 text-white'
-                      : link.url
-                      ? 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
-                      : 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                  ]"
-                  v-html="link.label"
-                ></button>
+                  v-if="movements.prev_page_url"
+                  @click="goToPage(movements.prev_page_url)"
+                  class="relative inline-flex items-center px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-l-md hover:bg-gray-50"
+                >
+                  <i class="fas fa-chevron-left"></i>
+                </button>
+                <button
+                  v-else
+                  disabled
+                  class="relative inline-flex items-center px-3 py-2 text-sm font-medium text-gray-300 bg-gray-100 border border-gray-300 rounded-l-md cursor-not-allowed"
+                >
+                  <i class="fas fa-chevron-left"></i>
+                </button>
+
+                <!-- Page Numbers -->
+                <template v-for="(link, index) in movements.links" :key="index">
+                  <button
+                    v-if="link.url && !link.label.includes('Previous') && !link.label.includes('Next')"
+                    @click="goToPage(link.url)"
+                    :class="[
+                      'relative inline-flex items-center px-4 py-2 text-sm font-medium border',
+                      link.active
+                        ? 'z-10 bg-blue-50 border-blue-500 text-blue-600'
+                        : 'bg-white border-gray-300 text-gray-500 hover:bg-gray-50'
+                    ]"
+                    v-html="link.label"
+                  ></button>
+                </template>
+
+                <!-- Next Page -->
+                <button
+                  v-if="movements.next_page_url"
+                  @click="goToPage(movements.next_page_url)"
+                  class="relative inline-flex items-center px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-r-md hover:bg-gray-50"
+                >
+                  <i class="fas fa-chevron-right"></i>
+                </button>
+                <button
+                  v-else
+                  disabled
+                  class="relative inline-flex items-center px-3 py-2 text-sm font-medium text-gray-300 bg-gray-100 border border-gray-300 rounded-r-md cursor-not-allowed"
+                >
+                  <i class="fas fa-chevron-right"></i>
+                </button>
               </div>
+            </div>
+          </div>
+
+          <!-- No Data Message -->
+          <div v-if="movements.data.length === 0" class="px-6 py-12 text-center">
+            <div class="text-gray-500">
+              <i class="fas fa-inbox text-4xl mb-4"></i>
+              <p class="text-lg font-medium">Tidak ada data employee movement</p>
+              <p class="text-sm">Coba ubah filter pencarian Anda</p>
             </div>
           </div>
         </div>
@@ -287,3 +364,60 @@ function getStatusText(status) {
     </div>
   </AppLayout>
 </template>
+
+<style scoped>
+/* Multiselect styling */
+:deep(.multiselect) {
+  min-height: 42px;
+  border-radius: 0.5rem;
+  border: 1px solid #d1d5db;
+}
+
+:deep(.multiselect:focus-within) {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+}
+
+:deep(.multiselect__input) {
+  background: transparent;
+  border: none;
+  outline: none;
+  font-size: 0.875rem;
+  padding: 0.5rem 0;
+}
+
+:deep(.multiselect__placeholder) {
+  color: #6b7280;
+  font-size: 0.875rem;
+  padding: 0.5rem 0;
+}
+
+:deep(.multiselect__single) {
+  background: transparent;
+  padding: 0.5rem 0;
+  font-size: 0.875rem;
+  color: #374151;
+}
+
+:deep(.multiselect__option) {
+  padding: 0.75rem 1rem;
+  font-size: 0.875rem;
+  color: #374151;
+}
+
+:deep(.multiselect__option--highlight) {
+  background: #3b82f6;
+  color: white;
+}
+
+:deep(.multiselect__option--selected) {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+:deep(.multiselect__content-wrapper) {
+  border: 1px solid #d1d5db;
+  border-radius: 0.5rem;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+</style>
