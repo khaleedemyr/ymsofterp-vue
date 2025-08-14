@@ -1099,6 +1099,7 @@ Route::get('/payroll/report/custom-items', [App\Http\Controllers\PayrollReportCo
 
 // Print Payroll Route
 Route::get('/payroll/report/print', [App\Http\Controllers\PayrollReportController::class, 'printPayroll'])->name('payroll.report.print');
+Route::get('/payroll/report/show', [App\Http\Controllers\PayrollReportController::class, 'showPayroll'])->name('payroll.report.show');
 
 
 // LMS Routes

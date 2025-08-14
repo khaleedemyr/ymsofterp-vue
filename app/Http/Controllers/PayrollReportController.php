@@ -1012,6 +1012,195 @@ class PayrollReportController extends Controller
         }
     }
 
+    public function showPayroll(Request $request)
+    {
+        // Same logic as printPayroll but return view instead of PDF
+        $userId = $request->input('user_id');
+        $outletId = $request->input('outlet_id');
+        $month = $request->input('month');
+        $year = $request->input('year');
+
+        // Get user data
+        $user = User::find($userId);
+        if (!$user) {
+            return response()->json(['error' => 'User not found'], 404);
+        }
+
+        // Get outlet data
+        $outlet = DB::table('tbl_data_outlet')->where('id_outlet', $outletId)->first();
+        if (!$outlet) {
+            return response()->json(['error' => 'Outlet not found'], 404);
+        }
+
+        // Get master data
+        $masterData = DB::table('payroll_master')
+            ->where('user_id', $userId)
+            ->where('outlet_id', $outletId)
+            ->where('month', $month)
+            ->where('year', $year)
+            ->first();
+
+        if (!$masterData) {
+            return response()->json(['error' => 'Payroll data not found'], 404);
+        }
+
+        // Get position, division data
+        $jabatan = DB::table('tbl_data_jabatan')->where('id_jabatan', $user->id_jabatan)->value('nama_jabatan');
+        $divisi = DB::table('tbl_data_divisi')->where('id', $user->division_id)->value('nama_divisi');
+
+        // Calculate overtime
+        $totalLembur = DB::table('attendance_logs')
+            ->where('user_id', $userId)
+            ->where('outlet_id', $outletId)
+            ->whereMonth('date', $month)
+            ->whereYear('date', $year)
+            ->sum('overtime_hours');
+
+        $gajiLembur = $totalLembur * $masterData->ot_rate;
+        $nominalLemburPerJam = $masterData->ot_rate;
+
+        // Calculate meal allowance
+        $hariKerja = DB::table('attendance_logs')
+            ->where('user_id', $userId)
+            ->where('outlet_id', $outletId)
+            ->whereMonth('date', $month)
+            ->whereYear('date', $year)
+            ->where('status', 'present')
+            ->count();
+
+        $uangMakan = $hariKerja * $masterData->um_rate;
+        $nominalUangMakan = $masterData->um_rate;
+
+        // Calculate late deductions
+        $totalTelat = DB::table('attendance_logs')
+            ->where('user_id', $userId)
+            ->where('outlet_id', $outletId)
+            ->whereMonth('date', $month)
+            ->whereYear('date', $year)
+            ->sum('late_minutes');
+
+        $gajiPerMenit = ($masterData->gaji + $masterData->tunjangan) / (22 * 8 * 60); // 22 days, 8 hours, 60 minutes
+        $potonganTelat = $totalTelat * $gajiPerMenit;
+
+        // Calculate BPJS
+        $bpjsJKN = $masterData->bpjs_jkn_rate;
+        $bpjsTK = $masterData->bpjs_tk_rate;
+
+        // Get custom items
+        $customItems = DB::table('payroll_custom_items')
+            ->where('user_id', $userId)
+            ->where('outlet_id', $outletId)
+            ->where('month', $month)
+            ->where('year', $year)
+            ->get();
+
+        $customEarnings = $customItems->where('item_type', 'earn')->sum('item_amount');
+        $customDeductions = $customItems->where('item_type', 'deduction')->sum('item_amount');
+
+        // Debug logging untuk custom items
+        \Log::info('Payroll Show Debug - Custom Items', [
+            'user_id' => $userId,
+            'outlet_id' => $outletId,
+            'month' => $month,
+            'year' => $year,
+            'custom_items_count' => $customItems->count(),
+            'custom_earnings_count' => $customItems->where('item_type', 'earn')->count(),
+            'custom_deductions_count' => $customItems->where('item_type', 'deduction')->count(),
+            'custom_earnings_total' => $customEarnings,
+            'custom_deductions_total' => $customDeductions,
+            'custom_items_details' => $customItems->toArray()
+        ]);
+
+        // Calculate total salary
+        $totalGaji = $masterData->gaji + $masterData->tunjangan + $gajiLembur + $uangMakan + $customEarnings - $potonganTelat - $bpjsJKN - $bpjsTK - $customDeductions;
+
+        // Prepare logo data with better error handling
+        $imagePath = public_path('images/logojustusgroup.png');
+        $logoBase64 = '';
+        
+        try {
+            if (file_exists($imagePath) && is_readable($imagePath)) {
+                $imageContent = file_get_contents($imagePath);
+                if ($imageContent !== false) {
+                    $logoBase64 = base64_encode($imageContent);
+                }
+            }
+        } catch (Exception $e) {
+            \Log::error('Error reading logo file: ' . $e->getMessage());
+        }
+        
+        \Log::info('Debug Logo Path', [
+            'path' => $imagePath,
+            'exists' => file_exists($imagePath),
+            'readable' => is_readable($imagePath),
+            'file_size' => file_exists($imagePath) ? filesize($imagePath) : 'N/A',
+            'base64_length' => strlen($logoBase64),
+            'base64_empty' => empty($logoBase64)
+        ]);
+
+        // Format period
+        $periode = date('d/m/Y', strtotime("$year-$month-01")) . ' - ' . date('d/m/Y', strtotime("$year-$month-" . date('t', strtotime("$year-$month-01"))));
+
+        // Check if download PDF is requested
+        if ($request->has('download') && $request->download === 'pdf') {
+            $pdf = \PDF::loadView('payroll.slip', [
+                'user' => $user,
+                'outlet' => $outlet,
+                'jabatan' => $jabatan,
+                'divisi' => $divisi,
+                'periode' => $periode,
+                'gaji_pokok' => $masterData->gaji,
+                'tunjangan' => $masterData->tunjangan,
+                'total_lembur' => $totalLembur,
+                'gaji_lembur' => $gajiLembur,
+                'nominal_lembur_per_jam' => $nominalLemburPerJam,
+                'uang_makan' => $uangMakan,
+                'nominal_uang_makan' => $nominalUangMakan,
+                'total_telat' => $totalTelat,
+                'bpjs_jkn' => $bpjsJKN,
+                'bpjs_tk' => $bpjsTK,
+                'custom_earnings' => $customEarnings,
+                'custom_deductions' => $customDeductions,
+                'custom_items' => $customItems,
+                'gaji_per_menit' => round($gajiPerMenit, 2),
+                'potongan_telat' => round($potonganTelat),
+                'total_gaji' => round($totalGaji),
+                'hari_kerja' => $hariKerja,
+                'master_data' => $masterData,
+                'logo_base64' => $logoBase64,
+            ]);
+
+            return $pdf->download("slip_gaji_{$user->nama_lengkap}_{$periode}.pdf");
+        }
+
+        return view('payroll.slip', [
+            'user' => $user,
+            'outlet' => $outlet,
+            'jabatan' => $jabatan,
+            'divisi' => $divisi,
+            'periode' => $periode,
+            'gaji_pokok' => $masterData->gaji,
+            'tunjangan' => $masterData->tunjangan,
+            'total_lembur' => $totalLembur,
+            'gaji_lembur' => $gajiLembur,
+            'nominal_lembur_per_jam' => $nominalLemburPerJam,
+            'uang_makan' => $uangMakan,
+            'nominal_uang_makan' => $nominalUangMakan,
+            'total_telat' => $totalTelat,
+            'bpjs_jkn' => $bpjsJKN,
+            'bpjs_tk' => $bpjsTK,
+            'custom_earnings' => $customEarnings,
+            'custom_deductions' => $customDeductions,
+            'custom_items' => $customItems,
+            'gaji_per_menit' => round($gajiPerMenit, 2),
+            'potongan_telat' => round($potonganTelat),
+            'total_gaji' => round($totalGaji),
+            'hari_kerja' => $hariKerja,
+            'master_data' => $masterData,
+            'logo_base64' => $logoBase64,
+        ]);
+    }
+
     public function printPayroll(Request $request)
     {
         $userId = $request->input('user_id');
@@ -1128,8 +1317,46 @@ class PayrollReportController extends Controller
         $customEarnings = $customItems->where('item_type', 'earn')->sum('item_amount');
         $customDeductions = $customItems->where('item_type', 'deduction')->sum('item_amount');
 
+        // Debug logging untuk custom items
+        \Log::info('Payroll Print Debug - Custom Items', [
+            'user_id' => $userId,
+            'outlet_id' => $outletId,
+            'month' => $month,
+            'year' => $year,
+            'custom_items_count' => $customItems->count(),
+            'custom_earnings_count' => $customItems->where('item_type', 'earn')->count(),
+            'custom_deductions_count' => $customItems->where('item_type', 'deduction')->count(),
+            'custom_earnings_total' => $customEarnings,
+            'custom_deductions_total' => $customDeductions,
+            'custom_items_details' => $customItems->toArray()
+        ]);
+
         // Hitung total gaji
         $totalGaji = $masterData->gaji + $masterData->tunjangan + $gajiLembur + $uangMakan + $customEarnings - $potonganTelat - $bpjsJKN - $bpjsTK - $customDeductions;
+
+        // Prepare logo data with better error handling
+        $imagePath = public_path('images/logojustusgroup.png');
+        $logoBase64 = '';
+        
+        try {
+            if (file_exists($imagePath) && is_readable($imagePath)) {
+                $imageContent = file_get_contents($imagePath);
+                if ($imageContent !== false) {
+                    $logoBase64 = base64_encode($imageContent);
+                }
+            }
+        } catch (Exception $e) {
+            \Log::error('Error reading logo file: ' . $e->getMessage());
+        }
+        
+        \Log::info('Debug Logo Path', [
+            'path' => $imagePath,
+            'exists' => file_exists($imagePath),
+            'readable' => is_readable($imagePath),
+            'file_size' => file_exists($imagePath) ? filesize($imagePath) : 'N/A',
+            'base64_length' => strlen($logoBase64),
+            'base64_empty' => empty($logoBase64)
+        ]);
 
         // Generate PDF
         $pdf = \PDF::loadView('payroll.slip', [
@@ -1156,6 +1383,7 @@ class PayrollReportController extends Controller
             'total_gaji' => round($totalGaji),
             'hari_kerja' => $hariKerja,
             'master_data' => $masterData,
+            'logo_base64' => $logoBase64,
         ]);
 
         $filename = "Slip_Gaji_{$user->nama_lengkap}_{$month}_{$year}.pdf";

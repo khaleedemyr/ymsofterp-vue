@@ -287,6 +287,17 @@ async function printPayroll(employee) {
     Swal.fire('Error', 'Terjadi kesalahan saat print payroll', 'error');
   }
 }
+
+// Show payroll as HTML for specific employee
+async function showPayroll(employee) {
+  try {
+    const url = `/payroll/report/show?user_id=${employee.user_id}&outlet_id=${outletId.value}&month=${month.value}&year=${year.value}`;
+    window.open(url, '_blank');
+  } catch (error) {
+    console.error('Error showing payroll:', error);
+    Swal.fire('Error', 'Terjadi kesalahan saat menampilkan payroll', 'error');
+  }
+}
 </script>
 
 <template>
@@ -520,6 +531,10 @@ async function printPayroll(employee) {
                         <button @click="toggleExpand(item.user_id)" 
                                 class="bg-gradient-to-br from-blue-400 to-blue-600 text-white px-3 py-1 rounded-lg text-xs hover:scale-105 transition-all duration-200 font-bold">
                           <i class="fa fa-eye mr-1"></i> Detail
+                        </button>
+                        <button @click="showPayroll(item)" 
+                                class="bg-gradient-to-br from-blue-400 to-blue-600 text-white px-3 py-1 rounded-lg text-xs hover:scale-105 transition-all duration-200 font-bold mr-1">
+                          <i class="fa fa-eye mr-1"></i> View
                         </button>
                         <button @click="printPayroll(item)" 
                                 class="bg-gradient-to-br from-green-400 to-green-600 text-white px-3 py-1 rounded-lg text-xs hover:scale-105 transition-all duration-200 font-bold">
