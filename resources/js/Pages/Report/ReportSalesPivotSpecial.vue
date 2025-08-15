@@ -19,13 +19,6 @@
           <input v-model="to" type="date" class="px-4 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500" />
         </div>
         <input v-model="search" type="text" placeholder="Cari outlet..." class="px-4 py-2 border border-gray-300 rounded-lg w-full md:w-64 focus:ring-blue-500 focus:border-blue-500" />
-        <div class="flex items-center gap-2">
-          <label class="text-sm">Tampilkan</label>
-          <select v-model="perPage" class="border border-gray-300 rounded-lg px-2 py-2 focus:ring-blue-500 focus:border-blue-500">
-            <option v-for="n in [10, 25, 50, 100]" :key="n" :value="n">{{ n }}</option>
-          </select>
-          <span class="text-sm">data</span>
-        </div>
         <button @click="setTodayRange" class="inline-flex items-center px-3 py-2 bg-green-600 text-white rounded-md font-semibold hover:bg-green-700 mr-2">
           <span class="mr-2"><i class="fas fa-calendar-day"></i></span>
           Hari Ini
@@ -70,10 +63,13 @@
             </tr>
           </thead>
           <tbody>
-            <tr v-if="!paginatedReport.length">
-              <td colspan="7" class="text-center py-10 text-gray-400">Tidak ada data.</td>
+            <!-- Outlet Group Header -->
+            <tr v-if="groupedReport.outlets.length > 0" class="bg-blue-100 font-bold">
+              <td colspan="7" class="px-4 py-2 border border-gray-300 text-center text-blue-800">
+                <i class="fas fa-store mr-2"></i>OUTLET (is_outlet = 1)
+              </td>
             </tr>
-            <tr v-for="row in paginatedReport" :key="row.customer">
+            <tr v-for="row in groupedReport.outlets" :key="'outlet-' + row.customer">
               <td class="px-4 py-2 border border-gray-200 flex items-center gap-2">
                 {{ row.customer }}
                 <button @click="showDetail(row.customer)" class="ml-2 bg-gradient-to-br from-yellow-400 to-yellow-600 text-white rounded-full shadow-lg px-2 py-1 hover:scale-110 transition-all font-bold" title="Lihat Detail">
@@ -87,10 +83,58 @@
               <td class="px-4 py-2 border border-gray-200 text-right">{{ formatRupiah(row.marketing) }}</td>
               <td class="px-4 py-2 border border-gray-200 text-right font-bold">{{ formatRupiah(row.line_total) }}</td>
             </tr>
+            
+            <!-- Outlet Group Subtotal -->
+            <tr v-if="groupedReport.outlets.length > 0" class="bg-blue-50 font-semibold">
+              <td class="px-4 py-2 border border-gray-300 text-right">SUBTOTAL OUTLET</td>
+              <td class="px-4 py-2 border border-gray-300 text-right">{{ formatRupiah(totalColGroup('main_kitchen', groupedReport.outlets)) }}</td>
+              <td class="px-4 py-2 border border-gray-300 text-right">{{ formatRupiah(totalColGroup('main_store', groupedReport.outlets)) }}</td>
+              <td class="px-4 py-2 border border-gray-300 text-right">{{ formatRupiah(totalColGroup('chemical', groupedReport.outlets)) }}</td>
+              <td class="px-4 py-2 border border-gray-300 text-right">{{ formatRupiah(totalColGroup('stationary', groupedReport.outlets)) }}</td>
+              <td class="px-4 py-2 border border-gray-300 text-right">{{ formatRupiah(totalColGroup('marketing', groupedReport.outlets)) }}</td>
+              <td class="px-4 py-2 border border-gray-300 text-right">{{ formatRupiah(totalColGroup('line_total', groupedReport.outlets)) }}</td>
+            </tr>
+            
+            <!-- Non-Outlet Group Header -->
+            <tr v-if="groupedReport.nonOutlets.length > 0" class="bg-green-100 font-bold">
+              <td colspan="7" class="px-4 py-2 border border-gray-300 text-center text-green-800">
+                <i class="fas fa-building mr-2"></i>NON-OUTLET (is_outlet = 0)
+              </td>
+            </tr>
+            <tr v-for="row in groupedReport.nonOutlets" :key="'nonoutlet-' + row.customer">
+              <td class="px-4 py-2 border border-gray-200 flex items-center gap-2">
+                {{ row.customer }}
+                <button @click="showDetail(row.customer)" class="ml-2 bg-gradient-to-br from-yellow-400 to-yellow-600 text-white rounded-full shadow-lg px-2 py-1 hover:scale-110 transition-all font-bold" title="Lihat Detail">
+                  <i class="fas fa-search-plus"></i>
+                </button>
+              </td>
+              <td class="px-4 py-2 border border-gray-200 text-right">{{ formatRupiah(row.main_kitchen) }}</td>
+              <td class="px-4 py-2 border border-gray-200 text-right">{{ formatRupiah(row.main_store) }}</td>
+              <td class="px-4 py-2 border border-gray-200 text-right">{{ formatRupiah(row.chemical) }}</td>
+              <td class="px-4 py-2 border border-gray-200 text-right">{{ formatRupiah(row.stationary) }}</td>
+              <td class="px-4 py-2 border border-gray-200 text-right">{{ formatRupiah(row.marketing) }}</td>
+              <td class="px-4 py-2 border border-gray-200 text-right font-bold">{{ formatRupiah(row.line_total) }}</td>
+            </tr>
+            
+            <!-- Non-Outlet Group Subtotal -->
+            <tr v-if="groupedReport.nonOutlets.length > 0" class="bg-green-50 font-semibold">
+              <td class="px-4 py-2 border border-gray-300 text-right">SUBTOTAL NON-OUTLET</td>
+              <td class="px-4 py-2 border border-gray-300 text-right">{{ formatRupiah(totalColGroup('main_kitchen', groupedReport.nonOutlets)) }}</td>
+              <td class="px-4 py-2 border border-gray-300 text-right">{{ formatRupiah(totalColGroup('main_store', groupedReport.nonOutlets)) }}</td>
+              <td class="px-4 py-2 border border-gray-300 text-right">{{ formatRupiah(totalColGroup('chemical', groupedReport.nonOutlets)) }}</td>
+              <td class="px-4 py-2 border border-gray-300 text-right">{{ formatRupiah(totalColGroup('stationary', groupedReport.nonOutlets)) }}</td>
+              <td class="px-4 py-2 border border-gray-300 text-right">{{ formatRupiah(totalColGroup('marketing', groupedReport.nonOutlets)) }}</td>
+              <td class="px-4 py-2 border border-gray-300 text-right">{{ formatRupiah(totalColGroup('line_total', groupedReport.nonOutlets)) }}</td>
+            </tr>
+            
+            <!-- No Data Message -->
+            <tr v-if="!groupedReport.outlets.length && !groupedReport.nonOutlets.length">
+              <td colspan="7" class="text-center py-10 text-gray-400">Tidak ada data.</td>
+            </tr>
           </tbody>
-          <tfoot v-if="paginatedReport.length">
+          <tfoot v-if="filteredReport.length">
             <tr class="bg-gray-100 font-bold">
-              <td class="px-4 py-2 border border-gray-300 text-right">TOTAL</td>
+              <td class="px-4 py-2 border border-gray-300 text-right">TOTAL KESELURUHAN</td>
               <td class="px-4 py-2 border border-gray-300 text-right">{{ formatRupiah(totalCol('main_kitchen')) }}</td>
               <td class="px-4 py-2 border border-gray-300 text-right">{{ formatRupiah(totalCol('main_store')) }}</td>
               <td class="px-4 py-2 border border-gray-300 text-right">{{ formatRupiah(totalCol('chemical')) }}</td>
@@ -103,12 +147,7 @@
       </div>
       <div v-if="from && to && dataLoaded && filteredReport.length" class="flex justify-between items-center mt-4">
         <div class="text-sm text-gray-600">
-          Menampilkan {{ startIndex + 1 }} - {{ endIndex }} dari {{ filteredReport.length }} data
-        </div>
-        <div class="flex gap-1">
-          <button @click="prevPage" :disabled="page === 1" class="px-3 py-1 rounded border text-sm" :class="page === 1 ? 'bg-gray-200 text-gray-400' : 'bg-white text-blue-700 hover:bg-blue-50'">&lt;</button>
-          <span class="px-2">Halaman {{ page }} / {{ totalPages }}</span>
-          <button @click="nextPage" :disabled="page === totalPages" class="px-3 py-1 rounded border text-sm" :class="page === totalPages ? 'bg-gray-200 text-gray-400' : 'bg-white text-blue-700 hover:bg-blue-50'">&gt;</button>
+          Total: {{ filteredReport.length }} data ({{ groupedReport.outlets.length }} Outlet, {{ groupedReport.nonOutlets.length }} Non-Outlet)
         </div>
       </div>
       <div v-if="showModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-60">
@@ -161,8 +200,6 @@ const props = defineProps({
 const from = ref(props.filters?.from || '');
 const to = ref(props.filters?.to || '');
 const search = ref('');
-const perPage = ref(25);
-const page = ref(1);
 const dataLoaded = ref(false);
 
 // Computed untuk menampilkan info rentang tanggal
@@ -189,24 +226,29 @@ const filteredReport = computed(() => {
   return data;
 });
 
-const totalPages = computed(() => Math.ceil(filteredReport.value.length / perPage.value) || 1);
-const startIndex = computed(() => (page.value - 1) * perPage.value);
-const endIndex = computed(() => Math.min(startIndex.value + paginatedReport.value.length, filteredReport.value.length));
-const paginatedReport = computed(() => filteredReport.value.slice(startIndex.value, startIndex.value + perPage.value));
+// Computed untuk mengelompokkan data berdasarkan is_outlet
+const groupedReport = computed(() => {
+  const groups = {
+    outlets: [],
+    nonOutlets: []
+  };
+  
+  filteredReport.value.forEach(row => {
+    if (row.is_outlet == 1) {
+      groups.outlets.push(row);
+    } else {
+      groups.nonOutlets.push(row);
+    }
+  });
+  
+  return groups;
+});
 
-function prevPage() {
-  if (page.value > 1) page.value--;
-}
-function nextPage() {
-  if (page.value < totalPages.value) page.value++;
-}
-watch([perPage, search], () => { page.value = 1; });
 watch([from, to], ([newFrom, newTo], [oldFrom, oldTo]) => { 
   // Reset dataLoaded when date range changes, unless it's the initial load
   if (oldFrom !== undefined || oldTo !== undefined) {
     dataLoaded.value = false; 
   }
-  page.value = 1; 
 });
 
 function setTodayRange() {
@@ -265,7 +307,11 @@ function reloadData() {
 }
 
 function totalCol(key) {
-  return paginatedReport.value.reduce((sum, row) => sum + (Number(row[key]) || 0), 0);
+  return filteredReport.value.reduce((sum, row) => sum + (Number(row[key]) || 0), 0);
+}
+
+function totalColGroup(key, groupData) {
+  return groupData.reduce((sum, row) => sum + (Number(row[key]) || 0), 0);
 }
 function formatRupiah(value) {
   return new Intl.NumberFormat('id-ID', {

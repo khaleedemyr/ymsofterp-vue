@@ -481,6 +481,7 @@ class ReportController extends Controller
             ->join('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
             ->select(
                 'o.nama_outlet as customer',
+                'o.is_outlet',
                 DB::raw("SUM(CASE WHEN w.name IN ('MK1 Hot Kitchen', 'MK2 Cold Kitchen') THEN i.received_qty * fo.price ELSE 0 END) as main_kitchen"),
                 DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name NOT IN ('Chemical', 'Stationary', 'Marketing') THEN i.received_qty * fo.price ELSE 0 END) as main_store"),
                 DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Chemical' THEN i.received_qty * fo.price ELSE 0 END) as chemical"),
@@ -502,7 +503,8 @@ class ReportController extends Controller
             $query->whereDate('gr.receive_date', '<=', $request->to);
         }
 
-        $report = $query->groupBy('o.nama_outlet')
+        $report = $query->groupBy('o.nama_outlet', 'o.is_outlet')
+            ->orderBy('o.is_outlet', 'desc')
             ->orderBy('o.nama_outlet')
             ->get();
 
@@ -541,6 +543,7 @@ class ReportController extends Controller
                 ->join('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
                 ->select(
                     'o.nama_outlet as customer',
+                    'o.is_outlet',
                     DB::raw("SUM(CASE WHEN w.name IN ('MK1 Hot Kitchen', 'MK2 Cold Kitchen') THEN i.received_qty * fo.price ELSE 0 END) as main_kitchen"),
                     DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name NOT IN ('Chemical', 'Stationary', 'Marketing') THEN i.received_qty * fo.price ELSE 0 END) as main_store"),
                     DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Chemical' THEN i.received_qty * fo.price ELSE 0 END) as chemical"),
@@ -558,7 +561,8 @@ class ReportController extends Controller
             $query->whereDate('gr.receive_date', '>=', $from);
             $query->whereDate('gr.receive_date', '<=', $to);
 
-            $report = $query->groupBy('o.nama_outlet')
+            $report = $query->groupBy('o.nama_outlet', 'o.is_outlet')
+                ->orderBy('o.is_outlet', 'desc')
                 ->orderBy('o.nama_outlet')
                 ->get();
 
