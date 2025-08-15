@@ -10,7 +10,7 @@
         </Link>
       </div>
       <div class="flex flex-wrap gap-2 mb-4 items-center">
-        <input v-model="search" type="text" placeholder="Cari Packing List / Floor Order / User" class="border rounded px-3 py-2 focus:ring-2 focus:ring-blue-200 min-w-[220px]" />
+        <input v-model="search" type="text" placeholder="Cari Packing List / Floor Order / User / Outlet / Warehouse Outlet" class="border rounded px-3 py-2 focus:ring-2 focus:ring-blue-200 min-w-[280px]" />
         <input v-model="dateFrom" type="date" class="border rounded px-3 py-2 focus:ring-2 focus:ring-blue-200" />
         <span class="mx-1">s/d</span>
         <input v-model="dateTo" type="date" class="border rounded px-3 py-2 focus:ring-2 focus:ring-blue-200" />
@@ -24,6 +24,8 @@
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider rounded-tl-2xl">No</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">No DO</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Tanggal</th>
+              <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Outlet</th>
+              <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Warehouse Outlet</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Packing List</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Floor Order</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">User</th>
@@ -32,12 +34,14 @@
           </thead>
           <tbody>
             <tr v-if="!orders.data.length">
-              <td colspan="7" class="text-center py-10 text-blue-300">Tidak ada data Delivery Order.</td>
+              <td colspan="9" class="text-center py-10 text-blue-300">Tidak ada data Delivery Order.</td>
             </tr>
             <tr v-for="(order, idx) in orders.data" :key="order.id" class="hover:bg-blue-50 transition shadow-sm">
               <td class="px-6 py-3">{{ (orders.current_page - 1) * orders.per_page + idx + 1 }}</td>
               <td class="px-6 py-3">{{ order.number || '-' }}</td>
               <td class="px-6 py-3">{{ formatDate(order.created_at) }}</td>
+              <td class="px-6 py-3">{{ order.nama_outlet || '-' }}</td>
+              <td class="px-6 py-3">{{ order.warehouse_outlet_name || '-' }}</td>
               <td class="px-6 py-3">{{ order.packing_number || '-' }}</td>
               <td class="px-6 py-3">{{ order.floor_order_number || '-' }}</td>
               <td class="px-6 py-3">{{ order.created_by_name || '-' }}</td>
@@ -58,12 +62,82 @@
           </tbody>
         </table>
       </div>
-      <div v-if="orders.total > orders.per_page" class="flex justify-center mt-6">
-        <nav class="inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
-          <button v-for="page in orders.last_page" :key="page" @click="goToPage(page)" :class="['px-3 py-1 border text-sm font-semibold', page === orders.current_page ? 'bg-blue-500 text-white' : 'bg-white text-blue-700 hover:bg-blue-100']">
+      <div v-if="orders.total > orders.per_page" class="flex flex-col items-center mt-6 space-y-4">
+        <nav class="flex items-center space-x-1 flex-wrap justify-center" aria-label="Pagination">
+          <!-- Previous button -->
+          <button 
+            @click="goToPage(orders.current_page - 1)" 
+            :disabled="orders.current_page === 1"
+            :class="[
+              'px-3 py-2 text-sm font-medium rounded-md transition-colors',
+              orders.current_page === 1 
+                ? 'text-gray-400 cursor-not-allowed' 
+                : 'text-blue-700 hover:bg-blue-100'
+            ]"
+          >
+            <i class="fas fa-chevron-left"></i>
+          </button>
+
+          <!-- First page -->
+          <button 
+            v-if="orders.current_page > 3" 
+            @click="goToPage(1)" 
+            class="px-3 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100 rounded-md transition-colors"
+          >
+            1
+          </button>
+
+          <!-- Ellipsis after first page -->
+          <span v-if="orders.current_page > 4" class="px-2 py-2 text-gray-500">...</span>
+
+          <!-- Pages around current page -->
+          <button 
+            v-for="page in visiblePages" 
+            :key="page" 
+            @click="goToPage(page)" 
+            :class="[
+              'px-3 py-2 text-sm font-medium rounded-md transition-colors',
+              page === orders.current_page 
+                ? 'bg-blue-500 text-white' 
+                : 'text-blue-700 hover:bg-blue-100'
+            ]"
+          >
             {{ page }}
           </button>
+
+          <!-- Ellipsis before last page -->
+          <span v-if="orders.current_page < orders.last_page - 3" class="px-2 py-2 text-gray-500">...</span>
+
+          <!-- Last page -->
+          <button 
+            v-if="orders.current_page < orders.last_page - 2" 
+            @click="goToPage(orders.last_page)" 
+            class="px-3 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100 rounded-md transition-colors"
+          >
+            {{ orders.last_page }}
+          </button>
+
+          <!-- Next button -->
+          <button 
+            @click="goToPage(orders.current_page + 1)" 
+            :disabled="orders.current_page === orders.last_page"
+            :class="[
+              'px-3 py-2 text-sm font-medium rounded-md transition-colors',
+              orders.current_page === orders.last_page 
+                ? 'text-gray-400 cursor-not-allowed' 
+                : 'text-blue-700 hover:bg-blue-100'
+            ]"
+          >
+            <i class="fas fa-chevron-right"></i>
+          </button>
         </nav>
+
+        <!-- Page info -->
+        <div class="text-sm text-gray-600 text-center">
+          Halaman {{ orders.current_page }} dari {{ orders.last_page }}
+          <span class="mx-2">•</span>
+          Total {{ orders.total }} data
+        </div>
       </div>
     </div>
   </AppLayout>
@@ -74,7 +148,7 @@ import AppLayout from '@/Layouts/AppLayout.vue';
 import { Link } from '@inertiajs/vue3';
 import Swal from 'sweetalert2';
 import { router } from '@inertiajs/vue3';
-import { ref, watch } from 'vue';
+import { ref, watch, computed } from 'vue';
 import { generateStrukPDF } from './generateStrukPDF';
 import axios from 'axios';
 import { usePage } from '@inertiajs/vue3';
@@ -87,6 +161,33 @@ const page = usePage();
 const search = ref(page.props.search || '');
 const dateFrom = ref(page.props.dateFrom || '');
 const dateTo = ref(page.props.dateTo || '');
+
+// Computed property untuk halaman yang ditampilkan
+const visiblePages = computed(() => {
+  const current = props.orders.current_page;
+  const last = props.orders.last_page;
+  const delta = 2; // Jumlah halaman di kiri dan kanan current page
+  
+  let start = Math.max(1, current - delta);
+  let end = Math.min(last, current + delta);
+  
+  // Jika terlalu dekat dengan awal
+  if (current - delta <= 1) {
+    end = Math.min(last, 1 + delta * 2);
+  }
+  
+  // Jika terlalu dekat dengan akhir
+  if (current + delta >= last) {
+    start = Math.max(1, last - delta * 2);
+  }
+  
+  const pages = [];
+  for (let i = start; i <= end; i++) {
+    pages.push(i);
+  }
+  
+  return pages;
+});
 
 function formatDate(date) {
   if (!date) return '-';

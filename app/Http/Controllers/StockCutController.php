@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use App\Models\StockCutLog;
 
 class StockCutController extends Controller
 {
@@ -18,18 +19,30 @@ class StockCutController extends Controller
     {
         $tanggal = $request->input('tanggal');
         $id_outlet = $request->input('id_outlet');
+        $type_filter = $request->input('type'); // Filter berdasarkan type
+        
         if (!$tanggal || !$id_outlet) {
             return response()->json(['status' => 'error', 'message' => 'Tanggal dan id_outlet wajib diisi'], 422);
         }
 
         // 1. Ambil order_items yang belum dipotong stock
-        $orderItems = DB::table('order_items')
+        $query = DB::table('order_items')
             ->join('items', 'order_items.item_id', '=', 'items.id')
             ->whereDate('order_items.created_at', $tanggal)
             ->where('order_items.kode_outlet', $id_outlet)
             ->where('order_items.stock_cut', 0)
-            ->select('order_items.*', 'items.type')
-            ->get();
+            ->select('order_items.*', 'items.type');
+        
+        // Filter berdasarkan type jika ada
+        if ($type_filter) {
+            if ($type_filter === 'food') {
+                $query->whereIn('items.type', ['Food Asian', 'Food Western', 'Food']);
+            } elseif ($type_filter === 'beverages') {
+                $query->where('items.type', 'Beverages');
+            }
+        }
+        
+        $orderItems = $query->get();
 
         if ($orderItems->isEmpty()) {
             return response()->json(['status' => 'success', 'message' => 'Tidak ada order_items yang perlu dipotong stock']);
@@ -38,30 +51,81 @@ class StockCutController extends Controller
         // 2. Mapping kebutuhan bahan baku & warehouse
         $kebutuhanBahan = [];
         $warehouseMap = [];
+        
+        // Ambil warehouse yang tersedia untuk outlet ini
+        $kitchenWarehouse = DB::table('warehouse_outlets')
+            ->where('outlet_id', $id_outlet)
+            ->where('name', 'Kitchen')
+            ->where('status', 'active')
+            ->first();
+            
+        $barWarehouse = DB::table('warehouse_outlets')
+            ->where('outlet_id', $id_outlet)
+            ->where('name', 'Bar')
+            ->where('status', 'active')
+            ->first();
+        
         foreach ($orderItems as $oi) {
-            // Tentukan warehouse
+            // Tentukan warehouse berdasarkan type item
+            $warehouse = null;
             if (in_array($oi->type, ['Food Asian', 'Food Western', 'Food'])) {
-                $warehouse = DB::table('warehouse_outlets')
-                    ->where('outlet_id', $id_outlet)
-                    ->where('name', 'Kitchen')
-                    ->where('status', 'active')
-                    ->first();
+                $warehouse = $kitchenWarehouse;
             } elseif ($oi->type == 'Beverages') {
-                $warehouse = DB::table('warehouse_outlets')
-                    ->where('outlet_id', $id_outlet)
-                    ->where('name', 'Bar')
-                    ->where('status', 'active')
-                    ->first();
+                $warehouse = $barWarehouse;
             } else {
                 continue; // skip jika type tidak dikenali
             }
-            if (!$warehouse) continue;
+            
+            if (!$warehouse) {
+                // Log warning jika warehouse tidak ditemukan
+                \Log::warning("Warehouse tidak ditemukan untuk type: {$oi->type}, outlet: {$id_outlet}");
+                continue;
+            }
+            
             $warehouseMap[$oi->item_id] = $warehouse->id;
+            
             // Ambil BOM
             $boms = DB::table('item_bom')->where('item_id', $oi->item_id)->get();
             foreach ($boms as $bom) {
                 $key = $bom->material_item_id . '-' . $warehouse->id;
                 $kebutuhanBahan[$key] = ($kebutuhanBahan[$key] ?? 0) + ($bom->qty * $oi->qty);
+            }
+            
+            // Ambil BOM dari modifier jika ada
+            if ($oi->modifiers) {
+                $modifiers = json_decode($oi->modifiers, true);
+                if (is_array($modifiers)) {
+                    foreach ($modifiers as $group) {
+                        if (is_array($group)) {
+                            foreach ($group as $modifierName => $modifierQty) {
+                                // Cari modifier option berdasarkan nama
+                                $modifierOption = DB::table('modifier_options')
+                                    ->where('name', $modifierName)
+                                    ->whereNotNull('modifier_bom_json')
+                                    ->where('modifier_bom_json', '!=', '')
+                                    ->where('modifier_bom_json', '!=', '[]')
+                                    ->first();
+                                
+                                // Skip modifier dengan modifier_id = 1
+                                if ($modifierOption && $modifierOption->modifier_id == 1) {
+                                    continue;
+                                }
+                                
+                                if ($modifierOption && $modifierOption->modifier_bom_json) {
+                                    $modifierBom = json_decode($modifierOption->modifier_bom_json, true);
+                                    if (is_array($modifierBom)) {
+                                        foreach ($modifierBom as $bomItem) {
+                                            if (isset($bomItem['item_id']) && isset($bomItem['qty'])) {
+                                                $key = $bomItem['item_id'] . '-' . $warehouse->id;
+                                                $kebutuhanBahan[$key] = ($kebutuhanBahan[$key] ?? 0) + ($bomItem['qty'] * $modifierQty * $oi->qty);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -84,6 +148,22 @@ class StockCutController extends Controller
             }
         }
         if (count($kurang) > 0) {
+            // Catat log error stock cut
+            StockCutLog::updateOrCreate(
+                [
+                    'outlet_id' => $id_outlet,
+                    'tanggal' => $tanggal,
+                    'type_filter' => $type_filter
+                ],
+                [
+                    'total_items_cut' => 0,
+                    'total_modifiers_cut' => 0,
+                    'status' => 'failed',
+                    'error_message' => 'Stock tidak cukup untuk beberapa item',
+                    'created_by' => auth()->id()
+                ]
+            );
+            
             return response()->json(['status' => 'error', 'kurang' => $kurang]);
         }
 
@@ -124,7 +204,598 @@ class StockCutController extends Controller
             ->where('stock_cut', 0)
             ->update(['stock_cut' => 1]);
 
+        // 6. Catat log stock cut
+        $totalItemsCut = count($orderItems);
+        $totalModifiersCut = 0;
+        
+        // Hitung total modifier yang dipotong
+        foreach ($orderItems as $oi) {
+            if ($oi->modifiers) {
+                $modifiers = json_decode($oi->modifiers, true);
+                if (is_array($modifiers)) {
+                    foreach ($modifiers as $group) {
+                        if (is_array($group)) {
+                            foreach ($group as $modifierName => $modifierQty) {
+                                // Skip modifier dengan modifier_id = 1
+                                $modifierOption = DB::table('modifier_options')
+                                    ->where('name', $modifierName)
+                                    ->first();
+                                
+                                if ($modifierOption && $modifierOption->modifier_id == 1) {
+                                    continue;
+                                }
+                                
+                                $totalModifiersCut += $modifierQty;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Insert atau update log stock cut
+        StockCutLog::updateOrCreate(
+            [
+                'outlet_id' => $id_outlet,
+                'tanggal' => $tanggal,
+                'type_filter' => $type_filter
+            ],
+            [
+                'total_items_cut' => $totalItemsCut,
+                'total_modifiers_cut' => $totalModifiersCut,
+                'status' => 'success',
+                'error_message' => null,
+                'created_by' => auth()->id()
+            ]
+        );
+
         return response()->json(['status' => 'success', 'message' => 'Potong stock berhasil']);
+    }
+
+    /**
+     * API: Cek kebutuhan stock (tampilkan kebutuhan vs stock tersedia) - V2
+     */
+    public function cekKebutuhanStockV2(Request $request)
+    {
+        $tanggal = $request->input('tanggal');
+        $id_outlet = $request->input('id_outlet');
+        $type_filter = $request->input('type');
+        
+        if (!$tanggal || !$id_outlet) {
+            return response()->json(['status' => 'error', 'message' => 'Tanggal dan id_outlet wajib diisi'], 422);
+        }
+
+        // Ambil qr_code dari tbl_data_outlet
+        $qr_code = DB::table('tbl_data_outlet')->where('id_outlet', $id_outlet)->value('qr_code');
+        
+        if (!$qr_code) {
+            return response()->json(['status' => 'error', 'message' => 'QR Code outlet tidak ditemukan'], 422);
+        }
+
+        // Debug: Log untuk melihat parameter
+        \Log::info('CekKebutuhanStockV2 Debug', [
+            'tanggal' => $tanggal,
+            'id_outlet' => $id_outlet,
+            'qr_code' => $qr_code,
+            'type_filter' => $type_filter
+        ]);
+
+        // 1. Ambil order_items yang belum dipotong stock
+        $query = DB::table('order_items')
+            ->join('items', 'order_items.item_id', '=', 'items.id')
+            ->leftJoin('categories', 'items.category_id', '=', 'categories.id')
+            ->leftJoin('sub_categories', 'items.sub_category_id', '=', 'sub_categories.id')
+            ->whereDate('order_items.created_at', $tanggal)
+            ->where('order_items.kode_outlet', $qr_code)
+            ->where('order_items.stock_cut', 0)
+            ->select(
+                'order_items.*', 
+                'items.type',
+                'items.category_id',
+                'items.sub_category_id',
+                'categories.name as category_name',
+                'sub_categories.name as sub_category_name'
+            );
+        
+        // Filter berdasarkan type jika ada
+        if ($type_filter) {
+            if ($type_filter === 'food') {
+                $query->whereIn('items.type', ['Food Asian', 'Food Western', 'Food']);
+            } elseif ($type_filter === 'beverages') {
+                $query->where('items.type', 'Beverages');
+            }
+        }
+        
+        $orderItems = $query->get();
+
+        \Log::info('Order Items Found', ['count' => $orderItems->count()]);
+
+        if ($orderItems->isEmpty()) {
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Tidak ada order_items yang perlu dipotong stock',
+                'laporan_stock' => [],
+                'total_item_dicek' => 0,
+                'total_kurang' => 0,
+                'total_cukup' => 0
+            ]);
+        }
+
+        // 2. Mapping kebutuhan bahan baku & warehouse dengan tracking menu yang berkontribusi
+        $kebutuhanBahan = [];
+        $warehouseMap = [];
+        
+        // Ambil warehouse yang tersedia untuk outlet ini
+        $kitchenWarehouse = DB::table('warehouse_outlets')
+            ->where('outlet_id', $id_outlet)
+            ->where('name', 'Kitchen')
+            ->where('status', 'active')
+            ->first();
+            
+        $barWarehouse = DB::table('warehouse_outlets')
+            ->where('outlet_id', $id_outlet)
+            ->where('name', 'Bar')
+            ->where('status', 'active')
+            ->first();
+        
+        foreach ($orderItems as $oi) {
+            // Tentukan warehouse berdasarkan type item
+            $warehouse = null;
+            if (in_array($oi->type, ['Food Asian', 'Food Western', 'Food'])) {
+                $warehouse = $kitchenWarehouse;
+            } elseif ($oi->type == 'Beverages') {
+                $warehouse = $barWarehouse;
+            } else {
+                continue;
+            }
+            
+            if (!$warehouse) {
+                continue;
+            }
+            
+            $warehouseMap[$oi->item_id] = $warehouse->id;
+            
+            // Ambil BOM dengan unit information
+            $boms = DB::table('item_bom')
+                ->join('units', 'item_bom.unit_id', '=', 'units.id')
+                ->where('item_bom.item_id', $oi->item_id)
+                ->select('item_bom.*', 'units.name as unit_name')
+                ->get();
+                
+            foreach ($boms as $bom) {
+                $key = $bom->material_item_id . '-' . $warehouse->id . '-' . $bom->unit_id;
+                if (!isset($kebutuhanBahan[$key])) {
+                    $kebutuhanBahan[$key] = [
+                        'qty' => 0,
+                        'unit_id' => $bom->unit_id,
+                        'unit_name' => $bom->unit_name,
+                        'contributing_menus' => []
+                    ];
+                }
+                $kebutuhanBahan[$key]['qty'] += ($bom->qty * $oi->qty);
+                
+                // Track menu yang berkontribusi - group by menu name
+                $menuKey = $oi->item_name;
+                $foundMenu = false;
+                
+                foreach ($kebutuhanBahan[$key]['contributing_menus'] as &$menu) {
+                    if ($menu['menu_name'] === $menuKey && $menu['type'] === 'menu') {
+                        $menu['menu_qty'] += $oi->qty;
+                        $menu['total_contributed'] += ($bom->qty * $oi->qty);
+                        $foundMenu = true;
+                        break;
+                    }
+                }
+                unset($menu);
+                
+                if (!$foundMenu) {
+                    $kebutuhanBahan[$key]['contributing_menus'][] = [
+                        'menu_name' => $oi->item_name,
+                        'menu_qty' => $oi->qty,
+                        'bom_qty_per_menu' => $bom->qty,
+                        'total_contributed' => $bom->qty * $oi->qty,
+                        'type' => 'menu'
+                    ];
+                }
+            }
+            
+            // Ambil BOM dari modifier jika ada
+            if ($oi->modifiers) {
+                $modifiers = json_decode($oi->modifiers, true);
+                if (is_array($modifiers)) {
+                    foreach ($modifiers as $group) {
+                        if (is_array($group)) {
+                            foreach ($group as $modifierName => $modifierQty) {
+                                // Cari modifier option berdasarkan nama
+                                $modifierOption = DB::table('modifier_options')
+                                    ->where('name', $modifierName)
+                                    ->whereNotNull('modifier_bom_json')
+                                    ->where('modifier_bom_json', '!=', '')
+                                    ->where('modifier_bom_json', '!=', '[]')
+                                    ->first();
+                                
+                                // Skip modifier dengan modifier_id = 1
+                                if ($modifierOption && $modifierOption->modifier_id == 1) {
+                                    continue;
+                                }
+                                
+                                if ($modifierOption && $modifierOption->modifier_bom_json) {
+                                    $modifierBom = json_decode($modifierOption->modifier_bom_json, true);
+                                    if (is_array($modifierBom)) {
+                                        foreach ($modifierBom as $bomItem) {
+                                            if (isset($bomItem['item_id']) && isset($bomItem['qty']) && isset($bomItem['unit_id'])) {
+                                                $key = $bomItem['item_id'] . '-' . $warehouse->id . '-' . $bomItem['unit_id'];
+                                                if (!isset($kebutuhanBahan[$key])) {
+                                                    $unitName = DB::table('units')->where('id', $bomItem['unit_id'])->value('name');
+                                                    $kebutuhanBahan[$key] = [
+                                                        'qty' => 0,
+                                                        'unit_id' => $bomItem['unit_id'],
+                                                        'unit_name' => $unitName ?: 'Unknown Unit'
+                                                    ];
+                                                }
+                                                $kebutuhanBahan[$key]['qty'] += ($bomItem['qty'] * $modifierQty * $oi->qty);
+                                                
+                                                // Track menu yang berkontribusi (dengan modifier) - group by menu name + modifier
+                                                $menuKey = $oi->item_name . ' + ' . $modifierName;
+                                                $foundMenu = false;
+                                                
+                                                foreach ($kebutuhanBahan[$key]['contributing_menus'] as &$menu) {
+                                                    if ($menu['menu_name'] === $menuKey && $menu['type'] === 'modifier') {
+                                                        $menu['menu_qty'] += $oi->qty;
+                                                        $menu['modifier_qty'] += $modifierQty;
+                                                        $menu['total_contributed'] += ($bomItem['qty'] * $modifierQty * $oi->qty);
+                                                        $foundMenu = true;
+                                                        break;
+                                                    }
+                                                }
+                                                unset($menu);
+                                                
+                                                if (!$foundMenu) {
+                                                    $kebutuhanBahan[$key]['contributing_menus'][] = [
+                                                        'menu_name' => $oi->item_name . ' + ' . $modifierName,
+                                                        'menu_qty' => $oi->qty,
+                                                        'modifier_qty' => $modifierQty,
+                                                        'bom_qty_per_modifier' => $bomItem['qty'],
+                                                        'total_contributed' => $bomItem['qty'] * $modifierQty * $oi->qty,
+                                                        'type' => 'modifier'
+                                                    ];
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        \Log::info('Kebutuhan Bahan Calculated', ['count' => count($kebutuhanBahan)]);
+
+        // 3. Cek stok dan buat laporan kebutuhan vs stock
+        $laporanStock = [];
+        $totalKurang = 0;
+        
+        // Group by item_id and warehouse_id to aggregate all requirements
+        $aggregatedItems = [];
+        
+        foreach ($kebutuhanBahan as $key => $data) {
+            [$item_id, $warehouse_id, $unit_id] = explode('-', $key);
+            
+            // Create unique key for item per warehouse
+            $uniqueKey = $item_id . '-' . $warehouse_id;
+            
+            if (!isset($aggregatedItems[$uniqueKey])) {
+                $aggregatedItems[$uniqueKey] = [
+                    'item_id' => $item_id,
+                    'warehouse_id' => $warehouse_id,
+                    'total_qty' => 0,
+                    'contributing_menus' => [],
+                    'units' => []
+                ];
+            }
+            
+            // Aggregate quantities
+            $aggregatedItems[$uniqueKey]['total_qty'] += $data['qty'];
+            
+            // Merge contributing menus
+            foreach ($data['contributing_menus'] as $menu) {
+                $menuKey = $menu['menu_name'] . '-' . $menu['type'];
+                $found = false;
+                
+                foreach ($aggregatedItems[$uniqueKey]['contributing_menus'] as &$existingMenu) {
+                    if ($existingMenu['menu_name'] === $menu['menu_name'] && $existingMenu['type'] === $menu['type']) {
+                        $existingMenu['menu_qty'] += $menu['menu_qty'];
+                        $existingMenu['total_contributed'] += $menu['total_contributed'];
+                        if (isset($menu['modifier_qty'])) {
+                            $existingMenu['modifier_qty'] += $menu['modifier_qty'];
+                        }
+                        $found = true;
+                        break;
+                    }
+                }
+                unset($existingMenu);
+                
+                if (!$found) {
+                    $aggregatedItems[$uniqueKey]['contributing_menus'][] = $menu;
+                }
+            }
+            
+            // Track units
+            $aggregatedItems[$uniqueKey]['units'][$unit_id] = $data['unit_name'];
+        }
+        
+        // Process aggregated items
+        foreach ($aggregatedItems as $uniqueKey => $aggregatedData) {
+            $item_id = $aggregatedData['item_id'];
+            $warehouse_id = $aggregatedData['warehouse_id'];
+            
+            // Ambil info item
+            $item = DB::table('items')
+                ->leftJoin('categories', 'items.category_id', '=', 'categories.id')
+                ->leftJoin('sub_categories', 'items.sub_category_id', '=', 'sub_categories.id')
+                ->where('items.id', $item_id)
+                ->select(
+                    'items.*',
+                    'categories.name as category_name',
+                    'sub_categories.name as sub_category_name'
+                )
+                ->first();
+            
+            // Ambil info warehouse
+            $warehouse = DB::table('warehouse_outlets')->where('id', $warehouse_id)->first();
+            
+            // Cek stock
+            $stock = DB::table('outlet_food_inventory_items')
+                ->join('outlet_food_inventory_stocks', 'outlet_food_inventory_items.id', '=', 'outlet_food_inventory_stocks.inventory_item_id')
+                ->where('outlet_food_inventory_items.item_id', $item_id)
+                ->where('outlet_food_inventory_stocks.id_outlet', $id_outlet)
+                ->where('outlet_food_inventory_stocks.warehouse_outlet_id', $warehouse_id)
+                ->first();
+            
+            $stockTersedia = $stock ? $stock->qty_small : 0;
+            $selisih = $aggregatedData['total_qty'] - $stockTersedia;
+            
+            if ($selisih > 0) {
+                $totalKurang++;
+            }
+            
+            // Use the first unit as primary unit for display
+            $primaryUnitId = array_keys($aggregatedData['units'])[0];
+            $primaryUnitName = $aggregatedData['units'][$primaryUnitId];
+            
+            $laporanStock[] = [
+                'item_id' => $item_id,
+                'item_name' => $item ? $item->name : 'Unknown Item',
+                'category_name' => $item ? ($item->category_name ?: 'Tanpa Kategori') : 'Unknown Category',
+                'sub_category_name' => $item ? ($item->sub_category_name ?: 'Tanpa Sub Kategori') : 'Unknown Sub Category',
+                'warehouse_id' => $warehouse_id,
+                'warehouse_name' => $warehouse ? $warehouse->name : 'Unknown Warehouse',
+                'unit_id' => $primaryUnitId,
+                'unit_name' => $primaryUnitName,
+                'kebutuhan' => $aggregatedData['total_qty'],
+                'stock_tersedia' => $stockTersedia,
+                'selisih' => $selisih,
+                'status' => $selisih > 0 ? 'kurang' : 'cukup',
+                'contributing_menus' => $aggregatedData['contributing_menus']
+            ];
+        }
+
+        \Log::info('Laporan Stock Generated', ['count' => count($laporanStock)]);
+
+        return response()->json([
+            'status' => 'success',
+            'laporan_stock' => $laporanStock,
+            'total_item_dicek' => count($laporanStock),
+            'total_kurang' => $totalKurang,
+            'total_cukup' => count($laporanStock) - $totalKurang
+        ]);
+    }
+
+    /**
+     * API: Cek kebutuhan stock (tampilkan kebutuhan vs stock tersedia)
+     */
+    public function cekKebutuhanStock(Request $request)
+    {
+        $tanggal = $request->input('tanggal');
+        $id_outlet = $request->input('id_outlet');
+        $type_filter = $request->input('type');
+        
+        if (!$tanggal || !$id_outlet) {
+            return response()->json(['status' => 'error', 'message' => 'Tanggal dan id_outlet wajib diisi'], 422);
+        }
+
+        // 1. Ambil order_items yang belum dipotong stock
+        $query = DB::table('order_items')
+            ->join('items', 'order_items.item_id', '=', 'items.id')
+            ->whereDate('order_items.created_at', $tanggal)
+            ->where('order_items.kode_outlet', $id_outlet)
+            ->where('order_items.stock_cut', 0)
+            ->select('order_items.*', 'items.type');
+        
+        // Filter berdasarkan type jika ada
+        if ($type_filter) {
+            if ($type_filter === 'food') {
+                $query->whereIn('items.type', ['Food Asian', 'Food Western', 'Food']);
+            } elseif ($type_filter === 'beverages') {
+                $query->where('items.type', 'Beverages');
+            }
+        }
+        
+        $orderItems = $query->get();
+
+        if ($orderItems->isEmpty()) {
+            return response()->json(['status' => 'success', 'message' => 'Tidak ada order_items yang perlu dipotong stock']);
+        }
+
+        // 2. Mapping kebutuhan bahan baku & warehouse
+        $kebutuhanBahan = [];
+        $warehouseMap = [];
+        
+        // Ambil warehouse yang tersedia untuk outlet ini
+        $kitchenWarehouse = DB::table('warehouse_outlets')
+            ->where('outlet_id', $id_outlet)
+            ->where('name', 'Kitchen')
+            ->where('status', 'active')
+            ->first();
+            
+        $barWarehouse = DB::table('warehouse_outlets')
+            ->where('outlet_id', $id_outlet)
+            ->where('name', 'Bar')
+            ->where('status', 'active')
+            ->first();
+        
+        foreach ($orderItems as $oi) {
+            // Tentukan warehouse berdasarkan type item
+            $warehouse = null;
+            if (in_array($oi->type, ['Food Asian', 'Food Western', 'Food'])) {
+                $warehouse = $kitchenWarehouse;
+            } elseif ($oi->type == 'Beverages') {
+                $warehouse = $barWarehouse;
+            } else {
+                continue;
+            }
+            
+            if (!$warehouse) {
+                continue;
+            }
+            
+            $warehouseMap[$oi->item_id] = $warehouse->id;
+            
+            // Ambil BOM
+            $boms = DB::table('item_bom')->where('item_id', $oi->item_id)->get();
+            foreach ($boms as $bom) {
+                $key = $bom->material_item_id . '-' . $warehouse->id;
+                $kebutuhanBahan[$key] = ($kebutuhanBahan[$key] ?? 0) + ($bom->qty * $oi->qty);
+            }
+            
+            // Ambil BOM dari modifier jika ada
+            if ($oi->modifiers) {
+                $modifiers = json_decode($oi->modifiers, true);
+                if (is_array($modifiers)) {
+                    foreach ($modifiers as $group) {
+                        if (is_array($group)) {
+                            foreach ($group as $modifierName => $modifierQty) {
+                                // Cari modifier option berdasarkan nama
+                                $modifierOption = DB::table('modifier_options')
+                                    ->where('name', $modifierName)
+                                    ->whereNotNull('modifier_bom_json')
+                                    ->where('modifier_bom_json', '!=', '')
+                                    ->where('modifier_bom_json', '!=', '[]')
+                                    ->first();
+                                
+                                // Skip modifier dengan modifier_id = 1
+                                if ($modifierOption && $modifierOption->modifier_id == 1) {
+                                    continue;
+                                }
+                                
+                                if ($modifierOption && $modifierOption->modifier_bom_json) {
+                                    $modifierBom = json_decode($modifierOption->modifier_bom_json, true);
+                                    if (is_array($modifierBom)) {
+                                        foreach ($modifierBom as $bomItem) {
+                                            if (isset($bomItem['item_id']) && isset($bomItem['qty'])) {
+                                                $key = $bomItem['item_id'] . '-' . $warehouse->id;
+                                                $kebutuhanBahan[$key] = ($kebutuhanBahan[$key] ?? 0) + ($bomItem['qty'] * $modifierQty * $oi->qty);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3. Cek stok dan buat laporan kebutuhan vs stock
+        $laporanStock = [];
+        $totalKurang = 0;
+        
+        foreach ($kebutuhanBahan as $key => $qty) {
+            [$item_id, $warehouse_id] = explode('-', $key);
+            
+            // Ambil info item
+            $item = DB::table('items')->where('id', $item_id)->first();
+            
+            // Ambil info warehouse
+            $warehouse = DB::table('warehouse_outlets')->where('id', $warehouse_id)->first();
+            
+            // Cek stock
+            $stock = DB::table('outlet_food_inventory_items')
+                ->join('outlet_food_inventory_stocks', 'outlet_food_inventory_items.id', '=', 'outlet_food_inventory_stocks.inventory_item_id')
+                ->where('outlet_food_inventory_items.item_id', $item_id)
+                ->where('outlet_food_inventory_stocks.id_outlet', $id_outlet)
+                ->where('outlet_food_inventory_stocks.warehouse_outlet_id', $warehouse_id)
+                ->first();
+            
+            $stockTersedia = $stock ? $stock->qty_small : 0;
+            $selisih = $qty - $stockTersedia;
+            
+            if ($selisih > 0) {
+                $totalKurang++;
+            }
+            
+            $laporanStock[] = [
+                'item_id' => $item_id,
+                'item_name' => $item ? $item->name : 'Unknown Item',
+                'warehouse_id' => $warehouse_id,
+                'warehouse_name' => $warehouse ? $warehouse->name : 'Unknown Warehouse',
+                'kebutuhan' => $qty,
+                'stock_tersedia' => $stockTersedia,
+                'selisih' => $selisih,
+                'status' => $selisih > 0 ? 'kurang' : 'cukup'
+            ];
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'laporan_stock' => $laporanStock,
+            'total_item_dicek' => count($laporanStock),
+            'total_kurang' => $totalKurang,
+            'total_cukup' => count($laporanStock) - $totalKurang
+        ]);
+    }
+
+    /**
+     * API: Cek apakah outlet sudah melakukan stock cut pada tanggal tertentu
+     */
+    public function checkStockCutStatus(Request $request)
+    {
+        $tanggal = $request->input('tanggal');
+        $id_outlet = $request->input('id_outlet');
+        $type_filter = $request->input('type');
+        
+        if (!$tanggal || !$id_outlet) {
+            return response()->json(['status' => 'error', 'message' => 'Tanggal dan id_outlet wajib diisi'], 422);
+        }
+
+        $log = StockCutLog::where('outlet_id', $id_outlet)
+            ->where('tanggal', $tanggal)
+            ->where('type_filter', $type_filter)
+            ->first();
+
+        if ($log) {
+            return response()->json([
+                'status' => 'success',
+                'has_stock_cut' => true,
+                'log' => [
+                    'id' => $log->id,
+                    'status' => $log->status,
+                    'total_items_cut' => $log->total_items_cut,
+                    'total_modifiers_cut' => $log->total_modifiers_cut,
+                    'error_message' => $log->error_message,
+                    'created_at' => $log->created_at,
+                    'created_by' => $log->created_by
+                ]
+            ]);
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'has_stock_cut' => false,
+            'log' => null
+        ]);
     }
 
     /**
@@ -195,9 +866,12 @@ class StockCutController extends Controller
     {
         $tanggal = $request->input('tanggal');
         $id_outlet = $request->input('id_outlet');
+        $type_filter = $request->input('type'); // Filter berdasarkan type
+        
         // Ambil qr_code dari tbl_data_outlet
         $qr_code = \DB::table('tbl_data_outlet')->where('id_outlet', $id_outlet)->value('qr_code');
-        $rows = \DB::table('order_items as oi')
+        
+        $query = \DB::table('order_items as oi')
             ->join('items as i', 'oi.item_id', '=', 'i.id')
             ->leftJoin('categories as c', 'i.category_id', '=', 'c.id')
             ->leftJoin('sub_categories as sc', 'i.sub_category_id', '=', 'sc.id')
@@ -211,8 +885,18 @@ class StockCutController extends Controller
             )
             ->whereDate('oi.created_at', $tanggal)
             ->where('oi.kode_outlet', $qr_code)
-            ->groupBy('i.id', 'i.type', 'c.name', 'sc.name', 'i.name')
-            ->orderBy('i.type')
+            ->groupBy('i.id', 'i.type', 'c.name', 'sc.name', 'i.name');
+        
+        // Filter berdasarkan type jika ada
+        if ($type_filter) {
+            if ($type_filter === 'food') {
+                $query->whereIn('i.type', ['Food Asian', 'Food Western', 'Food']);
+            } elseif ($type_filter === 'beverages') {
+                $query->where('i.type', 'Beverages');
+            }
+        }
+        
+        $rows = $query->orderBy('i.type')
             ->orderBy('c.name')
             ->orderBy('sc.name')
             ->orderBy('i.name')
@@ -246,9 +930,109 @@ class StockCutController extends Controller
                 ];
             }
         }
+        // MODIFIER ENGINEERING
+        $orderItems = \DB::table('order_items')
+            ->join('orders', 'order_items.order_id', '=', 'orders.id')
+            ->select(['order_items.modifiers', 'order_items.qty'])
+            ->whereDate('orders.created_at', $tanggal)
+            ->where('orders.kode_outlet', $qr_code)
+            ->get();
+            
+        $modifierMap = [];
+        foreach ($orderItems as $oi) {
+            if (!$oi->modifiers) continue;
+            $mods = json_decode($oi->modifiers, true);
+            if (!is_array($mods)) continue;
+            foreach ($mods as $group) {
+                if (is_array($group)) {
+                    foreach ($group as $name => $qty) {
+                        if (!isset($modifierMap[$name])) $modifierMap[$name] = 0;
+                        $modifierMap[$name] += $qty;
+                    }
+                }
+            }
+        }
+        
+        $modifiers = [];
+        $modifiersByGroup = [];
+        
+        foreach ($modifierMap as $name => $qty) {
+            // Cek modifier_id di tabel modifier_options, skip jika modifier_id = 1
+            $modifierOption = DB::table('modifier_options')
+                ->where('name', $name)
+                ->first();
+            
+            if ($modifierOption && $modifierOption->modifier_id == 1) {
+                continue; // Skip modifier dengan modifier_id = 1
+            }
+            
+            // Ambil info modifier group
+            $modifierGroup = DB::table('modifiers')
+                ->where('id', $modifierOption->modifier_id)
+                ->first();
+            
+            $groupName = $modifierGroup ? $modifierGroup->name : 'Unknown Group';
+            $modifierId = $modifierOption ? $modifierOption->modifier_id : 0;
+            
+            if (!isset($modifiersByGroup[$modifierId])) {
+                $modifiersByGroup[$modifierId] = [
+                    'group_id' => $modifierId,
+                    'group_name' => $groupName,
+                    'modifiers' => []
+                ];
+            }
+            
+            $modifiersByGroup[$modifierId]['modifiers'][] = [
+                'name' => $name,
+                'qty' => $qty
+            ];
+        }
+        
+        // Sort modifiers within each group by qty
+        foreach ($modifiersByGroup as &$group) {
+            usort($group['modifiers'], function($a, $b) { 
+                return $b['qty'] <=> $a['qty']; 
+            });
+        }
+        
+        // Convert to array and sort groups by total qty
+        $modifiers = array_values($modifiersByGroup);
+        usort($modifiers, function($a, $b) {
+            $totalA = array_sum(array_column($a['modifiers'], 'qty'));
+            $totalB = array_sum(array_column($b['modifiers'], 'qty'));
+            return $totalB <=> $totalA;
+        });
+
+        // Cek modifier yang tidak ada BOM
+        $missingModifierBom = [];
+        foreach ($modifierMap as $name => $qty) {
+            // Skip modifier dengan modifier_id = 1
+            $modifierOption = DB::table('modifier_options')
+                ->where('name', $name)
+                ->first();
+            
+            if ($modifierOption && $modifierOption->modifier_id == 1) {
+                continue;
+            }
+            
+            // Cek apakah modifier punya BOM
+            if (!$modifierOption || 
+                !$modifierOption->modifier_bom_json || 
+                $modifierOption->modifier_bom_json == '' || 
+                $modifierOption->modifier_bom_json == '[]') {
+                
+                $missingModifierBom[] = [
+                    'name' => $name,
+                    'modifier_id' => $modifierOption ? $modifierOption->modifier_id : null
+                ];
+            }
+        }
+
         return response()->json([
             'engineering' => $result,
-            'missing_bom' => $missingBom
+            'missing_bom' => $missingBom,
+            'modifiers' => $modifiers,
+            'missing_modifier_bom' => $missingModifierBom
         ]);
     }
 } 

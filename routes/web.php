@@ -884,6 +884,8 @@ Route::get('/report-invoice-outlet', [App\Http\Controllers\OutletPaymentControll
 
 Route::post('/stock-cut/order-items', [\App\Http\Controllers\StockCutController::class, 'potongStockOrderItems']);
 Route::post('/stock-cut/engineering', [\App\Http\Controllers\StockCutController::class, 'engineering']);
+Route::post('/stock-cut/check-status', [\App\Http\Controllers\StockCutController::class, 'checkStockCutStatus']);
+Route::post('/stock-cut/cek-kebutuhan', [\App\Http\Controllers\StockCutController::class, 'cekKebutuhanStockV2']);
 
 Route::get('/stock-cut', function () {
     return Inertia::render('StockCut');
@@ -904,7 +906,7 @@ Route::get('/stock-cut/form', function () {
     return Inertia::render('StockCut/Form', [
         'outlets' => $outlets,
     ]);
-})->name('stock-cut.form');
+})->middleware(['auth'])->name('stock-cut.form');
 
 // Route API untuk data dashboard outlet
 Route::get('/api/outlet-dashboard', [\App\Http\Controllers\OutletDashboardController::class, 'index']);

@@ -16,11 +16,15 @@ class DeliveryOrderController extends Controller
             ->leftJoin('food_packing_lists as pl', 'do.packing_list_id', '=', 'pl.id')
             ->leftJoin('food_floor_orders as fo', 'pl.food_floor_order_id', '=', 'fo.id')
             ->leftJoin('users as u', 'do.created_by', '=', 'u.id')
+            ->leftJoin('tbl_data_outlet as o', 'fo.id_outlet', '=', 'o.id_outlet')
+            ->leftJoin('warehouse_outlets as wo', 'fo.warehouse_outlet_id', '=', 'wo.id')
             ->select(
                 'do.*',
                 'pl.packing_number',
                 'fo.order_number as floor_order_number',
-                'u.nama_lengkap as created_by_name'
+                'u.nama_lengkap as created_by_name',
+                'o.nama_outlet',
+                'wo.name as warehouse_outlet_name'
             );
 
         if ($request->filled('search')) {
@@ -28,7 +32,9 @@ class DeliveryOrderController extends Controller
             $query->where(function($q) use ($search) {
                 $q->where('pl.packing_number', 'like', $search)
                   ->orWhere('fo.order_number', 'like', $search)
-                  ->orWhere('u.nama_lengkap', 'like', $search);
+                  ->orWhere('u.nama_lengkap', 'like', $search)
+                  ->orWhere('o.nama_outlet', 'like', $search)
+                  ->orWhere('wo.name', 'like', $search);
             });
         }
         if ($request->filled('dateFrom')) {
