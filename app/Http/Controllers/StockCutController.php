@@ -25,11 +25,18 @@ class StockCutController extends Controller
             return response()->json(['status' => 'error', 'message' => 'Tanggal dan id_outlet wajib diisi'], 422);
         }
 
+        // Ambil qr_code dari tbl_data_outlet
+        $qr_code = DB::table('tbl_data_outlet')->where('id_outlet', $id_outlet)->value('qr_code');
+        
+        if (!$qr_code) {
+            return response()->json(['status' => 'error', 'message' => 'QR Code outlet tidak ditemukan'], 422);
+        }
+
         // 1. Ambil order_items yang belum dipotong stock
         $query = DB::table('order_items')
             ->join('items', 'order_items.item_id', '=', 'items.id')
             ->whereDate('order_items.created_at', $tanggal)
-            ->where('order_items.kode_outlet', $id_outlet)
+            ->where('order_items.kode_outlet', $qr_code)
             ->where('order_items.stock_cut', 0)
             ->select('order_items.*', 'items.type');
         
@@ -200,7 +207,7 @@ class StockCutController extends Controller
         // 5. Update flag stock_cut di order_items
         DB::table('order_items')
             ->whereDate('created_at', $tanggal)
-            ->where('kode_outlet', $id_outlet)
+            ->where('kode_outlet', $qr_code)
             ->where('stock_cut', 0)
             ->update(['stock_cut' => 1]);
 
@@ -378,6 +385,10 @@ class StockCutController extends Controller
                 $menuKey = $oi->item_name;
                 $foundMenu = false;
                 
+                if (!isset($kebutuhanBahan[$key]['contributing_menus']) || !is_array($kebutuhanBahan[$key]['contributing_menus'])) {
+                    $kebutuhanBahan[$key]['contributing_menus'] = [];
+                }
+                
                 foreach ($kebutuhanBahan[$key]['contributing_menus'] as &$menu) {
                     if ($menu['menu_name'] === $menuKey && $menu['type'] === 'menu') {
                         $menu['menu_qty'] += $oi->qty;
@@ -430,7 +441,8 @@ class StockCutController extends Controller
                                                     $kebutuhanBahan[$key] = [
                                                         'qty' => 0,
                                                         'unit_id' => $bomItem['unit_id'],
-                                                        'unit_name' => $unitName ?: 'Unknown Unit'
+                                                        'unit_name' => $unitName ?: 'Unknown Unit',
+                                                        'contributing_menus' => []
                                                     ];
                                                 }
                                                 $kebutuhanBahan[$key]['qty'] += ($bomItem['qty'] * $modifierQty * $oi->qty);
@@ -438,6 +450,10 @@ class StockCutController extends Controller
                                                 // Track menu yang berkontribusi (dengan modifier) - group by menu name + modifier
                                                 $menuKey = $oi->item_name . ' + ' . $modifierName;
                                                 $foundMenu = false;
+                                                
+                                                if (!isset($kebutuhanBahan[$key]['contributing_menus']) || !is_array($kebutuhanBahan[$key]['contributing_menus'])) {
+                                                    $kebutuhanBahan[$key]['contributing_menus'] = [];
+                                                }
                                                 
                                                 foreach ($kebutuhanBahan[$key]['contributing_menus'] as &$menu) {
                                                     if ($menu['menu_name'] === $menuKey && $menu['type'] === 'modifier') {
@@ -500,6 +516,9 @@ class StockCutController extends Controller
             $aggregatedItems[$uniqueKey]['total_qty'] += $data['qty'];
             
             // Merge contributing menus
+            if (!isset($data['contributing_menus']) || !is_array($data['contributing_menus'])) {
+                $data['contributing_menus'] = [];
+            }
             foreach ($data['contributing_menus'] as $menu) {
                 $menuKey = $menu['menu_name'] . '-' . $menu['type'];
                 $found = false;
@@ -606,11 +625,18 @@ class StockCutController extends Controller
             return response()->json(['status' => 'error', 'message' => 'Tanggal dan id_outlet wajib diisi'], 422);
         }
 
+        // Ambil qr_code dari tbl_data_outlet
+        $qr_code = DB::table('tbl_data_outlet')->where('id_outlet', $id_outlet)->value('qr_code');
+        
+        if (!$qr_code) {
+            return response()->json(['status' => 'error', 'message' => 'QR Code outlet tidak ditemukan'], 422);
+        }
+
         // 1. Ambil order_items yang belum dipotong stock
         $query = DB::table('order_items')
             ->join('items', 'order_items.item_id', '=', 'items.id')
             ->whereDate('order_items.created_at', $tanggal)
-            ->where('order_items.kode_outlet', $id_outlet)
+            ->where('order_items.kode_outlet', $qr_code)
             ->where('order_items.stock_cut', 0)
             ->select('order_items.*', 'items.type');
         
@@ -849,10 +875,13 @@ class StockCutController extends Controller
             ->where('date', $tanggal)
             ->where('reference_type', 'order_items')
             ->delete();
+        // Ambil qr_code dari tbl_data_outlet untuk rollback
+        $qr_code = \DB::table('tbl_data_outlet')->where('id_outlet', $id_outlet)->value('qr_code');
+        
         // Reset flag stock_cut di order_items
         \DB::table('order_items')
             ->whereDate('created_at', $tanggal)
-            ->where('kode_outlet', $id_outlet)
+            ->where('kode_outlet', $qr_code)
             ->update(['stock_cut' => 0]);
         // Hapus log
         \DB::table('stock_cut_logs')->where('id', $id)->delete();
