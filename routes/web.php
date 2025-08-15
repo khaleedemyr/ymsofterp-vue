@@ -790,6 +790,8 @@ Route::get('/report-rekap-fj/export', [\App\Http\Controllers\ReportController::c
     Route::get('/report-good-receive-outlet/export', [\App\Http\Controllers\ReportController::class, 'exportGoodReceiveOutlet'])->name('report.good-receive-outlet.export');
     Route::get('/report-receiving-sheet', [\App\Http\Controllers\ReportController::class, 'reportReceivingSheet'])->name('report.receiving-sheet');
     Route::post('/report/sales-pivot-outlet-detail', [\App\Http\Controllers\ReportController::class, 'salesPivotOutletDetail'])->name('report.sales-pivot-outlet-detail');
+    Route::post('/report/retail-sales-detail', [\App\Http\Controllers\ReportController::class, 'retailSalesDetail'])->name('report.retail-sales-detail');
+Route::post('/report/warehouse-sales-detail', [\App\Http\Controllers\ReportController::class, 'warehouseSalesDetail'])->name('report.warehouse-sales-detail');
 });
 
 // Outlet Payments

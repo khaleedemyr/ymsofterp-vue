@@ -14,12 +14,16 @@ use Maatwebsite\Excel\Facades\Excel;
 class SalesPivotSpecialExport implements FromCollection, WithHeadings, WithMapping, WithStyles, WithColumnWidths, Responsable
 {
     private $report;
+    private $retailReport;
+    private $warehouseReport;
     private $tanggal;
     public $fileName = 'sales_pivot_special.xlsx';
 
-    public function __construct($report, $tanggal = null)
+    public function __construct($report, $tanggal = null, $retailReport = null, $warehouseReport = null)
     {
         $this->report = $report;
+        $this->retailReport = $retailReport;
+        $this->warehouseReport = $warehouseReport;
         $this->tanggal = $tanggal;
         if ($tanggal) {
             $this->fileName = 'sales_pivot_special_' . $tanggal . '.xlsx';
@@ -30,12 +34,17 @@ class SalesPivotSpecialExport implements FromCollection, WithHeadings, WithMappi
     {
         try {
             $data = collect($this->report);
+            $retailData = collect($this->retailReport);
+            $warehouseData = collect($this->warehouseReport);
             
-            if ($data->isEmpty()) {
+            if ($data->isEmpty() && $retailData->isEmpty() && $warehouseData->isEmpty()) {
                 return collect([]);
             }
             
-            return $data;
+            // Combine all datasets
+            $combinedData = $data->merge($retailData)->merge($warehouseData);
+            
+            return $combinedData;
         } catch (\Exception $e) {
             \Log::error('Export collection error: ' . $e->getMessage());
             return collect([]);

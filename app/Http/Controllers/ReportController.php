@@ -508,8 +508,79 @@ class ReportController extends Controller
             ->orderBy('o.nama_outlet')
             ->get();
 
+        // Query untuk retail warehouse sales dengan filter yang benar
+        $retailQuery = DB::table('retail_warehouse_sales as rws')
+            ->join('retail_warehouse_sale_items as rwsi', 'rws.id', '=', 'rwsi.retail_warehouse_sale_id')
+            ->join('customers as c', 'rws.customer_id', '=', 'c.id')
+            ->join('items as it', 'rwsi.item_id', '=', 'it.id')
+            ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
+            ->join('warehouses as w', 'rws.warehouse_id', '=', 'w.id')
+            ->select(
+                'c.name as customer',
+                DB::raw("SUM(CASE WHEN w.name IN ('MK1 Hot Kitchen', 'MK2 Cold Kitchen') THEN rwsi.subtotal ELSE 0 END) as main_kitchen"),
+                DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name NOT IN ('Chemical', 'Stationary', 'Marketing') THEN rwsi.subtotal ELSE 0 END) as main_store"),
+                DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Chemical' THEN rwsi.subtotal ELSE 0 END) as chemical"),
+                DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Stationary' THEN rwsi.subtotal ELSE 0 END) as stationary"),
+                DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Marketing' THEN rwsi.subtotal ELSE 0 END) as marketing"),
+                DB::raw("(
+                    SUM(CASE WHEN w.name IN ('MK1 Hot Kitchen', 'MK2 Cold Kitchen') THEN rwsi.subtotal ELSE 0 END) +
+                    SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name NOT IN ('Chemical', 'Stationary', 'Marketing') THEN rwsi.subtotal ELSE 0 END) +
+                    SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Chemical' THEN rwsi.subtotal ELSE 0 END) +
+                    SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Stationary' THEN rwsi.subtotal ELSE 0 END) +
+                    SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Marketing' THEN rwsi.subtotal ELSE 0 END)
+                ) as line_total")
+            );
+
+        if ($request->filled('from')) {
+            $retailQuery->whereDate('rws.created_at', '>=', $request->from);
+        }
+        if ($request->filled('to')) {
+            $retailQuery->whereDate('rws.created_at', '<=', $request->to);
+        }
+
+        $retailReport = $retailQuery->groupBy('c.name')
+            ->orderBy('c.name')
+            ->get();
+
+        // Query untuk warehouse sales (penjualan antar gudang)
+        $warehouseQuery = DB::table('warehouse_sales as ws')
+            ->join('warehouse_sale_items as wsi', 'ws.id', '=', 'wsi.warehouse_sale_id')
+            ->join('warehouses as w', 'ws.target_warehouse_id', '=', 'w.id')
+            ->join('items as it', 'wsi.item_id', '=', 'it.id')
+            ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
+            ->join('warehouse_division as wd', 'it.warehouse_division_id', '=', 'wd.id')
+            ->join('warehouses as w_source', 'wd.warehouse_id', '=', 'w_source.id')
+            ->select(
+                'w.name as customer',
+                DB::raw("SUM(CASE WHEN w_source.name IN ('MK1 Hot Kitchen', 'MK2 Cold Kitchen') THEN wsi.total ELSE 0 END) as main_kitchen"),
+                DB::raw("SUM(CASE WHEN w_source.name = 'MAIN STORE' AND sc.name NOT IN ('Chemical', 'Stationary', 'Marketing') THEN wsi.total ELSE 0 END) as main_store"),
+                DB::raw("SUM(CASE WHEN w_source.name = 'MAIN STORE' AND sc.name = 'Chemical' THEN wsi.total ELSE 0 END) as chemical"),
+                DB::raw("SUM(CASE WHEN w_source.name = 'MAIN STORE' AND sc.name = 'Stationary' THEN wsi.total ELSE 0 END) as stationary"),
+                DB::raw("SUM(CASE WHEN w_source.name = 'MAIN STORE' AND sc.name = 'Marketing' THEN wsi.total ELSE 0 END) as marketing"),
+                DB::raw("(
+                    SUM(CASE WHEN w_source.name IN ('MK1 Hot Kitchen', 'MK2 Cold Kitchen') THEN wsi.total ELSE 0 END) +
+                    SUM(CASE WHEN w_source.name = 'MAIN STORE' AND sc.name NOT IN ('Chemical', 'Stationary', 'Marketing') THEN wsi.total ELSE 0 END) +
+                    SUM(CASE WHEN w_source.name = 'MAIN STORE' AND sc.name = 'Chemical' THEN wsi.total ELSE 0 END) +
+                    SUM(CASE WHEN w_source.name = 'MAIN STORE' AND sc.name = 'Stationary' THEN wsi.total ELSE 0 END) +
+                    SUM(CASE WHEN w_source.name = 'MAIN STORE' AND sc.name = 'Marketing' THEN wsi.total ELSE 0 END)
+                ) as line_total")
+            );
+
+        if ($request->filled('from')) {
+            $warehouseQuery->whereDate('ws.date', '>=', $request->from);
+        }
+        if ($request->filled('to')) {
+            $warehouseQuery->whereDate('ws.date', '<=', $request->to);
+        }
+
+        $warehouseReport = $warehouseQuery->groupBy('w.name')
+            ->orderBy('w.name')
+            ->get();
+
         return Inertia::render('Report/ReportSalesPivotSpecial', [
             'report' => $report,
+            'retailReport' => $retailReport,
+            'warehouseReport' => $warehouseReport,
             'filters' => [
                 'from' => $request->from,
                 'to' => $request->to,
@@ -566,7 +637,68 @@ class ReportController extends Controller
                 ->orderBy('o.nama_outlet')
                 ->get();
 
-            return new SalesPivotSpecialExport($report, $from . ' - ' . $to);
+            // Query untuk retail warehouse sales export dengan filter yang benar
+            $retailQuery = DB::table('retail_warehouse_sales as rws')
+                ->join('retail_warehouse_sale_items as rwsi', 'rws.id', '=', 'rwsi.retail_warehouse_sale_id')
+                ->join('customers as c', 'rws.customer_id', '=', 'c.id')
+                ->join('items as it', 'rwsi.item_id', '=', 'it.id')
+                ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
+                ->join('warehouses as w', 'rws.warehouse_id', '=', 'w.id')
+                ->select(
+                    'c.name as customer',
+                    DB::raw("SUM(CASE WHEN w.name IN ('MK1 Hot Kitchen', 'MK2 Cold Kitchen') THEN rwsi.subtotal ELSE 0 END) as main_kitchen"),
+                    DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name NOT IN ('Chemical', 'Stationary', 'Marketing') THEN rwsi.subtotal ELSE 0 END) as main_store"),
+                    DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Chemical' THEN rwsi.subtotal ELSE 0 END) as chemical"),
+                    DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Stationary' THEN rwsi.subtotal ELSE 0 END) as stationary"),
+                    DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Marketing' THEN rwsi.subtotal ELSE 0 END) as marketing"),
+                    DB::raw("(
+                        SUM(CASE WHEN w.name IN ('MK1 Hot Kitchen', 'MK2 Cold Kitchen') THEN rwsi.subtotal ELSE 0 END) +
+                        SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name NOT IN ('Chemical', 'Stationary', 'Marketing') THEN rwsi.subtotal ELSE 0 END) +
+                        SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Chemical' THEN rwsi.subtotal ELSE 0 END) +
+                        SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Stationary' THEN rwsi.subtotal ELSE 0 END) +
+                        SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Marketing' THEN rwsi.subtotal ELSE 0 END)
+                    ) as line_total")
+                );
+
+            $retailQuery->whereDate('rws.created_at', '>=', $from);
+            $retailQuery->whereDate('rws.created_at', '<=', $to);
+
+            $retailReport = $retailQuery->groupBy('c.name')
+                ->orderBy('c.name')
+                ->get();
+
+            // Query untuk warehouse sales export
+            $warehouseQuery = DB::table('warehouse_sales as ws')
+                ->join('warehouse_sale_items as wsi', 'ws.id', '=', 'wsi.warehouse_sale_id')
+                ->join('warehouses as w', 'ws.target_warehouse_id', '=', 'w.id')
+                ->join('items as it', 'wsi.item_id', '=', 'it.id')
+                ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
+                ->join('warehouse_division as wd', 'it.warehouse_division_id', '=', 'wd.id')
+                ->join('warehouses as w_source', 'wd.warehouse_id', '=', 'w_source.id')
+                ->select(
+                    'w.name as customer',
+                    DB::raw("SUM(CASE WHEN w_source.name IN ('MK1 Hot Kitchen', 'MK2 Cold Kitchen') THEN wsi.total ELSE 0 END) as main_kitchen"),
+                    DB::raw("SUM(CASE WHEN w_source.name = 'MAIN STORE' AND sc.name NOT IN ('Chemical', 'Stationary', 'Marketing') THEN wsi.total ELSE 0 END) as main_store"),
+                    DB::raw("SUM(CASE WHEN w_source.name = 'MAIN STORE' AND sc.name = 'Chemical' THEN wsi.total ELSE 0 END) as chemical"),
+                    DB::raw("SUM(CASE WHEN w_source.name = 'MAIN STORE' AND sc.name = 'Stationary' THEN wsi.total ELSE 0 END) as stationary"),
+                    DB::raw("SUM(CASE WHEN w_source.name = 'MAIN STORE' AND sc.name = 'Marketing' THEN wsi.total ELSE 0 END) as marketing"),
+                    DB::raw("(
+                        SUM(CASE WHEN w_source.name IN ('MK1 Hot Kitchen', 'MK2 Cold Kitchen') THEN wsi.total ELSE 0 END) +
+                        SUM(CASE WHEN w_source.name = 'MAIN STORE' AND sc.name NOT IN ('Chemical', 'Stationary', 'Marketing') THEN wsi.total ELSE 0 END) +
+                        SUM(CASE WHEN w_source.name = 'MAIN STORE' AND sc.name = 'Chemical' THEN wsi.total ELSE 0 END) +
+                        SUM(CASE WHEN w_source.name = 'MAIN STORE' AND sc.name = 'Stationary' THEN wsi.total ELSE 0 END) +
+                        SUM(CASE WHEN w_source.name = 'MAIN STORE' AND sc.name = 'Marketing' THEN wsi.total ELSE 0 END)
+                    ) as line_total")
+                );
+
+            $warehouseQuery->whereDate('ws.date', '>=', $from);
+            $warehouseQuery->whereDate('ws.date', '<=', $to);
+
+            $warehouseReport = $warehouseQuery->groupBy('w.name')
+                ->orderBy('w.name')
+                ->get();
+
+            return new SalesPivotSpecialExport($report, $from . ' - ' . $to, $retailReport, $warehouseReport);
             
         } catch (\Exception $e) {
             \Log::error('Export error: ' . $e->getMessage());
@@ -754,6 +886,101 @@ class ReportController extends Controller
             if (!isset($grouped[$subCat])) $grouped[$subCat] = [];
             $grouped[$subCat][] = $item;
         }
+        return response()->json($grouped);
+    }
+
+    /**
+     * Retail Sales Detail: Shows detailed items for retail warehouse sales
+     */
+    public function retailSalesDetail(Request $request)
+    {
+        $request->validate([
+            'customer' => 'required|string',
+            'from' => 'required|date',
+            'to' => 'required|date',
+        ]);
+
+        $items = DB::table('retail_warehouse_sales as rws')
+            ->join('retail_warehouse_sale_items as rwsi', 'rws.id', '=', 'rwsi.retail_warehouse_sale_id')
+            ->join('customers as c', 'rws.customer_id', '=', 'c.id')
+            ->join('items as it', 'rwsi.item_id', '=', 'it.id')
+            ->join('categories as cat', 'it.category_id', '=', 'cat.id')
+            ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
+            ->where('c.name', $request->customer)
+            ->whereDate('rws.created_at', '>=', $request->from)
+            ->whereDate('rws.created_at', '<=', $request->to)
+            ->select(
+                'cat.name as category',
+                'sc.name as sub_category',
+                'it.name as item_name',
+                'rwsi.qty',
+                'rwsi.unit',
+                'rwsi.price',
+                'rwsi.subtotal',
+                'rws.number as sale_number',
+                'rws.created_at as sale_date'
+            )
+            ->orderBy('cat.name')
+            ->orderBy('sc.name')
+            ->orderBy('it.name')
+            ->get();
+
+        // Group by sub_category
+        $grouped = [];
+        foreach ($items as $item) {
+            $subCat = $item->sub_category;
+            if (!isset($grouped[$subCat])) $grouped[$subCat] = [];
+            $grouped[$subCat][] = $item;
+        }
+        
+        return response()->json($grouped);
+    }
+
+    /**
+     * Warehouse Sales Detail: Shows detailed items for warehouse sales
+     */
+    public function warehouseSalesDetail(Request $request)
+    {
+        $request->validate([
+            'customer' => 'required|string',
+            'from' => 'required|date',
+            'to' => 'required|date',
+        ]);
+
+        $items = DB::table('warehouse_sales as ws')
+            ->join('warehouse_sale_items as wsi', 'ws.id', '=', 'wsi.warehouse_sale_id')
+            ->join('warehouses as w', 'ws.target_warehouse_id', '=', 'w.id')
+            ->join('items as it', 'wsi.item_id', '=', 'it.id')
+            ->join('categories as cat', 'it.category_id', '=', 'cat.id')
+            ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
+            ->where('w.name', $request->customer)
+            ->whereDate('ws.date', '>=', $request->from)
+            ->whereDate('ws.date', '<=', $request->to)
+            ->select(
+                'cat.name as category',
+                'sc.name as sub_category',
+                'it.name as item_name',
+                'wsi.qty_small',
+                'wsi.qty_medium',
+                'wsi.qty_large',
+                'wsi.price',
+                'wsi.total',
+                'ws.number as sale_number',
+                'ws.date as sale_date'
+            )
+            ->orderBy('cat.name')
+            ->orderBy('sc.name')
+            ->orderBy('it.name')
+            ->get();
+
+        // Group by sub_category
+        $grouped = [];
+        foreach ($items as $item) {
+            $subCat = $item->sub_category;
+            if (!isset($grouped[$subCat])) $grouped[$subCat] = [];
+            $grouped[$subCat][] = $item;
+        }
+        
         return response()->json($grouped);
     }
 
