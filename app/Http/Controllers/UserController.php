@@ -59,6 +59,35 @@ class UserController extends Controller
 
         $outlets = DB::table('tbl_data_outlet')->where('status', 'A')->select('id_outlet', 'nama_outlet')->orderBy('nama_outlet')->get();
         $divisions = DB::table('tbl_data_divisi')->where('status', 'A')->select('id', 'nama_divisi')->orderBy('nama_divisi')->get();
+        $jabatans = DB::table('tbl_data_jabatan')->where('status', 'A')->select('id_jabatan', 'nama_jabatan')->orderBy('nama_jabatan')->get();
+
+        // Get statistics
+        $total = User::count();
+        $active = User::where('status', 'A')->count();
+        $inactive = User::where('status', 'N')->count();
+        $new = User::where('status', 'B')->count();
+        
+        // Log statistics for debugging
+        \Log::info('User Statistics', [
+            'total' => $total,
+            'active' => $active,
+            'inactive' => $inactive,
+            'new' => $new,
+            'sum' => $active + $inactive + $new
+        ]);
+        
+        // Check for any invalid statuses
+        $invalidStatuses = User::whereNotIn('status', ['A', 'N', 'B'])->orWhereNull('status')->get(['id', 'nik', 'nama_lengkap', 'status']);
+        if ($invalidStatuses->count() > 0) {
+            \Log::warning('Users with invalid status', $invalidStatuses->toArray());
+        }
+        
+        $statistics = [
+            'total' => $total,
+            'active' => $active,
+            'inactive' => $inactive,
+            'new' => $new,
+        ];
 
         return Inertia::render('Users/Index', [
             'users' => $users,
@@ -70,6 +99,8 @@ class UserController extends Controller
             ],
             'outlets' => $outlets,
             'divisions' => $divisions,
+            'jabatans' => $jabatans,
+            'statistics' => $statistics,
         ]);
     }
 
@@ -435,5 +466,33 @@ class UserController extends Controller
         return Inertia::render('Users/Edit', [
             'user' => $user
         ]);
+    }
+
+    public function activate(Request $request, User $user)
+    {
+        $request->validate([
+            'jabatan_id' => 'required|integer|exists:tbl_data_jabatan,id_jabatan',
+            'division_id' => 'required|integer|exists:tbl_data_divisi,id',
+            'outlet_id' => 'required|integer|exists:tbl_data_outlet,id_outlet',
+        ]);
+
+        try {
+            $user->update([
+                'id_jabatan' => $request->jabatan_id,
+                'division_id' => $request->division_id,
+                'id_outlet' => $request->outlet_id,
+                'status' => 'A', // Aktifkan karyawan
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Karyawan berhasil diaktifkan!'
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal mengaktifkan karyawan: ' . $e->getMessage()
+            ], 500);
+        }
     }
 } 

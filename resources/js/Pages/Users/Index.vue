@@ -7,12 +7,23 @@ import AppLayout from '@/Layouts/AppLayout.vue';
 import UserFormModal from './UserFormModal.vue';
 import axios from 'axios';
 import PinManagementModal from './PinManagementModal.vue';
+import ActivationModal from './ActivationModal.vue';
 
 const props = defineProps({
   users: Object, // { data, links, meta }
   filters: Object,
   outlets: Array,
   divisions: Array,
+  jabatans: Array,
+  statistics: {
+    type: Object,
+    default: () => ({
+      total: 0,
+      active: 0,
+      inactive: 0,
+      new: 0
+    })
+  },
 });
 
 const search = ref(props.filters?.search || '');
@@ -24,6 +35,8 @@ const isLoadingDropdown = ref(false);
 const showPinModal = ref(false);
 const pinUserId = ref(null);
 const pinUserName = ref('');
+const showActivationModal = ref(false);
+const selectedUserForActivation = ref(null);
 const outletId = ref(props.filters?.outlet_id || '');
 const divisionId = ref(props.filters?.division_id || '');
 const status = ref(props.filters?.status || 'A');
@@ -100,6 +113,14 @@ async function hapus(user) {
 }
 
 async function toggleStatus(user) {
+  // Jika status 'B' (Baru), tampilkan modal aktivasi
+  if (user.status === 'B') {
+    selectedUserForActivation.value = user;
+    showActivationModal.value = true;
+    return;
+  }
+
+  // Untuk status lain, gunakan logika lama
   const action = user.status === 'A' ? 'menonaktifkan' : 'mengaktifkan';
   const result = await Swal.fire({
     title: `${user.status === 'A' ? 'Nonaktifkan' : 'Aktifkan'} Karyawan?`,
@@ -132,6 +153,20 @@ function closeModal() {
   showModal.value = false;
 }
 
+function closeActivationModal() {
+  showActivationModal.value = false;
+  selectedUserForActivation.value = null;
+}
+
+function onActivationSuccess(message) {
+  Swal.fire('Berhasil', message, 'success');
+  reload();
+}
+
+function filterByStatus(newStatus) {
+  status.value = newStatus;
+}
+
 watch([outletId, divisionId, status], () => {
   router.get('/users', {
     search: search.value,
@@ -145,14 +180,97 @@ watch([outletId, divisionId, status], () => {
 <template>
   <AppLayout title="Data Karyawan">
     <div class="max-w-7xl w-full mx-auto py-8 px-2">
-      <div class="flex justify-between items-center mb-6">
-        <h1 class="text-2xl font-bold text-gray-800 flex items-center gap-2">
-          <i class="fa-solid fa-users text-blue-500"></i> Data Karyawan
-        </h1>
-        <button @click="openCreate" class="bg-gradient-to-r from-blue-500 to-blue-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold">
-          + Tambah Karyawan Baru
-        </button>
-      </div>
+             <div class="flex justify-between items-center mb-6">
+         <h1 class="text-2xl font-bold text-gray-800 flex items-center gap-2">
+           <i class="fa-solid fa-users text-blue-500"></i> Data Karyawan
+         </h1>
+         <button @click="openCreate" class="bg-gradient-to-r from-blue-500 to-blue-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold">
+           + Tambah Karyawan Baru
+         </button>
+       </div>
+
+       <!-- Statistics Cards -->
+       <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+         <!-- Total Karyawan -->
+         <div :class="[
+           'rounded-xl shadow-lg p-6 border-l-4 cursor-pointer transition-all relative',
+           status === 'all' ? 'bg-blue-50 border-blue-500 shadow-xl' : 'bg-white border-blue-500 hover:shadow-xl'
+         ]" @click="filterByStatus('all')" title="Klik untuk melihat semua karyawan">
+           <div class="flex items-center justify-between">
+             <div>
+               <p class="text-sm font-medium text-gray-600">Total Karyawan</p>
+               <p class="text-2xl font-bold text-gray-900">{{ statistics.total }}</p>
+               <p class="text-xs text-gray-500">100% dari total</p>
+             </div>
+             <div class="bg-blue-100 p-3 rounded-full">
+               <i class="fa-solid fa-users text-blue-600 text-xl"></i>
+             </div>
+           </div>
+           <div class="absolute top-2 right-2 text-xs text-gray-400">
+             <i class="fa-solid fa-mouse-pointer"></i>
+           </div>
+         </div>
+
+         <!-- Karyawan Aktif -->
+         <div :class="[
+           'rounded-xl shadow-lg p-6 border-l-4 cursor-pointer transition-all relative',
+           status === 'A' ? 'bg-green-50 border-green-500 shadow-xl' : 'bg-white border-green-500 hover:shadow-xl'
+         ]" @click="filterByStatus('A')" title="Klik untuk melihat karyawan aktif">
+           <div class="flex items-center justify-between">
+             <div>
+               <p class="text-sm font-medium text-gray-600">Karyawan Aktif</p>
+               <p class="text-2xl font-bold text-gray-900">{{ statistics.active }}</p>
+               <p class="text-xs text-gray-500">{{ statistics.total > 0 ? Math.round((statistics.active / statistics.total) * 100) : 0 }}% dari total</p>
+             </div>
+             <div class="bg-green-100 p-3 rounded-full">
+               <i class="fa-solid fa-user-check text-green-600 text-xl"></i>
+             </div>
+           </div>
+           <div class="absolute top-2 right-2 text-xs text-gray-400">
+             <i class="fa-solid fa-mouse-pointer"></i>
+           </div>
+         </div>
+
+         <!-- Karyawan Non-Aktif -->
+         <div :class="[
+           'rounded-xl shadow-lg p-6 border-l-4 cursor-pointer transition-all relative',
+           status === 'N' ? 'bg-red-50 border-red-500 shadow-xl' : 'bg-white border-red-500 hover:shadow-xl'
+         ]" @click="filterByStatus('N')" title="Klik untuk melihat karyawan non-aktif">
+           <div class="flex items-center justify-between">
+             <div>
+               <p class="text-sm font-medium text-gray-600">Karyawan Non-Aktif</p>
+               <p class="text-2xl font-bold text-gray-900">{{ statistics.inactive }}</p>
+               <p class="text-xs text-gray-500">{{ statistics.total > 0 ? Math.round((statistics.inactive / statistics.total) * 100) : 0 }}% dari total</p>
+             </div>
+             <div class="bg-red-100 p-3 rounded-full">
+               <i class="fa-solid fa-user-slash text-red-600 text-xl"></i>
+             </div>
+           </div>
+           <div class="absolute top-2 right-2 text-xs text-gray-400">
+             <i class="fa-solid fa-mouse-pointer"></i>
+           </div>
+         </div>
+
+         <!-- Karyawan Baru -->
+         <div :class="[
+           'rounded-xl shadow-lg p-6 border-l-4 cursor-pointer transition-all relative',
+           status === 'B' ? 'bg-yellow-50 border-yellow-500 shadow-xl' : 'bg-white border-yellow-500 hover:shadow-xl'
+         ]" @click="filterByStatus('B')" title="Klik untuk melihat karyawan baru">
+           <div class="flex items-center justify-between">
+             <div>
+               <p class="text-sm font-medium text-gray-600">Karyawan Baru</p>
+               <p class="text-2xl font-bold text-gray-900">{{ statistics.new }}</p>
+               <p class="text-xs text-gray-500">{{ statistics.total > 0 ? Math.round((statistics.new / statistics.total) * 100) : 0 }}% dari total</p>
+             </div>
+             <div class="bg-yellow-100 p-3 rounded-full">
+               <i class="fa-solid fa-user-plus text-yellow-600 text-xl"></i>
+             </div>
+           </div>
+           <div class="absolute top-2 right-2 text-xs text-gray-400">
+             <i class="fa-solid fa-mouse-pointer"></i>
+           </div>
+         </div>
+       </div>
       <div class="mb-4 flex gap-4">
         <select v-model="status" class="form-input rounded-xl">
           <option value="A">Aktif</option>
@@ -219,8 +337,10 @@ watch([outletId, divisionId, status], () => {
                 </button>
                 <button @click="toggleStatus(user)" :class="[
                   'px-2 py-1 rounded transition',
-                  user.status === 'A' ? 'bg-red-500 text-white hover:bg-red-600' : 'bg-green-500 text-white hover:bg-green-600'
-                ]" :title="user.status === 'A' ? 'Nonaktifkan' : 'Aktifkan'">
+                  user.status === 'A' ? 'bg-red-500 text-white hover:bg-red-600' : 
+                  user.status === 'B' ? 'bg-blue-500 text-white hover:bg-blue-600' : 
+                  'bg-green-500 text-white hover:bg-green-600'
+                ]" :title="user.status === 'A' ? 'Nonaktifkan' : user.status === 'B' ? 'Aktifkan' : 'Aktifkan'">
                   <i :class="user.status === 'A' ? 'fa-solid fa-user-slash' : 'fa-solid fa-user-check'"></i>
                 </button>
                 <button @click="openPinModal(user)" class="px-2 py-1 rounded bg-green-100 text-green-700 hover:bg-green-200 transition" title="Kelola PIN">
@@ -245,5 +365,14 @@ watch([outletId, divisionId, status], () => {
     </div>
     <UserFormModal :show="showModal" :mode="modalMode" :user="selectedUser" :dropdownData="dropdownData" :isLoadingDropdown="isLoadingDropdown" @close="closeModal" />
     <PinManagementModal :show="showPinModal" :user-id="pinUserId" :user-name="pinUserName" @close="closePinModal" />
+    <ActivationModal 
+      :show="showActivationModal" 
+      :user="selectedUserForActivation" 
+      :jabatans="jabatans" 
+      :divisions="divisions" 
+      :outlets="outlets" 
+      @close="closeActivationModal" 
+      @success="onActivationSuccess" 
+    />
   </AppLayout>
 </template> 

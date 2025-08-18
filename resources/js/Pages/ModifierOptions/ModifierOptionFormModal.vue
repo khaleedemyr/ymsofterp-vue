@@ -157,39 +157,41 @@ function closeModal() {
               <button type="button" @click="addBomRow" class="ml-auto bg-blue-500 text-white px-3 py-1 rounded shadow hover:bg-blue-700 text-xs">+ Tambah Baris</button>
             </div>
             <div v-if="bomRows.length === 0" class="text-gray-400 italic mb-2">Belum ada BOM</div>
-            <table v-if="bomRows.length" class="min-w-full text-sm rounded shadow mb-2">
-              <thead>
-                <tr class="bg-blue-100 text-blue-900">
-                  <th class="px-2 py-1">Item</th>
-                  <th class="px-2 py-1">Qty</th>
-                  <th class="px-2 py-1">Unit</th>
-                  <th class="px-2 py-1"></th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="(row, idx) in bomRows" :key="idx" class="bg-white border-b last:border-b-0">
-                  <td class="px-2 py-1">
-                    <input v-model="itemSearch[idx]" placeholder="Cari item..." class="w-full mb-1 rounded border-gray-200 px-2 py-1 text-xs" />
-                    <select v-model="row.item_id" class="w-full rounded border-gray-300" @change="async e => { row.unit_id = ''; row.qty = ''; await fetchItemUnits(row.item_id) }">
-                      <option value="">Pilih Item</option>
-                      <option v-for="item in filteredItems(idx)" :key="item.id" :value="item.id">{{ item.name }}</option>
-                    </select>
-                  </td>
-                  <td class="px-2 py-1">
-                    <input v-model="row.qty" type="number" min="0" step="any" class="w-20 rounded border-gray-300" />
-                  </td>
-                  <td class="px-2 py-1">
-                    <select v-model="row.unit_id" class="w-full rounded border-gray-300">
-                      <option value="">Pilih Unit</option>
-                      <option v-for="unit in itemUnits[row.item_id] || []" :key="unit.id" :value="unit.id">{{ unit.name }} ({{ unit.type }})</option>
-                    </select>
-                  </td>
-                  <td class="px-2 py-1 text-center">
-                    <button type="button" @click="removeBomRow(idx)" class="text-red-500 hover:text-red-700"><i class="fa fa-trash"></i></button>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+            <div v-if="bomRows.length" class="max-h-64 overflow-y-auto border border-gray-200 rounded-lg shadow-sm">
+              <table class="min-w-full text-sm">
+                <thead class="sticky top-0 bg-blue-100 text-blue-900 z-10">
+                  <tr>
+                    <th class="px-2 py-1">Item</th>
+                    <th class="px-2 py-1">Qty</th>
+                    <th class="px-2 py-1">Unit</th>
+                    <th class="px-2 py-1"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="(row, idx) in bomRows" :key="idx" class="bg-white border-b last:border-b-0">
+                    <td class="px-2 py-1">
+                      <input v-model="itemSearch[idx]" placeholder="Cari item..." class="w-full mb-1 rounded border-gray-200 px-2 py-1 text-xs" />
+                      <select v-model="row.item_id" class="w-full rounded border-gray-300" @change="async e => { row.unit_id = ''; row.qty = ''; await fetchItemUnits(row.item_id) }">
+                        <option value="">Pilih Item</option>
+                        <option v-for="item in filteredItems(idx)" :key="item.id" :value="item.id">{{ item.name }}</option>
+                      </select>
+                    </td>
+                    <td class="px-2 py-1">
+                      <input v-model="row.qty" type="number" min="0" step="any" class="w-20 rounded border-gray-300" />
+                    </td>
+                    <td class="px-2 py-1">
+                      <select v-model="row.unit_id" class="w-full rounded border-gray-300">
+                        <option value="">Pilih Unit</option>
+                        <option v-for="unit in itemUnits[row.item_id] || []" :key="unit.id" :value="unit.id">{{ unit.name }} ({{ unit.type }})</option>
+                      </select>
+                    </td>
+                    <td class="px-2 py-1 text-center">
+                      <button type="button" @click="removeBomRow(idx)" class="text-red-500 hover:text-red-700"><i class="fa fa-trash"></i></button>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </div>
         </form>
       </div>

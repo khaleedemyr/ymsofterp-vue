@@ -956,6 +956,7 @@ Route::get('/users/dropdown-data', [UserController::class, 'getDropdownData'])->
 
 Route::resource('users', UserController::class);
 Route::patch('users/{user}/toggle-status', [UserController::class, 'toggleStatus'])->name('users.toggle-status');
+Route::post('users/{user}/activate', [UserController::class, 'activate'])->name('users.activate');
 
 // Employee Movement Routes
 Route::get('employee-movements/search/employee', [\App\Http\Controllers\EmployeeMovementController::class, 'searchEmployee'])->name('employee-movements.search-employee');
