@@ -4,17 +4,24 @@
       <div class="w-full mx-auto px-4 sm:px-6 lg:px-8">
         <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
           <div class="p-6 bg-white border-b border-gray-200">
-            <div class="flex justify-between items-center mb-6">
-              <h2 class="font-semibold text-xl text-gray-800 leading-tight">
-                Report Item PO yang Sudah di-GR
-              </h2>
-              <button 
-                @click="exportReport"
-                class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
-              >
-                <i class="fas fa-download mr-2"></i> Export CSV
-              </button>
-            </div>
+                         <div class="flex justify-between items-center mb-6">
+               <h2 class="font-semibold text-xl text-gray-800 leading-tight">
+                 Report Item PO yang Sudah di-GR
+               </h2>
+               <div class="flex items-center gap-2">
+                 <div v-if="loading" class="flex items-center text-blue-600">
+                   <i class="fas fa-spinner fa-spin mr-2"></i>
+                   <span class="text-sm">Loading...</span>
+                 </div>
+                 <button 
+                   @click="exportReport"
+                   class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
+                   :disabled="loading"
+                 >
+                   <i class="fas fa-download mr-2"></i> Export CSV
+                 </button>
+               </div>
+             </div>
 
             <!-- Filters -->
             <div class="mb-6 bg-gray-50 p-4 rounded-lg">
@@ -22,44 +29,48 @@
                 <!-- Search -->
                 <div>
                   <label class="block text-sm font-medium text-gray-700 mb-1">Search</label>
-                  <input 
-                    v-model="filters.search" 
-                    type="text" 
-                    placeholder="Cari PO Number, GR Number, Supplier, Item..."
-                    class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    @input="debounceSearch"
-                  />
+                                     <input 
+                     v-model="filters.search" 
+                     type="text" 
+                     placeholder="Cari PO Number, GR Number, Supplier, Item..."
+                     class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                     @input="debounceSearch"
+                     :disabled="loading"
+                   />
                 </div>
 
                 <!-- Date Range -->
                 <div>
                   <label class="block text-sm font-medium text-gray-700 mb-1">Dari Tanggal</label>
-                  <input 
-                    v-model="filters.from" 
-                    type="date" 
-                    class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    @change="applyFilters"
-                  />
+                                     <input 
+                     v-model="filters.from" 
+                     type="date" 
+                     class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                     @change="applyFilters"
+                     :disabled="loading"
+                   />
                 </div>
 
                 <div>
                   <label class="block text-sm font-medium text-gray-700 mb-1">Sampai Tanggal</label>
-                  <input 
-                    v-model="filters.to" 
-                    type="date" 
-                    class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    @change="applyFilters"
-                  />
+                                     <input 
+                     v-model="filters.to" 
+                     type="date" 
+                     class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                     @change="applyFilters"
+                     :disabled="loading"
+                   />
                 </div>
 
                 <!-- Per Page -->
                 <div>
                   <label class="block text-sm font-medium text-gray-700 mb-1">Tampilkan</label>
-                  <select 
-                    v-model="filters.perPage" 
-                    class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    @change="applyFilters"
-                  >
+                                     <select 
+                     v-model="filters.perPage" 
+                     class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                     @change="applyFilters"
+                     :disabled="loading"
+                   >
                     <option value="15">15 data</option>
                     <option value="25">25 data</option>
                     <option value="50">50 data</option>
@@ -72,55 +83,69 @@
                 <!-- Supplier Filter -->
                 <div>
                   <label class="block text-sm font-medium text-gray-700 mb-1">Supplier</label>
-                  <Multiselect
-                    v-model="filters.supplier_id"
-                    :options="suppliers"
-                    :searchable="true"
-                    :close-on-select="true"
-                    :clear-on-select="false"
-                    :preserve-search="true"
-                    placeholder="Pilih atau cari supplier..."
-                    track-by="id"
-                    label="name"
-                    :preselect-first="false"
-                    @input="applyFilters"
-                    class="w-full"
-                  />
+                                     <div :class="{ 'opacity-50 pointer-events-none': loading }">
+                     <Multiselect
+                       v-model="filters.supplier_id"
+                       :options="suppliers"
+                       :searchable="true"
+                       :close-on-select="true"
+                       :clear-on-select="false"
+                       :preserve-search="true"
+                       placeholder="Pilih atau cari supplier..."
+                       track-by="id"
+                       label="name"
+                       :preselect-first="false"
+                       @input="applyFilters"
+                       class="w-full"
+                     />
+                   </div>
                 </div>
 
                 <!-- Item Filter -->
                 <div>
                   <label class="block text-sm font-medium text-gray-700 mb-1">Item</label>
-                  <Multiselect
-                    v-model="filters.item_id"
-                    :options="items"
-                    :searchable="true"
-                    :close-on-select="true"
-                    :clear-on-select="false"
-                    :preserve-search="true"
-                    placeholder="Pilih atau cari item..."
-                    track-by="id"
-                    label="name"
-                    :preselect-first="false"
-                    @input="applyFilters"
-                    class="w-full"
-                  />
+                                     <div :class="{ 'opacity-50 pointer-events-none': loading }">
+                     <Multiselect
+                       v-model="filters.item_id"
+                       :options="items"
+                       :searchable="true"
+                       :close-on-select="true"
+                       :clear-on-select="false"
+                       :preserve-search="true"
+                       placeholder="Pilih atau cari item..."
+                       track-by="id"
+                       label="name"
+                       :preselect-first="false"
+                       @input="applyFilters"
+                       class="w-full"
+                     />
+                   </div>
                 </div>
               </div>
 
               <!-- Clear Filters Button -->
               <div class="mt-4 flex justify-end">
-                <button 
-                  @click="clearFilters"
-                  class="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600"
-                >
-                  Clear Filters
-                </button>
+                                 <button 
+                   @click="clearFilters"
+                   class="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600"
+                   :disabled="loading"
+                 >
+                   <i v-if="loading" class="fas fa-spinner fa-spin mr-2"></i>
+                   Clear Filters
+                 </button>
               </div>
             </div>
 
                          <!-- Table -->
-             <div class="overflow-x-auto">
+             <div class="overflow-x-auto relative">
+               <!-- Loading Overlay -->
+               <div v-if="loading" class="absolute inset-0 bg-white bg-opacity-75 flex items-center justify-center z-10">
+                 <div class="flex items-center text-blue-600">
+                   <i class="fas fa-spinner fa-spin mr-2"></i>
+                   <span>Loading data...</span>
+                 </div>
+               </div>
+               
                <table class="min-w-full divide-y divide-gray-200">
                  <thead class="bg-gray-50">
                    <tr>
@@ -178,28 +203,31 @@
                <div class="text-sm text-gray-700">
                  Menampilkan {{ reports?.from || 0 }} - {{ reports?.to || 0 }} dari {{ reports?.total || 0 }} data
                </div>
-               <div class="flex space-x-2">
-                 <template v-for="(link, index) in (reports?.links || [])" :key="link.label || index">
-                   <Link 
-                     v-if="link.url"
-                     :href="link.url"
-                     :class="[
-                       'px-3 py-2 text-sm rounded-md',
-                       link.active 
-                         ? 'bg-blue-600 text-white' 
-                         : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
-                     ]"
-                     v-html="link.label || ''"
-                   />
-                   <span 
-                     v-else
-                     :class="[
-                       'px-3 py-2 text-sm rounded-md bg-gray-100 text-gray-400 cursor-not-allowed'
-                     ]"
-                     v-html="link.label || ''"
-                   />
-                 </template>
-               </div>
+                                <div class="flex space-x-2">
+                   <template v-for="(link, index) in (reports?.links || [])" :key="link.label || index">
+                     <Link 
+                       v-if="link.url && !loading"
+                       :href="link.url"
+                       :class="[
+                         'px-3 py-2 text-sm rounded-md',
+                         link.active 
+                           ? 'bg-blue-600 text-white' 
+                           : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+                       ]"
+                       v-html="link.label || ''"
+                     />
+                     <span 
+                       v-else
+                       :class="[
+                         'px-3 py-2 text-sm rounded-md',
+                         link.active 
+                           ? 'bg-blue-600 text-white' 
+                           : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                       ]"
+                       v-html="link.label || ''"
+                     />
+                   </template>
+                 </div>
              </div>
 
              <!-- No Data -->
@@ -248,34 +276,65 @@ const filters = ref({
   perPage: props.filters?.perPage || 15
 });
 
+const loading = ref(false);
+const isUpdatingFromProps = ref(false);
+
 let searchTimeout;
 
+// Watch for props changes to update filters
+watch(() => props.filters, (newFilters) => {
+  if (newFilters && !loading.value && !isUpdatingFromProps.value) {
+    isUpdatingFromProps.value = true;
+    filters.value = {
+      search: newFilters.search || '',
+      from: newFilters.from || '',
+      to: newFilters.to || '',
+      supplier_id: newFilters.supplier_id ? props.suppliers?.find(s => s.id == newFilters.supplier_id) || null : null,
+      item_id: newFilters.item_id ? props.items?.find(i => i.id == newFilters.item_id) || null : null,
+      perPage: newFilters.perPage || 15
+    };
+    isUpdatingFromProps.value = false;
+  }
+}, { deep: true, immediate: true });
+
 const debounceSearch = () => {
-  clearTimeout(searchTimeout);
-  searchTimeout = setTimeout(() => {
-    applyFilters();
-  }, 500);
+  applyFilters();
 };
 
 const applyFilters = () => {
-  const params = {
-    search: filters.value.search || '',
-    from: filters.value.from || '',
-    to: filters.value.to || '',
-    supplier_id: filters.value.supplier_id?.id || '',
-    item_id: filters.value.item_id?.id || '',
-    perPage: filters.value.perPage || 15
-  };
+  if (isUpdatingFromProps.value) return;
   
-  router.visit('/po-report', {
-    data: params,
-    preserveState: true,
-    preserveScroll: true,
-    replace: true
-  });
+  clearTimeout(searchTimeout);
+  searchTimeout = setTimeout(() => {
+    loading.value = true;
+    
+    const params = {
+      search: filters.value.search || '',
+      from: filters.value.from || '',
+      to: filters.value.to || '',
+      supplier_id: filters.value.supplier_id?.id || '',
+      item_id: filters.value.item_id?.id || '',
+      perPage: filters.value.perPage || 15
+    };
+    
+    router.visit('/po-report', {
+      data: params,
+      preserveState: true,
+      preserveScroll: true,
+      replace: true,
+      onFinish: () => {
+        loading.value = false;
+        isUpdatingFromProps.value = false;
+      }
+    });
+  }, 300);
 };
 
 const clearFilters = () => {
+  clearTimeout(searchTimeout);
+  loading.value = true;
+  isUpdatingFromProps.value = true;
+  
   filters.value = {
     search: '',
     from: '',
@@ -296,11 +355,17 @@ const clearFilters = () => {
     },
     preserveState: false,
     preserveScroll: false,
-    replace: true
+    replace: true,
+    onFinish: () => {
+      loading.value = false;
+      isUpdatingFromProps.value = false;
+    }
   });
 };
 
 const exportReport = () => {
+  if (loading.value) return;
+  
   const params = new URLSearchParams({
     search: filters.value.search || '',
     from: filters.value.from || '',
