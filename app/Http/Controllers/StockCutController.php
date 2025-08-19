@@ -1365,7 +1365,7 @@ class StockCutController extends Controller
             'menu_costs' => $menuCosts,
             'total_menu' => count($menuCosts),
             'total_cost' => round($totalCost, 2),
-            'periode' => $tanggal,
+            'periode' => date('Y-m-d', strtotime($tanggal)),
             'outlet_id' => $id_outlet
         ]);
     }

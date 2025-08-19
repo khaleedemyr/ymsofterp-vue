@@ -1231,19 +1231,48 @@ class ReportController extends Controller
      */
     public function apiOutlets()
     {
-        $user = auth()->user();
-        $query = \DB::table('tbl_data_outlet')
-            ->where('status', 'A')
-            ->whereNotNull('nama_outlet')
-            ->where('nama_outlet', '!=', '');
-        
-        // Jika user bukan superuser (id_outlet != 1), hanya tampilkan outlet mereka sendiri
-        if ($user->id_outlet != 1) {
-            $query->where('id_outlet', $user->id_outlet);
+        try {
+            $user = auth()->user();
+            
+            if (!$user) {
+                return response()->json(['error' => 'User tidak terautentikasi'], 401);
+            }
+            
+            // Cek apakah tabel exists
+            if (!\Schema::hasTable('tbl_data_outlet')) {
+                \Log::error('Table tbl_data_outlet does not exist');
+                return response()->json(['error' => 'Tabel outlet tidak ditemukan'], 500);
+            }
+            
+            $query = \DB::table('tbl_data_outlet')
+                ->where('status', 'A')
+                ->whereNotNull('nama_outlet')
+                ->where('nama_outlet', '!=', '');
+            
+            // Jika user bukan superuser (id_outlet != 1), hanya tampilkan outlet mereka sendiri
+            if ($user->id_outlet != 1) {
+                $query->where('id_outlet', $user->id_outlet);
+            }
+            
+            $outlets = $query->get(['id_outlet as id', 'nama_outlet as name', 'qr_code']);
+            
+            \Log::info('apiOutlets called', [
+                'user_id' => $user->id,
+                'user_outlet_id' => $user->id_outlet,
+                'outlets_count' => $outlets->count(),
+                'outlets' => $outlets->toArray()
+            ]);
+            
+            return response()->json(['outlets' => $outlets]);
+        } catch (\Exception $e) {
+            \Log::error('Error in apiOutlets', [
+                'error' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine()
+            ]);
+            
+            return response()->json(['error' => 'Terjadi kesalahan: ' . $e->getMessage()], 500);
         }
-        
-        $outlets = $query->get(['id_outlet as id', 'nama_outlet as name', 'qr_code']);
-        return response()->json(['outlets' => $outlets]);
     }
 
     /**

@@ -300,7 +300,8 @@ Route::middleware(['auth'])->group(function () {
     // Outlet routes
     Route::get('/outlets', [OutletController::class, 'index'])->name('outlets.index');
     Route::get('/api/outlets', [\App\Http\Controllers\OutletController::class, 'apiList'])->name('outlets.list');
-Route::get('/api/outlets/{id}', [\App\Http\Controllers\OutletController::class, 'apiShow'])->name('outlets.show');
+    Route::get('/api/outlets/report', [App\Http\Controllers\ReportController::class, 'apiOutlets'])->middleware(['auth']);
+    Route::get('/api/outlets/{id}', [\App\Http\Controllers\OutletController::class, 'apiShow'])->name('outlets.show');
     Route::post('/outlets', [OutletController::class, 'store'])->name('outlets.store');
     Route::put('/outlets/{id}', [OutletController::class, 'update'])->name('outlets.update');
     Route::delete('/outlets/{id}', [OutletController::class, 'destroy'])->name('outlets.destroy');
@@ -901,7 +902,7 @@ Route::post('/stock-cut/cek-kebutuhan', [\App\Http\Controllers\StockCutControlle
 
 Route::get('/stock-cut', function () {
     return Inertia::render('StockCut');
-})->middleware(['auth', 'verified']);
+})->middleware(['auth', 'verified'])->name('stock-cut.index');
 
 Route::get('/stock-cut/menu-cost', function () {
     return Inertia::render('StockCut/MenuCost');
@@ -951,8 +952,6 @@ Route::get('/report-daily-revenue-forecast', function () {
 Route::get('/report-monthly-fb-revenue-performance', function () {
     return Inertia::render('Report/ReportMonthlyFbRevenuePerformance');
 })->middleware(['auth']);
-
-Route::get('/api/outlets/report', [App\Http\Controllers\ReportController::class, 'apiOutlets']);
 
 Route::get('/api/report/sales-simple', [App\Http\Controllers\ReportController::class, 'reportSalesSimple']);
 Route::get('/api/outlet-expenses', [App\Http\Controllers\ReportController::class, 'apiOutletExpenses']);

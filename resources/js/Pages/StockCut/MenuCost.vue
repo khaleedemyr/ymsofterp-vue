@@ -22,7 +22,7 @@
             <label class="block text-sm font-medium text-gray-700 mb-2">Outlet</label>
             <select v-model="filters.outlet_id" @change="loadMenuCosts" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
               <option value="">Pilih Outlet</option>
-              <option v-for="outlet in outlets" :key="outlet.id" :value="outlet.id">{{ outlet.name }}</option>
+              <option v-for="outlet in outlets" :key="outlet.id_outlet" :value="outlet.id_outlet">{{ outlet.nama_outlet }}</option>
             </select>
           </div>
           <div>
@@ -200,9 +200,11 @@ onMounted(async () => {
 async function loadOutlets() {
   try {
     const response = await axios.get('/api/outlets/report')
-    outlets.value = response.data
+    outlets.value = response.data.outlets || []
+    console.log('Outlets loaded:', outlets.value)
   } catch (error) {
     console.error('Error loading outlets:', error)
+    outlets.value = []
   }
 }
 
@@ -214,7 +216,7 @@ async function loadMenuCosts() {
   loading.value = true
   try {
     const params = {
-      outlet_id: filters.value.outlet_id,
+      id_outlet: filters.value.outlet_id,
       tanggal: filters.value.tanggal,
       type: filters.value.type
     }
@@ -255,7 +257,13 @@ function formatNumber(number) {
 }
 
 function formatDate(dateString) {
+  if (!dateString) return 'Tidak ada tanggal'
+  
   const date = new Date(dateString)
+  if (isNaN(date.getTime())) {
+    return 'Tanggal tidak valid'
+  }
+  
   return date.toLocaleDateString('id-ID', {
     weekday: 'long',
     year: 'numeric',
