@@ -358,6 +358,19 @@ class StockCutController extends Controller
         $kebutuhanBahan = [];
         $warehouseMap = [];
         
+        // Ambil warehouse yang tersedia untuk outlet ini
+        $kitchenWarehouse = DB::table('warehouse_outlets')
+            ->where('outlet_id', $id_outlet)
+            ->where('name', 'Kitchen')
+            ->where('status', 'active')
+            ->first();
+            
+        $barWarehouse = DB::table('warehouse_outlets')
+            ->where('outlet_id', $id_outlet)
+            ->where('name', 'Bar')
+            ->where('status', 'active')
+            ->first();
+        
         // Debug: Log warehouse info untuk V2
         \Log::info('Warehouse check V2', [
             'id_outlet' => $id_outlet,
@@ -375,28 +388,6 @@ class StockCutController extends Controller
             'id_outlet' => $id_outlet,
             'warehouses' => $allWarehouses->toArray()
         ]);
-        
-        // Debug: Log semua warehouse untuk outlet ini
-        $allWarehouses = DB::table('warehouse_outlets')
-            ->where('outlet_id', $id_outlet)
-            ->get();
-        \Log::info('All warehouses for outlet V2', [
-            'id_outlet' => $id_outlet,
-            'warehouses' => $allWarehouses->toArray()
-        ]);
-        
-        // Ambil warehouse yang tersedia untuk outlet ini
-        $kitchenWarehouse = DB::table('warehouse_outlets')
-            ->where('outlet_id', $id_outlet)
-            ->where('name', 'Kitchen')
-            ->where('status', 'active')
-            ->first();
-            
-        $barWarehouse = DB::table('warehouse_outlets')
-            ->where('outlet_id', $id_outlet)
-            ->where('name', 'Bar')
-            ->where('status', 'active')
-            ->first();
         
         foreach ($orderItems as $oi) {
             // Tentukan warehouse berdasarkan type item
@@ -904,8 +895,8 @@ class StockCutController extends Controller
     public function getLogs()
     {
         $logs = \DB::table('stock_cut_logs as scl')
-            ->join('tbl_data_outlet as o', 'scl.id_outlet', '=', 'o.id_outlet')
-            ->join('users as u', 'scl.user_id', '=', 'u.id')
+            ->join('tbl_data_outlet as o', 'scl.outlet_id', '=', 'o.id_outlet')
+            ->join('users as u', 'scl.created_by', '=', 'u.id')
             ->select(
                 'scl.id',
                 'scl.tanggal',
@@ -928,7 +919,7 @@ class StockCutController extends Controller
             return response()->json(['error' => 'Log tidak ditemukan'], 404);
         }
         $tanggal = $log->tanggal;
-        $id_outlet = $log->id_outlet;
+        $id_outlet = $log->outlet_id;
         // Ambil semua kartu stok out pada tanggal & outlet tsb
         $cards = \DB::table('outlet_food_inventory_cards')
             ->where('id_outlet', $id_outlet)

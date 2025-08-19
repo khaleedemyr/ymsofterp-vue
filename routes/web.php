@@ -300,6 +300,7 @@ Route::middleware(['auth'])->group(function () {
     // Outlet routes
     Route::get('/outlets', [OutletController::class, 'index'])->name('outlets.index');
     Route::get('/api/outlets', [\App\Http\Controllers\OutletController::class, 'apiList'])->name('outlets.list');
+Route::get('/api/outlets/{id}', [\App\Http\Controllers\OutletController::class, 'apiShow'])->name('outlets.show');
     Route::post('/outlets', [OutletController::class, 'store'])->name('outlets.store');
     Route::put('/outlets/{id}', [OutletController::class, 'update'])->name('outlets.update');
     Route::delete('/outlets/{id}', [OutletController::class, 'destroy'])->name('outlets.destroy');
@@ -387,6 +388,7 @@ Route::get('/api/items/{id}/detail', [App\Http\Controllers\ItemController::class
 Route::get('/items/search-for-warehouse-transfer', [ItemController::class, 'searchForWarehouseTransfer']);
 Route::get('/api/items/by-fo-schedule/{fo_schedule_id}', [App\Http\Controllers\ItemController::class, 'getByFOSchedule']);
 Route::get('/items/search-for-outlet-transfer', [ItemController::class, 'searchForOutletTransfer']);
+Route::get('/items/search-for-outlet-stock-adjustment', [ItemController::class, 'searchForOutletStockAdjustment']);
 Route::get('/items/search-for-internal-warehouse-transfer', [ItemController::class, 'searchForInternalWarehouseTransfer']);
 
 Route::resource('items', ItemController::class);

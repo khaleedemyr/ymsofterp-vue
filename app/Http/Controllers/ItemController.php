@@ -2247,4 +2247,75 @@ $bomItems = \App\Models\Item::whereIn('id', $bomMaterialIds)->get();
         
         return response()->json(['items' => $items]);
     }
+
+    /**
+     * API: Search items for outlet stock adjustment (menerima outlet_id dan region_id)
+     */
+    public function searchForOutletStockAdjustment(Request $request)
+    {
+        $q = $request->input('q');
+        $outlet_id = $request->input('outlet_id');
+        $region_id = $request->input('region_id');
+
+        \Log::info('searchForOutletStockAdjustment called', [
+            'q' => $q,
+            'outlet_id' => $outlet_id,
+            'region_id' => $region_id
+        ]);
+
+        if (!$q || !$outlet_id || !$region_id) {
+            \Log::warning('Missing required parameters', [
+                'q' => $q,
+                'outlet_id' => $outlet_id,
+                'region_id' => $region_id
+            ]);
+            return response()->json([]);
+        }
+
+        $items = \DB::table('item_availabilities')
+            ->join('items', 'item_availabilities.item_id', '=', 'items.id')
+            ->leftJoin('units as u_small', 'items.small_unit_id', '=', 'u_small.id')
+            ->leftJoin('units as u_medium', 'items.medium_unit_id', '=', 'u_medium.id')
+            ->leftJoin('units as u_large', 'items.large_unit_id', '=', 'u_large.id')
+            ->where(function($query) use ($outlet_id, $region_id) {
+                $query->where('item_availabilities.availability_type', 'all')
+                    ->orWhere(function($q) use ($region_id) {
+                        $q->where('item_availabilities.availability_type', 'region')
+                          ->where('item_availabilities.region_id', $region_id);
+                    })
+                    ->orWhere(function($q) use ($outlet_id) {
+                        $q->where('item_availabilities.availability_type', 'outlet')
+                          ->where('item_availabilities.outlet_id', $outlet_id);
+                    });
+            })
+            ->where(function($query) use ($q) {
+                $query->where('items.name', 'like', "%$q%")
+                      ->orWhere('items.sku', 'like', "%$q%");
+            })
+            ->where('items.status', 'active')
+            ->select(
+                'items.id',
+                'items.name',
+                'items.sku',
+                'u_small.name as unit_small',
+                'u_medium.name as unit_medium',
+                'u_large.name as unit_large',
+                'items.small_unit_id',
+                'items.medium_unit_id',
+                'items.large_unit_id'
+            )
+            ->orderBy('items.name')
+            ->limit(20)
+            ->get();
+
+        \Log::info('searchForOutletStockAdjustment result', [
+            'q' => $q,
+            'outlet_id' => $outlet_id,
+            'region_id' => $region_id,
+            'result_count' => $items->count(),
+            'first_item' => $items->first(),
+        ]);
+
+        return response()->json($items);
+    }
 } 

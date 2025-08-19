@@ -320,4 +320,18 @@ class OutletController extends Controller
             ->get();
         return response()->json($outlets);
     }
+
+    public function apiShow($id)
+    {
+        $outlet = Outlet::where('id_outlet', $id)
+            ->where('status', 'A')
+            ->select('id_outlet', 'nama_outlet', 'lokasi', 'region_id', 'qr_code', 'lat', 'long', 'keterangan', 'status', 'url_places', 'created_at', 'updated_at')
+            ->first();
+            
+        if (!$outlet) {
+            return response()->json(['error' => 'Outlet tidak ditemukan'], 404);
+        }
+        
+        return response()->json($outlet);
+    }
 } 

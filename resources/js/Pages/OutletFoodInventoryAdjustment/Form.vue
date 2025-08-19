@@ -40,6 +40,20 @@
                 <div class="flex justify-between items-center mb-2">
                   <label class="block text-sm font-medium text-gray-700">Items</label>
                 </div>
+                                 <!-- Warning jika outlet belum dipilih -->
+                 <div v-if="!form.outlet_id && props.outlet_selectable" class="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
+                   <div class="flex items-center">
+                     <i class="fa fa-exclamation-triangle text-yellow-600 mr-2"></i>
+                     <span class="text-sm text-yellow-800">Pilih outlet terlebih dahulu sebelum menambahkan item</span>
+                   </div>
+                 </div>
+                 <!-- Warning jika warehouse outlet belum dipilih -->
+                 <div v-if="form.outlet_id && !form.warehouse_outlet_id" class="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
+                   <div class="flex items-center">
+                     <i class="fa fa-exclamation-triangle text-yellow-600 mr-2"></i>
+                     <span class="text-sm text-yellow-800">Pilih warehouse outlet terlebih dahulu sebelum menambahkan item</span>
+                   </div>
+                 </div>
                 <div class="overflow-x-auto">
                   <table class="min-w-full divide-y divide-gray-200">
                     <thead class="bg-gray-50">
@@ -66,10 +80,11 @@
                               @keydown.up="onItemKeydown(idx, $event)"
                               @keydown.enter="onItemKeydown(idx, $event)"
                               @keydown.esc="onItemKeydown(idx, $event)"
-                              class="w-full rounded border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                              required
-                              autocomplete="off"
-                              placeholder="Cari nama item..."
+                                                             :class="['w-full rounded border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500', (!form.outlet_id && props.outlet_selectable) || (form.outlet_id && !form.warehouse_outlet_id) ? 'bg-gray-100 cursor-not-allowed' : '']"
+                               :disabled="(!form.outlet_id && props.outlet_selectable) || (form.outlet_id && !form.warehouse_outlet_id)"
+                               required
+                               autocomplete="off"
+                               :placeholder="!form.outlet_id && props.outlet_selectable ? 'Pilih outlet terlebih dahulu' : (form.outlet_id && !form.warehouse_outlet_id) ? 'Pilih warehouse outlet terlebih dahulu' : 'Cari nama item...'"
                             />
                             <Teleport to="body">
                               <div v-if="item.showDropdown && item.suggestions && item.suggestions.length > 0"
@@ -118,7 +133,14 @@
                     </tbody>
                   </table>
                 </div>
-                <button type="button" @click="addItem" class="mt-3 px-4 py-2 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 font-semibold"><i class="fa fa-plus"></i> Tambah Item</button>
+                                 <button 
+                   type="button" 
+                   @click="addItem" 
+                   :class="['mt-3 px-4 py-2 rounded font-semibold', (!form.outlet_id && props.outlet_selectable) || (form.outlet_id && !form.warehouse_outlet_id) ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-blue-100 text-blue-700 hover:bg-blue-200']"
+                   :disabled="(!form.outlet_id && props.outlet_selectable) || (form.outlet_id && !form.warehouse_outlet_id)"
+                 >
+                   <i class="fa fa-plus"></i> Tambah Item
+                 </button>
               </div>
               <div class="mb-6">
                 <label class="block text-sm font-medium text-gray-700">Alasan / Catatan</label>
@@ -167,6 +189,13 @@ const props = defineProps({
   warehouse_outlets: Array,
 })
 
+console.log('Props received:', {
+  outlets: props.outlets,
+  outlet_selectable: props.outlet_selectable,
+  user_outlet_id: props.user_outlet_id,
+  warehouse_outlets: props.warehouse_outlets
+});
+
 const warehouse_outlets = ref(props.warehouse_outlets || [])
 
 const form = useForm({
@@ -178,7 +207,12 @@ const form = useForm({
   warehouse_outlet_id: '',
 })
 
+console.log('Form initialized with outlet_id:', form.outlet_id);
+
 const page = usePage();
+
+console.log('Page props auth user:', page.props.auth.user);
+console.log('Region ID from page props:', page.props.auth.user.region_id);
 
 function newItem() {
   return {
@@ -235,16 +269,46 @@ function removeItem(idx) {
 
 async function fetchItemSuggestions(idx, q) {
   console.log('fetchItemSuggestions called', idx, q);
-  if (!q || q.length < 2 || !form.outlet_id) {
+  console.log('form.outlet_id:', form.outlet_id);
+  console.log('form.warehouse_outlet_id:', form.warehouse_outlet_id);
+  
+  if (!q || q.length < 2) {
+    console.log('Query too short, returning');
     form.items[idx].suggestions = [];
     form.items[idx].highlightedIndex = -1;
     return;
   }
+  
+  if (!form.outlet_id) {
+    console.log('No outlet_id selected, returning');
+    form.items[idx].suggestions = [];
+    form.items[idx].highlightedIndex = -1;
+    return;
+  }
+  
+  if (!form.warehouse_outlet_id) {
+    console.log('No warehouse_outlet_id selected, returning');
+    form.items[idx].suggestions = [];
+    form.items[idx].highlightedIndex = -1;
+    return;
+  }
+  
   form.items[idx].loading = true;
   try {
-    const res = await axios.get('/items/search-for-outlet-transfer', {
-      params: { q, outlet_id: form.outlet_id, region_id: page.props.auth.user.region_id }
-    });
+    // Ambil region_id dari outlet yang dipilih
+    const outletResponse = await axios.get(`/api/outlets/${form.outlet_id}`);
+    const region_id = outletResponse.data.region_id;
+    
+    console.log('Region ID from outlet:', region_id);
+    
+    const params = { 
+      q, 
+      outlet_id: form.outlet_id, 
+      region_id: region_id 
+    };
+    console.log('Making API request with params:', params);
+    
+    const res = await axios.get('/items/search-for-outlet-stock-adjustment', { params });
     console.log('API result:', res.data);
     let items = Array.isArray(res.data) ? res.data : [];
     form.items[idx].suggestions = items.map(item => ({
