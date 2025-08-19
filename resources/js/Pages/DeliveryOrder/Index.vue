@@ -5,9 +5,16 @@
         <h1 class="text-2xl font-bold text-gray-800 flex items-center gap-2">
           <i class="fa-solid fa-truck-arrow-right text-blue-500"></i> Delivery Order
         </h1>
-        <Link href="/delivery-order/create" class="bg-gradient-to-r from-blue-500 to-blue-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold">
-          + Buat Delivery Order
-        </Link>
+        <div class="flex gap-2">
+          <button @click="exportToExcel" :disabled="exporting" class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold flex items-center gap-2">
+            <i v-if="exporting" class="fa fa-spinner fa-spin"></i>
+            <i v-else class="fa fa-file-excel"></i>
+            {{ exporting ? 'Exporting...' : 'Export Excel' }}
+          </button>
+          <Link href="/delivery-order/create" class="bg-gradient-to-r from-blue-500 to-blue-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold">
+            + Buat Delivery Order
+          </Link>
+        </div>
       </div>
       <div class="flex flex-wrap gap-2 mb-4 items-center">
         <input v-model="search" type="text" placeholder="Cari Packing List / Floor Order / User / Outlet / Warehouse Outlet" class="border rounded px-3 py-2 focus:ring-2 focus:ring-blue-200 min-w-[280px]" />
@@ -156,6 +163,7 @@ import { usePage } from '@inertiajs/vue3';
 const props = defineProps({ orders: Array });
 const loadingDeleteId = ref(null);
 const loadingReprintId = ref(null);
+const exporting = ref(false);
 
 const page = usePage();
 const search = ref(page.props.search || '');
@@ -270,5 +278,46 @@ function goToPage(page) {
     dateTo: dateTo.value,
     page
   }, { preserveState: true });
+}
+
+async function exportToExcel() {
+  exporting.value = true;
+  try {
+    const response = await axios.get(route('delivery-order.export'), {
+      params: {
+        search: search.value,
+        dateFrom: dateFrom.value,
+        dateTo: dateTo.value
+      },
+      responseType: 'blob'
+    });
+
+    // Create download link
+    const url = window.URL.createObjectURL(new Blob([response.data]));
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `delivery-order-${new Date().toISOString().slice(0, 10)}.xlsx`);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+
+    await Swal.fire({
+      icon: 'success',
+      title: 'Export Berhasil',
+      text: 'File Excel berhasil diunduh',
+      timer: 1500,
+      showConfirmButton: false
+    });
+  } catch (error) {
+    console.error('Export error:', error);
+    await Swal.fire({
+      icon: 'error',
+      title: 'Export Gagal',
+      text: 'Gagal mengekspor data ke Excel. Silakan coba lagi.',
+    });
+  } finally {
+    exporting.value = false;
+  }
 }
 </script> 

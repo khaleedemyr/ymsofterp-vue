@@ -568,4 +568,107 @@ class DeliveryOrderController extends Controller
             'items' => $items
         ]);
     }
+
+    public function export(Request $request)
+    {
+        $query = DB::table('delivery_orders as do')
+            ->leftJoin('food_packing_lists as pl', 'do.packing_list_id', '=', 'pl.id')
+            ->leftJoin('food_floor_orders as fo', 'pl.food_floor_order_id', '=', 'fo.id')
+            ->leftJoin('users as u', 'do.created_by', '=', 'u.id')
+            ->leftJoin('tbl_data_outlet as o', 'fo.id_outlet', '=', 'o.id_outlet')
+            ->leftJoin('warehouse_outlets as wo', 'fo.warehouse_outlet_id', '=', 'wo.id')
+            ->select(
+                'do.id',
+                'do.number',
+                'do.created_at',
+                'pl.packing_number',
+                'fo.order_number as floor_order_number',
+                'u.nama_lengkap as created_by_name',
+                'o.nama_outlet',
+                'wo.name as warehouse_outlet_name'
+            );
+
+        if ($request->filled('search')) {
+            $search = '%' . $request->search . '%';
+            $query->where(function($q) use ($search) {
+                $q->where('pl.packing_number', 'like', $search)
+                  ->orWhere('fo.order_number', 'like', $search)
+                  ->orWhere('u.nama_lengkap', 'like', $search)
+                  ->orWhere('o.nama_outlet', 'like', $search)
+                  ->orWhere('wo.name', 'like', $search);
+            });
+        }
+        if ($request->filled('dateFrom')) {
+            $query->whereDate('do.created_at', '>=', $request->dateFrom);
+        }
+        if ($request->filled('dateTo')) {
+            $query->whereDate('do.created_at', '<=', $request->dateTo);
+        }
+
+        $orders = $query->orderByDesc('do.created_at')->get();
+
+        // Create Excel file
+        $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+
+        // Set headers
+        $headers = [
+            'No',
+            'No DO',
+            'Tanggal',
+            'Outlet',
+            'Warehouse Outlet',
+            'Packing List',
+            'Floor Order',
+            'User'
+        ];
+
+        foreach ($headers as $col => $header) {
+            $sheet->setCellValueByColumnAndRow($col + 1, 1, $header);
+        }
+
+        // Style headers
+        $headerStyle = [
+            'font' => [
+                'bold' => true,
+                'color' => ['rgb' => 'FFFFFF'],
+            ],
+            'fill' => [
+                'fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
+                'startColor' => ['rgb' => '3B82F6'],
+            ],
+        ];
+        $sheet->getStyle('A1:H1')->applyFromArray($headerStyle);
+
+        // Add data
+        foreach ($orders as $index => $order) {
+            $row = $index + 2;
+            $sheet->setCellValueByColumnAndRow(1, $row, $index + 1);
+            $sheet->setCellValueByColumnAndRow(2, $row, $order->number ?? '-');
+            $sheet->setCellValueByColumnAndRow(3, $row, $order->created_at ? date('d/m/Y', strtotime($order->created_at)) : '-');
+            $sheet->setCellValueByColumnAndRow(4, $row, $order->nama_outlet ?? '-');
+            $sheet->setCellValueByColumnAndRow(5, $row, $order->warehouse_outlet_name ?? '-');
+            $sheet->setCellValueByColumnAndRow(6, $row, $order->packing_number ?? '-');
+            $sheet->setCellValueByColumnAndRow(7, $row, $order->floor_order_number ?? '-');
+            $sheet->setCellValueByColumnAndRow(8, $row, $order->created_by_name ?? '-');
+        }
+
+        // Auto size columns
+        foreach (range('A', 'H') as $column) {
+            $sheet->getColumnDimension($column)->setAutoSize(true);
+        }
+
+        // Create writer
+        $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
+        
+        // Set headers for download
+        $filename = 'delivery-order-' . date('Y-m-d') . '.xlsx';
+        header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        header('Content-Disposition: attachment;filename="' . $filename . '"');
+        header('Cache-Control: max-age=0');
+
+        // Output file
+        $writer->save('php://output');
+        exit;
+    }
 } 

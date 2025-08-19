@@ -49,6 +49,12 @@
                   <th class="px-2 py-1 text-right text-xs font-medium text-gray-500 uppercase">Qty PO</th>
                   <th class="px-2 py-1 text-right text-xs font-medium text-gray-500 uppercase">Qty Diterima</th>
                 </tr>
+                <tr>
+                  <th colspan="3" class="px-2 py-1 text-center text-xs text-blue-600 bg-blue-50">
+                    <i class="fa fa-info-circle mr-1"></i>
+                    Toleransi maksimal 10% dari Qty PO
+                  </th>
+                </tr>
               </thead>
               <tbody>
                 <tr v-for="(item, idx) in divisionGroup" :key="item.id">
@@ -58,13 +64,16 @@
                       <i class="fa fa-info-circle"></i> SPS
                     </button>
                   </td>
-                  <td class="px-2 py-1 text-right">{{ item.quantity }}</td>
+                  <td class="px-2 py-1 text-right">
+                    {{ item.quantity }}
+                    <div class="text-xs text-gray-400">+10%: {{ (item.quantity * 1.1).toFixed(2) }}</div>
+                  </td>
                   <td class="px-2 py-1 text-right">
                     <input 
                       v-model.number="item.qty_received" 
                       type="number" 
                       min="0" 
-                      :max="item.quantity" 
+                      :max="item.quantity * 1.1" 
                       step="0.01"
                       class="w-20 px-2 py-1 border rounded" 
                       :class="{'border-red-500': item.qty_error}"
@@ -185,10 +194,16 @@ const validateQty = (item) => {
     item.qty_error = 'Jumlah tidak boleh negatif';
     return false;
   }
-  if (item.qty_received > item.quantity) {
-    item.qty_error = `Jumlah tidak boleh melebihi ${item.quantity}`;
+  
+  // Calculate 10% tolerance
+  const tolerance = item.quantity * 0.1;
+  const maxAllowed = item.quantity + tolerance;
+  
+  if (item.qty_received > maxAllowed) {
+    item.qty_error = `Jumlah tidak boleh melebihi ${item.quantity} + 10% (${maxAllowed.toFixed(2)})`;
     return false;
   }
+  
   // Validate decimal places (max 2 decimal places)
   if (item.qty_received.toString().split('.')[1]?.length > 2) {
     item.qty_error = 'Maksimal 2 angka di belakang koma';

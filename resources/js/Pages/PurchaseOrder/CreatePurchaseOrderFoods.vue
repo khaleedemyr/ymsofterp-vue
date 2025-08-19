@@ -255,7 +255,29 @@ function formatRupiah(value) {
 }
 
 function goBack() {
-    window.location.href = '/po-foods'
+    // Ambil filter state dari sessionStorage
+    try {
+        const savedFilters = sessionStorage.getItem('po-foods-filters');
+        if (savedFilters) {
+            const filters = JSON.parse(savedFilters);
+            const queryParams = new URLSearchParams();
+            
+            if (filters.search) queryParams.append('search', filters.search);
+            if (filters.status) queryParams.append('status', filters.status);
+            if (filters.from) queryParams.append('from', filters.from);
+            if (filters.to) queryParams.append('to', filters.to);
+            if (filters.perPage) queryParams.append('perPage', filters.perPage);
+            
+            const queryString = queryParams.toString();
+            const url = queryString ? `/po-foods?${queryString}` : '/po-foods';
+            window.location.href = url;
+        } else {
+            window.location.href = '/po-foods';
+        }
+    } catch (error) {
+        console.error('Error restoring filters:', error);
+        window.location.href = '/po-foods';
+    }
 }
 
 // Calculate total for all items

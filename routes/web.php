@@ -347,6 +347,10 @@ Route::middleware(['auth'])->group(function () {
     Route::delete('/po-foods/{id}', [PurchaseOrderFoodsController::class, 'destroy'])->name('po-foods.destroy');
     Route::post('/po-foods/{id}/mark-printed', [\App\Http\Controllers\PurchaseOrderFoodsController::class, 'markPrinted'])->name('po-foods.mark-printed');
 
+    // PO Report routes
+    Route::get('/po-report', [\App\Http\Controllers\PurchaseOrderReportController::class, 'index'])->name('po-report.index');
+    Route::get('/po-report/export', [\App\Http\Controllers\PurchaseOrderReportController::class, 'export'])->name('po-report.export');
+
     // Good Receive routes
     Route::get('/food-good-receive', [FoodGoodReceiveController::class, 'index'])->name('food-good-receive.index');
     Route::post('/food-good-receive/fetch-po', [FoodGoodReceiveController::class, 'fetchPO'])->name('food-good-receive.fetch-po');
@@ -620,6 +624,7 @@ Route::get('/internal-use-waste/item/{id}/units', [App\Http\Controllers\Internal
 
 
 Route::get('/delivery-order', [DeliveryOrderController::class, 'index'])->name('delivery-order.index');
+Route::get('/delivery-order/export', [DeliveryOrderController::class, 'export'])->name('delivery-order.export');
 Route::get('/delivery-order/create', [DeliveryOrderController::class, 'create'])->name('delivery-order.create');
 Route::post('/delivery-order', [DeliveryOrderController::class, 'store'])->name('delivery-order.store');
 Route::get('/delivery-order/{id}', [DeliveryOrderController::class, 'show'])->name('delivery-order.show');

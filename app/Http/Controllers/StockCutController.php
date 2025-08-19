@@ -136,21 +136,51 @@ class StockCutController extends Controller
             }
         }
 
-        // 3. Cek stok
+        // 3. Cek stok (konsisten dengan konversi unit)
         $kurang = [];
-        foreach ($kebutuhanBahan as $key => $qty) {
-            [$item_id, $warehouse_id] = explode('-', $key);
-            $stock = DB::table('outlet_food_inventory_items')
-                ->join('outlet_food_inventory_stocks', 'outlet_food_inventory_items.id', '=', 'outlet_food_inventory_stocks.inventory_item_id')
-                ->where('outlet_food_inventory_items.item_id', $item_id)
-                ->where('outlet_food_inventory_stocks.id_outlet', $id_outlet)
-                ->where('outlet_food_inventory_stocks.warehouse_outlet_id', $warehouse_id)
-                ->first();
-            if (!$stock || $stock->qty_small < $qty) {
+        foreach ($kebutuhanBahan as $key => $data) {
+            // Handle struktur data baru dengan unit
+            if (is_array($data)) {
+                $qty_small = $data['qty']; // BOM dalam unit small
+                [$item_id, $warehouse_id, $unit_id] = explode('-', $key);
+            } else {
+                // Handle struktur data lama
+                $qty_small = $data; // Dalam unit small
+                [$item_id, $warehouse_id] = explode('-', $key);
+            }
+            
+            // Ambil inventory_item_id
+            $inventoryItem = DB::table('outlet_food_inventory_items')->where('item_id', $item_id)->first();
+            if (!$inventoryItem) {
                 $kurang[] = [
                     'item_id' => $item_id,
                     'warehouse_id' => $warehouse_id,
-                    'kurang' => $qty - ($stock->qty_small ?? 0)
+                    'kurang' => $qty_small,
+                    'reason' => 'Inventory item tidak ditemukan'
+                ];
+                continue;
+            }
+            
+            $stock = DB::table('outlet_food_inventory_stocks')
+                ->where('inventory_item_id', $inventoryItem->id)
+                ->where('id_outlet', $id_outlet)
+                ->where('warehouse_outlet_id', $warehouse_id)
+                ->first();
+                
+            if (!$stock) {
+                $kurang[] = [
+                    'item_id' => $item_id,
+                    'warehouse_id' => $warehouse_id,
+                    'kurang' => $qty_small,
+                    'reason' => 'Stock tidak ditemukan'
+                ];
+            } elseif ($stock->qty_small < $qty_small) {
+                $kurang[] = [
+                    'item_id' => $item_id,
+                    'warehouse_id' => $warehouse_id,
+                    'kurang' => $qty_small - $stock->qty_small,
+                    'stock_available' => $stock->qty_small,
+                    'reason' => 'Stock tidak cukup'
                 ];
             }
         }
@@ -174,20 +204,131 @@ class StockCutController extends Controller
             return response()->json(['status' => 'error', 'kurang' => $kurang]);
         }
 
-        // 4. Potong stock & catat kartu stok
-        foreach ($kebutuhanBahan as $key => $qty) {
-            [$item_id, $warehouse_id] = explode('-', $key);
+        // Debug: Log struktur kebutuhanBahan
+        \Log::info('KebutuhanBahan structure', [
+            'total_items' => count($kebutuhanBahan),
+            'sample_items' => array_slice($kebutuhanBahan, 0, 3, true)
+        ]);
+        
+        // 4. Potong stock & catat kartu stok (mengikuti pola OutletInternalUseWasteController)
+        foreach ($kebutuhanBahan as $key => $data) {
+            // Handle struktur data baru dengan unit
+            if (is_array($data)) {
+                $qty_input = $data['qty']; // Ini dalam unit small (dari BOM)
+                [$item_id, $warehouse_id, $unit_id] = explode('-', $key);
+            } else {
+                // Handle struktur data lama
+                $qty_input = $data; // Ini dalam unit small
+                [$item_id, $warehouse_id] = explode('-', $key);
+            }
+            
+            // Debug: Log sebelum potong stock
+            \Log::info('Potong Stock Debug', [
+                'key' => $key,
+                'item_id' => $item_id,
+                'warehouse_id' => $warehouse_id,
+                'qty_to_cut' => $qty_input
+            ]);
+            
             // Ambil inventory_item_id
             $inventoryItem = DB::table('outlet_food_inventory_items')->where('item_id', $item_id)->first();
-            if (!$inventoryItem) continue;
+            if (!$inventoryItem) {
+                \Log::warning('Inventory item tidak ditemukan', ['item_id' => $item_id]);
+                continue;
+            }
             $inventory_item_id = $inventoryItem->id;
-            // Update stok (qty_small saja, sesuaikan jika multi-unit)
+            
+            // Ambil data item master untuk konversi unit (mengikuti pola OutletInternalUseWasteController)
+            $itemMaster = DB::table('items')->where('id', $item_id)->first();
+            if (!$itemMaster) {
+                \Log::warning('Item master tidak ditemukan', ['item_id' => $item_id]);
+                continue;
+            }
+            
+            // Konversi qty dari small unit ke semua unit (mengikuti pola OutletInternalUseWasteController)
+            $qty_small = $qty_input; // BOM selalu dalam unit small
+            $qty_medium = 0;
+            $qty_large = 0;
+            $unitSmall = DB::table('units')->where('id', $itemMaster->small_unit_id)->value('name');
+            $unitMedium = DB::table('units')->where('id', $itemMaster->medium_unit_id)->value('name');
+            $unitLarge = DB::table('units')->where('id', $itemMaster->large_unit_id)->value('name');
+            $smallConv = $itemMaster->small_conversion_qty ?: 1;
+            $mediumConv = $itemMaster->medium_conversion_qty ?: 1;
+            
+            // Karena BOM dalam unit small, konversi ke medium dan large
+            $qty_medium = $smallConv > 0 ? $qty_small / $smallConv : 0;
+            $qty_large = ($smallConv > 0 && $mediumConv > 0) ? $qty_small / ($smallConv * $mediumConv) : 0;
+            
+            // Cek stock sebelum dipotong
+            $stock = DB::table('outlet_food_inventory_stocks')
+                ->where('inventory_item_id', $inventory_item_id)
+                ->where('id_outlet', $id_outlet)
+                ->where('warehouse_outlet_id', $warehouse_id)
+                ->first();
+                
+            if (!$stock) {
+                \Log::warning('Stock tidak ditemukan', [
+                    'inventory_item_id' => $inventory_item_id,
+                    'outlet_id' => $id_outlet,
+                    'warehouse_id' => $warehouse_id
+                ]);
+                continue;
+            }
+            
+            // Cek apakah stock cukup
+            if ($qty_small > $stock->qty_small) {
+                \Log::error("Qty melebihi stok yang tersedia", [
+                    'item_id' => $item_id,
+                    'qty_needed' => $qty_small,
+                    'stock_available' => $stock->qty_small,
+                    'unit' => $unitSmall
+                ]);
+                continue;
+            }
+                
+            \Log::info('Stock sebelum dipotong', [
+                'inventory_item_id' => $inventory_item_id,
+                'stock_before_small' => $stock->qty_small,
+                'stock_before_medium' => $stock->qty_medium,
+                'stock_before_large' => $stock->qty_large,
+                'qty_to_cut_small' => $qty_small,
+                'qty_to_cut_medium' => $qty_medium,
+                'qty_to_cut_large' => $qty_large
+            ]);
+            
+            // Update stok di semua unit (mengikuti pola OutletInternalUseWasteController)
+            $new_qty_small = $stock->qty_small - $qty_small;
+            $new_qty_medium = $stock->qty_medium - $qty_medium;
+            $new_qty_large = $stock->qty_large - $qty_large;
+            
+            // Hitung value baru berdasarkan qty_small dan last_cost_small
+            $new_value = $new_qty_small * $stock->last_cost_small;
+            
             DB::table('outlet_food_inventory_stocks')
                 ->where('inventory_item_id', $inventory_item_id)
                 ->where('id_outlet', $id_outlet)
                 ->where('warehouse_outlet_id', $warehouse_id)
-                ->decrement('qty_small', $qty);
-            // Catat kartu stok
+                ->update([
+                    'qty_small' => $new_qty_small,
+                    'qty_medium' => $new_qty_medium,
+                    'qty_large' => $new_qty_large,
+                    'value' => $new_value,
+                    // last_cost_small, last_cost_medium, last_cost_large tidak berubah karena ini transaksi OUT
+                    'updated_at' => now(),
+                ]);
+                
+            \Log::info('Stock cut result', [
+                'stock_before_small' => $stock->qty_small,
+                'stock_after_small' => $new_qty_small,
+                'stock_before_value' => $stock->value,
+                'stock_after_value' => $new_value,
+                'qty_cut_small' => $qty_small,
+                'qty_cut_medium' => $qty_medium,
+                'qty_cut_large' => $qty_large,
+                'last_cost_small' => $stock->last_cost_small
+            ]);
+            
+            // Catat kartu stok (mengikuti pola OutletInternalUseWasteController lengkap)
             DB::table('outlet_food_inventory_cards')->insert([
                 'inventory_item_id' => $inventory_item_id,
                 'id_outlet' => $id_outlet,
@@ -195,12 +336,19 @@ class StockCutController extends Controller
                 'date' => $tanggal,
                 'reference_type' => 'order_items',
                 'reference_id' => null,
-                'in_qty_small' => 0,
-                'out_qty_small' => $qty,
-                'saldo_qty_small' => null, // bisa diisi jika ingin update saldo
-                'description' => 'Potong stock otomatis dari order_items',
+                'out_qty_small' => $qty_small,
+                'out_qty_medium' => $qty_medium,
+                'out_qty_large' => $qty_large,
+                'cost_per_small' => $stock->last_cost_small,
+                'cost_per_medium' => $stock->last_cost_medium,
+                'cost_per_large' => $stock->last_cost_large,
+                'value_out' => $qty_small * $stock->last_cost_small,
+                'saldo_qty_small' => $stock->qty_small - $qty_small,
+                'saldo_qty_medium' => $stock->qty_medium - $qty_medium,
+                'saldo_qty_large' => $stock->qty_large - $qty_large,
+                'saldo_value' => ($stock->qty_small - $qty_small) * $stock->last_cost_small,
+                'description' => 'Stock Out - Potong stock otomatis dari order_items',
                 'created_at' => now(),
-                'updated_at' => now(),
             ]);
         }
 

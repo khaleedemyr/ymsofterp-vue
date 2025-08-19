@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, watch } from 'vue';
 import { useForm, router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import axios from 'axios';
@@ -38,13 +38,17 @@ const modalDateFrom = ref('');
 const modalDateTo = ref('');
 
 const debouncedSearch = debounce(() => {
-  router.get('/po-foods', { 
-    search: search.value, 
-    status: selectedStatus.value, 
-    from: from.value, 
+  // Simpan filter state ke sessionStorage
+  const filterState = {
+    search: search.value,
+    status: selectedStatus.value,
+    from: from.value,
     to: to.value,
     perPage: perPage.value
-  }, { preserveState: true, replace: true });
+  };
+  sessionStorage.setItem('po-foods-filters', JSON.stringify(filterState));
+  
+  router.get('/po-foods', filterState, { preserveState: true, replace: true });
 }, 400);
 
 function onSearchInput() {
@@ -118,16 +122,63 @@ function toggleExpandPOInModal(poId) {
   }
 }
 
+// Fungsi untuk memulihkan filter state dari sessionStorage
+function restoreFilterState() {
+  try {
+    const savedFilters = sessionStorage.getItem('po-foods-filters');
+    if (savedFilters) {
+      const filters = JSON.parse(savedFilters);
+      search.value = filters.search || '';
+      selectedStatus.value = filters.status || '';
+      from.value = filters.from || '';
+      to.value = filters.to || '';
+      perPage.value = filters.perPage || 10;
+    }
+  } catch (error) {
+    console.error('Error restoring filter state:', error);
+  }
+}
+
 function goToPage(url) {
   if (url) router.visit(url, { preserveState: true, replace: true });
 }
+
 function openCreate() {
+  // Simpan filter state sebelum navigasi
+  const filterState = {
+    search: search.value,
+    status: selectedStatus.value,
+    from: from.value,
+    to: to.value,
+    perPage: perPage.value
+  };
+  sessionStorage.setItem('po-foods-filters', JSON.stringify(filterState));
   router.visit('/po-foods/create');
 }
+
 function openEdit(id) {
+  // Simpan filter state sebelum navigasi
+  const filterState = {
+    search: search.value,
+    status: selectedStatus.value,
+    from: from.value,
+    to: to.value,
+    perPage: perPage.value
+  };
+  sessionStorage.setItem('po-foods-filters', JSON.stringify(filterState));
   router.visit(`/po-foods/${id}/edit`);
 }
+
 function openDetail(id) {
+  // Simpan filter state sebelum navigasi
+  const filterState = {
+    search: search.value,
+    status: selectedStatus.value,
+    from: from.value,
+    to: to.value,
+    perPage: perPage.value
+  };
+  sessionStorage.setItem('po-foods-filters', JSON.stringify(filterState));
   router.visit(`/po-foods/${id}`);
 }
 async function hapus(po) {
@@ -379,10 +430,30 @@ const fetchPOList = async () => {
     }
 };
 
+// Watch untuk memantau perubahan props dan memulihkan filter state
+watch(() => props.filters, (newFilters) => {
+  if (newFilters) {
+    // Jika ada filter dari props, gunakan itu
+    search.value = newFilters.search || '';
+    selectedStatus.value = newFilters.status || '';
+    from.value = newFilters.from || '';
+    to.value = newFilters.to || '';
+    perPage.value = newFilters.perPage || 10;
+  } else {
+    // Jika tidak ada filter dari props, coba pulihkan dari sessionStorage
+    restoreFilterState();
+  }
+}, { immediate: true });
+
 onMounted(() => {
     fetchPRList();
     fetchSuppliers();
     fetchPOList();
+    
+    // Jika tidak ada filter dari props, coba pulihkan dari sessionStorage
+    if (!props.filters || Object.keys(props.filters).length === 0) {
+        restoreFilterState();
+    }
 });
 </script>
 

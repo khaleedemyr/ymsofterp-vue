@@ -3,7 +3,7 @@
     <div class="py-12">
       <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
         <div class="mb-4">
-          <button @click="$inertia.visit('/po-foods')" class="text-blue-500 hover:underline"><i class="fa fa-arrow-left"></i> Kembali</button>
+          <button @click="goBack" class="text-blue-500 hover:underline"><i class="fa fa-arrow-left"></i> Kembali</button>
           <button 
             @click="showPreview = true" 
             class="ml-4 px-4 py-2 bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
@@ -266,6 +266,31 @@ async function approveGMFinance(approved) {
     } catch (e) {
       Swal.fire('Gagal', 'Terjadi kesalahan saat approve', 'error');
     }
+  }
+}
+
+function goBack() {
+  try {
+    const savedFilters = sessionStorage.getItem('po-foods-filters');
+    if (savedFilters) {
+      const filters = JSON.parse(savedFilters);
+      const queryParams = new URLSearchParams();
+      
+      if (filters.search) queryParams.append('search', filters.search);
+      if (filters.status) queryParams.append('status', filters.status);
+      if (filters.from) queryParams.append('from', filters.from);
+      if (filters.to) queryParams.append('to', filters.to);
+      if (filters.perPage) queryParams.append('perPage', filters.perPage);
+      
+      const queryString = queryParams.toString();
+      const url = queryString ? `/po-foods?${queryString}` : '/po-foods';
+      router.visit(url);
+    } else {
+      router.visit('/po-foods');
+    }
+  } catch (error) {
+    console.error('Error restoring filters:', error);
+    router.visit('/po-foods');
   }
 }
 </script>

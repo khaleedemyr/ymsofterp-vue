@@ -648,7 +648,8 @@ const handleSubmit = async () => {
     if (form.value.items.length === 0) {
       // Hapus PO jika tidak ada item
       await axios.delete(`/po-foods/${props.po.id}`);
-      router.visit(route('po-foods.index'));
+      // Kembali ke index dengan filter yang tersimpan
+      goBackToIndex();
       return;
     }
 
@@ -673,6 +674,32 @@ const handleSubmit = async () => {
     }
   } catch (error) {
     console.error('Update failed:', error)
+  }
+}
+
+// Fungsi untuk kembali ke index dengan filter yang tersimpan
+const goBackToIndex = () => {
+  try {
+    const savedFilters = sessionStorage.getItem('po-foods-filters');
+    if (savedFilters) {
+      const filters = JSON.parse(savedFilters);
+      const queryParams = new URLSearchParams();
+      
+      if (filters.search) queryParams.append('search', filters.search);
+      if (filters.status) queryParams.append('status', filters.status);
+      if (filters.from) queryParams.append('from', filters.from);
+      if (filters.to) queryParams.append('to', filters.to);
+      if (filters.perPage) queryParams.append('perPage', filters.perPage);
+      
+      const queryString = queryParams.toString();
+      const url = queryString ? `/po-foods?${queryString}` : '/po-foods';
+      router.visit(url);
+    } else {
+      router.visit(route('po-foods.index'));
+    }
+  } catch (error) {
+    console.error('Error restoring filters:', error);
+    router.visit(route('po-foods.index'));
   }
 }
 

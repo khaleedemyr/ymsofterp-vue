@@ -174,6 +174,7 @@ const menuGroups = [
         menus: [
             { name: () => 'Purchase Requisition Foods', icon: 'fa-solid fa-file-invoice', route: '/pr-foods', code: 'pr_foods' },
             { name: () => 'Purchase Order Foods', icon: 'fa-solid fa-file-invoice-dollar', route: '/po-foods', code: 'po_foods' },
+            { name: () => 'Report PO GR', icon: 'fa-solid fa-chart-line', route: '/po-report', code: 'po_report' },
             { name: () => 'Good Receive', icon: 'fa-solid fa-truck', route: '/food-good-receive', code: 'food_good_receive' },
             { name: () => 'Pindah Gudang', icon: 'fa-solid fa-right-left', route: '/warehouse-transfer', code: 'warehouse_transfer' },
             { name: () => 'Stock Adjustment', icon: 'fa-solid fa-boxes-stacked', route: '/food-inventory-adjustment', code: 'stock_adjustment' },

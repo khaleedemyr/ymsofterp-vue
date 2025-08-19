@@ -22,7 +22,7 @@
             <label class="block text-sm font-medium text-gray-700 mb-2">Outlet</label>
             <select v-model="filters.outlet_id" @change="loadMenuCosts" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
               <option value="">Pilih Outlet</option>
-              <option v-for="outlet in outlets" :key="outlet.id_outlet" :value="outlet.id_outlet">{{ outlet.nama_outlet }}</option>
+              <option v-for="outlet in outlets" :key="outlet.id" :value="outlet.id">{{ outlet.name }}</option>
             </select>
           </div>
           <div>
@@ -104,52 +104,54 @@
               </tr>
             </thead>
             <tbody class="bg-white divide-y divide-gray-200">
-              <tr v-for="menu in menuCosts" :key="menu.item_id" class="hover:bg-gray-50">
-                <td class="px-4 py-4 whitespace-nowrap">
-                  <div class="text-sm font-medium text-gray-900">{{ menu.item_name }}</div>
-                </td>
-                <td class="px-4 py-4 whitespace-nowrap">
-                  <div class="text-sm text-gray-900">{{ menu.category_name }}</div>
-                  <div class="text-xs text-gray-500">{{ menu.sub_category_name }}</div>
-                </td>
-                <td class="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
-                  {{ menu.qty_ordered }}
-                </td>
-                <td class="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
-                  Rp {{ formatNumber(menu.cost_per_unit) }}
-                </td>
-                <td class="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                  Rp {{ formatNumber(menu.total_cost) }}
-                </td>
-                <td class="px-4 py-4 whitespace-nowrap">
-                  <button @click="toggleBomDetails(menu.item_id)" class="text-blue-600 hover:text-blue-800">
-                    <i :class="expandedMenus.includes(menu.item_id) ? 'fa-solid fa-chevron-up' : 'fa-solid fa-chevron-down'"></i>
-                    {{ expandedMenus.includes(menu.item_id) ? 'Sembunyikan' : 'Tampilkan' }}
-                  </button>
-                </td>
-              </tr>
-              <!-- BOM Details Row -->
-              <tr v-if="expandedMenus.includes(menu.item_id)" v-for="menu in menuCosts" :key="`bom-${menu.item_id}`" class="bg-gray-50">
-                <td colspan="6" class="px-4 py-4">
-                  <div class="bg-white rounded-lg p-4 border">
-                    <h4 class="font-medium text-gray-900 mb-3">Detail Bahan Baku:</h4>
-                    <div class="grid grid-cols-1 md:grid-cols-5 gap-4 text-sm">
-                      <div class="font-medium text-gray-700">Bahan Baku</div>
-                      <div class="font-medium text-gray-700">Qty</div>
-                      <div class="font-medium text-gray-700">Unit</div>
-                      <div class="font-medium text-gray-700">Cost/Unit</div>
-                      <div class="font-medium text-gray-700">Total</div>
+              <template v-for="menu in menuCosts" :key="menu.item_id">
+                <tr class="hover:bg-gray-50">
+                  <td class="px-4 py-4 whitespace-nowrap">
+                    <div class="text-sm font-medium text-gray-900">{{ menu.item_name }}</div>
+                  </td>
+                  <td class="px-4 py-4 whitespace-nowrap">
+                    <div class="text-sm text-gray-900">{{ menu.category_name }}</div>
+                    <div class="text-xs text-gray-500">{{ menu.sub_category_name }}</div>
+                  </td>
+                  <td class="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {{ menu.qty_ordered }}
+                  </td>
+                  <td class="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                    Rp {{ formatNumber(menu.cost_per_unit) }}
+                  </td>
+                  <td class="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                    Rp {{ formatNumber(menu.total_cost) }}
+                  </td>
+                  <td class="px-4 py-4 whitespace-nowrap">
+                    <button @click="toggleBomDetails(menu.item_id)" class="text-blue-600 hover:text-blue-800">
+                      <i :class="expandedMenus.includes(menu.item_id) ? 'fa-solid fa-chevron-up' : 'fa-solid fa-chevron-down'"></i>
+                      {{ expandedMenus.includes(menu.item_id) ? 'Sembunyikan' : 'Tampilkan' }}
+                    </button>
+                  </td>
+                </tr>
+                <!-- BOM Details Row -->
+                <tr v-if="expandedMenus.includes(menu.item_id)" :key="`bom-${menu.item_id}`" class="bg-gray-50">
+                  <td colspan="6" class="px-4 py-4">
+                    <div class="bg-white rounded-lg p-4 border">
+                      <h4 class="font-medium text-gray-900 mb-3">Detail Bahan Baku:</h4>
+                      <div class="grid grid-cols-1 md:grid-cols-5 gap-4 text-sm">
+                        <div class="font-medium text-gray-700">Bahan Baku</div>
+                        <div class="font-medium text-gray-700">Qty</div>
+                        <div class="font-medium text-gray-700">Unit</div>
+                        <div class="font-medium text-gray-700">Cost/Unit</div>
+                        <div class="font-medium text-gray-700">Total</div>
+                      </div>
+                      <div v-for="(bom, bomIndex) in (menu.bom_details || [])" :key="`${menu.item_id}-bom-${bomIndex}`" class="grid grid-cols-1 md:grid-cols-5 gap-4 py-2 border-b border-gray-100">
+                        <div class="text-gray-900">{{ bom.material_name }}</div>
+                        <div class="text-gray-900">{{ bom.qty_needed }}</div>
+                        <div class="text-gray-900">{{ bom.unit_name }}</div>
+                        <div class="text-gray-900">Rp {{ formatNumber(bom.cost_per_unit) }}</div>
+                        <div class="text-gray-900 font-medium">Rp {{ formatNumber(bom.total_cost) }}</div>
+                      </div>
                     </div>
-                    <div v-for="bom in menu.bom_details" :key="bom.material_name" class="grid grid-cols-1 md:grid-cols-5 gap-4 py-2 border-b border-gray-100">
-                      <div class="text-gray-900">{{ bom.material_name }}</div>
-                      <div class="text-gray-900">{{ bom.qty_needed }}</div>
-                      <div class="text-gray-900">{{ bom.unit_name }}</div>
-                      <div class="text-gray-900">Rp {{ formatNumber(bom.cost_per_unit) }}</div>
-                      <div class="text-gray-900 font-medium">Rp {{ formatNumber(bom.total_cost) }}</div>
-                    </div>
-                  </div>
-                </td>
-              </tr>
+                  </td>
+                </tr>
+              </template>
             </tbody>
           </table>
         </div>
@@ -199,11 +201,14 @@ onMounted(async () => {
 
 async function loadOutlets() {
   try {
+    console.log('Loading outlets from /api/outlets/report...')
     const response = await axios.get('/api/outlets/report')
+    console.log('Response from /api/outlets/report:', response.data)
     outlets.value = response.data.outlets || []
     console.log('Outlets loaded:', outlets.value)
   } catch (error) {
     console.error('Error loading outlets:', error)
+    console.error('Error response:', error.response?.data)
     outlets.value = []
   }
 }
@@ -221,21 +226,25 @@ async function loadMenuCosts() {
       type: filters.value.type
     }
     
+    console.log('Loading menu costs with params:', params)
     const response = await axios.get('/api/stock-cut/menu-cost', { params })
+    console.log('Menu costs response:', response.data)
     
     if (response.data.status === 'success') {
-      menuCosts.value = response.data.menu_costs
+      menuCosts.value = response.data.menu_costs || []
       summary.value = {
-        total_menu: response.data.total_menu,
-        total_cost: response.data.total_cost,
+        total_menu: response.data.total_menu || 0,
+        total_cost: response.data.total_cost || 0,
         periode: response.data.periode
       }
     } else {
       menuCosts.value = []
       summary.value = null
+      console.warn('API returned non-success status:', response.data)
     }
   } catch (error) {
     console.error('Error loading menu costs:', error)
+    console.error('Error response:', error.response?.data)
     menuCosts.value = []
     summary.value = null
   } finally {
@@ -253,6 +262,9 @@ function toggleBomDetails(itemId) {
 }
 
 function formatNumber(number) {
+  if (number === null || number === undefined || isNaN(number)) {
+    return '0'
+  }
   return new Intl.NumberFormat('id-ID').format(number)
 }
 
