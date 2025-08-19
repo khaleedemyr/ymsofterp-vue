@@ -96,6 +96,27 @@ class OutletFoodInventoryAdjustmentController extends Controller
         ]);
     }
 
+    /**
+     * API: Get warehouse outlets by outlet ID
+     */
+    public function getWarehouseOutlets(Request $request)
+    {
+        $outlet_id = $request->input('outlet_id');
+        
+        if (!$outlet_id) {
+            return response()->json(['error' => 'Outlet ID is required'], 400);
+        }
+
+        $warehouse_outlets = DB::table('warehouse_outlets')
+            ->where('outlet_id', $outlet_id)
+            ->where('status', 'active')
+            ->select('id', 'name', 'outlet_id')
+            ->orderBy('name')
+            ->get();
+
+        return response()->json($warehouse_outlets);
+    }
+
     public function store(Request $request)
     {
         DB::beginTransaction();

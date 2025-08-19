@@ -21,8 +21,8 @@
                 </div>
                 <div>
                   <label class="block text-sm font-medium text-gray-700">Warehouse Outlet</label>
-                  <select v-model="form.warehouse_outlet_id" class="mt-1 block w-full rounded-md border-gray-300" required>
-                    <option value="">Pilih Warehouse Outlet</option>
+                  <select v-model="form.warehouse_outlet_id" class="mt-1 block w-full rounded-md border-gray-300" required :disabled="!form.outlet_id">
+                    <option value="">{{ form.outlet_id ? 'Pilih Warehouse Outlet' : 'Pilih outlet terlebih dahulu' }}</option>
                     <option v-for="wo in warehouse_outlets" :key="wo.id" :value="wo.id">{{ wo.name }}</option>
                   </select>
                 </div>
@@ -153,7 +153,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { Head, Link, useForm, usePage } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Swal from 'sweetalert2'
@@ -166,6 +166,8 @@ const props = defineProps({
   user_outlet_id: [String, Number],
   warehouse_outlets: Array,
 })
+
+const warehouse_outlets = ref(props.warehouse_outlets || [])
 
 const form = useForm({
   date: new Date().toISOString().split('T')[0],
@@ -195,6 +197,33 @@ function newItem() {
 }
 
 const loading = ref(false);
+
+// Watch for outlet_id changes and load warehouse outlets
+watch(() => form.outlet_id, async (newOutletId) => {
+  if (newOutletId) {
+    await loadWarehouseOutlets(newOutletId);
+  } else {
+    warehouse_outlets.value = [];
+    form.warehouse_outlet_id = '';
+  }
+});
+
+async function loadWarehouseOutlets(outletId) {
+  try {
+    const response = await axios.get('/api/outlet-food-inventory-adjustment/warehouse-outlets', {
+      params: { outlet_id: outletId }
+    });
+    warehouse_outlets.value = response.data;
+    // Reset warehouse selection if current selection is not in new list
+    if (form.warehouse_outlet_id && !warehouse_outlets.value.find(wo => wo.id == form.warehouse_outlet_id)) {
+      form.warehouse_outlet_id = '';
+    }
+  } catch (error) {
+    console.error('Error loading warehouse outlets:', error);
+    warehouse_outlets.value = [];
+    form.warehouse_outlet_id = '';
+  }
+}
 
 function addItem() {
   form.items.push(newItem());
@@ -304,7 +333,7 @@ function getDropdownStyle(idx) {
 
 function validateAndSubmit() {
   if (loading.value) return;
-  if (!form.date || !form.outlet_id || !form.type || !form.reason) {
+  if (!form.date || !form.outlet_id || !form.warehouse_outlet_id || !form.type || !form.reason) {
     Swal.fire({
       icon: 'error',
       title: 'Validasi Gagal',

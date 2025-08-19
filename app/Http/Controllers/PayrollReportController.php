@@ -208,25 +208,20 @@ class PayrollReportController extends Controller
                     ]);
                 }
 
-                // Hitung potongan telat (prorate dari gaji + tunjangan)
+                // Hitung potongan telat (flat rate Rp 500 per menit)
                 $potonganTelat = 0;
-                $gajiPerMenit = 0;
-                if ($totalTelat > 0 && ($masterData->gaji > 0 || $masterData->tunjangan > 0) && $hariKerja > 0) {
-                    // Gaji per menit = (Gaji Pokok + Tunjangan) ÷ (hari kerja × 8 jam × 60 menit)
-                    $gajiPerMenit = ($masterData->gaji + $masterData->tunjangan) / ($hariKerja * 8 * 60);
+                $gajiPerMenit = 500; // Flat rate Rp 500 per menit
+                if ($totalTelat > 0) {
                     $potonganTelat = $totalTelat * $gajiPerMenit;
                     
                     // Debug logging untuk perhitungan gaji per menit
                     \Log::info('Gaji per menit calculation', [
                         'user_id' => $user->id,
                         'nama_lengkap' => $user->nama_lengkap,
-                        'gaji_pokok' => $masterData->gaji,
-                        'tunjangan' => $masterData->tunjangan,
-                        'hari_kerja' => $hariKerja,
-                        'gaji_per_menit' => $gajiPerMenit,
                         'total_telat' => $totalTelat,
+                        'gaji_per_menit' => $gajiPerMenit,
                         'potongan_telat' => $potonganTelat,
-                        'calculation_formula' => "({$masterData->gaji} + {$masterData->tunjangan}) ÷ ({$hariKerja} × 8 × 60) = {$gajiPerMenit}"
+                        'calculation_formula' => "{$totalTelat} menit × Rp {$gajiPerMenit} = Rp {$potonganTelat}"
                     ]);
                 }
 
@@ -614,12 +609,10 @@ class PayrollReportController extends Controller
                 }
             }
 
-            // Hitung potongan telat (prorate dari gaji + tunjangan)
+            // Hitung potongan telat (flat rate Rp 500 per menit)
             $potonganTelat = 0;
-            $gajiPerMenit = 0;
-            if ($totalTelat > 0 && ($masterData->gaji > 0 || $masterData->tunjangan > 0) && $hariKerja > 0) {
-                // Gaji per menit = (Gaji Pokok + Tunjangan) ÷ (hari kerja × 8 jam × 60 menit)
-                $gajiPerMenit = ($masterData->gaji + $masterData->tunjangan) / ($hariKerja * 8 * 60);
+            $gajiPerMenit = 500; // Flat rate Rp 500 per menit
+            if ($totalTelat > 0) {
                 $potonganTelat = $totalTelat * $gajiPerMenit;
             }
             $totalGaji = $masterData->gaji + $masterData->tunjangan + $gajiLembur + $uangMakan - $potonganTelat - $bpjsJKN - $bpjsTK;
@@ -1079,7 +1072,7 @@ class PayrollReportController extends Controller
             ->whereYear('date', $year)
             ->sum('late_minutes');
 
-        $gajiPerMenit = ($masterData->gaji + $masterData->tunjangan) / (22 * 8 * 60); // 22 days, 8 hours, 60 minutes
+        $gajiPerMenit = 500; // Flat rate Rp 500 per menit
         $potonganTelat = $totalTelat * $gajiPerMenit;
 
         // Calculate BPJS
@@ -1300,11 +1293,10 @@ class PayrollReportController extends Controller
             }
         }
 
-        // Hitung potongan telat
+        // Hitung potongan telat (flat rate Rp 500 per menit)
         $potonganTelat = 0;
-        $gajiPerMenit = 0;
-        if ($totalTelat > 0 && ($masterData->gaji > 0 || $masterData->tunjangan > 0) && $hariKerja > 0) {
-            $gajiPerMenit = ($masterData->gaji + $masterData->tunjangan) / ($hariKerja * 8 * 60);
+        $gajiPerMenit = 500; // Flat rate Rp 500 per menit
+        if ($totalTelat > 0) {
             $potonganTelat = $totalTelat * $gajiPerMenit;
         }
 

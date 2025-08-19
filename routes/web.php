@@ -590,6 +590,15 @@ Route::get('/mk-production/report', [\App\Http\Controllers\MKProductionControlle
 Route::get('/mk-production/{id}', [\App\Http\Controllers\MKProductionController::class, 'show'])->name('mk-production.show');
 Route::delete('/mk-production/{id}', [\App\Http\Controllers\MKProductionController::class, 'destroy'])->name('mk-production.destroy');
 
+// Outlet WIP Production
+Route::get('/outlet-wip', [\App\Http\Controllers\OutletWIPController::class, 'index'])->name('outlet-wip.index');
+Route::post('/outlet-wip/bom', [\App\Http\Controllers\OutletWIPController::class, 'getBomAndStock'])->name('outlet-wip.bom');
+Route::post('/outlet-wip', [\App\Http\Controllers\OutletWIPController::class, 'store'])->name('outlet-wip.store');
+Route::get('/outlet-wip/create', [\App\Http\Controllers\OutletWIPController::class, 'create'])->name('outlet-wip.create');
+Route::get('/outlet-wip/report', [\App\Http\Controllers\OutletWIPController::class, 'report'])->name('outlet-wip.report');
+Route::get('/outlet-wip/{id}', [\App\Http\Controllers\OutletWIPController::class, 'show'])->name('outlet-wip.show');
+Route::delete('/outlet-wip/{id}', [\App\Http\Controllers\OutletWIPController::class, 'destroy'])->name('outlet-wip.destroy');
+
 // Scrapper Google Review
 
 Route::get('/google-review', [GoogleReviewController::class, 'index'])->name('google-review.index');
@@ -685,6 +694,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('/outlet-food-inventory-adjustment/{id}/approve', [OutletFoodInventoryAdjustmentController::class, 'approve'])->name('outlet-food-inventory-adjustment.approve');
     Route::post('/outlet-food-inventory-adjustment/{id}/reject', [OutletFoodInventoryAdjustmentController::class, 'reject'])->name('outlet-food-inventory-adjustment.reject');
     Route::delete('/outlet-food-inventory-adjustment/{id}', [OutletFoodInventoryAdjustmentController::class, 'destroy'])->name('outlet-food-inventory-adjustment.destroy');
+Route::get('/api/outlet-food-inventory-adjustment/warehouse-outlets', [OutletFoodInventoryAdjustmentController::class, 'getWarehouseOutlets'])->name('outlet-food-inventory-adjustment.warehouse-outlets');
 });
 
 // Laporan Stok Akhir Outlet
@@ -891,8 +901,13 @@ Route::get('/stock-cut', function () {
     return Inertia::render('StockCut');
 })->middleware(['auth', 'verified']);
 
+Route::get('/stock-cut/menu-cost', function () {
+    return Inertia::render('StockCut/MenuCost');
+})->middleware(['auth', 'verified'])->name('stock-cut.menu-cost');
+
 Route::get('/api/stock-cut/logs', [\App\Http\Controllers\StockCutController::class, 'getLogs']);
 Route::delete('/stock-cut/{id}', [\App\Http\Controllers\StockCutController::class, 'rollback']);
+Route::get('/api/stock-cut/menu-cost', [\App\Http\Controllers\StockCutController::class, 'calculateMenuCost']);
 
 Route::get('/stock-cut/form', function () {
     // Ambil data outlet untuk dropdown

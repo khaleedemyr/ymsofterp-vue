@@ -5,9 +5,14 @@
         <h1 class="text-2xl font-bold flex items-center gap-2">
           <i class="fa-solid fa-scissors text-blue-500"></i> Log Potong Stock
         </h1>
-        <Link :href="route('stock-cut.form')" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition">
-          <i class="fa-solid fa-plus mr-1"></i> Tambah Potong Stock
-        </Link>
+        <div class="flex gap-2">
+          <Link :href="route('stock-cut.form')" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition">
+            <i class="fa-solid fa-plus mr-1"></i> Tambah Potong Stock
+          </Link>
+          <Link :href="route('stock-cut.menu-cost')" class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 transition">
+            <i class="fa-solid fa-calculator mr-1"></i> Report Cost Menu
+          </Link>
+        </div>
       </div>
       <div class="bg-white rounded-xl shadow-xl p-6">
         <table class="min-w-full divide-y divide-gray-200">
@@ -22,8 +27,8 @@
           <tbody>
             <tr v-for="log in logs" :key="log.id">
               <td class="px-4 py-2">{{ log.tanggal }}</td>
-              <td class="px-4 py-2">{{ log.outlet_nama }}</td>
-              <td class="px-4 py-2">{{ log.user_nama }}</td>
+              <td class="px-4 py-2">{{ log.outlet_name }}</td>
+              <td class="px-4 py-2">{{ log.user_name }}</td>
               <td class="px-4 py-2">
                 <button @click="rollback(log.id)" class="bg-red-600 text-white px-3 py-1 rounded hover:bg-red-700 transition">
                   <i class="fa-solid fa-undo"></i> Undo
@@ -46,13 +51,24 @@ import axios from 'axios'
 const logs = ref([])
 
 onMounted(async () => {
-  const res = await axios.get('/stock-cut/logs')
-  logs.value = res.data
+  try {
+    const res = await axios.get('/api/stock-cut/logs')
+    logs.value = res.data
+  } catch (error) {
+    console.error('Error loading logs:', error)
+    alert('Gagal memuat data logs')
+  }
 })
 
 async function rollback(id) {
   if (!confirm('Yakin ingin rollback potong stock ini?')) return
-  await axios.post('/stock-cut/rollback', { id })
-  logs.value = logs.value.filter(l => l.id !== id)
+  try {
+    await axios.delete(`/stock-cut/${id}`)
+    logs.value = logs.value.filter(l => l.id !== id)
+    alert('Rollback berhasil')
+  } catch (error) {
+    console.error('Error rollback:', error)
+    alert('Gagal melakukan rollback')
+  }
 }
 </script> 

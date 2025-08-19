@@ -1,9 +1,19 @@
 <template>
   <AppLayout title="Stock Cut">
     <template #header>
-      <h2 class="font-semibold text-xl text-gray-800 leading-tight">
-        <i class="fa-solid fa-scissors text-blue-500"></i> Potong Stock
-      </h2>
+      <div class="flex items-center justify-between">
+        <h2 class="font-semibold text-xl text-gray-800 leading-tight">
+          <i class="fa-solid fa-scissors text-blue-500"></i> Potong Stock
+        </h2>
+        <div class="flex gap-2">
+          <Link :href="route('stock-cut.menu-cost')" class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 transition">
+            <i class="fa-solid fa-calculator mr-1"></i> Report Cost Menu
+          </Link>
+          <Link :href="route('stock-cut.index')" class="bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-700 transition">
+            <i class="fa-solid fa-list mr-1"></i> Log Stock Cut
+          </Link>
+        </div>
+      </div>
     </template>
 
     <div class="py-12">
@@ -378,6 +388,7 @@
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue'
 import { ref, computed, onMounted, watch } from 'vue'
+import { Link } from '@inertiajs/vue3'
 import axios from 'axios'
 
 const props = defineProps({
