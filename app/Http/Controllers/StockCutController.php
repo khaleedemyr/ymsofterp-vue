@@ -1339,6 +1339,8 @@ class StockCutController extends Controller
         // 2. Hitung cost per menu
         $menuCosts = [];
         $totalCost = 0;
+        $totalRevenue = 0;
+        $totalProfit = 0;
         
         foreach ($orderItems as $oi) {
             $menuCost = 0;
@@ -1398,8 +1400,8 @@ class StockCutController extends Controller
                                 'material_name' => $materialName,
                                 'qty_needed' => $qtyNeeded,
                                 'unit_name' => $bom->unit_name,
-                                'cost_per_unit' => $costPerUnit,
-                                'total_cost' => $totalCostForBom
+                                'cost_per_unit' => number_format($costPerUnit, 2, '.', ''),
+                                'total_cost' => number_format($totalCostForBom, 2, '.', '')
                             ];
                         }
                     }
@@ -1478,8 +1480,8 @@ class StockCutController extends Controller
                                                             'material_name' => $materialName . ' (Modifier: ' . $modifierName . ')',
                                                             'qty_needed' => $qtyNeeded,
                                                             'unit_name' => $unitName,
-                                                            'cost_per_unit' => $costPerUnit,
-                                                            'total_cost' => $totalCostForModifier
+                                                            'cost_per_unit' => number_format($costPerUnit, 2, '.', ''),
+                                                            'total_cost' => number_format($totalCostForModifier, 2, '.', '')
                                                         ];
                                                         }
                                                     }
@@ -1496,14 +1498,26 @@ class StockCutController extends Controller
             
             $totalCost += $menuCost;
             
+            // Ambil harga menu dari order_items
+            $menuPrice = $oi->price ?? 0;
+            $itemRevenue = $menuPrice * $oi->qty;
+            $totalRevenue += $itemRevenue;
+            $profit = $itemRevenue - $menuCost;
+            $totalProfit += $profit;
+            $profitMargin = $itemRevenue > 0 ? ($profit / $itemRevenue) * 100 : 0;
+            
             $menuCosts[] = [
                 'item_id' => $oi->item_id,
                 'item_name' => $oi->item_name,
                 'category_name' => $oi->category_name ?: 'Tanpa Kategori',
                 'sub_category_name' => $oi->sub_category_name ?: 'Tanpa Sub Kategori',
                 'qty_ordered' => $oi->qty,
-                'total_cost' => round($menuCost, 2),
-                'cost_per_unit' => $oi->qty > 0 ? round($menuCost / $oi->qty, 2) : 0,
+                'total_cost' => number_format($menuCost, 2, '.', ''),
+                'cost_per_unit' => $oi->qty > 0 ? number_format($menuCost / $oi->qty, 2, '.', '') : '0.00',
+                'menu_price' => number_format($menuPrice, 2, '.', ''),
+                'total_revenue' => number_format($totalRevenue, 2, '.', ''),
+                'profit' => number_format($profit, 2, '.', ''),
+                'profit_margin' => number_format($profitMargin, 2, '.', ''),
                 'bom_details' => $bomDetails
             ];
         }
@@ -1512,7 +1526,10 @@ class StockCutController extends Controller
             'status' => 'success',
             'menu_costs' => $menuCosts,
             'total_menu' => count($menuCosts),
-            'total_cost' => round($totalCost, 2),
+            'total_cost' => number_format($totalCost, 2, '.', ''),
+            'total_revenue' => number_format($totalRevenue, 2, '.', ''),
+            'total_profit' => number_format($totalProfit, 2, '.', ''),
+            'total_profit_margin' => $totalRevenue > 0 ? number_format(($totalProfit / $totalRevenue) * 100, 2, '.', '') : '0.00',
             'periode' => date('Y-m-d', strtotime($tanggal)),
             'outlet_id' => $id_outlet
         ]);

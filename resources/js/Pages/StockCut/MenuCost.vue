@@ -46,7 +46,7 @@
       </div>
 
       <!-- Summary Cards -->
-      <div v-if="summary" class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+      <div v-if="summary" class="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
         <div class="bg-blue-50 rounded-xl p-6 border border-blue-200">
           <div class="flex items-center">
             <div class="p-3 rounded-full bg-blue-100 text-blue-600">
@@ -69,15 +69,48 @@
             </div>
           </div>
         </div>
+        <div class="bg-orange-50 rounded-xl p-6 border border-orange-200">
+          <div class="flex items-center">
+            <div class="p-3 rounded-full bg-orange-100 text-orange-600">
+              <i class="fa-solid fa-money-bill-wave text-xl"></i>
+            </div>
+            <div class="ml-4">
+              <p class="text-sm font-medium text-orange-600">Total Revenue</p>
+              <p class="text-2xl font-bold text-orange-900">Rp {{ formatNumber(summary.total_revenue) }}</p>
+            </div>
+          </div>
+        </div>
+        <div class="bg-emerald-50 rounded-xl p-6 border border-emerald-200">
+          <div class="flex items-center">
+            <div class="p-3 rounded-full bg-emerald-100 text-emerald-600">
+              <i class="fa-solid fa-chart-line text-xl"></i>
+            </div>
+            <div class="ml-4">
+              <p class="text-sm font-medium text-emerald-600">Total Profit</p>
+              <p class="text-2xl font-bold text-emerald-900">Rp {{ formatNumber(summary.total_profit) }}</p>
+            </div>
+          </div>
+        </div>
         <div class="bg-purple-50 rounded-xl p-6 border border-purple-200">
           <div class="flex items-center">
             <div class="p-3 rounded-full bg-purple-100 text-purple-600">
-              <i class="fa-solid fa-calendar text-xl"></i>
+              <i class="fa-solid fa-percentage text-xl"></i>
             </div>
             <div class="ml-4">
-              <p class="text-sm font-medium text-purple-600">Periode</p>
-              <p class="text-lg font-bold text-purple-900">{{ formatDate(summary.periode) }}</p>
+              <p class="text-sm font-medium text-purple-600">Profit Margin</p>
+              <p class="text-2xl font-bold text-purple-900">{{ summary.total_profit_margin }}%</p>
             </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Periode Info -->
+      <div v-if="summary" class="bg-white rounded-xl shadow-xl p-4 mb-6">
+        <div class="flex items-center justify-center">
+          <div class="flex items-center gap-2 text-gray-600">
+            <i class="fa-solid fa-calendar text-purple-500"></i>
+            <span class="font-medium">Periode:</span>
+            <span class="text-purple-600 font-semibold">{{ formatDate(summary.periode) }}</span>
           </div>
         </div>
       </div>
@@ -100,6 +133,10 @@
                 <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Qty</th>
                 <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cost/Unit</th>
                 <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Cost</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Harga Menu</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Revenue</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Profit</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Margin</th>
                 <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Detail</th>
               </tr>
             </thead>
@@ -122,6 +159,18 @@
                   <td class="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                     Rp {{ formatNumber(menu.total_cost) }}
                   </td>
+                  <td class="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                    Rp {{ formatNumber(menu.menu_price) }}
+                  </td>
+                  <td class="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                    Rp {{ formatNumber(menu.total_revenue) }}
+                  </td>
+                  <td class="px-4 py-4 whitespace-nowrap text-sm font-medium" :class="menu.profit >= 0 ? 'text-green-600' : 'text-red-600'">
+                    Rp {{ formatNumber(menu.profit) }}
+                  </td>
+                  <td class="px-4 py-4 whitespace-nowrap text-sm font-medium" :class="menu.profit_margin >= 0 ? 'text-green-600' : 'text-red-600'">
+                    {{ menu.profit_margin }}%
+                  </td>
                   <td class="px-4 py-4 whitespace-nowrap">
                     <button @click="toggleBomDetails(menu.item_id)" class="text-blue-600 hover:text-blue-800">
                       <i :class="expandedMenus.includes(menu.item_id) ? 'fa-solid fa-chevron-up' : 'fa-solid fa-chevron-down'"></i>
@@ -131,7 +180,7 @@
                 </tr>
                 <!-- BOM Details Row -->
                 <tr v-if="expandedMenus.includes(menu.item_id)" :key="`bom-${menu.item_id}`" class="bg-gray-50">
-                  <td colspan="6" class="px-4 py-4">
+                  <td colspan="10" class="px-4 py-4">
                     <div class="bg-white rounded-lg p-4 border">
                       <h4 class="font-medium text-gray-900 mb-3">Detail Bahan Baku:</h4>
                       <div class="grid grid-cols-1 md:grid-cols-5 gap-4 text-sm">
@@ -235,6 +284,9 @@ async function loadMenuCosts() {
       summary.value = {
         total_menu: response.data.total_menu || 0,
         total_cost: response.data.total_cost || 0,
+        total_revenue: response.data.total_revenue || 0,
+        total_profit: response.data.total_profit || 0,
+        total_profit_margin: response.data.total_profit_margin || 0,
         periode: response.data.periode
       }
     } else {
@@ -263,9 +315,12 @@ function toggleBomDetails(itemId) {
 
 function formatNumber(number) {
   if (number === null || number === undefined || isNaN(number)) {
-    return '0'
+    return '0,00'
   }
-  return new Intl.NumberFormat('id-ID').format(number)
+  return new Intl.NumberFormat('id-ID', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  }).format(number)
 }
 
 function formatDate(dateString) {

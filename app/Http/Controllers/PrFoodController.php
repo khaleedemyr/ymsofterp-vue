@@ -17,8 +17,14 @@ class PrFoodController extends Controller
 {
     public function index(Request $request)
     {
-        $query = PrFood::with(['warehouse', 'warehouseDivision', 'requester'])
-            ->orderByDesc('id');
+        $query = PrFood::with([
+            'warehouse', 
+            'warehouseDivision', 
+            'requester',
+            'assistantSsdManager:id,nama_lengkap',
+            'ssdManager:id,nama_lengkap',
+            'viceCoo:id,nama_lengkap'
+        ])->orderByDesc('id');
         if ($request->search) {
             $query->where('pr_number', 'like', "%{$request->search}%");
         }
@@ -46,6 +52,7 @@ class PrFoodController extends Controller
             'items.item.smallUnit',
             'items.item.mediumUnit',
             'items.item.largeUnit',
+            'assistantSsdManager:id,nama_lengkap',
             'ssdManager:id,nama_lengkap',
             'viceCoo:id,nama_lengkap'
         ])->findOrFail($id);

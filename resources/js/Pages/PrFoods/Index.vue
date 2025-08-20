@@ -72,6 +72,91 @@ function onDateChange() {
 function goToPage(url) {
   if (url) router.visit(url, { preserveState: true, replace: true });
 }
+
+// Function untuk mendapatkan informasi approver
+function getApproverInfo(pr) {
+  const isMKWarehouse = pr.warehouse?.name === 'MK1 Hot Kitchen' || pr.warehouse?.name === 'MK2 Cold Kitchen';
+  
+  if (pr.status === 'approved') {
+    if (isMKWarehouse) {
+      // Untuk MK, yang approve adalah Sous Chef MK
+      return {
+        name: pr.ssd_manager?.nama_lengkap || 'Sous Chef MK',
+        date: pr.ssd_manager_approved_at,
+        role: 'Sous Chef MK'
+      };
+    } else {
+      // Untuk non-MK, yang approve adalah SSD Manager
+      return {
+        name: pr.ssd_manager?.nama_lengkap || 'SSD Manager',
+        date: pr.ssd_manager_approved_at,
+        role: 'SSD Manager'
+      };
+    }
+  } else if (pr.status === 'rejected') {
+    // Cek siapa yang reject
+    if (pr.ssd_manager_approved_at && pr.status === 'rejected') {
+      if (isMKWarehouse) {
+        return {
+          name: pr.ssd_manager?.nama_lengkap || 'Sous Chef MK',
+          date: pr.ssd_manager_approved_at,
+          role: 'Sous Chef MK (Rejected)'
+        };
+      } else {
+        return {
+          name: pr.ssd_manager?.nama_lengkap || 'SSD Manager',
+          date: pr.ssd_manager_approved_at,
+          role: 'SSD Manager (Rejected)'
+        };
+      }
+    } else if (pr.assistant_ssd_manager_approved_at && pr.status === 'rejected') {
+      return {
+        name: pr.assistant_ssd_manager?.nama_lengkap || 'Asisten SSD Manager',
+        date: pr.assistant_ssd_manager_approved_at,
+        role: 'Asisten SSD Manager (Rejected)'
+      };
+    }
+  } else if (pr.status === 'draft') {
+    // Cek progress approval
+    if (pr.assistant_ssd_manager_approved_at && !pr.ssd_manager_approved_at) {
+      return {
+        name: pr.assistant_ssd_manager?.nama_lengkap || 'Asisten SSD Manager',
+        date: pr.assistant_ssd_manager_approved_at,
+        role: 'Asisten SSD Manager (Approved)'
+      };
+    }
+  }
+  
+  return null;
+}
+
+// Function untuk mendapatkan semua informasi approver (untuk PR non-MK)
+function getAllApproverInfo(pr) {
+  const isMKWarehouse = pr.warehouse?.name === 'MK1 Hot Kitchen' || pr.warehouse?.name === 'MK2 Cold Kitchen';
+  const approvers = [];
+  
+  // Untuk PR non-MK, cek assistant SSD manager terlebih dahulu
+  if (!isMKWarehouse && pr.assistant_ssd_manager_approved_at) {
+    approvers.push({
+      name: pr.assistant_ssd_manager?.nama_lengkap || 'Asisten SSD Manager',
+      date: pr.assistant_ssd_manager_approved_at,
+      role: pr.status === 'rejected' && !pr.ssd_manager_approved_at ? 'Asisten SSD Manager (Rejected)' : 'Asisten SSD Manager (Approved)'
+    });
+  }
+  
+  // Cek SSD Manager / Sous Chef MK
+  if (pr.ssd_manager_approved_at) {
+    const role = isMKWarehouse ? 'Sous Chef MK' : 'SSD Manager';
+    const status = pr.status === 'rejected' ? ' (Rejected)' : ' (Approved)';
+    approvers.push({
+      name: pr.ssd_manager?.nama_lengkap || role,
+      date: pr.ssd_manager_approved_at,
+      role: role + status
+    });
+  }
+  
+  return approvers;
+}
 function openCreate() {
   console.log('Schedule Debug:', scheduleInfo.value.debug);
   console.log('Is Within Schedule:', scheduleInfo.value.isWithinSchedule);
@@ -186,12 +271,13 @@ async function hapus(pr) {
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Warehouse Division</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Requester</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Status</th>
+              <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Approver</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider rounded-tr-2xl">Aksi</th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="prFoods.data.length === 0">
-              <td colspan="7" class="text-center py-10 text-gray-400">Tidak ada data PR Foods.</td>
+              <td colspan="8" class="text-center py-10 text-gray-400">Tidak ada data PR Foods.</td>
             </tr>
             <tr v-for="pr in prFoods.data" :key="pr.id" class="hover:bg-blue-50 transition shadow-sm">
               <td class="px-6 py-3 font-mono font-semibold text-blue-700">{{ pr.pr_number }}</td>
@@ -210,6 +296,19 @@ async function hapus(pr) {
                 }" class="px-2 py-1 rounded-full text-xs font-semibold shadow">
                   {{ pr.status }}
                 </span>
+              </td>
+              <td class="px-6 py-3">
+                <div v-if="getAllApproverInfo(pr).length > 0" class="text-xs space-y-1">
+                  <div v-for="approver in getAllApproverInfo(pr)" :key="approver.date" class="border-b border-gray-100 pb-1 last:border-b-0">
+                    <div class="font-semibold text-gray-800">{{ approver.name }}</div>
+                    <div class="text-gray-600">{{ approver.role }}</div>
+                    <div class="text-gray-500">{{ new Date(approver.date).toLocaleString('id-ID') }}</div>
+                  </div>
+                </div>
+                <div v-else class="text-xs text-gray-400">
+                  <div v-if="pr.status === 'draft'">Menunggu approval</div>
+                  <div v-else>-</div>
+                </div>
               </td>
               <td class="px-6 py-3">
                 <div class="flex gap-2">
