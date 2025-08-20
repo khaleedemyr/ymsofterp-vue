@@ -100,7 +100,7 @@
                       <input type="number" min="0.01" step="0.01" v-model.number="item.qty" class="input input-bordered w-full" required />
                     </td>
                     <td class="px-3 py-2 min-w-[100px]">
-                      <input type="text" :value="getUnitName(item.unit_id)" class="input input-bordered w-full bg-gray-100" readonly />
+                      <input type="text" :value="getItemUnitName(item)" class="input input-bordered w-full bg-gray-100" readonly />
                     </td>
                     <td class="px-3 py-2 min-w-[120px]">
                       <input type="text" v-model="item.note" class="input input-bordered w-full" />
@@ -160,8 +160,8 @@ function newItem() {
     item_name: '',
     qty: '',
     unit_id: '',
+    unit_name: '',
     note: '',
-    unitOptions: [],
     suggestions: [],
     showDropdown: false,
     highlightedIndex: -1,
@@ -249,24 +249,29 @@ function selectItem(idx, item) {
   form.value.items[idx].suggestions = [];
   form.value.items[idx].showDropdown = false;
   form.value.items[idx].highlightedIndex = -1;
-  // Fetch unit options for selected item
-  fetchUnitOptions(idx, item.id);
+  // Set small unit directly
+  setSmallUnit(idx, item.id);
 }
 
-async function fetchUnitOptions(idx, itemId) {
+async function setSmallUnit(idx, itemId) {
   if (itemId) {
     const res = await axios.get(`/outlet-internal-use-waste/get-item-units/${itemId}`)
-    form.value.items[idx].unitOptions = res.data.units
     // Automatically select the first unit (small unit)
     if (res.data.units && res.data.units.length > 0) {
       form.value.items[idx].unit_id = res.data.units[0].id
+      form.value.items[idx].unit_name = res.data.units[0].name
     } else {
       form.value.items[idx].unit_id = ''
+      form.value.items[idx].unit_name = ''
     }
   } else {
-    form.value.items[idx].unitOptions = []
     form.value.items[idx].unit_id = ''
+    form.value.items[idx].unit_name = ''
   }
+}
+
+function getItemUnitName(item) {
+  return item.unit_name || '';
 }
 
 function onItemBlur(idx) {
@@ -351,17 +356,7 @@ function getDropdownStyle(idx) {
   };
 }
 
-function getUnitName(unitId) {
-  if (!unitId) return '';
-  // Find the unit name from any item's unitOptions
-  for (const item of form.value.items) {
-    if (item.unitOptions) {
-      const unit = item.unitOptions.find(u => u.id === unitId);
-      if (unit) return unit.name;
-    }
-  }
-  return '';
-}
+
 </script>
 
 <style scoped>

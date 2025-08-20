@@ -15,6 +15,7 @@ const props = defineProps({
 const search = ref(props.filters?.search || '');
 const statusFilter = ref(props.filters?.status || '');
 const pointBalanceFilter = ref(props.filters?.point_balance || '');
+const perPageFilter = ref(props.filters?.per_page || '15');
 
 // Modal state
 const showTransactionModal = ref(false);
@@ -42,6 +43,7 @@ const preferencesSummary = ref({
   favorite_category: 'Tidak ada data'
 });
 const loadingPreferences = ref(false);
+const expandedPreferences = ref(new Set()); // Track which preferences are expanded
 
 
 
@@ -50,6 +52,7 @@ const debouncedSearch = debounce(() => {
     search: search.value,
     status: statusFilter.value,
     point_balance: pointBalanceFilter.value,
+    per_page: perPageFilter.value,
   }, { preserveState: true, replace: true });
 }, 400);
 
@@ -115,16 +118,18 @@ function changeSort(sortField) {
     search: search.value,
     status: statusFilter.value,
     point_balance: pointBalanceFilter.value,
+    per_page: perPageFilter.value,
     sort: sortField,
     direction: newDirection,
   }, { preserveState: true, replace: true });
 }
 
-watch([statusFilter, pointBalanceFilter], () => {
+watch([statusFilter, pointBalanceFilter, perPageFilter], () => {
   router.get('/members', {
     search: search.value,
     status: statusFilter.value,
     point_balance: pointBalanceFilter.value,
+    per_page: perPageFilter.value,
   }, { preserveState: true, replace: true });
 });
 
@@ -265,6 +270,19 @@ function closePreferencesModal() {
     total_spent_formatted: 'Rp 0',
     favorite_category: 'Tidak ada data'
   };
+  expandedPreferences.value.clear(); // Reset expanded preferences
+}
+
+function togglePreferenceExpansion(index) {
+  if (expandedPreferences.value.has(index)) {
+    expandedPreferences.value.delete(index);
+  } else {
+    expandedPreferences.value.add(index);
+  }
+}
+
+function isPreferenceExpanded(index) {
+  return expandedPreferences.value.has(index);
 }
 
 function formatDate(dateString) {
@@ -394,30 +412,38 @@ function formatDate(dateString) {
         </div>
       </div>
 
-      <!-- Filters -->
-      <div class="mb-4 flex gap-4 flex-wrap">
-        <select v-model="statusFilter" class="form-input rounded-xl">
-          <option value="">Semua Status</option>
-          <option value="active">Aktif</option>
-          <option value="inactive">Tidak Aktif</option>
-        </select>
+             <!-- Filters -->
+       <div class="mb-4 flex gap-4 flex-wrap">
+         <select v-model="statusFilter" class="form-input rounded-xl">
+           <option value="">Semua Status</option>
+           <option value="active">Aktif</option>
+           <option value="inactive">Tidak Aktif</option>
+         </select>
 
-        <select v-model="pointBalanceFilter" class="form-input rounded-xl">
-          <option value="">Semua Saldo Point</option>
-          <option value="positive">Saldo Positif</option>
-          <option value="negative">Saldo Negatif</option>
-          <option value="zero">Saldo Nol</option>
-          <option value="high">Saldo Tinggi (≥1000)</option>
-        </select>
+         <select v-model="pointBalanceFilter" class="form-input rounded-xl">
+           <option value="">Semua Saldo Point</option>
+           <option value="positive">Saldo Positif</option>
+           <option value="negative">Saldo Negatif</option>
+           <option value="zero">Saldo Nol</option>
+           <option value="high">Saldo Tinggi (≥1000)</option>
+         </select>
 
-        <input
-          v-model="search"
-          @input="onSearchInput"
-          type="text"
-          placeholder="Cari ID, NIK, Nama, Email, Telepon..."
-          class="flex-1 px-4 py-2 rounded-xl border border-purple-200 shadow focus:ring-2 focus:ring-purple-400 focus:border-purple-400 transition"
-        />
-      </div>
+         <select v-model="perPageFilter" class="form-input rounded-xl">
+           <option value="10">10 Data</option>
+           <option value="15">15 Data</option>
+           <option value="25">25 Data</option>
+           <option value="50">50 Data</option>
+           <option value="100">100 Data</option>
+         </select>
+
+         <input
+           v-model="search"
+           @input="onSearchInput"
+           type="text"
+           placeholder="Cari ID, NIK, Nama, Email, Telepon..."
+           class="flex-1 px-4 py-2 rounded-xl border border-purple-200 shadow focus:ring-2 focus:ring-purple-400 focus:border-purple-400 transition"
+         />
+       </div>
 
       <!-- Table -->
       <div class="bg-white rounded-2xl shadow-lg overflow-x-auto">
@@ -516,15 +542,21 @@ function formatDate(dateString) {
         </table>
       </div>
 
-      <!-- Pagination -->
-      <div class="mt-4 flex justify-end">
-        <nav v-if="members.links && members.links.length > 3" class="inline-flex -space-x-px">
-          <template v-for="(link, i) in members.links" :key="i">
-            <button v-if="link.url" @click="goToPage(link.url)" :class="['px-3 py-1 border border-gray-300', link.active ? 'bg-purple-600 text-white' : 'bg-white text-purple-700 hover:bg-purple-50']" v-html="link.label"></button>
-            <span v-else class="px-3 py-1 border border-gray-200 text-gray-400" v-html="link.label"></span>
-          </template>
-        </nav>
-      </div>
+             <!-- Pagination Info & Controls -->
+       <div class="mt-4 flex justify-between items-center">
+         <!-- Data Info -->
+         <div class="text-sm text-gray-600">
+           Menampilkan {{ members.from || 0 }} - {{ members.to || 0 }} dari {{ members.total || 0 }} data member
+         </div>
+         
+         <!-- Pagination -->
+         <nav v-if="members.links && members.links.length > 3" class="inline-flex -space-x-px">
+           <template v-for="(link, i) in members.links" :key="i">
+             <button v-if="link.url" @click="goToPage(link.url)" :class="['px-3 py-1 border border-gray-300', link.active ? 'bg-purple-600 text-white' : 'bg-white text-purple-700 hover:bg-purple-50']" v-html="link.label"></button>
+             <span v-else class="px-3 py-1 border border-gray-200 text-gray-400" v-html="link.label"></span>
+           </template>
+         </nav>
+       </div>
 
              <!-- Modal Transaksi & Point -->
        <div v-if="showTransactionModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -831,53 +863,115 @@ function formatDate(dateString) {
                  <p class="text-gray-600">Belum ada data menu favorit</p>
                </div>
 
-                               <div v-else class="space-y-3">
-                  <div v-for="(pref, index) in preferences" :key="index" class="bg-white rounded-lg p-4 border border-gray-200 hover:shadow-md transition-shadow">
-                    <div class="flex justify-between items-start">
-                      <div class="flex-1">
-                        <div class="flex items-center gap-3 mb-2">
-                          <span class="bg-pink-100 text-pink-800 px-2 py-1 rounded-full text-xs font-semibold">
-                            #{{ index + 1 }}
-                          </span>
-                          <span class="bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-xs font-semibold">
-                            {{ pref.menu_category }}
-                          </span>
-                        </div>
-                        <h4 class="font-bold text-gray-800 text-lg mb-2">{{ pref.menu_name }}</h4>
-                        
-                        <!-- Menu Details -->
-                        <div class="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm text-gray-600">
-                          <div class="flex items-center gap-1">
-                            <i class="fa-solid fa-shopping-cart text-blue-500"></i>
-                            <span class="font-medium">Order Count:</span>
-                            <span class="font-semibold text-blue-600">{{ pref.order_count }}x</span>
-                          </div>
-                          <div class="flex items-center gap-1">
-                            <i class="fa-solid fa-utensils text-green-500"></i>
-                            <span class="font-medium">Total Qty:</span>
-                            <span class="font-semibold text-green-600">{{ pref.total_qty }}</span>
-                          </div>
-                          <div class="flex items-center gap-1">
-                            <i class="fa-solid fa-money-bill-wave text-orange-500"></i>
-                            <span class="font-medium">Total Spent:</span>
-                            <span class="font-semibold text-orange-600">{{ pref.total_spent_formatted }}</span>
-                          </div>
-                        </div>
-                        
-                        <div class="mt-2 text-xs text-gray-500">
-                          <i class="fa-solid fa-clock text-gray-400"></i>
-                          Terakhir dipesan: {{ pref.last_ordered_formatted }}
-                        </div>
-                      </div>
-                      <div class="text-right ml-4">
-                        <div class="text-lg font-bold text-pink-600">
-                          {{ pref.menu_price_formatted }}
-                        </div>
-                        <div class="text-xs text-gray-500">per item</div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
+                                               <div v-else class="space-y-3">
+                   <div v-for="(pref, index) in preferences" :key="index" class="bg-white rounded-lg border border-gray-200 hover:shadow-md transition-shadow overflow-hidden">
+                     <!-- Preference Header (Always Visible) -->
+                     <div class="p-4 cursor-pointer" @click="togglePreferenceExpansion(index)">
+                       <div class="flex justify-between items-start">
+                         <div class="flex-1">
+                           <div class="flex items-center gap-3 mb-2">
+                             <span class="bg-pink-100 text-pink-800 px-2 py-1 rounded-full text-xs font-semibold">
+                               #{{ index + 1 }}
+                             </span>
+                             <span class="bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-xs font-semibold">
+                               {{ pref.menu_category }}
+                             </span>
+                             <i :class="isPreferenceExpanded(index) ? 'fa-solid fa-chevron-up' : 'fa-solid fa-chevron-down'" class="text-gray-400 text-sm"></i>
+                           </div>
+                           <h4 class="font-bold text-gray-800 text-lg mb-2">{{ pref.menu_name }}</h4>
+                           
+                           <!-- Menu Details -->
+                           <div class="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm text-gray-600">
+                             <div class="flex items-center gap-1">
+                               <i class="fa-solid fa-shopping-cart text-blue-500"></i>
+                               <span class="font-medium">Order Count:</span>
+                               <span class="font-semibold text-blue-600">{{ pref.order_count }}x</span>
+                             </div>
+                             <div class="flex items-center gap-1">
+                               <i class="fa-solid fa-utensils text-green-500"></i>
+                               <span class="font-medium">Total Qty:</span>
+                               <span class="font-semibold text-green-600">{{ pref.total_qty }}</span>
+                             </div>
+                             <div class="flex items-center gap-1">
+                               <i class="fa-solid fa-money-bill-wave text-orange-500"></i>
+                               <span class="font-medium">Total Spent:</span>
+                               <span class="font-semibold text-orange-600">{{ pref.total_spent_formatted }}</span>
+                             </div>
+                           </div>
+                           
+                           <div class="mt-2 text-xs text-gray-500">
+                             <i class="fa-solid fa-clock text-gray-400"></i>
+                             Terakhir dipesan: {{ pref.last_ordered_formatted }}
+                           </div>
+                         </div>
+                         <div class="text-right ml-4">
+                           <div class="text-lg font-bold text-pink-600">
+                             {{ pref.menu_price_formatted }}
+                           </div>
+                           <div class="text-xs text-gray-500">per item</div>
+                         </div>
+                       </div>
+                     </div>
+
+                     <!-- Modifier Details (Expandable) -->
+                     <div v-if="isPreferenceExpanded(index)" class="bg-gray-50 p-4 border-t border-gray-200">
+                       <h5 class="font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                         <i class="fa-solid fa-tags text-indigo-500"></i>
+                         Detail Modifier & Catatan:
+                       </h5>
+                       
+                       <!-- Modifiers -->
+                       <div v-if="pref.modifiers && pref.modifiers.length > 0" class="mb-4">
+                         <h6 class="font-medium text-gray-600 mb-2">Modifier yang Sering Dipilih:</h6>
+                         <div class="space-y-3">
+                           <div v-for="(modifier, modIndex) in pref.modifiers" :key="modIndex" class="bg-white p-3 rounded-lg border border-gray-200">
+                             <div class="flex items-center gap-2 mb-2">
+                               <i class="fa-solid fa-tag text-indigo-500"></i>
+                               <span class="font-medium text-gray-800">{{ modifier.name }}</span>
+                               <span class="bg-indigo-100 text-indigo-800 px-2 py-1 rounded-full text-xs font-semibold">
+                                 {{ modifier.count }}x dipilih
+                               </span>
+                             </div>
+                             
+                             <!-- Modifier Options -->
+                             <div v-if="modifier.options && Object.keys(modifier.options).length > 0" class="ml-6">
+                               <div class="text-sm text-gray-600 mb-1">Opsi yang dipilih:</div>
+                               <div class="space-y-1">
+                                 <div v-for="(option, optKey) in modifier.options" :key="optKey" class="flex items-center gap-2 text-xs">
+                                   <i class="fa-solid fa-circle text-gray-400 text-xs"></i>
+                                   <span class="font-medium">{{ option.name }}</span>
+                                   <span class="text-gray-500">({{ option.count }}x)</span>
+                                   <span v-if="option.price > 0" class="text-green-600 font-medium">
+                                     +Rp {{ formatNumber(option.price) }}
+                                   </span>
+                                 </div>
+                               </div>
+                             </div>
+                           </div>
+                         </div>
+                       </div>
+                       
+                       <!-- Notes -->
+                       <div v-if="pref.notes && pref.notes.length > 0" class="mb-4">
+                         <h6 class="font-medium text-gray-600 mb-2">Catatan yang Sering Ditambahkan:</h6>
+                         <div class="space-y-2">
+                           <div v-for="(note, noteIndex) in pref.notes" :key="noteIndex" class="bg-white p-3 rounded-lg border border-gray-200">
+                             <div class="flex items-start gap-2">
+                               <i class="fa-solid fa-sticky-note text-yellow-500 mt-0.5"></i>
+                               <span class="text-gray-700 italic">{{ note }}</span>
+                             </div>
+                           </div>
+                         </div>
+                       </div>
+                       
+                       <!-- No Modifiers/Notes Message -->
+                       <div v-if="(!pref.modifiers || pref.modifiers.length === 0) && (!pref.notes || pref.notes.length === 0)" class="text-center py-4">
+                         <i class="fa-solid fa-info-circle text-gray-400 text-lg mb-2"></i>
+                         <p class="text-gray-600 text-sm">Tidak ada modifier atau catatan untuk menu ini</p>
+                       </div>
+                     </div>
+                   </div>
+                 </div>
              </div>
            </div>
 

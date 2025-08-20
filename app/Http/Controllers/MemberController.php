@@ -57,7 +57,8 @@ class MemberController extends Controller
         }
 
         // Pagination
-        $members = $query->paginate(15)->withQueryString();
+        $perPage = $request->get('per_page', 15);
+        $members = $query->paginate($perPage)->withQueryString();
 
         // Calculate point balance for each member
         $members->getCollection()->transform(function ($member) {
@@ -145,7 +146,7 @@ class MemberController extends Controller
 
         return Inertia::render('Members/Index', [
             'members' => $members,
-            'filters' => $request->only(['search', 'status', 'block_status', 'exclusive', 'sort', 'direction']),
+            'filters' => $request->only(['search', 'status', 'block_status', 'exclusive', 'sort', 'direction', 'per_page']),
             'stats' => $stats,
         ]);
     }
@@ -571,8 +572,113 @@ class MemberController extends Controller
                 ->limit(10) // Top 10 favorite items
                 ->get();
 
-            // Transform preferences data
-            $preferences = $preferences->map(function ($pref) {
+            // Get modifier details for each preference
+            $preferences = $preferences->map(function ($pref) use ($billNumbers) {
+                // Get all order items with modifiers for this specific menu
+                $orderItems = DB::connection('db_justus')
+                    ->table('orders as o')
+                    ->select([
+                        'oi.modifiers',
+                        'oi.notes',
+                        'o.created_at'
+                    ])
+                    ->join('order_items as oi', 'o.id', '=', 'oi.order_id')
+                    ->whereIn('o.paid_number', $billNumbers)
+                    ->where('oi.item_name', $pref->menu_name)
+                    ->where('oi.price', $pref->menu_price)
+                    ->get();
+
+                // Process modifiers
+                $allModifiers = [];
+                $allNotes = [];
+                
+                foreach ($orderItems as $item) {
+                    if ($item->modifiers) {
+                        try {
+                            $modifiers = json_decode($item->modifiers, true) ?: [];
+                            
+                            // Handle both format types:
+                            // Format 1: {"Tingkat Kematangan":{"Well Done":1},"Potato":{"Mashed Potato":1}}
+                            // Format 2: [{"name":"modifier_name","options":[{"name":"option_name","qty":1,"price":0}]}]
+                            
+                            if (is_array($modifiers)) {
+                                // Check if it's the flat key-value format
+                                $isFlat = true;
+                                foreach ($modifiers as $key => $value) {
+                                    if (is_numeric($key) && is_array($value) && isset($value['name'])) {
+                                        $isFlat = false;
+                                        break;
+                                    }
+                                }
+                                
+                                if ($isFlat) {
+                                    // Handle flat format: {"Tingkat Kematangan":{"Well Done":1}}
+                                    foreach ($modifiers as $modifierName => $options) {
+                                        if (is_array($options)) {
+                                            $modifierKey = $modifierName;
+                                            if (!isset($allModifiers[$modifierKey])) {
+                                                $allModifiers[$modifierKey] = [
+                                                    'name' => $modifierName,
+                                                    'count' => 0,
+                                                    'options' => []
+                                                ];
+                                            }
+                                            $allModifiers[$modifierKey]['count']++;
+                                            
+                                            // Process options
+                                            foreach ($options as $optionName => $optionQty) {
+                                                $optionKey = $optionName;
+                                                if (!isset($allModifiers[$modifierKey]['options'][$optionKey])) {
+                                                    $allModifiers[$modifierKey]['options'][$optionKey] = [
+                                                        'name' => $optionName,
+                                                        'count' => 0,
+                                                        'price' => 0 // Price not available in this format
+                                                    ];
+                                                }
+                                                $allModifiers[$modifierKey]['options'][$optionKey]['count'] += (int)$optionQty;
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    // Handle structured format: [{"name":"modifier_name","options":[...]}]
+                                    foreach ($modifiers as $modifier) {
+                                        if (is_array($modifier) && isset($modifier['name'])) {
+                                            $modifierKey = $modifier['name'];
+                                            if (!isset($allModifiers[$modifierKey])) {
+                                                $allModifiers[$modifierKey] = [
+                                                    'name' => $modifier['name'],
+                                                    'count' => 0,
+                                                    'options' => []
+                                                ];
+                                            }
+                                            $allModifiers[$modifierKey]['count']++;
+                                            
+                                            // Collect options
+                                            foreach ($modifier['options'] ?? [] as $option) {
+                                                $optionKey = $option['name'] ?? 'Unknown';
+                                                if (!isset($allModifiers[$modifierKey]['options'][$optionKey])) {
+                                                    $allModifiers[$modifierKey]['options'][$optionKey] = [
+                                                        'name' => $option['name'] ?? 'Unknown',
+                                                        'count' => 0,
+                                                        'price' => $option['price'] ?? 0
+                                                    ];
+                                                }
+                                                $allModifiers[$modifierKey]['options'][$optionKey]['count'] += ($option['qty'] ?? 1);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        } catch (\Exception $e) {
+                            // Skip invalid modifiers
+                        }
+                    }
+                    
+                    if ($item->notes) {
+                        $allNotes[] = $item->notes;
+                    }
+                }
+
                 return [
                     'menu_name' => $pref->menu_name,
                     'menu_price' => $pref->menu_price,
@@ -583,9 +689,13 @@ class MemberController extends Controller
                     'total_spent' => $pref->total_spent,
                     'total_spent_formatted' => 'Rp ' . number_format($pref->total_spent, 0, ',', '.'),
                     'last_ordered' => $pref->last_ordered,
-                    'last_ordered_formatted' => $pref->last_ordered ? date('d/m/Y H:i', strtotime($pref->last_ordered)) : '-'
+                    'last_ordered_formatted' => $pref->last_ordered ? date('d/m/Y H:i', strtotime($pref->last_ordered)) : '-',
+                    'modifiers' => array_values($allModifiers),
+                    'notes' => array_unique(array_filter($allNotes))
                 ];
             });
+
+
 
             // Get summary statistics
             $summary = [
