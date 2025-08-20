@@ -376,4 +376,262 @@ class MemberController extends Controller
             'count' => $members->count()
         ]);
     }
+
+    /**
+     * Get member transactions and point statistics
+     */
+    public function getTransactions($id)
+    {
+        try {
+            $member = Customer::findOrFail($id);
+            
+            // Get point statistics
+            $pointStats = DB::connection('mysql_second')
+                ->table('point')
+                ->where('costumer_id', $member->id)
+                ->selectRaw('
+                    COALESCE(SUM(CASE WHEN type = "1" THEN point ELSE 0 END), 0) as total_earned,
+                    COALESCE(SUM(CASE WHEN type = "2" THEN point ELSE 0 END), 0) as total_redeemed
+                ')
+                ->first();
+
+            $totalEarned = $pointStats->total_earned ?? 0;
+            $totalRedeemed = $pointStats->total_redeemed ?? 0;
+            $balance = $totalEarned - $totalRedeemed;
+
+            // Get transaction history with outlet and bill info
+            $transactions = DB::connection('mysql_second')
+                ->table('point as p')
+                ->select([
+                    'p.id',
+                    'p.point',
+                    'p.jml_trans',
+                    'p.type',
+                    'p.no_bill',
+                    'p.no_bill_2',
+                    'p.created_at',
+                    'cb.name as outlet_name',
+                    'cb.alamat as outlet_alamat'
+                ])
+                ->leftJoin('cabangs as cb', 'p.cabang_id', '=', 'cb.id')
+                ->where('p.costumer_id', $member->id)
+                ->orderBy('p.created_at', 'desc')
+                ->limit(50) // Limit to last 50 transactions
+                ->get();
+
+            // Transform transaction data and get order details for EARNED transactions
+            $transactions = $transactions->map(function ($transaction) {
+                $orderDetails = [];
+                
+                // Only get order details for EARNED transactions (type = '1') and if no_bill exists
+                if ($transaction->type === '1' && $transaction->no_bill) {
+                    try {
+                        // First get order ID from orders table using paid_number
+                        $order = DB::connection('db_justus')
+                            ->table('orders')
+                            ->where('paid_number', $transaction->no_bill)
+                            ->first();
+                        
+                        if ($order) {
+                            // Then get order items using order_id
+                            $orderDetails = DB::connection('db_justus')
+                                ->table('order_items')
+                                ->select([
+                                    'item_name',
+                                    'qty',
+                                    'price',
+                                    'modifiers',
+                                    'notes'
+                                ])
+                                ->where('order_id', $order->id)
+                                ->get()
+                                ->map(function ($item) {
+                                    $modifiers = [];
+                                    if ($item->modifiers) {
+                                        try {
+                                            $modifiers = json_decode($item->modifiers, true) ?: [];
+                                        } catch (\Exception $e) {
+                                            $modifiers = [];
+                                        }
+                                    }
+
+                                    return [
+                                        'item_name' => $item->item_name,
+                                        'qty' => $item->qty,
+                                        'price' => $item->price,
+                                        'price_formatted' => 'Rp ' . number_format($item->price, 0, ',', '.'),
+                                        'total_price' => $item->qty * $item->price,
+                                        'total_price_formatted' => 'Rp ' . number_format($item->qty * $item->price, 0, ',', '.'),
+                                        'modifiers' => $modifiers,
+                                        'modifiers_formatted' => $this->formatModifiers($modifiers),
+                                        'notes' => $item->notes
+                                    ];
+                                });
+                        } else {
+                            $orderDetails = collect([]);
+                        }
+                    } catch (\Exception $e) {
+                        // If there's an error getting order details, just continue with empty array
+                        $orderDetails = collect([]);
+                    }
+                }
+
+                return [
+                    'id' => $transaction->id,
+                    'point' => $transaction->point,
+                    'jml_trans' => $transaction->jml_trans,
+                    'jml_trans_formatted' => $transaction->jml_trans ? 'Rp ' . number_format($transaction->jml_trans, 0, ',', '.') : '-',
+                    'type' => $transaction->type,
+                    'type_text' => $transaction->type === '1' ? 'EARNED' : 'REDEEMED',
+                    'no_bill' => $transaction->type === '1' ? $transaction->no_bill : $transaction->no_bill_2,
+                    'outlet_name' => $transaction->outlet_name ?: 'Outlet Tidak Diketahui',
+                    'outlet_alamat' => $transaction->outlet_alamat,
+                    'created_at' => $transaction->created_at,
+                    'description' => $transaction->type === '1' 
+                        ? 'Top Up Point dari Transaksi' 
+                        : 'Redeem Point untuk Transaksi',
+                    'order_details' => $orderDetails
+                ];
+            });
+
+            return response()->json([
+                'status' => 'success',
+                'member' => $member,
+                'stats' => [
+                    'total_earned' => $totalEarned,
+                    'total_redeemed' => $totalRedeemed,
+                    'balance' => $balance,
+                    'total_earned_formatted' => number_format($totalEarned, 0, ',', '.'),
+                    'total_redeemed_formatted' => number_format($totalRedeemed, 0, ',', '.'),
+                    'balance_formatted' => number_format($balance, 0, ',', '.')
+                ],
+                'transactions' => $transactions
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Gagal mengambil data transaksi: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Get member preferences (favorite menu items)
+     */
+    public function getPreferences($id)
+    {
+        try {
+            $member = Customer::findOrFail($id);
+            
+            // Get member preferences by joining point table with orders and order_items
+            // First, get all bill numbers from point table
+            $billNumbers = DB::connection('mysql_second')
+                ->table('point')
+                ->where('costumer_id', $member->id)
+                ->where('type', '1') // Only top up transactions (actual orders)
+                ->whereNotNull('no_bill')
+                ->pluck('no_bill')
+                ->toArray();
+
+            if (empty($billNumbers)) {
+                return response()->json([
+                    'status' => 'success',
+                    'member' => $member,
+                    'preferences' => [],
+                    'summary' => [
+                        'total_orders' => 0,
+                        'total_items' => 0,
+                        'total_spent' => 0,
+                        'total_spent_formatted' => 'Rp 0',
+                        'favorite_category' => 'Tidak ada data'
+                    ]
+                ]);
+            }
+
+            // Get preferences from db_justus database
+            $preferences = DB::connection('db_justus')
+                ->table('orders as o')
+                ->select([
+                    'oi.item_name as menu_name',
+                    'oi.price as menu_price',
+                    'c.name as menu_category',
+                    DB::raw('COUNT(*) as order_count'),
+                    DB::raw('SUM(oi.qty) as total_qty'),
+                    DB::raw('SUM(oi.qty * oi.price) as total_spent'),
+                    DB::raw('MAX(o.created_at) as last_ordered')
+                ])
+                ->join('order_items as oi', 'o.id', '=', 'oi.order_id')
+                ->leftJoin('items as i', 'oi.item_id', '=', 'i.id')
+                ->leftJoin('categories as c', 'i.category_id', '=', 'c.id')
+                ->whereIn('o.paid_number', $billNumbers)
+                ->whereNotNull('oi.item_name')
+                ->groupBy('oi.item_name', 'oi.price', 'c.name')
+                ->orderBy('order_count', 'desc')
+                ->orderBy('total_spent', 'desc')
+                ->limit(10) // Top 10 favorite items
+                ->get();
+
+            // Transform preferences data
+            $preferences = $preferences->map(function ($pref) {
+                return [
+                    'menu_name' => $pref->menu_name,
+                    'menu_price' => $pref->menu_price,
+                    'menu_price_formatted' => 'Rp ' . number_format($pref->menu_price, 0, ',', '.'),
+                    'menu_category' => $pref->menu_category,
+                    'order_count' => $pref->order_count,
+                    'total_qty' => $pref->total_qty,
+                    'total_spent' => $pref->total_spent,
+                    'total_spent_formatted' => 'Rp ' . number_format($pref->total_spent, 0, ',', '.'),
+                    'last_ordered' => $pref->last_ordered,
+                    'last_ordered_formatted' => $pref->last_ordered ? date('d/m/Y H:i', strtotime($pref->last_ordered)) : '-'
+                ];
+            });
+
+            // Get summary statistics
+            $summary = [
+                'total_orders' => $preferences->sum('order_count'),
+                'total_items' => $preferences->sum('total_qty'),
+                'total_spent' => $preferences->sum('total_spent'),
+                'total_spent_formatted' => 'Rp ' . number_format($preferences->sum('total_spent'), 0, ',', '.'),
+                'favorite_category' => $preferences->groupBy('menu_category')
+                    ->map(function($items) { return $items->sum('order_count'); })
+                    ->sortDesc()
+                    ->keys()
+                    ->first() ?: 'Tidak ada data'
+            ];
+
+            return response()->json([
+                'status' => 'success',
+                'member' => $member,
+                'preferences' => $preferences,
+                'summary' => $summary
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Gagal mengambil data preferensi: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Format modifiers for display
+     */
+    private function formatModifiers($modifiers)
+    {
+        if (empty($modifiers)) {
+            return '-';
+        }
+
+        $formatted = [];
+        foreach ($modifiers as $modifier) {
+            if (is_array($modifier) && isset($modifier['name'])) {
+                $formatted[] = $modifier['name'];
+            } elseif (is_string($modifier)) {
+                $formatted[] = $modifier;
+            }
+        }
+
+        return empty($formatted) ? '-' : implode(', ', $formatted);
+    }
 } 

@@ -1008,8 +1008,10 @@ Route::middleware(['auth'])->group(function () {
 Route::middleware(['auth'])->group(function () {
     Route::resource('members', MemberController::class);
     Route::patch('members/{member}/toggle-status', [MemberController::class, 'toggleStatus'])->name('members.toggle-status');
-    Route::patch('members/{member}/toggle-block', [MemberController::class, 'toggleBlock'])->name('members.toggle-block');
-    Route::get('members/export', [MemberController::class, 'export'])->name('members.export');
+                    Route::patch('members/{member}/toggle-block', [MemberController::class, 'toggleBlock'])->name('members.toggle-block');
+                Route::get('members/export', [MemberController::class, 'export'])->name('members.export');
+                Route::get('api/members/{id}/transactions', [MemberController::class, 'getTransactions'])->name('members.transactions');
+                Route::get('api/members/{id}/preferences', [MemberController::class, 'getPreferences'])->name('members.preferences');
 });
 
 // Shared Documents Routes

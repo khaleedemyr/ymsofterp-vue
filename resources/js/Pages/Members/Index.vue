@@ -3,6 +3,7 @@ import { ref, watch } from 'vue';
 import { router } from '@inertiajs/vue3';
 import { debounce } from 'lodash';
 import Swal from 'sweetalert2';
+import axios from 'axios';
 import AppLayout from '@/Layouts/AppLayout.vue';
 
 const props = defineProps({
@@ -14,6 +15,33 @@ const props = defineProps({
 const search = ref(props.filters?.search || '');
 const statusFilter = ref(props.filters?.status || '');
 const pointBalanceFilter = ref(props.filters?.point_balance || '');
+
+// Modal state
+const showTransactionModal = ref(false);
+const selectedMember = ref(null);
+const transactions = ref([]);
+const memberStats = ref({
+  total_earned: 0,
+  total_redeemed: 0,
+  balance: 0,
+  total_earned_formatted: '0',
+  total_redeemed_formatted: '0',
+  balance_formatted: '0'
+});
+const loadingTransactions = ref(false);
+const expandedTransactions = ref(new Set()); // Track which transactions are expanded
+
+// Preferences modal state
+const showPreferencesModal = ref(false);
+const preferences = ref([]);
+const preferencesSummary = ref({
+  total_orders: 0,
+  total_items: 0,
+  total_spent: 0,
+  total_spent_formatted: 'Rp 0',
+  favorite_category: 'Tidak ada data'
+});
+const loadingPreferences = ref(false);
 
 
 
@@ -110,6 +138,150 @@ watch([statusFilter, pointBalanceFilter], () => {
  */
 function formatNumber(number) {
   return number.toLocaleString('id-ID');
+}
+
+async function viewTransactions(member) {
+  selectedMember.value = member;
+  showTransactionModal.value = true;
+  loadingTransactions.value = true;
+  
+  try {
+    const response = await axios.get(`/api/members/${member.id}/transactions`);
+    
+    if (response.data.status === 'success') {
+      transactions.value = response.data.transactions || [];
+      memberStats.value = {
+        total_earned: response.data.stats.total_earned || 0,
+        total_redeemed: response.data.stats.total_redeemed || 0,
+        balance: response.data.stats.balance || 0,
+        total_earned_formatted: response.data.stats.total_earned_formatted || '0',
+        total_redeemed_formatted: response.data.stats.total_redeemed_formatted || '0',
+        balance_formatted: response.data.stats.balance_formatted || '0'
+      };
+    } else {
+      transactions.value = [];
+      memberStats.value = {
+        total_earned: 0,
+        total_redeemed: 0,
+        balance: 0,
+        total_earned_formatted: '0',
+        total_redeemed_formatted: '0',
+        balance_formatted: '0'
+      };
+    }
+  } catch (error) {
+    console.error('Error loading transactions:', error);
+    transactions.value = [];
+    memberStats.value = {
+      total_earned: 0,
+      total_redeemed: 0,
+      balance: 0,
+      total_earned_formatted: '0',
+      total_redeemed_formatted: '0',
+      balance_formatted: '0'
+    };
+  } finally {
+    loadingTransactions.value = false;
+  }
+}
+
+function closeTransactionModal() {
+  showTransactionModal.value = false;
+  selectedMember.value = null;
+  transactions.value = [];
+  memberStats.value = {
+    total_earned: 0,
+    total_redeemed: 0,
+    balance: 0,
+    total_earned_formatted: '0',
+    total_redeemed_formatted: '0',
+    balance_formatted: '0'
+  };
+  expandedTransactions.value.clear(); // Reset expanded transactions
+}
+
+function toggleTransactionExpansion(transactionId) {
+  if (expandedTransactions.value.has(transactionId)) {
+    expandedTransactions.value.delete(transactionId);
+  } else {
+    expandedTransactions.value.add(transactionId);
+  }
+}
+
+function isTransactionExpanded(transactionId) {
+  return expandedTransactions.value.has(transactionId);
+}
+
+async function viewPreferences(member) {
+  selectedMember.value = member;
+  showPreferencesModal.value = true;
+  loadingPreferences.value = true;
+  
+  try {
+    const response = await axios.get(`/api/members/${member.id}/preferences`);
+    
+    if (response.data.status === 'success') {
+      preferences.value = response.data.preferences || [];
+      preferencesSummary.value = response.data.summary || {
+        total_orders: 0,
+        total_items: 0,
+        total_spent: 0,
+        total_spent_formatted: 'Rp 0',
+        favorite_category: 'Tidak ada data'
+      };
+    } else {
+      preferences.value = [];
+      preferencesSummary.value = {
+        total_orders: 0,
+        total_items: 0,
+        total_spent: 0,
+        total_spent_formatted: 'Rp 0',
+        favorite_category: 'Tidak ada data'
+      };
+    }
+  } catch (error) {
+    console.error('Error loading preferences:', error);
+    preferences.value = [];
+    preferencesSummary.value = {
+      total_orders: 0,
+      total_items: 0,
+      total_spent: 0,
+      total_spent_formatted: 'Rp 0',
+      favorite_category: 'Tidak ada data'
+    };
+  } finally {
+    loadingPreferences.value = false;
+  }
+}
+
+function closePreferencesModal() {
+  showPreferencesModal.value = false;
+  selectedMember.value = null;
+  preferences.value = [];
+  preferencesSummary.value = {
+    total_orders: 0,
+    total_items: 0,
+    total_spent: 0,
+    total_spent_formatted: 'Rp 0',
+    favorite_category: 'Tidak ada data'
+  };
+}
+
+function formatDate(dateString) {
+  if (!dateString) return '-';
+  
+  const date = new Date(dateString);
+  if (isNaN(date.getTime())) {
+    return 'Tanggal tidak valid';
+  }
+  
+  return date.toLocaleDateString('id-ID', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
 }
 </script>
 
@@ -321,6 +493,12 @@ function formatNumber(number) {
                 <button @click="openEdit(member)" class="px-2 py-1 rounded bg-yellow-200 text-yellow-900 hover:bg-yellow-300 transition" title="Edit">
                   <i class="fa-solid fa-pen-to-square"></i>
                 </button>
+                                 <button @click="viewTransactions(member)" class="px-2 py-1 rounded bg-green-100 text-green-700 hover:bg-green-200 transition" title="Transaksi & Point">
+                   <i class="fa-solid fa-coins"></i>
+                 </button>
+                 <button @click="viewPreferences(member)" class="px-2 py-1 rounded bg-purple-100 text-purple-700 hover:bg-purple-200 transition" title="Menu Favorit">
+                   <i class="fa-solid fa-heart"></i>
+                 </button>
                 <button @click="toggleStatus(member)" :class="[
                   'px-2 py-1 rounded transition',
                   member.status_aktif === '1' 
@@ -329,7 +507,6 @@ function formatNumber(number) {
                 ]" :title="member.status_aktif === '1' ? 'Nonaktifkan' : 'Aktifkan'">
                   <i :class="member.status_aktif === '1' ? 'fa-solid fa-user-slash' : 'fa-solid fa-user-check'"></i>
                 </button>
-
               </td>
             </tr>
             <tr v-if="members.data.length === 0">
@@ -348,6 +525,370 @@ function formatNumber(number) {
           </template>
         </nav>
       </div>
+
+             <!-- Modal Transaksi & Point -->
+       <div v-if="showTransactionModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+         <div class="bg-white rounded-2xl shadow-2xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+           <!-- Header -->
+           <div class="bg-gradient-to-r from-purple-600 to-purple-800 text-white p-6 rounded-t-2xl">
+             <div class="flex justify-between items-center">
+               <div>
+                 <h2 class="text-xl font-bold">Transaksi & Point Member</h2>
+                 <p class="text-purple-200">{{ selectedMember?.name }} ({{ selectedMember?.costumers_id }})</p>
+               </div>
+               <button @click="closeTransactionModal" class="text-white hover:text-purple-200 transition">
+                 <i class="fa-solid fa-times text-xl"></i>
+               </button>
+             </div>
+           </div>
+
+           <!-- Content -->
+           <div class="p-6">
+             <!-- Summary Cards -->
+             <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+               <div class="bg-green-50 rounded-xl p-4 border border-green-200">
+                 <div class="flex items-center">
+                   <div class="p-2 bg-green-100 rounded-lg">
+                     <i class="fa-solid fa-plus-circle text-green-600"></i>
+                   </div>
+                   <div class="ml-3">
+                     <p class="text-sm text-green-600">Total Point Diperoleh</p>
+                     <p class="text-lg font-bold text-green-800">{{ memberStats.total_earned_formatted }}</p>
+                   </div>
+                 </div>
+               </div>
+               <div class="bg-red-50 rounded-xl p-4 border border-red-200">
+                 <div class="flex items-center">
+                   <div class="p-2 bg-red-100 rounded-lg">
+                     <i class="fa-solid fa-minus-circle text-red-600"></i>
+                   </div>
+                   <div class="ml-3">
+                     <p class="text-sm text-red-600">Total Point Diredeem</p>
+                     <p class="text-lg font-bold text-red-800">{{ memberStats.total_redeemed_formatted }}</p>
+                   </div>
+                 </div>
+               </div>
+               <div class="bg-blue-50 rounded-xl p-4 border border-blue-200">
+                 <div class="flex items-center">
+                   <div class="p-2 bg-blue-100 rounded-lg">
+                     <i class="fa-solid fa-wallet text-blue-600"></i>
+                   </div>
+                   <div class="ml-3">
+                     <p class="text-sm text-blue-600">Saldo Point</p>
+                     <p class="text-lg font-bold text-blue-800">{{ memberStats.balance_formatted }}</p>
+                   </div>
+                 </div>
+               </div>
+             </div>
+
+             <!-- Transaction History -->
+             <div class="bg-gray-50 rounded-xl p-4 mb-4">
+               <h3 class="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                 <i class="fa-solid fa-history text-purple-600"></i>
+                 Riwayat Transaksi Point
+               </h3>
+               
+               <div v-if="loadingTransactions" class="text-center py-8">
+                 <i class="fa-solid fa-spinner fa-spin text-2xl text-purple-600 mb-2"></i>
+                 <p class="text-gray-600">Memuat data transaksi...</p>
+               </div>
+
+               <div v-else-if="transactions.length === 0" class="text-center py-8">
+                 <i class="fa-solid fa-inbox text-4xl text-gray-400 mb-2"></i>
+                 <p class="text-gray-600">Tidak ada transaksi point</p>
+               </div>
+
+                               <div v-else class="space-y-3">
+                  <div v-for="transaction in transactions" :key="transaction.id" class="bg-white rounded-lg border border-gray-200 hover:shadow-md transition-shadow overflow-hidden">
+                    <!-- Transaction Header (Always Visible) -->
+                    <div class="p-4 cursor-pointer" @click="toggleTransactionExpansion(transaction.id)">
+                      <div class="flex justify-between items-start mb-3">
+                        <div class="flex-1">
+                          <div class="flex items-center gap-2 mb-2">
+                            <span :class="[
+                              'px-2 py-1 rounded-full text-xs font-semibold',
+                              transaction.type === '1' 
+                                ? 'bg-green-100 text-green-800' 
+                                : 'bg-red-100 text-red-800'
+                            ]">
+                              {{ transaction.type_text }}
+                            </span>
+                            <span class="text-sm text-gray-500">{{ formatDate(transaction.created_at) }}</span>
+                            <i :class="isTransactionExpanded(transaction.id) ? 'fa-solid fa-chevron-up' : 'fa-solid fa-chevron-down'" class="text-gray-400 text-sm"></i>
+                          </div>
+                          <p class="font-medium text-gray-800 mb-1">{{ transaction.description }}</p>
+                          
+                          <!-- Info Detail Transaksi -->
+                          <div class="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm text-gray-600">
+                            <div class="flex items-center gap-1">
+                              <i class="fa-solid fa-store text-purple-500"></i>
+                              <span class="font-medium">Outlet:</span>
+                              <span>{{ transaction.outlet_name }}</span>
+                            </div>
+                            <div class="flex items-center gap-1" v-if="transaction.no_bill">
+                              <i class="fa-solid fa-receipt text-blue-500"></i>
+                              <span class="font-medium">No. Bill:</span>
+                              <span class="font-mono">{{ transaction.no_bill }}</span>
+                            </div>
+                            <div class="flex items-center gap-1" v-if="transaction.jml_trans_formatted && transaction.jml_trans_formatted !== '-'">
+                              <i class="fa-solid fa-money-bill-wave text-green-500"></i>
+                              <span class="font-medium">Nilai Transaksi:</span>
+                              <span class="font-semibold text-green-600">{{ transaction.jml_trans_formatted }}</span>
+                            </div>
+                            <div class="flex items-center gap-1">
+                              <i class="fa-solid fa-hashtag text-gray-400"></i>
+                              <span class="font-medium">ID Transaksi:</span>
+                              <span class="font-mono text-xs">{{ transaction.id }}</span>
+                            </div>
+                          </div>
+                        </div>
+                        <div class="text-right ml-4">
+                          <div class="flex flex-col items-end">
+                            <span :class="[
+                              'text-lg font-bold',
+                              transaction.type === '1' ? 'text-green-600' : 'text-red-600'
+                            ]">
+                              {{ transaction.type === '1' ? '+' : '-' }}{{ formatNumber(transaction.point) }}
+                            </span>
+                            <span class="text-xs text-gray-500">point</span>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <!-- Alamat Outlet (jika ada) -->
+                      <div v-if="transaction.outlet_alamat" class="text-xs text-gray-500 border-t pt-2 mt-2">
+                        <i class="fa-solid fa-map-marker-alt text-red-400"></i>
+                        {{ transaction.outlet_alamat }}
+                      </div>
+                    </div>
+                    
+                    <!-- Order Details (Expandable) - Only for EARNED transactions -->
+                    <div v-if="isTransactionExpanded(transaction.id) && transaction.type === '1' && transaction.order_details && transaction.order_details.length > 0" class="border-t border-gray-100 bg-gray-50">
+                      <div class="p-4">
+                        <h5 class="font-medium text-gray-700 mb-3 flex items-center gap-2">
+                          <i class="fa-solid fa-utensils text-blue-500"></i>
+                          Detail Order ({{ transaction.order_details.length }} item)
+                        </h5>
+                        <div class="space-y-3">
+                          <div v-for="(item, itemIndex) in transaction.order_details" :key="itemIndex" class="bg-white rounded-lg p-3 border border-gray-200">
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                              <!-- Item Info -->
+                              <div class="space-y-2">
+                                <div class="flex items-center gap-2 text-sm">
+                                  <i class="fa-solid fa-utensils text-blue-500"></i>
+                                  <span class="font-medium">Menu:</span>
+                                  <span class="font-semibold text-gray-800">{{ item.item_name }}</span>
+                                </div>
+                                <div class="flex items-center gap-2 text-sm">
+                                  <i class="fa-solid fa-hashtag text-gray-500"></i>
+                                  <span class="font-medium">Qty:</span>
+                                  <span class="font-semibold">{{ item.qty }}x</span>
+                                </div>
+                                <div class="flex items-center gap-2 text-sm">
+                                  <i class="fa-solid fa-money-bill-wave text-green-500"></i>
+                                  <span class="font-medium">Harga:</span>
+                                  <span>{{ item.price_formatted }}</span>
+                                </div>
+                              </div>
+                              
+                              <!-- Item Details -->
+                              <div class="space-y-2">
+                                <div class="flex items-center gap-2 text-sm">
+                                  <i class="fa-solid fa-calculator text-orange-500"></i>
+                                  <span class="font-medium">Total:</span>
+                                  <span class="font-semibold text-green-600">{{ item.total_price_formatted }}</span>
+                                </div>
+                              </div>
+                            </div>
+                            
+                            <!-- Modifiers & Notes -->
+                            <div class="mt-3 pt-3 border-t border-gray-100">
+                              <div v-if="item.modifiers_formatted !== '-'" class="mb-2">
+                                <div class="flex items-start gap-2 text-sm">
+                                  <i class="fa-solid fa-tags text-indigo-500 mt-0.5"></i>
+                                  <div>
+                                    <span class="font-medium text-gray-700">Modifier:</span>
+                                    <span class="text-indigo-600">{{ item.modifiers_formatted }}</span>
+                                  </div>
+                                </div>
+                              </div>
+                              <div v-if="item.notes" class="mb-2">
+                                <div class="flex items-start gap-2 text-sm">
+                                  <i class="fa-solid fa-sticky-note text-yellow-500 mt-0.5"></i>
+                                  <div>
+                                    <span class="font-medium text-gray-700">Catatan:</span>
+                                    <span class="text-gray-600 italic">{{ item.notes }}</span>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <!-- No Order Details Message -->
+                    <div v-if="isTransactionExpanded(transaction.id) && transaction.type === '1' && (!transaction.order_details || transaction.order_details.length === 0)" class="border-t border-gray-100 bg-gray-50">
+                      <div class="p-4 text-center">
+                        <i class="fa-solid fa-info-circle text-gray-400 text-lg mb-2"></i>
+                        <p class="text-gray-600 text-sm">Detail order tidak tersedia</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+             </div>
+           </div>
+
+           <!-- Footer -->
+           <div class="bg-gray-50 px-6 py-4 rounded-b-2xl flex justify-end">
+             <button @click="closeTransactionModal" class="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition">
+               Tutup
+             </button>
+           </div>
+         </div>
+       </div>
+
+       <!-- Modal Preferences -->
+       <div v-if="showPreferencesModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+         <div class="bg-white rounded-2xl shadow-2xl max-w-5xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+           <!-- Header -->
+           <div class="bg-gradient-to-r from-pink-600 to-pink-800 text-white p-6 rounded-t-2xl">
+             <div class="flex justify-between items-center">
+               <div>
+                 <h2 class="text-xl font-bold">Menu Favorit Member</h2>
+                 <p class="text-pink-200">{{ selectedMember?.name }} ({{ selectedMember?.costumers_id }})</p>
+               </div>
+               <button @click="closePreferencesModal" class="text-white hover:text-pink-200 transition">
+                 <i class="fa-solid fa-times text-xl"></i>
+               </button>
+             </div>
+           </div>
+
+           <!-- Content -->
+           <div class="p-6">
+             <!-- Summary Cards -->
+             <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+               <div class="bg-blue-50 rounded-xl p-4 border border-blue-200">
+                 <div class="flex items-center">
+                   <div class="p-2 bg-blue-100 rounded-lg">
+                     <i class="fa-solid fa-shopping-cart text-blue-600"></i>
+                   </div>
+                   <div class="ml-3">
+                     <p class="text-sm text-blue-600">Total Order</p>
+                     <p class="text-lg font-bold text-blue-800">{{ preferencesSummary.total_orders }}</p>
+                   </div>
+                 </div>
+               </div>
+               <div class="bg-green-50 rounded-xl p-4 border border-green-200">
+                 <div class="flex items-center">
+                   <div class="p-2 bg-green-100 rounded-lg">
+                     <i class="fa-solid fa-utensils text-green-600"></i>
+                   </div>
+                   <div class="ml-3">
+                     <p class="text-sm text-green-600">Total Item</p>
+                     <p class="text-lg font-bold text-green-800">{{ preferencesSummary.total_items }}</p>
+                   </div>
+                 </div>
+               </div>
+               <div class="bg-orange-50 rounded-xl p-4 border border-orange-200">
+                 <div class="flex items-center">
+                   <div class="p-2 bg-orange-100 rounded-lg">
+                     <i class="fa-solid fa-money-bill-wave text-orange-600"></i>
+                   </div>
+                   <div class="ml-3">
+                     <p class="text-sm text-orange-600">Total Spent</p>
+                     <p class="text-lg font-bold text-orange-800">{{ preferencesSummary.total_spent_formatted }}</p>
+                   </div>
+                 </div>
+               </div>
+               <div class="bg-purple-50 rounded-xl p-4 border border-purple-200">
+                 <div class="flex items-center">
+                   <div class="p-2 bg-purple-100 rounded-lg">
+                     <i class="fa-solid fa-tags text-purple-600"></i>
+                   </div>
+                   <div class="ml-3">
+                     <p class="text-sm text-purple-600">Kategori Favorit</p>
+                     <p class="text-lg font-bold text-purple-800">{{ preferencesSummary.favorite_category }}</p>
+                   </div>
+                 </div>
+               </div>
+             </div>
+
+             <!-- Menu Preferences -->
+             <div class="bg-gray-50 rounded-xl p-4 mb-4">
+               <h3 class="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                 <i class="fa-solid fa-heart text-pink-600"></i>
+                 Menu Favorit (Top 10)
+               </h3>
+               
+               <div v-if="loadingPreferences" class="text-center py-8">
+                 <i class="fa-solid fa-spinner fa-spin text-2xl text-pink-600 mb-2"></i>
+                 <p class="text-gray-600">Memuat data menu favorit...</p>
+               </div>
+
+               <div v-else-if="preferences.length === 0" class="text-center py-8">
+                 <i class="fa-solid fa-heart-broken text-4xl text-gray-400 mb-2"></i>
+                 <p class="text-gray-600">Belum ada data menu favorit</p>
+               </div>
+
+                               <div v-else class="space-y-3">
+                  <div v-for="(pref, index) in preferences" :key="index" class="bg-white rounded-lg p-4 border border-gray-200 hover:shadow-md transition-shadow">
+                    <div class="flex justify-between items-start">
+                      <div class="flex-1">
+                        <div class="flex items-center gap-3 mb-2">
+                          <span class="bg-pink-100 text-pink-800 px-2 py-1 rounded-full text-xs font-semibold">
+                            #{{ index + 1 }}
+                          </span>
+                          <span class="bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-xs font-semibold">
+                            {{ pref.menu_category }}
+                          </span>
+                        </div>
+                        <h4 class="font-bold text-gray-800 text-lg mb-2">{{ pref.menu_name }}</h4>
+                        
+                        <!-- Menu Details -->
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm text-gray-600">
+                          <div class="flex items-center gap-1">
+                            <i class="fa-solid fa-shopping-cart text-blue-500"></i>
+                            <span class="font-medium">Order Count:</span>
+                            <span class="font-semibold text-blue-600">{{ pref.order_count }}x</span>
+                          </div>
+                          <div class="flex items-center gap-1">
+                            <i class="fa-solid fa-utensils text-green-500"></i>
+                            <span class="font-medium">Total Qty:</span>
+                            <span class="font-semibold text-green-600">{{ pref.total_qty }}</span>
+                          </div>
+                          <div class="flex items-center gap-1">
+                            <i class="fa-solid fa-money-bill-wave text-orange-500"></i>
+                            <span class="font-medium">Total Spent:</span>
+                            <span class="font-semibold text-orange-600">{{ pref.total_spent_formatted }}</span>
+                          </div>
+                        </div>
+                        
+                        <div class="mt-2 text-xs text-gray-500">
+                          <i class="fa-solid fa-clock text-gray-400"></i>
+                          Terakhir dipesan: {{ pref.last_ordered_formatted }}
+                        </div>
+                      </div>
+                      <div class="text-right ml-4">
+                        <div class="text-lg font-bold text-pink-600">
+                          {{ pref.menu_price_formatted }}
+                        </div>
+                        <div class="text-xs text-gray-500">per item</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+             </div>
+           </div>
+
+           <!-- Footer -->
+           <div class="bg-gray-50 px-6 py-4 rounded-b-2xl flex justify-end">
+             <button @click="closePreferencesModal" class="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition">
+               Tutup
+             </button>
+           </div>
+         </div>
+       </div>
     </div>
   </AppLayout>
 </template> 
