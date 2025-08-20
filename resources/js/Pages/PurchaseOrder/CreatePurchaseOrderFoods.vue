@@ -203,52 +203,6 @@ function convertPrice(priceSmall, item) {
     };
 }
 
-const onSupplierChange = async (item) => {
-    const supplier = poForm.items_by_supplier[item.id][0].supplier_id;
-    const supplierId = supplier ? supplier.id : null;
-    if (!supplierId) {
-        poForm.items_by_supplier[item.id].forEach(split => {
-            split.price = '';
-            split.last_price = 0;
-            split.min_price = 0;
-            split.max_price = 0;
-            split.price_medium = 0;
-            split.price_large = 0;
-        });
-        return;
-    }
-    try {
-        console.log('Item data:', item); // Debug log
-        const res = await axios.get('/api/items/last-price', {
-            params: {
-                item_id: item.item_id || item.item?.id, // Try both item_id and item.id
-                supplier_id: supplierId,
-                unit: item.unit
-            }
-        });
-        poForm.items_by_supplier[item.id].forEach(split => {
-            split.price = res.data.last_price ?? 0;
-            split.last_price = res.data.last_price ?? 0;
-            split.min_price = res.data.min_price ?? 0;
-            split.max_price = res.data.max_price ?? 0;
-            // Konversi ke medium dan large
-            const { priceMedium, priceLarge } = convertPrice(res.data.last_price ?? 0, item);
-            split.price_medium = priceMedium;
-            split.price_large = priceLarge;
-        });
-    } catch (error) {
-        console.error('Error fetching last price:', error);
-        poForm.items_by_supplier[item.id].forEach(split => {
-            split.price = 0;
-            split.last_price = 0;
-            split.min_price = 0;
-            split.max_price = 0;
-            split.price_medium = 0;
-            split.price_large = 0;
-        });
-    }
-};
-
 function formatRupiah(value) {
     if (!value) return 'Rp 0';
     return 'Rp ' + Number(value).toLocaleString('id-ID');
@@ -304,9 +258,40 @@ const calculateGrandTotal = () => {
     return calculateTotal() + calculatePPN();
 };
 
-onMounted(() => {
-    fetchPRList();
-    fetchSuppliers();
+// Fungsi untuk mengambil harga terakhir untuk semua item
+const fetchLastPrices = async () => {
+    for (const pr of prList.value) {
+        for (const item of pr.items) {
+            try {
+                const res = await axios.get('/api/items/last-price', {
+                    params: {
+                        item_id: item.item_id || item.item?.id,
+                        unit: item.unit
+                    }
+                });
+                
+                if (poForm.items_by_supplier[item.id]) {
+                    poForm.items_by_supplier[item.id].forEach(split => {
+                        split.last_price = res.data.last_price ?? 0;
+                        split.min_price = res.data.min_price ?? 0;
+                        split.max_price = res.data.max_price ?? 0;
+                        // Konversi ke medium dan large
+                        const { priceMedium, priceLarge } = convertPrice(res.data.last_price ?? 0, item);
+                        split.price_medium = priceMedium;
+                        split.price_large = priceLarge;
+                    });
+                }
+            } catch (error) {
+                console.error('Error fetching last price for item', item.id, ':', error);
+            }
+        }
+    }
+};
+
+onMounted(async () => {
+    await fetchPRList();
+    await fetchSuppliers();
+    await fetchLastPrices();
 });
 </script>
 
@@ -426,7 +411,6 @@ onMounted(() => {
                                                                         track-by="id"
                                                                         label="name"
                                                                         :preselect-first="false"
-                                                                        @input="onSupplierChange(item)"
                                                                         class="w-40"
                                                                     />
                                                                 </td>

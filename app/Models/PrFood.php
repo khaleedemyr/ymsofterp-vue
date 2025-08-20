@@ -13,6 +13,7 @@ class PrFood extends Model
     protected $table = 'pr_foods';
     protected $fillable = [
         'pr_number', 'tanggal', 'status', 'requested_by', 'warehouse_id', 'warehouse_division_id',
+        'assistant_ssd_manager_approved_at', 'assistant_ssd_manager_approved_by', 'assistant_ssd_manager_note',
         'ssd_manager_approved_at', 'ssd_manager_approved_by', 'ssd_manager_note',
         'vice_coo_approved_at', 'vice_coo_approved_by', 'vice_coo_note', 'description'
     ];
@@ -35,6 +36,11 @@ class PrFood extends Model
     public function requester()
     {
         return $this->belongsTo(User::class, 'requested_by');
+    }
+
+    public function assistantSsdManager()
+    {
+        return $this->belongsTo(User::class, 'assistant_ssd_manager_approved_by');
     }
 
     public function ssdManager()

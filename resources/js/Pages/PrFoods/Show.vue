@@ -20,7 +20,17 @@ const isMKWarehouse = computed(() => {
   return warehouseName === 'MK1 Hot Kitchen' || warehouseName === 'MK2 Cold Kitchen';
 });
 
-// Determine who can approve based on warehouse
+// Determine who can approve Assistant SSD Manager
+const canApproveAssistantSSD = computed(() => {
+  // Hanya untuk PR non-MK
+  if (isMKWarehouse.value) return false;
+  
+  return ((user?.id_jabatan === 54 && user?.status === 'A') || isSuperadmin.value)
+    && props.prFood.status === 'draft'
+    && !props.prFood.assistant_ssd_manager_approved_at;
+});
+
+// Determine who can approve SSD Manager
 const canApproveSSD = computed(() => {
   if (isMKWarehouse.value) {
     // For MK warehouses, Sous Chef MK (id_jabatan=179) can approve
@@ -29,8 +39,10 @@ const canApproveSSD = computed(() => {
       && !props.prFood.ssd_manager_approved_at;
   } else {
     // For other warehouses, SSD Manager (id_jabatan=161) can approve
+    // Tapi harus sudah di-approve asisten SSD manager terlebih dahulu
     return ((user?.id_jabatan === 161 && user?.status === 'A') || isSuperadmin.value)
       && props.prFood.status === 'draft'
+      && props.prFood.assistant_ssd_manager_approved_at
       && !props.prFood.ssd_manager_approved_at;
   }
 });
@@ -43,9 +55,28 @@ const getApproverTitle = computed(() => {
   return isMKWarehouse.value ? 'Sous Chef MK' : 'SSD Manager';
 });
 
+const assistantSsdNote = ref('');
 const ssdNote = ref('');
 // COO note tidak digunakan lagi
 const cooNote = ref('');
+
+async function approveAssistantSSD(approved) {
+  const { value: note } = await Swal.fire({
+    title: approved ? `Approve PR?` : `Reject PR?`,
+    input: 'textarea',
+    inputLabel: 'Catatan (opsional)',
+    inputValue: '',
+    showCancelButton: true,
+    confirmButtonText: approved ? 'Approve' : 'Reject',
+    cancelButtonText: 'Batal',
+  });
+  if (note !== undefined) {
+    router.post(route('pr-foods.approve-assistant-ssd-manager', props.prFood.id), {
+      approved,
+      assistant_ssd_manager_note: note,
+    });
+  }
+}
 
 async function approveSSD(approved) {
   const approverTitle = getApproverTitle.value;
@@ -120,6 +151,25 @@ async function approveSSD(approved) {
       </div>
       <div class="bg-white rounded-2xl shadow p-6 mb-6">
         <h2 class="text-lg font-bold mb-2">Approval</h2>
+        
+        <!-- Approval Asisten SSD Manager (hanya untuk PR non-MK) -->
+        <div v-if="!isMKWarehouse" class="mb-4">
+          <b>Asisten SSD Manager:</b>
+          <span v-if="prFood.assistant_ssd_manager_approved_at">
+            <span class="text-green-600 font-semibold">Approved</span>
+            oleh <b>{{ prFood.assistant_ssd_manager?.nama_lengkap || prFood.assistant_ssd_manager_approved_by }}</b>
+            pada {{ new Date(prFood.assistant_ssd_manager_approved_at).toLocaleString('id-ID') }}
+            <span v-if="prFood.assistant_ssd_manager_note">- Note: {{ prFood.assistant_ssd_manager_note }}</span>
+          </span>
+          <span v-else class="text-gray-500">Belum di-approve</span>
+          
+          <div v-if="canApproveAssistantSSD" class="mt-2">
+            <button @click="approveAssistantSSD(true)" class="px-4 py-2 rounded bg-green-600 text-white font-semibold hover:bg-green-700 mr-2">Approve (Asisten SSD Manager)</button>
+            <button @click="approveAssistantSSD(false)" class="px-4 py-2 rounded bg-red-600 text-white font-semibold hover:bg-red-700">Reject</button>
+          </div>
+        </div>
+        
+        <!-- Approval SSD Manager / Sous Chef MK -->
         <div class="mb-2">
           <b>{{ getApproverTitle }}:</b>
           <span v-if="prFood.ssd_manager_approved_at">
@@ -130,12 +180,11 @@ async function approveSSD(approved) {
           </span>
           <span v-else class="text-gray-500">Belum di-approve</span>
         </div>
-        <!-- Bagian Vice COO dihilangkan -->
+        
         <div v-if="canApproveSSD">
           <button @click="approveSSD(true)" class="px-4 py-2 rounded bg-green-600 text-white font-semibold hover:bg-green-700 mr-2">Approve ({{ getApproverTitle }})</button>
           <button @click="approveSSD(false)" class="px-4 py-2 rounded bg-red-600 text-white font-semibold hover:bg-red-700">Reject</button>
         </div>
-        <!-- Tombol approval Vice COO dihilangkan -->
       </div>
     </div>
   </AppLayout>

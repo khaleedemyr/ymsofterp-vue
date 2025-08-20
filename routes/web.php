@@ -409,6 +409,7 @@ Route::post('/items/price-update/import', [ItemController::class, 'importPriceUp
 Route::resource('modifiers', ModifierController::class);
 Route::resource('modifier-options', ModifierOptionController::class);
 Route::resource('pr-foods', PrFoodController::class);
+Route::post('pr-foods/{id}/approve-assistant-ssd-manager', [PrFoodController::class, 'approveAssistantSsdManager'])->name('pr-foods.approve-assistant-ssd-manager');
 Route::post('pr-foods/{id}/approve-ssd-manager', [PrFoodController::class, 'approveSsdManager'])->name('pr-foods.approve-ssd-manager');
 Route::post('pr-foods/{id}/approve-vice-coo', [PrFoodController::class, 'approveViceCoo'])->name('pr-foods.approve-vice-coo');
 

@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed } from 'vue';
-import { router } from '@inertiajs/vue3';
+import { router, usePage } from '@inertiajs/vue3';
 import { debounce } from 'lodash';
 import Swal from 'sweetalert2';
 import AppLayout from '@/Layouts/AppLayout.vue';
@@ -9,6 +9,8 @@ const props = defineProps({
   prFoods: Object,
   filters: Object,
 });
+
+const $page = usePage();
 
 const search = ref(props.filters?.search || '');
 const selectedStatus = ref(props.filters?.status || '');
@@ -19,16 +21,16 @@ const to = ref(props.filters?.to || '');
 const scheduleInfo = computed(() => {
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const tomorrow = new Date(today);
-  tomorrow.setDate(tomorrow.getDate() + 1);
   
-  const startTime = new Date(today);
-  startTime.setHours(15, 0, 0, 0); // 15:00 hari ini
+  const closeStart = new Date(today);
+  closeStart.setHours(10, 0, 0, 0); // 10:00 pagi
   
-  const endTime = new Date(tomorrow);
-  endTime.setHours(10, 0, 0, 0); // 10:00 besok
+  const closeEnd = new Date(today);
+  closeEnd.setHours(15, 0, 0, 0); // 15:00 sore
   
-  const isWithinSchedule = now >= startTime && now <= endTime;
+  // Tutup: 10:00 pagi sampai 15:00 sore
+  // Buka: 15:00 sore sampai 10:00 pagi besok
+  const isWithinSchedule = !(now >= closeStart && now < closeEnd);
   
   const formatTime = (date) => {
     return date.toLocaleTimeString('id-ID', { 
@@ -42,9 +44,15 @@ const scheduleInfo = computed(() => {
   
   return {
     isWithinSchedule,
-    startTime: formatTime(startTime),
-    endTime: formatTime(endTime),
-    now: formatTime(now)
+    startTime: formatTime(closeStart),
+    endTime: formatTime(closeEnd),
+    now: formatTime(now),
+    debug: {
+      now: now.toISOString(),
+      closeStart: closeStart.toISOString(),
+      closeEnd: closeEnd.toISOString(),
+      isInCloseTime: now >= closeStart && now < closeEnd
+    }
   };
 });
 
@@ -65,6 +73,18 @@ function goToPage(url) {
   if (url) router.visit(url, { preserveState: true, replace: true });
 }
 function openCreate() {
+  console.log('Schedule Debug:', scheduleInfo.value.debug);
+  console.log('Is Within Schedule:', scheduleInfo.value.isWithinSchedule);
+  
+  if (!scheduleInfo.value.isWithinSchedule) {
+    Swal.fire({
+      title: 'Jadwal PR Foods',
+      text: 'PR Foods hanya bisa dibuat di luar jam 10:00 - 15:00',
+      icon: 'warning',
+      confirmButtonText: 'OK'
+    });
+    return;
+  }
   router.visit('/pr-foods/create');
 }
 function openEdit(id) {
@@ -92,6 +112,14 @@ async function hapus(pr) {
 </script>
 <template>
   <AppLayout>
+    <!-- Notifikasi Error -->
+    <div v-if="$page.props.flash?.error" class="mb-4 mx-4 mt-4">
+      <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative">
+        <strong class="font-bold">Error!</strong>
+        <span class="block sm:inline">{{ $page.props.flash.error }}</span>
+      </div>
+    </div>
+    
     <div class="w-full py-8 px-0">
       <div class="flex justify-between items-center mb-6">
         <div>
@@ -115,7 +143,14 @@ async function hapus(pr) {
         </div>
         <button
           @click="openCreate"
-          class="px-4 py-2 rounded-xl shadow-lg transition-all font-semibold bg-gradient-to-r from-blue-500 to-blue-700 text-white hover:shadow-2xl"
+          :disabled="!scheduleInfo.isWithinSchedule"
+          :class="[
+            'px-4 py-2 rounded-xl shadow-lg transition-all font-semibold',
+            scheduleInfo.isWithinSchedule 
+              ? 'bg-gradient-to-r from-blue-500 to-blue-700 text-white hover:shadow-2xl cursor-pointer' 
+              : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+          ]"
+                     :title="scheduleInfo.isWithinSchedule ? 'Buat PR Foods Baru' : 'PR Foods hanya bisa dibuat di luar jam 10:00 - 15:00'"
         >
           <i class="fa fa-clock mr-2"></i> + Buat PR Foods Baru
         </button>

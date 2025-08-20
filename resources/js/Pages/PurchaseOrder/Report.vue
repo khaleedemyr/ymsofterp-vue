@@ -34,14 +34,20 @@
 
                          <!-- Filters -->
              <div class="mb-6 bg-gray-50 p-4 rounded-lg">
-               <div class="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
-                 <div class="flex items-center">
-                   <i class="fas fa-info-circle text-blue-600 mr-2"></i>
-                   <span class="text-sm text-blue-800">
-                     <strong>Petunjuk:</strong> Isi filter yang diinginkan, kemudian klik tombol "Load Data" untuk menampilkan hasil.
-                   </span>
+                                <div class="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
+                   <div class="flex items-center">
+                     <i class="fas fa-info-circle text-blue-600 mr-2"></i>
+                     <div class="text-sm text-blue-800">
+                       <p class="font-medium mb-1">Petunjuk:</p>
+                       <ul class="list-disc list-inside space-y-1">
+                         <li>Isi filter yang diinginkan, kemudian klik tombol "Load Data" untuk menampilkan hasil.</li>
+                         <li>Filter "Hanya item yang berubah harga" akan menampilkan item yang memiliki perubahan harga dari PO sebelumnya.</li>
+                         <li>Filter "Hanya kenaikan harga" akan menampilkan item yang harganya naik dari PO sebelumnya.</li>
+                         <li>Filter "Hanya penurunan harga" akan menampilkan item yang harganya turun dari PO sebelumnya.</li>
+                       </ul>
+                     </div>
+                   </div>
                  </div>
-               </div>
               <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                                  <!-- Search -->
                  <div>
@@ -92,11 +98,11 @@
                 </div>
               </div>
 
-              <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-                <!-- Supplier Filter -->
-                <div>
-                  <label class="block text-sm font-medium text-gray-700 mb-1">Supplier</label>
-                                     <div :class="{ 'opacity-50 pointer-events-none': loading }">
+                             <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                 <!-- Supplier Filter -->
+                 <div>
+                   <label class="block text-sm font-medium text-gray-700 mb-1">Supplier</label>
+                   <div :class="{ 'opacity-50 pointer-events-none': loading }">
                      <Multiselect
                        v-model="filters.supplier_id"
                        :options="suppliers"
@@ -111,12 +117,12 @@
                        class="w-full"
                      />
                    </div>
-                </div>
+                 </div>
 
-                <!-- Item Filter -->
-                <div>
-                  <label class="block text-sm font-medium text-gray-700 mb-1">Item</label>
-                                     <div :class="{ 'opacity-50 pointer-events-none': loading }">
+                 <!-- Item Filter -->
+                 <div>
+                   <label class="block text-sm font-medium text-gray-700 mb-1">Item</label>
+                   <div :class="{ 'opacity-50 pointer-events-none': loading }">
                      <Multiselect
                        v-model="filters.item_id"
                        :options="items"
@@ -131,8 +137,45 @@
                        class="w-full"
                      />
                    </div>
-                </div>
-              </div>
+                 </div>
+               </div>
+
+               <!-- Additional Filters -->
+               <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+                 <!-- Price Change Filter -->
+                 <div>
+                   <label class="block text-sm font-medium text-gray-700 mb-1">Filter Harga</label>
+                   <div class="space-y-2">
+                     <label class="flex items-center">
+                       <input 
+                         type="checkbox" 
+                         v-model="filters.hasPriceChange"
+                         class="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50"
+                         :disabled="loading"
+                       />
+                       <span class="ml-2 text-sm text-gray-700">Hanya item yang berubah harga</span>
+                     </label>
+                     <label class="flex items-center">
+                       <input 
+                         type="checkbox" 
+                         v-model="filters.priceIncrease"
+                         class="rounded border-gray-300 text-red-600 shadow-sm focus:border-red-300 focus:ring focus:ring-red-200 focus:ring-opacity-50"
+                         :disabled="loading"
+                       />
+                       <span class="ml-2 text-sm text-gray-700">Hanya kenaikan harga</span>
+                     </label>
+                     <label class="flex items-center">
+                       <input 
+                         type="checkbox" 
+                         v-model="filters.priceDecrease"
+                         class="rounded border-gray-300 text-green-600 shadow-sm focus:border-green-300 focus:ring focus:ring-green-200 focus:ring-opacity-50"
+                         :disabled="loading"
+                       />
+                       <span class="ml-2 text-sm text-gray-700">Hanya penurunan harga</span>
+                     </label>
+                   </div>
+                 </div>
+               </div>
 
                              <!-- Action Buttons -->
                <div class="mt-4 flex justify-end gap-2">
@@ -156,7 +199,47 @@
                </div>
             </div>
 
-                         <!-- Table -->
+                         <!-- Statistics -->
+             <div v-if="(reports?.data || []).length > 0" class="mb-6 grid grid-cols-1 md:grid-cols-4 gap-4">
+               <div class="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                 <div class="flex items-center">
+                   <i class="fas fa-chart-line text-blue-600 text-xl mr-3"></i>
+                   <div>
+                     <p class="text-sm text-blue-600 font-medium">Total Items</p>
+                     <p class="text-lg font-bold text-blue-800">{{ props.reports?.total || 0 }}</p>
+                   </div>
+                 </div>
+               </div>
+               <div class="bg-red-50 p-4 rounded-lg border border-red-200">
+                 <div class="flex items-center">
+                   <i class="fas fa-arrow-up text-red-600 text-xl mr-3"></i>
+                   <div>
+                     <p class="text-sm text-red-600 font-medium">Naik Harga</p>
+                     <p class="text-lg font-bold text-red-800">{{ getPriceIncreaseCount() }}</p>
+                   </div>
+                 </div>
+               </div>
+               <div class="bg-green-50 p-4 rounded-lg border border-green-200">
+                 <div class="flex items-center">
+                   <i class="fas fa-arrow-down text-green-600 text-xl mr-3"></i>
+                   <div>
+                     <p class="text-sm text-green-600 font-medium">Turun Harga</p>
+                     <p class="text-lg font-bold text-green-800">{{ getPriceDecreaseCount() }}</p>
+                   </div>
+                 </div>
+               </div>
+               <div class="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                 <div class="flex items-center">
+                   <i class="fas fa-minus text-gray-600 text-xl mr-3"></i>
+                   <div>
+                     <p class="text-sm text-gray-600 font-medium">Harga Stabil</p>
+                     <p class="text-lg font-bold text-gray-800">{{ getStablePriceCount() }}</p>
+                   </div>
+                 </div>
+               </div>
+             </div>
+
+             <!-- Table -->
              <div class="overflow-x-auto relative">
                <!-- Loading Overlay -->
                <div v-if="loading" class="absolute inset-0 bg-white bg-opacity-75 flex items-center justify-center z-10">
@@ -297,7 +380,10 @@ const filters = ref({
   to: props.filters?.to || '',
   supplier_id: props.filters?.supplier_id ? props.suppliers?.find(s => s.id == props.filters.supplier_id) || null : null,
   item_id: props.filters?.item_id ? props.items?.find(i => i.id == props.filters.item_id) || null : null,
-  perPage: props.filters?.perPage || 15
+  perPage: props.filters?.perPage || 15,
+  hasPriceChange: props.filters?.hasPriceChange === 'true' || props.filters?.hasPriceChange === true || false,
+  priceIncrease: props.filters?.priceIncrease === 'true' || props.filters?.priceIncrease === true || false,
+  priceDecrease: props.filters?.priceDecrease === 'true' || props.filters?.priceDecrease === true || false
 });
 
 const loading = ref(false);
@@ -311,7 +397,10 @@ watch(() => props.filters, (newFilters) => {
       to: newFilters.to || '',
       supplier_id: newFilters.supplier_id ? props.suppliers?.find(s => s.id == newFilters.supplier_id) || null : null,
       item_id: newFilters.item_id ? props.items?.find(i => i.id == newFilters.item_id) || null : null,
-      perPage: newFilters.perPage || 15
+      perPage: newFilters.perPage || 15,
+      hasPriceChange: newFilters.hasPriceChange === 'true' || newFilters.hasPriceChange === true,
+      priceIncrease: newFilters.priceIncrease === 'true' || newFilters.priceIncrease === true,
+      priceDecrease: newFilters.priceDecrease === 'true' || newFilters.priceDecrease === true
     };
   }
 }, { deep: true, immediate: true });
@@ -325,8 +414,18 @@ const loadData = () => {
     to: filters.value.to || '',
     supplier_id: filters.value.supplier_id?.id || '',
     item_id: filters.value.item_id?.id || '',
-    perPage: filters.value.perPage || 15
+    perPage: filters.value.perPage || 15,
+    hasPriceChange: filters.value.hasPriceChange ? 'true' : 'false',
+    priceIncrease: filters.value.priceIncrease ? 'true' : 'false',
+    priceDecrease: filters.value.priceDecrease ? 'true' : 'false'
   };
+  
+  console.log('Sending filters:', params);
+  console.log('Filter values:', {
+    hasPriceChange: filters.value.hasPriceChange,
+    priceIncrease: filters.value.priceIncrease,
+    priceDecrease: filters.value.priceDecrease
+  });
   
   router.visit('/po-report', {
     data: params,
@@ -346,7 +445,10 @@ const clearFilters = () => {
     to: '',
     supplier_id: null,
     item_id: null,
-    perPage: 15
+    perPage: 15,
+    hasPriceChange: false,
+    priceIncrease: false,
+    priceDecrease: false
   };
 };
 
@@ -359,6 +461,9 @@ const exportReport = () => {
     to: filters.value.to || '',
     supplier_id: filters.value.supplier_id?.id || '',
     item_id: filters.value.item_id?.id || '',
+    hasPriceChange: filters.value.hasPriceChange ? 'true' : 'false',
+    priceIncrease: filters.value.priceIncrease ? 'true' : 'false',
+    priceDecrease: filters.value.priceDecrease ? 'true' : 'false'
   });
   
   window.open(`/po-report/export?${params.toString()}`, '_blank');
@@ -400,6 +505,22 @@ const formatRupiah = (amount) => {
     minimumFractionDigits: 0,
     maximumFractionDigits: 0
   }).format(Number(amount) || 0);
+};
+
+// Statistics functions
+const getPriceIncreaseCount = () => {
+  if (!props.reports?.data) return 0;
+  return props.reports.data.filter(item => item.price_change > 0).length;
+};
+
+const getPriceDecreaseCount = () => {
+  if (!props.reports?.data) return 0;
+  return props.reports.data.filter(item => item.price_change < 0).length;
+};
+
+const getStablePriceCount = () => {
+  if (!props.reports?.data) return 0;
+  return props.reports.data.filter(item => item.price_change === 0 || item.price_change === null).length;
 };
 </script>
 

@@ -77,6 +77,12 @@ class PrFoodController extends Controller
 
     public function create()
     {
+        // Validasi waktu untuk pembuatan PR Foods
+        if (!$this->isWithinPrFoodsSchedule()) {
+            return redirect()->route('pr-foods.index')
+                ->with('error', 'PR Foods hanya bisa dibuat di luar jam 10:00 - 15:00');
+        }
+        
         $warehouses = Warehouse::all();
         $items = Item::all();
         return Inertia::render('PrFoods/Form', [
@@ -87,6 +93,12 @@ class PrFoodController extends Controller
 
     public function store(Request $request)
     {
+        // Validasi waktu untuk pembuatan PR Foods
+        if (!$this->isWithinPrFoodsSchedule()) {
+            return redirect()->route('pr-foods.index')
+                ->with('error', 'PR Foods hanya bisa dibuat di luar jam 10:00 - 15:00');
+        }
+        
         $validated = $request->validate([
             'tanggal' => 'required|date',
             'warehouse_id' => 'required|exists:warehouses,id',
@@ -149,16 +161,16 @@ class PrFoodController extends Controller
                 route('pr-foods.show', $prFood->id)
             );
         } else {
-            // Notifikasi ke SSD Manager (id_jabatan=161)
-            $ssdManagers = DB::table('users')->where('id_jabatan', 161)->where('status', 'A')->pluck('id');
+            // Notifikasi ke Asisten SSD Manager (id_jabatan=54) terlebih dahulu
+            $assistantSsdManagers = DB::table('users')->where('id_jabatan', 54)->where('status', 'A')->pluck('id');
             $no_pr = $prFood->pr_number;
             $requester = $prFood->requester->nama_lengkap ?? '-';
             $warehouse = $prFood->warehouse->name ?? '-';
             $this->sendNotification(
-                $ssdManagers,
+                $assistantSsdManagers,
                 'pr_approval',
                 'Approval PR Foods',
-                "PR $no_pr dari $requester ($warehouse) menunggu approval SSD Manager.",
+                "PR $no_pr dari $requester ($warehouse) menunggu approval Asisten SSD Manager.",
                 route('pr-foods.show', $prFood->id)
             );
         }
@@ -244,6 +256,84 @@ class PrFoodController extends Controller
         return redirect()->route('pr-foods.index');
     }
 
+    // Approval Asisten SSD Manager
+    public function approveAssistantSsdManager(Request $request, $id)
+    {
+        $prFood = PrFood::with(['requester', 'warehouse'])->findOrFail($id);
+        
+        // Check if warehouse is MK1 or MK2 - jika MK, tidak perlu approval asisten SSD manager
+        $isMKWarehouse = in_array($prFood->warehouse->name, ['MK1 Hot Kitchen', 'MK2 Cold Kitchen']);
+        if ($isMKWarehouse) {
+            return redirect()->route('pr-foods.index')->with('error', 'PR MK tidak memerlukan approval Asisten SSD Manager');
+        }
+        
+        $updateData = [
+            'assistant_ssd_manager_approved_at' => now(),
+            'assistant_ssd_manager_approved_by' => Auth::id(),
+            'assistant_ssd_manager_note' => $request->assistant_ssd_manager_note,
+        ];
+        
+        if ($request->approved) {
+            // Jika approved, update status tetap draft (belum final approval)
+            $updateData['status'] = 'draft';
+            $prFood->update($updateData);
+            
+            ActivityLog::create([
+                'user_id' => Auth::id(),
+                'activity_type' => 'approve',
+                'module' => 'pr_foods',
+                'description' => 'Approve PR Foods (Asisten SSD Manager): ' . $prFood->pr_number,
+                'ip_address' => $request->ip(),
+                'user_agent' => $request->userAgent(),
+                'old_data' => null,
+                'new_data' => $prFood->fresh()->toArray(),
+            ]);
+            
+            // Notifikasi ke SSD Manager untuk approval selanjutnya
+            $ssdManagers = DB::table('users')->where('id_jabatan', 161)->where('status', 'A')->pluck('id');
+            $no_pr = $prFood->pr_number;
+            $requester = $prFood->requester->nama_lengkap ?? '-';
+            $warehouse = $prFood->warehouse->name ?? '-';
+            $this->sendNotification(
+                $ssdManagers,
+                'pr_approval',
+                'Approval PR Foods',
+                "PR $no_pr dari $requester ($warehouse) sudah di-approve Asisten SSD Manager, menunggu approval SSD Manager.",
+                route('pr-foods.show', $prFood->id)
+            );
+        } else {
+            // Jika rejected, update status jadi rejected
+            $updateData['status'] = 'rejected';
+            $prFood->update($updateData);
+            
+            ActivityLog::create([
+                'user_id' => Auth::id(),
+                'activity_type' => 'reject',
+                'module' => 'pr_foods',
+                'description' => 'Reject PR Foods (Asisten SSD Manager): ' . $prFood->pr_number,
+                'ip_address' => $request->ip(),
+                'user_agent' => $request->userAgent(),
+                'old_data' => null,
+                'new_data' => $prFood->fresh()->toArray(),
+            ]);
+            
+            // Notifikasi ke creator PR jika di-reject
+            $requestedBy = $prFood->requested_by;
+            $no_pr = $prFood->pr_number;
+            $requester = $prFood->requester->nama_lengkap ?? '-';
+            $warehouse = $prFood->warehouse->name ?? '-';
+            $this->sendNotification(
+                [$requestedBy],
+                'pr_rejected',
+                'PR Foods Ditolak',
+                "PR $no_pr dari $requester ($warehouse) telah ditolak oleh Asisten SSD Manager.",
+                route('pr-foods.show', $prFood->id)
+            );
+        }
+        
+        return redirect()->route('pr-foods.index');
+    }
+
     // Approval SSD Manager
     public function approveSsdManager(Request $request, $id)
     {
@@ -252,6 +342,11 @@ class PrFoodController extends Controller
         // Check if warehouse is MK1 or MK2
         $isMKWarehouse = in_array($prFood->warehouse->name, ['MK1 Hot Kitchen', 'MK2 Cold Kitchen']);
         $approverTitle = $isMKWarehouse ? 'Sous Chef MK' : 'SSD Manager';
+        
+        // Untuk PR non-MK, pastikan sudah di-approve asisten SSD manager terlebih dahulu
+        if (!$isMKWarehouse && !$prFood->assistant_ssd_manager_approved_at) {
+            return redirect()->route('pr-foods.index')->with('error', 'PR harus di-approve Asisten SSD Manager terlebih dahulu');
+        }
         
         $updateData = [
             'ssd_manager_approved_at' => now(),
@@ -342,6 +437,20 @@ class PrFoodController extends Controller
             );
         }
         return redirect()->route('pr-foods.index');
+    }
+
+    // Helper untuk validasi waktu PR Foods
+    private function isWithinPrFoodsSchedule()
+    {
+        $now = now();
+        $today = $now->copy()->startOfDay();
+        
+        $closeStart = $today->copy()->setTime(10, 0, 0); // 10:00 pagi
+        $closeEnd = $today->copy()->setTime(15, 0, 0); // 15:00 sore
+        
+        // Tutup: 10:00 pagi sampai 15:00 sore
+        // Buka: 15:00 sore sampai 10:00 pagi besok
+        return !($now->gte($closeStart) && $now->lt($closeEnd));
     }
 
     // Helper untuk insert notifikasi

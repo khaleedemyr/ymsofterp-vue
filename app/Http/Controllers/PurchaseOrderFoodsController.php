@@ -409,14 +409,52 @@ class PurchaseOrderFoodsController extends Controller
             // Log item data untuk debugging
             \Log::info('Item data:', ['item' => $item->toArray()]);
 
-            // Ambil cost histories (cost per small unit)
-            $query = \DB::table('food_inventory_cost_histories')
-                ->where('inventory_item_id', $inventoryItemId)
-                ->orderBy('date', 'desc');
+            // Cari harga dari PO sebelumnya berdasarkan item_id dan unit
+            // Pertama, cari unit_id dari nama unit
+            $unit = \App\Models\Unit::where('name', $request->unit)->first();
+            
+            if ($unit) {
+                $poQuery = \DB::table('purchase_order_food_items as pofi')
+                    ->join('purchase_order_foods as pof', 'pofi.purchase_order_food_id', '=', 'pof.id')
+                    ->where('pofi.item_id', $request->item_id)
+                    ->where('pofi.unit_id', $unit->id)
+                    ->orderBy('pof.created_at', 'desc');
 
-            $last = (clone $query)->first()?->new_cost;
-            $min = (clone $query)->min('new_cost');
-            $max = (clone $query)->max('new_cost');
+                $last = (clone $poQuery)->first()?->price;
+                $min = (clone $poQuery)->min('price');
+                $max = (clone $poQuery)->max('price');
+
+                \Log::info('PO data:', [
+                    'item_id' => $request->item_id,
+                    'unit' => $request->unit,
+                    'unit_id' => $unit->id,
+                    'last' => $last,
+                    'min' => $min,
+                    'max' => $max
+                ]);
+            } else {
+                $last = $min = $max = null;
+                \Log::info('Unit not found:', ['unit' => $request->unit]);
+            }
+
+            // Jika tidak ada data PO, fallback ke cost histories
+            $useCostHistories = false;
+            if (!$last) {
+                $useCostHistories = true;
+                $query = \DB::table('food_inventory_cost_histories')
+                    ->where('inventory_item_id', $inventoryItemId)
+                    ->orderBy('date', 'desc');
+
+                $last = (clone $query)->first()?->new_cost;
+                $min = (clone $query)->min('new_cost');
+                $max = (clone $query)->max('new_cost');
+
+                \Log::info('Fallback to cost histories:', [
+                    'last' => $last,
+                    'min' => $min,
+                    'max' => $max
+                ]);
+            }
 
             // Log cost data untuk debugging
             \Log::info('Cost data:', [
@@ -442,6 +480,7 @@ class PurchaseOrderFoodsController extends Controller
                 'requested_unit' => $request->unit
             ]);
 
+            // Konversi harga jika menggunakan cost histories
             $convertCost = function($cost) use ($request, $unitSmall, $unitMedium, $unitLarge, $smallConv, $mediumConv) {
                 if ($request->unit == $unitSmall) {
                     return $cost;
@@ -453,10 +492,12 @@ class PurchaseOrderFoodsController extends Controller
                 return $cost;
             };
 
+            // Jika data dari PO, langsung gunakan tanpa konversi karena sudah sesuai unit
+            // Jika data dari cost histories, perlu konversi
             $response = [
-                'last_price' => $convertCost($last ?? 0),
-                'min_price' => $convertCost($min ?? 0),
-                'max_price' => $convertCost($max ?? 0),
+                'last_price' => $useCostHistories ? $convertCost($last ?? 0) : ($last ?? 0),
+                'min_price' => $useCostHistories ? $convertCost($min ?? 0) : ($min ?? 0),
+                'max_price' => $useCostHistories ? $convertCost($max ?? 0) : ($max ?? 0),
                 'unit_info' => [
                     'requested_unit' => $request->unit,
                     'available_units' => [

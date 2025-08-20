@@ -89,6 +89,41 @@ class PurchaseOrderReportController extends Controller
             return $item;
         });
 
+        // Apply price change filters
+        if ($request->hasPriceChange == 'true' || $request->priceIncrease == 'true' || $request->priceDecrease == 'true') {
+            \Log::info('Price filters applied:', [
+                'hasPriceChange' => $request->hasPriceChange,
+                'priceIncrease' => $request->priceIncrease,
+                'priceDecrease' => $request->priceDecrease,
+                'total_before' => $results->getCollection()->count()
+            ]);
+            
+            $filteredCollection = $results->getCollection()->filter(function ($item) use ($request) {
+                // Filter for items with price change
+                if ($request->hasPriceChange == 'true' && $item->price_change == 0) {
+                    return false;
+                }
+                
+                // Filter for price increase only
+                if ($request->priceIncrease == 'true' && $item->price_change <= 0) {
+                    return false;
+                }
+                
+                // Filter for price decrease only
+                if ($request->priceDecrease == 'true' && $item->price_change >= 0) {
+                    return false;
+                }
+                
+                return true;
+            });
+            
+            \Log::info('Price filters result:', [
+                'total_after' => $filteredCollection->count()
+            ]);
+            
+            $results->setCollection($filteredCollection);
+        }
+
         // Get suppliers for filter
         $suppliers = DB::table('suppliers')
             ->select('id', 'name')
@@ -105,7 +140,7 @@ class PurchaseOrderReportController extends Controller
             'reports' => $results,
             'suppliers' => $suppliers,
             'items' => $items,
-            'filters' => $request->only(['search', 'from', 'to', 'supplier_id', 'item_id', 'perPage']) ?: [],
+            'filters' => $request->only(['search', 'from', 'to', 'supplier_id', 'item_id', 'perPage', 'hasPriceChange', 'priceIncrease', 'priceDecrease']) ?: [],
         ]);
     }
 
@@ -178,6 +213,28 @@ class PurchaseOrderReportController extends Controller
 
             return $item;
         });
+
+        // Apply price change filters for export
+        if ($request->hasPriceChange == 'true' || $request->priceIncrease == 'true' || $request->priceDecrease == 'true') {
+            $results = $results->filter(function ($item) use ($request) {
+                // Filter for items with price change
+                if ($request->hasPriceChange == 'true' && $item->price_change == 0) {
+                    return false;
+                }
+                
+                // Filter for price increase only
+                if ($request->priceIncrease == 'true' && $item->price_change <= 0) {
+                    return false;
+                }
+                
+                // Filter for price decrease only
+                if ($request->priceDecrease == 'true' && $item->price_change >= 0) {
+                    return false;
+                }
+                
+                return true;
+            });
+        }
 
         // Generate CSV
         $filename = 'po_gr_report_' . date('Y-m-d_H-i-s') . '.csv';
