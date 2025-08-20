@@ -52,8 +52,37 @@ async function hapus(roulette) {
     cancelButtonText: 'Batal',
   });
   if (!result.isConfirmed) return;
+  
+  // Tampilkan loading animation
+  Swal.fire({
+    title: 'Menghapus Data...',
+    text: 'Mohon tunggu sebentar, sedang menghapus data...',
+    icon: 'info',
+    allowOutsideClick: false,
+    allowEscapeKey: false,
+    showConfirmButton: false,
+    didOpen: () => {
+      Swal.showLoading();
+    }
+  });
+  
   router.delete(route('roulette.destroy', roulette.id), {
-    onSuccess: () => Swal.fire('Berhasil', 'Data roulette berhasil dihapus!', 'success'),
+    onSuccess: () => {
+      Swal.fire({
+        title: 'Berhasil!',
+        text: 'Data roulette berhasil dihapus!',
+        icon: 'success',
+        confirmButtonText: 'OK'
+      });
+    },
+    onError: (errors) => {
+      Swal.fire({
+        title: 'Error!',
+        text: 'Gagal menghapus data: ' + (errors.message || 'Terjadi kesalahan'),
+        icon: 'error',
+        confirmButtonText: 'OK'
+      });
+    }
   });
 }
 
@@ -84,15 +113,73 @@ function openSlotMachine() {
 function openLotteryMachine() {
   window.open(route('roulette.lottery'), '_blank');
 }
+
+async function hapusSemua() {
+  const result = await Swal.fire({
+    title: 'Hapus Semua Peserta?',
+    text: `Yakin ingin menghapus seluruh ${props.roulettes.data.length} data peserta roulette? Tindakan ini tidak dapat dibatalkan!`,
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonColor: '#d33',
+    cancelButtonColor: '#3085d6',
+    confirmButtonText: 'Ya, Hapus Semua!',
+    cancelButtonText: 'Batal',
+    input: 'text',
+    inputLabel: 'Ketik "HAPUS" untuk konfirmasi',
+    inputPlaceholder: 'HAPUS',
+    inputValidator: (value) => {
+      if (value !== 'HAPUS') {
+        return 'Anda harus mengetik "HAPUS" untuk melanjutkan';
+      }
+    }
+  });
+  
+  if (!result.isConfirmed) return;
+  
+  // Tampilkan loading animation
+  Swal.fire({
+    title: 'Menghapus Data...',
+    text: 'Mohon tunggu sebentar, sedang menghapus seluruh data peserta...',
+    icon: 'info',
+    allowOutsideClick: false,
+    allowEscapeKey: false,
+    showConfirmButton: false,
+    didOpen: () => {
+      Swal.showLoading();
+    }
+  });
+  
+  router.delete(route('roulette.destroy-all'), {
+    onSuccess: () => {
+      Swal.fire({
+        title: 'Berhasil!',
+        text: 'Semua data peserta roulette berhasil dihapus!',
+        icon: 'success',
+        confirmButtonText: 'OK'
+      });
+    },
+    onError: (errors) => {
+      Swal.fire({
+        title: 'Error!',
+        text: 'Gagal menghapus data: ' + (errors.message || 'Terjadi kesalahan'),
+        icon: 'error',
+        confirmButtonText: 'OK'
+      });
+    }
+  });
+}
 </script>
 
 <template>
   <AppLayout title="Data Roulette">
     <div class="max-w-7xl w-full mx-auto py-8 px-2">
       <div class="flex justify-between items-center mb-6">
-        <h1 class="text-2xl font-bold text-gray-800 flex items-center gap-2">
-          <i class="fa-solid fa-dice text-purple-500"></i> Data Roulette
-        </h1>
+        <div>
+          <h1 class="text-2xl font-bold text-gray-800 flex items-center gap-2">
+            <i class="fa-solid fa-dice text-purple-500"></i> Data Roulette
+          </h1>
+          <p class="text-sm text-gray-600 mt-1">Total: {{ roulettes.data.length }} peserta</p>
+        </div>
         <div class="flex gap-2">
           <button @click="openRouletteGame" class="bg-gradient-to-r from-green-500 to-green-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold flex items-center gap-2">
             <i class="fa-solid fa-play"></i>
@@ -116,6 +203,14 @@ function openLotteryMachine() {
           </button>
           <button @click="openCreate" class="bg-gradient-to-r from-purple-500 to-purple-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold">
             + Tambah Data Roulette
+          </button>
+          <button 
+            v-if="roulettes.data.length > 0"
+            @click="hapusSemua" 
+            class="bg-gradient-to-r from-red-500 to-red-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold flex items-center gap-2"
+          >
+            <i class="fa-solid fa-trash-can"></i>
+            Hapus Semua
           </button>
         </div>
       </div>

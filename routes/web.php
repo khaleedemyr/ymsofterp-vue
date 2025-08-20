@@ -997,8 +997,9 @@ Route::get('roulette/lottery', [\App\Http\Controllers\RouletteController::class,
 
 // Roulette Routes
 Route::middleware(['auth'])->group(function () {
-    Route::resource('roulette', \App\Http\Controllers\RouletteController::class);
+    Route::delete('roulette/destroy-all', [\App\Http\Controllers\RouletteController::class, 'destroyAll'])->name('roulette.destroy-all');
     Route::post('roulette/import', [\App\Http\Controllers\RouletteController::class, 'import'])->name('roulette.import');
+    Route::resource('roulette', \App\Http\Controllers\RouletteController::class);
 });
 
 

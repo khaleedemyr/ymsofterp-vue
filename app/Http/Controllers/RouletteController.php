@@ -301,4 +301,16 @@ class RouletteController extends Controller
             'roulettes' => $roulettes,
         ]);
     }
+
+    public function destroyAll()
+    {
+        try {
+            $count = Roulette::count();
+            Roulette::truncate();
+            
+            return redirect()->route('roulette.index')->with('success', "Berhasil menghapus seluruh {$count} data peserta roulette!");
+        } catch (\Exception $e) {
+            return redirect()->route('roulette.index')->with('error', 'Gagal menghapus seluruh data: ' . $e->getMessage());
+        }
+    }
 } 

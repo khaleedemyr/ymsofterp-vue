@@ -161,8 +161,8 @@ class PrFoodController extends Controller
                 route('pr-foods.show', $prFood->id)
             );
         } else {
-            // Notifikasi ke Asisten SSD Manager (id_jabatan=54) terlebih dahulu
-            $assistantSsdManagers = DB::table('users')->where('id_jabatan', 54)->where('status', 'A')->pluck('id');
+            // Notifikasi ke Asisten SSD Manager (id_jabatan=172) terlebih dahulu
+            $assistantSsdManagers = DB::table('users')->where('id_jabatan', 172)->where('status', 'A')->pluck('id');
             $no_pr = $prFood->pr_number;
             $requester = $prFood->requester->nama_lengkap ?? '-';
             $warehouse = $prFood->warehouse->name ?? '-';

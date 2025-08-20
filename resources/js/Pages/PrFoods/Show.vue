@@ -25,7 +25,7 @@ const canApproveAssistantSSD = computed(() => {
   // Hanya untuk PR non-MK
   if (isMKWarehouse.value) return false;
   
-  return ((user?.id_jabatan === 54 && user?.status === 'A') || isSuperadmin.value)
+  return ((user?.id_jabatan === 172 && user?.status === 'A') || isSuperadmin.value)
     && props.prFood.status === 'draft'
     && !props.prFood.assistant_ssd_manager_approved_at;
 });
