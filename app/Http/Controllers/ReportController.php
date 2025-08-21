@@ -508,42 +508,6 @@ class ReportController extends Controller
             ->orderBy('o.nama_outlet')
             ->get();
 
-        // Query untuk retail_food data (akan di-UNION dengan data outlet)
-        $retailFoodQuery = DB::table('retail_food as rf')
-            ->join('retail_food_items as rfi', 'rf.id', '=', 'rfi.retail_food_id')
-            ->join('items as it', 'rfi.item_name', '=', 'it.name')  // Join berdasarkan nama item
-            ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
-            ->join('warehouse_division as wd', 'it.warehouse_division_id', '=', 'wd.id')
-            ->join('tbl_data_outlet as o', 'rf.outlet_id', '=', 'o.id_outlet')
-            ->select(
-                'o.nama_outlet as customer',
-                'o.is_outlet',
-                DB::raw("SUM(CASE WHEN wd.id NOT IN (1, 2, 5) THEN rfi.subtotal ELSE 0 END) as main_kitchen"),
-                DB::raw("SUM(CASE WHEN wd.id IN (1, 2, 5) AND sc.name NOT IN ('Chemical', 'Stationary', 'Marketing') THEN rfi.subtotal ELSE 0 END) as main_store"),
-                DB::raw("SUM(CASE WHEN wd.id IN (1, 2, 5) AND sc.name = 'Chemical' THEN rfi.subtotal ELSE 0 END) as chemical"),
-                DB::raw("SUM(CASE WHEN wd.id IN (1, 2, 5) AND sc.name = 'Stationary' THEN rfi.subtotal ELSE 0 END) as stationary"),
-                DB::raw("SUM(CASE WHEN wd.id IN (1, 2, 5) AND sc.name = 'Marketing' THEN rfi.subtotal ELSE 0 END) as marketing"),
-                DB::raw("(
-                    SUM(CASE WHEN wd.id NOT IN (1, 2, 5) THEN rfi.subtotal ELSE 0 END) +
-                    SUM(CASE WHEN wd.id IN (1, 2, 5) AND sc.name NOT IN ('Chemical', 'Stationary', 'Marketing') THEN rfi.subtotal ELSE 0 END) +
-                    SUM(CASE WHEN wd.id IN (1, 2, 5) AND sc.name = 'Chemical' THEN rfi.subtotal ELSE 0 END) +
-                    SUM(CASE WHEN wd.id IN (1, 2, 5) AND sc.name = 'Stationary' THEN rfi.subtotal ELSE 0 END) +
-                    SUM(CASE WHEN wd.id IN (1, 2, 5) AND sc.name = 'Marketing' THEN rfi.subtotal ELSE 0 END)
-                ) as line_total")
-            );
-
-        if ($request->filled('from')) {
-            $retailFoodQuery->whereDate('rf.transaction_date', '>=', $request->from);
-        }
-        if ($request->filled('to')) {
-            $retailFoodQuery->whereDate('rf.transaction_date', '<=', $request->to);
-        }
-
-        $retailFoodReport = $retailFoodQuery->groupBy('o.nama_outlet', 'o.is_outlet')
-            ->orderBy('o.is_outlet', 'desc')
-            ->orderBy('o.nama_outlet')
-            ->get();
-
         // Get all active outlets (status='A' and is_outlet=1)
         $allActiveOutlets = DB::table('tbl_data_outlet')
             ->where('status', 'A')
@@ -552,31 +516,27 @@ class ReportController extends Controller
             ->orderBy('nama_outlet')
             ->get();
 
-        // Merge data outlet dengan retail_food
+        // Merge data to include all active outlets
         $mergedReport = collect();
         
         // Group data outlet
         $outletData = $report->keyBy('customer');
         
-        // Group data retail_food
-        $retailFoodData = $retailFoodReport->keyBy('customer');
-        
         // Process all active outlets
         foreach ($allActiveOutlets as $outlet) {
             $outletRow = $outletData->get($outlet->customer);
-            $retailFoodRow = $retailFoodData->get($outlet->customer);
             
             $mergedRow = new \stdClass();
             $mergedRow->customer = $outlet->customer;
             $mergedRow->is_outlet = $outlet->is_outlet;
             
-            // Sum the values (0 if no data)
-            $mergedRow->main_kitchen = ($outletRow ? $outletRow->main_kitchen : 0) + ($retailFoodRow ? $retailFoodRow->main_kitchen : 0);
-            $mergedRow->main_store = ($outletRow ? $outletRow->main_store : 0) + ($retailFoodRow ? $retailFoodRow->main_store : 0);
-            $mergedRow->chemical = ($outletRow ? $outletRow->chemical : 0) + ($retailFoodRow ? $retailFoodRow->chemical : 0);
-            $mergedRow->stationary = ($outletRow ? $outletRow->stationary : 0) + ($retailFoodRow ? $retailFoodRow->stationary : 0);
-            $mergedRow->marketing = ($outletRow ? $outletRow->marketing : 0) + ($retailFoodRow ? $retailFoodRow->marketing : 0);
-            $mergedRow->line_total = ($outletRow ? $outletRow->line_total : 0) + ($retailFoodRow ? $retailFoodRow->line_total : 0);
+            // Use data if exists, otherwise use 0
+            $mergedRow->main_kitchen = $outletRow ? $outletRow->main_kitchen : 0;
+            $mergedRow->main_store = $outletRow ? $outletRow->main_store : 0;
+            $mergedRow->chemical = $outletRow ? $outletRow->chemical : 0;
+            $mergedRow->stationary = $outletRow ? $outletRow->stationary : 0;
+            $mergedRow->marketing = $outletRow ? $outletRow->marketing : 0;
+            $mergedRow->line_total = $outletRow ? $outletRow->line_total : 0;
             
             $mergedReport->push($mergedRow);
         }
@@ -718,42 +678,6 @@ class ReportController extends Controller
                 ->orderBy('o.nama_outlet')
                 ->get();
 
-            // Query untuk retail_food data (akan di-UNION dengan data outlet)
-            $retailFoodQuery = DB::table('retail_food as rf')
-                ->join('retail_food_items as rfi', 'rf.id', '=', 'rfi.retail_food_id')
-                ->join('items as it', 'rfi.item_name', '=', 'it.name')  // Join berdasarkan nama item
-                ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
-                ->join('warehouse_division as wd', 'it.warehouse_division_id', '=', 'wd.id')
-                ->join('tbl_data_outlet as o', 'rf.outlet_id', '=', 'o.id_outlet')
-                ->select(
-                    'o.nama_outlet as customer',
-                    'o.is_outlet',
-                    DB::raw("SUM(CASE WHEN wd.id NOT IN (1, 2, 5) THEN rfi.subtotal ELSE 0 END) as main_kitchen"),
-                    DB::raw("SUM(CASE WHEN wd.id IN (1, 2, 5) AND sc.name NOT IN ('Chemical', 'Stationary', 'Marketing') THEN rfi.subtotal ELSE 0 END) as main_store"),
-                    DB::raw("SUM(CASE WHEN wd.id IN (1, 2, 5) AND sc.name = 'Chemical' THEN rfi.subtotal ELSE 0 END) as chemical"),
-                    DB::raw("SUM(CASE WHEN wd.id IN (1, 2, 5) AND sc.name = 'Stationary' THEN rfi.subtotal ELSE 0 END) as stationary"),
-                    DB::raw("SUM(CASE WHEN wd.id IN (1, 2, 5) AND sc.name = 'Marketing' THEN rfi.subtotal ELSE 0 END) as marketing"),
-                    DB::raw("(
-                        SUM(CASE WHEN wd.id NOT IN (1, 2, 5) THEN rfi.subtotal ELSE 0 END) +
-                        SUM(CASE WHEN wd.id IN (1, 2, 5) AND sc.name NOT IN ('Chemical', 'Stationary', 'Marketing') THEN rfi.subtotal ELSE 0 END) +
-                        SUM(CASE WHEN wd.id IN (1, 2, 5) AND sc.name = 'Chemical' THEN rfi.subtotal ELSE 0 END) +
-                        SUM(CASE WHEN wd.id IN (1, 2, 5) AND sc.name = 'Stationary' THEN rfi.subtotal ELSE 0 END) +
-                        SUM(CASE WHEN wd.id IN (1, 2, 5) AND sc.name = 'Marketing' THEN rfi.subtotal ELSE 0 END)
-                    ) as line_total")
-                );
-
-            if ($request->filled('from')) {
-                $retailFoodQuery->whereDate('rf.transaction_date', '>=', $from);
-            }
-            if ($request->filled('to')) {
-                $retailFoodQuery->whereDate('rf.transaction_date', '<=', $to);
-            }
-
-            $retailFoodReport = $retailFoodQuery->groupBy('o.nama_outlet', 'o.is_outlet')
-                ->orderBy('o.is_outlet', 'desc')
-                ->orderBy('o.nama_outlet')
-                ->get();
-
             // Get all active outlets (status='A' and is_outlet=1)
             $allActiveOutlets = DB::table('tbl_data_outlet')
                 ->where('status', 'A')
@@ -762,31 +686,27 @@ class ReportController extends Controller
                 ->orderBy('nama_outlet')
                 ->get();
 
-            // Merge data outlet dengan retail_food
+            // Merge data to include all active outlets
             $mergedReport = collect();
             
             // Group data outlet
             $outletData = $report->keyBy('customer');
             
-            // Group data retail_food
-            $retailFoodData = $retailFoodReport->keyBy('customer');
-            
             // Process all active outlets
             foreach ($allActiveOutlets as $outlet) {
                 $outletRow = $outletData->get($outlet->customer);
-                $retailFoodRow = $retailFoodData->get($outlet->customer);
                 
                 $mergedRow = new \stdClass();
                 $mergedRow->customer = $outlet->customer;
                 $mergedRow->is_outlet = $outlet->is_outlet;
                 
-                // Sum the values (0 if no data)
-                $mergedRow->main_kitchen = ($outletRow ? $outletRow->main_kitchen : 0) + ($retailFoodRow ? $retailFoodRow->main_kitchen : 0);
-                $mergedRow->main_store = ($outletRow ? $outletRow->main_store : 0) + ($retailFoodRow ? $retailFoodRow->main_store : 0);
-                $mergedRow->chemical = ($outletRow ? $outletRow->chemical : 0) + ($retailFoodRow ? $retailFoodRow->chemical : 0);
-                $mergedRow->stationary = ($outletRow ? $outletRow->stationary : 0) + ($retailFoodRow ? $retailFoodRow->stationary : 0);
-                $mergedRow->marketing = ($outletRow ? $outletRow->marketing : 0) + ($retailFoodRow ? $retailFoodRow->marketing : 0);
-                $mergedRow->line_total = ($outletRow ? $outletRow->line_total : 0) + ($retailFoodRow ? $retailFoodRow->line_total : 0);
+                // Use data if exists, otherwise use 0
+                $mergedRow->main_kitchen = $outletRow ? $outletRow->main_kitchen : 0;
+                $mergedRow->main_store = $outletRow ? $outletRow->main_store : 0;
+                $mergedRow->chemical = $outletRow ? $outletRow->chemical : 0;
+                $mergedRow->stationary = $outletRow ? $outletRow->stationary : 0;
+                $mergedRow->marketing = $outletRow ? $outletRow->marketing : 0;
+                $mergedRow->line_total = $outletRow ? $outletRow->line_total : 0;
                 
                 $mergedReport->push($mergedRow);
             }
@@ -2004,284 +1924,70 @@ class ReportController extends Controller
         $from = $request->from;
         $to = $request->to;
 
-        // Query untuk outlet food good receives
-        $mainKitchen = DB::table('outlet_food_good_receives as gr')
-            ->join('outlet_food_good_receive_items as i', 'gr.id', '=', 'i.outlet_food_good_receive_id')
-            ->join('items as it', 'i.item_id', '=', 'it.id')
-            ->join('categories as cat', 'it.category_id', '=', 'cat.id')
-            ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
-            ->join('units as u', 'i.unit_id', '=', 'u.id')
-            ->join('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
-            ->join('food_packing_lists as pl', 'do.packing_list_id', '=', 'pl.id')
-            ->join('warehouse_division as wd', 'pl.warehouse_division_id', '=', 'wd.id')
-            ->join('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
-            ->join('food_floor_order_items as fo', function($join) {
-                $join->on('i.item_id', '=', 'fo.item_id')
-                     ->on('fo.floor_order_id', '=', 'pl.food_floor_order_id');
-            })
-            ->join('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
-            ->where('o.nama_outlet', $customer)
-            ->whereIn('w.name', ['MK1 Hot Kitchen', 'MK2 Cold Kitchen'])
-            ->whereDate('gr.receive_date', '>=', $from)
-            ->whereDate('gr.receive_date', '<=', $to)
-            ->select(
-                'it.name as item_name',
-                'cat.name as category',
-                'u.name as unit',
-                'i.received_qty',
-                'fo.price',
-                DB::raw('(i.received_qty * fo.price) as subtotal')
-            )
-            ->orderBy('cat.name')
-            ->orderBy('it.name')
-            ->get();
+        // Helper function to get GR data with grouping to avoid duplicates
+        $getGRData = function($warehouseCondition, $subCategoryCondition = null, $excludeSubCategories = null) use ($customer, $from, $to) {
+            $query = DB::table('outlet_food_good_receives as gr')
+                ->join('outlet_food_good_receive_items as i', 'gr.id', '=', 'i.outlet_food_good_receive_id')
+                ->join('items as it', 'i.item_id', '=', 'it.id')
+                ->join('categories as cat', 'it.category_id', '=', 'cat.id')
+                ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
+                ->join('units as u', 'i.unit_id', '=', 'u.id')
+                ->join('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
+                ->join('food_packing_lists as pl', 'do.packing_list_id', '=', 'pl.id')
+                ->join('warehouse_division as wd', 'pl.warehouse_division_id', '=', 'wd.id')
+                ->join('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
+                ->join('food_floor_order_items as fo', function($join) {
+                    $join->on('i.item_id', '=', 'fo.item_id')
+                         ->on('fo.floor_order_id', '=', 'pl.food_floor_order_id');
+                })
+                ->join('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
+                ->where('o.nama_outlet', $customer)
+                ->whereDate('gr.receive_date', '>=', $from)
+                ->whereDate('gr.receive_date', '<=', $to);
 
-        $mainStore = DB::table('outlet_food_good_receives as gr')
-            ->join('outlet_food_good_receive_items as i', 'gr.id', '=', 'i.outlet_food_good_receive_id')
-            ->join('items as it', 'i.item_id', '=', 'it.id')
-            ->join('categories as cat', 'it.category_id', '=', 'cat.id')
-            ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
-            ->join('units as u', 'i.unit_id', '=', 'u.id')
-            ->join('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
-            ->join('food_packing_lists as pl', 'do.packing_list_id', '=', 'pl.id')
-            ->join('warehouse_division as wd', 'pl.warehouse_division_id', '=', 'wd.id')
-            ->join('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
-            ->join('food_floor_order_items as fo', function($join) {
-                $join->on('i.item_id', '=', 'fo.item_id')
-                     ->on('fo.floor_order_id', '=', 'pl.food_floor_order_id');
-            })
-            ->join('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
-            ->where('o.nama_outlet', $customer)
-            ->where('w.name', 'MAIN STORE')
-            ->whereNotIn('sc.name', ['Chemical', 'Stationary', 'Marketing'])
-            ->whereDate('gr.receive_date', '>=', $from)
-            ->whereDate('gr.receive_date', '<=', $to)
-            ->select(
-                'it.name as item_name',
-                'cat.name as category',
-                'u.name as unit',
-                'i.received_qty',
-                'fo.price',
-                DB::raw('(i.received_qty * fo.price) as subtotal')
-            )
-            ->orderBy('cat.name')
-            ->orderBy('it.name')
-            ->get();
+            // Apply warehouse condition
+            if (is_array($warehouseCondition)) {
+                $query->whereIn('w.name', $warehouseCondition);
+            } else {
+                $query->where('w.name', $warehouseCondition);
+            }
 
-        $chemical = DB::table('outlet_food_good_receives as gr')
-            ->join('outlet_food_good_receive_items as i', 'gr.id', '=', 'i.outlet_food_good_receive_id')
-            ->join('items as it', 'i.item_id', '=', 'it.id')
-            ->join('categories as cat', 'it.category_id', '=', 'cat.id')
-            ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
-            ->join('units as u', 'i.unit_id', '=', 'u.id')
-            ->join('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
-            ->join('food_packing_lists as pl', 'do.packing_list_id', '=', 'pl.id')
-            ->join('warehouse_division as wd', 'pl.warehouse_division_id', '=', 'wd.id')
-            ->join('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
-            ->join('food_floor_order_items as fo', function($join) {
-                $join->on('i.item_id', '=', 'fo.item_id')
-                     ->on('fo.floor_order_id', '=', 'pl.food_floor_order_id');
-            })
-            ->join('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
-            ->where('o.nama_outlet', $customer)
-            ->where('w.name', 'MAIN STORE')
-            ->where('sc.name', 'Chemical')
-            ->whereDate('gr.receive_date', '>=', $from)
-            ->whereDate('gr.receive_date', '<=', $to)
-            ->select(
-                'it.name as item_name',
-                'cat.name as category',
-                'u.name as unit',
-                'i.received_qty',
-                'fo.price',
-                DB::raw('(i.received_qty * fo.price) as subtotal')
-            )
-            ->orderBy('cat.name')
-            ->orderBy('it.name')
-            ->get();
+            // Apply sub-category condition if provided
+            if ($subCategoryCondition) {
+                if (is_array($subCategoryCondition)) {
+                    $query->whereIn('sc.name', $subCategoryCondition);
+                } else {
+                    $query->where('sc.name', $subCategoryCondition);
+                }
+            }
 
-        $stationary = DB::table('outlet_food_good_receives as gr')
-            ->join('outlet_food_good_receive_items as i', 'gr.id', '=', 'i.outlet_food_good_receive_id')
-            ->join('items as it', 'i.item_id', '=', 'it.id')
-            ->join('categories as cat', 'it.category_id', '=', 'cat.id')
-            ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
-            ->join('units as u', 'i.unit_id', '=', 'u.id')
-            ->join('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
-            ->join('food_packing_lists as pl', 'do.packing_list_id', '=', 'pl.id')
-            ->join('warehouse_division as wd', 'pl.warehouse_division_id', '=', 'wd.id')
-            ->join('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
-            ->join('food_floor_order_items as fo', function($join) {
-                $join->on('i.item_id', '=', 'fo.item_id')
-                     ->on('fo.floor_order_id', '=', 'pl.food_floor_order_id');
-            })
-            ->join('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
-            ->where('o.nama_outlet', $customer)
-            ->where('w.name', 'MAIN STORE')
-            ->where('sc.name', 'Stationary')
-            ->whereDate('gr.receive_date', '>=', $from)
-            ->whereDate('gr.receive_date', '<=', $to)
-            ->select(
-                'it.name as item_name',
-                'cat.name as category',
-                'u.name as unit',
-                'i.received_qty',
-                'fo.price',
-                DB::raw('(i.received_qty * fo.price) as subtotal')
-            )
-            ->orderBy('cat.name')
-            ->orderBy('it.name')
-            ->get();
+            // Apply exclude sub-categories if provided
+            if ($excludeSubCategories) {
+                $query->whereNotIn('sc.name', $excludeSubCategories);
+            }
 
-        $marketing = DB::table('outlet_food_good_receives as gr')
-            ->join('outlet_food_good_receive_items as i', 'gr.id', '=', 'i.outlet_food_good_receive_id')
-            ->join('items as it', 'i.item_id', '=', 'it.id')
-            ->join('categories as cat', 'it.category_id', '=', 'cat.id')
-            ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
-            ->join('units as u', 'i.unit_id', '=', 'u.id')
-            ->join('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
-            ->join('food_packing_lists as pl', 'do.packing_list_id', '=', 'pl.id')
-            ->join('warehouse_division as wd', 'pl.warehouse_division_id', '=', 'wd.id')
-            ->join('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
-            ->join('food_floor_order_items as fo', function($join) {
-                $join->on('i.item_id', '=', 'fo.item_id')
-                     ->on('fo.floor_order_id', '=', 'pl.food_floor_order_id');
-            })
-            ->join('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
-            ->where('o.nama_outlet', $customer)
-            ->where('w.name', 'MAIN STORE')
-            ->where('sc.name', 'Marketing')
-            ->whereDate('gr.receive_date', '>=', $from)
-            ->whereDate('gr.receive_date', '<=', $to)
-            ->select(
-                'it.name as item_name',
-                'cat.name as category',
-                'u.name as unit',
-                'i.received_qty',
-                'fo.price',
-                DB::raw('(i.received_qty * fo.price) as subtotal')
-            )
-            ->orderBy('cat.name')
-            ->orderBy('it.name')
-            ->get();
+            return $query->select(
+                    'it.name as item_name',
+                    'cat.name as category',
+                    'u.name as unit',
+                    DB::raw('SUM(i.received_qty) as received_qty'),
+                    'fo.price',
+                    DB::raw('SUM(i.received_qty * fo.price) as subtotal')
+                )
+                ->groupBy('it.name', 'cat.name', 'u.name', 'fo.price')
+                ->orderBy('cat.name')
+                ->orderBy('it.name')
+                ->get();
+        };
 
-        // Get retail_food data for Main Kitchen
-        $retailFoodMainKitchen = DB::table('retail_food as rf')
-            ->join('retail_food_items as rfi', 'rf.id', '=', 'rfi.retail_food_id')
-            ->join('items as it', 'rfi.item_name', '=', 'it.name')
-            ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
-            ->join('warehouse_division as wd', 'it.warehouse_division_id', '=', 'wd.id')
-            ->join('tbl_data_outlet as o', 'rf.outlet_id', '=', 'o.id_outlet')
-            ->where('o.nama_outlet', $customer)
-            ->whereNotIn('wd.id', [1, 2, 5])
-            ->whereDate('rf.transaction_date', '>=', $from)
-            ->whereDate('rf.transaction_date', '<=', $to)
-            ->select(
-                'rfi.item_name',
-                'sc.name as category',
-                'rfi.unit',
-                'rfi.qty as received_qty',
-                'rfi.price',
-                'rfi.subtotal'
-            )
-            ->orderBy('sc.name')
-            ->orderBy('rfi.item_name')
-            ->get();
 
-        // Get retail_food data for Main Store
-        $retailFoodMainStore = DB::table('retail_food as rf')
-            ->join('retail_food_items as rfi', 'rf.id', '=', 'rfi.retail_food_id')
-            ->join('items as it', 'rfi.item_name', '=', 'it.name')
-            ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
-            ->join('warehouse_division as wd', 'it.warehouse_division_id', '=', 'wd.id')
-            ->join('tbl_data_outlet as o', 'rf.outlet_id', '=', 'o.id_outlet')
-            ->where('o.nama_outlet', $customer)
-            ->whereIn('wd.id', [1, 2, 5])
-            ->whereNotIn('sc.name', ['Chemical', 'Stationary', 'Marketing'])
-            ->whereDate('rf.transaction_date', '>=', $from)
-            ->whereDate('rf.transaction_date', '<=', $to)
-            ->select(
-                'rfi.item_name',
-                'sc.name as category',
-                'rfi.unit',
-                'rfi.qty as received_qty',
-                'rfi.price',
-                'rfi.subtotal'
-            )
-            ->orderBy('sc.name')
-            ->orderBy('rfi.item_name')
-            ->get();
 
-        // Get retail_food data for Chemical
-        $retailFoodChemical = DB::table('retail_food as rf')
-            ->join('retail_food_items as rfi', 'rf.id', '=', 'rfi.retail_food_id')
-            ->join('items as it', 'rfi.item_name', '=', 'it.name')
-            ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
-            ->join('warehouse_division as wd', 'it.warehouse_division_id', '=', 'wd.id')
-            ->join('tbl_data_outlet as o', 'rf.outlet_id', '=', 'o.id_outlet')
-            ->where('o.nama_outlet', $customer)
-            ->whereIn('wd.id', [1, 2, 5])
-            ->where('sc.name', 'Chemical')
-            ->whereDate('rf.transaction_date', '>=', $from)
-            ->whereDate('rf.transaction_date', '<=', $to)
-            ->select(
-                'rfi.item_name',
-                'sc.name as category',
-                'rfi.unit',
-                'rfi.qty as received_qty',
-                'rfi.price',
-                'rfi.subtotal'
-            )
-            ->orderBy('sc.name')
-            ->orderBy('rfi.item_name')
-            ->get();
-
-        // Get retail_food data for Stationary
-        $retailFoodStationary = DB::table('retail_food as rf')
-            ->join('retail_food_items as rfi', 'rf.id', '=', 'rfi.retail_food_id')
-            ->join('items as it', 'rfi.item_name', '=', 'it.name')
-            ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
-            ->join('warehouse_division as wd', 'it.warehouse_division_id', '=', 'wd.id')
-            ->join('tbl_data_outlet as o', 'rf.outlet_id', '=', 'o.id_outlet')
-            ->where('o.nama_outlet', $customer)
-            ->whereIn('wd.id', [1, 2, 5])
-            ->where('sc.name', 'Stationary')
-            ->whereDate('rf.transaction_date', '>=', $from)
-            ->whereDate('rf.transaction_date', '<=', $to)
-            ->select(
-                'rfi.item_name',
-                'sc.name as category',
-                'rfi.unit',
-                'rfi.qty as received_qty',
-                'rfi.price',
-                'rfi.subtotal'
-            )
-            ->orderBy('sc.name')
-            ->orderBy('rfi.item_name')
-            ->get();
-
-        // Get retail_food data for Marketing
-        $retailFoodMarketing = DB::table('retail_food as rf')
-            ->join('retail_food_items as rfi', 'rf.id', '=', 'rfi.retail_food_id')
-            ->join('items as it', 'rfi.item_name', '=', 'it.name')
-            ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
-            ->join('warehouse_division as wd', 'it.warehouse_division_id', '=', 'wd.id')
-            ->join('tbl_data_outlet as o', 'rf.outlet_id', '=', 'o.id_outlet')
-            ->where('o.nama_outlet', $customer)
-            ->whereIn('wd.id', [1, 2, 5])
-            ->where('sc.name', 'Marketing')
-            ->whereDate('rf.transaction_date', '>=', $from)
-            ->whereDate('rf.transaction_date', '<=', $to)
-            ->select(
-                'rfi.item_name',
-                'sc.name as category',
-                'rfi.unit',
-                'rfi.qty as received_qty',
-                'rfi.price',
-                'rfi.subtotal'
-            )
-            ->orderBy('sc.name')
-            ->orderBy('rfi.item_name')
-            ->get();
+        // Get data using helper functions
+        $mainKitchen = $getGRData(['MK1 Hot Kitchen', 'MK2 Cold Kitchen']);
+        $mainStore = $getGRData('MAIN STORE', null, ['Chemical', 'Stationary', 'Marketing']);
+        $chemical = $getGRData('MAIN STORE', 'Chemical');
+        $stationary = $getGRData('MAIN STORE', 'Stationary');
+        $marketing = $getGRData('MAIN STORE', 'Marketing');
 
         // Add source identifier to each dataset
         $mainKitchen->each(function($item) {
@@ -2300,47 +2006,31 @@ class ReportController extends Controller
             $item->source = 'GR';
         });
 
-        $retailFoodMainKitchen->each(function($item) {
-            $item->source = 'Retail Food';
-        });
-        $retailFoodMainStore->each(function($item) {
-            $item->source = 'Retail Food';
-        });
-        $retailFoodChemical->each(function($item) {
-            $item->source = 'Retail Food';
-        });
-        $retailFoodStationary->each(function($item) {
-            $item->source = 'Retail Food';
-        });
-        $retailFoodMarketing->each(function($item) {
-            $item->source = 'Retail Food';
-        });
-
         return response()->json([
             'main_kitchen' => [
                 'gr' => $mainKitchen,
-                'retail_food' => $retailFoodMainKitchen,
-                'all' => $mainKitchen->merge($retailFoodMainKitchen)
+                'retail_food' => collect(),
+                'all' => $mainKitchen
             ],
             'main_store' => [
                 'gr' => $mainStore,
-                'retail_food' => $retailFoodMainStore,
-                'all' => $mainStore->merge($retailFoodMainStore)
+                'retail_food' => collect(),
+                'all' => $mainStore
             ],
             'chemical' => [
                 'gr' => $chemical,
-                'retail_food' => $retailFoodChemical,
-                'all' => $chemical->merge($retailFoodChemical)
+                'retail_food' => collect(),
+                'all' => $chemical
             ],
             'stationary' => [
                 'gr' => $stationary,
-                'retail_food' => $retailFoodStationary,
-                'all' => $stationary->merge($retailFoodStationary)
+                'retail_food' => collect(),
+                'all' => $stationary
             ],
             'marketing' => [
                 'gr' => $marketing,
-                'retail_food' => $retailFoodMarketing,
-                'all' => $marketing->merge($retailFoodMarketing)
+                'retail_food' => collect(),
+                'all' => $marketing
             ],
         ]);
     }
