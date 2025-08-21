@@ -147,7 +147,7 @@ const generatePO = async () => {
     Object.entries(poForm.items_by_supplier).forEach(([itemId, splits]) => {
         splits.forEach(split => {
             const supplierId = split.supplier_id ? split.supplier_id.id : null;
-            if (!supplierId || !split.price || !split.qty || split.qty <= 0) return;
+            if (!supplierId || !split.price || !split.qty || split.qty < 0) return;
             if (!itemsBySupplier[supplierId]) itemsBySupplier[supplierId] = [];
             itemsBySupplier[supplierId].push({
                 id: Number(itemId),
@@ -395,7 +395,7 @@ onMounted(async () => {
                                                             <tr v-for="(split, idx) in poForm.items_by_supplier[item.id]" :key="idx">
                                                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ item.name }}</td>
                                                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                                                    <input type="number" v-model="split.qty" :max="item.quantity - totalQtyUsed(item.id, idx)" class="w-20 border rounded px-2 py-1" />
+                                                                    <input type="number" v-model="split.qty" min="0" step="0.01" :max="item.quantity - totalQtyUsed(item.id, idx)" class="w-20 border rounded px-2 py-1" />
                                                                 </td>
                                                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ item.unit }}</td>
                                                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ item.arrival_date ? new Date(item.arrival_date).toLocaleDateString('id-ID') : '-' }}</td>

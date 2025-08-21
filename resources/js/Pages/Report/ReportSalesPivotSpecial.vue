@@ -54,11 +54,11 @@
           <thead>
             <tr class="bg-yellow-300 text-gray-900">
               <th class="px-4 py-2 border border-gray-300">Customer</th>
-              <th class="px-4 py-2 border border-gray-300 text-right">Main Kitchen</th>
               <th class="px-4 py-2 border border-gray-300 text-right">Main Store</th>
               <th class="px-4 py-2 border border-gray-300 text-right">Chemical</th>
               <th class="px-4 py-2 border border-gray-300 text-right">Stationary</th>
               <th class="px-4 py-2 border border-gray-300 text-right">Marketing</th>
+              <th class="px-4 py-2 border border-gray-300 text-right">Main Kitchen</th>
               <th class="px-4 py-2 border border-gray-300 text-right">Line Total</th>
             </tr>
           </thead>
@@ -76,22 +76,22 @@
                   <i class="fas fa-search-plus"></i>
                 </button>
               </td>
-              <td class="px-4 py-2 border border-gray-200 text-right">{{ formatRupiah(row.main_kitchen) }}</td>
               <td class="px-4 py-2 border border-gray-200 text-right">{{ formatRupiah(row.main_store) }}</td>
               <td class="px-4 py-2 border border-gray-200 text-right">{{ formatRupiah(row.chemical) }}</td>
               <td class="px-4 py-2 border border-gray-200 text-right">{{ formatRupiah(row.stationary) }}</td>
               <td class="px-4 py-2 border border-gray-200 text-right">{{ formatRupiah(row.marketing) }}</td>
+              <td class="px-4 py-2 border border-gray-200 text-right">{{ formatRupiah(row.main_kitchen) }}</td>
               <td class="px-4 py-2 border border-gray-200 text-right font-bold">{{ formatRupiah(row.line_total) }}</td>
             </tr>
             
             <!-- Outlet Group Subtotal -->
             <tr v-if="groupedReport.outlets.length > 0" class="bg-blue-50 font-semibold">
               <td class="px-4 py-2 border border-gray-300 text-right">SUBTOTAL OUTLET</td>
-              <td class="px-4 py-2 border border-gray-300 text-right">{{ formatRupiah(totalColGroup('main_kitchen', groupedReport.outlets)) }}</td>
               <td class="px-4 py-2 border border-gray-300 text-right">{{ formatRupiah(totalColGroup('main_store', groupedReport.outlets)) }}</td>
               <td class="px-4 py-2 border border-gray-300 text-right">{{ formatRupiah(totalColGroup('chemical', groupedReport.outlets)) }}</td>
               <td class="px-4 py-2 border border-gray-300 text-right">{{ formatRupiah(totalColGroup('stationary', groupedReport.outlets)) }}</td>
               <td class="px-4 py-2 border border-gray-300 text-right">{{ formatRupiah(totalColGroup('marketing', groupedReport.outlets)) }}</td>
+              <td class="px-4 py-2 border border-gray-300 text-right">{{ formatRupiah(totalColGroup('main_kitchen', groupedReport.outlets)) }}</td>
               <td class="px-4 py-2 border border-gray-300 text-right">{{ formatRupiah(totalColGroup('line_total', groupedReport.outlets)) }}</td>
             </tr>
             
@@ -108,22 +108,22 @@
                   <i class="fas fa-search-plus"></i>
                 </button>
               </td>
-              <td class="px-4 py-2 border border-gray-200 text-right">{{ formatRupiah(row.main_kitchen) }}</td>
               <td class="px-4 py-2 border border-gray-200 text-right">{{ formatRupiah(row.main_store) }}</td>
               <td class="px-4 py-2 border border-gray-200 text-right">{{ formatRupiah(row.chemical) }}</td>
               <td class="px-4 py-2 border border-gray-200 text-right">{{ formatRupiah(row.stationary) }}</td>
               <td class="px-4 py-2 border border-gray-200 text-right">{{ formatRupiah(row.marketing) }}</td>
+              <td class="px-4 py-2 border border-gray-200 text-right">{{ formatRupiah(row.main_kitchen) }}</td>
               <td class="px-4 py-2 border border-gray-200 text-right font-bold">{{ formatRupiah(row.line_total) }}</td>
             </tr>
             
             <!-- Non-Outlet Group Subtotal -->
             <tr v-if="groupedReport.nonOutlets.length > 0" class="bg-green-50 font-semibold">
               <td class="px-4 py-2 border border-gray-300 text-right">SUBTOTAL NON-OUTLET</td>
-              <td class="px-4 py-2 border border-gray-300 text-right">{{ formatRupiah(totalColGroup('main_kitchen', groupedReport.nonOutlets)) }}</td>
               <td class="px-4 py-2 border border-gray-300 text-right">{{ formatRupiah(totalColGroup('main_store', groupedReport.nonOutlets)) }}</td>
               <td class="px-4 py-2 border border-gray-300 text-right">{{ formatRupiah(totalColGroup('chemical', groupedReport.nonOutlets)) }}</td>
               <td class="px-4 py-2 border border-gray-300 text-right">{{ formatRupiah(totalColGroup('stationary', groupedReport.nonOutlets)) }}</td>
               <td class="px-4 py-2 border border-gray-300 text-right">{{ formatRupiah(totalColGroup('marketing', groupedReport.nonOutlets)) }}</td>
+              <td class="px-4 py-2 border border-gray-300 text-right">{{ formatRupiah(totalColGroup('main_kitchen', groupedReport.nonOutlets)) }}</td>
               <td class="px-4 py-2 border border-gray-300 text-right">{{ formatRupiah(totalColGroup('line_total', groupedReport.nonOutlets)) }}</td>
             </tr>
             
@@ -135,11 +135,11 @@
           <tfoot v-if="filteredReport.length">
             <tr class="bg-gray-100 font-bold">
               <td class="px-4 py-2 border border-gray-300 text-right">TOTAL KESELURUHAN</td>
-              <td class="px-4 py-2 border border-gray-300 text-right">{{ formatRupiah(totalCol('main_kitchen')) }}</td>
               <td class="px-4 py-2 border border-gray-300 text-right">{{ formatRupiah(totalCol('main_store')) }}</td>
               <td class="px-4 py-2 border border-gray-300 text-right">{{ formatRupiah(totalCol('chemical')) }}</td>
               <td class="px-4 py-2 border border-gray-300 text-right">{{ formatRupiah(totalCol('stationary')) }}</td>
               <td class="px-4 py-2 border border-gray-300 text-right">{{ formatRupiah(totalCol('marketing')) }}</td>
+              <td class="px-4 py-2 border border-gray-300 text-right">{{ formatRupiah(totalCol('main_kitchen')) }}</td>
               <td class="px-4 py-2 border border-gray-300 text-right">{{ formatRupiah(totalCol('line_total')) }}</td>
             </tr>
           </tfoot>
@@ -169,11 +169,11 @@
             <thead>
               <tr class="bg-purple-300 text-gray-900">
                 <th class="px-4 py-2 border border-gray-300">Customer</th>
-                <th class="px-4 py-2 border border-gray-300 text-right">Main Kitchen</th>
                 <th class="px-4 py-2 border border-gray-300 text-right">Main Store</th>
                 <th class="px-4 py-2 border border-gray-300 text-right">Chemical</th>
                 <th class="px-4 py-2 border border-gray-300 text-right">Stationary</th>
                 <th class="px-4 py-2 border border-gray-300 text-right">Marketing</th>
+                <th class="px-4 py-2 border border-gray-300 text-right">Main Kitchen</th>
                 <th class="px-4 py-2 border border-gray-300 text-right">Line Total</th>
               </tr>
             </thead>
@@ -188,22 +188,22 @@
                     <i class="fas fa-search-plus"></i>
                   </button>
                 </td>
-                <td class="px-4 py-2 border border-gray-200 text-right">{{ formatRupiah(row.main_kitchen) }}</td>
                 <td class="px-4 py-2 border border-gray-200 text-right">{{ formatRupiah(row.main_store) }}</td>
                 <td class="px-4 py-2 border border-gray-200 text-right">{{ formatRupiah(row.chemical) }}</td>
                 <td class="px-4 py-2 border border-gray-200 text-right">{{ formatRupiah(row.stationary) }}</td>
                 <td class="px-4 py-2 border border-gray-200 text-right">{{ formatRupiah(row.marketing) }}</td>
+                <td class="px-4 py-2 border border-gray-200 text-right">{{ formatRupiah(row.main_kitchen) }}</td>
                 <td class="px-4 py-2 border border-gray-200 text-right font-bold">{{ formatRupiah(row.line_total) }}</td>
               </tr>
             </tbody>
             <tfoot v-if="filteredRetailReport.length">
               <tr class="bg-purple-100 font-bold">
                 <td class="px-4 py-2 border border-gray-300 text-right">TOTAL RETAIL</td>
-                <td class="px-4 py-2 border border-gray-300 text-right">{{ formatRupiah(totalColRetail('main_kitchen')) }}</td>
                 <td class="px-4 py-2 border border-gray-300 text-right">{{ formatRupiah(totalColRetail('main_store')) }}</td>
                 <td class="px-4 py-2 border border-gray-300 text-right">{{ formatRupiah(totalColRetail('chemical')) }}</td>
                 <td class="px-4 py-2 border border-gray-300 text-right">{{ formatRupiah(totalColRetail('stationary')) }}</td>
                 <td class="px-4 py-2 border border-gray-300 text-right">{{ formatRupiah(totalColRetail('marketing')) }}</td>
+                <td class="px-4 py-2 border border-gray-300 text-right">{{ formatRupiah(totalColRetail('main_kitchen')) }}</td>
                 <td class="px-4 py-2 border border-gray-300 text-right">{{ formatRupiah(totalColRetail('line_total')) }}</td>
               </tr>
             </tfoot>
@@ -226,11 +226,11 @@
             <thead>
               <tr class="bg-orange-300 text-gray-900">
                 <th class="px-4 py-2 border border-gray-300">Customer</th>
-                <th class="px-4 py-2 border border-gray-300 text-right">Main Kitchen</th>
                 <th class="px-4 py-2 border border-gray-300 text-right">Main Store</th>
                 <th class="px-4 py-2 border border-gray-300 text-right">Chemical</th>
                 <th class="px-4 py-2 border border-gray-300 text-right">Stationary</th>
                 <th class="px-4 py-2 border border-gray-300 text-right">Marketing</th>
+                <th class="px-4 py-2 border border-gray-300 text-right">Main Kitchen</th>
                 <th class="px-4 py-2 border border-gray-300 text-right">Line Total</th>
               </tr>
             </thead>
@@ -245,22 +245,22 @@
                     <i class="fas fa-search-plus"></i>
                   </button>
                 </td>
-                <td class="px-4 py-2 border border-gray-200 text-right">{{ formatRupiah(row.main_kitchen) }}</td>
                 <td class="px-4 py-2 border border-gray-200 text-right">{{ formatRupiah(row.main_store) }}</td>
                 <td class="px-4 py-2 border border-gray-200 text-right">{{ formatRupiah(row.chemical) }}</td>
                 <td class="px-4 py-2 border border-gray-200 text-right">{{ formatRupiah(row.stationary) }}</td>
                 <td class="px-4 py-2 border border-gray-200 text-right">{{ formatRupiah(row.marketing) }}</td>
+                <td class="px-4 py-2 border border-gray-200 text-right">{{ formatRupiah(row.main_kitchen) }}</td>
                 <td class="px-4 py-2 border border-gray-200 text-right font-bold">{{ formatRupiah(row.line_total) }}</td>
               </tr>
             </tbody>
             <tfoot v-if="filteredWarehouseReport.length">
               <tr class="bg-orange-100 font-bold">
                 <td class="px-4 py-2 border border-gray-300 text-right">TOTAL WAREHOUSE</td>
-                <td class="px-4 py-2 border border-gray-300 text-right">{{ formatRupiah(totalColWarehouse('main_kitchen')) }}</td>
                 <td class="px-4 py-2 border border-gray-300 text-right">{{ formatRupiah(totalColWarehouse('main_store')) }}</td>
                 <td class="px-4 py-2 border border-gray-300 text-right">{{ formatRupiah(totalColWarehouse('chemical')) }}</td>
                 <td class="px-4 py-2 border border-gray-300 text-right">{{ formatRupiah(totalColWarehouse('stationary')) }}</td>
                 <td class="px-4 py-2 border border-gray-300 text-right">{{ formatRupiah(totalColWarehouse('marketing')) }}</td>
+                <td class="px-4 py-2 border border-gray-300 text-right">{{ formatRupiah(totalColWarehouse('main_kitchen')) }}</td>
                 <td class="px-4 py-2 border border-gray-300 text-right">{{ formatRupiah(totalColWarehouse('line_total')) }}</td>
               </tr>
             </tfoot>
@@ -272,16 +272,121 @@
         <div class="bg-gradient-to-br from-yellow-200 via-white to-yellow-100 rounded-3xl shadow-2xl p-8 min-w-[350px] max-w-2xl w-full relative animate-fade-in-3d">
           <button @click="showModal = false" class="absolute top-3 right-4 text-2xl text-yellow-700 hover:text-red-500 font-bold">&times;</button>
           <h2 class="text-xl font-bold mb-4 text-yellow-800 flex items-center gap-2"><i class="fas fa-list-alt"></i> Detail Penjualan: {{ modalCustomer }}</h2>
+          
+          <!-- Download PDF Button -->
+          <div class="mb-4 flex justify-end">
+            <button 
+              @click="downloadPDF"
+              :disabled="loadingDetail || Object.keys(detailData).length === 0"
+              class="inline-flex items-center px-4 py-2 bg-red-600 text-white rounded-md font-semibold hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              <i class="fas fa-file-pdf mr-2"></i>
+              Download PDF
+            </button>
+          </div>
           <div v-if="loadingDetail" class="text-center py-8 text-yellow-600"><i class="fa fa-spinner fa-spin mr-2"></i>Loading...</div>
           <div v-else-if="Object.keys(detailData).length === 0" class="text-center py-8 text-gray-400">Tidak ada data detail.</div>
           <div v-else class="space-y-6 max-h-[60vh] overflow-y-auto">
-            <div v-for="(items, cat) in detailData" :key="cat" class="rounded-xl shadow bg-white/80 p-4 border-l-8" :class="modalCustomer.includes('(Retail)') ? 'border-purple-400' : modalCustomer.includes('(Warehouse)') ? 'border-orange-400' : 'border-yellow-400'">
-              <div class="font-bold text-lg mb-2 flex items-center gap-2" :class="modalCustomer.includes('(Retail)') ? 'text-purple-700' : modalCustomer.includes('(Warehouse)') ? 'text-orange-700' : 'text-yellow-700'">
-                <i class="fa fa-folder-open"></i> {{ cat }}
+            <!-- For FJ Detail (GR + Retail Food) -->
+            <div v-if="!modalCustomer.includes('(Retail)') && !modalCustomer.includes('(Warehouse)')">
+              <div v-for="(categoryData, cat) in detailData" :key="cat" class="rounded-xl shadow bg-white/80 p-4 border-l-8 border-yellow-400 mb-4">
+                <div class="font-bold text-lg mb-2 flex items-center gap-2 text-yellow-700">
+                  <i class="fa fa-folder-open"></i> {{ cat.charAt(0).toUpperCase() + cat.slice(1).replace('_', ' ') }}
+                </div>
+                
+                <!-- GR Data -->
+                <div v-if="categoryData.gr && categoryData.gr.length > 0" class="mb-4">
+                  <div class="bg-blue-100 p-2 rounded-lg mb-2 border-l-4 border-blue-500">
+                    <div class="font-semibold text-blue-800 text-sm">GR (Good Receipt)</div>
+                  </div>
+                  <table class="w-full text-sm">
+                    <thead>
+                      <tr class="text-blue-700">
+                        <th class="text-left py-1">Item</th>
+                        <th class="text-left py-1">Category</th>
+                        <th class="text-right py-1">Unit</th>
+                        <th class="text-right py-1">Qty</th>
+                        <th class="text-right py-1">Price</th>
+                        <th class="text-right py-1">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr v-for="item in categoryData.gr" :key="'gr-' + item.item_name" class="border-b border-gray-200 hover:bg-gray-50">
+                        <td class="py-1">{{ item.item_name }}</td>
+                        <td class="py-1">{{ item.category }}</td>
+                        <td class="py-1 text-right">{{ item.unit }}</td>
+                        <td class="py-1 text-right">{{ item.received_qty }}</td>
+                        <td class="py-1 text-right">{{ formatRupiah(item.price) }}</td>
+                        <td class="py-1 text-right font-bold">{{ formatRupiah(item.subtotal) }}</td>
+                      </tr>
+                    </tbody>
+                    <tfoot>
+                      <tr class="font-bold bg-blue-50">
+                        <td colspan="5" class="text-right py-1">Total GR:</td>
+                        <td class="py-1 text-right">{{ formatRupiah(categoryData.gr.reduce((sum, item) => sum + (Number(item.subtotal) || 0), 0)) }}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+
+                <!-- Retail Food Data -->
+                <div v-if="categoryData.retail_food && categoryData.retail_food.length > 0" class="mb-4">
+                  <div class="bg-purple-100 p-2 rounded-lg mb-2 border-l-4 border-purple-500">
+                    <div class="font-semibold text-purple-800 text-sm">Retail Food</div>
+                  </div>
+                  <table class="w-full text-sm">
+                    <thead>
+                      <tr class="text-purple-700">
+                        <th class="text-left py-1">Item</th>
+                        <th class="text-left py-1">Category</th>
+                        <th class="text-right py-1">Unit</th>
+                        <th class="text-right py-1">Qty</th>
+                        <th class="text-right py-1">Price</th>
+                        <th class="text-right py-1">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr v-for="item in categoryData.retail_food" :key="'rf-' + item.item_name" class="border-b border-gray-200 hover:bg-gray-50">
+                        <td class="py-1">{{ item.item_name }}</td>
+                        <td class="py-1">{{ item.category }}</td>
+                        <td class="py-1 text-right">{{ item.unit }}</td>
+                        <td class="py-1 text-right">{{ item.received_qty }}</td>
+                        <td class="py-1 text-right">{{ formatRupiah(item.price) }}</td>
+                        <td class="py-1 text-right font-bold">{{ formatRupiah(item.subtotal) }}</td>
+                      </tr>
+                    </tbody>
+                    <tfoot>
+                      <tr class="font-bold bg-purple-50">
+                        <td colspan="5" class="text-right py-1">Total Retail Food:</td>
+                        <td class="py-1 text-right">{{ formatRupiah(categoryData.retail_food.reduce((sum, item) => sum + (Number(item.subtotal) || 0), 0)) }}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+
+                <!-- Combined Total -->
+                <div class="border-t-2 border-yellow-500 pt-2 mt-4">
+                  <table class="w-full text-sm">
+                    <tfoot>
+                      <tr class="font-bold bg-yellow-50">
+                        <td colspan="5" class="text-right py-1">Total {{ cat.charAt(0).toUpperCase() + cat.slice(1).replace('_', ' ') }}:</td>
+                        <td class="py-1 text-right">{{ formatRupiah(categoryData.all.reduce((sum, item) => sum + (Number(item.subtotal) || 0), 0)) }}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
               </div>
-              <table class="w-full text-sm">
-                <thead>
-                  <tr :class="modalCustomer.includes('(Retail)') ? 'text-purple-700' : modalCustomer.includes('(Warehouse)') ? 'text-orange-700' : 'text-yellow-700'">
+            </div>
+
+            <!-- For Retail and Warehouse Detail (existing code) -->
+            <div v-else>
+              <div v-for="(items, cat) in detailData" :key="cat" class="rounded-xl shadow bg-white/80 p-4 border-l-8" :class="modalCustomer.includes('(Retail)') ? 'border-purple-400' : modalCustomer.includes('(Warehouse)') ? 'border-orange-400' : 'border-yellow-400'">
+                <div class="font-bold text-lg mb-2 flex items-center gap-2" :class="modalCustomer.includes('(Retail)') ? 'text-purple-700' : modalCustomer.includes('(Warehouse)') ? 'text-orange-700' : 'text-yellow-700'">
+                  <i class="fa fa-folder-open"></i> {{ cat }}
+                </div>
+                <table class="w-full text-sm">
+                  <thead>
+                    <tr :class="modalCustomer.includes('(Retail)') ? 'text-purple-700' : modalCustomer.includes('(Warehouse)') ? 'text-orange-700' : 'text-yellow-700'">
                     <th class="text-left py-1">Item</th>
                     <th class="text-right py-1">Qty</th>
                     <th class="text-right py-1">Unit</th>
@@ -309,7 +414,15 @@
                     <td v-if="modalCustomer.includes('(Retail)') || modalCustomer.includes('(Warehouse)')" class="py-1 text-right text-xs">{{ new Date(item.sale_date).toLocaleDateString('id-ID') }}</td>
                   </tr>
                 </tbody>
+                <tfoot>
+                  <tr class="font-bold bg-gray-100">
+                    <td colspan="4" class="text-right py-1">Total {{ cat }}:</td>
+                    <td class="py-1 text-right">{{ formatRupiah(items.reduce((sum, item) => sum + (Number(modalCustomer.includes('(Warehouse)') ? item.total : item.subtotal) || 0), 0)) }}</td>
+                    <td v-if="modalCustomer.includes('(Retail)') || modalCustomer.includes('(Warehouse)')" colspan="2"></td>
+                  </tr>
+                </tfoot>
               </table>
+            </div>
             </div>
           </div>
         </div>
@@ -495,8 +608,8 @@ async function showDetail(customer) {
   detailData.value = {};
   loadingDetail.value = true;
   try {
-    const { data } = await axios.post(route('report.sales-pivot-outlet-detail'), {
-      outlet: customer,
+    const { data } = await axios.post('/api/report/fj-detail', {
+      customer: customer,
       from: from.value,
       to: to.value
     });
@@ -505,6 +618,43 @@ async function showDetail(customer) {
     detailData.value = {};
   } finally {
     loadingDetail.value = false;
+  }
+}
+
+async function downloadPDF() {
+  try {
+    let endpoint = '/api/report/fj-detail-pdf';
+    let customerName = modalCustomer.value;
+    
+    // Determine the correct endpoint and customer name based on modal type
+    if (modalCustomer.value.includes('(Retail)')) {
+      endpoint = '/api/report/retail-detail-pdf';
+      customerName = modalCustomer.value.replace(' (Retail)', '');
+    } else if (modalCustomer.value.includes('(Warehouse)')) {
+      endpoint = '/api/report/warehouse-detail-pdf';
+      customerName = modalCustomer.value.replace(' (Warehouse)', '');
+    }
+    
+    const response = await axios.post(endpoint, {
+      customer: customerName,
+      from: from.value,
+      to: to.value
+    }, {
+      responseType: 'blob'
+    });
+    
+    const blob = new Blob([response.data], { type: 'application/pdf' })
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `Detail_${modalCustomer.value}_${from.value}_${to.value}.pdf`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(url)
+  } catch (error) {
+    console.error('Error downloading PDF:', error)
+    alert('Terjadi kesalahan saat download PDF')
   }
 }
 

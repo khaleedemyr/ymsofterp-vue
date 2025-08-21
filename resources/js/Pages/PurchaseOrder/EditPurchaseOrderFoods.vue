@@ -94,7 +94,8 @@
                           <input
                             type="number"
                             v-model="item.quantity"
-                            min="1"
+                            min="0"
+                            step="0.01"
                             class="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
                             @input="updateItemTotal(index)"
                           />
@@ -258,6 +259,8 @@
                                 <input 
                                   type="number" 
                                   v-model="split.qty" 
+                                  min="0"
+                                  step="0.01"
                                   :max="item.quantity - totalQtyUsed(item.id, idx)" 
                                   class="w-20 border rounded px-2 py-1" 
                                 />
@@ -548,7 +551,7 @@ const addSelectedItems = () => {
   Object.entries(addItemForm.value.items_by_supplier).forEach(([itemId, splits]) => {
     splits.forEach(split => {
       const supplierId = split.supplier_id ? split.supplier_id.id : null;
-      if (!supplierId || !split.price || !split.qty || split.qty <= 0) return;
+      if (!supplierId || !split.price || !split.qty || split.qty < 0) return;
       
       // Find the item details
       const prItem = prList.value.flatMap(pr => pr.items).find(i => i.id == itemId);

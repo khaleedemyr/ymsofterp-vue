@@ -607,11 +607,28 @@ class DeliveryOrderController extends Controller
 
         $orders = $query->orderByDesc('do.created_at')->get();
 
+        // Get items for each order
+        $orderItems = [];
+        foreach ($orders as $order) {
+            $items = DB::table('delivery_order_items as doi')
+                ->leftJoin('items as i', 'doi.item_id', '=', 'i.id')
+                ->select(
+                    'doi.id',
+                    'i.name as item_name',
+                    'doi.qty_packing_list',
+                    'doi.qty_scan',
+                    'doi.unit'
+                )
+                ->where('doi.delivery_order_id', $order->id)
+                ->get();
+            $orderItems[$order->id] = $items;
+        }
+
         // Create Excel file
         $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet();
 
-        // Set headers
+        // Set headers for delivery orders
         $headers = [
             'No',
             'No DO',
@@ -640,17 +657,62 @@ class DeliveryOrderController extends Controller
         ];
         $sheet->getStyle('A1:H1')->applyFromArray($headerStyle);
 
-        // Add data
+        // Add delivery order data
+        $currentRow = 2;
         foreach ($orders as $index => $order) {
-            $row = $index + 2;
-            $sheet->setCellValueByColumnAndRow(1, $row, $index + 1);
-            $sheet->setCellValueByColumnAndRow(2, $row, $order->number ?? '-');
-            $sheet->setCellValueByColumnAndRow(3, $row, $order->created_at ? date('d/m/Y', strtotime($order->created_at)) : '-');
-            $sheet->setCellValueByColumnAndRow(4, $row, $order->nama_outlet ?? '-');
-            $sheet->setCellValueByColumnAndRow(5, $row, $order->warehouse_outlet_name ?? '-');
-            $sheet->setCellValueByColumnAndRow(6, $row, $order->packing_number ?? '-');
-            $sheet->setCellValueByColumnAndRow(7, $row, $order->floor_order_number ?? '-');
-            $sheet->setCellValueByColumnAndRow(8, $row, $order->created_by_name ?? '-');
+            $sheet->setCellValueByColumnAndRow(1, $currentRow, $index + 1);
+            $sheet->setCellValueByColumnAndRow(2, $currentRow, $order->number ?? '-');
+            $sheet->setCellValueByColumnAndRow(3, $currentRow, $order->created_at ? date('d/m/Y', strtotime($order->created_at)) : '-');
+            $sheet->setCellValueByColumnAndRow(4, $currentRow, $order->nama_outlet ?? '-');
+            $sheet->setCellValueByColumnAndRow(5, $currentRow, $order->warehouse_outlet_name ?? '-');
+            $sheet->setCellValueByColumnAndRow(6, $currentRow, $order->packing_number ?? '-');
+            $sheet->setCellValueByColumnAndRow(7, $currentRow, $order->floor_order_number ?? '-');
+            $sheet->setCellValueByColumnAndRow(8, $currentRow, $order->created_by_name ?? '-');
+            
+            $currentRow++;
+            
+            // Add items for this order
+            if (isset($orderItems[$order->id]) && $orderItems[$order->id]->count() > 0) {
+                // Add item headers
+                $itemHeaders = [
+                    '',
+                    'Item Name',
+                    'Qty Packing List',
+                    'Qty Scan',
+                    'Unit'
+                ];
+                
+                foreach ($itemHeaders as $col => $header) {
+                    $sheet->setCellValueByColumnAndRow($col + 1, $currentRow, $header);
+                }
+                
+                // Style item headers
+                $itemHeaderStyle = [
+                    'font' => [
+                        'bold' => true,
+                        'color' => ['rgb' => 'FFFFFF'],
+                    ],
+                    'fill' => [
+                        'fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
+                        'startColor' => ['rgb' => '10B981'],
+                    ],
+                ];
+                $sheet->getStyle('A' . $currentRow . ':E' . $currentRow)->applyFromArray($itemHeaderStyle);
+                $currentRow++;
+                
+                // Add item data
+                foreach ($orderItems[$order->id] as $item) {
+                    $sheet->setCellValueByColumnAndRow(1, $currentRow, '');
+                    $sheet->setCellValueByColumnAndRow(2, $currentRow, $item->item_name ?? '-');
+                    $sheet->setCellValueByColumnAndRow(3, $currentRow, $item->qty_packing_list ?? 0);
+                    $sheet->setCellValueByColumnAndRow(4, $currentRow, $item->qty_scan ?? 0);
+                    $sheet->setCellValueByColumnAndRow(5, $currentRow, $item->unit ?? '-');
+                    $currentRow++;
+                }
+                
+                // Add empty row after items
+                $currentRow++;
+            }
         }
 
         // Auto size columns

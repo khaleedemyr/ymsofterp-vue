@@ -811,6 +811,10 @@ Route::get('/report-rekap-fj/export', [\App\Http\Controllers\ReportController::c
     Route::post('/report/sales-pivot-outlet-detail', [\App\Http\Controllers\ReportController::class, 'salesPivotOutletDetail'])->name('report.sales-pivot-outlet-detail');
     Route::post('/report/retail-sales-detail', [\App\Http\Controllers\ReportController::class, 'retailSalesDetail'])->name('report.retail-sales-detail');
 Route::post('/report/warehouse-sales-detail', [\App\Http\Controllers\ReportController::class, 'warehouseSalesDetail'])->name('report.warehouse-sales-detail');
+    Route::post('/api/report/fj-detail', [\App\Http\Controllers\ReportController::class, 'fjDetail'])->name('report.fj-detail');
+    Route::post('/api/report/fj-detail-pdf', [\App\Http\Controllers\ReportController::class, 'fjDetailPdf'])->name('report.fj-detail-pdf');
+    Route::post('/api/report/retail-detail-pdf', [\App\Http\Controllers\ReportController::class, 'retailDetailPdf'])->name('report.retail-detail-pdf');
+    Route::post('/api/report/warehouse-detail-pdf', [\App\Http\Controllers\ReportController::class, 'warehouseDetailPdf'])->name('report.warehouse-detail-pdf');
 });
 
 // Outlet Payments
