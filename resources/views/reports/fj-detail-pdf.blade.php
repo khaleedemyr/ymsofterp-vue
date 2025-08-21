@@ -176,18 +176,13 @@
         </div>
     </div>
 
+
+
     <!-- Main Kitchen Section -->
-    @if($mainKitchen['all']->count() > 0)
+    @if($mainKitchen['gr']->count() > 0)
     <div class="section">
         <div class="section-title">Main Kitchen</div>
         <div class="section-content">
-        
-        <!-- GR Data -->
-        @if($mainKitchen['gr']->count() > 0)
-        <div style="margin-bottom: 8px;">
-            <div style="background-color: #e3f2fd; padding: 3px 6px; font-weight: bold; font-size: 9px; border-left: 3px solid #2196f3;">
-                GR (Good Receipt)
-            </div>
             <table>
                 <thead>
                     <tr>
@@ -213,80 +208,20 @@
                 </tbody>
                 <tfoot>
                     <tr class="total-row">
-                        <td colspan="5" class="text-right"><strong>Total GR:</strong></td>
-                        <td class="text-right"><strong>{{ number_format($grTotals['mainKitchen'], 0) }}</strong></td>
-                    </tr>
-                </tfoot>
-            </table>
-        </div>
-        @endif
-
-        <!-- Retail Food Data -->
-        @if($mainKitchen['retail_food']->count() > 0)
-        <div style="margin-bottom: 8px;">
-            <div style="background-color: #f3e5f5; padding: 3px 6px; font-weight: bold; font-size: 9px; border-left: 3px solid #9c27b0;">
-                Retail Food
-            </div>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Item</th>
-                        <th>Category</th>
-                        <th>Unit</th>
-                        <th class="text-right">Qty</th>
-                        <th class="text-right">Price</th>
-                        <th class="text-right">Total</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach($mainKitchen['retail_food'] as $item)
-                    <tr>
-                        <td>{{ $item->item_name }}</td>
-                        <td>{{ $item->category }}</td>
-                        <td>{{ $item->unit }}</td>
-                        <td class="text-right">{{ number_format($item->received_qty, 2) }}</td>
-                        <td class="text-right">{{ number_format($item->price, 0) }}</td>
-                        <td class="text-right">{{ number_format($item->subtotal, 0) }}</td>
-                    </tr>
-                    @endforeach
-                </tbody>
-                <tfoot>
-                    <tr class="total-row">
-                        <td colspan="5" class="text-right"><strong>Total Retail Food:</strong></td>
-                        <td class="text-right"><strong>{{ number_format($retailTotals['mainKitchen'], 0) }}</strong></td>
-                    </tr>
-                </tfoot>
-            </table>
-        </div>
-        @endif
-
-        <!-- Combined Total -->
-        <div style="margin-top: 8px; border-top: 2px solid #333; padding-top: 4px;">
-            <table>
-                <tfoot>
-                    <tr class="total-row">
                         <td colspan="5" class="text-right"><strong>Total Main Kitchen:</strong></td>
                         <td class="text-right"><strong>{{ number_format($mainKitchenTotal, 0) }}</strong></td>
                     </tr>
                 </tfoot>
             </table>
         </div>
-        </div>
     </div>
     @endif
 
     <!-- Main Store Section -->
-    @if($mainStore['all']->count() > 0)
+    @if($mainStore['gr']->count() > 0)
     <div class="section">
         <div class="section-title">Main Store</div>
         <div class="section-content">
-        
-        <!-- GR Data -->
-        @if($mainStore['gr']->count() > 0)
-        <div style="margin-bottom: 8px;">
-            <div style="background-color: #e3f2fd; padding: 3px 6px; font-weight: bold; font-size: 9px; border-left: 3px solid #2196f3;">
-                GR (Good Receipt)
-            </div>
             <table>
                 <thead>
                     <tr>
@@ -312,80 +247,20 @@
                 </tbody>
                 <tfoot>
                     <tr class="total-row">
-                        <td colspan="5" class="text-right"><strong>Total GR:</strong></td>
-                        <td class="text-right"><strong>{{ number_format($grTotals['mainStore'], 0) }}</strong></td>
-                    </tr>
-                </tfoot>
-            </table>
-        </div>
-        @endif
-
-        <!-- Retail Food Data -->
-        @if($mainStore['retail_food']->count() > 0)
-        <div style="margin-bottom: 8px;">
-            <div style="background-color: #f3e5f5; padding: 3px 6px; font-weight: bold; font-size: 9px; border-left: 3px solid #9c27b0;">
-                Retail Food
-            </div>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Item</th>
-                        <th>Category</th>
-                        <th>Unit</th>
-                        <th class="text-right">Qty</th>
-                        <th class="text-right">Price</th>
-                        <th class="text-right">Total</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach($mainStore['retail_food'] as $item)
-                    <tr>
-                        <td>{{ $item->item_name }}</td>
-                        <td>{{ $item->category }}</td>
-                        <td>{{ $item->unit }}</td>
-                        <td class="text-right">{{ number_format($item->received_qty, 2) }}</td>
-                        <td class="text-right">{{ number_format($item->price, 0) }}</td>
-                        <td class="text-right">{{ number_format($item->subtotal, 0) }}</td>
-                    </tr>
-                    @endforeach
-                </tbody>
-                <tfoot>
-                    <tr class="total-row">
-                        <td colspan="5" class="text-right"><strong>Total Retail Food:</strong></td>
-                        <td class="text-right"><strong>{{ number_format($retailTotals['mainStore'], 0) }}</strong></td>
-                    </tr>
-                </tfoot>
-            </table>
-        </div>
-        @endif
-
-        <!-- Combined Total -->
-        <div style="margin-top: 8px; border-top: 2px solid #333; padding-top: 4px;">
-            <table>
-                <tfoot>
-                    <tr class="total-row">
                         <td colspan="5" class="text-right"><strong>Total Main Store:</strong></td>
                         <td class="text-right"><strong>{{ number_format($mainStoreTotal, 0) }}</strong></td>
                     </tr>
                 </tfoot>
             </table>
         </div>
-        </div>
     </div>
     @endif
 
     <!-- Chemical Section -->
-    @if($chemical['all']->count() > 0)
+    @if($chemical['gr']->count() > 0)
     <div class="section">
         <div class="section-title">Chemical</div>
         <div class="section-content">
-        
-        <!-- GR Data -->
-        @if($chemical['gr']->count() > 0)
-        <div style="margin-bottom: 8px;">
-            <div style="background-color: #e3f2fd; padding: 3px 6px; font-weight: bold; font-size: 9px; border-left: 3px solid #2196f3;">
-                GR (Good Receipt)
-            </div>
             <table>
                 <thead>
                     <tr>
@@ -411,80 +286,20 @@
                 </tbody>
                 <tfoot>
                     <tr class="total-row">
-                        <td colspan="5" class="text-right"><strong>Total GR:</strong></td>
-                        <td class="text-right"><strong>{{ number_format($grTotals['chemical'], 0) }}</strong></td>
-                    </tr>
-                </tfoot>
-            </table>
-        </div>
-        @endif
-
-        <!-- Retail Food Data -->
-        @if($chemical['retail_food']->count() > 0)
-        <div style="margin-bottom: 8px;">
-            <div style="background-color: #f3e5f5; padding: 3px 6px; font-weight: bold; font-size: 9px; border-left: 3px solid #9c27b0;">
-                Retail Food
-            </div>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Item</th>
-                        <th>Category</th>
-                        <th>Unit</th>
-                        <th class="text-right">Qty</th>
-                        <th class="text-right">Price</th>
-                        <th class="text-right">Total</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach($chemical['retail_food'] as $item)
-                    <tr>
-                        <td>{{ $item->item_name }}</td>
-                        <td>{{ $item->category }}</td>
-                        <td>{{ $item->unit }}</td>
-                        <td class="text-right">{{ number_format($item->received_qty, 2) }}</td>
-                        <td class="text-right">{{ number_format($item->price, 0) }}</td>
-                        <td class="text-right">{{ number_format($item->subtotal, 0) }}</td>
-                    </tr>
-                    @endforeach
-                </tbody>
-                <tfoot>
-                    <tr class="total-row">
-                        <td colspan="5" class="text-right"><strong>Total Retail Food:</strong></td>
-                        <td class="text-right"><strong>{{ number_format($retailTotals['chemical'], 0) }}</strong></td>
-                    </tr>
-                </tfoot>
-            </table>
-        </div>
-        @endif
-
-        <!-- Combined Total -->
-        <div style="margin-top: 8px; border-top: 2px solid #333; padding-top: 4px;">
-            <table>
-                <tfoot>
-                    <tr class="total-row">
                         <td colspan="5" class="text-right"><strong>Total Chemical:</strong></td>
                         <td class="text-right"><strong>{{ number_format($chemicalTotal, 0) }}</strong></td>
                     </tr>
                 </tfoot>
             </table>
         </div>
-        </div>
     </div>
     @endif
 
     <!-- Stationary Section -->
-    @if($stationary['all']->count() > 0)
+    @if($stationary['gr']->count() > 0)
     <div class="section">
         <div class="section-title">Stationary</div>
         <div class="section-content">
-        
-        <!-- GR Data -->
-        @if($stationary['gr']->count() > 0)
-        <div style="margin-bottom: 8px;">
-            <div style="background-color: #e3f2fd; padding: 3px 6px; font-weight: bold; font-size: 9px; border-left: 3px solid #2196f3;">
-                GR (Good Receipt)
-            </div>
             <table>
                 <thead>
                     <tr>
@@ -510,80 +325,20 @@
                 </tbody>
                 <tfoot>
                     <tr class="total-row">
-                        <td colspan="5" class="text-right"><strong>Total GR:</strong></td>
-                        <td class="text-right"><strong>{{ number_format($grTotals['stationary'], 0) }}</strong></td>
-                    </tr>
-                </tfoot>
-            </table>
-        </div>
-        @endif
-
-        <!-- Retail Food Data -->
-        @if($stationary['retail_food']->count() > 0)
-        <div style="margin-bottom: 8px;">
-            <div style="background-color: #f3e5f5; padding: 3px 6px; font-weight: bold; font-size: 9px; border-left: 3px solid #9c27b0;">
-                Retail Food
-            </div>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Item</th>
-                        <th>Category</th>
-                        <th>Unit</th>
-                        <th class="text-right">Qty</th>
-                        <th class="text-right">Price</th>
-                        <th class="text-right">Total</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach($stationary['retail_food'] as $item)
-                    <tr>
-                        <td>{{ $item->item_name }}</td>
-                        <td>{{ $item->category }}</td>
-                        <td>{{ $item->unit }}</td>
-                        <td class="text-right">{{ number_format($item->received_qty, 2) }}</td>
-                        <td class="text-right">{{ number_format($item->price, 0) }}</td>
-                        <td class="text-right">{{ number_format($item->subtotal, 0) }}</td>
-                    </tr>
-                    @endforeach
-                </tbody>
-                <tfoot>
-                    <tr class="total-row">
-                        <td colspan="5" class="text-right"><strong>Total Retail Food:</strong></td>
-                        <td class="text-right"><strong>{{ number_format($retailTotals['stationary'], 0) }}</strong></td>
-                    </tr>
-                </tfoot>
-            </table>
-        </div>
-        @endif
-
-        <!-- Combined Total -->
-        <div style="margin-top: 8px; border-top: 2px solid #333; padding-top: 4px;">
-            <table>
-                <tfoot>
-                    <tr class="total-row">
                         <td colspan="5" class="text-right"><strong>Total Stationary:</strong></td>
                         <td class="text-right"><strong>{{ number_format($stationaryTotal, 0) }}</strong></td>
                     </tr>
                 </tfoot>
             </table>
         </div>
-        </div>
     </div>
     @endif
 
     <!-- Marketing Section -->
-    @if($marketing['all']->count() > 0)
+    @if($marketing['gr']->count() > 0)
     <div class="section">
         <div class="section-title">Marketing</div>
         <div class="section-content">
-        
-        <!-- GR Data -->
-        @if($marketing['gr']->count() > 0)
-        <div style="margin-bottom: 8px;">
-            <div style="background-color: #e3f2fd; padding: 3px 6px; font-weight: bold; font-size: 9px; border-left: 3px solid #2196f3;">
-                GR (Good Receipt)
-            </div>
             <table>
                 <thead>
                     <tr>
@@ -609,20 +364,25 @@
                 </tbody>
                 <tfoot>
                     <tr class="total-row">
-                        <td colspan="5" class="text-right"><strong>Total GR:</strong></td>
-                        <td class="text-right"><strong>{{ number_format($grTotals['marketing'], 0) }}</strong></td>
+                        <td colspan="5" class="text-right"><strong>Total Marketing:</strong></td>
+                        <td class="text-right"><strong>{{ number_format($marketingTotal, 0) }}</strong></td>
                     </tr>
                 </tfoot>
             </table>
         </div>
-        @endif
+    </div>
+    @endif
 
-        <!-- Retail Food Data -->
-        @if($marketing['retail_food']->count() > 0)
-        <div style="margin-bottom: 8px;">
-            <div style="background-color: #f3e5f5; padding: 3px 6px; font-weight: bold; font-size: 9px; border-left: 3px solid #9c27b0;">
-                Retail Food
-            </div>
+    @if($mainKitchen['gr']->count() == 0 && $mainStore['gr']->count() == 0 && $chemical['gr']->count() == 0 && $stationary['gr']->count() == 0 && $marketing['gr']->count() == 0)
+    <div class="no-data">
+        Tidak ada data GR untuk periode yang dipilih.
+    </div>
+    @else
+    <!-- Force display Main Store if it has data -->
+    @if($mainStore['gr']->count() > 0)
+    <div class="section">
+        <div class="section-title">Main Store ({{ $mainStore['gr']->count() }} items)</div>
+        <div class="section-content">
             <table>
                 <thead>
                     <tr>
@@ -635,7 +395,7 @@
                     </tr>
                 </thead>
                 <tbody>
-                    @foreach($marketing['retail_food'] as $item)
+                    @foreach($mainStore['gr'] as $item)
                     <tr>
                         <td>{{ $item->item_name }}</td>
                         <td>{{ $item->category }}</td>
@@ -648,33 +408,14 @@
                 </tbody>
                 <tfoot>
                     <tr class="total-row">
-                        <td colspan="5" class="text-right"><strong>Total Retail Food:</strong></td>
-                        <td class="text-right"><strong>{{ number_format($retailTotals['marketing'], 0) }}</strong></td>
+                        <td colspan="5" class="text-right"><strong>Total Main Store:</strong></td>
+                        <td class="text-right"><strong>{{ number_format($mainStoreTotal, 0) }}</strong></td>
                     </tr>
                 </tfoot>
             </table>
-        </div>
-        @endif
-
-        <!-- Combined Total -->
-        <div style="margin-top: 8px; border-top: 2px solid #333; padding-top: 4px;">
-            <table>
-                <tfoot>
-                    <tr class="total-row">
-                        <td colspan="5" class="text-right"><strong>Total Marketing:</strong></td>
-                        <td class="text-right"><strong>{{ number_format($marketingTotal, 0) }}</strong></td>
-                    </tr>
-                </tfoot>
-            </table>
-        </div>
         </div>
     </div>
     @endif
-
-    @if($mainKitchen['all']->count() == 0 && $mainStore['all']->count() == 0 && $chemical['all']->count() == 0 && $stationary['all']->count() == 0 && $marketing['all']->count() == 0)
-    <div class="no-data">
-        Tidak ada data untuk periode yang dipilih.
-    </div>
     @endif
 
     <!-- Summary -->
