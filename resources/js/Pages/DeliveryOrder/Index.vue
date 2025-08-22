@@ -11,6 +11,11 @@
             <i v-else class="fa fa-file-excel"></i>
             {{ exporting ? 'Exporting...' : 'Export Excel' }}
           </button>
+          <button @click="exportSummary" :disabled="exportingSummary" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold flex items-center gap-2">
+            <i v-if="exportingSummary" class="fa fa-spinner fa-spin"></i>
+            <i v-else class="fa fa-chart-bar"></i>
+            {{ exportingSummary ? 'Exporting...' : 'Export Summary' }}
+          </button>
           <Link href="/delivery-order/create" class="bg-gradient-to-r from-blue-500 to-blue-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold">
             + Buat Delivery Order
           </Link>
@@ -164,6 +169,7 @@ const props = defineProps({ orders: Array });
 const loadingDeleteId = ref(null);
 const loadingReprintId = ref(null);
 const exporting = ref(false);
+const exportingSummary = ref(false);
 
 const page = usePage();
 const search = ref(page.props.search || '');
@@ -318,6 +324,47 @@ async function exportToExcel() {
     });
   } finally {
     exporting.value = false;
+  }
+}
+
+async function exportSummary() {
+  exportingSummary.value = true;
+  try {
+    const response = await axios.get(route('delivery-order.export-summary'), {
+      params: {
+        search: search.value,
+        dateFrom: dateFrom.value,
+        dateTo: dateTo.value
+      },
+      responseType: 'blob'
+    });
+
+    // Create download link
+    const url = window.URL.createObjectURL(new Blob([response.data]));
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `delivery-order-summary-${new Date().toISOString().slice(0, 10)}.xlsx`);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+
+    await Swal.fire({
+      icon: 'success',
+      title: 'Export Berhasil',
+      text: 'File Summary berhasil diunduh',
+      timer: 1500,
+      showConfirmButton: false
+    });
+  } catch (error) {
+    console.error('Export error:', error);
+    await Swal.fire({
+      icon: 'error',
+      title: 'Export Gagal',
+      text: 'Gagal mengekspor data summary. Silakan coba lagi.',
+    });
+  } finally {
+    exportingSummary.value = false;
   }
 }
 </script> 

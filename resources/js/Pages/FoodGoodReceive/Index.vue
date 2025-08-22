@@ -5,9 +5,17 @@
         <h1 class="text-2xl font-bold text-gray-800 flex items-center gap-2">
           <i class="fa-solid fa-truck"></i> Good Receive
         </h1>
-        <button @click="showForm = true" class="bg-gradient-to-r from-blue-500 to-blue-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold">
-          + Buat Good Receive
-        </button>
+        <div class="flex gap-2">
+          <a 
+            :href="route('food-good-receive.report')" 
+            class="bg-gradient-to-r from-green-500 to-green-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold"
+          >
+            <i class="fa-solid fa-chart-bar mr-2"></i> Report
+          </a>
+          <button @click="showForm = true" class="bg-gradient-to-r from-blue-500 to-blue-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold">
+            + Buat Good Receive
+          </button>
+        </div>
       </div>
       <div class="flex flex-wrap gap-3 mb-4 items-center">
         <input

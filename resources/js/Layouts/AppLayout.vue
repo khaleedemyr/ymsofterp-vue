@@ -176,6 +176,7 @@ const menuGroups = [
             { name: () => 'Purchase Order Foods', icon: 'fa-solid fa-file-invoice-dollar', route: '/po-foods', code: 'po_foods' },
             { name: () => 'Report PO GR', icon: 'fa-solid fa-chart-line', route: '/po-report', code: 'po_report' },
             { name: () => 'Good Receive', icon: 'fa-solid fa-truck', route: '/food-good-receive', code: 'food_good_receive' },
+            { name: () => 'Food Good Receive Report', icon: 'fa-solid fa-chart-bar', route: '/food-good-receive-report', code: 'food_good_receive_report' },
             { name: () => 'Pindah Gudang', icon: 'fa-solid fa-right-left', route: '/warehouse-transfer', code: 'warehouse_transfer' },
             { name: () => 'Stock Adjustment', icon: 'fa-solid fa-boxes-stacked', route: '/food-inventory-adjustment', code: 'stock_adjustment' },
             { name: () => 'Packing List', icon: 'fa-solid fa-box', route: '/packing-list', code: 'packing_list' },

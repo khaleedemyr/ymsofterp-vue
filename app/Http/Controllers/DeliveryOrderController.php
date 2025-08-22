@@ -733,4 +733,101 @@ class DeliveryOrderController extends Controller
         $writer->save('php://output');
         exit;
     }
+
+    public function exportSummary(Request $request)
+    {
+        // Get delivery orders with filters
+        $query = DB::table('delivery_orders as do')
+            ->leftJoin('food_packing_lists as pl', 'do.packing_list_id', '=', 'pl.id')
+            ->leftJoin('food_floor_orders as fo', 'pl.food_floor_order_id', '=', 'fo.id')
+            ->leftJoin('users as u', 'do.created_by', '=', 'u.id')
+            ->leftJoin('tbl_data_outlet as o', 'fo.id_outlet', '=', 'o.id_outlet')
+            ->leftJoin('warehouse_outlets as wo', 'fo.warehouse_outlet_id', '=', 'wo.id')
+            ->select(
+                'do.id',
+                'do.number',
+                'do.created_at',
+                'pl.packing_number',
+                'fo.order_number as floor_order_number',
+                'u.nama_lengkap as created_by_name',
+                'o.nama_outlet',
+                'wo.name as warehouse_outlet_name'
+            );
+
+        // Apply filters
+        if ($request->filled('search')) {
+            $search = '%' . $request->search . '%';
+            $query->where(function($q) use ($search) {
+                $q->where('pl.packing_number', 'like', $search)
+                  ->orWhere('fo.order_number', 'like', $search)
+                  ->orWhere('u.nama_lengkap', 'like', $search)
+                  ->orWhere('o.nama_outlet', 'like', $search)
+                  ->orWhere('wo.name', 'like', $search);
+            });
+        }
+        if ($request->filled('dateFrom')) {
+            $query->whereDate('do.created_at', '>=', $request->dateFrom);
+        }
+        if ($request->filled('dateTo')) {
+            $query->whereDate('do.created_at', '<=', $request->dateTo);
+        }
+
+        $orders = $query->orderByDesc('do.created_at')->get();
+
+        // Get summary data - sum qty per item across all DOs
+        $summaryData = DB::table('delivery_order_items as doi')
+            ->leftJoin('delivery_orders as do', 'doi.delivery_order_id', '=', 'do.id')
+            ->leftJoin('food_packing_lists as pl', 'do.packing_list_id', '=', 'pl.id')
+            ->leftJoin('food_floor_orders as fo', 'pl.food_floor_order_id', '=', 'fo.id')
+            ->leftJoin('tbl_data_outlet as o', 'fo.id_outlet', '=', 'o.id_outlet')
+            ->leftJoin('warehouse_outlets as wo', 'fo.warehouse_outlet_id', '=', 'wo.id')
+            ->leftJoin('items as i', 'doi.item_id', '=', 'i.id')
+            ->leftJoin('categories as c', 'i.category_id', '=', 'c.id')
+            ->leftJoin('sub_categories as sc', 'i.sub_category_id', '=', 'sc.id')
+            ->leftJoin('units as u_small', 'i.small_unit_id', '=', 'u_small.id')
+            ->leftJoin('units as u_medium', 'i.medium_unit_id', '=', 'u_medium.id')
+            ->leftJoin('units as u_large', 'i.large_unit_id', '=', 'u_large.id')
+            ->select(
+                'i.id as item_id',
+                'i.name as item_name',
+                'i.sku as item_sku',
+                'c.name as category_name',
+                'sc.name as sub_category_name',
+                'doi.unit',
+                'u_small.name as small_unit_name',
+                'u_medium.name as medium_unit_name',
+                'u_large.name as large_unit_name',
+                'i.small_conversion_qty',
+                'i.medium_conversion_qty',
+                DB::raw('SUM(doi.qty_packing_list) as total_qty_packing_list'),
+                DB::raw('SUM(doi.qty_scan) as total_qty_scan'),
+                DB::raw('COUNT(DISTINCT do.id) as total_do_count'),
+                DB::raw('GROUP_CONCAT(DISTINCT o.nama_outlet ORDER BY o.nama_outlet SEPARATOR ", ") as outlets'),
+                DB::raw('GROUP_CONCAT(DISTINCT wo.name ORDER BY wo.name SEPARATOR ", ") as warehouse_outlets')
+            )
+            ->groupBy('i.id', 'i.name', 'i.sku', 'c.name', 'sc.name', 'doi.unit', 'u_small.name', 'u_medium.name', 'u_large.name', 'i.small_conversion_qty', 'i.medium_conversion_qty');
+
+        // Apply same filters to summary query
+        if ($request->filled('search')) {
+            $search = '%' . $request->search . '%';
+            $summaryData->where(function($q) use ($search) {
+                $q->where('pl.packing_number', 'like', $search)
+                  ->orWhere('fo.order_number', 'like', $search)
+                  ->orWhere('u.nama_lengkap', 'like', $search)
+                  ->orWhere('o.nama_outlet', 'like', $search)
+                  ->orWhere('wo.name', 'like', $search);
+            });
+        }
+        if ($request->filled('dateFrom')) {
+            $summaryData->whereDate('do.created_at', '>=', $request->dateFrom);
+        }
+        if ($request->filled('dateTo')) {
+            $summaryData->whereDate('do.created_at', '<=', $request->dateTo);
+        }
+
+        $summaryResults = $summaryData->orderBy('i.name')->get();
+
+        // Return Excel export using the Responsable interface
+        return (new \App\Exports\DeliveryOrderSummaryExport($summaryResults))->toResponse($request);
+    }
 } 

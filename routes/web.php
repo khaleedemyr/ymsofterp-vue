@@ -101,6 +101,7 @@ use App\Http\Controllers\MemberController;
 use App\Http\Controllers\MemberReportsController;
 use App\Http\Controllers\PointManagementController;
 use App\Http\Controllers\SharedDocumentController;
+use App\Http\Controllers\FoodGoodReceiveReportController;
 
 
 Route::get('/', function () {
@@ -358,6 +359,10 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/food-good-receive/{id}', [FoodGoodReceiveController::class, 'show'])->name('food-good-receive.show');
     Route::put('/food-good-receive/{id}', [FoodGoodReceiveController::class, 'update'])->name('food-good-receive.update');
     Route::delete('/food-good-receive/{id}', [FoodGoodReceiveController::class, 'destroy'])->name('food-good-receive.destroy');
+
+    // Food Good Receive Report routes
+    Route::get('/food-good-receive-report', [\App\Http\Controllers\FoodGoodReceiveReportController::class, 'index'])->name('food-good-receive.report');
+    Route::get('/food-good-receive-report/export', [\App\Http\Controllers\FoodGoodReceiveReportController::class, 'export'])->name('food-good-receive.report.export');
 
     // Food Payment
     Route::get('/food-payments', [\App\Http\Controllers\FoodPaymentController::class, 'index'])->name('food-payments.index');
@@ -630,6 +635,7 @@ Route::get('/internal-use-waste/item/{id}/units', [App\Http\Controllers\Internal
 
 Route::get('/delivery-order', [DeliveryOrderController::class, 'index'])->name('delivery-order.index');
 Route::get('/delivery-order/export', [DeliveryOrderController::class, 'export'])->name('delivery-order.export');
+Route::get('/delivery-order/export-summary', [DeliveryOrderController::class, 'exportSummary'])->name('delivery-order.export-summary');
 Route::get('/delivery-order/create', [DeliveryOrderController::class, 'create'])->name('delivery-order.create');
 Route::post('/delivery-order', [DeliveryOrderController::class, 'store'])->name('delivery-order.store');
 Route::get('/delivery-order/{id}', [DeliveryOrderController::class, 'show'])->name('delivery-order.show');
