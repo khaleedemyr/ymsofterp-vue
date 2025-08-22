@@ -830,4 +830,101 @@ class DeliveryOrderController extends Controller
         // Return Excel export using the Responsable interface
         return (new \App\Exports\DeliveryOrderSummaryExport($summaryResults))->toResponse($request);
     }
+
+    public function exportDetail(Request $request)
+    {
+        // Get delivery orders with filters
+        $query = DB::table('delivery_orders as do')
+            ->leftJoin('food_packing_lists as pl', 'do.packing_list_id', '=', 'pl.id')
+            ->leftJoin('food_floor_orders as fo', 'pl.food_floor_order_id', '=', 'fo.id')
+            ->leftJoin('users as u', 'do.created_by', '=', 'u.id')
+            ->leftJoin('tbl_data_outlet as o', 'fo.id_outlet', '=', 'o.id_outlet')
+            ->leftJoin('warehouse_outlets as wo', 'fo.warehouse_outlet_id', '=', 'wo.id')
+            ->select(
+                'do.id',
+                'do.number',
+                'do.created_at',
+                'pl.packing_number',
+                'fo.order_number as floor_order_number',
+                'u.nama_lengkap as created_by_name',
+                'o.nama_outlet',
+                'wo.name as warehouse_outlet_name'
+            );
+
+        // Apply filters
+        if ($request->filled('search')) {
+            $search = '%' . $request->search . '%';
+            $query->where(function($q) use ($search) {
+                $q->where('pl.packing_number', 'like', $search)
+                  ->orWhere('fo.order_number', 'like', $search)
+                  ->orWhere('u.nama_lengkap', 'like', $search)
+                  ->orWhere('o.nama_outlet', 'like', $search)
+                  ->orWhere('wo.name', 'like', $search);
+            });
+        }
+        if ($request->filled('dateFrom')) {
+            $query->whereDate('do.created_at', '>=', $request->dateFrom);
+        }
+        if ($request->filled('dateTo')) {
+            $query->whereDate('do.created_at', '<=', $request->dateTo);
+        }
+
+        $orders = $query->orderByDesc('do.created_at')->get();
+
+        // Get detailed items data per outlet & warehouse per date
+        $detailData = DB::table('delivery_order_items as doi')
+            ->leftJoin('delivery_orders as do', 'doi.delivery_order_id', '=', 'do.id')
+            ->leftJoin('food_packing_lists as pl', 'do.packing_list_id', '=', 'pl.id')
+            ->leftJoin('food_floor_orders as fo', 'pl.food_floor_order_id', '=', 'fo.id')
+            ->leftJoin('tbl_data_outlet as o', 'fo.id_outlet', '=', 'o.id_outlet')
+            ->leftJoin('warehouse_outlets as wo', 'fo.warehouse_outlet_id', '=', 'wo.id')
+            ->leftJoin('items as i', 'doi.item_id', '=', 'i.id')
+            ->leftJoin('categories as c', 'i.category_id', '=', 'c.id')
+            ->leftJoin('sub_categories as sc', 'i.sub_category_id', '=', 'sc.id')
+            ->leftJoin('users as u', 'do.created_by', '=', 'u.id')
+            ->select(
+                'do.number as do_number',
+                'do.created_at as do_date',
+                'pl.packing_number',
+                'fo.order_number as floor_order_number',
+                'o.nama_outlet',
+                'wo.name as warehouse_outlet_name',
+                'u.nama_lengkap as created_by_name',
+                'i.name as item_name',
+                'i.sku as item_sku',
+                'c.name as category_name',
+                'sc.name as sub_category_name',
+                'doi.qty_packing_list',
+                'doi.qty_scan',
+                'doi.unit',
+                DB::raw('DATE(do.created_at) as delivery_date')
+            )
+            ->orderBy('do.created_at', 'desc')
+            ->orderBy('o.nama_outlet')
+            ->orderBy('wo.name')
+            ->orderBy('i.name');
+
+        // Apply same filters to detail query
+        if ($request->filled('search')) {
+            $search = '%' . $request->search . '%';
+            $detailData->where(function($q) use ($search) {
+                $q->where('pl.packing_number', 'like', $search)
+                  ->orWhere('fo.order_number', 'like', $search)
+                  ->orWhere('u.nama_lengkap', 'like', $search)
+                  ->orWhere('o.nama_outlet', 'like', $search)
+                  ->orWhere('wo.name', 'like', $search);
+            });
+        }
+        if ($request->filled('dateFrom')) {
+            $detailData->whereDate('do.created_at', '>=', $request->dateFrom);
+        }
+        if ($request->filled('dateTo')) {
+            $detailData->whereDate('do.created_at', '<=', $request->dateTo);
+        }
+
+        $detailResults = $detailData->get();
+
+        // Return Excel export using the Responsable interface
+        return (new \App\Exports\DeliveryOrderDetailExport($detailResults))->toResponse($request);
+    }
 } 

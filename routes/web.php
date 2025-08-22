@@ -636,6 +636,7 @@ Route::get('/internal-use-waste/item/{id}/units', [App\Http\Controllers\Internal
 Route::get('/delivery-order', [DeliveryOrderController::class, 'index'])->name('delivery-order.index');
 Route::get('/delivery-order/export', [DeliveryOrderController::class, 'export'])->name('delivery-order.export');
 Route::get('/delivery-order/export-summary', [DeliveryOrderController::class, 'exportSummary'])->name('delivery-order.export-summary');
+Route::get('/delivery-order/export-detail', [DeliveryOrderController::class, 'exportDetail'])->name('delivery-order.export-detail');
 Route::get('/delivery-order/create', [DeliveryOrderController::class, 'create'])->name('delivery-order.create');
 Route::post('/delivery-order', [DeliveryOrderController::class, 'store'])->name('delivery-order.store');
 Route::get('/delivery-order/{id}', [DeliveryOrderController::class, 'show'])->name('delivery-order.show');
