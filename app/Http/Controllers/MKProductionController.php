@@ -51,9 +51,35 @@ class MKProductionController extends Controller
 
     public function getBomAndStock(Request $request)
     {
+        Log::info('[MKProduction] BOM request', $request->all());
+        
         $item_id = $request->input('item_id');
         $qty = $request->input('qty', 1);
         $warehouse_id = $request->input('warehouse_id');
+        
+        Log::info('[MKProduction] BOM params', ['item_id' => $item_id, 'qty' => $qty, 'warehouse_id' => $warehouse_id]);
+        
+        // Validasi input
+        if (!$item_id || !$qty || !$warehouse_id) {
+            Log::warning('[MKProduction] Missing required parameters', ['item_id' => $item_id, 'qty' => $qty, 'warehouse_id' => $warehouse_id]);
+            return response()->json([]);
+        }
+        
+        // Cek apakah item ada dan memiliki composition_type = 'composed'
+        $item = DB::table('items')
+            ->where('id', $item_id)
+            ->where('composition_type', 'composed')
+            ->where('status', 'active')
+            ->first();
+            
+        if (!$item) {
+            Log::warning('[MKProduction] Item not found or not composed', ['item_id' => $item_id]);
+            return response()->json([]);
+        }
+        
+        Log::info('[MKProduction] Item found', ['item' => $item]);
+        
+        // Ambil BOM untuk item tersebut
         $bom = DB::table('item_bom')
             ->join('items as material', 'item_bom.material_item_id', '=', 'material.id')
             ->join('units', 'item_bom.unit_id', '=', 'units.id')
@@ -64,19 +90,39 @@ class MKProductionController extends Controller
                 'units.name as unit_name'
             )
             ->get();
+            
+        Log::info('[MKProduction] BOM query result', ['bom_count' => $bom->count(), 'bom' => $bom->toArray()]);
+        
+        if ($bom->isEmpty()) {
+            Log::warning('[MKProduction] No BOM found for item', ['item_id' => $item_id, 'item_name' => $item->name]);
+            return response()->json([
+                'error' => 'Item tidak memiliki BOM (Bill of Materials). Silakan pilih item lain atau tambahkan BOM untuk item ini.',
+                'item_name' => $item->name
+            ]);
+        }
+        
+        // Ambil inventory items untuk bahan baku
         $inventoryItems = DB::table('food_inventory_items')
             ->whereIn('item_id', $bom->pluck('material_item_id'))
             ->pluck('id', 'item_id');
+            
+        Log::info('[MKProduction] Inventory items', ['inventory_items' => $inventoryItems->toArray()]);
+        
+        // Ambil stok untuk bahan baku
         $stocks = DB::table('food_inventory_stocks')
             ->whereIn('inventory_item_id', $inventoryItems->values())
-            ->when($warehouse_id, function($q) use ($warehouse_id) {
-                $q->where('warehouse_id', $warehouse_id);
-            })
+            ->where('warehouse_id', $warehouse_id)
             ->pluck('qty_small', 'inventory_item_id');
+            
+        Log::info('[MKProduction] Stocks', ['stocks' => $stocks->toArray()]);
+        
+        // Mapping stok berdasarkan item_id
         $stok = [];
         foreach ($inventoryItems as $item_id => $inventory_item_id) {
             $stok[$item_id] = $stocks[$inventory_item_id] ?? 0;
         }
+        
+        // Buat response BOM data
         $bomData = $bom->map(function($b) use ($qty, $stok) {
             $qty_total = $b->qty * $qty;
             $stok_now = $stok[$b->material_item_id] ?? 0;
@@ -90,6 +136,9 @@ class MKProductionController extends Controller
                 'sisa' => $stok_now - $qty_total,
             ];
         });
+        
+        Log::info('[MKProduction] BOM response', ['bom_data' => $bomData->toArray()]);
+        
         return response()->json($bomData);
     }
 
@@ -404,12 +453,30 @@ class MKProductionController extends Controller
                 'large_unit.name as large_unit_name'
             )
             ->get();
+            
+        Log::info('[MKProduction] Create page items', ['items_count' => $items->count(), 'items' => $items->toArray()]);
+        
+        // Cari item yang memiliki BOM
+        $itemsWithBom = DB::table('items')
+            ->join('item_bom', 'items.id', '=', 'item_bom.item_id')
+            ->where('items.composition_type', 'composed')
+            ->where('items.status', 'active')
+            ->select('items.id', 'items.name')
+            ->distinct()
+            ->get();
+            
+        Log::info('[MKProduction] Items with BOM', ['items_with_bom_count' => $itemsWithBom->count()]);
+        
         $warehouses = DB::table('warehouses')
             ->where('status', 'active')
             ->get();
+            
+        Log::info('[MKProduction] Create page warehouses', ['warehouses_count' => $warehouses->count(), 'warehouses' => $warehouses->toArray()]);
+        
         return inertia('MKProduction/Create', [
             'items' => $items,
             'warehouses' => $warehouses,
+            'itemsWithBom' => $itemsWithBom,
         ]);
     }
 
@@ -589,6 +656,51 @@ class MKProductionController extends Controller
             'productions' => $productions,
             'start_date' => $request->start_date,
             'end_date' => $request->end_date,
+        ]);
+    }
+
+    public function testBomData()
+    {
+        // Test 1: Cek item yang memiliki composition_type = 'composed'
+        $composedItems = DB::table('items')
+            ->where('composition_type', 'composed')
+            ->where('status', 'active')
+            ->select('id', 'name', 'composition_type')
+            ->get();
+            
+        Log::info('[MKProduction] Test - Composed items', ['items' => $composedItems->toArray()]);
+        
+        // Test 2: Cek data BOM
+        $bomData = DB::table('item_bom')
+            ->join('items as parent', 'item_bom.item_id', '=', 'parent.id')
+            ->join('items as material', 'item_bom.material_item_id', '=', 'material.id')
+            ->select(
+                'item_bom.item_id',
+                'parent.name as parent_name',
+                'item_bom.material_item_id',
+                'material.name as material_name',
+                'item_bom.qty',
+                'item_bom.unit_id'
+            )
+            ->get();
+            
+        Log::info('[MKProduction] Test - BOM data', ['bom_data' => $bomData->toArray()]);
+        
+        // Test 3: Cek warehouse
+        $warehouses = DB::table('warehouses')
+            ->where('status', 'active')
+            ->select('id', 'name', 'status')
+            ->get();
+            
+        Log::info('[MKProduction] Test - Warehouses', ['warehouses' => $warehouses->toArray()]);
+        
+        return response()->json([
+            'composed_items_count' => $composedItems->count(),
+            'bom_data_count' => $bomData->count(),
+            'warehouses_count' => $warehouses->count(),
+            'composed_items' => $composedItems,
+            'bom_data' => $bomData,
+            'warehouses' => $warehouses
         ]);
     }
 } 

@@ -22,10 +22,26 @@
         </div>
         <div class="md:col-span-2">
           <label class="block text-sm font-medium text-gray-700 mb-1">Item Hasil Produksi</label>
-          <select v-model="form.item_id" @change="onItemChange" class="input input-bordered w-full" required :disabled="!form.warehouse_id">
-            <option value="" disabled>Pilih Item</option>
-            <option v-for="item in items" :key="item.id" :value="item.id">{{ item.name }}</option>
-          </select>
+          <Multiselect
+            v-model="form.item_id"
+            :options="items"
+            :searchable="true"
+            :close-on-select="true"
+            :clear-on-select="false"
+            :preserve-search="true"
+            placeholder="Pilih atau cari item..."
+            track-by="id"
+            label="name"
+            :preselect-first="false"
+            class="w-full"
+            @select="onItemChange"
+          />
+          <div v-if="itemsWithBom && itemsWithBom.length" class="text-xs text-gray-500 mt-1">
+            💡 <strong>{{ itemsWithBom.length }}</strong> item tersedia dengan BOM. 
+            <span v-if="form.item_id && !isItemHasBom(form.item_id)" class="text-orange-600">
+              Item yang dipilih tidak memiliki BOM.
+            </span>
+          </div>
         </div>
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1">Qty Produksi</label>
@@ -91,19 +107,46 @@ import { ref, watch, computed } from 'vue'
 import axios from 'axios'
 import { usePage } from '@inertiajs/vue3'
 import Swal from 'sweetalert2'
+import Multiselect from 'vue-multiselect'
+import 'vue-multiselect/dist/vue-multiselect.min.css'
 
 const props = defineProps({
   items: Array,
   warehouses: Array,
   loading: Boolean,
+  itemsWithBom: Array,
 })
+
+// Debug props
+console.log('MKProduction Form props:', { 
+  items: props.items, 
+  warehouses: props.warehouses,
+  itemsWithBom: props.itemsWithBom 
+})
+
+// Debug items data
+if (props.items && props.items.length > 0) {
+  console.log('Sample items data:')
+  props.items.slice(0, 3).forEach((item, index) => {
+    console.log(`Item ${index + 1}:`, {
+      id: item.id,
+      name: item.name,
+      small_unit_id: item.small_unit_id,
+      small_unit_name: item.small_unit_name,
+      medium_unit_id: item.medium_unit_id,
+      medium_unit_name: item.medium_unit_name,
+      large_unit_id: item.large_unit_id,
+      large_unit_name: item.large_unit_name
+    })
+  })
+}
 const emit = defineEmits(['submitted', 'cancel'])
 
 const form = ref({
   warehouse_id: '',
   production_date: new Date().toISOString().slice(0, 10),
   batch_number: '',
-  item_id: '',
+  item_id: null,
   qty: 1,
   notes: '',
   unit_id: '',
@@ -114,45 +157,175 @@ const bom = ref([])
 const unitName = ref('')
 const loading = ref(false)
 const unitOptions = computed(() => {
-  const item = props.items.find(i => i.id == form.value.item_id)
-  if (!item) return []
+  // Debug form.item_id
+  console.log('unitOptions computed - form.item_id:', form.value.item_id)
+  console.log('unitOptions computed - form.item_id type:', typeof form.value.item_id)
+  
+  // Extract item ID dengan cara yang lebih aman
+  let itemId = null
+  if (form.value.item_id) {
+    if (typeof form.value.item_id === 'object' && form.value.item_id.id) {
+      itemId = form.value.item_id.id
+    } else if (typeof form.value.item_id === 'number' || typeof form.value.item_id === 'string') {
+      itemId = parseInt(form.value.item_id)
+    }
+  }
+  
+  console.log('unitOptions computed - extracted itemId:', itemId)
+  
+  if (!itemId) {
+    console.log('unitOptions computed - no valid itemId, returning empty array')
+    return []
+  }
+  
+  // Cari item berdasarkan ID yang sudah diextract
+  const item = props.items.find(i => i.id === itemId)
+  
+  console.log('unitOptions computed - found item:', item)
+  console.log('unitOptions computed - props.items length:', props.items.length)
+  console.log('unitOptions computed - props.items IDs:', props.items.slice(0, 5).map(i => i.id))
+  
+  if (!item) {
+    console.log('unitOptions computed - no item found, returning empty array')
+    return []
+  }
+  
   const opts = []
-  if (item.small_unit_id && item.small_unit_name) opts.push({ id: item.small_unit_id, name: item.small_unit_name })
-  if (item.medium_unit_id && item.medium_unit_name) opts.push({ id: item.medium_unit_id, name: item.medium_unit_name })
-  if (item.large_unit_id && item.large_unit_name) opts.push({ id: item.large_unit_id, name: item.large_unit_name })
+  
+  // Tambahkan unit berdasarkan urutan: Small -> Medium -> Large
+  // Pastikan unit_id ada dan unit_name tidak null/empty
+  if (item.small_unit_id && item.small_unit_name) {
+    opts.push({ 
+      id: item.small_unit_id, 
+      name: item.small_unit_name 
+    })
+  }
+  if (item.medium_unit_id && item.medium_unit_name && item.medium_unit_id !== item.small_unit_id) {
+    opts.push({ 
+      id: item.medium_unit_id, 
+      name: item.medium_unit_name 
+    })
+  }
+  if (item.large_unit_id && item.large_unit_name && 
+      item.large_unit_id !== item.small_unit_id && 
+      item.large_unit_id !== item.medium_unit_id) {
+    opts.push({ 
+      id: item.large_unit_id, 
+      name: item.large_unit_name 
+    })
+  }
+  
+  console.log('unitOptions computed - final options:', opts)
   return opts
 })
 
-function onItemChange() {
-  const item = props.items.find(i => i.id == form.value.item_id)
-  form.value.unit_id = item?.small_unit_id || ''
-  unitName.value = item?.small_unit_id ? (item.small_unit_name || 'Small') : ''
+const onItemChange = (selectedItem) => {
+  console.log('onItemChange called with:', selectedItem)
+  
+  if (!selectedItem) {
+    form.value.item_id = null
+    form.value.unit_id = ''
+    form.value.unit_jadi = ''
+    unitName.value = ''
+    return
+  }
+  
+  // Set form.item_id ke objek item yang dipilih
+  form.value.item_id = selectedItem
+  
+  // Set unit_id ke small_unit_id sebagai default
+  form.value.unit_id = selectedItem.small_unit_id || ''
+  form.value.unit_jadi = selectedItem.small_unit_id || ''
+  unitName.value = selectedItem.small_unit_name || ''
+  
+  console.log('Form after item change:', {
+    item_id: form.value.item_id,
+    item_id_type: typeof form.value.item_id,
+    unit_id: form.value.unit_id,
+    unit_jadi: form.value.unit_jadi,
+    unitName: unitName.value,
+    selectedItem: selectedItem
+  })
+  
   fetchBom()
 }
+
 function onQtyChange() {
   fetchBom()
 }
+
 function fetchBom() {
-  if (!form.value.item_id || !form.value.qty || !form.value.warehouse_id) {
+  const itemId = form.value.item_id?.id || form.value.item_id
+  console.log('Fetching BOM for:', { itemId, qty: form.value.qty, warehouse_id: form.value.warehouse_id })
+  console.log('Form value item_id:', form.value.item_id)
+  console.log('Selected item object:', form.value.item_id)
+  
+  if (!itemId || !form.value.qty || !form.value.warehouse_id) {
+    console.log('Missing required data for BOM fetch')
+    console.log('itemId:', itemId)
+    console.log('qty:', form.value.qty)
+    console.log('warehouse_id:', form.value.warehouse_id)
     bom.value = []
     return
   }
+  
+  const requestData = { 
+    item_id: itemId, 
+    qty: form.value.qty, 
+    warehouse_id: form.value.warehouse_id 
+  }
+  
+  console.log('Request data to send:', requestData)
+  
   loading.value = true
-  axios.post('/mk-production/bom', { item_id: form.value.item_id, qty: form.value.qty, warehouse_id: form.value.warehouse_id })
+  axios.post('/mk-production/bom', requestData, {
+    headers: {
+      'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')
+    }
+  })
     .then(res => {
+      console.log('BOM response:', res.data)
+      console.log('Response status:', res.status)
+      
+      // Cek apakah ada error message
+      if (res.data.error) {
+        console.error('BOM Error:', res.data.error)
+        Swal.fire({
+          icon: 'warning',
+          title: 'Item Tidak Memiliki BOM',
+          text: res.data.error,
+          confirmButtonText: 'OK'
+        })
+        bom.value = []
+        return
+      }
+      
       bom.value = res.data
+    })
+    .catch(error => {
+      console.error('Error fetching BOM:', error)
+      console.error('Error response:', error.response?.data)
+      console.error('Error status:', error.response?.status)
+      bom.value = []
     })
     .finally(() => loading.value = false)
 }
+
 function submit() {
   if (bom.value.some(b => b.sisa < 0)) return
   loading.value = true
+  const itemId = form.value.item_id?.id || form.value.item_id
   const payload = {
     ...form.value,
+    item_id: itemId,
     qty: form.value.qty,
     unit_id: form.value.unit_jadi || form.value.unit_id,
   }
-  axios.post('/mk-production', payload)
+  axios.post('/mk-production', payload, {
+    headers: {
+      'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')
+    }
+  })
     .then(() => {
       Swal.fire({
         icon: 'success',
@@ -173,11 +346,25 @@ function submit() {
     })
     .finally(() => loading.value = false)
 }
+
 function formatNumber(val) {
   return Number(val).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
+
+function isItemHasBom(itemId) {
+  const item = typeof itemId === 'object' ? itemId : { id: itemId }
+  return props.itemsWithBom?.some(bomItem => bomItem.id == item.id) || false
+}
+
 watch(() => form.value.item_id, () => {
   form.value.unit_jadi = ''
+})
+
+// Watch warehouse change to refetch BOM
+watch(() => form.value.warehouse_id, () => {
+  if (form.value.item_id) {
+    fetchBom()
+  }
 })
 </script>
 
@@ -193,5 +380,55 @@ watch(() => form.value.item_id, () => {
 }
 .btn-ghost {
   @apply bg-gray-100 hover:bg-gray-200;
+}
+
+/* Custom styling for vue-multiselect */
+:deep(.multiselect) {
+  min-height: 38px;
+  border: 1px solid #d1d5db;
+  border-radius: 0.5rem;
+}
+
+:deep(.multiselect:focus-within) {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+:deep(.multiselect__placeholder) {
+  color: #6b7280;
+  font-size: 0.875rem;
+  padding: 8px 12px;
+}
+
+:deep(.multiselect__single) {
+  padding: 8px 12px;
+  font-size: 0.875rem;
+  color: #374151;
+}
+
+:deep(.multiselect__input) {
+  padding: 8px 12px;
+  font-size: 0.875rem;
+}
+
+:deep(.multiselect__content-wrapper) {
+  border: 1px solid #d1d5db;
+  border-radius: 0.5rem;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+}
+
+:deep(.multiselect__option) {
+  padding: 8px 12px;
+  font-size: 0.875rem;
+}
+
+:deep(.multiselect__option--highlight) {
+  background: #3b82f6;
+  color: white;
+}
+
+:deep(.multiselect__option--selected) {
+  background: #dbeafe;
+  color: #1e40af;
 }
 </style> 

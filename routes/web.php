@@ -589,23 +589,27 @@ Route::middleware(['auth'])->group(function () {
     Route::delete('/butcher-processes/{id}', [\App\Http\Controllers\ButcherProcessController::class, 'destroy'])->name('butcher-processes.destroy');
 });
 
-// MK Production
-Route::get('/mk-production', [\App\Http\Controllers\MKProductionController::class, 'index'])->name('mk-production.index');
-Route::post('/mk-production/bom', [\App\Http\Controllers\MKProductionController::class, 'getBomAndStock'])->name('mk-production.bom');
-Route::post('/mk-production', [\App\Http\Controllers\MKProductionController::class, 'store'])->name('mk-production.store');
-Route::get('/mk-production/create', [\App\Http\Controllers\MKProductionController::class, 'create'])->name('mk-production.create');
-Route::get('/mk-production/report', [\App\Http\Controllers\MKProductionController::class, 'report'])->name('mk-production.report');
-Route::get('/mk-production/{id}', [\App\Http\Controllers\MKProductionController::class, 'show'])->name('mk-production.show');
-Route::delete('/mk-production/{id}', [\App\Http\Controllers\MKProductionController::class, 'destroy'])->name('mk-production.destroy');
-
-// Outlet WIP Production
-Route::get('/outlet-wip', [\App\Http\Controllers\OutletWIPController::class, 'index'])->name('outlet-wip.index');
-Route::post('/outlet-wip/bom', [\App\Http\Controllers\OutletWIPController::class, 'getBomAndStock'])->name('outlet-wip.bom');
-Route::post('/outlet-wip', [\App\Http\Controllers\OutletWIPController::class, 'store'])->name('outlet-wip.store');
-Route::get('/outlet-wip/create', [\App\Http\Controllers\OutletWIPController::class, 'create'])->name('outlet-wip.create');
-Route::get('/outlet-wip/report', [\App\Http\Controllers\OutletWIPController::class, 'report'])->name('outlet-wip.report');
-Route::get('/outlet-wip/{id}', [\App\Http\Controllers\OutletWIPController::class, 'show'])->name('outlet-wip.show');
-Route::delete('/outlet-wip/{id}', [\App\Http\Controllers\OutletWIPController::class, 'destroy'])->name('outlet-wip.destroy');
+// MK Production & Outlet WIP Production
+Route::middleware(['auth'])->group(function () {
+    // MK Production
+    Route::get('/mk-production', [\App\Http\Controllers\MKProductionController::class, 'index'])->name('mk-production.index');
+    Route::post('/mk-production/bom', [\App\Http\Controllers\MKProductionController::class, 'getBomAndStock'])->name('mk-production.bom');
+    Route::post('/mk-production', [\App\Http\Controllers\MKProductionController::class, 'store'])->name('mk-production.store');
+    Route::get('/mk-production/create', [\App\Http\Controllers\MKProductionController::class, 'create'])->name('mk-production.create');
+    Route::get('/mk-production/report', [\App\Http\Controllers\MKProductionController::class, 'report'])->name('mk-production.report');
+    Route::get('/mk-production/{id}', [\App\Http\Controllers\MKProductionController::class, 'show'])->name('mk-production.show');
+    Route::delete('/mk-production/{id}', [\App\Http\Controllers\MKProductionController::class, 'destroy'])->name('mk-production.destroy');
+    Route::get('/mk-production/test/bom-data', [\App\Http\Controllers\MKProductionController::class, 'testBomData'])->name('mk-production.test-bom-data');
+    
+    // Outlet WIP Production
+    Route::get('/outlet-wip', [\App\Http\Controllers\OutletWIPController::class, 'index'])->name('outlet-wip.index');
+    Route::post('/outlet-wip/bom', [\App\Http\Controllers\OutletWIPController::class, 'getBomAndStock'])->name('outlet-wip.bom');
+    Route::post('/outlet-wip', [\App\Http\Controllers\OutletWIPController::class, 'store'])->name('outlet-wip.store');
+    Route::get('/outlet-wip/create', [\App\Http\Controllers\OutletWIPController::class, 'create'])->name('outlet-wip.create');
+    Route::get('/outlet-wip/report', [\App\Http\Controllers\OutletWIPController::class, 'report'])->name('outlet-wip.report');
+    Route::get('/outlet-wip/{id}', [\App\Http\Controllers\OutletWIPController::class, 'show'])->name('outlet-wip.show');
+    Route::delete('/outlet-wip/{id}', [\App\Http\Controllers\OutletWIPController::class, 'destroy'])->name('outlet-wip.destroy');
+});
 
 // Scrapper Google Review
 
