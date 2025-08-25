@@ -182,28 +182,59 @@
                     </div>
                     <!-- List PCS Items -->
                     <div class="mb-2 font-semibold">PCS Items</div>
-                    <div v-for="(pcs, pcsIdx) in item.pcs" :key="pcsIdx" class="grid grid-cols-1 md:grid-cols-8 gap-2 mb-2 items-center relative">
-                      <div class="relative w-full">
-                        <select v-model="pcs.pcs_item_id" @change="onPcsSelect(idx, pcsIdx)" class="rounded border-gray-300 w-full" required>
-                          <option value="">Pilih Item PCS</option>
-                          <option v-for="item in filteredPcsItems" :key="item.id" :value="item.id">
-                            {{ item.name }} ({{ item.sku }})
-                          </option>
+                    <!-- Header untuk kolom-kolom -->
+                    <div class="grid grid-cols-1 lg:grid-cols-12 gap-3 mb-2 items-center text-xs font-medium text-gray-600 bg-gray-50 p-2 rounded">
+                      <div class="lg:col-span-4">Item PCS</div>
+                      <div class="lg:col-span-2">Unit</div>
+                      <div class="lg:col-span-1">Qty PCS</div>
+                      <div class="lg:col-span-1">Qty ({{ item.whole_unit }})</div>
+                      <div class="lg:col-span-1">Unit</div>
+                      <div class="lg:col-span-1">Costs 0</div>
+                      <div class="lg:col-span-1">Action</div>
+                      <div class="lg:col-span-2">MAC Preview</div>
+                    </div>
+                    <div v-for="(pcs, pcsIdx) in item.pcs" :key="pcsIdx" class="grid grid-cols-1 lg:grid-cols-12 gap-3 mb-3 items-center relative">
+                      <div class="lg:col-span-4">
+                        <Multiselect
+                          v-model="pcs.pcs_item_id"
+                          :options="filteredPcsItems"
+                          :searchable="true"
+                          :close-on-select="true"
+                          :clear-on-select="false"
+                          :preserve-search="true"
+                          placeholder="Pilih atau cari item PCS..."
+                          track-by="id"
+                          label="name"
+                          :preselect-first="false"
+                          @change="onPcsSelect(idx, pcsIdx)"
+                          class="w-full"
+                        />
+                      </div>
+                      <div class="lg:col-span-2">
+                        <select v-model="pcs.unit_id" class="rounded border-gray-300 w-full">
+                          <option value="">Pilih Unit</option>
+                          <option v-for="u in pcs.unit_options || []" :key="u.id" :value="u.id">{{ u.name }}</option>
                         </select>
                       </div>
-                      <select v-model="pcs.unit_id" class="rounded border-gray-300">
-                        <option value="">Pilih Unit</option>
-                        <option v-for="u in pcs.unit_options || []" :key="u.id" :value="u.id">{{ u.name }}</option>
-                      </select>
-                      <input v-model="pcs.pcs_qty" type="number" min="0.01" step="0.01" placeholder="Qty PCS" class="rounded border-gray-300" />
-                      <input v-model="pcs.qty" type="number" min="0.01" step="0.01" :placeholder="'Qty ('+item.whole_unit+')'" class="rounded border-gray-300" />
-                      <span>{{ item.whole_unit }}</span>
-                      <label class="flex items-center gap-1"><input type="checkbox" v-model="pcs.costs_0" /> Costs 0</label>
-                      <button type="button" class="text-red-600" @click="removePcsFromWhole(idx, pcsIdx)">Delete</button>
+                      <div class="lg:col-span-1">
+                        <input v-model="pcs.pcs_qty" type="number" min="0.01" step="0.01" placeholder="Qty PCS" class="rounded border-gray-300 w-full" />
+                      </div>
+                      <div class="lg:col-span-1">
+                        <input v-model="pcs.qty" type="number" min="0.01" step="0.01" :placeholder="'Qty ('+item.whole_unit+')'" class="rounded border-gray-300 w-full" />
+                      </div>
+                      <div class="lg:col-span-1 text-center">
+                        <span class="text-sm text-gray-600">{{ item.whole_unit }}</span>
+                      </div>
+                      <div class="lg:col-span-1">
+                        <label class="flex items-center gap-1 text-sm"><input type="checkbox" v-model="pcs.costs_0" /> Costs 0</label>
+                      </div>
+                      <div class="lg:col-span-1">
+                        <button type="button" class="text-red-600 hover:text-red-800 text-sm" @click="removePcsFromWhole(idx, pcsIdx)">Delete</button>
+                      </div>
                       <!-- Kolom baru: MAC PCS Preview -->
-                      <div class="text-xs text-blue-700 font-semibold leading-tight text-right min-w-max">
+                      <div class="lg:col-span-2 text-xs text-blue-700 font-semibold leading-tight">
                         <div>MAC /Gram: {{ formatRupiah(pcs.costs_0 ? 0 : (macPcsPreviewArray[idx]?.[pcsIdx] || 0)) }}</div>
-                        <div v-if="pcs.pcs_item_id">MAC /Pcs: {{ formatRupiah(pcs.costs_0 ? 0 : macPcsPerPcs(idx, pcsIdx)) }}</div>
+                        <div v-if="pcs.pcs_item_id && (typeof pcs.pcs_item_id === 'object' ? pcs.pcs_item_id.id : pcs.pcs_item_id)">MAC /Pcs: {{ formatRupiah(pcs.costs_0 ? 0 : macPcsPerPcs(idx, pcsIdx)) }}</div>
                       </div>
                     </div>
                     <button type="button" class="mt-2 px-3 py-1 rounded bg-blue-100 text-blue-700 font-semibold hover:bg-blue-200" @click="addPcsToWhole(idx)">+ Add PCS Item</button>
@@ -320,6 +351,8 @@ import { Head, useForm } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import axios from 'axios'
 import Swal from 'sweetalert2'
+import Multiselect from 'vue-multiselect'
+import 'vue-multiselect/dist/vue-multiselect.min.css'
 
 const props = defineProps({
   warehouses: Array,
@@ -505,7 +538,7 @@ const validateForm = () => {
 
     // Validate each PCS item
     item.pcs.forEach((pcs, pcsIndex) => {
-      if (!pcs.pcs_item_id) {
+      if (!pcs.pcs_item_id || (typeof pcs.pcs_item_id === 'object' && !pcs.pcs_item_id.id)) {
         validationErrors.value[`items.${index}.pcs.${pcsIndex}.pcs_item_id`] = 'PCS item is required'
         isValid = false
       }
@@ -612,7 +645,7 @@ const submit = async () => {
         batch_est: whole.batch_est,
         qty_purchase: whole.qty_purchase,
         susut_air: whole.susut_air,
-        pcs_item_id: pcs.pcs_item_id,
+        pcs_item_id: pcs.pcs_item_id?.id || pcs.pcs_item_id, // Handle both object and ID
         pcs_item_name: pcs.pcs_item_name,
         pcs_qty: pcs.pcs_qty,
         unit_id: pcs.unit_id,
@@ -701,8 +734,9 @@ function getUsedQty(itemId) {
 
 function onPcsSelect(idx, pcsIdx) {
   const pcs = form.items[idx].pcs[pcsIdx];
-  const selected = filteredPcsItems.value.find(i => i.id == pcs.pcs_item_id);
-  if (selected) {
+  // For multiselect, pcs.pcs_item_id will be the selected item object
+  const selected = pcs.pcs_item_id;
+  if (selected && selected.id) {
     pcs.pcs_item_name = selected.name;
     pcs.unit_options = [
       selected.small_unit_id ? { id: selected.small_unit_id, name: selected.small_unit_name } : null,
@@ -827,8 +861,8 @@ function macPcsPerPcs(idx, pcsIdx) {
   const pcs = form.items[idx]?.pcs?.[pcsIdx];
   if (!pcs || !pcs.pcs_item_id || pcs.costs_0) return 0;
   const macPerGram = macPcsPreviewArray.value[idx]?.[pcsIdx] || 0;
-  // Find small_conversion_qty from pcsItems
-  const pcsItem = filteredPcsItems.value.find(i => i.id == pcs.pcs_item_id);
+  // For multiselect, pcs.pcs_item_id is now an object
+  const pcsItem = pcs.pcs_item_id;
   const smallConv = Number(pcsItem?.small_conversion_qty) || 1;
   return macPerGram * smallConv;
 }
@@ -846,5 +880,73 @@ function macPcsPerPcs(idx, pcsIdx) {
 }
 @keyframes spin {
   to { transform: rotate(360deg); }
+}
+
+/* Custom styling for vue-multiselect */
+:deep(.multiselect) {
+  min-height: 42px;
+  border: 1px solid #d1d5db;
+  border-radius: 0.5rem;
+  min-width: 250px;
+}
+
+:deep(.multiselect:focus-within) {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+:deep(.multiselect__placeholder) {
+  color: #6b7280;
+  font-size: 0.875rem;
+  padding: 10px 12px;
+}
+
+:deep(.multiselect__single) {
+  padding: 10px 12px;
+  font-size: 0.875rem;
+  color: #374151;
+}
+
+:deep(.multiselect__input) {
+  padding: 10px 12px;
+  font-size: 0.875rem;
+}
+
+:deep(.multiselect__content-wrapper) {
+  border: 1px solid #d1d5db;
+  border-radius: 0.5rem;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+  min-width: 300px;
+  max-width: 400px;
+}
+
+:deep(.multiselect__option) {
+  padding: 10px 12px;
+  font-size: 0.875rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+:deep(.multiselect__option--highlight) {
+  background: #3b82f6;
+  color: white;
+}
+
+:deep(.multiselect__option--selected) {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+/* Responsive adjustments */
+@media (max-width: 1024px) {
+  :deep(.multiselect) {
+    min-width: 200px;
+  }
+  
+  :deep(.multiselect__content-wrapper) {
+    min-width: 250px;
+    max-width: 350px;
+  }
 }
 </style> 
