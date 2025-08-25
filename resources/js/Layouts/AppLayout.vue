@@ -208,6 +208,12 @@ const menuGroups = [
                 code: 'po_price_change_report_view',
             },
             {
+                name: () => 'MAC Report',
+                icon: 'fa-solid fa-chart-line',
+                route: '/mac-report',
+                code: 'mac_report',
+            },
+            {
                 name: () => 'Report Penjualan per Category',
                 icon: 'fa-solid fa-table-list',
                 route: '/report-sales-per-category',

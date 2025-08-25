@@ -5,7 +5,7 @@
         <h1 class="text-2xl font-bold text-gray-800 flex items-center gap-2">
           <i class="fa-solid fa-truck"></i> Good Receive Outlet Supplier
         </h1>
-        <button @click="showForm = true" class="bg-gradient-to-r from-blue-500 to-blue-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold">
+        <button @click="router.visit('/good-receive-outlet-supplier/create')" class="bg-gradient-to-r from-blue-500 to-blue-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold">
           + Buat Good Receive
         </button>
       </div>
@@ -99,7 +99,7 @@
     </div>
 
     <!-- Form Modal -->
-    <Form v-if="showForm" @close="showForm = false" @success="handleFormSuccess" />
+    <!-- Form component removed - using direct page navigation instead -->
 
   </AppLayout>
 </template>
@@ -108,7 +108,7 @@
 import { ref, watch } from 'vue';
 import { router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
-import Form from './Form.vue';
+// Form component removed - using direct page navigation instead
 import Swal from 'sweetalert2';
 
 const props = defineProps({
@@ -119,7 +119,7 @@ const props = defineProps({
 const search = ref(props.filters?.search || '');
 const from = ref(props.filters?.from || '');
 const to = ref(props.filters?.to || '');
-const showForm = ref(false);
+// showForm removed - using direct page navigation instead
 
 function onSearchInput() {
   router.get(
@@ -174,10 +174,7 @@ function hapus(id) {
   });
 }
 
-function handleFormSuccess() {
-  showForm.value = false;
-  router.reload();
-}
+// handleFormSuccess removed - using direct page navigation instead
 
 function goToPage(url) {
   if (url) {

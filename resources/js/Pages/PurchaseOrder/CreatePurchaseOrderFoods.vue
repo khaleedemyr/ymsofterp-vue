@@ -9,9 +9,11 @@ import Multiselect from 'vue-multiselect';
 import 'vue-multiselect/dist/vue-multiselect.min.css';
 
 const prList = ref([]);
+const roSupplierList = ref([]);
 const suppliers = ref([]);
 const loading = ref(false);
 const expandedPRs = ref({});
+const expandedROs = ref({});
 const expandedWarehouses = ref({});
 const notes = ref('');
 const router = useRouter()
@@ -52,6 +54,62 @@ const fetchPRList = async () => {
     }
 };
 
+// Fetch RO Supplier list yang belum di-PO
+const fetchROSupplierList = async () => {
+    try {
+        loading.value = true;
+        const response = await axios.get('/api/floor-order/supplier-available');
+        
+        // Debug logging untuk melihat data yang diterima
+        console.log('RO Supplier API response:', response.data);
+        
+        roSupplierList.value = response.data.map(ro => ({
+            ...ro,
+            items: ro.items.map(item => {
+                const itemKey = `ro_${ro.id}_${item.id}`;
+                if (!poForm.items_by_supplier[itemKey]) {
+                    // Default: satu baris, qty penuh
+                    poForm.items_by_supplier[itemKey] = [{
+                        supplier_id: null,
+                        qty: item.qty,
+                        price: '',
+                        last_price: '',
+                        min_price: '',
+                        max_price: '',
+                        ro_id: ro.id,
+                        ro_number: ro.order_number
+                    }];
+                }
+                
+                // Debug logging untuk setiap item
+                console.log('RO item processed:', {
+                    item_id: item.item_id,
+                    item_name: item.item_name,
+                    qty: item.qty,
+                    unit: item.unit,
+                    itemKey: itemKey
+                });
+                
+                return { 
+                    ...item,
+                    itemKey: itemKey,
+                    ro_id: ro.id,
+                    ro_number: ro.order_number
+                };
+            })
+        }));
+        
+        // Debug logging untuk melihat hasil akhir
+        console.log('Final roSupplierList:', roSupplierList.value);
+        console.log('Final poForm.items_by_supplier:', poForm.items_by_supplier);
+    } catch (error) {
+        console.error('Error fetching RO Supplier list:', error);
+        Swal.fire('Error', 'Failed to fetch RO Supplier list', 'error');
+    } finally {
+        loading.value = false;
+    }
+};
+
 // Group PRs by warehouse
 const groupedPRs = computed(() => {
     const grouped = {};
@@ -71,6 +129,30 @@ const groupedPRs = computed(() => {
     return grouped;
 });
 
+// Group RO Suppliers by outlet
+const groupedROSuppliers = computed(() => {
+    const grouped = {};
+    roSupplierList.value.forEach(ro => {
+        // Gunakan outlet_name dari data RO, bukan dari outlet relasi
+        const outletId = ro.id_outlet || 'unknown';
+        const outletName = ro.outlet_name || 'Unknown Outlet';
+        
+        if (!grouped[outletId]) {
+            grouped[outletId] = {
+                id: outletId,
+                name: outletName,
+                ros: []
+            };
+        }
+        grouped[outletId].ros.push(ro);
+    });
+    
+    // Debug log untuk melihat grouping
+    console.log('RO Supplier Grouping:', grouped);
+    
+    return grouped;
+});
+
 // Fetch suppliers
 const fetchSuppliers = async () => {
     try {
@@ -85,6 +167,11 @@ const fetchSuppliers = async () => {
 // Toggle expand/collapse PR
 const togglePR = (prId) => {
     expandedPRs.value[prId] = !expandedPRs.value[prId];
+};
+
+// Toggle expand/collapse RO Supplier
+const toggleRO = (roId) => {
+    expandedROs.value[roId] = !expandedROs.value[roId];
 };
 
 // Toggle expand/collapse warehouse
@@ -149,17 +236,62 @@ const generatePO = async () => {
             const supplierId = split.supplier_id ? split.supplier_id.id : null;
             if (!supplierId || !split.price || !split.qty || split.qty < 0) return;
             if (!itemsBySupplier[supplierId]) itemsBySupplier[supplierId] = [];
-            itemsBySupplier[supplierId].push({
-                id: Number(itemId),
-                supplier_id: supplierId,
-                qty: split.qty,
-                price: split.price
-            });
+            
+            // Cek apakah ini dari RO Supplier atau PR
+            if (split.ro_id) {
+                // Dari RO Supplier
+                // Cari item data dari roSupplierList
+                const roData = roSupplierList.value.find(ro => ro.id === split.ro_id);
+                const itemData = roData?.items.find(item => item.id === Number(itemId.split('_')[2]));
+                
+                // Debug logging untuk RO Supplier
+                console.log('RO Supplier item data:', {
+                    itemId: itemId,
+                    splitItemId: Number(itemId.split('_')[2]),
+                    roData: roData,
+                    itemData: itemData,
+                    split: split,
+                    item_name: itemData?.item_name,
+                    unit: itemData?.unit,
+                    arrival_date: itemData?.arrival_date,
+                    actual_item_id: itemData?.item_id // This should be the real item_id (e.g., 53063)
+                });
+                
+                itemsBySupplier[supplierId].push({
+                    ro_id: split.ro_id,
+                    ro_number: split.ro_number,
+                    item_id: itemData?.item_id || Number(itemId.split('_')[2]), // Use actual item_id, fallback to key
+                    item_name: itemData?.item_name || 'Unknown Item',
+                    unit: itemData?.unit || null,
+                    arrival_date: itemData?.arrival_date || null,
+                    supplier_id: supplierId,
+                    qty: split.qty,
+                    price: split.price,
+                    source: 'ro_supplier'
+                });
+            } else {
+                // Dari PR
+                itemsBySupplier[supplierId].push({
+                    id: Number(itemId),
+                    supplier_id: supplierId,
+                    qty: split.qty,
+                    price: split.price,
+                    source: 'pr_foods'
+                });
+            }
         });
     });
 
     try {
         loading.value = true;
+        
+        // Debug logging untuk melihat data yang dikirim
+        console.log('Data yang dikirim ke backend:', {
+            items_by_supplier: itemsBySupplier,
+            notes: notes.value,
+            ppn_enabled: poForm.ppn_enabled
+        });
+        
         const response = await axios.post('/api/po-foods/generate', {
             items_by_supplier: itemsBySupplier,
             notes: notes.value,
@@ -260,6 +392,7 @@ const calculateGrandTotal = () => {
 
 // Fungsi untuk mengambil harga terakhir untuk semua item
 const fetchLastPrices = async () => {
+    // Fetch untuk PR items
     for (const pr of prList.value) {
         for (const item of pr.items) {
             try {
@@ -282,7 +415,77 @@ const fetchLastPrices = async () => {
                     });
                 }
             } catch (error) {
-                console.error('Error fetching last price for item', item.id, ':', error);
+                // Handle error gracefully - set default values if item not found
+                console.warn(`Item ${item.item_id || item.item?.id} (${item.name}) not found in inventory, using default prices`);
+                
+                if (poForm.items_by_supplier[item.id]) {
+                    poForm.items_by_supplier[item.id].forEach(split => {
+                        split.last_price = 0;
+                        split.min_price = 0;
+                        split.max_price = 0;
+                        split.price_medium = 0;
+                        split.price_large = 0;
+                    });
+                }
+            }
+        }
+    }
+    
+    // Fetch untuk RO Supplier items
+    for (const ro of roSupplierList.value) {
+        for (const item of ro.items) {
+            try {
+                // Debug logging untuk melihat data item RO Supplier
+                console.log('Fetching last price for RO item:', {
+                    item_id: item.item_id,
+                    item_name: item.item_name,
+                    unit: item.unit,
+                    itemKey: item.itemKey
+                });
+                
+                const res = await axios.get('/api/items/last-price', {
+                    params: {
+                        item_id: item.item_id,
+                        unit: item.unit
+                    }
+                });
+                
+                console.log('Last price response for RO item:', {
+                    item_id: item.item_id,
+                    response: res.data
+                });
+                
+                if (poForm.items_by_supplier[item.itemKey]) {
+                    poForm.items_by_supplier[item.itemKey].forEach(split => {
+                        split.last_price = res.data.last_price ?? 0;
+                        split.min_price = res.data.min_price ?? 0;
+                        split.max_price = res.data.max_price ?? 0;
+                        // Konversi ke medium dan large
+                        const { priceMedium, priceLarge } = convertPrice(res.data.last_price ?? 0, item);
+                        split.price_medium = priceMedium;
+                        split.price_large = priceLarge;
+                    });
+                    
+                    console.log('Updated split data for RO item:', {
+                        itemKey: item.itemKey,
+                        splits: poForm.items_by_supplier[item.itemKey]
+                    });
+                } else {
+                    console.warn(`ItemKey ${item.itemKey} not found in poForm.items_by_supplier`);
+                }
+            } catch (error) {
+                // Handle error gracefully - set default values if item not found
+                console.warn(`Item ${item.item_id} (${item.item_name}) not found in inventory, using default prices`);
+                
+                if (poForm.items_by_supplier[item.itemKey]) {
+                    poForm.items_by_supplier[item.itemKey].forEach(split => {
+                        split.last_price = 0;
+                        split.min_price = 0;
+                        split.max_price = 0;
+                        split.price_medium = 0;
+                        split.price_large = 0;
+                    });
+                }
             }
         }
     }
@@ -290,6 +493,7 @@ const fetchLastPrices = async () => {
 
 onMounted(async () => {
     await fetchPRList();
+    await fetchROSupplierList();
     await fetchSuppliers();
     await fetchLastPrices();
 });
@@ -330,8 +534,11 @@ onMounted(async () => {
                             </svg>
                         </div>
                         <div v-else>
-                            <!-- Warehouse Groups -->
-                            <div v-for="warehouse in Object.values(groupedPRs)" :key="warehouse.id" class="mb-6 border rounded-lg overflow-hidden">
+                            <!-- PR Foods Section -->
+                            <div class="mb-8">
+                                <h3 class="text-lg font-semibold text-gray-800 mb-4 border-b pb-2">Purchase Request (PR) Foods</h3>
+                                <!-- Warehouse Groups -->
+                                <div v-for="warehouse in Object.values(groupedPRs)" :key="warehouse.id" class="mb-6 border rounded-lg overflow-hidden">
                                 <!-- Warehouse Header -->
                                 <div 
                                     class="bg-blue-50 px-4 py-3 flex justify-between items-center cursor-pointer hover:bg-blue-100 border-b"
@@ -443,6 +650,129 @@ onMounted(async () => {
                                                         </template>
                                                     </tbody>
                                                 </table>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            </div>
+
+                            <!-- RO Supplier Section -->
+                            <div class="mb-8">
+                                <h3 class="text-lg font-semibold text-gray-800 mb-4 border-b pb-2">Request Order (RO) Supplier</h3>
+                                <!-- Outlet Groups -->
+                                <div v-for="warehouse in Object.values(groupedROSuppliers)" :key="warehouse.id" class="mb-6 border rounded-lg overflow-hidden">
+                                    <!-- Outlet Header -->
+                                    <div 
+                                        class="bg-green-50 px-4 py-3 flex justify-between items-center cursor-pointer hover:bg-green-100 border-b"
+                                        @click="toggleWarehouse(warehouse.id)"
+                                    >
+                                        <div class="flex items-center">
+                                            <svg 
+                                                class="w-5 h-5 mr-2 transition-transform"
+                                                :class="{ 'transform rotate-90': expandedWarehouses[warehouse.id] }"
+                                                fill="none" 
+                                                stroke="currentColor" 
+                                                viewBox="0 0 24 24"
+                                            >
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                                            </svg>
+                                            <span class="font-semibold text-green-800">{{ warehouse.name }}</span>
+                                            <span class="ml-2 text-sm text-green-600">({{ warehouse.ros.length }} RO)</span>
+                                        </div>
+                                    </div>
+
+                                    <!-- RO List for this Outlet -->
+                                    <div v-if="expandedWarehouses[warehouse.id]">
+                                        <div v-for="ro in warehouse.ros" :key="ro.id" class="border-b last:border-b-0">
+                                            <!-- RO Header -->
+                                            <div 
+                                                class="bg-gray-50 px-4 py-3 flex justify-between items-center cursor-pointer hover:bg-gray-100"
+                                                @click="toggleRO(ro.id)"
+                                            >
+                                                <div class="flex items-center">
+                                                    <svg 
+                                                        class="w-5 h-5 mr-2 transition-transform"
+                                                        :class="{ 'transform rotate-90': expandedROs[ro.id] }"
+                                                        fill="none" 
+                                                        stroke="currentColor" 
+                                                        viewBox="0 0 24 24"
+                                                    >
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                                                    </svg>
+                                                    <span class="font-medium">{{ ro.order_number }} - {{ ro.tanggal }}</span>
+                                                    <span class="ml-2 text-xs text-gray-500">({{ ro.outlet_name }})</span>
+                                                </div>
+                                            </div>
+
+                                            <!-- RO Items -->
+                                            <div v-if="expandedROs[ro.id]" class="p-4 border-t overflow-x-auto">
+                                                <div class="overflow-x-auto">
+                                                    <table class="min-w-full divide-y divide-gray-200">
+                                                        <thead class="bg-gray-50">
+                                                            <tr>
+                                                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Item</th>
+                                                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Quantity</th>
+                                                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Unit</th>
+                                                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Supplier</th>
+                                                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Price</th>
+                                                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Subtotal</th>
+                                                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Aksi</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody class="bg-white divide-y divide-gray-200">
+                                                            <template v-for="item in ro.items" :key="item.id">
+                                                                <tr v-for="(split, idx) in poForm.items_by_supplier[item.itemKey]" :key="idx">
+                                                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ item.item_name }}</td>
+                                                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                                                        <input type="number" v-model="split.qty" min="0" step="0.01" :max="item.qty - totalQtyUsed(item.itemKey, idx)" class="w-20 border rounded px-2 py-1" />
+                                                                    </td>
+                                                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ item.unit }}</td>
+                                                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                                                        <Multiselect
+                                                                            v-model="split.supplier_id"
+                                                                            :options="suppliers"
+                                                                            :searchable="true"
+                                                                            :close-on-select="true"
+                                                                            :clear-on-select="false"
+                                                                            :preserve-search="true"
+                                                                            placeholder="Pilih atau cari supplier..."
+                                                                            track-by="id"
+                                                                            label="name"
+                                                                            :preselect-first="false"
+                                                                            class="w-40"
+                                                                        />
+                                                                    </td>
+                                                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                                                        <input type="number" v-model="split.price" placeholder="Enter price" class="w-24 border rounded px-2 py-1" />
+                                                                        <div>
+                                                                            <small class="text-gray-400">
+                                                                                Last: {{ formatRupiah(split.last_price ?? 0) }} |
+                                                                                Min: {{ formatRupiah(split.min_price ?? 0) }} |
+                                                                                Max: {{ formatRupiah(split.max_price ?? 0) }}
+                                                                            </small>
+                                                                        </div>
+                                                                        <div v-if="split.price_medium || split.price_large" class="text-xs text-blue-500 mt-1">
+                                                                            <div v-if="split.price_medium">
+                                                                                Medium: {{ formatRupiah(split.price_medium) }} <span v-if="item.medium_unit_name">/ {{ item.medium_unit_name }}</span>
+                                                                            </div>
+                                                                            <div v-if="split.price_large">
+                                                                                Large: {{ formatRupiah(split.price_large) }} <span v-if="item.large_unit_name">/ {{ item.large_unit_name }}</span>
+                                                                            </div>
+                                                                        </div>
+                                                                    </td>
+                                                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                                                        {{ formatRupiah((split.price || 0) * split.qty) }}
+                                                                    </td>
+                                                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                                                        <button type="button" @click="addSplit(item.itemKey)" class="bg-blue-100 hover:bg-blue-200 text-blue-700 px-2 py-1 rounded text-xs mr-1">Split</button>
+                                                                        <button v-if="poForm.items_by_supplier[item.itemKey].length > 1" type="button" @click="removeSplit(item.itemKey, idx)" class="bg-red-100 hover:bg-red-200 text-red-700 px-2 py-1 rounded text-xs">Hapus</button>
+                                                                    </td>
+                                                                </tr>
+                                                            </template>
+                                                        </tbody>
+                                                    </table>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>

@@ -44,10 +44,20 @@ class PurchaseOrderFoodsController extends Controller
         $perPage = request('perPage', 10);
         $purchaseOrders = $query->paginate($perPage)->withQueryString();
         $purchaseOrders->getCollection()->transform(function ($po) {
-            $prItemIds = $po->items->pluck('pr_food_item_id')->toArray();
-            $prIds = \App\Models\PurchaseRequisitionFoodItem::whereIn('id', $prItemIds)->pluck('pr_food_id')->unique()->toArray();
-            $prNumbers = \App\Models\PurchaseRequisitionFood::whereIn('id', $prIds)->pluck('pr_number')->unique()->toArray();
-            $po->pr_numbers = $prNumbers;
+            // Get source information
+            if ($po->source_type === 'pr_foods' || !$po->source_type) {
+                // For PR Foods or legacy PO without source_type, get PR numbers
+                $prItemIds = $po->items->pluck('pr_food_item_id')->toArray();
+                $prIds = \App\Models\PurchaseRequisitionFoodItem::whereIn('id', $prItemIds)->pluck('pr_food_id')->unique()->toArray();
+                $prNumbers = \App\Models\PurchaseRequisitionFood::whereIn('id', $prIds)->pluck('pr_number')->unique()->toArray();
+                $po->source_numbers = $prNumbers;
+            } elseif ($po->source_type === 'ro_supplier') {
+                $roNumbers = $po->items->pluck('ro_number')->unique()->filter()->toArray();
+                $po->source_numbers = $roNumbers;
+            } else {
+                $po->source_numbers = [];
+            }
+            
             return $po;
         });
 
@@ -155,10 +165,14 @@ class PurchaseOrderFoodsController extends Controller
 
     public function generatePO(Request $request)
     {
+        // Debug logging
+        \Log::info('Generate PO Request Data:', [
+            'items_by_supplier' => $request->items_by_supplier
+        ]);
+        
         $request->validate([
             'items_by_supplier' => 'required|array',
             'items_by_supplier.*' => 'required|array',
-            'items_by_supplier.*.*.id' => 'required|exists:pr_food_items,id',
             'items_by_supplier.*.*.supplier_id' => 'required|exists:suppliers,id',
             'items_by_supplier.*.*.qty' => 'required|numeric|min:0',
             'items_by_supplier.*.*.price' => 'required|numeric|min:0',
@@ -169,10 +183,14 @@ class PurchaseOrderFoodsController extends Controller
         try {
             DB::beginTransaction();
 
-            // Collect all PR IDs that will be processed
+            // Collect all PR IDs that will be processed (only for PR Foods)
             $prIds = collect($request->items_by_supplier)
                 ->flatMap(function ($items) {
-                    return collect($items)->pluck('pr_id');
+                    return collect($items)
+                        ->filter(function ($item) {
+                            return !isset($item['source']) || $item['source'] !== 'ro_supplier';
+                        })
+                        ->pluck('pr_id');
                 })
                 ->unique()
                 ->values();
@@ -182,11 +200,18 @@ class PurchaseOrderFoodsController extends Controller
                 ->map(function ($items, $supplierId) {
                     return collect($items)->map(function ($item) use ($supplierId) {
                         return [
-                            'pr_item_id' => $item['id'],
+                            'pr_item_id' => $item['id'] ?? null,
                             'supplier_id' => $supplierId,
                             'price' => $item['price'],
                             'qty' => $item['qty'],
                             'pr_id' => $item['pr_id'] ?? null,
+                            'source' => $item['source'] ?? 'pr_foods',
+                            'item_id' => $item['item_id'] ?? null,
+                            'item_name' => $item['item_name'] ?? null,
+                            'unit' => $item['unit'] ?? null,
+                            'arrival_date' => $item['arrival_date'] ?? null,
+                            'ro_id' => $item['ro_id'] ?? null,
+                            'ro_number' => $item['ro_number'] ?? null,
                         ];
                     });
                 });
@@ -225,6 +250,23 @@ class PurchaseOrderFoodsController extends Controller
                     $grandTotal = $subtotal + $ppnAmount;
                 }
 
+                // Determine source type and ID for this PO
+                $sourceType = null;
+                $sourceId = null;
+                
+                // Check if all items are from the same source
+                $firstItem = $items[0];
+                if (isset($firstItem['source'])) {
+                    $sourceType = $firstItem['source'];
+                    if ($sourceType === 'pr_foods') {
+                        // For PR Foods, use the first PR ID
+                        $sourceId = $firstItem['pr_id'] ?? null;
+                    } elseif ($sourceType === 'ro_supplier') {
+                        // For RO Supplier, use the first RO ID
+                        $sourceId = $firstItem['ro_id'] ?? null;
+                    }
+                }
+                
                 // Create PO
                 $po = PurchaseOrderFood::create([
                     'number' => $poNumber,
@@ -237,21 +279,96 @@ class PurchaseOrderFoodsController extends Controller
                     'ppn_amount' => $ppnAmount,
                     'subtotal' => $subtotal,
                     'grand_total' => $grandTotal,
+                    'source_type' => $sourceType,
+                    'source_id' => $sourceId,
                 ]);
 
                 $createdPOs[] = $po;
 
-                // Get PR items for this supplier
-                $prItemIds = collect($items)->pluck('pr_item_id');
-                $prItems = PurchaseRequisitionFoodItem::with('item')
-                    ->whereIn('id', $prItemIds)
-                    ->get();
-
+                // Get items for this supplier (PR or RO)
                 $priceChanges = [];
 
+                // Get PR items for this supplier (only for PR Foods)
+                $prItemIds = collect($items)
+                    ->filter(function ($item) {
+                        return !isset($item['source']) || $item['source'] !== 'ro_supplier';
+                    })
+                    ->pluck('pr_item_id')
+                    ->filter();
+                
+                $prItems = collect();
+                if ($prItemIds->isNotEmpty()) {
+                    $prItems = PurchaseRequisitionFoodItem::with('item')
+                        ->whereIn('id', $prItemIds)
+                        ->get();
+                }
+
                 foreach ($items as $itemData) {
-                    $prItem = $prItems->firstWhere('id', $itemData['pr_item_id']);
-                    if (!$prItem) continue;
+                    // Debug logging for each item
+                    \Log::info('Processing item:', $itemData);
+                    
+                    // Handle both PR Foods and RO Supplier items
+                    if (isset($itemData['source']) && $itemData['source'] === 'ro_supplier') {
+                        // RO Supplier item - FIXED LOGIC
+                        $itemId = $itemData['item_id'] ?? null; // This should be the actual item_id (e.g., 53063)
+                        $itemName = $itemData['item_name'] ?? 'Unknown Item';
+                        $unit = $itemData['unit'] ?? null;
+                        $arrivalDate = $itemData['arrival_date'] ?? null;
+                        
+                        // Get food_floor_order_item_id for RO Supplier items
+                        $prItemId = null;
+                        if ($itemId && isset($itemData['ro_id'])) {
+                            $floorOrderItem = \DB::table('food_floor_order_items')
+                                ->where('floor_order_id', $itemData['ro_id'])
+                                ->where('item_id', $itemId)
+                                ->first();
+                            $prItemId = $floorOrderItem ? $floorOrderItem->id : null;
+                            
+                            // Debug logging for floor order item search
+                            \Log::info('Searching for floor order item:', [
+                                'floor_order_id' => $itemData['ro_id'],
+                                'item_id' => $itemId,
+                                'found_floor_order_item' => $floorOrderItem ? (array) $floorOrderItem : null,
+                                'pr_item_id_result' => $prItemId
+                            ]);
+                        }
+                        
+                        // Debug logging for RO Supplier item
+                        \Log::info('RO Supplier item data:', [
+                            'item_id' => $itemId, // This should be the actual item_id (e.g., 53063)
+                            'item_name' => $itemName,
+                            'unit' => $unit,
+                            'arrival_date' => $arrivalDate,
+                            'ro_id' => $itemData['ro_id'] ?? null,
+                            'floor_order_item_id' => $prItemId // This should be the food_floor_order_items.id (e.g., 227881)
+                        ]);
+                        
+                        // Verify that item_id is correct
+                        if ($itemId) {
+                            $actualItem = \App\Models\Item::find($itemId);
+                            if (!$actualItem) {
+                                \Log::error('Item not found in items table:', [
+                                    'item_id' => $itemId,
+                                    'ro_id' => $itemData['ro_id'] ?? null
+                                ]);
+                            } else {
+                                \Log::info('Item found in items table:', [
+                                    'item_id' => $itemId,
+                                    'item_name' => $actualItem->name
+                                ]);
+                            }
+                        }
+                    } else {
+                        // PR Foods item
+                        $prItem = $prItems->firstWhere('id', $itemData['pr_item_id']);
+                        if (!$prItem) continue;
+                        
+                        $itemId = $prItem->item_id;
+                        $itemName = $prItem->item->name ?? 'Unknown Item';
+                        $unit = $prItem->unit;
+                        $arrivalDate = $prItem->arrival_date;
+                        $prItemId = $prItem->id;
+                    }
 
                     $quantity = floatval($itemData['qty']);
                     $price = floatval($itemData['price']);
@@ -259,21 +376,57 @@ class PurchaseOrderFoodsController extends Controller
 
                     // Get unit ID
                     $unitId = null;
-                    if ($prItem->unit) {
-                        $unit = Unit::where('name', $prItem->unit)->first();
-                        $unitId = $unit ? $unit->id : null;
+                    if ($unit) {
+                        // Try to find unit by name first
+                        $unitModel = Unit::where('name', $unit)->first();
+                        if ($unitModel) {
+                            $unitId = $unitModel->id;
+                        } else {
+                            // If unit name not found, try to get default unit from item
+                            if ($itemId) {
+                                $itemModel = \App\Models\Item::find($itemId);
+                                if ($itemModel && $itemModel->small_unit_id) {
+                                    $unitId = $itemModel->small_unit_id;
+                                    \Log::info('Using default unit from item:', [
+                                        'item_id' => $itemId,
+                                        'default_unit_id' => $unitId,
+                                        'requested_unit' => $unit
+                                    ]);
+                                }
+                            }
+                        }
+                    } else {
+                        // If no unit provided, try to get default unit from item
+                        if ($itemId) {
+                            $itemModel = \App\Models\Item::find($itemId);
+                            if ($itemModel && $itemModel->small_unit_id) {
+                                $unitId = $itemModel->small_unit_id;
+                                \Log::info('Using default unit from item (no unit provided):', [
+                                    'item_id' => $itemId,
+                                    'default_unit_id' => $unitId
+                                ]);
+                            }
+                        }
                     }
+                    
+                    // Debug logging for unit
+                    \Log::info('Unit processing:', [
+                        'unit_name' => $unit,
+                        'unit_id' => $unitId,
+                        'item_name' => $itemName,
+                        'item_id' => $itemId
+                    ]);
 
                     // Check for price changes using the same logic as getLastPrice
                     $lastPrice = null;
                     
                     // Cari inventory_item_id dari item_id
-                    $inventoryItem = \DB::table('food_inventory_items')->where('item_id', $prItem->item_id)->first();
+                    $inventoryItem = \DB::table('food_inventory_items')->where('item_id', $itemId)->first();
                     if ($inventoryItem) {
                         $inventoryItemId = $inventoryItem->id;
                         
                         // Ambil item dan konversi unit
-                        $item = \App\Models\Item::with(['smallUnit', 'mediumUnit', 'largeUnit'])->find($prItem->item_id);
+                        $item = \App\Models\Item::with(['smallUnit', 'mediumUnit', 'largeUnit'])->find($itemId);
                         
                         if ($item) {
                             // Ambil cost histories (cost per small unit)
@@ -291,11 +444,11 @@ class PurchaseOrderFoodsController extends Controller
                                 $mediumConv = $item->medium_conversion_qty ?: 1;
                                 
                                 // Konversi cost ke unit yang diminta
-                                if ($prItem->unit == $unitSmall) {
+                                if ($unit == $unitSmall) {
                                     $lastPrice = $lastCost;
-                                } elseif ($prItem->unit == $unitMedium) {
+                                } elseif ($unit == $unitMedium) {
                                     $lastPrice = $lastCost * $smallConv;
-                                } elseif ($prItem->unit == $unitLarge) {
+                                } elseif ($unit == $unitLarge) {
                                     $lastPrice = $lastCost * $smallConv * $mediumConv;
                                 } else {
                                     $lastPrice = $lastCost; // Default ke small unit
@@ -310,7 +463,7 @@ class PurchaseOrderFoodsController extends Controller
 
                         if (abs($priceDiffPercent) > 0) { // Jika ada perubahan harga
                             $priceChanges[] = [
-                                'item_name' => $prItem->item->name,
+                                'item_name' => $itemName,
                                 'last_price' => $lastPrice,
                                 'new_price' => $price,
                                 'price_diff' => $priceDiff,
@@ -320,16 +473,77 @@ class PurchaseOrderFoodsController extends Controller
                         }
                     }
 
-                    PurchaseOrderFoodItem::create([
+                    // Skip if unit_id is still null
+                    if (!$unitId) {
+                        \Log::error('Cannot create PO item - unit_id is null:', [
+                            'item_name' => $itemName,
+                            'item_id' => $itemId,
+                            'unit' => $unit
+                        ]);
+                        continue;
+                    }
+                    
+                    // Debug logging before creating PO item
+                    \Log::info('Creating PO item:', [
                         'purchase_order_food_id' => $po->id,
-                        'pr_food_item_id' => $prItem->id,
-                        'item_id' => $prItem->item_id,
+                        'pr_food_item_id' => $prItemId,
+                        'item_id' => $itemId,
+                        'quantity' => $quantity,
+                        'unit_id' => $unitId,
+                        'price' => $price,
+                        'total' => $total,
+                        'arrival_date' => $arrivalDate,
+                        'source_type' => $itemData['source'] ?? 'pr_foods',
+                        'source_id' => $sourceId,
+                        'ro_id' => $itemData['ro_id'] ?? null,
+                        'ro_number' => $itemData['ro_number'] ?? null,
+                        'is_ro_supplier' => isset($itemData['source']) && $itemData['source'] === 'ro_supplier',
+                        'floor_order_item_id' => $prItemId // This should be the ID from food_floor_order_items for RO Supplier
+                    ]);
+
+                    // Determine source_id based on source type
+                    $sourceId = null;
+                    if (isset($itemData['source']) && $itemData['source'] === 'ro_supplier') {
+                        // For RO Supplier, source_id should be the RO ID
+                        $sourceId = $itemData['ro_id'] ?? null;
+                    } else {
+                        // For PR Foods, source_id should be the PR ID
+                        $sourceId = $itemData['pr_id'] ?? ($prItemId ? \App\Models\PurchaseRequisitionFoodItem::find($prItemId)->pr_food_id : null);
+                    }
+
+                    $poItem = PurchaseOrderFoodItem::create([
+                        'purchase_order_food_id' => $po->id,
+                        'pr_food_item_id' => $prItemId, // This will be food_floor_order_item_id for RO Supplier
+                        'item_id' => $itemId,
                         'quantity' => $quantity,
                         'unit_id' => $unitId,
                         'price' => $price,
                         'total' => $total,
                         'created_by' => auth()->id(),
-                        'arrival_date' => $prItem->arrival_date,
+                        'arrival_date' => $arrivalDate,
+                        'source_type' => $itemData['source'] ?? 'pr_foods',
+                        'source_id' => $sourceId,
+                        'ro_id' => $itemData['ro_id'] ?? null,
+                        'ro_number' => $itemData['ro_number'] ?? null,
+                    ]);
+
+                    // Debug logging after PO item created successfully
+                    \Log::info('PO item created successfully:', [
+                        'po_item_id' => $poItem->id,
+                        'pr_food_item_id' => $poItem->pr_food_item_id,
+                        'item_id' => $poItem->item_id,
+                        'source_type' => $poItem->source_type,
+                        'source_id' => $poItem->source_id,
+                        'ro_id' => $poItem->ro_id,
+                        'ro_number' => $poItem->ro_number,
+                        'is_ro_supplier' => isset($itemData['source']) && $itemData['source'] === 'ro_supplier'
+                    ]);
+
+                    // Debug logging after creating PO item
+                    \Log::info('PO item created successfully:', [
+                        'po_item_id' => $poItem->id,
+                        'item_id' => $poItem->item_id,
+                        'source_type' => $poItem->source_type
                     ]);
                 }
 
@@ -351,9 +565,34 @@ class PurchaseOrderFoodsController extends Controller
                     }
                 }
 
-                // Update PR status to 'in_po'
-                foreach ($prIds as $prId) {
-                    PurchaseRequisitionFood::where('id', $prId)->update(['status' => 'in_po']);
+                // Update PR status to 'in_po' (only for PR Foods)
+                if ($sourceType === 'pr_foods') {
+                    foreach ($prIds as $prId) {
+                        PurchaseRequisitionFood::where('id', $prId)->update(['status' => 'in_po']);
+                    }
+                }
+
+                // Update RO Supplier status to 'packing' if all items are in PO
+                if ($sourceType === 'ro_supplier') {
+                    // Get all RO IDs from this PO
+                    $roIds = collect($items)->pluck('ro_id')->unique()->filter();
+                    
+                    foreach ($roIds as $roId) {
+                        // Check if all items from this RO are now in PO
+                        $roItems = \DB::table('food_floor_order_items')->where('floor_order_id', $roId)->get();
+                        $roItemsInPO = \App\Models\PurchaseOrderFoodItem::where('ro_id', $roId)->get();
+                        
+                        // If all RO items are in PO, update RO status to 'packing'
+                        if ($roItems->count() > 0 && $roItems->count() === $roItemsInPO->count()) {
+                            \App\Models\FoodFloorOrder::where('id', $roId)->update(['status' => 'packing']);
+                            
+                            \Log::info('RO Supplier status updated to packing:', [
+                                'ro_id' => $roId,
+                                'ro_items_count' => $roItems->count(),
+                                'ro_items_in_po_count' => $roItemsInPO->count()
+                            ]);
+                        }
+                    }
                 }
 
                 // Log activity
@@ -629,6 +868,49 @@ class PurchaseOrderFoodsController extends Controller
             'gm_finance'
         ])->findOrFail($id);
 
+        // Transform items to ensure proper display for both PR Foods and RO Supplier
+        $po->items->transform(function ($item) {
+            // For RO Supplier items, ensure item_name is available
+            if ($item->source_type === 'ro_supplier' && !$item->item) {
+                // If item relation is null but we have item_id, try to get item data
+                if ($item->item_id) {
+                    $itemData = \App\Models\Item::find($item->item_id);
+                    if ($itemData) {
+                        $item->item = $itemData;
+                    }
+                }
+            }
+            
+            // Ensure unit information is available
+            if (!$item->unit && $item->unit_id) {
+                $unitData = \App\Models\Unit::find($item->unit_id);
+                if ($unitData) {
+                    $item->unit = $unitData;
+                }
+            }
+            
+            return $item;
+        });
+
+        // Add RO Supplier information if PO is from RO Supplier
+        $roSupplierInfo = null;
+        if ($po->source_type === 'ro_supplier' && $po->source_id) {
+            // Get RO information
+            $ro = \App\Models\FoodFloorOrder::with(['outlet', 'warehouseOutlet', 'creator'])
+                ->find($po->source_id);
+            
+            if ($ro) {
+                $roSupplierInfo = [
+                    'ro_number' => $ro->order_number,
+                    'ro_date' => $ro->tanggal,
+                    'outlet_name' => $ro->outlet ? $ro->outlet->nama_outlet : 'Unknown Outlet',
+                    'warehouse_outlet_name' => $ro->warehouseOutlet ? $ro->warehouseOutlet->name : 'Unknown Warehouse',
+                    'ro_creator' => $ro->creator ? $ro->creator->nama_lengkap : 'Unknown User',
+                    'ro_description' => $ro->description
+                ];
+            }
+        }
+
         $user = auth()->user();
         $userData = [
             'id' => $user->id,
@@ -640,6 +922,7 @@ class PurchaseOrderFoodsController extends Controller
 
         return inertia('PurchaseOrder/DetailPurchaseOrderFoods', [
             'po' => $po,
+            'roSupplierInfo' => $roSupplierInfo,
             'user' => $userData
         ]);
     }
@@ -854,15 +1137,49 @@ class PurchaseOrderFoodsController extends Controller
 
         $pos = $query->get()
             ->map(function ($po) {
-                $prItemIds = $po->items->pluck('pr_food_item_id')->toArray();
-                $prIds = \App\Models\PurchaseRequisitionFoodItem::whereIn('id', $prItemIds)->pluck('pr_food_id')->unique()->toArray();
-                $prNumbers = \App\Models\PurchaseRequisitionFood::whereIn('id', $prIds)->pluck('pr_number')->unique()->toArray();
-                $po->pr_numbers = $prNumbers;
-                
-                // Ambil warehouse dari PR pertama untuk stock fetching
-                if (!empty($prIds)) {
-                    $firstPR = \App\Models\PurchaseRequisitionFood::find($prIds[0]);
-                    $po->warehouse_outlet_id = $firstPR ? $firstPR->warehouse_id : null;
+                // Transform items to ensure proper display for both PR Foods and RO Supplier
+                $po->items->transform(function ($item) {
+                    // For RO Supplier items, ensure item_name is available
+                    if ($item->source_type === 'ro_supplier' && !$item->item) {
+                        // If item relation is null but we have item_id, try to get item data
+                        if ($item->item_id) {
+                            $itemData = \App\Models\Item::find($item->item_id);
+                            if ($itemData) {
+                                $item->item = $itemData;
+                            }
+                        }
+                    }
+                    
+                    // Ensure unit information is available
+                    if (!$item->unit && $item->unit_id) {
+                        $unitData = \App\Models\Unit::find($item->unit_id);
+                        if ($unitData) {
+                            $item->unit = $unitData;
+                        }
+                    }
+                    
+                    return $item;
+                });
+
+                // Get source numbers based on source type
+                if ($po->source_type === 'pr_foods' || !$po->source_type) {
+                    $prItemIds = $po->items->pluck('pr_food_item_id')->toArray();
+                    $prIds = \App\Models\PurchaseRequisitionFoodItem::whereIn('id', $prItemIds)->pluck('pr_food_id')->unique()->toArray();
+                    $prNumbers = \App\Models\PurchaseRequisitionFood::whereIn('id', $prIds)->pluck('pr_number')->unique()->toArray();
+                    $po->pr_numbers = $prNumbers;
+                    
+                    // Ambil warehouse dari PR pertama untuk stock fetching
+                    if (!empty($prIds)) {
+                        $firstPR = \App\Models\PurchaseRequisitionFood::find($prIds[0]);
+                        $po->warehouse_outlet_id = $firstPR ? $firstPR->warehouse_id : null;
+                    }
+                } elseif ($po->source_type === 'ro_supplier') {
+                    $roNumbers = $po->items->pluck('ro_number')->unique()->filter()->toArray();
+                    $po->pr_numbers = $roNumbers; // Reuse pr_numbers field for RO numbers
+                    
+                    // For RO Supplier, we need to determine warehouse differently
+                    // You might need to adjust this based on your business logic
+                    $po->warehouse_outlet_id = null; // Set appropriate warehouse for RO Supplier
                 }
                 
                 return $po;

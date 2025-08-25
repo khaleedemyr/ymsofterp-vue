@@ -33,17 +33,28 @@
         </div>
       </div>
 
-      <!-- Info RO -->
+      <!-- Info PO/RO -->
       <div class="mb-4 p-4 border rounded bg-blue-50">
-        <div class="font-semibold text-blue-800">Info RO Supplier</div>
+        <div class="font-semibold text-blue-800">{{ gr.delivery_order_id ? 'Info PO' : 'Info RO Supplier' }}</div>
         <div class="grid grid-cols-2 gap-4 mt-2">
           <div>
-            <div class="text-sm">Nomor RO: <span class="font-mono">{{ gr.ro_number }}</span></div>
-            <div class="text-sm">Tanggal RO: {{ gr.ro_date || '-' }}</div>
+            <div class="text-sm" v-if="gr.delivery_order_id">
+              Nomor PO: <span class="font-mono">{{ gr.po_number || '-' }}</span>
+            </div>
+            <div class="text-sm" v-else>
+              Nomor RO: <span class="font-mono">{{ gr.ro_number || '-' }}</span>
+            </div>
+            <div class="text-sm" v-if="gr.delivery_order_id">
+              Tanggal PO: {{ gr.po_date ? new Date(gr.po_date).toLocaleDateString('id-ID') : '-' }}
+            </div>
+            <div class="text-sm" v-else>
+              Tanggal RO: {{ gr.ro_date || '-' }}
+            </div>
           </div>
-          <div>
-            <div class="text-sm">Supplier: {{ gr.supplier_name || '-' }}</div>
-          </div>
+                     <div>
+             <div class="text-sm">Supplier: {{ gr.supplier_name || '-' }}</div>
+             <div class="text-sm" v-if="gr.delivery_order_id">Dibuat oleh: {{ gr.po_creator_name || '-' }}</div>
+           </div>
         </div>
       </div>
 
@@ -52,32 +63,27 @@
         <div class="font-semibold mb-2">Daftar Item</div>
         <div class="overflow-x-auto">
           <table class="min-w-full divide-y divide-gray-200">
-            <thead class="bg-gray-50">
-              <tr>
-                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Item</th>
-                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Qty Order</th>
-                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Qty Terima</th>
-                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Unit</th>
-                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Harga</th>
-                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Subtotal</th>
-              </tr>
-            </thead>
-            <tbody class="bg-white divide-y divide-gray-200">
-              <tr v-for="item in gr.items" :key="item.id">
-                <td class="px-4 py-2">{{ item.item_name }}</td>
-                <td class="px-4 py-2">{{ item.qty_ordered }}</td>
-                <td class="px-4 py-2">{{ item.qty_received }}</td>
-                <td class="px-4 py-2">{{ item.unit_name }}</td>
-                <td class="px-4 py-2">{{ formatPrice(item.price) }}</td>
-                <td class="px-4 py-2">{{ formatPrice((item.qty_received || 0) * (item.price || 0)) }}</td>
-              </tr>
-            </tbody>
-            <tfoot class="bg-gray-50">
-              <tr>
-                <td colspan="5" class="px-4 py-2 text-right font-semibold">Grand Total:</td>
-                <td class="px-4 py-2 font-semibold">{{ formatPrice(grandTotal) }}</td>
-              </tr>
-            </tfoot>
+                         <thead class="bg-gray-50">
+               <tr>
+                 <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Item</th>
+                 <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Qty Order</th>
+                 <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Qty Terima</th>
+                 <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Unit</th>
+               </tr>
+             </thead>
+                         <tbody class="bg-white divide-y divide-gray-200">
+               <tr v-for="item in gr.items" :key="item.id">
+                 <td class="px-4 py-2">{{ item.item_name }}</td>
+                 <td class="px-4 py-2">{{ item.qty_ordered }}</td>
+                 <td class="px-4 py-2">{{ item.qty_received }}</td>
+                 <td class="px-4 py-2">{{ item.unit_name }}</td>
+               </tr>
+             </tbody>
+                         <tfoot class="bg-gray-50">
+               <tr>
+                 <td colspan="4" class="px-4 py-2 text-right font-semibold">Total Item: {{ gr.items ? gr.items.length : 0 }}</td>
+               </tr>
+             </tfoot>
           </table>
         </div>
       </div>
@@ -96,7 +102,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from 'vue';
+import { ref, onMounted } from 'vue';
 import axios from 'axios';
 import Swal from 'sweetalert2';
 
@@ -104,19 +110,7 @@ const props = defineProps({
   gr: Object
 });
 
-const formatPrice = (price) => {
-  return new Intl.NumberFormat('id-ID', {
-    style: 'currency',
-    currency: 'IDR',
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0
-  }).format(price || 0);
-};
 
-const grandTotal = computed(() => {
-  if (!props.gr.items) return 0;
-  return props.gr.items.reduce((sum, item) => sum + ((Number(item.qty_received) || 0) * (Number(item.price) || 0)), 0);
-});
 
 const handleClose = () => {
   window.history.length > 1 ? window.history.back() : window.location.href = '/good-receive-outlet-supplier';

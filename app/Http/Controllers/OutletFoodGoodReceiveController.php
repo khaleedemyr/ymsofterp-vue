@@ -26,6 +26,7 @@ class OutletFoodGoodReceiveController extends Controller
                 'o.nama_outlet as outlet_name',
                 'gr.delivery_order_id',
                 'do.number as delivery_order_number',
+                'do.source_type',
                 'gr.warehouse_outlet_id',
                 'wo.name as warehouse_outlet_name'
             );
@@ -88,12 +89,29 @@ class OutletFoodGoodReceiveController extends Controller
             $user = auth()->user();
             $do = DB::table('delivery_orders')->where('id', $validated['delivery_order_id'])->first();
             if (!$do) throw new \Exception('Delivery Order tidak ditemukan');
-            $floorOrderId = $do->floor_order_id;
+            
             $outletId = $user->id_outlet;
             $warehouseOutletId = null;
-            $floorOrder = DB::table('food_floor_orders')->where('id', $floorOrderId)->first();
-            if ($floorOrder && isset($floorOrder->warehouse_outlet_id)) {
-                $warehouseOutletId = $floorOrder->warehouse_outlet_id;
+            
+            if ($do->source_type === 'ro_supplier_gr') {
+                // Untuk RO Supplier GR, ambil data dari purchase order
+                $gr = DB::table('food_good_receives')->where('id', $do->ro_supplier_gr_id)->first();
+                if ($gr) {
+                    $po = DB::table('purchase_order_foods')->where('id', $gr->po_id)->first();
+                    if ($po) {
+                        $floorOrder = DB::table('food_floor_orders')->where('id', $po->source_id)->first();
+                        if ($floorOrder && isset($floorOrder->warehouse_outlet_id)) {
+                            $warehouseOutletId = $floorOrder->warehouse_outlet_id;
+                        }
+                    }
+                }
+            } else {
+                // Untuk Packing List biasa
+                $floorOrderId = $do->floor_order_id;
+                $floorOrder = DB::table('food_floor_orders')->where('id', $floorOrderId)->first();
+                if ($floorOrder && isset($floorOrder->warehouse_outlet_id)) {
+                    $warehouseOutletId = $floorOrder->warehouse_outlet_id;
+                }
             }
             $today = date('Ymd');
             $countToday = DB::table('outlet_food_good_receives')->whereDate('created_at', now())->count();
@@ -134,11 +152,23 @@ class OutletFoodGoodReceiveController extends Controller
                     continue;
                 }
                 
-                $ffoi = DB::table('food_floor_order_items')
-                    ->where('floor_order_id', $floorOrderId)
-                    ->where('item_id', $item['item_id'])
-                    ->first();
-                $cost = $ffoi ? $ffoi->price : 0;
+                // Ambil cost berdasarkan source type
+                $ffoi = null;
+                if ($do->source_type === 'ro_supplier_gr') {
+                    // Untuk RO Supplier GR, ambil dari GR items
+                    $grItem = DB::table('food_good_receive_items')
+                        ->where('good_receive_id', $do->ro_supplier_gr_id)
+                        ->where('item_id', $item['item_id'])
+                        ->first();
+                    $cost = $grItem ? $grItem->price : 0;
+                } else {
+                    // Untuk Packing List biasa
+                    $ffoi = DB::table('food_floor_order_items')
+                        ->where('floor_order_id', $do->floor_order_id)
+                        ->where('item_id', $item['item_id'])
+                        ->first();
+                    $cost = $ffoi ? $ffoi->price : 0;
+                }
                 $itemMaster = DB::table('items')->where('id', $item['item_id'])->first();
                 \Log::info('DEBUG ITEM MASTER', ['itemMaster' => $itemMaster]);
                 $inventoryItem = DB::table('outlet_food_inventory_items')->where('item_id', $item['item_id'])->first();
@@ -596,10 +626,18 @@ class OutletFoodGoodReceiveController extends Controller
         $do = \DB::table('delivery_orders')
             ->leftJoin('food_floor_orders', 'delivery_orders.floor_order_id', '=', 'food_floor_orders.id')
             ->leftJoin('tbl_data_outlet', 'food_floor_orders.id_outlet', '=', 'tbl_data_outlet.id_outlet')
+            // Join untuk RO Supplier GR
+            ->leftJoin('food_good_receives as gr_ro', 'delivery_orders.ro_supplier_gr_id', '=', 'gr_ro.id')
+            ->leftJoin('purchase_order_foods as po', 'gr_ro.po_id', '=', 'po.id')
+            ->leftJoin('food_floor_orders as fo_ro', 'po.source_id', '=', 'fo_ro.id')
+            ->leftJoin('tbl_data_outlet as o_ro', 'fo_ro.id_outlet', '=', 'o_ro.id_outlet')
             ->select(
                 'delivery_orders.*',
                 'food_floor_orders.id_outlet',
-                'tbl_data_outlet.nama_outlet as outlet_name'
+                'tbl_data_outlet.nama_outlet as outlet_name',
+                // Data untuk RO Supplier GR
+                'fo_ro.id_outlet as ro_id_outlet',
+                'o_ro.nama_outlet as ro_outlet_name'
             )
             ->where('delivery_orders.id', $delivery_order_id)
             ->first();
@@ -627,7 +665,7 @@ class OutletFoodGoodReceiveController extends Controller
                 'id' => $do->id,
                 'number' => $do->number,
                 'date' => $do->created_at,
-                'outlet_name' => $do->outlet_name ?? '-',
+                'outlet_name' => $do->source_type === 'ro_supplier_gr' ? ($do->ro_outlet_name ?? '-') : ($do->outlet_name ?? '-'),
                 'status' => $do->status ?? '-',
                 'items' => $items,
             ]
@@ -647,19 +685,40 @@ class OutletFoodGoodReceiveController extends Controller
             ->leftJoin('food_floor_orders as fo', 'do.floor_order_id', '=', 'fo.id')
             ->leftJoin('food_packing_lists as pl', 'do.packing_list_id', '=', 'pl.id')
             ->leftJoin('warehouse_division as wd', 'pl.warehouse_division_id', '=', 'wd.id')
+            // Join untuk RO Supplier GR
+            ->leftJoin('food_good_receives as gr_ro', 'do.ro_supplier_gr_id', '=', 'gr_ro.id')
+            ->leftJoin('purchase_order_foods as po', 'gr_ro.po_id', '=', 'po.id')
+            ->leftJoin('food_floor_orders as fo_ro', 'po.source_id', '=', 'fo_ro.id')
             ->whereNull('gr.id')
-            ->where('fo.id_outlet', $idOutlet);
+            ->where(function($q) use ($idOutlet) {
+                // Jika user bukan admin (id_outlet != 1), filter berdasarkan outlet
+                if ($idOutlet != 1) {
+                    // Untuk packing list biasa
+                    $q->where('fo.id_outlet', $idOutlet)
+                      // Atau untuk RO Supplier GR
+                      ->orWhere('fo_ro.id_outlet', $idOutlet);
+                }
+                // Jika user admin (id_outlet = 1), tidak ada filter outlet (bisa lihat semua)
+            });
 
         if ($q) {
             $query->where('do.number', 'like', "%$q%");
         }
         $dos = $query->orderByDesc('do.created_at')
-            ->select('do.id', 'do.number', 'do.created_at as do_date', 'wd.name as division_name')
+            ->select(
+                'do.id', 
+                'do.number', 
+                'do.created_at as do_date', 
+                'do.source_type',
+                DB::raw('COALESCE(wd.name, "Perishable") as division_name')
+            )
             ->limit(20)
             ->get();
         \Log::info('DEBUG DO OUTLET', [
             'id_outlet' => $idOutlet,
-            'result' => $dos
+            'result' => $dos,
+            'query_sql' => $query->toSql(),
+            'query_bindings' => $query->getBindings()
         ]);
         return response()->json($dos);
     }
@@ -671,12 +730,22 @@ class OutletFoodGoodReceiveController extends Controller
             ->leftJoin('food_packing_lists as pl', 'do.packing_list_id', '=', 'pl.id')
             ->leftJoin('food_floor_orders as fo', 'do.floor_order_id', '=', 'fo.id')
             ->leftJoin('warehouse_outlets as wo', 'fo.warehouse_outlet_id', '=', 'wo.id')
+            // Join untuk RO Supplier GR
+            ->leftJoin('food_good_receives as gr_ro', 'do.ro_supplier_gr_id', '=', 'gr_ro.id')
+            ->leftJoin('purchase_order_foods as po', 'gr_ro.po_id', '=', 'po.id')
+            ->leftJoin('food_floor_orders as fo_ro', 'po.source_id', '=', 'fo_ro.id')
+            ->leftJoin('warehouse_outlets as wo_ro', 'fo_ro.warehouse_outlet_id', '=', 'wo_ro.id')
             ->select(
                 'do.id as do_id', 'do.number as do_number', 'do.packing_list_id', 'do.floor_order_id',
+                'do.source_type', 'do.ro_supplier_gr_id',
                 'pl.packing_number', 'pl.reason as packing_reason',
                 'fo.order_number as floor_order_number', 'fo.tanggal as floor_order_date', 'fo.description as floor_order_desc',
                 'do.created_at as do_created_at',
-                'fo.warehouse_outlet_id', 'wo.name as warehouse_outlet_name'
+                'fo.warehouse_outlet_id', 'wo.name as warehouse_outlet_name',
+                // Data untuk RO Supplier GR
+                'gr_ro.gr_number as ro_gr_number',
+                'fo_ro.order_number as ro_floor_order_number', 'fo_ro.tanggal as ro_floor_order_date', 'fo_ro.description as ro_floor_order_desc',
+                'fo_ro.warehouse_outlet_id as ro_warehouse_outlet_id', 'wo_ro.name as ro_warehouse_outlet_name'
             )
             ->where('do.id', $do_id)
             ->first();

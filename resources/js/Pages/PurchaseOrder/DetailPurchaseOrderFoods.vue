@@ -40,6 +40,23 @@
               </div>
             </div>
 
+            <!-- RO Supplier Information -->
+            <div v-if="roSupplierInfo" class="mb-6 bg-green-50 border border-green-200 rounded-lg p-4">
+              <h3 class="text-lg font-semibold mb-3 text-green-800">Informasi RO Supplier</h3>
+              <div class="grid grid-cols-2 gap-4">
+                <div class="space-y-2">
+                  <p><span class="font-medium text-green-700">Nomor RO:</span> {{ roSupplierInfo.ro_number }}</p>
+                  <p><span class="font-medium text-green-700">Tanggal RO:</span> {{ formatDate(roSupplierInfo.ro_date) }}</p>
+                  <p><span class="font-medium text-green-700">Outlet:</span> {{ roSupplierInfo.outlet_name }}</p>
+                  <p><span class="font-medium text-green-700">Warehouse Outlet:</span> {{ roSupplierInfo.warehouse_outlet_name }}</p>
+                </div>
+                <div class="space-y-2">
+                  <p><span class="font-medium text-green-700">Pembuat RO:</span> {{ roSupplierInfo.ro_creator }}</p>
+                  <p><span class="font-medium text-green-700">Deskripsi RO:</span> {{ roSupplierInfo.ro_description || '-' }}</p>
+                </div>
+              </div>
+            </div>
+
             <!-- Items Table -->
             <div class="mb-6">
               <h3 class="text-lg font-semibold mb-4">Daftar Item</h3>
@@ -152,6 +169,10 @@ const props = defineProps({
   po: {
     type: Object,
     required: true
+  },
+  roSupplierInfo: {
+    type: Object,
+    default: null
   },
   user: {
     type: Object,

@@ -4,31 +4,56 @@
       <h1 class="text-3xl font-bold mb-8 text-blue-800 flex items-center gap-3">
         <i class="fa-solid fa-barcode text-blue-500"></i> Delivery Order (Scan Barang)
       </h1>
-      <!-- Pilih Packing List -->
+      <!-- Pilih Packing List atau RO Supplier GR -->
       <div class="mb-6 flex flex-col md:flex-row gap-4 items-center w-full max-w-xl">
-        <label class="font-semibold text-lg">No Packing List</label>
+        <label class="font-semibold text-lg">Pilih Sumber</label>
         <select v-model="selectedPackingListId" @change="onPackingListChange" class="border-2 border-blue-400 rounded-lg px-3 py-2 w-full max-w-xs focus:ring-2 focus:ring-blue-500">
-          <option value="">Pilih Packing List...</option>
-          <option v-for="pl in packingLists" :key="pl.id" :value="pl.id">
-            {{ new Date(pl.created_at).toLocaleDateString('id-ID') }} - {{ pl.nama_outlet || '-' }} - {{ pl.division_name || '-' }} - {{ pl.packing_number }}
-          </option>
+          <option value="">Pilih Packing List atau RO Supplier GR...</option>
+          <optgroup label="Packing List">
+            <option v-for="pl in packingLists" :key="pl.id" :value="pl.id">
+              {{ new Date(pl.created_at).toLocaleDateString('id-ID') }} - {{ pl.nama_outlet || '-' }} - {{ pl.division_name || '-' }} - {{ pl.packing_number }}
+            </option>
+          </optgroup>
+          <optgroup label="RO Supplier GR">
+            <option v-for="gr in roSupplierGRs" :key="'gr_' + gr.gr_id" :value="'gr_' + gr.gr_id">
+              {{ new Date(gr.created_at).toLocaleDateString('id-ID') }} - {{ gr.nama_outlet || '-' }} - {{ gr.division_name || '-' }} - {{ gr.packing_number }} ({{ gr.supplier_name }})
+            </option>
+          </optgroup>
         </select>
       </div>
-      <!-- Card Info Packing List terpilih -->
+      <!-- Card Info Packing List atau RO Supplier GR terpilih -->
       <div v-if="selectedPackingList" class="mb-6 w-full max-w-xl bg-blue-50 border-l-4 border-blue-400 p-4 rounded animate-fade-in">
-        <div class="font-bold text-blue-800 mb-1">Info Packing List</div>
+        <div class="font-bold text-blue-800 mb-1">
+          {{ isROSupplierGR ? 'Info RO Supplier GR' : 'Info Packing List' }}
+        </div>
         <div><b>Outlet:</b> {{ selectedPackingList.nama_outlet || '-' }}</div>
         <div><b>Warehouse Outlet:</b> {{ selectedPackingList.warehouse_outlet_name || '-' }}</div>
         <div><b>Warehouse Division:</b> {{ selectedPackingList.division_name || '-' }}</div>
         <div><b>Warehouse:</b> {{ selectedPackingList.warehouse_name || '-' }}</div>
         <div><b>Tanggal Floor Order:</b> {{ selectedPackingList.floor_order_date ? new Date(selectedPackingList.floor_order_date).toLocaleDateString('id-ID') : '-' }}</div>
         <div><b>Nomor Floor Order:</b> {{ selectedPackingList.floor_order_number || '-' }}</div>
-        <div><b>Tanggal Packing:</b> {{ selectedPackingList.created_at ? new Date(selectedPackingList.created_at).toLocaleDateString('id-ID') : '-' }}</div>
-        <div><b>Nomor Packing:</b> {{ selectedPackingList.packing_number }}</div>
-        <div><b>User Packing:</b> {{ selectedPackingList.creator_name || '-' }}</div>
+        <div v-if="isROSupplierGR">
+          <div><b>Supplier:</b> {{ selectedPackingList.supplier_name || '-' }}</div>
+          <div><b>Tanggal GR:</b> {{ selectedPackingList.created_at ? new Date(selectedPackingList.created_at).toLocaleDateString('id-ID') : '-' }}</div>
+          <div><b>Nomor GR:</b> {{ selectedPackingList.packing_number }}</div>
+          <div><b>User GR:</b> {{ selectedPackingList.creator_name || '-' }}</div>
+        </div>
+        <div v-else>
+          <div><b>Tanggal Packing:</b> {{ selectedPackingList.created_at ? new Date(selectedPackingList.created_at).toLocaleDateString('id-ID') : '-' }}</div>
+          <div><b>Nomor Packing:</b> {{ selectedPackingList.packing_number }}</div>
+          <div><b>User Packing:</b> {{ selectedPackingList.creator_name || '-' }}</div>
+        </div>
       </div>
+      <!-- Loading Spinner -->
+      <div v-if="isLoadingItems" class="mb-8 w-full flex justify-center items-center py-12">
+        <div class="text-center">
+          <div class="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
+          <div class="text-lg font-semibold text-blue-600">Loading items...</div>
+        </div>
+      </div>
+      
       <!-- Tabel Item Packing List -->
-      <div v-if="packingListItems.length" class="mb-8 w-full max-w-3xl animate-fade-in">
+      <div v-if="packingListItems.length && !isLoadingItems" class="mb-8 w-full max-w-3xl animate-fade-in">
         <table class="min-w-full rounded-xl overflow-hidden shadow-xl">
           <thead class="bg-blue-100">
             <tr>
@@ -61,12 +86,12 @@
         </table>
       </div>
       <!-- Scan Barcode -->
-      <div v-if="packingListItems.length" class="mb-8 w-full max-w-xl flex flex-col items-center animate-fade-in">
+      <div v-if="packingListItems.length && !isLoadingItems" class="mb-8 w-full max-w-xl flex flex-col items-center animate-fade-in">
         <label class="font-semibold text-lg mb-2">Scan Barcode</label>
         <input ref="barcodeInput" v-model="barcodeInputVal" @keyup.enter="onScanBarcode" class="border-2 border-blue-400 rounded-lg px-4 py-3 w-full text-xl text-center focus:ring-2 focus:ring-blue-500 shadow-lg" placeholder="Scan barcode di sini..." autofocus />
         <div v-if="scanFeedback" :class="scanFeedbackClass" class="mt-4 font-bold text-xl min-h-[32px]">{{ scanFeedback }}</div>
       </div>
-      <button v-if="packingListItems.length" @click="confirmSubmit" :disabled="!isReadyToSubmit || loadingSubmit" class="bg-gradient-to-r from-blue-500 to-blue-700 text-white px-10 py-4 rounded-2xl font-extrabold text-2xl shadow-xl hover:scale-105 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
+      <button v-if="packingListItems.length && !isLoadingItems" @click="confirmSubmit" :disabled="!isReadyToSubmit || loadingSubmit" class="bg-gradient-to-r from-blue-500 to-blue-700 text-white px-10 py-4 rounded-2xl font-extrabold text-2xl shadow-xl hover:scale-105 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
         <i v-if="loadingSubmit" class="fa fa-spinner fa-spin mr-2"></i>
         <i v-else class="fa-solid fa-paper-plane mr-2"></i>
         Submit Delivery Order
@@ -124,10 +149,19 @@ import Swal from 'sweetalert2';
 
 const props = defineProps({
   packingLists: Array,
+  roSupplierGRs: Array,
 });
 const packingLists = ref(props.packingLists || []);
+const roSupplierGRs = ref(props.roSupplierGRs || []);
+
+// Debug logging
+console.log('Packing Lists:', packingLists.value);
+console.log('RO Supplier GRs:', roSupplierGRs.value);
+console.log('Packing Lists length:', packingLists.value.length);
+console.log('RO Supplier GRs length:', roSupplierGRs.value.length);
 const packingListItems = reactive([]);
 const selectedPackingListId = ref('');
+const isLoadingItems = ref(false);
 const barcodeInputVal = ref('');
 const scanFeedback = ref('');
 const scanFeedbackClass = ref('');
@@ -150,18 +184,60 @@ const error = ref("");
 const isLoading = ref(false);
 
 const isReadyToSubmit = computed(() => packingListItems.length > 0 && packingListItems.some(i => i.qty_scan > 0));
-const selectedPackingList = computed(() => packingLists.value.find(pl => pl.id == selectedPackingListId.value) || null);
+const isROSupplierGR = computed(() => {
+  const value = selectedPackingListId.value;
+  return value && typeof value === 'string' && value.startsWith('gr_');
+});
+const selectedPackingList = computed(() => {
+  const value = selectedPackingListId.value;
+  if (!value) return null;
+  
+  if (isROSupplierGR.value) {
+    const grId = value.substring(3);
+    return roSupplierGRs.value.find(gr => gr.gr_id == grId) || null;
+  } else {
+    return packingLists.value.find(pl => pl.id == value) || null;
+  }
+});
 
 async function onPackingListChange() {
-  if (!selectedPackingListId.value) return;
-  const res = await axios.get(`/api/packing-list/${selectedPackingListId.value}/items`);
-  packingListItems.splice(0, packingListItems.length, ...res.data.items.map(item => ({
-    ...item,
-    qty_scan: 0
-  })));
+  console.log('=== onPackingListChange START ===');
+  const value = selectedPackingListId.value;
+  console.log('selectedPackingListId.value:', value, 'type:', typeof value);
+  
+  if (!value) {
+    console.log('Early return - no value');
+    return;
+  }
+  
+  // Set loading state
+  isLoadingItems.value = true;
+  packingListItems.splice(0, packingListItems.length); // Clear items
+  
+  console.log('Calling API for:', value);
+  
+  try {
+    // Gunakan endpoint yang sama karena sudah dimodifikasi untuk menangani RO Supplier GR
+    const res = await axios.get(`/api/packing-list/${value}/items`);
+    console.log('API Response:', res.data);
+    
+    packingListItems.splice(0, packingListItems.length, ...res.data.items.map(item => ({
+      ...item,
+      qty_scan: 0
+    })));
+    
+    console.log('Packing list items after update:', packingListItems);
+  } catch (error) {
+    console.error('API Error:', error);
+  } finally {
+    // Clear loading state
+    isLoadingItems.value = false;
+  }
+  
   barcodeInputVal.value = '';
   scanFeedback.value = '';
   nextTick(() => barcodeInput.value?.focus());
+  console.log('=== onPackingListChange END ===');
 }
 
 function onScanBarcode() {

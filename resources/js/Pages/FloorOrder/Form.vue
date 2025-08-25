@@ -31,9 +31,7 @@ const todaySchedules = ref([]);
 const todayScheduleNotes = ref('');
 const showPreview = ref(false);
 const isSubmitting = ref(false);
-const selectedSupplier = ref(null);
-const suppliers = ref([]);
-const supplierItems = ref([]);
+
 const warehouseOutlets = ref([]);
 const selectedWarehouseOutlet = ref(null);
 
@@ -142,98 +140,8 @@ async function fetchItemsByFOSchedule(foScheduleId) {
   }
 }
 
-// Watch selectedFOMode untuk reset supplier dan items
-watch(selectedFOMode, (val) => {
-  if (val !== 'RO Supplier') {
-    selectedSupplier.value = null;
-    supplierItems.value = [];
-  } else {
-    fetchSuppliers();
-  }
-});
 
-// Fetch suppliers untuk outlet (ubah: fetch semua supplier aktif)
-async function fetchSuppliers() {
-  try {
-    const res = await axios.get('/api/suppliers', {
-      params: {
-        status: 'active'
-      }
-    });
-    suppliers.value = Array.isArray(res.data) ? res.data : (res.data.suppliers || []);
-  } catch (e) {
-    suppliers.value = [];
-  }
-}
 
-// Fetch items berdasarkan supplier
-async function fetchSupplierItems() {
-  if (!selectedSupplier.value) {
-    supplierItems.value = [];
-    categories.value = [];
-    return;
-  }
-  loadingItems.value = true;
-  try {
-    console.log('DEBUG fetchSupplierItems params:', {
-      supplier_id: selectedSupplier.value,
-      outlet_id: outlet_id.value
-    });
-    
-    const res = await axios.get('/api/items/by-supplier', {
-      params: {
-        supplier_id: selectedSupplier.value,
-        outlet_id: outlet_id.value
-      }
-    });
-    
-    console.log('DEBUG fetchSupplierItems response:', res.data);
-    supplierItems.value = Array.isArray(res.data.items) ? res.data.items : [];
-    console.log('DEBUG supplierItems', supplierItems.value);
-  } catch (e) {
-    console.error('DEBUG fetchSupplierItems error:', e);
-    supplierItems.value = [];
-  } finally {
-    loadingItems.value = false;
-  }
-}
-
-// Watch selectedSupplier untuk fetch items dan reset form
-watch(selectedSupplier, (val) => {
-  if (val) {
-    fetchSupplierItems().then(() => {
-      if (selectedFOMode.value === 'RO Supplier') {
-        // Group supplierItems by category_name
-        const grouped = {};
-        supplierItems.value.forEach(item => {
-          const catName = item.category_name && item.category_name.trim() !== '' ? item.category_name : 'Tanpa Kategori';
-          if (!grouped[item.category_id]) grouped[item.category_id] = { id: item.category_id, name: catName, items: [] };
-          grouped[item.category_id].items.push({ 
-            ...item, 
-            qty: 0,
-            unit: item.unit_medium_name || item.unit_medium || item.unit_small || item.unit || '-',
-            price: roundUpToHundred(item.price || 0), // Apply rounding ke kelipatan Rp 100
-            subtotal: 0
-          });
-        });
-        categories.value = Object.values(grouped);
-        console.log('DEBUG categories', categories.value);
-      }
-    });
-    // Reset items jika supplier berubah
-    form.value.items = [
-      { item_id: '', item_name: '', qty: '', unit: '', price: 0, subtotal: 0, suggestions: [], showDropdown: false, loading: false, highlightedIndex: -1, _rowKey: Date.now() + '-' + Math.random() }
-    ];
-  } else {
-    supplierItems.value = [];
-    categories.value = [];
-    form.value.items = [
-      { item_id: '', item_name: '', qty: '', unit: '', price: 0, subtotal: 0, suggestions: [], showDropdown: false, loading: false, highlightedIndex: -1, _rowKey: Date.now() + '-' + Math.random() }
-    ];
-  }
-});
-
-// Modifikasi fetchItemSuggestions untuk RO Supplier
 function fetchItemSuggestions(idx, q) {
   if (!q || q.length < 2) {
     form.value.items[idx].suggestions = [];
@@ -242,34 +150,10 @@ function fetchItemSuggestions(idx, q) {
   }
   form.value.items[idx].loading = true;
 
-  if (selectedFOMode.value === 'RO Supplier') {
-    if (!selectedSupplier.value) {
-      Swal.fire({
-        icon: 'warning',
-        title: 'Pilih Supplier',
-        text: 'Silakan pilih supplier terlebih dahulu.',
-        confirmButtonColor: '#3085d6',
-      });
-      form.value.items[idx].loading = false;
-      return;
-    }
-    // Filter dari supplierItems
-    form.value.items[idx].suggestions = supplierItems.value.filter(item => 
-      item.name.toLowerCase().includes(q.toLowerCase()) || 
-      (item.sku && item.sku.toLowerCase().includes(q.toLowerCase()))
-    );
-    form.value.items[idx].showDropdown = true;
-    form.value.items[idx].highlightedIndex = 0;
-    form.value.items[idx].loading = false;
-    return;
-  }
-
-  // Untuk mode lain, gunakan logika yang sudah ada
   const searchParams = {
     q: q,
     outlet_id: outlet_id.value,
-    region_id: region_id.value,
-    exclude_supplier: true
+    region_id: region_id.value
   };
   
   console.log('DEBUG: Search API params', searchParams);
@@ -291,59 +175,19 @@ function fetchItemSuggestions(idx, q) {
 }
 
 function selectItem(idx, item) {
-  // Validasi untuk RO Supplier: item harus dari supplier
-  if (selectedFOMode.value === 'RO Supplier') {
-    // Cek apakah item ada di supplier
-    const supplierItem = supplierItems.value.find(i => i.id === item.id);
-    if (!supplierItem) {
-        Swal.fire({
-          icon: 'error',
-          title: 'Item Tidak Valid',
-          text: 'RO Supplier hanya boleh berisi item dari supplier.',
-          confirmButtonColor: '#3085d6',
-        });
-        return;
-      }
-      // Lanjutkan jika item valid
-      form.value.items[idx].item_id = item.id;
-      form.value.items[idx].item_name = item.name;
-      form.value.items[idx].unit = item.unit_medium_name || item.unit_medium || item.unit_small || item.unit || '-';
-      const rawPrice = item.price || 0; // Menggunakan price dari item_prices (sama dengan RO utama)
-      form.value.items[idx].price = roundUpToHundred(rawPrice); // Apply rounding
-      form.value.items[idx].qty = '';
-      form.value.items[idx].subtotal = 0;
-      form.value.items[idx].category_id = item.category_id;
-      form.value.items[idx].category_name = item.category_name || (item.category?.name ?? 'Tanpa Kategori');
-      form.value.items[idx].suggestions = [];
-      form.value.items[idx].showDropdown = false;
-      form.value.items[idx].highlightedIndex = -1;
-  } else if (mode.value === 'tab') {
-    // Untuk mode tab, pakai unit_medium_name/unit_medium
-    form.value.items[idx].unit = item.unit_medium_name || item.unit_medium || item.unit_small || item.unit || '-';
-    form.value.items[idx].item_id = item.id;
-    form.value.items[idx].item_name = item.name;
-    form.value.items[idx].qty = '';
-    form.value.items[idx].subtotal = 0;
-    form.value.items[idx].category_id = item.category_id;
-    form.value.items[idx].category_name = item.category_name || (item.category?.name ?? 'Tanpa Kategori');
-      form.value.items[idx].suggestions = [];
-      form.value.items[idx].showDropdown = false;
-      form.value.items[idx].highlightedIndex = -1;
-  } else {
-    // Untuk mode PC, pakai unit_medium_name/unit_medium dan harga medium (seperti mode tab)
-    form.value.items[idx].unit = item.unit_medium_name || item.unit_medium || item.unit_small || item.unit || '-';
-    form.value.items[idx].item_id = item.id;
-    form.value.items[idx].item_name = item.name;
-    const rawPrice = item.price !== undefined ? item.price : 0; // Gunakan price yang sudah diambil dari API
-    form.value.items[idx].price = roundUpToHundred(rawPrice); // Apply rounding
-    form.value.items[idx].qty = '';
-    form.value.items[idx].subtotal = 0;
-    form.value.items[idx].category_id = item.category_id;
-    form.value.items[idx].category_name = item.category_name || (item.category?.name ?? 'Tanpa Kategori');
-    form.value.items[idx].suggestions = [];
-    form.value.items[idx].showDropdown = false;
-    form.value.items[idx].highlightedIndex = -1;
-  }
+  // Set item data tanpa validasi supplier
+  form.value.items[idx].item_id = item.id;
+  form.value.items[idx].item_name = item.name;
+  form.value.items[idx].unit = item.unit_medium_name || item.unit_medium || item.unit_small || item.unit || '-';
+  const rawPrice = item.price !== undefined ? item.price : 0;
+  form.value.items[idx].price = roundUpToHundred(rawPrice);
+  form.value.items[idx].qty = '';
+  form.value.items[idx].subtotal = 0;
+  form.value.items[idx].category_id = item.category_id;
+  form.value.items[idx].category_name = item.category_name || (item.category?.name ?? 'Tanpa Kategori');
+  form.value.items[idx].suggestions = [];
+  form.value.items[idx].showDropdown = false;
+  form.value.items[idx].highlightedIndex = -1;
 }
 function onItemInput(idx, e) {
   const value = e.target.value;
@@ -530,6 +374,107 @@ async function checkFOSchedule() {
     jadwalSiap.value = true;
     showScheduleModal.value = false;
     error.value = '';
+    
+    // Cari jadwal aktif untuk RO Supplier
+    try {
+      const response = await axios.get('/api/fo-schedules/check', {
+        params: {
+          fo_mode: selectedFOMode.value,
+          day: getCurrentDay(),
+          region_id: region_id.value,
+          outlet_id: outlet_id.value
+        }
+      });
+      
+      if (response.data.schedule && response.data.schedule.is_active) {
+        const scheduleId = response.data.schedule.id;
+        
+        // Fetch item schedule untuk RO Supplier sebagai notifikasi saja
+        if (!itemsByFOSchedule.value.length) {
+          loadingItems.value = true;
+          try {
+            const res = await axios.get(`/api/items/by-fo-schedule/${scheduleId}`, {
+              params: {
+                region_id: region_id.value,
+                outlet_id: outlet_id.value
+              }
+            });
+            itemsByFOSchedule.value = res.data.items || [];
+          } catch (e) {
+            itemsByFOSchedule.value = [];
+          } finally {
+            loadingItems.value = false;
+          }
+        }
+        
+        // Untuk mode tab, tetap tampilkan item seperti RO lainnya
+        if (!categories.value.length) {
+          loadingItems.value = true;
+          try {
+            const res = await axios.get(`/api/items/by-fo-schedule/${scheduleId}`, {
+              params: {
+                region_id: region_id.value,
+                outlet_id: outlet_id.value
+              }
+            });
+            const items = res.data.items || [];
+            // Kelompokkan per kategori untuk mode tab
+            const grouped = {};
+            items.forEach(item => {
+              const catName = item.category_name && item.category_name.trim() !== '' ? item.category_name : 'Tanpa Kategori';
+              if (!grouped[item.category_id]) grouped[item.category_id] = { id: item.category_id, name: catName, items: [] };
+              grouped[item.category_id].items.push({
+                ...item,
+                qty: 0,
+                unit: item.unit_medium_name || item.unit_medium || item.unit_small || item.unit || '-',
+                price: roundUpToHundred(item.price || 0),
+                subtotal: 0
+              });
+            });
+            categories.value = Object.values(grouped);
+          } catch (e) {
+            categories.value = [];
+          } finally {
+            loadingItems.value = false;
+          }
+        }
+      } else {
+        // Jika tidak ada jadwal aktif, gunakan item khusus
+        loadingItems.value = true;
+        try {
+          const res = await axios.get('/api/items/by-fo-khusus', {
+            params: {
+              region_id: region_id.value,
+              outlet_id: outlet_id.value
+            }
+          });
+          const items = res.data.items || [];
+          itemsByFOSchedule.value = items;
+          
+          // Kelompokkan per kategori untuk mode tab
+          const grouped = {};
+          items.forEach(item => {
+            const catName = item.category_name && item.category_name.trim() !== '' ? item.category_name : 'Tanpa Kategori';
+            if (!grouped[item.category_id]) grouped[item.category_id] = { id: item.category_id, name: catName, items: [] };
+            grouped[item.category_id].items.push({
+              ...item,
+              qty: 0,
+              unit: item.unit_medium_name || item.unit_medium || item.unit_small || item.unit || '-',
+              price: roundUpToHundred(item.price || 0),
+              subtotal: 0
+            });
+          });
+          categories.value = Object.values(grouped);
+        } catch (e) {
+          itemsByFOSchedule.value = [];
+          categories.value = [];
+        } finally {
+          loadingItems.value = false;
+        }
+      }
+    } catch (e) {
+      console.error('Error fetching schedule for RO Supplier:', e);
+    }
     return;
   }
   if (!selectedFOMode.value) {
@@ -739,6 +684,10 @@ function isTodaySchedule(itemId) {
   return todaySchedules.value.some(s => s.item_id == itemId);
 }
 
+function isItemInSchedule(itemId) {
+  return itemsByFOSchedule.value.some(item => item.id == itemId);
+}
+
 function focusLastItemInput() {
   nextTick(() => {
     setTimeout(() => {
@@ -840,6 +789,7 @@ watch([jadwalSiap, showScheduleModal], ([val, modal]) => {
 
 function submitOrderWithLoading() {
   console.log('SUBMIT ORDER DIPANGGIL', draftId.value);
+  
   if (!draftId.value) {
     Swal.fire({
       icon: 'error',
@@ -1026,23 +976,10 @@ watch(selectedWarehouseOutlet, (val) => {
           <option v-for="wh in warehouseOutlets" :key="wh.id" :value="wh.id">{{ wh.name }}</option>
         </select>
       </div>
-      <div v-if="selectedFOMode === 'RO Supplier'" class="mb-6">
-        <label class="block text-sm font-medium text-gray-700 mb-2">Pilih Supplier</label>
-        <select 
-          v-model="selectedSupplier"
-          class="w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-          :disabled="loadingItems"
-        >
-          <option value="">Pilih Supplier</option>
-          <option v-for="supplier in suppliers" :key="supplier.id" :value="supplier.id">
-            {{ supplier.name }}
-          </option>
-        </select>
-      </div>
-      <div v-if="selectedFOMode && !loading && (selectedFOMode !== 'RO Supplier' || selectedSupplier)">
+      <div v-if="selectedFOMode && !loading">
         <button 
           @click="checkFOSchedule"
-          :disabled="!selectedFOMode || (selectedFOMode === 'RO Supplier' && !selectedSupplier)"
+          :disabled="!selectedFOMode"
           class="px-4 py-2 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-colors"
         >
           <i class="fas fa-calendar-check mr-2"></i>
@@ -1168,6 +1105,9 @@ watch(selectedWarehouseOutlet, (val) => {
           <div v-if="todayScheduleNotes" class="mb-2 text-yellow-700 bg-yellow-100 border-l-4 border-yellow-400 px-3 py-2 rounded">
             {{ todayScheduleNotes }}
           </div>
+          <div v-if="selectedFOMode === 'RO Supplier' && itemsByFOSchedule.length > 0" class="mb-2 text-blue-700 bg-blue-100 border-l-4 border-blue-400 px-3 py-2 rounded">
+            <strong>Info Jadwal RO Supplier:</strong> {{ itemsByFOSchedule.length }} item tersedia sesuai jadwal hari ini. Item yang wajib diorder hari ini akan ditandai dengan background hijau (Anda tetap bisa memilih item lain).
+          </div>
           <div v-if="loadingItems" class="text-center py-8">
             <i class="fas fa-spinner fa-spin text-blue-500 text-2xl"></i>
             <p class="mt-2 text-gray-600">Memuat data item...</p>
@@ -1190,19 +1130,7 @@ watch(selectedWarehouseOutlet, (val) => {
               <label class="block text-sm font-medium text-gray-700">Keterangan</label>
               <input type="text" v-model="form.description" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500" :disabled="loadingItems" />
             </div>
-            <div v-if="selectedFOMode === 'RO Supplier'" class="mb-4">
-              <label class="block text-sm font-medium text-gray-700 mb-2">Pilih Supplier</label>
-              <select 
-                v-model="selectedSupplier"
-                class="w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                :disabled="loadingItems"
-              >
-                <option value="">Pilih Supplier</option>
-                <option v-for="supplier in suppliers" :key="supplier.id" :value="supplier.id">
-                  {{ supplier.name }}
-                </option>
-              </select>
-            </div>
+
             <div v-if="jadwalSiap && warehouseOutlets.length" class="mb-4">
               <label class="block text-sm font-medium text-gray-700 mb-2">Pilih Warehouse Outlet</label>
               <select v-model="selectedWarehouseOutlet" class="w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
@@ -1302,6 +1230,9 @@ watch(selectedWarehouseOutlet, (val) => {
           <div>
             <div v-if="todayScheduleNotes" class="mb-2 text-yellow-700 bg-yellow-100 border-l-4 border-yellow-400 px-3 py-2 rounded">
               {{ todayScheduleNotes }}
+            </div>
+            <div v-if="selectedFOMode === 'RO Supplier' && itemsByFOSchedule.length > 0" class="mb-2 text-blue-700 bg-blue-100 border-l-4 border-blue-400 px-3 py-2 rounded">
+              <strong>Info Jadwal RO Supplier:</strong> {{ itemsByFOSchedule.length }} item tersedia sesuai jadwal hari ini. Item yang wajib diorder hari ini akan ditandai dengan background hijau (Anda tetap bisa memilih item lain).
             </div>
             <div v-if="loadingItems" class="text-center py-8">
               <i class="fas fa-spinner fa-spin text-blue-500 text-2xl"></i>

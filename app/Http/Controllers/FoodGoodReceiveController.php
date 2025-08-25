@@ -61,15 +61,33 @@ class FoodGoodReceiveController extends Controller
         if ($alreadyReceived) {
             return response()->json(['message' => 'PO sudah pernah diterima'], 400);
         }
-        $items = DB::table('purchase_order_food_items as poi')
-            ->leftJoin('items as i', 'poi.item_id', '=', 'i.id')
-            ->leftJoin('units as u', 'poi.unit_id', '=', 'u.id')
-            ->leftJoin('pr_food_items as pfi', 'poi.pr_food_item_id', '=', 'pfi.id')
-            ->leftJoin('pr_foods as pf', 'pfi.pr_food_id', '=', 'pf.id')
-            ->leftJoin('warehouse_division as wd', 'pf.warehouse_division_id', '=', 'wd.id')
-            ->where('poi.purchase_order_food_id', $po->id)
-            ->select('poi.*', 'i.name as item_name', 'u.name as unit_name', 'wd.name as warehouse_division_name')
-            ->get();
+        // Cek source_type dari PO untuk menentukan cara mengambil data items
+        if ($po->source_type === 'ro_supplier') {
+            // Untuk source_type = 'ro_supplier', ambil data items tanpa join ke pr_foods
+            $items = DB::table('purchase_order_food_items as poi')
+                ->leftJoin('items as i', 'poi.item_id', '=', 'i.id')
+                ->leftJoin('units as u', 'poi.unit_id', '=', 'u.id')
+                ->where('poi.purchase_order_food_id', $po->id)
+                ->select('poi.*', 'i.name as item_name', 'u.name as unit_name')
+                ->get();
+            
+            // Set warehouse_division_name = 'Perishable' untuk semua items ro_supplier
+            $items = $items->map(function($item) {
+                $item->warehouse_division_name = 'Perishable';
+                return $item;
+            });
+        } else {
+            // Untuk source_type selain 'ro_supplier', gunakan alur yang ada sekarang
+            $items = DB::table('purchase_order_food_items as poi')
+                ->leftJoin('items as i', 'poi.item_id', '=', 'i.id')
+                ->leftJoin('units as u', 'poi.unit_id', '=', 'u.id')
+                ->leftJoin('pr_food_items as pfi', 'poi.pr_food_item_id', '=', 'pfi.id')
+                ->leftJoin('pr_foods as pf', 'pfi.pr_food_id', '=', 'pf.id')
+                ->leftJoin('warehouse_division as wd', 'pf.warehouse_division_id', '=', 'wd.id')
+                ->where('poi.purchase_order_food_id', $po->id)
+                ->select('poi.*', 'i.name as item_name', 'u.name as unit_name', 'wd.name as warehouse_division_name')
+                ->get();
+        }
         return response()->json([
             'po' => $po,
             'items' => $items
@@ -107,6 +125,9 @@ class FoodGoodReceiveController extends Controller
                 ->count();
             $grNumber = 'GR-' . $dateStr . '-' . str_pad($countToday, 4, '0', STR_PAD_LEFT);
             DB::table('food_good_receives')->where('id', $goodReceiveId)->update(['gr_number' => $grNumber]);
+            // Ambil informasi PO untuk mengecek source_type
+            $po = DB::table('purchase_order_foods')->where('id', $request->po_id)->first();
+            
             foreach ($request->items as $item) {
                 DB::table('food_good_receive_items')->insert([
                     'good_receive_id' => $goodReceiveId,
@@ -122,27 +143,46 @@ class FoodGoodReceiveController extends Controller
                 ]);
 
                 // === INVENTORY LOGIC ===
-                // Ambil warehouse_id dan warehouse_division_id dari PR terkait item
+                // Ambil poItem untuk semua kasus (diperlukan untuk cost calculation)
                 $poItem = DB::table('purchase_order_food_items')->where('id', $item['po_item_id'])->first();
-                $prFoodItem = $poItem ? DB::table('pr_food_items')->where('id', $poItem->pr_food_item_id)->first() : null;
-                $pr = $prFoodItem ? DB::table('pr_foods')->where('id', $prFoodItem->pr_food_id)->first() : null;
-                $warehouseId = $pr ? $pr->warehouse_id : null;
-                $warehouseDivisionId = $pr ? $pr->warehouse_division_id : null;
                 
-                // Log untuk debugging
-                \Log::info('DEBUG: Warehouse ID Check', [
-                    'po_item_id' => $item['po_item_id'],
-                    'poItem' => $poItem ? $poItem->id : 'null',
-                    'pr_food_item_id' => $poItem ? $poItem->pr_food_item_id : 'null',
-                    'prFoodItem' => $prFoodItem ? $prFoodItem->id : 'null',
-                    'pr_food_id' => $prFoodItem ? $prFoodItem->pr_food_id : 'null',
-                    'pr' => $pr ? $pr->id : 'null',
-                    'warehouse_id' => $warehouseId,
-                    'item_id' => $item['item_id']
-                ]);
+                // Cek source_type dari PO
+                if ($po && $po->source_type === 'ro_supplier') {
+                    // Untuk PO dengan source_type = 'ro_supplier', set warehouse = 1 dan warehouse_division = 1
+                    $warehouseId = 1;
+                    $warehouseDivisionId = 1;
+                    
+                    \Log::info('DEBUG: Using fixed warehouse for ro_supplier', [
+                        'po_id' => $request->po_id,
+                        'source_type' => $po->source_type,
+                        'warehouse_id' => $warehouseId,
+                        'warehouse_division_id' => $warehouseDivisionId,
+                        'item_id' => $item['item_id']
+                    ]);
+                } else {
+                    // Untuk source_type selain 'ro_supplier', gunakan alur yang ada sekarang
+                    $prFoodItem = $poItem ? DB::table('pr_food_items')->where('id', $poItem->pr_food_item_id)->first() : null;
+                    $pr = $prFoodItem ? DB::table('pr_foods')->where('id', $prFoodItem->pr_food_id)->first() : null;
+                    $warehouseId = $pr ? $pr->warehouse_id : null;
+                    $warehouseDivisionId = $pr ? $pr->warehouse_division_id : null;
+                    
+                    \Log::info('DEBUG: Using existing warehouse logic', [
+                        'po_id' => $request->po_id,
+                        'source_type' => $po ? $po->source_type : 'null',
+                        'po_item_id' => $item['po_item_id'],
+                        'poItem' => $poItem ? $poItem->id : 'null',
+                        'pr_food_item_id' => $poItem ? $poItem->pr_food_item_id : 'null',
+                        'prFoodItem' => $prFoodItem ? $prFoodItem->id : 'null',
+                        'pr_food_id' => $prFoodItem ? $prFoodItem->pr_food_id : 'null',
+                        'pr' => $pr ? $pr->id : 'null',
+                        'warehouse_id' => $warehouseId,
+                        'warehouse_division_id' => $warehouseDivisionId,
+                        'item_id' => $item['item_id']
+                    ]);
+                }
                 
-                // Jika warehouse_id tidak ditemukan, coba ambil dari warehouse default atau berikan error yang lebih informatif
-                if (!$warehouseId) {
+                // Jika warehouse_id tidak ditemukan (untuk source_type selain ro_supplier), coba ambil dari warehouse default atau berikan error yang lebih informatif
+                if (!$warehouseId && (!$po || $po->source_type !== 'ro_supplier')) {
                     // Coba ambil warehouse default (warehouse pertama)
                     $defaultWarehouse = DB::table('warehouses')->first();
                     if ($defaultWarehouse) {

@@ -18,13 +18,20 @@ class DeliveryOrderController extends Controller
             ->leftJoin('users as u', 'do.created_by', '=', 'u.id')
             ->leftJoin('tbl_data_outlet as o', 'fo.id_outlet', '=', 'o.id_outlet')
             ->leftJoin('warehouse_outlets as wo', 'fo.warehouse_outlet_id', '=', 'wo.id')
+            // Join untuk RO Supplier GR
+            ->leftJoin('food_good_receives as gr', 'do.ro_supplier_gr_id', '=', 'gr.id')
+            ->leftJoin('purchase_order_foods as po', 'gr.po_id', '=', 'po.id')
+            ->leftJoin('food_floor_orders as fo_gr', 'po.source_id', '=', 'fo_gr.id')
+            ->leftJoin('tbl_data_outlet as o_gr', 'fo_gr.id_outlet', '=', 'o_gr.id_outlet')
+            ->leftJoin('warehouse_outlets as wo_gr', 'fo_gr.warehouse_outlet_id', '=', 'wo_gr.id')
             ->select(
                 'do.*',
-                'pl.packing_number',
-                'fo.order_number as floor_order_number',
                 'u.nama_lengkap as created_by_name',
-                'o.nama_outlet',
-                'wo.name as warehouse_outlet_name'
+                // Gunakan COALESCE untuk mengambil data dari packing list atau RO Supplier GR
+                DB::raw('COALESCE(pl.packing_number, gr.gr_number) as packing_number'),
+                DB::raw('COALESCE(fo.order_number, fo_gr.order_number) as floor_order_number'),
+                DB::raw('COALESCE(o.nama_outlet, o_gr.nama_outlet) as nama_outlet'),
+                DB::raw('COALESCE(wo.name, wo_gr.name) as warehouse_outlet_name')
             );
 
         if ($request->filled('search')) {
@@ -56,31 +63,79 @@ class DeliveryOrderController extends Controller
     public function create(Request $request)
     {
         // Ambil daftar packing list yang belum/do belum dibuat
-        $usedPackingListIds = DB::table('delivery_orders')->pluck('packing_list_id');
+        $usedPackingListIds = DB::table('delivery_orders')->whereNotNull('packing_list_id')->pluck('packing_list_id')->toArray();
         $packingLists = DB::table('food_packing_lists as pl')
             ->leftJoin('food_floor_orders as fo', 'pl.food_floor_order_id', '=', 'fo.id')
             ->leftJoin('tbl_data_outlet as o', 'fo.id_outlet', '=', 'o.id_outlet')
             ->leftJoin('users as u', 'pl.created_by', '=', 'u.id')
             ->leftJoin('warehouse_division as wd', 'pl.warehouse_division_id', '=', 'wd.id')
             ->leftJoin('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
+            ->leftJoin('warehouse_outlets as wo', 'fo.warehouse_outlet_id', '=', 'wo.id');
+        
+        // Hanya apply whereNotIn jika ada data yang sudah digunakan
+        if (!empty($usedPackingListIds)) {
+            $packingLists = $packingLists->whereNotIn('pl.id', $usedPackingListIds);
+        }
+        
+                $packingLists = $packingLists->select(
+            'pl.id',
+            'pl.packing_number',
+            'pl.created_at',
+            'fo.order_number as floor_order_number',
+            'fo.tanggal as floor_order_date',
+            'o.nama_outlet',
+            'u.nama_lengkap as creator_name',
+            'wd.name as division_name',
+            'w.name as warehouse_name',
+            'wo.name as warehouse_outlet_name'
+        )
+        ->orderByDesc('pl.created_at')
+        ->get();
+
+        Log::info('Packing lists found', ['count' => $packingLists->count(), 'packingLists' => $packingLists->toArray()]);
+        
+        // Convert to array to ensure proper JSON serialization
+        $packingLists = $packingLists->toArray();
+
+        // Ambil data RO Supplier yang sudah di-GR dan belum dibuat DO
+        $roSupplierGRs = DB::table('food_good_receives as gr')
+            ->leftJoin('purchase_order_foods as po', 'gr.po_id', '=', 'po.id')
+            ->leftJoin('food_floor_orders as fo', 'po.source_id', '=', 'fo.id')
+            ->leftJoin('tbl_data_outlet as o', 'fo.id_outlet', '=', 'o.id_outlet')
+            ->leftJoin('suppliers as s', 'gr.supplier_id', '=', 's.id')
+            ->leftJoin('users as u', 'gr.received_by', '=', 'u.id')
             ->leftJoin('warehouse_outlets as wo', 'fo.warehouse_outlet_id', '=', 'wo.id')
-            ->whereNotIn('pl.id', $usedPackingListIds)
+            ->where('po.source_type', 'ro_supplier')
+            ->whereNotExists(function($query) {
+                $query->select(DB::raw(1))
+                      ->from('delivery_orders as do')
+                      ->whereRaw('do.ro_supplier_gr_id = gr.id');
+            })
             ->select(
-                'pl.id',
-                'pl.packing_number',
-                'pl.created_at',
+                'gr.id as gr_id',
+                'gr.gr_number as packing_number',
+                'gr.receive_date as created_at',
                 'fo.order_number as floor_order_number',
                 'fo.tanggal as floor_order_date',
                 'o.nama_outlet',
                 'u.nama_lengkap as creator_name',
-                'wd.name as division_name',
-                'w.name as warehouse_name',
-                'wo.name as warehouse_outlet_name'
+                DB::raw("'Perishable' as division_name"),
+                DB::raw("'Warehouse 1' as warehouse_name"),
+                'wo.name as warehouse_outlet_name',
+                DB::raw("'ro_supplier_gr' as source_type"),
+                's.name as supplier_name'
             )
-            ->orderByDesc('pl.created_at')
+            ->orderByDesc('gr.receive_date')
             ->get();
+
+        Log::info('RO Supplier GRs found', ['count' => $roSupplierGRs->count(), 'roSupplierGRs' => $roSupplierGRs->toArray()]);
+        
+        // Convert to array to ensure proper JSON serialization
+        $roSupplierGRs = $roSupplierGRs->toArray();
+
         return Inertia::render('DeliveryOrder/Form', [
-            'packingLists' => $packingLists
+            'packingLists' => $packingLists,
+            'roSupplierGRs' => $roSupplierGRs
         ]);
     }
 
@@ -141,32 +196,89 @@ class DeliveryOrderController extends Controller
     public function store(Request $request)
     {
         Log::info('Mulai proses store Delivery Order', $request->all());
-        $packingList = DB::table('food_packing_lists')->where('id', $request->packing_list_id)->first();
-        $floorOrderId = $packingList->food_floor_order_id ?? null;
-        $warehouseDivisionId = $packingList->warehouse_division_id ?? null;
+        
+        // Cek apakah ini adalah RO Supplier GR atau Packing List biasa
+        $isROSupplierGR = false;
+        $grId = null;
+        $floorOrderId = null;
+        $warehouseDivisionId = null;
         $warehouseId = null;
-        if ($warehouseDivisionId) {
-            $warehouseId = DB::table('warehouse_division')->where('id', $warehouseDivisionId)->value('warehouse_id');
+        
+        if (strpos($request->packing_list_id, 'gr_') === 0) {
+            // Ini adalah RO Supplier GR
+            $isROSupplierGR = true;
+            $grId = substr($request->packing_list_id, 3); // Hapus prefix 'gr_'
+            
+            // Ambil data dari GR
+            $gr = DB::table('food_good_receives as gr')
+                ->leftJoin('purchase_order_foods as po', 'gr.po_id', '=', 'po.id')
+                ->leftJoin('food_floor_orders as fo', 'po.source_id', '=', 'fo.id')
+                ->where('gr.id', $grId)
+                ->first();
+            
+            if (!$gr) {
+                throw new \Exception('RO Supplier GR tidak ditemukan');
+            }
+            
+            $floorOrderId = $gr->id; // source_id dari PO
+            $warehouseDivisionId = 1; // Perishable
+            $warehouseId = 1; // Warehouse 1
+            
+            Log::info('RO Supplier GR warehouse info', [
+                'gr_id' => $grId,
+                'warehouse_id' => $warehouseId,
+                'warehouse_division_id' => $warehouseDivisionId
+            ]);
+        } else {
+            // Ini adalah Packing List biasa
+            $packingList = DB::table('food_packing_lists')->where('id', $request->packing_list_id)->first();
+            $floorOrderId = $packingList->food_floor_order_id ?? null;
+            $warehouseDivisionId = $packingList->warehouse_division_id ?? null;
+            if ($warehouseDivisionId) {
+                $warehouseId = DB::table('warehouse_division')->where('id', $warehouseDivisionId)->value('warehouse_id');
+            }
         }
         DB::beginTransaction();
         try {
-            Log::info('Insert delivery_orders', ['packing_list_id' => $request->packing_list_id]);
-            $doId = DB::table('delivery_orders')->insertGetId([
+            Log::info('Insert delivery_orders', ['packing_list_id' => $request->packing_list_id, 'isROSupplierGR' => $isROSupplierGR]);
+            
+            $insertData = [
                 'number' => $this->generateDONumber(),
-                'packing_list_id' => $request->packing_list_id,
                 'floor_order_id' => $floorOrderId,
                 'created_by' => auth()->id(),
                 'created_at' => now(),
                 'updated_at' => now(),
-            ]);
+            ];
+            
+            if ($isROSupplierGR) {
+                $insertData['ro_supplier_gr_id'] = $grId;
+                // Untuk RO Supplier GR, set packing_list_id ke 0 atau nilai default
+                $insertData['packing_list_id'] = 0; // Atau gunakan nilai default yang sesuai
+                $insertData['source_type'] = 'ro_supplier_gr';
+            } else {
+                $insertData['packing_list_id'] = $request->packing_list_id;
+                $insertData['ro_supplier_gr_id'] = null;
+                $insertData['source_type'] = 'packing_list';
+            }
+            
+            $doId = DB::table('delivery_orders')->insertGetId($insertData);
             Log::info('DO ID: ' . $doId);
             foreach ($request->items as $item) {
-                // Ambil item_id dari food_floor_order_items via packing list item
-                $packingListItem = DB::table('food_packing_list_items')->where('id', $item['id'])->first();
-                if (!$packingListItem) throw new \Exception('Packing list item tidak ditemukan untuk id: ' . $item['id']);
-                $floorOrderItem = DB::table('food_floor_order_items')->where('id', $packingListItem->food_floor_order_item_id)->first();
-                if (!$floorOrderItem) throw new \Exception('Floor order item tidak ditemukan untuk id: ' . $packingListItem->food_floor_order_item_id);
-                $realItemId = $floorOrderItem->item_id;
+                // Ambil item_id berdasarkan jenis source
+                $realItemId = null;
+                if ($isROSupplierGR) {
+                    // Untuk RO Supplier GR, ambil dari food_good_receive_items
+                    $grItem = DB::table('food_good_receive_items')->where('id', $item['id'])->first();
+                    if (!$grItem) throw new \Exception('GR item tidak ditemukan untuk id: ' . $item['id']);
+                    $realItemId = $grItem->item_id;
+                } else {
+                    // Untuk Packing List biasa, ambil dari food_floor_order_items via packing list item
+                    $packingListItem = DB::table('food_packing_list_items')->where('id', $item['id'])->first();
+                    if (!$packingListItem) throw new \Exception('Packing list item tidak ditemukan untuk id: ' . $item['id']);
+                    $floorOrderItem = DB::table('food_floor_order_items')->where('id', $packingListItem->food_floor_order_item_id)->first();
+                    if (!$floorOrderItem) throw new \Exception('Floor order item tidak ditemukan untuk id: ' . $packingListItem->food_floor_order_item_id);
+                    $realItemId = $floorOrderItem->item_id;
+                }
                 // Ambil barcode hasil scan dari frontend (ambil barcode pertama jika array, string jika satu, null jika tidak ada)
                 $barcode = null;
                 if (isset($item['barcode'])) {
@@ -187,12 +299,21 @@ class DeliveryOrderController extends Controller
                     'updated_at' => now(),
                 ]);
                 if ($warehouseId) {
-                    // Ambil item_id dari food_floor_order_items via food_packing_list_items
-                    $packingListItem = DB::table('food_packing_list_items')->where('id', $item['id'])->first();
-                    if (!$packingListItem) throw new \Exception('Packing list item tidak ditemukan untuk id: ' . $item['id']);
-                    $floorOrderItem = DB::table('food_floor_order_items')->where('id', $packingListItem->food_floor_order_item_id)->first();
-                    if (!$floorOrderItem) throw new \Exception('Floor order item tidak ditemukan untuk id: ' . $packingListItem->food_floor_order_item_id);
-                    $realItemId = $floorOrderItem->item_id;
+                    // Ambil item_id berdasarkan jenis source
+                    $realItemId = null;
+                    if ($isROSupplierGR) {
+                        // Untuk RO Supplier GR, ambil dari food_good_receive_items
+                        $grItem = DB::table('food_good_receive_items')->where('id', $item['id'])->first();
+                        if (!$grItem) throw new \Exception('GR item tidak ditemukan untuk id: ' . $item['id']);
+                        $realItemId = $grItem->item_id;
+                    } else {
+                        // Untuk Packing List biasa, ambil dari food_floor_order_items via food_packing_list_items
+                        $packingListItem = DB::table('food_packing_list_items')->where('id', $item['id'])->first();
+                        if (!$packingListItem) throw new \Exception('Packing list item tidak ditemukan untuk id: ' . $item['id']);
+                        $floorOrderItem = DB::table('food_floor_order_items')->where('id', $packingListItem->food_floor_order_item_id)->first();
+                        if (!$floorOrderItem) throw new \Exception('Floor order item tidak ditemukan untuk id: ' . $packingListItem->food_floor_order_item_id);
+                        $realItemId = $floorOrderItem->item_id;
+                    }
                     // Pastikan item_id valid
                     $itemMaster = DB::table('items')->where('id', $realItemId)->first();
                     if (!$itemMaster) throw new \Exception('Item master tidak ditemukan di tabel items untuk item_id: ' . $realItemId);
@@ -245,6 +366,7 @@ class DeliveryOrderController extends Controller
                         'warehouse_id' => $warehouseId,
                         'item_id' => $realItemId,
                         'qty_small' => $qty_small,
+                        'isROSupplierGR' => $isROSupplierGR,
                     ]);
                     $stock = DB::table('food_inventory_stocks')
                         ->where('inventory_item_id', $inventory_item_id)
@@ -305,12 +427,39 @@ class DeliveryOrderController extends Controller
                     ]);
                 }
             }
+            
+            // Update status RO menjadi delivered
+            if ($isROSupplierGR) {
+                // Untuk RO Supplier GR, update status RO dari purchase order
+                $po = DB::table('purchase_order_foods')->where('id', $gr->po_id)->first();
+                if ($po && $po->source_id) {
+                    DB::table('food_floor_orders')
+                        ->where('id', $po->source_id)
+                        ->update([
+                            'status' => 'delivered',
+                            'updated_at' => now()
+                        ]);
+                    Log::info('Updated RO status to delivered for RO Supplier GR', ['ro_id' => $po->source_id]);
+                }
+            } else {
+                // Untuk Packing List biasa, update status RO
+                if ($floorOrderId) {
+                    DB::table('food_floor_orders')
+                        ->where('id', $floorOrderId)
+                        ->update([
+                            'status' => 'delivered',
+                            'updated_at' => now()
+                        ]);
+                    Log::info('Updated RO status to delivered for regular packing list', ['ro_id' => $floorOrderId]);
+                }
+            }
+            
             Log::info('Insert activity_logs');
             DB::table('activity_logs')->insert([
                 'user_id' => auth()->id(),
                 'activity_type' => 'create',
                 'module' => 'delivery_order',
-                'description' => 'Membuat delivery order untuk packing list #' . $request->packing_list_id,
+                'description' => 'Membuat delivery order untuk ' . ($isROSupplierGR ? 'RO Supplier GR #' . $grId : 'packing list #' . $request->packing_list_id),
                 'ip_address' => $request->ip(),
                 'user_agent' => $request->userAgent(),
                 'old_data' => null,
@@ -354,13 +503,102 @@ class DeliveryOrderController extends Controller
 
     public function getPackingListItems($id)
     {
+        Log::info('=== getPackingListItems START ===');
+        Log::info('getPackingListItems called', ['id' => $id, 'type' => gettype($id)]);
+        
+        // Cek apakah ini adalah RO Supplier GR atau Packing List biasa
+        if (strpos($id, 'gr_') === 0) {
+            // Ini adalah RO Supplier GR
+            $grId = substr($id, 3); // Hapus prefix 'gr_'
+            Log::info('Processing RO Supplier GR', ['grId' => $grId]);
+            $result = $this->getROSupplierGRItems($grId);
+            Log::info('=== getPackingListItems END (RO Supplier GR) ===');
+            return $result;
+        } else {
+            // Ini adalah Packing List biasa
+            Log::info('Processing regular Packing List', ['id' => $id]);
+            $result = $this->getPackingListItemsRegular($id);
+            Log::info('=== getPackingListItems END (Regular Packing List) ===');
+            return $result;
+        }
+    }
+
+    private function getROSupplierGRItems($grId)
+    {
+        // Ambil items dari RO Supplier GR
+        $items = DB::table('food_good_receive_items as fgri')
+            ->join('items', 'fgri.item_id', '=', 'items.id')
+            ->join('units as u', 'fgri.unit_id', '=', 'u.id')
+            ->select(
+                'fgri.id',
+                'fgri.qty_received as qty',
+                'u.name as unit',
+                'items.name',
+                'items.id as item_id'
+            )
+            ->where('fgri.good_receive_id', $grId)
+            ->where('fgri.qty_received', '>', 0)
+            ->orderBy('items.name')
+            ->get();
+
+        // Ambil semua barcode untuk setiap item
+        $itemIds = $items->pluck('item_id')->unique()->values();
+        $barcodeMap = DB::table('item_barcodes')
+            ->whereIn('item_id', $itemIds)
+            ->select('item_id', 'barcode')
+            ->get()
+            ->groupBy('item_id')
+            ->map(function($rows) {
+                return $rows->pluck('barcode')->values();
+            });
+
+        // Ambil stock untuk setiap item (warehouse_id = 1 untuk RO Supplier)
+        $warehouse_id = 1;
+        $itemStocks = [];
+        if ($warehouse_id) {
+            foreach ($items as $item) {
+                $stock = DB::table('food_inventory_stocks as fis')
+                    ->join('food_inventory_items as fii', 'fis.inventory_item_id', '=', 'fii.id')
+                    ->where('fis.warehouse_id', $warehouse_id)
+                    ->where('fii.item_id', $item->item_id)
+                    ->value('fis.qty_small') ?? 0;
+                $itemStocks[$item->item_id] = $stock;
+            }
+        }
+
+        // Tambahkan barcode dan stock ke setiap item
+        $items = $items->map(function($item) use ($barcodeMap, $itemStocks) {
+            $item->barcodes = $barcodeMap->get($item->item_id, []);
+            $item->stock = $itemStocks[$item->item_id] ?? 0;
+            return $item;
+        });
+
+        return response()->json(['items' => $items]);
+    }
+
+    private function getPackingListItemsRegular($id)
+    {
+        Log::info('=== getPackingListItemsRegular START ===');
+        Log::info('getPackingListItemsRegular called', ['id' => $id]);
+        
         // Ambil packing list untuk dapat warehouse_division_id
         $packingList = DB::table('food_packing_lists')->where('id', $id)->first();
+        Log::info('Packing list found', ['packingList' => $packingList]);
+        
+        if (!$packingList) {
+            Log::error('Packing list not found', ['id' => $id]);
+            return response()->json(['items' => []]);
+        }
+        
         $warehouse_division_id = $packingList->warehouse_division_id ?? null;
         $warehouse_id = null;
         if ($warehouse_division_id) {
             $warehouse_id = DB::table('warehouse_division')->where('id', $warehouse_division_id)->value('warehouse_id');
         }
+        
+        Log::info('Warehouse info', ['warehouse_division_id' => $warehouse_division_id, 'warehouse_id' => $warehouse_id]);
+        
+        // Ambil items dari food_packing_list_items (bukan dari GR)
         $items = DB::table('food_packing_list_items as fpli')
             ->join('food_floor_order_items as ffoi', 'fpli.food_floor_order_item_id', '=', 'ffoi.id')
             ->join('items', 'ffoi.item_id', '=', 'items.id')
@@ -369,6 +607,13 @@ class DeliveryOrderController extends Controller
             ->where('fpli.qty', '>', 0)
             ->orderBy('items.name')
             ->get();
+        
+        Log::info('Items found', ['count' => $items->count(), 'items' => $items->toArray()]);
+        
+        if ($items->count() == 0) {
+            Log::warning('No items found for packing list', ['packing_list_id' => $id]);
+            return response()->json(['items' => []]);
+        }
         // Ambil semua barcode untuk setiap item
         $itemIds = $items->pluck('item_id')->unique()->values();
         $barcodeMap = DB::table('item_barcodes')
@@ -416,7 +661,11 @@ class DeliveryOrderController extends Controller
             $item->stock = $itemStocks[$item->id] ?? 0;
             return $item;
         });
-        return response()->json(['items' => $items]);
+        
+        Log::info('Final items before response', ['count' => $items->count(), 'items' => $items->toArray()]);
+        $response = response()->json(['items' => $items]);
+        Log::info('=== getPackingListItemsRegular END ===');
+        return $response;
     }
 
     public function destroy($id)

@@ -536,6 +536,7 @@ Route::delete('/floor-order/{id}', [FoodFloorOrderController::class, 'destroy'])
 Route::post('/floor-order/{id}/submit', [FoodFloorOrderController::class, 'submit'])->name('floor-order.submit');
 Route::post('/floor-order/{id}/approve', [FoodFloorOrderController::class, 'approve'])->name('floor-order.approve');
 Route::post('/api/floor-order/check-exists', [\App\Http\Controllers\FoodFloorOrderController::class, 'checkExists']);
+Route::get('/api/floor-order/supplier-available', [\App\Http\Controllers\FoodFloorOrderController::class, 'supplierAvailable']);
 Route::get('/floor-order/{id}', [\App\Http\Controllers\FoodFloorOrderController::class, 'show'])->name('floor-order.show');
 
 Route::resource('packing-list', App\Http\Controllers\PackingListController::class);
@@ -644,6 +645,7 @@ Route::delete('/delivery-order/{id}', [DeliveryOrderController::class, 'destroy'
 
 // API untuk fetch item packing list
 Route::get('/api/packing-list/{id}/items', [DeliveryOrderController::class, 'getPackingListItems']);
+Route::get('/api/ro-supplier-gr/{id}/items', [DeliveryOrderController::class, 'getROSupplierGRItems']);
 
 Route::middleware(['auth'])->group(function () {
     Route::get('/menus', [MenuController::class, 'index'])->name('menus.index');
@@ -772,39 +774,28 @@ Route::get('/test-email', function() {
     }
 });
 
-Route::get('/api/items/{id}/check-supplier', function ($id) {
-    $outletId = Request::get('outlet_id');
-    $isSupplier = \DB::table('item_supplier_outlet')
-        ->join('item_supplier', 'item_supplier_outlet.item_supplier_id', '=', 'item_supplier.id')
-        ->where('item_supplier_outlet.outlet_id', $outletId)
-        ->where('item_supplier.item_id', $id)
-        ->exists();
-    return response()->json(['is_supplier' => $isSupplier]);
-});
 
-Route::get('/api/suppliers/by-outlet', function () {
-    $outletId = Request::get('outlet_id');
-    $suppliers = \DB::table('suppliers')
-        ->join('item_supplier', 'suppliers.id', '=', 'item_supplier.supplier_id')
-        ->join('item_supplier_outlet', 'item_supplier.id', '=', 'item_supplier_outlet.item_supplier_id')
-        ->where('item_supplier_outlet.outlet_id', $outletId)
-        ->select('suppliers.*')
-        ->distinct()
-        ->get();
-    return response()->json(['suppliers' => $suppliers]);
-});
 
 // Index, create, store, show, delete, fetch RO, dsb
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/good-receive-outlet-supplier', [GoodReceiveOutletSupplierController::class, 'index'])->name('good-receive-outlet-supplier.index');
+Route::get('/good-receive-outlet-supplier/create', [GoodReceiveOutletSupplierController::class, 'create'])->name('good-receive-outlet-supplier.create');
+
+// MAC Report Routes
+Route::get('/mac-report', [App\Http\Controllers\MacReportController::class, 'index'])->name('mac-report.index');
+Route::post('/mac-report/export', [App\Http\Controllers\MacReportController::class, 'export'])->name('mac-report.export');
     Route::get('/good-receive-outlet-supplier/{id}', [GoodReceiveOutletSupplierController::class, 'show'])->name('good-receive-outlet-supplier.show');
     Route::post('/good-receive-outlet-supplier', [GoodReceiveOutletSupplierController::class, 'store'])->name('good-receive-outlet-supplier.store');
     Route::delete('/good-receive-outlet-supplier/{id}', [GoodReceiveOutletSupplierController::class, 'destroy'])->name('good-receive-outlet-supplier.destroy');
     Route::post('/good-receive-outlet-supplier/fetch-ro', [GoodReceiveOutletSupplierController::class, 'fetchRO'])->name('good-receive-outlet-supplier.fetch-ro');
+Route::get('/good-receive-outlet-supplier/available-delivery-orders', [GoodReceiveOutletSupplierController::class, 'getAvailableDeliveryOrders'])->name('good-receive-outlet-supplier.available-delivery-orders');
+Route::get('/good-receive-outlet-supplier/create-from-do/{delivery_order_id}', [GoodReceiveOutletSupplierController::class, 'createFromDeliveryOrder'])->name('good-receive-outlet-supplier.create-from-do');
+Route::post('/good-receive-outlet-supplier/store-from-do', [GoodReceiveOutletSupplierController::class, 'storeFromDeliveryOrder'])->name('good-receive-outlet-supplier.store-from-do');
 });
 
 // API untuk dropdown RO Supplier (jika perlu)
 Route::get('/api/ro-suppliers', [GoodReceiveOutletSupplierController::class, 'getROSuppliers']);
+Route::get('/api/delivery-orders-ro-supplier', [GoodReceiveOutletSupplierController::class, 'getAvailableDeliveryOrders']);
 
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/report-sales-per-category', [ReportController::class, 'reportSalesPerCategory'])->name('report.sales-per-category');

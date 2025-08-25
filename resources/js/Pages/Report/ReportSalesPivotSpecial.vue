@@ -329,6 +329,41 @@
                   </table>
                 </div>
 
+                <!-- GR Supplier Data -->
+                <div v-if="categoryData.gr_supplier && categoryData.gr_supplier.length > 0" class="mb-4">
+                  <div class="bg-green-100 p-2 rounded-lg mb-2 border-l-4 border-green-500">
+                    <div class="font-semibold text-green-800 text-sm">GR Supplier (Good Receive Outlet Supplier)</div>
+                  </div>
+                  <table class="w-full text-sm">
+                    <thead>
+                      <tr class="text-green-700">
+                        <th class="text-left py-1">Item</th>
+                        <th class="text-left py-1">Category</th>
+                        <th class="text-right py-1">Unit</th>
+                        <th class="text-right py-1">Qty</th>
+                        <th class="text-right py-1">Price</th>
+                        <th class="text-right py-1">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr v-for="item in categoryData.gr_supplier" :key="'gr-supplier-' + item.item_name" class="border-b border-gray-200 hover:bg-gray-50">
+                        <td class="py-1">{{ item.item_name }}</td>
+                        <td class="py-1">{{ item.category }}</td>
+                        <td class="py-1 text-right">{{ item.unit }}</td>
+                        <td class="py-1 text-right">{{ item.received_qty }}</td>
+                        <td class="py-1 text-right">{{ formatRupiah(item.price) }}</td>
+                        <td class="py-1 text-right font-bold">{{ formatRupiah(item.subtotal) }}</td>
+                      </tr>
+                    </tbody>
+                    <tfoot>
+                      <tr class="font-bold bg-green-50">
+                        <td colspan="5" class="text-right py-1">Total GR Supplier:</td>
+                        <td class="py-1 text-right">{{ formatRupiah(categoryData.gr_supplier.reduce((sum, item) => sum + (Number(item.subtotal) || 0), 0)) }}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+
                 <!-- Retail Food Data -->
                 <div v-if="categoryData.retail_food && categoryData.retail_food.length > 0" class="mb-4">
                   <div class="bg-purple-100 p-2 rounded-lg mb-2 border-l-4 border-purple-500">

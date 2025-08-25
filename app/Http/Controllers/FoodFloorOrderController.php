@@ -32,17 +32,18 @@ class FoodFloorOrderController extends Controller
         ]);
     }
 
-    // Tambahkan method baru untuk validasi dan pengelompokan item berdasarkan supplier
+    // Method untuk memproses item tanpa validasi supplier
     private function validateAndGroupItemsBySupplier($items, $outletId, $foMode = null)
     {
-        $supplierItems = [];
-        $nonSupplierItems = [];
+        $processedItems = [];
 
         foreach ($items as $item) {
             // Abaikan item kosong
             if (empty($item['item_id']) || empty($item['item_name'])) {
                 continue;
             }
+
+            // Cek apakah item ada di supplier (untuk informasi saja, tidak untuk validasi)
             $itemSupplier = \DB::table('item_supplier_outlet')
                 ->join('item_supplier', 'item_supplier_outlet.item_supplier_id', '=', 'item_supplier.id')
                 ->where('item_supplier_outlet.outlet_id', $outletId)
@@ -50,224 +51,23 @@ class FoodFloorOrderController extends Controller
                 ->select('item_supplier.supplier_id', 'item_supplier.id as item_supplier_id')
                 ->first();
 
-            // Untuk RO Supplier, semua item harus dari supplier
-            if ($foMode === 'RO Supplier') {
-                if (!$itemSupplier) {
-                    throw new \Exception("Item {$item['item_name']} tidak ditemukan di supplier. RO Supplier hanya boleh berisi item dari supplier.");
-                }
-                $supplierItems[] = [
-                    'item_id' => $item['item_id'],
-                    'item_name' => $item['item_name'],
-                    'qty' => $item['qty'],
-                    'unit' => $item['unit'],
-                    'price' => $item['price'],
-                    'subtotal' => $item['subtotal'],
-                    'supplier_id' => $itemSupplier->supplier_id,
-                    'item_supplier_id' => $itemSupplier->item_supplier_id,
-                    'id_outlet' => $outletId
-                ];
-            } else {
-                // Untuk mode lain (RO Utama, RO Tambahan, RO Khusus)
-                if ($itemSupplier) {
-                    // Item dari supplier tidak boleh masuk ke RO Utama/Tambahan/Khusus
-                    throw new \Exception("Item {$item['item_name']} adalah item supplier. Item supplier hanya boleh dipesan melalui RO Supplier.");
-                }
-                $nonSupplierItems[] = [
-                    'item_id' => $item['item_id'],
-                    'item_name' => $item['item_name'],
-                    'qty' => $item['qty'],
-                    'unit' => $item['unit'],
-                    'price' => $item['price'],
-                    'subtotal' => $item['subtotal']
-                ];
-            }
+            $processedItems[] = [
+                'item_id' => $item['item_id'],
+                'item_name' => $item['item_name'],
+                'qty' => $item['qty'],
+                'unit' => $item['unit'],
+                'price' => $item['price'],
+                'subtotal' => $item['subtotal'],
+                'supplier_id' => $itemSupplier ? $itemSupplier->supplier_id : null,
+                'item_supplier_id' => $itemSupplier ? $itemSupplier->item_supplier_id : null,
+                'id_outlet' => $outletId
+            ];
         }
 
-        // Return sesuai mode
-        if ($foMode === 'RO Supplier') {
-            return $supplierItems;
-        } else {
-            return $nonSupplierItems;
-        }
+        return $processedItems;
     }
 
-    // Modifikasi method sendEmailToSupplier untuk mengirim email biasa tanpa PDF
-    private function sendEmailToSupplier($supplierItems, $outletName, $floorOrderId)
-    {
-        try {
-            // Kelompokkan item berdasarkan supplier_id
-            $groupedItems = collect($supplierItems)->groupBy('supplier_id');
-            \Log::info('Mulai proses kirim email supplier', [
-                'floor_order_id' => $floorOrderId,
-                'total_suppliers' => count($groupedItems),
-                'supplier_ids' => array_keys($groupedItems->toArray()),
-                'app_env' => config('app.env'),
-                'mail_driver' => config('mail.default')
-            ]);
-
-            // Ambil informasi order dan pembuat sekali saja
-            $order = \DB::table('food_floor_orders')
-                ->join('users', 'food_floor_orders.user_id', '=', 'users.id')
-                ->where('food_floor_orders.id', $floorOrderId)
-                ->select('food_floor_orders.*', 'users.nama_lengkap')
-                ->first();
-
-            if (!$order) {
-                \Log::error('Order tidak ditemukan', ['floor_order_id' => $floorOrderId]);
-                return;
-            }
-
-            \Log::info('Data order ditemukan', [
-                'order_id' => $order->id,
-                'order_number' => $order->order_number,
-                'creator' => $order->nama_lengkap
-            ]);
-
-            $creatorName = $order->nama_lengkap ?? '-';
-            $createdAt = Carbon::parse($order->created_at)->format('d/m/Y H:i');
-            $emailData = [];
-
-            foreach ($groupedItems as $supplierId => $items) {
-                try {
-                    $supplier = \DB::table('suppliers')->where('id', $supplierId)->first();
-                    \Log::info('Proses supplier', [
-                        'supplier_id' => $supplierId,
-                        'supplier_email' => $supplier ? $supplier->email : 'tidak ada email',
-                        'total_items' => count($items)
-                    ]);
-
-                    if ($supplier && $supplier->email) {
-                        // Cek header supplier, jika belum ada baru insert
-                        $header = \DB::table('food_floor_order_supplier_headers')
-                            ->where('floor_order_id', $floorOrderId)
-                            ->where('supplier_id', $supplierId)
-                            ->first();
-                        
-                        if (!$header) {
-                            $supplierFoNumber = $this->floorOrderService->generateSupplierFONumber($supplierId);
-                            \Log::info('Generated FO Number', ['supplier_fo_number' => $supplierFoNumber]);
-                            \DB::beginTransaction();
-                            try {
-                                $headerData = [
-                                    'floor_order_id' => $floorOrderId,
-                                    'supplier_id' => $supplierId,
-                                    'supplier_fo_number' => $supplierFoNumber,
-                                    'created_at' => now(),
-                                    'updated_at' => now()
-                                ];
-                                \Log::info('Mencoba insert ke food_floor_order_supplier_headers', $headerData);
-                                $inserted = \DB::table('food_floor_order_supplier_headers')->insert($headerData);
-                                \Log::info('Hasil insert header', ['success' => $inserted]);
-                                if ($inserted) {
-                                    $emailData[] = [
-                                        'supplier' => $supplier,
-                                        'supplierFoNumber' => $supplierFoNumber,
-                                        'items' => $items
-                                    ];
-                                    \DB::commit();
-                                } else {
-                                    \Log::error('Gagal insert ke food_floor_order_supplier_headers', $headerData);
-                                    \DB::rollBack();
-                                }
-                            } catch (\Exception $e) {
-                                \DB::rollBack();
-                                throw $e;
-                            }
-                        } else {
-                            // Jika sudah ada, gunakan nomor yang sudah ada
-                            $emailData[] = [
-                                'supplier' => $supplier,
-                                'supplierFoNumber' => $header->supplier_fo_number,
-                                'items' => $items
-                            ];
-                        }
-                    } else {
-                        \Log::warning('Supplier tidak memiliki email', [
-                            'supplier_id' => $supplierId
-                        ]);
-                    }
-                } catch (\Exception $e) {
-                    \Log::error('Error dalam loop supplier', [
-                        'supplier_id' => $supplierId,
-                        'error' => $e->getMessage(),
-                        'trace' => $e->getTraceAsString()
-                    ]);
-                }
-            }
-
-            // Kirim email setelah semua proses insert selesai
-            foreach ($emailData as $data) {
-                try {
-                    \Log::info('Mencoba kirim email ke supplier', [
-                        'email' => $data['supplier']->email,
-                        'supplier_fo_number' => $data['supplierFoNumber'],
-                        'total_items' => count($data['items'])
-                    ]);
-                    
-                    $itemsList = '';
-                    foreach ($data['items'] as $item) {
-                        $itemsList .= "- {$item['item_name']} ({$item['qty']} {$item['unit']})\n";
-                    }
-                    
-                    $emailContent = "\nRequest Order Supplier\n\n- Nomor RO: {$order->order_number}\n- Nomor RO Supplier: {$data['supplierFoNumber']}\nOutlet: {$outletName}\nDibuat oleh: {$creatorName}\nWaktu pembuatan: {$createdAt}\n\nDetail Items:\n{$itemsList}\n\nTerima kasih,\nYMSoft ERP\n";
-                    
-                    // Cek apakah di production environment
-                    if (config('app.env') === 'production') {
-                        // Di production, gunakan try-catch yang lebih robust
-                        try {
-                            Mail::raw($emailContent, function($message) use ($data) {
-                                $message->to($data['supplier']->email)
-                                       ->subject("Request Order Supplier - {$data['supplierFoNumber']}");
-                            });
-                            \Log::info('Email berhasil dikirim ke supplier (production)', ['email' => $data['supplier']->email]);
-                        } catch (\Exception $emailError) {
-                            \Log::error('Error saat kirim email di production', [
-                                'supplier_email' => $data['supplier']->email,
-                                'error' => $emailError->getMessage(),
-                                'mail_config' => [
-                                    'driver' => config('mail.default'),
-                                    'host' => config('mail.mailers.smtp.host'),
-                                    'port' => config('mail.mailers.smtp.port'),
-                                    'encryption' => config('mail.mailers.smtp.encryption'),
-                                    'username' => config('mail.mailers.smtp.username')
-                                ]
-                            ]);
-                            
-                            // Simpan ke log atau database untuk retry nanti
-                            \DB::table('email_logs')->insert([
-                                'to_email' => $data['supplier']->email,
-                                'subject' => "Request Order Supplier - {$data['supplierFoNumber']}",
-                                'content' => $emailContent,
-                                'error_message' => $emailError->getMessage(),
-                                'created_at' => now(),
-                                'updated_at' => now()
-                            ]);
-                        }
-                    } else {
-                        // Di local/development, gunakan cara biasa
-                    Mail::raw($emailContent, function($message) use ($data) {
-                        $message->to($data['supplier']->email)
-                               ->subject("Request Order Supplier - {$data['supplierFoNumber']}");
-                    });
-                        \Log::info('Email berhasil dikirim ke supplier (development)', ['email' => $data['supplier']->email]);
-                    }
-                } catch (\Exception $e) {
-                    \Log::error('Error saat kirim email', [
-                        'supplier_email' => $data['supplier']->email,
-                        'error' => $e->getMessage(),
-                        'trace' => $e->getTraceAsString()
-                    ]);
-                }
-            }
-        } catch (\Exception $e) {
-            \Log::error('Error utama dalam sendEmailToSupplier', [
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
-            ]);
-        }
-    }
-
-    // Modifikasi method store untuk mengirim email dengan PDF
+    // Method store untuk membuat floor order
     public function store(Request $request)
     {
         try {
@@ -336,62 +136,30 @@ class FoodFloorOrderController extends Controller
 
             $items = $request->items;
             
-            // Validasi dan pisahkan item berdasarkan supplier
-            $validatedItems = $this->validateAndGroupItemsBySupplier($items, $idOutlet, $request->fo_mode);
+            // Proses item tanpa validasi supplier
+            $processedItems = $this->validateAndGroupItemsBySupplier($items, $idOutlet, $request->fo_mode);
 
             // Hapus item lama (hanya untuk draft ini)
             \DB::table('food_floor_order_items')->where('floor_order_id', $floorOrderId)->delete();
             \DB::table('food_floor_order_supplier_items')->where('floor_order_id', $floorOrderId)->delete();
             \DB::table('food_floor_order_supplier_headers')->where('floor_order_id', $floorOrderId)->delete();
 
-            if ($request->fo_mode === 'RO Supplier') {
-                // Untuk RO Supplier, simpan ke tabel supplier
-                $groupedSupplierItems = collect($validatedItems)->groupBy('supplier_id');
-                foreach ($groupedSupplierItems as $supplierId => $itemsGroup) {
-                    // Insert header supplier
-                    \DB::table('food_floor_order_supplier_headers')->insert([
-                        'floor_order_id' => $floorOrderId,
-                        'supplier_id' => $supplierId,
-                        'supplier_fo_number' => $this->floorOrderService->generateSupplierFONumber($supplierId),
-                        'created_at' => now(),
-                        'updated_at' => now()
-                    ]);
-
-                    // Insert items
-                    foreach ($itemsGroup as $supplierItem) {
-                        \DB::table('food_floor_order_supplier_items')->insert([
-                            'floor_order_id' => $floorOrderId,
-                            'item_id' => $supplierItem['item_id'],
-                            'item_name' => $supplierItem['item_name'],
-                            'qty' => $supplierItem['qty'],
-                            'unit' => $supplierItem['unit'],
-                            'price' => $supplierItem['price'],
-                            'subtotal' => $supplierItem['subtotal'],
-                            'supplier_id' => $supplierItem['supplier_id'],
-                            'item_supplier_id' => $supplierItem['item_supplier_id'],
-                            'created_at' => now(),
-                            'updated_at' => now()
-                        ]);
-                    }
-                }
-            } else {
-                // Untuk mode lain, simpan ke tabel regular items
-                foreach ($validatedItems as $item) {
-                    $masterItem = Item::find($item['item_id']);
-                    \DB::table('food_floor_order_items')->insert([
-                        'floor_order_id' => $floorOrderId,
-                        'item_id' => $item['item_id'],
-                        'item_name' => $item['item_name'],
-                        'qty' => $item['qty'],
-                        'unit' => $item['unit'],
-                        'price' => $item['price'],
-                        'subtotal' => $item['subtotal'],
-                        'category_id' => $masterItem ? $masterItem->category_id : null,
-                        'warehouse_division_id' => $masterItem ? $masterItem->warehouse_division_id : null,
-                        'created_at' => now(),
-                        'updated_at' => now()
-                    ]);
-                }
+            // Simpan semua item ke tabel regular items
+            foreach ($processedItems as $item) {
+                $masterItem = Item::find($item['item_id']);
+                \DB::table('food_floor_order_items')->insert([
+                    'floor_order_id' => $floorOrderId,
+                    'item_id' => $item['item_id'],
+                    'item_name' => $item['item_name'],
+                    'qty' => $item['qty'],
+                    'unit' => $item['unit'],
+                    'price' => $item['price'],
+                    'subtotal' => $item['subtotal'],
+                    'category_id' => $masterItem ? $masterItem->category_id : null,
+                    'warehouse_division_id' => $masterItem ? $masterItem->warehouse_division_id : null,
+                    'created_at' => now(),
+                    'updated_at' => now()
+                ]);
             }
 
             \DB::commit();
@@ -416,7 +184,7 @@ class FoodFloorOrderController extends Controller
         }
     }
 
-    // Modifikasi method update untuk mengirim email dengan PDF
+    // Method update untuk mengupdate floor order
     public function update(Request $request, $id)
     {
         $order = FoodFloorOrder::findOrFail($id);
@@ -435,66 +203,34 @@ class FoodFloorOrderController extends Controller
             ['warehouse_outlet_id' => $warehouseOutletId]
         ));
 
-        // Validasi dan pisahkan item berdasarkan supplier
-        $validatedItems = $this->validateAndGroupItemsBySupplier($request->items, $order->id_outlet, $order->fo_mode);
+        // Proses item tanpa validasi supplier
+        $processedItems = $this->validateAndGroupItemsBySupplier($request->items, $order->id_outlet, $order->fo_mode);
 
         // Hapus data item lama
         $order->items()->delete();
         \DB::table('food_floor_order_supplier_items')->where('floor_order_id', $order->id)->delete();
         \DB::table('food_floor_order_supplier_headers')->where('floor_order_id', $order->id)->delete();
 
-        if ($order->fo_mode === 'RO Supplier') {
-            // Untuk RO Supplier, simpan ke tabel supplier
-            $groupedSupplierItems = collect($validatedItems)->groupBy('supplier_id');
-            foreach ($groupedSupplierItems as $supplierId => $itemsGroup) {
-                // Insert header supplier
-                \DB::table('food_floor_order_supplier_headers')->insert([
-                    'floor_order_id' => $order->id,
-                    'supplier_id' => $supplierId,
-                    'supplier_fo_number' => $this->floorOrderService->generateSupplierFONumber($supplierId),
-                    'created_at' => now(),
-                    'updated_at' => now()
-                ]);
-
-                // Insert items
-                foreach ($itemsGroup as $supplierItem) {
-                    \DB::table('food_floor_order_supplier_items')->insert([
-                        'floor_order_id' => $order->id,
-                        'item_id' => $supplierItem['item_id'],
-                        'item_name' => $supplierItem['item_name'],
-                        'qty' => $supplierItem['qty'],
-                        'unit' => $supplierItem['unit'],
-                        'price' => $supplierItem['price'],
-                        'subtotal' => $supplierItem['subtotal'],
-                        'supplier_id' => $supplierItem['supplier_id'],
-                        'item_supplier_id' => $supplierItem['item_supplier_id'],
-                        'created_at' => now(),
-                        'updated_at' => now()
-                    ]);
-                }
-            }
-        } else {
-            // Untuk mode lain, simpan ke tabel regular items
-            foreach ($validatedItems as $item) {
-                $masterItem = Item::find($item['item_id']);
-                \DB::table('food_floor_order_items')->insert([
-                    'floor_order_id' => $order->id,
-                    'item_id' => $item['item_id'],
-                    'item_name' => $item['item_name'],
-                    'qty' => $item['qty'],
-                    'unit' => $item['unit'],
-                    'price' => $item['price'],
-                    'subtotal' => $item['subtotal'],
-                    'category_id' => $masterItem ? $masterItem->category_id : null,
-                    'warehouse_division_id' => $masterItem ? $masterItem->warehouse_division_id : null,
-                    'created_at' => now(),
-                    'updated_at' => now()
-                ]);
-            }
+        // Simpan semua item ke tabel regular items
+        foreach ($processedItems as $item) {
+            $masterItem = Item::find($item['item_id']);
+            \DB::table('food_floor_order_items')->insert([
+                'floor_order_id' => $order->id,
+                'item_id' => $item['item_id'],
+                'item_name' => $item['item_name'],
+                'qty' => $item['qty'],
+                'unit' => $item['unit'],
+                'price' => $item['price'],
+                'subtotal' => $item['subtotal'],
+                'category_id' => $masterItem ? $masterItem->category_id : null,
+                'warehouse_division_id' => $masterItem ? $masterItem->warehouse_division_id : null,
+                'created_at' => now(),
+                'updated_at' => now()
+            ]);
         }
 
         \App\Models\ActivityLog::create([
-            'user_id' => Auth::id(),
+            'user_id' => auth()->id(),
             'activity_type' => 'update',
             'module' => 'food_floor_order',
             'description' => 'Update Floor Order: ' . $order->id,
@@ -503,30 +239,16 @@ class FoodFloorOrderController extends Controller
             'old_data' => $oldData,
             'new_data' => $order->fresh()->toArray(),
         ]);
-        return response()->json(['success' => true]);
+
+        return response()->json(['success' => true, 'message' => 'Floor Order berhasil diupdate']);
     }
 
-    // Hapus draft
+    // Method destroy untuk menghapus floor order
     public function destroy($id)
     {
         $order = FoodFloorOrder::findOrFail($id);
-        $oldData = $order->toArray();
-        if (!in_array($order->status, ['draft', 'approved', 'submitted'])) {
-            return response()->json(['error' => 'Tidak bisa hapus selain draft, approved, atau submitted'], 422);
-        }
-        $order->items()->delete();
         $order->delete();
-        \App\Models\ActivityLog::create([
-            'user_id' => Auth::id(),
-            'activity_type' => 'delete',
-            'module' => 'food_floor_order',
-            'description' => 'Menghapus Floor Order: ' . $oldData['id'],
-            'ip_address' => request()->ip(),
-            'user_agent' => request()->userAgent(),
-            'old_data' => $oldData,
-            'new_data' => null,
-        ]);
-        return response()->json(['success' => true]);
+        return redirect()->route('floor-order.index')->with('success', 'Floor Order berhasil dihapus');
     }
 
     // Submit draft
@@ -539,60 +261,11 @@ class FoodFloorOrderController extends Controller
         $order_number = 'RO-' . $date . '-' . $random;
 
         $order->update([
-            'status' => $order->fo_mode === 'RO Khusus' || $order->fo_mode === 'RO Supplier' ? 'submitted' : 'approved',
+            'status' => $order->fo_mode === 'RO Khusus' ? 'submitted' : 'approved',
             'order_number' => $order_number,
         ]);
         \Log::info('FO status & nomor diupdate', ['id' => $order->id, 'status' => $order->status, 'order_number' => $order_number]);
 
-        // Kirim email ke supplier jika ada item supplier
-        if ($order->fo_mode === 'RO Supplier') {
-            $supplierItems = \DB::table('food_floor_order_supplier_items')
-                ->where('floor_order_id', $order->id)
-                ->get();
-            \Log::info('Jumlah item supplier', ['count' => $supplierItems->count()]);
-            
-            if ($supplierItems->count() > 0) {
-                $outlet = \DB::table('tbl_data_outlet')->where('id_outlet', $order->id_outlet)->first();
-                $outletName = $outlet ? $outlet->nama_outlet : 'Unknown Outlet';
-                // Ambil nama lengkap creator
-                $creator = \DB::table('users')->where('id', $order->user_id)->first();
-                $creatorName = $creator ? $creator->nama_lengkap : $order->user_id;
-                // Group by supplier_id
-                $grouped = $supplierItems->groupBy('supplier_id');
-                foreach ($grouped as $supplierId => $items) {
-                    $supplier = \DB::table('suppliers')->where('id', $supplierId)->first();
-                    \Log::info('Proses email supplier', ['supplier_id' => $supplierId, 'email' => $supplier ? $supplier->email : null, 'jumlah_item' => count($items)]);
-                    if ($supplier && $supplier->email) {
-                        $header = \DB::table('food_floor_order_supplier_headers')
-                            ->where('floor_order_id', $order->id)
-                            ->where('supplier_id', $supplierId)
-                            ->first();
-                        // Format nomor supplier FO
-                        $supplierFoNumber = $header ? $header->supplier_fo_number : '';
-                        $itemsList = '';
-                        foreach ($items as $item) {
-                            $itemsList .= "- {$item->item_name} ({$item->qty} {$item->unit})\n";
-                        }
-                        $emailContent = "\nRequest Order Supplier\n\n" .
-                            "- Nomor RO: {$order->order_number}\n" .
-                            "- Nomor RO Supplier: {$supplierFoNumber}\n" .
-                            "- Outlet: {$outletName}\n" .
-                            "- Dibuat oleh: {$creatorName}\n" .
-                            "- Waktu pembuatan: {$order->created_at}\n" .
-                            "- Tanggal pengiriman: {$order->tanggal}\n\n" .
-                            "Detail Items:\n{$itemsList}\n\n" .
-                            "Mohon untuk diproses sesuai dengan permintaan di atas.\n\n" .
-                            "Terima kasih,\n" .
-                            "YMSoft ERP\n";
-                        \Mail::raw($emailContent, function($message) use ($supplier, $supplierFoNumber) {
-                            $message->to($supplier->email)
-                                    ->subject("Request Order Supplier - {$supplierFoNumber}");
-                        });
-                        \Log::info('Email dikirim ke supplier', ['supplier_id' => $supplierId, 'email' => $supplier->email]);
-                    }
-                }
-            }
-        }
         return response()->json(['success' => true]);
     }
 
@@ -624,41 +297,14 @@ class FoodFloorOrderController extends Controller
     public function show($id)
     {
         $order = FoodFloorOrder::with(['outlet', 'requester', 'foSchedule', 'approver', 'warehouseOutlet'])->findOrFail($id);
-
-        if ($order->fo_mode === 'RO Supplier') {
-            // Ambil semua header supplier untuk FO ini
-            $supplierHeaders = \DB::table('food_floor_order_supplier_headers')
-                ->where('floor_order_id', $order->id)
-                ->get();
-
-            // Ambil semua item supplier untuk FO ini
-            $supplierItems = \DB::table('food_floor_order_supplier_items')
-                ->where('floor_order_id', $order->id)
-                ->get();
-
-            // Group items by supplier_id
-            $itemsBySupplier = [];
-            foreach ($supplierHeaders as $header) {
-                $itemsBySupplier[] = [
-                    'header' => $header,
-                    'items' => $supplierItems->where('supplier_id', $header->supplier_id)->values(),
-                ];
-            }
-
-            return Inertia::render('FloorOrder/Show', [
-                'order' => $order,
-                'user' => Auth::user()->load('outlet'),
-                'supplierHeaders' => $supplierHeaders,
-                'itemsBySupplier' => $itemsBySupplier,
-            ]);
-        } else {
-            // Default: ambil items dari relasi
-            $order->load('items.category');
+        
+        // Load items dari relasi untuk semua mode
+        $order->load('items.category');
+        
         return Inertia::render('FloorOrder/Show', [
             'order' => $order,
             'user' => Auth::user()->load('outlet'),
         ]);
-        }
     }
 
     // Tambahkan method sendNotification
@@ -692,7 +338,7 @@ class FoodFloorOrderController extends Controller
             abort(403, 'Unauthorized');
         }
 
-        if (($order->fo_mode !== 'RO Khusus' && $order->fo_mode !== 'RO Supplier') || $order->status !== 'submitted') {
+        if (($order->fo_mode !== 'RO Khusus') || $order->status !== 'submitted') {
             abort(400, 'Tidak bisa approve order ini');
         }
 
@@ -740,7 +386,7 @@ class FoodFloorOrderController extends Controller
         }
         $floorOrders = $query->orderByDesc('created_at')->paginate(10)->withQueryString();
 
-        // Inject subtotal/grandtotal untuk RO Supplier
+        // Load items untuk semua order
         $floorOrders->getCollection()->transform(function($order) {
             \Log::info('DEBUG WAREHOUSE OUTLET', [
                 'order_id' => $order->id,
@@ -748,12 +394,7 @@ class FoodFloorOrderController extends Controller
                 'warehouseOutlet' => $order->warehouseOutlet
             ]);
           
-            if ($order->fo_mode === 'RO Supplier') {
-                $items = \DB::table('food_floor_order_supplier_items')->where('floor_order_id', $order->id)->get();
-                $order->setAttribute('items', $items->toArray());
-            } else {
-                $order->loadMissing('items');
-            }
+            $order->loadMissing('items');
             $order->setRelation('outlet', $order->outlet);
             $order->setRelation('requester', $order->requester);
             $order->setRelation('foSchedule', $order->foSchedule);
@@ -770,5 +411,117 @@ class FoodFloorOrderController extends Controller
 
     public function warehouseOutlet() {
         return $this->belongsTo(WarehouseOutlet::class, 'warehouse_outlet_id');
+    }
+
+    // API untuk mengambil RO Supplier yang tersedia untuk dibuat PO
+    public function supplierAvailable()
+    {
+        try {
+            $user = auth()->user();
+            
+            // Query untuk RO Supplier yang sudah approved dan belum packing
+            $query = FoodFloorOrder::with(['items', 'outlet', 'warehouseOutlet'])
+                ->where('fo_mode', 'RO Supplier')
+                ->whereIn('status', ['approved', 'submitted'])
+                ->whereNotNull('id_outlet'); // Pastikan id_outlet tidak null
+            
+            // Jika user bukan superuser (id_outlet != 1), hanya tampilkan RO dari outlet mereka
+            if ($user->id_outlet != 1) {
+                $query->where('id_outlet', $user->id_outlet);
+            }
+            // Jika user adalah superuser (id_outlet = 1), tampilkan semua RO Supplier
+            
+            $roSuppliers = $query->orderBy('created_at', 'desc')->get();
+
+            // Filter RO Supplier yang belum semua itemnya dibuat PO
+            $roSuppliers = $roSuppliers->filter(function($ro) {
+                $totalItems = \DB::table('food_floor_order_items')->where('floor_order_id', $ro->id)->count();
+                $itemsInPO = \App\Models\PurchaseOrderFoodItem::where('ro_id', $ro->id)->count();
+                
+                // Hanya tampilkan RO yang belum semua itemnya dibuat PO
+                return $totalItems > $itemsInPO;
+            });
+
+            // Debug: Cek unique outlet IDs
+            $uniqueOutlets = $roSuppliers->pluck('id_outlet')->unique()->values();
+            \Log::info('Unique outlet IDs found:', [
+                'unique_outlets' => $uniqueOutlets->toArray(),
+                'total_ro_suppliers' => $roSuppliers->count()
+            ]);
+
+            // Debug: Log RO Supplier yang difilter
+            \Log::info('RO Supplier filtering details:', [
+                'ro_suppliers_details' => $roSuppliers->map(function($ro) {
+                    $totalItems = \DB::table('food_floor_order_items')->where('floor_order_id', $ro->id)->count();
+                    $itemsInPO = \App\Models\PurchaseOrderFoodItem::where('ro_id', $ro->id)->count();
+                    return [
+                        'ro_id' => $ro->id,
+                        'ro_number' => $ro->order_number,
+                        'status' => $ro->status,
+                        'total_items' => $totalItems,
+                        'items_in_po' => $itemsInPO,
+                        'remaining_items' => $totalItems - $itemsInPO
+                    ];
+                })
+            ]);
+
+            // Debug logging
+            \Log::info('RO Supplier Available API called', [
+                'user_id' => $user->id,
+                'user_outlet_id' => $user->id_outlet,
+                'is_superuser' => $user->id_outlet == 1,
+                'ro_suppliers_count' => $roSuppliers->count(),
+                'ro_suppliers' => $roSuppliers->map(function($ro) {
+                    return [
+                        'id' => $ro->id,
+                        'order_number' => $ro->order_number,
+                        'id_outlet' => $ro->id_outlet,
+                        'outlet_name' => $ro->outlet ? $ro->outlet->nama_outlet : 'Unknown',
+                        'status' => $ro->status,
+                        'items_count' => $ro->items->count()
+                    ];
+                })
+            ]);
+
+            // Transform data untuk frontend
+            $transformedData = $roSuppliers->map(function($ro) {
+                return [
+                    'id' => $ro->id,
+                    'order_number' => $ro->order_number,
+                    'tanggal' => $ro->tanggal,
+                    'description' => $ro->description,
+                    'status' => $ro->status,
+                    'id_outlet' => $ro->id_outlet,
+                    'outlet_name' => $ro->outlet ? $ro->outlet->nama_outlet : 'Unknown Outlet',
+                    'warehouse_outlet_id' => $ro->warehouse_outlet_id,
+                    'warehouse_outlet_name' => $ro->warehouseOutlet ? $ro->warehouseOutlet->name : 'Unknown Warehouse',
+                    'items' => $ro->items->map(function($item) use ($ro) {
+                        return [
+                            'id' => $item->id,
+                            'item_id' => $item->item_id,
+                            'item_name' => $item->item->name ?? $item->item_name ?? 'Unknown Item',
+                            'qty' => $item->qty,
+                            'unit' => $item->unit,
+                            'price' => $item->price,
+                            'subtotal' => $item->subtotal,
+                            'category_id' => $item->category_id,
+                            'warehouse_division_id' => $item->warehouse_division_id,
+                            'arrival_date' => $item->arrival_date ?? null,
+                            'source' => 'ro_supplier', // Mark as RO Supplier item
+                            'ro_id' => $ro->id,
+                            'ro_number' => $ro->order_number,
+                        ];
+                    })
+                ];
+            });
+
+            return response()->json($transformedData);
+        } catch (\Exception $e) {
+            \Log::error('Error fetching RO Supplier available:', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return response()->json(['error' => 'Failed to fetch RO Supplier data'], 500);
+        }
     }
 } 

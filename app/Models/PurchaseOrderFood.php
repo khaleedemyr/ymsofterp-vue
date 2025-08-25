@@ -29,6 +29,8 @@ class PurchaseOrderFood extends Model
         'ppn_amount',
         'subtotal',
         'grand_total',
+        'source_type',
+        'source_id',
     ];
 
     protected $casts = [

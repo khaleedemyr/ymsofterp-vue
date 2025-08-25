@@ -525,7 +525,7 @@ onMounted(() => {
                                         <tr>
                                             <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider rounded-tl-2xl">No. PO</th>
                                             <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Tanggal</th>
-                                            <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">PR Numbers</th>
+                                            <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Source</th>
                                             <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Supplier</th>
                                             <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Tgl Kedatangan</th>
                                             <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Tanggal Print</th>
@@ -544,11 +544,33 @@ onMounted(() => {
                                             <td class="px-6 py-3 font-mono font-semibold text-blue-700">{{ po.number }}</td>
                                             <td class="px-6 py-3">{{ new Date(po.date).toLocaleDateString('id-ID') }}</td>
                                             <td class="px-6 py-3">
-                                                <div class="flex flex-wrap gap-1">
-                                                    <span v-for="pr in po.pr_numbers" :key="pr" 
-                                                          class="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full">
-                                                        {{ pr }}
-                                                    </span>
+                                                <div class="flex flex-col gap-1">
+                                                    <!-- Source Type Badge -->
+                                                    <div class="flex items-center gap-1">
+                                                        <span v-if="po.source_type === 'pr_foods' || !po.source_type" 
+                                                              class="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full font-semibold">
+                                                            Purchase Requisition
+                                                        </span>
+                                                        <span v-else-if="po.source_type === 'ro_supplier'" 
+                                                              class="bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full font-semibold">
+                                                            RO Supplier
+                                                        </span>
+                                                        <span v-else 
+                                                              class="bg-gray-100 text-gray-800 text-xs px-2 py-1 rounded-full font-semibold">
+                                                            N/A
+                                                        </span>
+                                                    </div>
+                                                    <!-- Source Numbers -->
+                                                    <div class="flex flex-wrap gap-1">
+                                                        <span v-for="sourceNumber in po.source_numbers" :key="sourceNumber" 
+                                                              :class="{
+                                                                  'bg-blue-100 text-blue-800': po.source_type === 'pr_foods' || !po.source_type,
+                                                                  'bg-green-100 text-green-800': po.source_type === 'ro_supplier'
+                                                              }"
+                                                              class="text-xs px-2 py-1 rounded-full">
+                                                            {{ sourceNumber }}
+                                                        </span>
+                                                    </div>
                                                 </div>
                                             </td>
                                             <td class="px-6 py-3">{{ po.supplier?.name }}</td>

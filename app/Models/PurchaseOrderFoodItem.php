@@ -21,6 +21,10 @@ class PurchaseOrderFoodItem extends Model
         'created_by',
         'arrival_date',
         'pr_food_item_id',
+        'source_type',
+        'source_id',
+        'ro_id',
+        'ro_number',
     ];
 
     protected $casts = [
