@@ -585,12 +585,12 @@ function setThisMonthRange() {
 const loading = ref(false);
 
 onMounted(() => {
-  router.on('start', () => { loading.value = true; });
-  router.on('finish', () => { loading.value = false; });
+  // Inertia.js v3 doesn't have router.on/off methods
+  // We'll handle loading state differently
 });
+
 onUnmounted(() => {
-  router.off('start');
-  router.off('finish');
+  // Cleanup if needed
 });
 
 function reloadData() {
@@ -682,14 +682,27 @@ async function downloadPDF() {
     const url = window.URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
-    link.download = `Detail_${modalCustomer.value}_${from.value}_${to.value}.pdf`
+    // Clean filename from invalid characters and ensure it's safe
+    const cleanCustomer = modalCustomer.value
+      .replace(/[^a-zA-Z0-9\s\-_]/g, '_')
+      .trim()
+      .replace(/\s+/g, '_');
+    link.download = `Detail_${cleanCustomer}_${from.value}_${to.value}.pdf`
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
     window.URL.revokeObjectURL(url)
   } catch (error) {
     console.error('Error downloading PDF:', error)
-    alert('Terjadi kesalahan saat download PDF')
+    
+    // Check if it's a server error with message
+    if (error.response && error.response.data && error.response.data.error) {
+      alert('Error: ' + error.response.data.error)
+    } else if (error.response && error.response.status === 500) {
+      alert('Terjadi kesalahan server saat generate PDF. Silakan coba lagi.')
+    } else {
+      alert('Terjadi kesalahan saat download PDF. Silakan coba lagi.')
+    }
   }
 }
 

@@ -2285,15 +2285,16 @@ class ReportController extends Controller
      */
     public function fjDetailPdf(Request $request)
     {
-        $request->validate([
-            'customer' => 'required|string',
-            'from' => 'required|date',
-            'to' => 'required|date',
-        ]);
+        try {
+            $request->validate([
+                'customer' => 'required|string',
+                'from' => 'required|date',
+                'to' => 'required|date',
+            ]);
 
-        $customer = $request->customer;
-        $from = $request->from;
-        $to = $request->to;
+            $customer = $request->customer;
+            $from = $request->from;
+            $to = $request->to;
 
         // Helper function to get GR data with grouping to avoid duplicates
         $getGRData = function($warehouseCondition, $subCategoryCondition = null, $excludeSubCategories = null) use ($customer, $from, $to) {
@@ -2452,9 +2453,26 @@ class ReportController extends Controller
         $pdf->setOption('margin-right', 10);
         $pdf->setOption('dpi', 96);
 
-        $filename = "FJ_Detail_{$customer}_{$from}_{$to}.pdf";
+                    // Clean filename from invalid characters and ensure it's safe
+            $cleanCustomer = preg_replace('/[^a-zA-Z0-9\s\-_]/', '_', $customer);
+            $cleanCustomer = trim($cleanCustomer); // Remove leading/trailing spaces
+            $cleanCustomer = preg_replace('/\s+/', '_', $cleanCustomer); // Replace multiple spaces with single underscore
+            $filename = "FJ_Detail_{$cleanCustomer}_{$from}_{$to}.pdf";
         
         return $pdf->download($filename);
+        
+        } catch (\Exception $e) {
+            \Log::error('FJ Detail PDF Error: ' . $e->getMessage(), [
+                'customer' => $request->customer ?? 'unknown',
+                'from' => $request->from ?? 'unknown',
+                'to' => $request->to ?? 'unknown',
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'error' => 'Gagal generate PDF: ' . $e->getMessage()
+            ], 500);
+        }
     }
 
     /**
@@ -2462,72 +2480,90 @@ class ReportController extends Controller
      */
     public function retailDetailPdf(Request $request)
     {
-        $request->validate([
-            'customer' => 'required|string',
-            'from' => 'required|date',
-            'to' => 'required|date',
-        ]);
+        try {
+            $request->validate([
+                'customer' => 'required|string',
+                'from' => 'required|date',
+                'to' => 'required|date',
+            ]);
 
-        $customer = $request->customer;
-        $from = $request->from;
-        $to = $request->to;
+            $customer = $request->customer;
+            $from = $request->from;
+            $to = $request->to;
 
-        // Get retail sales detail data
-        $retailData = DB::table('retail_warehouse_sales as rws')
-            ->join('retail_warehouse_sale_items as rwsi', 'rws.id', '=', 'rwsi.retail_warehouse_sale_id')
-            ->join('customers as c', 'rws.customer_id', '=', 'c.id')
-            ->join('items as it', 'rwsi.item_id', '=', 'it.id')
-            ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
-            ->join('warehouses as w', 'rws.warehouse_id', '=', 'w.id')
-            ->where('c.name', $customer)
-            ->whereDate('rws.created_at', '>=', $from)
-            ->whereDate('rws.created_at', '<=', $to)
-            ->select(
-                'it.name as item_name',
-                'sc.name as category',
-                'rwsi.qty',
-                'rwsi.price',
-                'rwsi.subtotal',
-                'rws.number as sale_number',
-                'rws.created_at as sale_date'
-            )
-            ->orderBy('sc.name')
-            ->orderBy('it.name')
-            ->get();
+            // Get retail sales detail data with error handling
+            $retailData = DB::table('retail_warehouse_sales as rws')
+                ->join('retail_warehouse_sale_items as rwsi', 'rws.id', '=', 'rwsi.retail_warehouse_sale_id')
+                ->join('customers as c', 'rws.customer_id', '=', 'c.id')
+                ->join('items as it', 'rwsi.item_id', '=', 'it.id')
+                ->leftJoin('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
+                ->leftJoin('warehouses as w', 'rws.warehouse_id', '=', 'w.id')
+                ->where('c.name', $customer)
+                ->whereDate('rws.created_at', '>=', $from)
+                ->whereDate('rws.created_at', '<=', $to)
+                ->select(
+                    'it.name as item_name',
+                    DB::raw('COALESCE(sc.name, "Uncategorized") as category'),
+                    'rwsi.qty',
+                    'rwsi.price',
+                    'rwsi.subtotal',
+                    'rws.number as sale_number',
+                    'rws.created_at as sale_date'
+                )
+                ->orderBy('category')
+                ->orderBy('it.name')
+                ->get();
 
-        // Group by category
-        $groupedData = [];
-        foreach ($retailData as $item) {
-            $category = $item->category;
-            if (!isset($groupedData[$category])) {
-                $groupedData[$category] = [];
+            // Group by category
+            $groupedData = [];
+            foreach ($retailData as $item) {
+                $category = $item->category ?: 'Uncategorized';
+                if (!isset($groupedData[$category])) {
+                    $groupedData[$category] = [];
+                }
+                $groupedData[$category][] = $item;
             }
-            $groupedData[$category][] = $item;
+
+            // Calculate totals
+            $totalAmount = $retailData->sum('subtotal');
+
+            // Generate PDF
+            $pdf = \PDF::loadView('reports.retail-detail-pdf', [
+                'customer' => $customer,
+                'from' => $from,
+                'to' => $to,
+                'detailData' => $groupedData,
+                'totalAmount' => $totalAmount,
+            ]);
+
+            // Optimize PDF settings for compact layout
+            $pdf->setPaper('a4', 'portrait');
+            $pdf->setOption('margin-top', 10);
+            $pdf->setOption('margin-bottom', 10);
+            $pdf->setOption('margin-left', 10);
+            $pdf->setOption('margin-right', 10);
+            $pdf->setOption('dpi', 96);
+
+            // Clean filename from invalid characters and ensure it's safe
+            $cleanCustomer = preg_replace('/[^a-zA-Z0-9\s\-_]/', '_', $customer);
+            $cleanCustomer = trim($cleanCustomer); // Remove leading/trailing spaces
+            $cleanCustomer = preg_replace('/\s+/', '_', $cleanCustomer); // Replace multiple spaces with single underscore
+            $filename = "Retail_Detail_{$cleanCustomer}_{$from}_{$to}.pdf";
+            
+            return $pdf->download($filename);
+            
+        } catch (\Exception $e) {
+            \Log::error('Retail Detail PDF Error: ' . $e->getMessage(), [
+                'customer' => $request->customer ?? 'unknown',
+                'from' => $request->from ?? 'unknown',
+                'to' => $request->to ?? 'unknown',
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'error' => 'Gagal generate PDF: ' . $e->getMessage()
+            ], 500);
         }
-
-        // Calculate totals
-        $totalAmount = $retailData->sum('subtotal');
-
-        // Generate PDF
-        $pdf = \PDF::loadView('reports.retail-detail-pdf', [
-            'customer' => $customer,
-            'from' => $from,
-            'to' => $to,
-            'detailData' => $groupedData,
-            'totalAmount' => $totalAmount,
-        ]);
-
-        // Optimize PDF settings for compact layout
-        $pdf->setPaper('a4', 'portrait');
-        $pdf->setOption('margin-top', 10);
-        $pdf->setOption('margin-bottom', 10);
-        $pdf->setOption('margin-left', 10);
-        $pdf->setOption('margin-right', 10);
-        $pdf->setOption('dpi', 96);
-
-        $filename = "Retail_Detail_{$customer}_{$from}_{$to}.pdf";
-        
-        return $pdf->download($filename);
     }
 
     /**
@@ -2535,72 +2571,90 @@ class ReportController extends Controller
      */
     public function warehouseDetailPdf(Request $request)
     {
-        $request->validate([
-            'customer' => 'required|string',
-            'from' => 'required|date',
-            'to' => 'required|date',
-        ]);
+        try {
+            $request->validate([
+                'customer' => 'required|string',
+                'from' => 'required|date',
+                'to' => 'required|date',
+            ]);
 
-        $customer = $request->customer;
-        $from = $request->from;
-        $to = $request->to;
+            $customer = $request->customer;
+            $from = $request->from;
+            $to = $request->to;
 
-        // Get warehouse sales detail data
-        $warehouseData = DB::table('warehouse_sales as ws')
-            ->join('warehouse_sale_items as wsi', 'ws.id', '=', 'wsi.warehouse_sale_id')
-            ->join('warehouses as w', 'ws.target_warehouse_id', '=', 'w.id')
-            ->join('items as it', 'wsi.item_id', '=', 'it.id')
-            ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
-            ->where('w.name', $customer)
-            ->whereDate('ws.date', '>=', $from)
-            ->whereDate('ws.date', '<=', $to)
-            ->select(
-                'it.name as item_name',
-                'sc.name as category',
-                'wsi.qty_small',
-                'wsi.qty_medium',
-                'wsi.qty_large',
-                'wsi.price',
-                'wsi.total',
-                'ws.number as sale_number',
-                'ws.date as sale_date'
-            )
-            ->orderBy('sc.name')
-            ->orderBy('it.name')
-            ->get();
+            // Get warehouse sales detail data with error handling
+            $warehouseData = DB::table('warehouse_sales as ws')
+                ->join('warehouse_sale_items as wsi', 'ws.id', '=', 'wsi.warehouse_sale_id')
+                ->join('warehouses as w', 'ws.target_warehouse_id', '=', 'w.id')
+                ->join('items as it', 'wsi.item_id', '=', 'it.id')
+                ->leftJoin('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
+                ->where('w.name', $customer)
+                ->whereDate('ws.date', '>=', $from)
+                ->whereDate('ws.date', '<=', $to)
+                ->select(
+                    'it.name as item_name',
+                    DB::raw('COALESCE(sc.name, "Uncategorized") as category'),
+                    'wsi.qty_small',
+                    'wsi.qty_medium',
+                    'wsi.qty_large',
+                    'wsi.price',
+                    'wsi.total',
+                    'ws.number as sale_number',
+                    'ws.date as sale_date'
+                )
+                ->orderBy('category')
+                ->orderBy('it.name')
+                ->get();
 
-        // Group by category
-        $groupedData = [];
-        foreach ($warehouseData as $item) {
-            $category = $item->category;
-            if (!isset($groupedData[$category])) {
-                $groupedData[$category] = [];
+            // Group by category
+            $groupedData = [];
+            foreach ($warehouseData as $item) {
+                $category = $item->category ?: 'Uncategorized';
+                if (!isset($groupedData[$category])) {
+                    $groupedData[$category] = [];
+                }
+                $groupedData[$category][] = $item;
             }
-            $groupedData[$category][] = $item;
+
+            // Calculate totals
+            $totalAmount = $warehouseData->sum('total');
+
+            // Generate PDF
+            $pdf = \PDF::loadView('reports.warehouse-detail-pdf', [
+                'customer' => $customer,
+                'from' => $from,
+                'to' => $to,
+                'detailData' => $groupedData,
+                'totalAmount' => $totalAmount,
+            ]);
+
+            // Optimize PDF settings for compact layout
+            $pdf->setPaper('a4', 'portrait');
+            $pdf->setOption('margin-top', 10);
+            $pdf->setOption('margin-bottom', 10);
+            $pdf->setOption('margin-left', 10);
+            $pdf->setOption('margin-right', 10);
+            $pdf->setOption('dpi', 96);
+
+            // Clean filename from invalid characters and ensure it's safe
+            $cleanCustomer = preg_replace('/[^a-zA-Z0-9\s\-_]/', '_', $customer);
+            $cleanCustomer = trim($cleanCustomer); // Remove leading/trailing spaces
+            $cleanCustomer = preg_replace('/\s+/', '_', $cleanCustomer); // Replace multiple spaces with single underscore
+            $filename = "Warehouse_Detail_{$cleanCustomer}_{$from}_{$to}.pdf";
+            
+            return $pdf->download($filename);
+            
+        } catch (\Exception $e) {
+            \Log::error('Warehouse Detail PDF Error: ' . $e->getMessage(), [
+                'customer' => $request->customer ?? 'unknown',
+                'from' => $request->from ?? 'unknown',
+                'to' => $request->to ?? 'unknown',
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'error' => 'Gagal generate PDF: ' . $e->getMessage()
+            ], 500);
         }
-
-        // Calculate totals
-        $totalAmount = $warehouseData->sum('total');
-
-        // Generate PDF
-        $pdf = \PDF::loadView('reports.warehouse-detail-pdf', [
-            'customer' => $customer,
-            'from' => $from,
-            'to' => $to,
-            'detailData' => $groupedData,
-            'totalAmount' => $totalAmount,
-        ]);
-
-        // Optimize PDF settings for compact layout
-        $pdf->setPaper('a4', 'portrait');
-        $pdf->setOption('margin-top', 10);
-        $pdf->setOption('margin-bottom', 10);
-        $pdf->setOption('margin-left', 10);
-        $pdf->setOption('margin-right', 10);
-        $pdf->setOption('dpi', 96);
-
-        $filename = "Warehouse_Detail_{$customer}_{$from}_{$to}.pdf";
-        
-        return $pdf->download($filename);
     }
 } 
