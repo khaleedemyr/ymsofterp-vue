@@ -450,6 +450,12 @@ class OutletRejectionController extends Controller
     // Approval SSD Manager / Sous Chef MK
     public function approveSsdManager(Request $request, $id)
     {
+        Log::info('approveSsdManager called', [
+            'rejection_id' => $id,
+            'request_data' => $request->all(),
+            'user_id' => Auth::id()
+        ]);
+        
         $rejection = OutletRejection::with(['outlet', 'warehouse', 'items'])->findOrFail($id);
         
         // Check if warehouse is MK1 or MK2
@@ -462,6 +468,11 @@ class OutletRejectionController extends Controller
         }
         
         if ($request->approved) {
+            Log::info('Rejection approved, starting validation and processing', [
+                'rejection_id' => $rejection->id,
+                'warehouse_name' => $rejection->warehouse->name ?? 'unknown'
+            ]);
+            
             // Validasi qty_received
             $request->validate([
                 'items' => 'required|array',
@@ -472,16 +483,57 @@ class OutletRejectionController extends Controller
             DB::beginTransaction();
             try {
                 // Update qty_received for each item
+                Log::info('Updating qty_received for items', [
+                    'items_count' => count($request->items),
+                    'items_data' => $request->items
+                ]);
+                
                 foreach ($request->items as $itemData) {
+                    Log::info('Processing item data', [
+                        'item_data' => $itemData,
+                        'item_id' => $itemData['id'] ?? 'missing',
+                        'qty_received' => $itemData['qty_received'] ?? 'missing'
+                    ]);
+                    
                     $item = $rejection->items()->find($itemData['id']);
                     if ($item) {
+                        Log::info('Found item, updating qty_received', [
+                            'item_id' => $item->id,
+                            'old_qty_received' => $item->qty_received,
+                            'new_qty_received' => $itemData['qty_received']
+                        ]);
                         $item->update(['qty_received' => $itemData['qty_received']]);
+                    } else {
+                        Log::warning('Item not found', [
+                            'item_id' => $itemData['id'] ?? 'missing'
+                        ]);
                     }
                 }
                 
+                // Refresh rejection data to get updated items
+                $rejection->refresh();
+                $rejection->load('items');
+                
                 // Process inventory (similar to food good receive)
+                Log::info('Starting inventory processing for outlet rejection', [
+                    'rejection_id' => $rejection->id,
+                    'total_items' => $rejection->items->count(),
+                    'items_with_qty_received' => $rejection->items->where('qty_received', '>', 0)->count(),
+                    'items_data' => $rejection->items->toArray()
+                ]);
+                
                 foreach ($rejection->items as $item) {
+                    Log::info('Processing item for inventory', [
+                        'item_id' => $item->id,
+                        'qty_received' => $item->qty_received,
+                        'will_process' => $item->qty_received > 0
+                    ]);
+                    
                     if ($item->qty_received > 0) {
+                        Log::info('Calling processInventory for item', [
+                            'item_id' => $item->id,
+                            'qty_received' => $item->qty_received
+                        ]);
                         $this->processInventory($rejection, $item);
                     }
                 }
@@ -496,14 +548,27 @@ class OutletRejectionController extends Controller
                     'completed_at' => now()
                 ]);
                 
+                Log::info('Transaction about to commit', [
+                    'rejection_id' => $rejection->id
+                ]);
+                
                 DB::commit();
+                
+                Log::info('Transaction committed successfully', [
+                    'rejection_id' => $rejection->id
+                ]);
                 
                 return redirect()->route('outlet-rejections.show', $id)
                     ->with('success', 'Outlet Rejection berhasil di-approve dan barang telah masuk ke inventory');
                     
             } catch (\Exception $e) {
+                Log::error('Error in approveSsdManager transaction', [
+                    'rejection_id' => $rejection->id ?? 'unknown',
+                    'error_message' => $e->getMessage(),
+                    'error_trace' => $e->getTraceAsString()
+                ]);
+                
                 DB::rollBack();
-                Log::error('Error approving outlet rejection: ' . $e->getMessage());
                 
                 return back()->withErrors(['error' => 'Terjadi kesalahan: ' . $e->getMessage()]);
             }
@@ -578,19 +643,52 @@ class OutletRejectionController extends Controller
 
     private function processInventory($rejection, $item)
     {
-        // Get inventory item
-        $inventoryItem = DB::table('food_inventory_items')
-            ->where('item_id', $item->item_id)
-            ->first();
-
-        if (!$inventoryItem) {
-            throw new \Exception("Inventory item not found for item_id: {$item->item_id}");
-        }
+        Log::info('Processing inventory for outlet rejection', [
+            'rejection_id' => $rejection->id,
+            'item_id' => $item->item_id,
+            'warehouse_id' => $rejection->warehouse_id,
+            'qty_received' => $item->qty_received,
+            'mac_cost' => $item->mac_cost
+        ]);
 
         // Get item master for conversion
         $itemMaster = DB::table('items')->where('id', $item->item_id)->first();
         if (!$itemMaster) {
             throw new \Exception("Item master not found for item_id: {$item->item_id}");
+        }
+
+        // Get or create inventory item
+        $inventoryItem = DB::table('food_inventory_items')
+            ->where('item_id', $item->item_id)
+            ->first();
+
+        if (!$inventoryItem) {
+            Log::info('Creating new inventory item', [
+                'item_id' => $item->item_id,
+                'small_unit_id' => $itemMaster->small_unit_id,
+                'medium_unit_id' => $itemMaster->medium_unit_id,
+                'large_unit_id' => $itemMaster->large_unit_id
+            ]);
+            
+            $inventoryItemId = DB::table('food_inventory_items')->insertGetId([
+                'item_id' => $item->item_id,
+                'small_unit_id' => $itemMaster->small_unit_id,
+                'medium_unit_id' => $itemMaster->medium_unit_id,
+                'large_unit_id' => $itemMaster->large_unit_id,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+            $inventoryItem = DB::table('food_inventory_items')->where('id', $inventoryItemId)->first();
+            
+            Log::info('Inventory item created', [
+                'inventory_item_id' => $inventoryItemId,
+                'inventory_item' => $inventoryItem
+            ]);
+        } else {
+            Log::info('Using existing inventory item', [
+                'inventory_item_id' => $inventoryItem->id,
+                'inventory_item' => $inventoryItem
+            ]);
         }
 
         // Convert qty to small/medium/large units
@@ -620,23 +718,96 @@ class OutletRejectionController extends Controller
             $qty_small = $qtyInput;
         }
 
+        // Get warehouse division ID from item master
+        $warehouseDivisionId = $itemMaster->warehouse_division_id;
+        
+        Log::info('Warehouse division info', [
+            'warehouse_id' => $rejection->warehouse_id,
+            'warehouse_division_id' => $warehouseDivisionId,
+            'item_master' => $itemMaster
+        ]);
+        
         // Get existing stock
         $existingStock = DB::table('food_inventory_stocks')
             ->where('inventory_item_id', $inventoryItem->id)
             ->where('warehouse_id', $rejection->warehouse_id)
             ->first();
 
-        // Calculate MAC (Moving Average Cost)
+        // Convert item cost to small unit based on rejection item unit
+        $item_mac_cost_small_unit = $item->mac_cost;
+        
+        // Get rejection item unit
+        $rejectionUnit = DB::table('units')->where('id', $item->unit_id)->first();
+        
+        // If rejection item unit is not small unit, convert it
+        if ($rejectionUnit->name !== $unitSmall) {
+            if ($rejectionUnit->name === $unitMedium) {
+                // Convert from medium to small unit
+                $item_mac_cost_small_unit = $item->mac_cost / $smallConv;
+                Log::info('Converting cost from medium to small unit', [
+                    'original_cost' => $item->mac_cost,
+                    'small_conversion' => $smallConv,
+                    'converted_cost' => $item_mac_cost_small_unit
+                ]);
+            } elseif ($rejectionUnit->name === $unitLarge) {
+                // Convert from large to small unit
+                $item_mac_cost_small_unit = $item->mac_cost / ($smallConv * $mediumConv);
+                Log::info('Converting cost from large to small unit', [
+                    'original_cost' => $item->mac_cost,
+                    'small_conversion' => $smallConv,
+                    'medium_conversion' => $mediumConv,
+                    'converted_cost' => $item_mac_cost_small_unit
+                ]);
+            }
+        } else {
+            Log::info('Cost already in small unit, no conversion needed', [
+                'original_cost' => $item->mac_cost
+            ]);
+        }
+        
+        // Calculate MAC (Moving Average Cost) in small unit
         $qty_lama = $existingStock ? $existingStock->qty_small : 0;
         $nilai_lama = $existingStock ? $existingStock->value : 0;
         $qty_baru = $qty_small;
-        $nilai_baru = $qty_small * $item->mac_cost;
+        $nilai_baru = $qty_small * $item_mac_cost_small_unit;
         $total_qty = $qty_lama + $qty_baru;
         $total_nilai = $nilai_lama + $nilai_baru;
-        $mac = $total_qty > 0 ? $total_nilai / $total_qty : $item->mac_cost;
+        $mac = $total_qty > 0 ? $total_nilai / $total_qty : $item_mac_cost_small_unit;
+        
+        Log::info('MAC calculation with small unit conversion', [
+            'qty_lama' => $qty_lama,
+            'nilai_lama' => $nilai_lama,
+            'qty_baru' => $qty_baru,
+            'item_mac_cost_original' => $item->mac_cost,
+            'item_mac_cost_small_unit' => $item_mac_cost_small_unit,
+            'rejection_unit_name' => $rejectionUnit->name,
+            'small_unit_name' => $unitSmall,
+            'medium_unit_name' => $unitMedium,
+            'large_unit_name' => $unitLarge,
+            'small_conv' => $smallConv,
+            'medium_conv' => $mediumConv,
+            'nilai_baru' => $nilai_baru,
+            'total_qty' => $total_qty,
+            'total_nilai' => $total_nilai,
+            'mac' => $mac,
+            'existing_stock' => $existingStock
+        ]);
 
         // Update or insert stock
         if ($existingStock) {
+            Log::info('Updating existing stock with corrected costs', [
+                'stock_id' => $existingStock->id,
+                'inventory_item_id' => $inventoryItem->id,
+                'warehouse_id' => $rejection->warehouse_id,
+                'qty_small' => $total_qty,
+                'qty_medium' => $existingStock->qty_medium + $qty_medium,
+                'qty_large' => $existingStock->qty_large + $qty_large,
+                'value' => $total_nilai,
+                'last_cost_small' => $mac,
+                'last_cost_medium' => $mac * $smallConv,
+                'last_cost_large' => $mac * $smallConv * $mediumConv
+            ]);
+            
             DB::table('food_inventory_stocks')
                 ->where('id', $existingStock->id)
                 ->update([
@@ -650,6 +821,18 @@ class OutletRejectionController extends Controller
                     'updated_at' => now(),
                 ]);
         } else {
+            Log::info('Creating new stock with corrected costs', [
+                'inventory_item_id' => $inventoryItem->id,
+                'warehouse_id' => $rejection->warehouse_id,
+                'qty_small' => $qty_small,
+                'qty_medium' => $qty_medium,
+                'qty_large' => $qty_large,
+                'value' => $nilai_baru,
+                'last_cost_small' => $mac,
+                'last_cost_medium' => $mac * $smallConv,
+                'last_cost_large' => $mac * $smallConv * $mediumConv
+            ]);
+            
             DB::table('food_inventory_stocks')->insert([
                 'inventory_item_id' => $inventoryItem->id,
                 'warehouse_id' => $rejection->warehouse_id,
@@ -684,30 +867,52 @@ class OutletRejectionController extends Controller
         }
 
         // Insert stock card
-        DB::table('food_inventory_cards')->insert([
+        Log::info('Inserting stock card', [
             'inventory_item_id' => $inventoryItem->id,
             'warehouse_id' => $rejection->warehouse_id,
             'date' => $rejection->rejection_date,
             'reference_type' => 'outlet_rejection',
             'reference_id' => $rejection->id,
-            'in_qty_small' => $qty_small,
-            'in_qty_medium' => $qty_medium,
-            'in_qty_large' => $qty_large,
-            'out_qty_small' => 0,
-            'out_qty_medium' => 0,
-            'out_qty_large' => 0,
-            'cost_per_small' => $mac,
-            'cost_per_medium' => $mac * $smallConv,
-            'cost_per_large' => $mac * $smallConv * $mediumConv,
-            'value_in' => $qty_small * $mac,
-            'value_out' => 0,
             'saldo_qty_small' => $saldo_qty_small,
             'saldo_qty_medium' => $saldo_qty_medium,
-            'saldo_qty_large' => $saldo_qty_large,
-            'saldo_value' => $saldo_qty_small * $mac,
-            'description' => 'Outlet Rejection - ' . $item->rejection_reason,
-            'created_at' => now(),
+            'saldo_qty_large' => $saldo_qty_large
         ]);
+        
+                     $stockCardData = [
+                 'inventory_item_id' => $inventoryItem->id,
+                 'warehouse_id' => $rejection->warehouse_id,
+                 'date' => $rejection->rejection_date,
+                 'reference_type' => 'outlet_rejection',
+                 'reference_id' => $rejection->id,
+                 'in_qty_small' => $qty_small,
+                 'in_qty_medium' => $qty_medium,
+                 'in_qty_large' => $qty_large,
+                 'out_qty_small' => 0,
+                 'out_qty_medium' => 0,
+                 'out_qty_large' => 0,
+                 'cost_per_small' => $mac,
+                 'cost_per_medium' => $mac * $smallConv,
+                 'cost_per_large' => $mac * $smallConv * $mediumConv,
+                 'value_in' => $qty_small * $mac,
+                 'value_out' => 0,
+                 'saldo_qty_small' => $saldo_qty_small,
+                 'saldo_qty_medium' => $saldo_qty_medium,
+                 'saldo_qty_large' => $saldo_qty_large,
+                 'saldo_value' => $saldo_qty_small * $mac,
+                 'description' => 'Outlet Rejection - ' . $item->rejection_reason,
+                 'created_at' => now(),
+             ];
+             
+             Log::info('Stock card data to insert', [
+                 'stock_card_data' => $stockCardData
+             ]);
+             
+             $stockCardId = DB::table('food_inventory_cards')->insertGetId($stockCardData);
+             
+             Log::info('Stock card inserted successfully', [
+                 'stock_card_id' => $stockCardId,
+                 'inventory_item_id' => $inventoryItem->id
+             ]);
 
         // Insert cost history
         $lastCostHistory = DB::table('food_inventory_cost_histories')
@@ -719,9 +924,24 @@ class OutletRejectionController extends Controller
 
         $old_cost = $lastCostHistory ? $lastCostHistory->new_cost : 0;
 
+        Log::info('Inserting cost history with small unit costs', [
+            'inventory_item_id' => $inventoryItem->id,
+            'warehouse_id' => $rejection->warehouse_id,
+            'warehouse_division_id' => $warehouseDivisionId,
+            'date' => $rejection->rejection_date,
+            'old_cost_small_unit' => $old_cost,
+            'new_cost_small_unit' => $mac,
+            'mac_small_unit' => $mac,
+            'type' => 'outlet_rejection',
+            'reference_type' => 'outlet_rejection',
+            'reference_id' => $rejection->id,
+            'last_cost_history' => $lastCostHistory
+        ]);
+
         DB::table('food_inventory_cost_histories')->insert([
             'inventory_item_id' => $inventoryItem->id,
             'warehouse_id' => $rejection->warehouse_id,
+            'warehouse_division_id' => $warehouseDivisionId,
             'date' => $rejection->rejection_date,
             'old_cost' => $old_cost,
             'new_cost' => $mac,
@@ -730,6 +950,11 @@ class OutletRejectionController extends Controller
             'reference_type' => 'outlet_rejection',
             'reference_id' => $rejection->id,
             'created_at' => now(),
+        ]);
+        
+        Log::info('Inventory processing completed successfully', [
+            'rejection_id' => $rejection->id,
+            'item_id' => $item->item_id
         ]);
     }
 
