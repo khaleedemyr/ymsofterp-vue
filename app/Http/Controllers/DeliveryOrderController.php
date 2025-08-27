@@ -428,29 +428,18 @@ class DeliveryOrderController extends Controller
                 }
             }
             
-            // Update status RO menjadi delivered
+            // Update status RO menjadi delivered hanya jika semua packing list sudah dibuat DO
             if ($isROSupplierGR) {
                 // Untuk RO Supplier GR, update status RO dari purchase order
                 $po = DB::table('purchase_order_foods')->where('id', $gr->po_id)->first();
                 if ($po && $po->source_id) {
-                    DB::table('food_floor_orders')
-                        ->where('id', $po->source_id)
-                        ->update([
-                            'status' => 'delivered',
-                            'updated_at' => now()
-                        ]);
-                    Log::info('Updated RO status to delivered for RO Supplier GR', ['ro_id' => $po->source_id]);
+                    // Cek apakah semua packing list untuk RO ini sudah dibuat DO
+                    $this->checkAndUpdateFloorOrderStatus($po->source_id, 'RO Supplier GR');
                 }
             } else {
-                // Untuk Packing List biasa, update status RO
+                // Untuk Packing List biasa, cek apakah semua packing list sudah dibuat DO
                 if ($floorOrderId) {
-                    DB::table('food_floor_orders')
-                        ->where('id', $floorOrderId)
-                        ->update([
-                            'status' => 'delivered',
-                            'updated_at' => now()
-                        ]);
-                    Log::info('Updated RO status to delivered for regular packing list', ['ro_id' => $floorOrderId]);
+                    $this->checkAndUpdateFloorOrderStatus($floorOrderId, 'Regular Packing List');
                 }
             }
             
@@ -469,31 +458,62 @@ class DeliveryOrderController extends Controller
             DB::commit();
             Log::info('Sukses simpan Delivery Order');
             $kasirName = DB::table('users')->where('id', auth()->id())->value('nama_lengkap');
-            // Ambil warehouse division dan warehouse name
-            $packingListFull = DB::table('food_packing_lists as pl')
-                ->leftJoin('warehouse_division as wd', 'pl.warehouse_division_id', '=', 'wd.id')
-                ->leftJoin('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
-                ->leftJoin('food_floor_orders as fo', 'pl.food_floor_order_id', '=', 'fo.id')
-                ->leftJoin('users as u', 'fo.user_id', '=', 'u.id')
-                ->where('pl.id', $request->packing_list_id)
-                ->select(
-                    'wd.name as division_name',
-                    'w.name as warehouse_name',
-                    'fo.order_number as ro_number',
-                    'fo.tanggal as ro_date',
-                    'u.nama_lengkap as ro_creator_name'
-                )
-                ->first();
-            return response()->json([
-                'success' => true,
-                'message' => 'Delivery Order berhasil disimpan!',
-                'kasir_name' => $kasirName,
-                'division_name' => $packingListFull->division_name ?? null,
-                'warehouse_name' => $packingListFull->warehouse_name ?? null,
-                'ro_number' => $packingListFull->ro_number ?? null,
-                'ro_date' => $packingListFull->ro_date ?? null,
-                'ro_creator_name' => $packingListFull->ro_creator_name ?? null
-            ]);
+            
+            // Ambil data untuk response berdasarkan jenis source
+            if ($isROSupplierGR) {
+                // Untuk RO Supplier GR, ambil data dari purchase order dan floor order
+                $roSupplierData = DB::table('food_good_receives as gr')
+                    ->leftJoin('purchase_order_foods as po', 'gr.po_id', '=', 'po.id')
+                    ->leftJoin('food_floor_orders as fo', 'po.source_id', '=', 'fo.id')
+                    ->leftJoin('users as u', 'fo.user_id', '=', 'u.id')
+                    ->where('gr.id', $grId)
+                    ->select(
+                        DB::raw("'Perishable' as division_name"),
+                        DB::raw("'Warehouse 1' as warehouse_name"),
+                        'fo.order_number as ro_number',
+                        'fo.tanggal as ro_date',
+                        'u.nama_lengkap as ro_creator_name'
+                    )
+                    ->first();
+                
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Delivery Order berhasil disimpan!',
+                    'kasir_name' => $kasirName,
+                    'division_name' => $roSupplierData->division_name ?? null,
+                    'warehouse_name' => $roSupplierData->warehouse_name ?? null,
+                    'ro_number' => $roSupplierData->ro_number ?? null,
+                    'ro_date' => $roSupplierData->ro_date ?? null,
+                    'ro_creator_name' => $roSupplierData->ro_creator_name ?? null
+                ]);
+            } else {
+                // Untuk Packing List biasa, ambil data dari packing list
+                $packingListFull = DB::table('food_packing_lists as pl')
+                    ->leftJoin('warehouse_division as wd', 'pl.warehouse_division_id', '=', 'wd.id')
+                    ->leftJoin('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
+                    ->leftJoin('food_floor_orders as fo', 'pl.food_floor_order_id', '=', 'fo.id')
+                    ->leftJoin('users as u', 'fo.user_id', '=', 'u.id')
+                    ->where('pl.id', $request->packing_list_id)
+                    ->select(
+                        'wd.name as division_name',
+                        'w.name as warehouse_name',
+                        'fo.order_number as ro_number',
+                        'fo.tanggal as ro_date',
+                        'u.nama_lengkap as ro_creator_name'
+                    )
+                    ->first();
+                
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Delivery Order berhasil disimpan!',
+                    'kasir_name' => $kasirName,
+                    'division_name' => $packingListFull->division_name ?? null,
+                    'warehouse_name' => $packingListFull->warehouse_name ?? null,
+                    'ro_number' => $packingListFull->ro_number ?? null,
+                    'ro_date' => $packingListFull->ro_date ?? null,
+                    'ro_creator_name' => $packingListFull->ro_creator_name ?? null
+                ]);
+            }
         } catch (\Exception $e) {
             DB::rollBack();
             Log::error('Gagal simpan Delivery Order: ' . $e->getMessage(), ['trace' => $e->getTraceAsString()]);
@@ -748,6 +768,23 @@ class DeliveryOrderController extends Controller
             DB::table('delivery_order_items')->where('delivery_order_id', $id)->delete();
             // Hapus delivery_order
             DB::table('delivery_orders')->where('id', $id)->delete();
+            
+            // Check and update floor order status after DO deletion
+            if ($order->packing_list_id) {
+                $packingList = DB::table('food_packing_lists')->where('id', $order->packing_list_id)->first();
+                if ($packingList && $packingList->food_floor_order_id) {
+                    $this->checkAndUpdateFloorOrderStatus($packingList->food_floor_order_id, 'Regular Packing List');
+                }
+            } elseif ($order->ro_supplier_gr_id) {
+                // Untuk RO Supplier GR, ambil floor order ID dari purchase order
+                $gr = DB::table('food_good_receives')->where('id', $order->ro_supplier_gr_id)->first();
+                if ($gr) {
+                    $po = DB::table('purchase_order_foods')->where('id', $gr->po_id)->first();
+                    if ($po && $po->source_id) {
+                        $this->checkAndUpdateFloorOrderStatus($po->source_id, 'RO Supplier GR');
+                    }
+                }
+            }
             // Log activity
             DB::table('activity_logs')->insert([
                 'user_id' => auth()->id(),
@@ -1175,5 +1212,96 @@ class DeliveryOrderController extends Controller
 
         // Return Excel export using the Responsable interface
         return (new \App\Exports\DeliveryOrderDetailExport($detailResults))->toResponse($request);
+    }
+
+    /**
+     * Check and update floor order status to delivered only if all packing lists have been created DO
+     */
+    private function checkAndUpdateFloorOrderStatus($floorOrderId, $sourceType)
+    {
+        Log::info('Checking floor order status', [
+            'floor_order_id' => $floorOrderId,
+            'source_type' => $sourceType
+        ]);
+
+        if ($sourceType === 'RO Supplier GR') {
+            // Untuk RO Supplier GR, langsung update status ke delivered karena tidak ada packing list
+            Log::info('RO Supplier GR detected, updating status to delivered', [
+                'floor_order_id' => $floorOrderId
+            ]);
+            
+            DB::table('food_floor_orders')
+                ->where('id', $floorOrderId)
+                ->update([
+                    'status' => 'delivered',
+                    'updated_at' => now()
+                ]);
+            
+            Log::info('Updated RO Supplier GR floor order status to delivered', [
+                'floor_order_id' => $floorOrderId
+            ]);
+            return;
+        }
+
+        // Get all packing lists for this floor order
+        $allPackingLists = DB::table('food_packing_lists')
+            ->where('food_floor_order_id', $floorOrderId)
+            ->get();
+
+        Log::info('All packing lists for floor order', [
+            'floor_order_id' => $floorOrderId,
+            'total_packing_lists' => $allPackingLists->count(),
+            'packing_lists' => $allPackingLists->pluck('id')->toArray()
+        ]);
+
+        // Jika tidak ada packing list sama sekali, berarti ini floor order yang belum dibuat packing list
+        // Status tetap sesuai status sebelumnya (approved atau packing)
+        if ($allPackingLists->count() == 0) {
+            Log::info('No packing lists found for floor order, keeping current status', [
+                'floor_order_id' => $floorOrderId
+            ]);
+            return;
+        }
+
+        // Get packing list IDs that have been created DO
+        $packingListIds = $allPackingLists->pluck('id')->toArray();
+        $packingListsWithDO = DB::table('delivery_orders')
+            ->whereIn('packing_list_id', $packingListIds)
+            ->pluck('packing_list_id')
+            ->toArray();
+
+        Log::info('Packing lists with DO', [
+            'floor_order_id' => $floorOrderId,
+            'total_packing_lists' => count($packingListIds),
+            'packing_lists_with_do' => count($packingListsWithDO),
+            'packing_lists_with_do_ids' => $packingListsWithDO
+        ]);
+
+        // Check if all packing lists have been created DO
+        if (count($packingListsWithDO) === count($packingListIds)) {
+            Log::info('All packing lists have DO, updating floor order status to delivered', [
+                'floor_order_id' => $floorOrderId,
+                'source_type' => $sourceType
+            ]);
+            
+            // Update status to delivered
+            DB::table('food_floor_orders')
+                ->where('id', $floorOrderId)
+                ->update([
+                    'status' => 'delivered',
+                    'updated_at' => now()
+                ]);
+            
+            Log::info('Updated floor order status to delivered', [
+                'floor_order_id' => $floorOrderId,
+                'source_type' => $sourceType
+            ]);
+        } else {
+            Log::info('Not all packing lists have DO yet, keeping floor order status as packing', [
+                'floor_order_id' => $floorOrderId,
+                'source_type' => $sourceType,
+                'packing_lists_without_do' => array_diff($packingListIds, $packingListsWithDO)
+            ]);
+        }
     }
 } 

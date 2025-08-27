@@ -82,15 +82,34 @@ class ButcherProcessController extends Controller
             ->select(
                 'items.*',
                 'small_unit.id as small_unit_id',
-            'small_unit.name as small_unit_name',
+                'small_unit.name as small_unit_name',
                 'medium_unit.id as medium_unit_id',
-            'medium_unit.name as medium_unit_name',
-            'large_unit.id as large_unit_id',
+                'medium_unit.name as medium_unit_name',
+                'large_unit.id as large_unit_id',
                 'large_unit.name as large_unit_name',
                 'categories.code as category_code'
             )
             ->orderBy('items.name', 'asc')
             ->get();
+
+        // Filter out items that don't have any units configured
+        $pcsItems = $pcsItems->filter(function($item) {
+            return $item->small_unit_id || $item->medium_unit_id || $item->large_unit_id;
+        });
+
+        // Log items yang tidak memiliki unit untuk monitoring
+        $itemsWithoutUnits = Item::whereHas('category', function($q) {
+            $q->where('show_pos', '0');
+        })
+            ->where('items.status', 'active')
+            ->whereNull('small_unit_id')
+            ->whereNull('medium_unit_id')
+            ->whereNull('large_unit_id')
+            ->pluck('name', 'id');
+        
+        if ($itemsWithoutUnits->count() > 0) {
+            \Log::warning('Items without units found:', $itemsWithoutUnits->toArray());
+        }
 
         // Get good receives that have remaining quantity
         $goodReceives = FoodGoodReceive::whereHas('items', function($query) {

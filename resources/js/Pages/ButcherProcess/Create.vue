@@ -182,6 +182,10 @@
                     </div>
                     <!-- List PCS Items -->
                     <div class="mb-2 font-semibold">PCS Items</div>
+                    <div class="text-xs text-gray-600 mb-2">
+                      <i class="fas fa-info-circle mr-1"></i>
+                      Pilih item PCS, kemudian pilih unit yang tersedia untuk item tersebut (Small, Medium, atau Large)
+                    </div>
                     <!-- Header untuk kolom-kolom -->
                     <div class="grid grid-cols-1 lg:grid-cols-12 gap-3 mb-2 items-center text-xs font-medium text-gray-600 bg-gray-50 p-2 rounded">
                       <div class="lg:col-span-4">Item PCS</div>
@@ -211,10 +215,21 @@
                         />
                       </div>
                       <div class="lg:col-span-2">
-                        <select v-model="pcs.unit_id" class="rounded border-gray-300 w-full">
+                        <select v-model="pcs.unit_id" class="rounded border-gray-300 w-full" :class="{ 'border-red-300': !pcs.unit_id && pcs.pcs_item_id }">
                           <option value="">Pilih Unit</option>
                           <option v-for="u in pcs.unit_options || []" :key="u.id" :value="u.id">{{ u.name }}</option>
                         </select>
+                        <div v-if="!pcs.unit_id && pcs.pcs_item_id && pcs.unit_options && pcs.unit_options.length > 0" class="text-xs text-red-600 mt-1">
+                          Unit harus dipilih
+                        </div>
+                        <div v-if="pcs.pcs_item_id && (!pcs.unit_options || pcs.unit_options.length === 0)" class="text-xs text-orange-600 mt-1">
+                          <i class="fas fa-exclamation-triangle mr-1"></i>
+                          Item ini tidak memiliki unit yang valid. Silakan periksa konfigurasi unit di master data item.
+                        </div>
+                        <div v-if="pcs.pcs_item_id && pcs.unit_options && pcs.unit_options.length === 1" class="text-xs text-blue-600 mt-1">
+                          <i class="fas fa-info-circle mr-1"></i>
+                          Item ini hanya memiliki 1 unit yang tersedia.
+                        </div>
                       </div>
                       <div class="lg:col-span-1">
                         <input v-model="pcs.pcs_qty" type="number" min="0.01" step="0.01" placeholder="Qty PCS" class="rounded border-gray-300 w-full" />
@@ -360,6 +375,15 @@ const props = defineProps({
   pcsItems: Array
 })
 
+// Debug: Log PCS items data
+console.log('PCS Items from props:', props.pcsItems?.length || 0);
+if (props.pcsItems) {
+  const picanhaItem = props.pcsItems.find(item => item.name?.includes('Beef Picanha 200gr'));
+  if (picanhaItem) {
+    console.log('Found Picanha item in props:', picanhaItem);
+  }
+}
+
 const form = useForm({
   warehouse_id: '',
   good_receive_id: '',
@@ -485,7 +509,9 @@ const addPcsToWhole = (idx) => {
     pcs_unit: '',
     pcs_qty: '',
     qty: '',
-    costs_0: false
+    costs_0: false,
+    unit_options: [],
+    unit_id: ''
   })
 }
 const removePcsFromWhole = (idx, pcsIdx) => {
@@ -738,14 +764,74 @@ function onPcsSelect(idx, pcsIdx) {
   const selected = pcs.pcs_item_id;
   if (selected && selected.id) {
     pcs.pcs_item_name = selected.name;
-    pcs.unit_options = [
-      selected.small_unit_id ? { id: selected.small_unit_id, name: selected.small_unit_name } : null,
-      selected.medium_unit_id ? { id: selected.medium_unit_id, name: selected.medium_unit_name } : null,
-      selected.large_unit_id ? { id: selected.large_unit_id, name: selected.large_unit_name } : null,
-    ].filter(Boolean);
-    pcs.unit_id = '';
+    pcs.small_conversion_qty = selected.small_conversion_qty || 1;
+    
+    // Debug logging
+    console.log('Selected item:', selected.name);
+    console.log('Small unit:', selected.small_unit_id, selected.small_unit_name);
+    console.log('Medium unit:', selected.medium_unit_id, selected.medium_unit_name);
+    console.log('Large unit:', selected.large_unit_id, selected.large_unit_name);
+    
+    // Build unit options array with deduplication
+    const unitOptions = [];
+    const addedUnits = new Set();
+    
+    // Add units in order: small, medium, large
+    const unitsToAdd = [
+      { id: selected.small_unit_id, name: selected.small_unit_name },
+      { id: selected.medium_unit_id, name: selected.medium_unit_name },
+      { id: selected.large_unit_id, name: selected.large_unit_name }
+    ];
+    
+    console.log('Units to add:', unitsToAdd);
+    
+    unitsToAdd.forEach(unit => {
+      console.log('Processing unit:', unit);
+      if (unit.id && unit.name) {
+        const unitKey = `${unit.id}-${unit.name}`;
+        console.log('Unit key:', unitKey);
+        if (!addedUnits.has(unitKey)) {
+          unitOptions.push({ id: unit.id, name: unit.name });
+          addedUnits.add(unitKey);
+          console.log('Added unit:', unit);
+        } else {
+          console.log('Unit already exists, skipping:', unit);
+        }
+      } else {
+        console.log('Unit has null/empty id or name, skipping:', unit);
+      }
+    });
+    
+    console.log('After deduplication, unit options:', unitOptions);
+    
+    // If all units are the same, still show at least one
+    if (unitOptions.length === 0 && (selected.small_unit_id || selected.medium_unit_id || selected.large_unit_id)) {
+      console.log('No unit options after deduplication, trying fallback...');
+      // Get the first available unit
+      const firstUnit = unitsToAdd.find(unit => unit.id && unit.name);
+      if (firstUnit) {
+        unitOptions.push({ id: firstUnit.id, name: firstUnit.name });
+        console.log('Added fallback unit:', firstUnit);
+      } else {
+        console.log('No fallback unit found');
+      }
+    }
+    
+    console.log('Final unit options:', unitOptions);
+    
+    pcs.unit_options = unitOptions;
+    
+    // Auto-select if only one unit is available
+    if (unitOptions.length === 1) {
+      pcs.unit_id = unitOptions[0].id;
+      console.log('Auto-selected unit:', unitOptions[0].id, unitOptions[0].name);
+    } else {
+      pcs.unit_id = '';
+      console.log('No auto-select, unit_id set to empty. Unit options count:', unitOptions.length);
+    }
   } else {
     pcs.pcs_item_name = '';
+    pcs.small_conversion_qty = 1;
     pcs.unit_options = [];
     pcs.unit_id = '';
   }
@@ -820,9 +906,8 @@ const macPcsPreviewArray = computed(() => {
   return form.items.map(item => {
     if (!Array.isArray(item.pcs)) return [];
     return item.pcs.map(pcs => {
-      // Ambil small_conversion_qty dari PCS item
-      const smallConv = Number(pcs.small_conversion_qty) || 1;
-      return costPerGram.value * smallConv;
+      // Return cost per gram saja, tidak perlu multiply di sini
+      return costPerGram.value;
     });
   });
 });
@@ -861,10 +946,9 @@ function macPcsPerPcs(idx, pcsIdx) {
   const pcs = form.items[idx]?.pcs?.[pcsIdx];
   if (!pcs || !pcs.pcs_item_id || pcs.costs_0) return 0;
   const macPerGram = macPcsPreviewArray.value[idx]?.[pcsIdx] || 0;
-  // For multiselect, pcs.pcs_item_id is now an object
-  const pcsItem = pcs.pcs_item_id;
-  const smallConv = Number(pcsItem?.small_conversion_qty) || 1;
-  return macPerGram * smallConv;
+  // Use the small_conversion_qty stored in the pcs object
+  const smallConv = Number(pcs.small_conversion_qty) || 1;
+  return macPerGram * smallConv; // Sekarang benar: cost per gram × small conversion qty
 }
 </script> 
 

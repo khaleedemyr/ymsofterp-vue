@@ -746,6 +746,26 @@ Route::get('/outlet-internal-use-waste/{id}', [\App\Http\Controllers\OutletInter
 Route::delete('/outlet-internal-use-waste/{id}', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'destroy'])->name('outlet-internal-use-waste.destroy');
 Route::get('/outlet-internal-use-waste/get-item-units/{id}', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'getItemUnits'])->name('outlet-internal-use-waste.get-item-units');
 
+// Outlet Rejection Routes
+Route::middleware(['auth', 'verified'])->group(function () {
+    Route::get('/outlet-rejections', [\App\Http\Controllers\OutletRejectionController::class, 'index'])->name('outlet-rejections.index');
+    Route::get('/outlet-rejections/create', [\App\Http\Controllers\OutletRejectionController::class, 'create'])->name('outlet-rejections.create');
+    Route::post('/outlet-rejections', [\App\Http\Controllers\OutletRejectionController::class, 'store'])->name('outlet-rejections.store');
+    Route::get('/outlet-rejections/{outletRejection}', [\App\Http\Controllers\OutletRejectionController::class, 'show'])->name('outlet-rejections.show');
+    Route::get('/outlet-rejections/{outletRejection}/edit', [\App\Http\Controllers\OutletRejectionController::class, 'edit'])->name('outlet-rejections.edit');
+    Route::put('/outlet-rejections/{outletRejection}', [\App\Http\Controllers\OutletRejectionController::class, 'update'])->name('outlet-rejections.update');
+    Route::delete('/outlet-rejections/{outletRejection}', [\App\Http\Controllers\OutletRejectionController::class, 'destroy'])->name('outlet-rejections.destroy');
+    
+    // Workflow actions
+    Route::post('/outlet-rejections/{outletRejection}/approve-assistant-ssd-manager', [\App\Http\Controllers\OutletRejectionController::class, 'approveAssistantSsdManager'])->name('outlet-rejections.approve-assistant-ssd-manager');
+Route::post('/outlet-rejections/{outletRejection}/approve-ssd-manager', [\App\Http\Controllers\OutletRejectionController::class, 'approveSsdManager'])->name('outlet-rejections.approve-ssd-manager');
+Route::post('/outlet-rejections/{outletRejection}/cancel', [\App\Http\Controllers\OutletRejectionController::class, 'cancel'])->name('outlet-rejections.cancel');
+    
+    // API endpoints
+    Route::get('/outlet-rejections/api/items', [\App\Http\Controllers\OutletRejectionController::class, 'getItems'])->name('outlet-rejections.api.items');
+    Route::get('/outlet-rejections/api/delivery-order-items', [\App\Http\Controllers\OutletRejectionController::class, 'getDeliveryOrderItems'])->name('outlet-rejections.api.delivery-order-items');
+    Route::get('/outlet-rejections/api/filtered-delivery-orders', [\App\Http\Controllers\OutletRejectionController::class, 'getFilteredDeliveryOrders'])->name('outlet-rejections.api.filtered-delivery-orders');
+});
 
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::resource('retail-food', RetailFoodController::class);

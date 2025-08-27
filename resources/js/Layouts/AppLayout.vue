@@ -193,6 +193,7 @@ const menuGroups = [
             { name: () => 'Laporan Aging Persediaan', icon: 'fa-solid fa-hourglass-half', route: '/inventory/aging-report', code: 'inventory_aging_report' },
             { name: () => 'Internal Use & Waste', icon: 'fa-solid fa-recycle', route: '/internal-use-waste', code: 'internal_use_waste' },
             { name: () => 'Penjualan Antar Gudang', icon: 'fas fa-exchange-alt', route: '/warehouse-sales', code: 'warehouse_sales' },
+            { name: () => 'Outlet Rejection', icon: 'fas fa-undo', route: '/outlet-rejections', code: 'outlet_rejection' },
         ],
     },
     {
