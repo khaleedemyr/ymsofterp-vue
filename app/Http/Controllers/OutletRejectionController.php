@@ -19,8 +19,17 @@ class OutletRejectionController extends Controller
 {
     public function index(Request $request)
     {
-        $query = OutletRejection::with(['outlet', 'warehouse', 'deliveryOrder', 'createdBy', 'approvedBy', 'completedBy'])
-            ->orderBy('created_at', 'desc');
+        $query = OutletRejection::with([
+            'outlet', 
+            'warehouse', 
+            'deliveryOrder', 
+            'createdBy:id,nama_lengkap',
+            'approvedBy:id,nama_lengkap',
+            'completedBy:id,nama_lengkap',
+            'assistantSsdManager:id,nama_lengkap',
+            'ssdManager:id,nama_lengkap'
+        ])
+        ->orderBy('created_at', 'desc');
 
         // Filters
         if ($request->filled('search')) {
@@ -57,6 +66,23 @@ class OutletRejectionController extends Controller
         }
 
         $rejections = $query->paginate($request->get('per_page', 15));
+
+        // Transform data to include approval information
+        $rejections->getCollection()->transform(function ($rejection) {
+            // Add approval information
+            $rejection->approval_info = [
+                'created_by' => $rejection->createdBy ? $rejection->createdBy->nama_lengkap : null,
+                'created_at' => $rejection->created_at ? $rejection->created_at->format('d/m/Y H:i') : null,
+                'assistant_ssd_manager' => $rejection->assistantSsdManager ? $rejection->assistantSsdManager->nama_lengkap : null,
+                'assistant_ssd_manager_at' => $rejection->assistant_ssd_manager_approved_at ? $rejection->assistant_ssd_manager_approved_at->format('d/m/Y H:i') : null,
+                'ssd_manager' => $rejection->ssdManager ? $rejection->ssdManager->nama_lengkap : null,
+                'ssd_manager_at' => $rejection->ssd_manager_approved_at ? $rejection->ssd_manager_approved_at->format('d/m/Y H:i') : null,
+                'completed_by' => $rejection->completedBy ? $rejection->completedBy->nama_lengkap : null,
+                'completed_at' => $rejection->completed_at ? $rejection->completed_at->format('d/m/Y H:i') : null,
+            ];
+            
+            return $rejection;
+        });
 
         // Get filter options
         $outlets = Outlet::select('id_outlet', 'nama_outlet')->orderBy('nama_outlet')->get();
@@ -197,14 +223,26 @@ class OutletRejectionController extends Controller
             'outlet', 
             'warehouse', 
             'deliveryOrder', 
-            'createdBy', 
-            'approvedBy', 
-            'completedBy',
+            'createdBy:id,nama_lengkap', 
+            'approvedBy:id,nama_lengkap', 
+            'completedBy:id,nama_lengkap',
             'assistantSsdManager:id,nama_lengkap',
             'ssdManager:id,nama_lengkap',
             'items.item',
             'items.unit'
         ])->findOrFail($id);
+
+        // Add approval information to rejection object
+        $rejection->approval_info = [
+            'created_by' => $rejection->createdBy ? $rejection->createdBy->nama_lengkap : null,
+            'created_at' => $rejection->created_at ? $rejection->created_at->format('d/m/Y H:i') : null,
+            'assistant_ssd_manager' => $rejection->assistantSsdManager ? $rejection->assistantSsdManager->nama_lengkap : null,
+            'assistant_ssd_manager_at' => $rejection->assistant_ssd_manager_approved_at ? $rejection->assistant_ssd_manager_approved_at->format('d/m/Y H:i') : null,
+            'ssd_manager' => $rejection->ssdManager ? $rejection->ssdManager->nama_lengkap : null,
+            'ssd_manager_at' => $rejection->ssd_manager_approved_at ? $rejection->ssd_manager_approved_at->format('d/m/Y H:i') : null,
+            'completed_by' => $rejection->completedBy ? $rejection->completedBy->nama_lengkap : null,
+            'completed_at' => $rejection->completed_at ? $rejection->completed_at->format('d/m/Y H:i') : null,
+        ];
 
         // Get document flow information if delivery order exists
         $documentFlowInfo = null;
@@ -281,6 +319,14 @@ class OutletRejectionController extends Controller
     public function edit($id)
     {
         $rejection = OutletRejection::with([
+            'outlet',
+            'warehouse',
+            'deliveryOrder',
+            'createdBy:id,nama_lengkap',
+            'approvedBy:id,nama_lengkap',
+            'completedBy:id,nama_lengkap',
+            'assistantSsdManager:id,nama_lengkap',
+            'ssdManager:id,nama_lengkap',
             'items.item',
             'items.unit'
         ])->findOrFail($id);
@@ -1176,6 +1222,7 @@ class OutletRejectionController extends Controller
     private function getFilteredDeliveryOrdersData($outletId, $warehouseId)
     {
         // Get delivery orders that have items with remaining qty in good receive
+        // Exclude delivery orders that already have outlet rejections
         $deliveryOrders = DB::table('delivery_orders as do')
             ->leftJoin('food_packing_lists as pl', 'do.packing_list_id', '=', 'pl.id')
             ->leftJoin('food_floor_orders as fo', 'pl.food_floor_order_id', '=', 'fo.id')
@@ -1189,6 +1236,13 @@ class OutletRejectionController extends Controller
             ->where('o.id_outlet', $outletId)
             ->where('pl.warehouse_division_id', $warehouseId)
             ->where('gri.remaining_qty', '>', 0) // Only items with remaining qty
+            ->whereNotExists(function($query) {
+                // Exclude delivery orders that already have outlet rejections
+                $query->select(DB::raw(1))
+                      ->from('outlet_rejections as or')
+                      ->whereRaw('or.delivery_order_id = do.id')
+                      ->where('or.status', '!=', 'cancelled'); // Allow cancelled rejections to be reused
+            })
             ->select(
                 'do.*',
                 'fo.order_number as floor_order_number',

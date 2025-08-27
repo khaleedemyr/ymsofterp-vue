@@ -138,20 +138,26 @@
               <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 <div>
                   <label class="block text-sm font-medium text-gray-700">Created By</label>
-                  <p class="text-gray-900">{{ rejection.created_by_user?.name }}</p>
-                  <p class="text-sm text-gray-500">{{ formatDateTime(rejection.created_at) }}</p>
+                  <p class="text-gray-900">{{ rejection.approval_info?.created_by || rejection.createdBy?.nama_lengkap || '-' }}</p>
+                  <p class="text-sm text-gray-500">{{ rejection.approval_info?.created_at || formatDateTime(rejection.created_at) }}</p>
                 </div>
                 
-                <div v-if="rejection.approved_by_user">
-                  <label class="block text-sm font-medium text-gray-700">Approved By</label>
-                  <p class="text-gray-900">{{ rejection.approved_by_user.name }}</p>
-                  <p class="text-sm text-gray-500">{{ formatDateTime(rejection.approved_at) }}</p>
+                <div v-if="rejection.approval_info?.assistant_ssd_manager || rejection.assistantSsdManager?.nama_lengkap">
+                  <label class="block text-sm font-medium text-gray-700">Assistant SSD Manager</label>
+                  <p class="text-gray-900">{{ rejection.approval_info?.assistant_ssd_manager || rejection.assistantSsdManager?.nama_lengkap }}</p>
+                  <p class="text-sm text-gray-500">{{ rejection.approval_info?.assistant_ssd_manager_at || formatDateTime(rejection.assistant_ssd_manager_approved_at) }}</p>
                 </div>
                 
-                <div v-if="rejection.completed_by_user">
+                <div v-if="rejection.approval_info?.ssd_manager || rejection.ssdManager?.nama_lengkap">
+                  <label class="block text-sm font-medium text-gray-700">SSD Manager</label>
+                  <p class="text-gray-900">{{ rejection.approval_info?.ssd_manager || rejection.ssdManager?.nama_lengkap }}</p>
+                  <p class="text-sm text-gray-500">{{ rejection.approval_info?.ssd_manager_at || formatDateTime(rejection.ssd_manager_approved_at) }}</p>
+                </div>
+                
+                <div v-if="rejection.approval_info?.completed_by || rejection.completedBy?.nama_lengkap">
                   <label class="block text-sm font-medium text-gray-700">Completed By</label>
-                  <p class="text-gray-900">{{ rejection.completed_by_user.name }}</p>
-                  <p class="text-sm text-gray-500">{{ formatDateTime(rejection.completed_at) }}</p>
+                  <p class="text-gray-900">{{ rejection.approval_info?.completed_by || rejection.completedBy?.nama_lengkap }}</p>
+                  <p class="text-sm text-gray-500">{{ rejection.approval_info?.completed_at || formatDateTime(rejection.completed_at) }}</p>
                 </div>
               </div>
             </div>

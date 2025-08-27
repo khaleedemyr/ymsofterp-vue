@@ -143,6 +143,12 @@
                       Created By
                     </th>
                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Approved By
+                    </th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Completed By
+                    </th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Actions
                     </th>
                   </tr>
@@ -176,7 +182,26 @@
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap">
                       <div class="text-sm text-gray-900">
-                        {{ rejection.created_by_user?.name }}
+                        <div>{{ rejection.approval_info?.created_by || rejection.createdBy?.nama_lengkap || '-' }}</div>
+                        <div class="text-xs text-gray-500">{{ rejection.approval_info?.created_at || formatDateTime(rejection.created_at) }}</div>
+                      </div>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                      <div class="text-sm text-gray-900">
+                        <div v-if="rejection.approval_info?.ssd_manager || rejection.ssdManager?.nama_lengkap">
+                          <div>{{ rejection.approval_info?.ssd_manager || rejection.ssdManager?.nama_lengkap }}</div>
+                          <div class="text-xs text-gray-500">{{ rejection.approval_info?.ssd_manager_at || formatDateTime(rejection.ssd_manager_approved_at) }}</div>
+                        </div>
+                        <div v-else class="text-gray-400">-</div>
+                      </div>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                      <div class="text-sm text-gray-900">
+                        <div v-if="rejection.approval_info?.completed_by || rejection.completedBy?.nama_lengkap">
+                          <div>{{ rejection.approval_info?.completed_by || rejection.completedBy?.nama_lengkap }}</div>
+                          <div class="text-xs text-gray-500">{{ rejection.approval_info?.completed_at || formatDateTime(rejection.completed_at) }}</div>
+                        </div>
+                        <div v-else class="text-gray-400">-</div>
                       </div>
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
@@ -300,6 +325,16 @@ const formatDate = (date) => {
     year: 'numeric',
     month: 'short',
     day: 'numeric'
+  })
+}
+
+const formatDateTime = (date) => {
+  return new Date(date).toLocaleDateString('id-ID', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: 'numeric'
   })
 }
 
