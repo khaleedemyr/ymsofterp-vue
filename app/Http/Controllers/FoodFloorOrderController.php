@@ -284,6 +284,11 @@ class FoodFloorOrderController extends Controller
         ]);
         \Log::info('FO status & nomor diupdate', ['id' => $order->id, 'status' => $order->status, 'order_number' => $order_number]);
 
+        // Kirim notifikasi jika RO Khusus
+        if ($order->fo_mode === 'RO Khusus' && $order->status === 'submitted') {
+            $this->sendNotificationByWarehouse($order->warehouse_outlet_id, $order->id, $order_number);
+        }
+
         return response()->json(['success' => true]);
     }
 
@@ -349,11 +354,12 @@ class FoodFloorOrderController extends Controller
         $user = Auth::user();
         $order = \App\Models\FoodFloorOrder::findOrFail($id);
 
-        // Cek hak akses
+        // Cek hak akses berdasarkan warehouse outlet
         $isSuperadmin = $user->id_role === '5af56935b011a' && $user->status === 'A';
-        $isExecutiveChef = $user->id_jabatan == 163 && $user->status === 'A';
-        if (!($isSuperadmin || $isExecutiveChef)) {
-            abort(403, 'Unauthorized');
+        $canApprove = $this->canUserApproveByWarehouse($user, $order->warehouse_outlet_id);
+        
+        if (!($isSuperadmin || $canApprove)) {
+            abort(403, 'Unauthorized - Anda tidak memiliki hak untuk approve RO Khusus untuk warehouse outlet ini');
         }
 
         if (($order->fo_mode !== 'RO Khusus') || $order->status !== 'submitted') {
@@ -377,6 +383,88 @@ class FoodFloorOrderController extends Controller
             'new_data' => $order->fresh()->toArray(),
         ]);
         return redirect()->back()->with('success', 'Floor Order berhasil di-approve');
+    }
+
+    // Method untuk mengecek apakah user bisa approve berdasarkan warehouse outlet
+    private function canUserApproveByWarehouse($user, $warehouseOutletId)
+    {
+        // Ambil warehouse outlet
+        $warehouseOutlet = \DB::table('warehouse_outlets')->where('id', $warehouseOutletId)->first();
+        if (!$warehouseOutlet) {
+            return false;
+        }
+
+        $warehouseName = $warehouseOutlet->name;
+        $userJabatan = $user->id_jabatan;
+        $userStatus = $user->status;
+
+        // Cek berdasarkan nama warehouse outlet
+        switch ($warehouseName) {
+            case 'Kitchen':
+                return in_array($userJabatan, [174, 180, 345, 346, 347, 348, 349]) && $userStatus === 'A';
+            case 'Bar':
+                return in_array($userJabatan, [175, 182, 323]) && $userStatus === 'A';
+            case 'Service':
+                return in_array($userJabatan, [176, 322, 164, 321]) && $userStatus === 'A';
+            default:
+                return false;
+        }
+    }
+
+    // Method untuk mengirim notifikasi berdasarkan warehouse outlet
+    private function sendNotificationByWarehouse($warehouseOutletId, $orderId, $orderNumber)
+    {
+        // Ambil warehouse outlet
+        $warehouseOutlet = \DB::table('warehouse_outlets')->where('id', $warehouseOutletId)->first();
+        if (!$warehouseOutlet) {
+            return;
+        }
+
+        $warehouseName = $warehouseOutlet->name;
+        $jabatanIds = [];
+
+        // Tentukan jabatan berdasarkan nama warehouse outlet
+        switch ($warehouseName) {
+            case 'Kitchen':
+                $jabatanIds = [174, 180, 345, 346, 347, 348, 349];
+                break;
+            case 'Bar':
+                $jabatanIds = [175, 182, 323];
+                break;
+            case 'Service':
+                $jabatanIds = [176, 322, 164, 321];
+                break;
+            default:
+                return; // Tidak ada notifikasi untuk warehouse outlet lain
+        }
+
+        // Ambil user yang memiliki jabatan tersebut dan status aktif
+        $users = \DB::table('users')
+            ->whereIn('id_jabatan', $jabatanIds)
+            ->where('status', 'A')
+            ->pluck('id')
+            ->toArray();
+
+        if (empty($users)) {
+            return;
+        }
+
+        // Kirim notifikasi
+        $now = now();
+        $data = [];
+        foreach ($users as $userId) {
+            $data[] = [
+                'user_id' => $userId,
+                'type' => 'floor_order_approval',
+                'title' => 'Approval RO Khusus',
+                'message' => "RO Khusus {$orderNumber} dari warehouse {$warehouseName} menunggu approval Anda.",
+                'url' => route('floor-order.show', $orderId),
+                'is_read' => 0,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ];
+        }
+        \DB::table('notifications')->insert($data);
     }
 
     public function index(Request $request)

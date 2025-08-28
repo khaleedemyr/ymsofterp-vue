@@ -64,14 +64,41 @@ const grandTotalSupplier = computed(() => {
 const isSuperadmin = computed(() =>
   props.user?.id_role === '5af56935b011a' && props.user?.status === 'A'
 );
-const isExecutiveChef = computed(() =>
-  props.user?.id_jabatan === 163 && props.user?.status === 'A'
-);
-const canApproveFO = computed(() =>
-  (props.order.fo_mode === 'RO Khusus' || props.order.fo_mode === 'RO Supplier') &&
-  props.order.status === 'submitted' &&
-  (isExecutiveChef.value || isSuperadmin.value)
-);
+
+// Function untuk mengecek apakah user bisa approve berdasarkan warehouse outlet
+const canUserApproveByWarehouse = (user, warehouseOutletName) => {
+  if (!user || !warehouseOutletName) return false;
+  
+  const userJabatan = user.id_jabatan;
+  const userStatus = user.status;
+  
+  switch (warehouseOutletName) {
+    case 'Kitchen':
+      return [174, 180, 345, 346, 347, 348, 349].includes(userJabatan) && userStatus === 'A';
+    case 'Bar':
+      return [175, 182, 323].includes(userJabatan) && userStatus === 'A';
+    case 'Service':
+      return [176, 322, 164, 321].includes(userJabatan) && userStatus === 'A';
+    default:
+      return false;
+  }
+};
+
+const canApproveFO = computed(() => {
+  // Untuk RO Supplier, tetap menggunakan logika lama (Executive Chef atau Superadmin)
+  if (props.order.fo_mode === 'RO Supplier') {
+    const isExecutiveChef = props.user?.id_jabatan === 163 && props.user?.status === 'A';
+    return props.order.status === 'submitted' && (isExecutiveChef || isSuperadmin.value);
+  }
+  
+  // Untuk RO Khusus, cek berdasarkan warehouse outlet
+  if (props.order.fo_mode === 'RO Khusus' && props.order.status === 'submitted') {
+    const warehouseName = props.order.warehouse_outlet?.name;
+    return isSuperadmin.value || canUserApproveByWarehouse(props.user, warehouseName);
+  }
+  
+  return false;
+});
 
 async function approveFO() {
   const { value: note } = await Swal.fire({
@@ -133,6 +160,10 @@ async function approveFO() {
               <span class="text-xs text-gray-500">{{ props.order.fo_schedule.open_time }} - {{ props.order.fo_schedule.close_time }}</span>
             </div>
             <div v-else class="text-gray-400 italic">-</div>
+          </div>
+          <div>
+            <div class="text-xs text-gray-500">Warehouse Outlet</div>
+            <div class="font-semibold">{{ props.order.warehouse_outlet?.name || '-' }}</div>
           </div>
         </div>
         <div class="mb-2">
