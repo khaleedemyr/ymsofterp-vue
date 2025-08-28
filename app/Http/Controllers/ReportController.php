@@ -1995,11 +1995,12 @@ class ReportController extends Controller
             ]);
         }
         
-        // Retail Food
+        // Retail Food - hanya yang cash
         $retailFoods = \App\Models\RetailFood::with(['items', 'invoices'])
             ->where('outlet_id', $outletId)
             ->whereDate('transaction_date', $date)
             ->where('status', 'approved')
+            ->where('payment_method', 'cash')
             ->get()
             ->map(function($rf) {
                 return [

@@ -2,7 +2,6 @@
 import { ref, computed, watch } from 'vue';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import axios from 'axios';
-import { router } from '@inertiajs/vue3';
 import Swal from 'sweetalert2';
 
 const props = defineProps({
@@ -15,35 +14,19 @@ const selectedDivision = ref('');
 const items = ref([]);
 const loadingItems = ref(false);
 const error = ref('');
-const showPrint = ref(false);
-const showReasonModal = ref(false);
-const showPreviewModal = ref(false);
-const reason = ref('');
-const reasonOptions = [
-  'Stok di warehouse tidak cukup',
-  'Barang rusak/cacat',
-  'Barang sudah diganti item lain',
-  'Permintaan outlet berubah',
-  'Lainnya',
-];
-const reasonItemId = ref(null);
-const itemStocks = ref({});
 const isSubmitting = ref(false);
+
+// New RO selection variables
+const searchRO = ref('');
+const statusFilter = ref('');
+const selectedRO = ref(null);
+const viewMode = ref('cards');
 
 const foDetail = computed(() => props.floorOrders.find(f => f.id == selectedFO.value) || {});
 
 const selectedDivisionName = computed(() => {
   const div = props.warehouseDivisions.find(d => d.id == selectedDivision.value);
   return div ? div.name : '-';
-});
-
-const filteredFOItems = computed(() => {
-  if (!foDetail.value || !selectedDivision.value) return [];
-  return (foDetail.value.items || []).filter(item => {
-    // warehouse_division_id bisa di item.item atau item langsung
-    const divId = item.item?.warehouse_division_id || item.warehouse_division_id;
-    return String(divId) === String(selectedDivision.value);
-  });
 });
 
 const itemsByCategory = computed(() => {
@@ -56,6 +39,67 @@ const itemsByCategory = computed(() => {
   return map;
 });
 
+// New RO selection computed properties
+const filteredROs = computed(() => {
+  let filtered = props.floorOrders || [];
+
+  if (searchRO.value) {
+    const search = searchRO.value.toLowerCase();
+    filtered = filtered.filter(ro => 
+      ro.outlet?.nama_outlet?.toLowerCase().includes(search) ||
+      ro.order_number?.toLowerCase().includes(search) ||
+      ro.user?.nama_lengkap?.toLowerCase().includes(search) ||
+      formatDate(ro.tanggal).toLowerCase().includes(search)
+    );
+  }
+
+  if (statusFilter.value) {
+    filtered = filtered.filter(ro => ro.status === statusFilter.value);
+  }
+
+  return filtered;
+});
+
+const selectedROData = computed(() => {
+  return props.floorOrders?.find(ro => ro.id === selectedRO.value);
+});
+
+// Methods
+const formatDate = (date) => {
+  if (!date) return '-';
+  return new Date(date).toLocaleDateString('id-ID', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric'
+  });
+};
+
+const getStatusBadgeClass = (status) => {
+  switch (status) {
+    case 'approved':
+      return 'bg-green-100 text-green-800';
+    case 'packing':
+      return 'bg-yellow-100 text-yellow-800';
+    default:
+      return 'bg-gray-100 text-gray-800';
+  }
+};
+
+const selectRO = (roId) => {
+  selectedRO.value = roId;
+  selectedFO.value = roId;
+};
+
+const clearSelection = () => {
+  selectedRO.value = null;
+  selectedFO.value = '';
+};
+
+const clearSearch = () => {
+  searchRO.value = '';
+};
+
+// Original methods
 watch([selectedFO, selectedDivision], async ([fo, div]) => {
   if (fo && div) {
     loadingItems.value = true;
@@ -66,68 +110,24 @@ watch([selectedFO, selectedDivision], async ([fo, div]) => {
       });
       items.value = (res.data.items || []).map(item => ({
         ...item,
-        source: 'warehouse', // default
+        source: 'warehouse',
         checked: true,
-        input_qty: null // input qty kosong saat load
+        input_qty: null
       }));
-      // Fetch stock
-      const itemIds = items.value.map(i => i.item_id || i.item?.id).filter(Boolean);
-      if (itemIds.length) {
-        const stockRes = await axios.post('/api/packing-list/item-stocks', {
-          warehouse_division_id: div,
-          item_ids: itemIds
-        });
-        itemStocks.value = stockRes.data.stocks || {};
-      } else {
-        itemStocks.value = {};
-      }
     } catch (e) {
       error.value = 'Gagal mengambil data item.';
       items.value = [];
-      itemStocks.value = {};
     } finally {
       loadingItems.value = false;
     }
   } else {
     items.value = [];
-    itemStocks.value = {};
   }
 });
 
 async function onSubmit() {
   if (!selectedFO.value || !selectedDivision.value || items.value.length === 0) return;
-  // Tidak perlu lagi konfirmasi qty kurang, langsung preview
-  showPreviewModal.value = true;
-}
-
-async function confirmSubmit() {
-  // Loop untuk semua item checked yang butuh reason
-  for (let i = 0; i < items.value.length; i++) {
-    const item = items.value[i];
-    const qtyOrder = Number(item.qty ?? item.qty_order);
-    if (item.checked && Number(item.input_qty) < qtyOrder && (!item.reason || item.reason === '')) {
-      reasonItemId.value = item.id;
-      showReasonModal.value = true;
-      // Tunggu user memilih reason
-      await new Promise(resolve => {
-        const unwatch = watch(showReasonModal, (val) => {
-          if (!val) {
-            unwatch();
-            resolve();
-          }
-        });
-      });
-      // Setelah modal ditutup, cek lagi
-      if (!item.reason || item.reason === '') {
-        await Swal.fire({
-          icon: 'warning',
-          title: 'Alasan Wajib Diisi',
-          text: 'Ada item dengan qty kurang dari permintaan FO, alasan harus diisi!',
-        });
-        return;
-      }
-    }
-  }
+  
   const data = {
     food_floor_order_id: selectedFO.value,
     warehouse_division_id: selectedDivision.value,
@@ -141,9 +141,7 @@ async function confirmSubmit() {
         reason: i.reason || null
       }))
   };
-  // Debug: cek reason sebelum kirim ke backend
-  console.log('DATA TO BACKEND', JSON.parse(JSON.stringify(data)));
-  showPreviewModal.value = false;
+  
   isSubmitting.value = true;
   try {
     const res = await axios.post('/packing-list', data);
@@ -164,78 +162,253 @@ async function confirmSubmit() {
   }
 }
 
-function onQtyInput(item, idx) {
-  const qtyOrder = Number(item.qty ?? item.qty_order);
-  if (item.input_qty !== null && Number(item.input_qty) < qtyOrder) {
-    reasonItemId.value = item.id;
-    showReasonModal.value = true;
-  } else {
-    item.reason = '';
+// Watch for RO selection changes
+watch(selectedRO, (newValue) => {
+  if (newValue) {
+    selectedFO.value = newValue;
   }
-}
-
-function selectReason(r) {
-  if (reasonItemId.value !== null) {
-    const found = items.value.find(i => i.id === reasonItemId.value);
-    if (found) {
-      found.reason = r;
-      console.log('Reason set for id', reasonItemId.value, r, found);
-    }
-    reasonItemId.value = null;
-  }
-  showReasonModal.value = false;
-}
-
-function printFO() {
-  const printContents = document.getElementById('print-area').innerHTML;
-  const printWindow = window.open('', '', 'height=600,width=800');
-  printWindow.document.write('<html><head><title>Print FO</title>');
-  printWindow.document.write(
-    '<style>' +
-      'body{font-family:Arial,sans-serif;}' +
-      'table{border-collapse:collapse;width:100%;}' +
-      'th,td{border:1px solid #ddd;padding:8px;}' +
-      '.print-header { text-align:center; }' +
-      '.logo-print { max-width:180px; margin:0 auto 12px; display:block; }' +
-      '@media print {' +
-        '.print-header { display:block !important; }' +
-        '.logo-print { display:block !important; }' +
-      '}' +
-    '</style>'
-  );
-  printWindow.document.write('</head><body>');
-  printWindow.document.write(printContents);
-  printWindow.document.write('</body></html>');
-  printWindow.document.close();
-  printWindow.focus();
-  setTimeout(() => {
-    printWindow.print();
-    printWindow.close();
-  }, 500);
-}
+});
 </script>
+
 <template>
   <AppLayout>
-    <div class="max-w-3xl mx-auto py-8 px-2">
-      <h1 class="text-2xl font-bold text-gray-800 mb-6 flex items-center gap-2">
+    <div class="max-w-4xl mx-auto py-4 px-3">
+      <h1 class="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
         <i class="fa-solid fa-box text-blue-500"></i> Buat Packing List
       </h1>
-      <div class="mb-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">Request Order (RO)</label>
-          <select v-model="selectedFO" class="w-full rounded border-gray-300">
-            <option value="">Pilih Request Order (RO)</option>
-            <option v-for="fo in props.floorOrders" :key="fo.id" :value="fo.id">
-              {{ fo.outlet?.nama_outlet }}
-              <template v-if="fo.warehouse_outlet && fo.warehouse_outlet.name"> - {{ fo.warehouse_outlet.name }}</template>
-              <template v-else> -</template>
-              - {{ fo.tanggal }} - {{ fo.fo_mode }} - {{ fo.order_number }}
-            </option>
-          </select>
+
+      <!-- Step 1: RO Selection -->
+      <div class="mb-8">
+        <h2 class="text-lg font-semibold text-gray-700 mb-4">1. Pilih Request Order (RO)</h2>
+        
+        <!-- Search and Filter Section -->
+        <div class="bg-white p-3 rounded-lg border border-gray-200 mb-3">
+          <div class="space-y-3">
+            <!-- Search Box -->
+            <div>
+              <label class="block text-xs font-medium text-gray-700 mb-1">Cari RO</label>
+              <div class="relative">
+                <input 
+                  type="text" 
+                  v-model="searchRO" 
+                  placeholder="Outlet, nomor RO, atau tanggal..." 
+                  class="w-full px-3 py-2 pl-8 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                />
+                <div class="absolute left-2 top-2">
+                  <i class="fas fa-search text-gray-400 text-xs"></i>
+                </div>
+                <div v-if="searchRO" class="absolute right-2 top-2">
+                  <button @click="clearSearch" class="text-gray-400 hover:text-gray-600">
+                    <i class="fas fa-times text-xs"></i>
+                  </button>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Filter by Status -->
+            <div>
+              <label class="block text-xs font-medium text-gray-700 mb-1">Status</label>
+              <select v-model="statusFilter" class="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500">
+                <option value="">Semua Status</option>
+                <option value="approved">Approved</option>
+                <option value="packing">Packing</option>
+              </select>
+            </div>
+          </div>
         </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">Warehouse Division</label>
-          <select v-model="selectedDivision" class="w-full rounded border-gray-300">
+
+        <!-- RO Selection Cards -->
+        <div v-if="filteredROs.length > 0" class="space-y-3">
+          <div class="flex justify-between items-center">
+            <h3 class="text-sm font-semibold text-gray-900">
+              RO Tersedia ({{ filteredROs.length }})
+            </h3>
+            <div class="flex gap-1">
+              <button 
+                @click="viewMode = 'cards'" 
+                :class="[
+                  'px-2 py-1 rounded text-xs font-medium',
+                  viewMode === 'cards' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                ]"
+              >
+                <i class="fas fa-th-large mr-1"></i> Cards
+              </button>
+              <button 
+                @click="viewMode = 'list'" 
+                :class="[
+                  'px-2 py-1 rounded text-xs font-medium',
+                  viewMode === 'list' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                ]"
+              >
+                <i class="fas fa-list mr-1"></i> List
+              </button>
+            </div>
+          </div>
+
+          <!-- Cards View -->
+          <div v-if="viewMode === 'cards'" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+            <div 
+              v-for="ro in filteredROs" 
+              :key="ro.id"
+              @click="selectRO(ro.id)"
+              :class="[
+                'p-2 border rounded-md cursor-pointer transition-all hover:shadow-sm',
+                selectedRO === ro.id ? 'border-blue-500 bg-blue-50 ring-1 ring-blue-200' : 'border-gray-200 hover:border-blue-300'
+              ]"
+            >
+              <div class="flex justify-between items-start mb-1">
+                <div class="font-medium text-gray-900 text-xs truncate flex-1 mr-1">{{ ro.outlet?.nama_outlet || 'Unknown Outlet' }}</div>
+                <span :class="getStatusBadgeClass(ro.status)" class="text-xs px-1 py-0.5 rounded flex-shrink-0">
+                  {{ ro.status }}
+                </span>
+              </div>
+              <div class="text-xs font-mono text-blue-600 mb-1">{{ ro.order_number }}</div>
+                             <div class="text-xs text-gray-500 mb-1">
+                 <div class="flex items-center mb-0.5">
+                   <i class="fas fa-calendar mr-1 w-3"></i>
+                   <span class="truncate">{{ formatDate(ro.tanggal) }}</span>
+                 </div>
+                 <div class="flex items-center">
+                   <i class="fas fa-truck mr-1 w-3"></i>
+                   <span class="truncate">Kedatangan: {{ ro.arrival_date ? formatDate(ro.arrival_date) : '-' }}</span>
+                 </div>
+               </div>
+              <div class="text-xs text-gray-600 mb-1">
+                <i class="fas fa-user mr-1 w-3"></i>
+                <span class="truncate">{{ ro.user?.nama_lengkap || 'Unknown User' }}</span>
+              </div>
+              <div class="text-xs text-gray-500">
+                <i class="fas fa-boxes mr-1 w-3"></i>
+                {{ ro.items?.length || 0 }} items
+              </div>
+            </div>
+          </div>
+
+          <!-- List View -->
+          <div v-else class="bg-white border border-gray-200 rounded-md overflow-hidden">
+            <div class="overflow-x-auto">
+              <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                  <tr>
+                    <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Outlet</th>
+                    <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">RO</th>
+                    <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Tanggal</th>
+                    <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Kedatangan</th>
+                    <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                    <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Aksi</th>
+                  </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-gray-200">
+                  <tr 
+                    v-for="ro in filteredROs" 
+                    :key="ro.id"
+                    :class="[
+                      'hover:bg-gray-50 cursor-pointer',
+                      selectedRO === ro.id ? 'bg-blue-50' : ''
+                    ]"
+                    @click="selectRO(ro.id)"
+                  >
+                    <td class="px-3 py-2 whitespace-nowrap text-xs font-medium text-gray-900">
+                      {{ ro.outlet?.nama_outlet || 'Unknown Outlet' }}
+                    </td>
+                    <td class="px-3 py-2 whitespace-nowrap text-xs font-mono text-blue-600">
+                      {{ ro.order_number }}
+                    </td>
+                    <td class="px-3 py-2 whitespace-nowrap text-xs text-gray-500">
+                      {{ formatDate(ro.tanggal) }}
+                    </td>
+                    <td class="px-3 py-2 whitespace-nowrap text-xs text-gray-500">
+                      {{ ro.arrival_date ? formatDate(ro.arrival_date) : '-' }}
+                    </td>
+                    <td class="px-3 py-2 whitespace-nowrap">
+                      <span :class="getStatusBadgeClass(ro.status)" class="text-xs px-1.5 py-0.5 rounded">
+                        {{ ro.status }}
+                      </span>
+                    </td>
+                    <td class="px-3 py-2 whitespace-nowrap text-xs text-gray-500">
+                      <button 
+                        @click.stop="selectRO(ro.id)"
+                        class="text-blue-600 hover:text-blue-900 font-medium"
+                      >
+                        Pilih
+                      </button>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- No Results -->
+        <div v-else class="text-center py-8">
+          <i class="fas fa-search text-gray-400 text-2xl mb-2"></i>
+          <h3 class="text-sm font-medium text-gray-900 mb-1">Tidak ada RO ditemukan</h3>
+          <p class="text-xs text-gray-500">Coba ubah kata kunci pencarian atau filter status</p>
+        </div>
+
+        <!-- Selected RO Details -->
+        <div v-if="selectedRO" class="bg-blue-50 border border-blue-200 rounded-md p-3">
+          <h3 class="text-sm font-semibold text-blue-900 mb-2">RO Terpilih</h3>
+          <div class="grid grid-cols-2 gap-3 text-xs">
+            <div>
+              <label class="block text-xs font-medium text-blue-700">Outlet</label>
+              <p class="text-xs text-blue-900">{{ selectedROData?.outlet?.nama_outlet }}</p>
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-blue-700">Nomor RO</label>
+              <p class="text-xs font-mono text-blue-900">{{ selectedROData?.order_number }}</p>
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-blue-700">Tanggal</label>
+              <p class="text-xs text-blue-900">{{ formatDate(selectedROData?.tanggal) }}</p>
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-blue-700">Kedatangan</label>
+              <p class="text-xs text-blue-900">{{ selectedROData?.arrival_date ? formatDate(selectedROData?.arrival_date) : '-' }}</p>
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-blue-700">Status</label>
+              <p class="text-xs text-blue-900">{{ selectedROData?.status }}</p>
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-blue-700">Items</label>
+              <p class="text-xs text-blue-900">{{ selectedROData?.items?.length || 0 }} items</p>
+            </div>
+          </div>
+          <div class="mt-3 flex gap-2">
+            <button 
+              @click="clearSelection"
+              class="px-3 py-1 text-xs font-medium text-blue-700 bg-white border border-blue-300 rounded hover:bg-blue-50"
+            >
+              Pilih RO Lain
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 2: Warehouse Division Selection -->
+      <div v-if="selectedFO" id="warehouse-selection" class="mb-6">
+        <h2 class="text-sm font-semibold text-gray-700 mb-3">2. Pilih Warehouse Division</h2>
+        
+        <!-- Detail Request Order -->
+        <div class="bg-blue-50 border-l-4 border-blue-400 p-3 rounded mb-3">
+          <div class="font-bold text-blue-800 text-sm mb-1">Detail RO</div>
+          <div v-if="foDetail" class="text-xs space-y-1">
+            <div><b>Outlet:</b> {{ foDetail.outlet?.nama_outlet }}</div>
+            <div v-if="foDetail.warehouse_outlet && foDetail.warehouse_outlet.name"><b>Warehouse Outlet:</b> {{ foDetail.warehouse_outlet.name }}</div>
+            <div><b>Tanggal:</b> {{ formatDate(foDetail.tanggal) }}</div>
+            <div v-if="foDetail.arrival_date"><b>Kedatangan:</b> {{ formatDate(foDetail.arrival_date) }}</div>
+            <div><b>RO Mode:</b> {{ foDetail.fo_mode }}</div>
+            <div><b>Nomor:</b> {{ foDetail.order_number }}</div>
+            <div><b>Creator:</b> {{ foDetail.user?.nama_lengkap || '-' }}</div>
+          </div>
+        </div>
+
+        <!-- Warehouse Division Selection -->
+        <div class="mb-3">
+          <label class="block text-xs font-medium text-gray-700 mb-1">Warehouse Division</label>
+          <select v-model="selectedDivision" class="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500">
             <option value="">Pilih Warehouse Division</option>
             <option v-for="div in props.warehouseDivisions" :key="div.id" :value="div.id">
               {{ div.name }}
@@ -243,181 +416,59 @@ function printFO() {
           </select>
         </div>
       </div>
-      <div v-if="selectedFO">
-        <div class="bg-blue-50 border-l-4 border-blue-400 p-4 rounded mb-4">
-          <div class="font-bold text-blue-800 mb-1">Detail Request Order (RO)</div>
-          <div v-if="foDetail">
-            <div><b>Outlet:</b> {{ foDetail.outlet?.nama_outlet }}</div>
-            <div v-if="foDetail.warehouse_outlet && foDetail.warehouse_outlet.name"><b>Warehouse Outlet:</b> {{ foDetail.warehouse_outlet.name }}</div>
-            <div><b>Tanggal:</b> {{ foDetail.tanggal }}</div>
-            <div><b>RO Mode:</b> {{ foDetail.fo_mode }}</div>
-            <div><b>Nomor:</b> {{ foDetail.order_number }}</div>
-            <div><b>Creator:</b> {{ foDetail.user?.nama_lengkap || '-' }}</div>
-          </div>
+
+      <!-- Step 3: Items Selection -->
+      <div v-if="selectedFO && selectedDivision">
+        <h2 class="text-sm font-semibold text-gray-700 mb-3">3. Pilih Items untuk Packing</h2>
+        
+        <div v-if="!loadingItems && items.length === 0" class="text-center text-gray-500 my-6">
+          <p class="text-sm">Semua item di warehouse division ini sudah di-packing.</p>
         </div>
-        <button @click="showPrint = true" :disabled="!selectedDivision" class="mb-4 px-4 py-2 rounded bg-blue-500 text-white font-semibold hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed">
-          <i class="fas fa-print mr-2"></i> Print Preview Request Order (RO)
-        </button>
-      </div>
-      <div v-if="!loadingItems && items.length === 0 && selectedFO && selectedDivision" class="text-center text-gray-500 my-8">
-        Semua item di warehouse division ini sudah di-packing.
-      </div>
-      <div v-if="loadingItems" class="text-center py-8">
-        <i class="fas fa-spinner fa-spin text-blue-500 text-2xl"></i>
-        <p class="mt-2 text-gray-600">Memuat data item...</p>
-      </div>
-      <div v-if="error" class="text-red-600 mb-4">{{ error }}</div>
-      <div v-if="items.length">
-        <div v-for="(catItems, catName) in itemsByCategory" :key="catName" class="mb-6">
-          <div class="font-bold text-blue-700 text-lg mb-2">{{ catName }}</div>
-          <table class="w-full mb-2">
-            <thead>
-              <tr class="bg-blue-50">
-                <th class="py-2 text-left">No</th>
-                <th class="py-2 text-left">Pilih</th>
-                <th class="py-2 text-left">Nama Item</th>
-                <th class="py-2 text-left">Qty Order</th>
-                <th class="py-2 text-left">Input Qty</th>
-                <th class="py-2 text-left">Unit</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="(item, idx) in catItems" :key="item.id">
-                <td>{{ idx + 1 }}</td>
-                <td><input type="checkbox" v-model="item.checked" /></td>
-                <td>{{ item.item?.name || item.item_name }}
-                  <div class="text-xs text-gray-500 mt-1">
-                    Stok: <span :class="{'text-red-600 font-bold': item.stock === 0}">{{ item.stock }}</span> {{ item.unit }}
-                  </div>
-                </td>
-                <td>{{ item.qty ?? item.qty_order }}</td>
-                <td class="flex items-center gap-2">
-                  <input type="number" v-model.number="item.input_qty" min="0" :max="item.stock" step="0.01" class="w-20 rounded border-gray-300 text-right" :placeholder="'Qty'" @input="onQtyInput(item, idx)" />
-                  <button type="button" @click="item.input_qty = item.qty ?? item.qty_order" class="px-2 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200" title="Isi qty sesuai pesanan">=</button>
-                </td>
-                <td>{{ item.unit }}</td>
-              </tr>
-            </tbody>
-          </table>
+        
+        <div v-if="loadingItems" class="text-center py-6">
+          <i class="fas fa-spinner fa-spin text-blue-500 text-xl"></i>
+          <p class="mt-2 text-sm text-gray-600">Memuat data item...</p>
         </div>
-      </div>
-      <button @click="onSubmit" :disabled="!selectedFO || !selectedDivision || !items.length || isSubmitting" class="px-6 py-2 rounded bg-blue-600 text-white font-bold text-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed">
-        <i class="fas fa-save mr-2"></i> Submit
-        <span v-if="isSubmitting" class="ml-2"><i class="fas fa-spinner fa-spin"></i></span>
-      </button>
-      <div v-if="showPrint" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40">
-        <div class="bg-white rounded-xl shadow-lg w-full max-w-2xl p-6 relative" style="max-height:80vh; overflow-y:auto;">
-          <button @click="showPrint = false" class="absolute top-3 right-3 text-gray-400 hover:text-gray-600">
-            <i class="fas fa-times text-lg"></i>
-          </button>
-          <div id="print-area">
-            <div class="text-center mb-4 print-header">
-              <img src="/images/logojustusgroup.png" alt="Justus Group" class="logo-print" style="max-width: 180px; margin: 0 auto 12px; display:block;" />
-              <h2 style="font-size: 20px; font-weight: bold; margin-bottom: 8px;">FLOOR ORDER</h2>
-            </div>
-            <div class="mb-4 text-sm">
-              <div><b>Outlet:</b> {{ foDetail.outlet?.nama_outlet }}</div>
-              <div><b>Tanggal:</b> {{ foDetail.tanggal }}</div>
-              <div><b>RO Mode:</b> {{ foDetail.fo_mode }}</div>
-              <div><b>Nomor:</b> {{ foDetail.order_number }}</div>
-              <div><b>Creator:</b> {{ foDetail.user?.nama_lengkap || '-' }}</div>
-              <div><b>Warehouse Division:</b> {{ selectedDivisionName }}</div>
-            </div>
-            <template v-if="selectedDivision">
-              <div v-for="(catItems, catName) in itemsByCategory" :key="catName" class="mb-6">
-                <div class="font-bold text-blue-700 text-sm mb-1">{{ catName }}</div>
-                <table class="w-full text-xs border mb-2" style="border-collapse: collapse;">
-                  <thead class="bg-gray-100">
-                    <tr>
-                      <th class="border px-2 py-1">No</th>
-                      <th class="border px-2 py-1">Nama Item</th>
-                      <th class="border px-2 py-1">Qty</th>
-                      <th class="border px-2 py-1">Unit</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr v-for="(item, idx) in catItems" :key="item.id">
-                      <td class="border px-2 py-1">{{ idx + 1 }}</td>
-                      <td class="border px-2 py-1">{{ item.item?.name || item.item_name }}</td>
-                      <td class="border px-2 py-1">{{ item.input_qty ?? item.qty ?? item.qty_order }}</td>
-                      <td class="border px-2 py-1">{{ item.unit }}</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </template>
-            <template v-else>
-              <div class="text-center text-gray-500 py-8">Pilih Warehouse Division terlebih dahulu</div>
-            </template>
-          </div>
-          <div class="flex justify-end gap-2 mt-4">
-            <button @click="showPrint = false" class="px-4 py-2 text-gray-700 bg-gray-100 rounded hover:bg-gray-200">Tutup</button>
-            <button @click="printFO" :disabled="!selectedDivision" class="px-4 py-2 text-white bg-blue-500 rounded hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed">Print</button>
-          </div>
-        </div>
-      </div>
-      <div v-if="showReasonModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40">
-        <div class="bg-white rounded-xl shadow-lg w-full max-w-md p-6 relative">
-          <div class="font-bold text-lg mb-4 text-blue-700">Pilih Alasan Qty Kurang</div>
-          <div class="grid gap-3 mb-4">
-            <button v-for="r in reasonOptions" :key="r" @click="selectReason(r)" class="w-full px-4 py-2 rounded bg-blue-100 text-blue-800 font-semibold hover:bg-blue-200">{{ r }}</button>
-          </div>
-          <button @click="showReasonModal = false" class="px-4 py-2 text-gray-700 bg-gray-100 rounded hover:bg-gray-200 w-full">Batal</button>
-        </div>
-      </div>
-      <!-- Preview Modal -->
-      <div v-if="showPreviewModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40">
-        <div class="bg-white rounded-xl shadow-lg w-full max-w-4xl p-6 relative" style="max-height:90vh;">
-          <button @click="showPreviewModal = false" class="absolute top-3 right-3 text-gray-400 hover:text-gray-600">
-            <i class="fas fa-times text-lg"></i>
-          </button>
-          <h3 class="text-xl font-bold text-gray-800 mb-4">Preview Packing List</h3>
-          <div class="overflow-y-auto" style="max-height: calc(90vh - 180px);">
-            <div class="mb-4 text-sm">
-              <div><b>Outlet:</b> {{ foDetail.outlet?.nama_outlet }}</div>
-              <div><b>Tanggal:</b> {{ foDetail.tanggal }}</div>
-              <div><b>RO Mode:</b> {{ foDetail.fo_mode }}</div>
-              <div><b>Nomor:</b> {{ foDetail.order_number }}</div>
-              <div><b>Creator:</b> {{ foDetail.user?.nama_lengkap || '-' }}</div>
-              <div><b>Warehouse Division:</b> {{ selectedDivisionName }}</div>
-            </div>
-            <div v-for="(catItems, catName) in itemsByCategory" :key="catName" class="mb-6">
-              <div class="font-bold text-blue-700 text-lg mb-2">{{ catName }}</div>
-              <table class="w-full mb-2">
+        
+        <div v-if="error" class="text-red-600 mb-3 text-sm">{{ error }}</div>
+        
+        <div v-if="items.length">
+          <div v-for="(catItems, catName) in itemsByCategory" :key="catName" class="mb-4">
+            <div class="font-bold text-blue-700 text-sm mb-2">{{ catName }}</div>
+            <div class="overflow-x-auto">
+              <table class="w-full text-xs">
                 <thead>
                   <tr class="bg-blue-50">
-                    <th class="py-2 px-3 text-left">No</th>
-                    <th class="py-2 px-3 text-left">Nama Item</th>
-                    <th class="py-2 px-3 text-left">Qty Order</th>
-                    <th class="py-2 px-3 text-left">Qty Input</th>
-                    <th class="py-2 px-3 text-left">Unit</th>
-                    <th class="py-2 px-3 text-left">Alasan (jika ada)</th>
+                    <th class="py-1 px-2 text-left">No</th>
+                    <th class="py-1 px-2 text-left">Pilih</th>
+                    <th class="py-1 px-2 text-left">Nama Item</th>
+                    <th class="py-1 px-2 text-left">Qty Order</th>
+                    <th class="py-1 px-2 text-left">Input Qty</th>
+                    <th class="py-1 px-2 text-left">Unit</th>
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="(item, idx) in catItems.filter(i => i.checked)" :key="item.id" class="border-b">
-                    <td class="py-2 px-3">{{ idx + 1 }}</td>
-                    <td class="py-2 px-3">{{ item.item?.name || item.item_name }}</td>
-                    <td class="py-2 px-3">{{ item.qty ?? item.qty_order }}</td>
-                    <td class="py-2 px-3">{{ item.input_qty }}</td>
-                    <td class="py-2 px-3">{{ item.unit }}</td>
-                    <td class="py-2 px-3 text-red-600">{{ item.reason || '-' }}</td>
+                  <tr v-for="(item, idx) in catItems" :key="item.id" class="border-b">
+                    <td class="py-1 px-2">{{ idx + 1 }}</td>
+                    <td class="py-1 px-2"><input type="checkbox" v-model="item.checked" class="w-3 h-3" /></td>
+                    <td class="py-1 px-2">{{ item.item?.name || item.item_name }}</td>
+                    <td class="py-1 px-2">{{ item.qty ?? item.qty_order }}</td>
+                    <td class="py-1 px-2">
+                      <input type="number" v-model.number="item.input_qty" min="0" step="0.01" class="w-16 px-1 py-0.5 text-xs border border-gray-300 rounded text-right" :placeholder="'Qty'" />
+                    </td>
+                    <td class="py-1 px-2">{{ item.unit }}</td>
                   </tr>
                 </tbody>
               </table>
             </div>
           </div>
-          <div class="flex justify-end gap-2 mt-4 pt-4 border-t">
-            <button @click="showPreviewModal = false" class="px-4 py-2 text-gray-700 bg-gray-100 rounded hover:bg-gray-200">
-              <i class="fas fa-times mr-2"></i> Batal
-            </button>
-            <button @click="confirmSubmit" :disabled="isSubmitting" class="px-4 py-2 text-white bg-blue-500 rounded hover:bg-blue-600">
-              <i class="fas fa-check mr-2"></i> Konfirmasi Submit
-              <span v-if="isSubmitting" class="ml-2"><i class="fas fa-spinner fa-spin"></i></span>
-            </button>
-          </div>
         </div>
+        
+        <button @click="onSubmit" :disabled="!selectedFO || !selectedDivision || !items.length || isSubmitting" class="w-full px-4 py-2 rounded bg-blue-600 text-white font-semibold text-sm hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed">
+          <i class="fas fa-save mr-2"></i> Submit Packing List
+          <span v-if="isSubmitting" class="ml-2"><i class="fas fa-spinner fa-spin"></i></span>
+        </button>
       </div>
     </div>
   </AppLayout>
-</template> 
+</template>

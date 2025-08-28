@@ -31,6 +31,7 @@ const todaySchedules = ref([]);
 const todayScheduleNotes = ref('');
 const showPreview = ref(false);
 const isSubmitting = ref(false);
+const formSubmitted = ref(false);
 
 const warehouseOutlets = ref([]);
 const selectedWarehouseOutlet = ref(null);
@@ -46,6 +47,7 @@ const form = ref({
   tanggal: tanggal.value,
   description: '',
   fo_schedule_id: null,
+  arrival_date: '', // Default kosong agar user tidak lupa pilih
   items: [
     { item_id: '', item_name: '', qty: '', unit: '', price: 0, subtotal: 0, suggestions: [], showDropdown: false, loading: false, highlightedIndex: -1, _rowKey: Date.now() + '-' + Math.random() }
   ],
@@ -57,6 +59,7 @@ const itemInputRefs = ref([]);
 if (props.order) {
   form.value.tanggal = props.order.tanggal;
   form.value.description = props.order.description;
+  form.value.arrival_date = props.order.arrival_date || '';
   form.value.items = props.order.items?.map(item => ({ ...item, suggestions: [], showDropdown: false, loading: false, highlightedIndex: -1, _rowKey: Date.now() + '-' + Math.random() })) || form.value.items;
   selectedFOMode.value = props.order.fo_mode;
   mode.value = props.order.input_mode;
@@ -790,6 +793,18 @@ watch([jadwalSiap, showScheduleModal], ([val, modal]) => {
 function submitOrderWithLoading() {
   console.log('SUBMIT ORDER DIPANGGIL', draftId.value);
   
+  // Validasi tanggal kedatangan
+  if (!form.value.arrival_date) {
+    formSubmitted.value = true;
+    Swal.fire({
+      icon: 'error',
+      title: 'Tanggal Kedatangan Wajib Diisi',
+      text: 'Silakan pilih tanggal kedatangan barang sebelum mengirim RO.',
+      confirmButtonColor: '#3085d6',
+    });
+    return;
+  }
+  
   if (!draftId.value) {
     Swal.fire({
       icon: 'error',
@@ -976,6 +991,18 @@ watch(selectedWarehouseOutlet, (val) => {
           <option v-for="wh in warehouseOutlets" :key="wh.id" :value="wh.id">{{ wh.name }}</option>
         </select>
       </div>
+      <div class="mb-6">
+        <label class="block text-sm font-medium text-gray-700 mb-2">Tanggal Kedatangan <span class="text-red-500">*</span></label>
+        <input 
+          type="date" 
+          v-model="form.arrival_date" 
+          class="w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" 
+          :class="{ 'border-red-500': !form.arrival_date && formSubmitted }"
+          required
+        />
+        <p class="mt-1 text-sm text-gray-500">Pilih tanggal kapan barang diharapkan tiba</p>
+        <p v-if="!form.arrival_date && formSubmitted" class="mt-1 text-sm text-red-500">Tanggal kedatangan wajib diisi</p>
+      </div>
       <div v-if="selectedFOMode && !loading">
         <button 
           @click="checkFOSchedule"
@@ -1126,6 +1153,7 @@ watch(selectedWarehouseOutlet, (val) => {
                 </select>
               </div>
             </div>
+
             <div class="mb-4">
               <label class="block text-sm font-medium text-gray-700">Keterangan</label>
               <input type="text" v-model="form.description" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500" :disabled="loadingItems" />

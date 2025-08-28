@@ -42,6 +42,22 @@
               </span>
             </div>
           </div>
+          <div>
+            <div class="text-sm text-gray-500 mb-1">Metode Pembayaran</div>
+            <div>
+              <span :class="[
+                'px-2 py-1 rounded text-xs font-medium',
+                props.retailFood.payment_method === 'cash' ? 'bg-green-100 text-green-800' :
+                'bg-blue-100 text-blue-800'
+              ]">
+                {{ props.retailFood.payment_method === 'cash' ? 'Cash' : 'Contra Bon' }}
+              </span>
+            </div>
+          </div>
+          <div>
+            <div class="text-sm text-gray-500 mb-1">Supplier</div>
+            <div class="font-medium">{{ props.retailFood.supplier?.name || '-' }}</div>
+          </div>
         </div>
 
         <div class="mb-8">

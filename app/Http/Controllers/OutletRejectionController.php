@@ -1229,12 +1229,13 @@ class OutletRejectionController extends Controller
             ->leftJoin('tbl_data_outlet as o', 'fo.id_outlet', '=', 'o.id_outlet')
             ->leftJoin('outlet_food_good_receives as gr', 'do.id', '=', 'gr.delivery_order_id')
             ->leftJoin('outlet_food_good_receive_items as gri', 'gr.id', '=', 'gri.outlet_food_good_receive_id')
+            ->leftJoin('warehouse_division as wd', 'pl.warehouse_division_id', '=', 'wd.id')
             ->leftJoin('users as do_creator', 'do.created_by', '=', 'do_creator.id')
             ->leftJoin('users as pl_creator', 'pl.created_by', '=', 'pl_creator.id')
             ->leftJoin('users as gr_creator', 'gr.created_by', '=', 'gr_creator.id')
             ->leftJoin('users as fo_creator', 'fo.user_id', '=', 'fo_creator.id')
             ->where('o.id_outlet', $outletId)
-            ->where('pl.warehouse_division_id', $warehouseId)
+            ->where('wd.warehouse_id', $warehouseId) // Use warehouse_id from warehouse_division table
             ->where('gri.remaining_qty', '>', 0) // Only items with remaining qty
             ->whereNotExists(function($query) {
                 // Exclude delivery orders that already have outlet rejections

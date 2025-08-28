@@ -41,15 +41,9 @@ const strukText = computed(() => {
   lines.push('Tanggal: ' + props.date);
   lines.push('Outlet: ' + props.outlet);
   lines.push('--------------------------------');
-  // Kolom: Item(13) | Qty(5) | Unit(10) | (total 28 + 2 spasi antar kolom = 30)
-  lines.push(pad('Item', 13) + '  ' + pad('Qty', 5, 'right') + '  ' + pad('Unit', 10, 'left'));
-  lines.push('--------------------------------');
+  // Format: Qty Unit Code Nama Item (sejajar) - menggunakan unit_code
   for (const item of props.items) {
-    lines.push(
-      pad(item.name, 13) + '  ' +
-      pad(item.qty_scan, 5, 'right') + '  ' +
-      pad(item.unit, 10, 'left')
-    );
+    lines.push(`${item.qty_scan} ${item.unit_code || item.unit} ${item.name}`);
   }
   lines.push('--------------------------------');
   return lines.join('\n');

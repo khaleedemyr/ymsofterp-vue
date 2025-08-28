@@ -19,12 +19,21 @@ const supplierDetail = ref(null);
 const fileImage = ref(null);
 const fileImagePreview = ref(null);
 
+// Retail Food variables
+const retailFoodList = ref([]);
+const selectedRetailFood = ref(null);
+const loadingRetailFood = ref(false);
+const selectedRetailFoodKey = ref('');
+const sourceType = ref('purchase_order'); // 'purchase_order' or 'retail_food'
+
 const form = useForm({
   date: props.contraBon?.date ? props.contraBon.date.substring(0, 10) : '',
   po_id: props.contraBon?.po_id || '',
   gr_id: props.contraBon?.gr_id || '',
   notes: props.contraBon?.notes || '',
-  supplier_invoice_number: props.contraBon?.supplier_invoice_number || '', // <-- Tambahkan ini
+  supplier_invoice_number: props.contraBon?.supplier_invoice_number || '',
+  source_type: props.contraBon?.source_type || 'purchase_order',
+  source_id: props.contraBon?.source_id || '',
   items: props.contraBon?.items?.map(i => ({
     gr_item_id: i.gr_item_id,
     item_id: i.item_id,
@@ -46,6 +55,8 @@ onMounted(async () => {
     const mm = String(today.getMonth() + 1).padStart(2, '0');
     const dd = String(today.getDate()).padStart(2, '0');
     form.date = `${yyyy}-${mm}-${dd}`;
+    
+    // Load PO/GR data
     loadingPOGR.value = true;
     try {
       const res = await axios.get('/api/contra-bon/po-with-approved-gr');
@@ -54,6 +65,17 @@ onMounted(async () => {
       Swal.fire('Error', 'Gagal mengambil data PO/GR', 'error');
     } finally {
       loadingPOGR.value = false;
+    }
+    
+    // Load Retail Food data
+    loadingRetailFood.value = true;
+    try {
+      const res = await axios.get('/api/contra-bon/retail-food-contra-bon');
+      retailFoodList.value = res.data;
+    } catch (e) {
+      Swal.fire('Error', 'Gagal mengambil data Retail Food', 'error');
+    } finally {
+      loadingRetailFood.value = false;
     }
   } else {
     // Mode edit: set preview image jika ada
@@ -109,6 +131,64 @@ async function onPOGRChange() {
   }
 }
 
+async function onRetailFoodChange() {
+  if (!selectedRetailFoodKey.value) {
+    selectedRetailFood.value = null;
+    form.po_id = '';
+    form.gr_id = '';
+    form.items = [];
+    supplierDetail.value = null;
+    fileImage.value = null;
+    fileImagePreview.value = null;
+    return;
+  }
+  
+  const retailFood = retailFoodList.value.find(rf => String(rf.retail_food_id) === selectedRetailFoodKey.value);
+  selectedRetailFood.value = retailFood;
+  
+  if (retailFood) {
+    form.items = retailFood.items.map(item => ({
+      gr_item_id: null,
+      item_id: item.item_id,
+      po_item_id: null,
+      unit_id: item.unit_id,
+      quantity: item.qty,
+      price: item.price,
+      notes: '',
+      _rowKey: Date.now() + '-' + Math.random(),
+    }));
+    
+    // Fetch supplier detail
+    if (retailFood.supplier_id) {
+      try {
+        const res = await axios.get(`/api/suppliers/${retailFood.supplier_id}`);
+        supplierDetail.value = res.data;
+      } catch (e) {
+        supplierDetail.value = null;
+      }
+    } else {
+      supplierDetail.value = null;
+    }
+  } else {
+    form.items = [];
+    supplierDetail.value = null;
+  }
+}
+
+function onSourceTypeChange() {
+  // Reset selections when switching source type
+  selectedPOGRKey.value = '';
+  selectedRetailFoodKey.value = '';
+  selectedPOGR.value = null;
+  selectedRetailFood.value = null;
+  form.po_id = '';
+  form.gr_id = '';
+  form.items = [];
+  supplierDetail.value = null;
+  fileImage.value = null;
+  fileImagePreview.value = null;
+}
+
 function onFileChange(e) {
   const file = e.target.files[0];
   fileImage.value = file;
@@ -142,7 +222,9 @@ async function onSubmit() {
     fd.append('po_id', form.po_id);
     fd.append('gr_id', form.gr_id);
     fd.append('notes', form.notes);
-    fd.append('supplier_invoice_number', form.supplier_invoice_number); // Tambahkan ini
+    fd.append('supplier_invoice_number', form.supplier_invoice_number);
+    fd.append('source_type', sourceType.value);
+    fd.append('source_id', sourceType.value === 'retail_food' ? selectedRetailFoodKey.value : '');
     fd.append('image', fileImage.value);
     form.items.forEach((item, idx) => {
       Object.keys(item).forEach(key => {
@@ -170,6 +252,10 @@ async function onSubmit() {
     return;
   }
   // Tanpa file, pakai inertia
+  // Set source_type dan source_id ke form
+  form.source_type = sourceType.value;
+  form.source_id = sourceType.value === 'retail_food' ? selectedRetailFoodKey.value : '';
+  
   if (isEdit.value) {
     form.put(`/contra-bons/${props.contraBon.id}`, {
       onSuccess: () => {
@@ -201,13 +287,50 @@ function goBack() {
         </h1>
       </div>
       <form @submit.prevent="onSubmit" class="space-y-6">
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <!-- Source Type Selector -->
+        <div class="mb-6">
+          <label class="block text-sm font-medium text-gray-700 mb-2">Sumber Data</label>
+          <div class="flex gap-4">
+            <label class="flex items-center">
+              <input type="radio" v-model="sourceType" value="purchase_order" @change="onSourceTypeChange" class="mr-2">
+              <span>Purchase Order / Good Receive</span>
+            </label>
+            <label class="flex items-center">
+              <input type="radio" v-model="sourceType" value="retail_food" @change="onSourceTypeChange" class="mr-2">
+              <span>Retail Food (Contra Bon)</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Purchase Order Selection -->
+        <div v-if="sourceType === 'purchase_order'" class="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label class="block text-sm font-medium text-gray-700">Purchase Order</label>
             <select v-model="selectedPOGRKey" @change="onPOGRChange" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500" required>
               <option value="">Pilih PO - GR - Supplier</option>
               <option v-for="p in poWithGRList" :key="p.po_id + '-' + p.gr_id" :value="p.po_id + '-' + p.gr_id">
                 {{ p.po_number }} - {{ p.gr_number }} - {{ p.supplier_name }}
+              </option>
+            </select>
+            <input type="hidden" v-model="form.po_id" />
+            <input type="hidden" v-model="form.gr_id" />
+            <div v-if="form.errors.po_id" class="text-xs text-red-500 mt-1">{{ form.errors.po_id }}</div>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700">Tanggal</label>
+            <input type="date" v-model="form.date" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500" />
+            <div v-if="form.errors.date" class="text-xs text-red-500 mt-1">{{ form.errors.date }}</div>
+          </div>
+        </div>
+
+        <!-- Retail Food Selection -->
+        <div v-if="sourceType === 'retail_food'" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700">Retail Food</label>
+            <select v-model="selectedRetailFoodKey" @change="onRetailFoodChange" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500" required>
+              <option value="">Pilih Retail Food - Supplier</option>
+              <option v-for="rf in retailFoodList" :key="rf.retail_food_id" :value="rf.retail_food_id">
+                {{ rf.retail_number }} - {{ rf.supplier_name }}
               </option>
             </select>
             <input type="hidden" v-model="form.po_id" />
@@ -237,6 +360,17 @@ function goBack() {
             <div>Diterima oleh: {{ selectedPOGR.gr_receiver_name }}</div>
             <div>Supplier: <b>{{ selectedPOGR.supplier_name }}</b></div>
           </div>
+        </div>
+
+        <!-- Card Info Retail Food -->
+        <div v-if="selectedRetailFood" class="bg-purple-50 rounded-lg p-4 shadow mb-4">
+          <h3 class="font-bold mb-2">Info Retail Food</h3>
+          <div>No. Retail Food: {{ selectedRetailFood.retail_number }}</div>
+          <div>Tanggal Transaksi: {{ selectedRetailFood.transaction_date }}</div>
+          <div>Supplier: <b>{{ selectedRetailFood.supplier_name }}</b></div>
+          <div>Dibuat oleh: {{ selectedRetailFood.creator_name }}</div>
+          <div>Total Amount: <b>{{ formatCurrency(selectedRetailFood.total_amount) }}</b></div>
+          <div v-if="selectedRetailFood.notes">Notes: {{ selectedRetailFood.notes }}</div>
         </div>
 
         <!-- Card Info Supplier -->

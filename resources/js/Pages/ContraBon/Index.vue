@@ -37,7 +37,8 @@
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider rounded-tl-2xl">Nomor</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Tanggal</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Supplier</th>
-              <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">No. PO</th>
+              <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Sumber</th>
+              <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">No. PO/Retail</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">No Invoice Supplier</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Total</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Status</th>
@@ -47,13 +48,23 @@
           </thead>
           <tbody>
             <tr v-if="!contraBons.data || !contraBons.data.length">
-              <td colspan="8" class="text-center py-10 text-gray-400">Belum ada data Contra Bon.</td>
+              <td colspan="10" class="text-center py-10 text-gray-400">Belum ada data Contra Bon.</td>
             </tr>
             <tr v-for="cb in contraBons.data" :key="cb.id" class="hover:bg-blue-50 transition shadow-sm">
               <td class="px-6 py-3 font-mono font-semibold text-blue-700">{{ cb.number }}</td>
               <td class="px-6 py-3">{{ formatDate(cb.date) }}</td>
               <td class="px-6 py-3">{{ cb.supplier?.name }}</td>
-              <td class="px-6 py-3">{{ cb.purchase_order?.number }}</td>
+              <td class="px-6 py-3">
+                <span :class="{
+                  'bg-blue-100 text-blue-700': cb.source_type === 'purchase_order',
+                  'bg-purple-100 text-purple-700': cb.source_type === 'retail_food',
+                }" class="px-2 py-1 rounded-full text-xs font-semibold">
+                  {{ cb.source_type === 'purchase_order' ? 'PO/GR' : 'Retail Food' }}
+                </span>
+              </td>
+              <td class="px-6 py-3">
+                {{ cb.source_type === 'purchase_order' ? cb.purchase_order?.number : cb.retail_food?.retail_number || '-' }}
+              </td>
               <td class="px-6 py-3">{{ cb.supplier_invoice_number || '-' }}</td>
               <td class="px-6 py-3">{{ formatCurrency(cb.total_amount) }}</td>
               <td class="px-6 py-3">

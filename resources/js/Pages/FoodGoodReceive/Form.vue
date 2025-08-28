@@ -176,7 +176,8 @@ const fetchPO = async () => {
     po.value = res.data.po;
     items.value = res.data.items.map(item => ({
       ...item,
-      qty_received: item.quantity
+      quantity: parseFloat(item.quantity) || 0,
+      qty_received: parseFloat(item.quantity) || 0
     }));
     poFetched.value = true;
   } catch (e) {
@@ -186,26 +187,31 @@ const fetchPO = async () => {
 
 const validateQty = (item) => {
   item.qty_error = '';
-  if (item.qty_received === null || item.qty_received === undefined) {
+  
+  // Ensure qty_received is a number
+  const qtyReceived = parseFloat(item.qty_received) || 0;
+  const quantity = parseFloat(item.quantity) || 0;
+  
+  if (qtyReceived === null || qtyReceived === undefined || isNaN(qtyReceived)) {
     item.qty_error = 'Jumlah harus diisi';
     return false;
   }
-  if (item.qty_received < 0) {
+  if (qtyReceived < 0) {
     item.qty_error = 'Jumlah tidak boleh negatif';
     return false;
   }
   
   // Calculate 10% tolerance
-  const tolerance = item.quantity * 0.1;
-  const maxAllowed = item.quantity + tolerance;
+  const tolerance = quantity * 0.1;
+  const maxAllowed = quantity + tolerance;
   
-  if (item.qty_received > maxAllowed) {
-    item.qty_error = `Jumlah tidak boleh melebihi ${item.quantity} + 10% (${maxAllowed.toFixed(2)})`;
+  if (qtyReceived > maxAllowed) {
+    item.qty_error = `Jumlah tidak boleh melebihi ${quantity} + 10% (${maxAllowed.toFixed(2)})`;
     return false;
   }
   
   // Validate decimal places (max 2 decimal places)
-  if (item.qty_received.toString().split('.')[1]?.length > 2) {
+  if (qtyReceived.toString().split('.')[1]?.length > 2) {
     item.qty_error = 'Maksimal 2 angka di belakang koma';
     return false;
   }
@@ -236,8 +242,8 @@ const submit = async () => {
       items: items.value.map(item => ({
         po_item_id: item.id,
         item_id: item.item_id,
-        qty_ordered: item.quantity,
-        qty_received: item.qty_received,
+        qty_ordered: parseFloat(item.quantity) || 0,
+        qty_received: parseFloat(item.qty_received) || 0,
         unit_id: item.unit_id || 1,
       })),
       notes: '',

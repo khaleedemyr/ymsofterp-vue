@@ -91,7 +91,9 @@ async function hapus(list) {
   });
   if (!result.isConfirmed) return;
   try {
-    await axios.delete(`/packing-list/${list.id}`);
+    console.log('Deleting packing list:', list.id);
+    const response = await axios.delete(`/packing-list/${list.id}`);
+    console.log('Delete response:', response);
     Swal.fire({
       icon: 'success',
       title: 'Berhasil',
@@ -101,10 +103,12 @@ async function hapus(list) {
     });
     window.location.reload();
   } catch (err) {
+    console.error('Delete error:', err);
+    console.error('Error response:', err.response);
     Swal.fire({
       icon: 'error',
       title: 'Gagal',
-      text: err?.response?.data?.error || 'Tidak bisa hapus Packing List ini.'
+      text: err?.response?.data?.message || err?.response?.data?.error || 'Tidak bisa hapus Packing List ini.'
     });
   }
 }

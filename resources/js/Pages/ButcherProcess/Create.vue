@@ -402,9 +402,9 @@ const selectedWhole = ref({})
 const expandedWhole = ref({})
 
 // Ambil kode kategori yang diizinkan
-const allowedCategoryCodes = ['MT', 'BK', 'BP'];
+const allowedCategoryCodes = ['MT', 'BK', 'BP', 'SP'];
 
-// Filter pcsItems agar hanya yang kategori MT, BK, BP yang muncul
+// Filter pcsItems agar hanya yang kategori MT, BK, BP, SP yang muncul
 const filteredPcsItems = computed(() => {
   return (props.pcsItems || []).filter(item =>
     allowedCategoryCodes.includes(item.category_code)

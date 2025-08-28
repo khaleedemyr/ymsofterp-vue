@@ -15,26 +15,26 @@ class ContraBonController extends Controller
 {
     public function index(Request $request)
     {
-        $query = ContraBon::with(['supplier', 'purchaseOrder', 'creator'])->orderByDesc('created_at');
+        $query = ContraBon::with(['supplier', 'purchaseOrder', 'retailFood', 'creator'])->orderByDesc('created_at');
 
         if ($request->search) {
             $search = $request->search;
             $query->where(function($q) use ($search) {
                 $q->where('number', 'like', "%$search%")
-                  ->orWhere('supplier_invoice_number', 'like', "%$search%") // <-- Tambahkan ini
+                  ->orWhere('supplier_invoice_number', 'like', "%$search%")
                   ->orWhereHas('supplier', function($q2) use ($search) {
-                      $q2->where('name', 'like', "%$search%")
-                         ;
+                      $q2->where('name', 'like', "%$search%");
                   })
                   ->orWhereHas('purchaseOrder', function($q2) use ($search) {
-                      $q2->where('number', 'like', "%$search%")
-                         ;
+                      $q2->where('number', 'like', "%$search%");
+                  })
+                  ->orWhereHas('retailFood', function($q2) use ($search) {
+                      $q2->where('retail_number', 'like', "%$search%");
                   })
                   ->orWhere('total_amount', 'like', "%$search%")
                   ->orWhere('status', 'like', "%$search%")
                   ->orWhereHas('creator', function($q2) use ($search) {
-                      $q2->where('nama_lengkap', 'like', "%$search%")
-                         ;
+                      $q2->where('nama_lengkap', 'like', "%$search%");
                   });
             });
         }
@@ -62,22 +62,40 @@ class ContraBonController extends Controller
     public function store(Request $request)
     {
         $request->validate([
-            'po_id' => 'required|exists:purchase_order_foods,id',
+            'po_id' => 'required',
             'date' => 'required|date',
             'items' => 'required|array',
-            'items.*.po_item_id' => 'required|exists:purchase_order_food_items,id',
             'items.*.item_id' => 'required|exists:items,id',
             'items.*.quantity' => 'required|numeric|min:0',
             'items.*.unit_id' => 'required|exists:units,id',
             'items.*.price' => 'required|numeric|min:0',
             'notes' => 'nullable|string',
             'image' => 'nullable|image|max:2048',
-            'supplier_invoice_number' => 'nullable|string|max:100', // <-- Tambahkan validasi
+            'supplier_invoice_number' => 'nullable|string|max:100',
+            'source_type' => 'nullable|in:purchase_order,retail_food',
+            'source_id' => 'nullable|integer',
         ]);
 
         DB::beginTransaction();
         try {
-            $po = PurchaseOrderFood::findOrFail($request->po_id);
+            $sourceType = $request->input('source_type', 'purchase_order');
+            $sourceId = $request->input('source_id');
+            $supplierId = null;
+            $poId = null;
+            $grId = null;
+
+            // Handle different source types
+            if ($sourceType === 'purchase_order') {
+                $po = PurchaseOrderFood::findOrFail($request->po_id);
+                $supplierId = $po->supplier_id;
+                $poId = $po->id;
+                $grId = $request->input('gr_id');
+            } elseif ($sourceType === 'retail_food') {
+                $retailFood = \App\Models\RetailFood::findOrFail($sourceId);
+                $supplierId = $retailFood->supplier_id;
+                $poId = null;
+                $grId = null;
+            }
             
             // Generate contra bon number
             $dateStr = date('Ymd', strtotime($request->date));
@@ -103,14 +121,16 @@ class ContraBonController extends Controller
             $contraBon = ContraBon::create([
                 'number' => $number,
                 'date' => $request->date,
-                'supplier_id' => $po->supplier_id,
-                'po_id' => $po->id,
+                'supplier_id' => $supplierId,
+                'po_id' => $poId,
                 'total_amount' => $totalAmount,
                 'notes' => $request->notes,
                 'image_path' => $imagePath,
                 'status' => 'draft',
                 'created_by' => Auth::id(),
-                'supplier_invoice_number' => $request->supplier_invoice_number, // <-- Tambahkan simpan
+                'supplier_invoice_number' => $request->supplier_invoice_number,
+                'source_type' => $sourceType,
+                'source_id' => $sourceId,
             ]);
 
             // Create contra bon items
@@ -118,7 +138,7 @@ class ContraBonController extends Controller
                 ContraBonItem::create([
                     'contra_bon_id' => $contraBon->id,
                     'item_id' => $item['item_id'],
-                    'po_item_id' => $item['po_item_id'],
+                    'po_item_id' => $item['po_item_id'] ?? null,
                     'quantity' => $item['quantity'],
                     'unit_id' => $item['unit_id'],
                     'price' => $item['price'],
@@ -341,63 +361,137 @@ class ContraBonController extends Controller
     // API: Get PO list with approved GR for Contra Bon create
     public function getPOWithApprovedGR()
     {
-        // Ambil semua po_id yang sudah ada di contra bon
-        $usedPOs = \DB::table('food_contra_bons')->pluck('po_id')->toArray();
+        try {
+            // Ambil semua po_id yang sudah ada di contra bon
+            $usedPOs = \DB::table('food_contra_bons')
+                ->where('source_type', 'purchase_order')
+                ->whereNotNull('po_id')
+                ->pluck('po_id')
+                ->toArray();
 
-        $poWithGR = \DB::table('purchase_order_foods as po')
-            ->join('food_good_receives as gr', 'gr.po_id', '=', 'po.id')
-            ->join('suppliers as s', 'po.supplier_id', '=', 's.id')
-            ->join('users as po_creator', 'po.created_by', '=', 'po_creator.id')
-            ->join('users as gr_receiver', 'gr.received_by', '=', 'gr_receiver.id')
-            ->whereNotIn('po.id', $usedPOs)
-            ->select(
-                'po.id as po_id',
-                'po.number as po_number',
-                'po.date as po_date',
-                'po_creator.nama_lengkap as po_creator_name',
-                'gr.id as gr_id',
-                'gr.gr_number',
-                'gr.receive_date as gr_date',
-                'gr_receiver.nama_lengkap as gr_receiver_name',
-                's.id as supplier_id',
-                's.name as supplier_name'
-            )
-            ->orderByDesc('gr.receive_date')
-            ->get();
-
-        $result = [];
-        foreach ($poWithGR as $row) {
-            $items = \DB::table('food_good_receive_items as gri')
-                ->join('items as i', 'gri.item_id', '=', 'i.id')
-                ->join('units as u', 'gri.unit_id', '=', 'u.id')
-                ->join('purchase_order_food_items as poi', 'gri.po_item_id', '=', 'poi.id')
-                ->where('gri.good_receive_id', $row->gr_id)
+            $poWithGR = \DB::table('purchase_order_foods as po')
+                ->join('food_good_receives as gr', 'gr.po_id', '=', 'po.id')
+                ->join('suppliers as s', 'po.supplier_id', '=', 's.id')
+                ->join('users as po_creator', 'po.created_by', '=', 'po_creator.id')
+                ->join('users as gr_receiver', 'gr.received_by', '=', 'gr_receiver.id')
+                ->whereNotIn('po.id', $usedPOs)
                 ->select(
-                    'gri.id',
-                    'gri.item_id',
-                    'gri.po_item_id',
-                    'i.name as item_name',
-                    'gri.unit_id',
-                    'u.name as unit_name',
-                    'gri.qty_received',
-                    'poi.price as po_price'
+                    'po.id as po_id',
+                    'po.number as po_number',
+                    'po.date as po_date',
+                    'po_creator.nama_lengkap as po_creator_name',
+                    'gr.id as gr_id',
+                    'gr.gr_number',
+                    'gr.receive_date as gr_date',
+                    'gr_receiver.nama_lengkap as gr_receiver_name',
+                    's.id as supplier_id',
+                    's.name as supplier_name'
                 )
+                ->orderByDesc('gr.receive_date')
                 ->get();
-            $result[] = [
-                'po_id' => $row->po_id,
-                'po_number' => $row->po_number,
-                'po_date' => $row->po_date,
-                'po_creator_name' => $row->po_creator_name,
-                'gr_id' => $row->gr_id,
-                'gr_number' => $row->gr_number,
-                'gr_date' => $row->gr_date,
-                'gr_receiver_name' => $row->gr_receiver_name,
-                'supplier_id' => $row->supplier_id,
-                'supplier_name' => $row->supplier_name,
-                'items' => $items,
-            ];
+
+            $result = [];
+            foreach ($poWithGR as $row) {
+                $items = \DB::table('food_good_receive_items as gri')
+                    ->join('items as i', 'gri.item_id', '=', 'i.id')
+                    ->join('units as u', 'gri.unit_id', '=', 'u.id')
+                    ->join('purchase_order_food_items as poi', 'gri.po_item_id', '=', 'poi.id')
+                    ->where('gri.good_receive_id', $row->gr_id)
+                    ->select(
+                        'gri.id',
+                        'gri.item_id',
+                        'gri.po_item_id',
+                        'i.name as item_name',
+                        'gri.unit_id',
+                        'u.name as unit_name',
+                        'gri.qty_received',
+                        'poi.price as po_price'
+                    )
+                    ->get();
+                $result[] = [
+                    'po_id' => $row->po_id,
+                    'po_number' => $row->po_number,
+                    'po_date' => $row->po_date,
+                    'po_creator_name' => $row->po_creator_name,
+                    'gr_id' => $row->gr_id,
+                    'gr_number' => $row->gr_number,
+                    'gr_date' => $row->gr_date,
+                    'gr_receiver_name' => $row->gr_receiver_name,
+                    'supplier_id' => $row->supplier_id,
+                    'supplier_name' => $row->supplier_name,
+                    'items' => $items,
+                ];
+            }
+            return response()->json($result);
+        } catch (\Exception $e) {
+            \Log::error('Error in getPOWithApprovedGR: ' . $e->getMessage());
+            return response()->json(['error' => 'Gagal mengambil data PO/GR: ' . $e->getMessage()], 500);
         }
-        return response()->json($result);
+    }
+
+    // API: Get Retail Food with contra bon payment method
+    public function getRetailFoodContraBon()
+    {
+        try {
+            // Ambil semua retail_food_id yang sudah ada di contra bon
+            $usedRetailFoods = \DB::table('food_contra_bons')
+                ->where('source_type', 'retail_food')
+                ->whereNotNull('source_id')
+                ->pluck('source_id')
+                ->toArray();
+
+            $retailFoods = \DB::table('retail_food as rf')
+                ->join('suppliers as s', 'rf.supplier_id', '=', 's.id')
+                ->join('users as creator', 'rf.created_by', '=', 'creator.id')
+                ->where('rf.payment_method', 'contra_bon')
+                ->where('rf.status', 'approved')
+                ->whereNotIn('rf.id', $usedRetailFoods)
+                ->select(
+                    'rf.id as retail_food_id',
+                    'rf.retail_number',
+                    'rf.transaction_date',
+                    'rf.total_amount',
+                    'rf.notes',
+                    's.id as supplier_id',
+                    's.name as supplier_name',
+                    'creator.nama_lengkap as creator_name'
+                )
+                ->orderByDesc('rf.transaction_date')
+                ->get();
+
+            $result = [];
+            foreach ($retailFoods as $row) {
+                $items = \DB::table('retail_food_items as rfi')
+                    ->join('items as i', 'rfi.item_id', '=', 'i.id')
+                    ->join('units as u', 'rfi.unit_id', '=', 'u.id')
+                    ->where('rfi.retail_food_id', $row->retail_food_id)
+                    ->select(
+                        'rfi.id',
+                        'rfi.item_id',
+                        'i.name as item_name',
+                        'rfi.unit_id',
+                        'u.name as unit_name',
+                        'rfi.qty',
+                        'rfi.price'
+                    )
+                    ->get();
+                $result[] = [
+                    'retail_food_id' => $row->retail_food_id,
+                    'retail_number' => $row->retail_number,
+                    'transaction_date' => $row->transaction_date,
+                    'total_amount' => $row->total_amount,
+                    'notes' => $row->notes,
+                    'supplier_id' => $row->supplier_id,
+                    'supplier_name' => $row->supplier_name,
+                    'creator_name' => $row->creator_name,
+                    'items' => $items,
+                ];
+            }
+            return response()->json($result);
+        } catch (\Exception $e) {
+            \Log::error('Error in getRetailFoodContraBon: ' . $e->getMessage());
+            return response()->json(['error' => 'Gagal mengambil data Retail Food: ' . $e->getMessage()], 500);
+        }
     }
 
     public function edit($id)

@@ -118,6 +118,7 @@ class PurchaseOrderFoodsController extends Controller
                     'date' => \Carbon\Carbon::parse($pr->tanggal)->format('d/m/Y'),
                     'warehouse_id' => $pr->warehouse_id,
                     'warehouse_name' => $pr->warehouse ? $pr->warehouse->name : 'Unknown Warehouse',
+                    'description' => $pr->description, // Tambahkan field description
                     'items' => $pr->items->map(function ($item) {
                         return [
                             'id' => $item->id,
@@ -126,6 +127,7 @@ class PurchaseOrderFoodsController extends Controller
                             'quantity' => $item->qty,
                             'unit' => $item->unit,
                             'arrival_date' => $item->arrival_date,
+                            'note' => $item->note, // Tambahkan field note per item
                             'supplier_id' => null,
                             'price' => null,
                         ];
@@ -267,6 +269,20 @@ class PurchaseOrderFoodsController extends Controller
                     }
                 }
                 
+                // Get arrival_date from items (use the earliest arrival date)
+                $arrivalDates = collect($items)->pluck('arrival_date')->filter()->map(function($date) {
+                    return \Carbon\Carbon::parse($date);
+                })->sort();
+                
+                $poArrivalDate = $arrivalDates->isNotEmpty() ? $arrivalDates->first()->format('Y-m-d') : null;
+                
+                // Debug logging for arrival date
+                \Log::info('PO Arrival Date processing:', [
+                    'all_arrival_dates' => collect($items)->pluck('arrival_date')->toArray(),
+                    'filtered_arrival_dates' => $arrivalDates->toArray(),
+                    'selected_arrival_date' => $poArrivalDate
+                ]);
+                
                 // Create PO
                 $po = PurchaseOrderFood::create([
                     'number' => $poNumber,
@@ -275,6 +291,7 @@ class PurchaseOrderFoodsController extends Controller
                     'status' => 'draft',
                     'created_by' => auth()->id(),
                     'notes' => $request->notes,
+                    'arrival_date' => $poArrivalDate,
                     'ppn_enabled' => $request->ppn_enabled ?? false,
                     'ppn_amount' => $ppnAmount,
                     'subtotal' => $subtotal,
@@ -366,8 +383,17 @@ class PurchaseOrderFoodsController extends Controller
                         $itemId = $prItem->item_id;
                         $itemName = $prItem->item->name ?? 'Unknown Item';
                         $unit = $prItem->unit;
+                        // Always use arrival_date from PR item, not from request
                         $arrivalDate = $prItem->arrival_date;
                         $prItemId = $prItem->id;
+                        
+                        // Debug logging for PR item arrival date
+                        \Log::info('PR Foods item arrival date:', [
+                            'pr_item_id' => $prItem->id,
+                            'pr_item_arrival_date' => $prItem->arrival_date,
+                            'request_arrival_date' => $itemData['arrival_date'] ?? null,
+                            'final_arrival_date' => $arrivalDate
+                        ]);
                     }
 
                     $quantity = floatval($itemData['qty']);

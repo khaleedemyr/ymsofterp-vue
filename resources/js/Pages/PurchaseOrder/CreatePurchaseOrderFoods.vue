@@ -179,6 +179,57 @@ const toggleWarehouse = (warehouseId) => {
     expandedWarehouses.value[warehouseId] = !expandedWarehouses.value[warehouseId];
 };
 
+// Bulk supplier selection
+const bulkSupplier = ref(null);
+const selectedItemsForBulk = ref([]);
+
+// Select all items in a PR
+const selectAllItemsInPR = (prId) => {
+    const pr = prList.value.find(p => p.id === prId);
+    if (pr) {
+        selectedItemsForBulk.value = pr.items.map(item => item.id);
+    }
+};
+
+// Select all items in a RO
+const selectAllItemsInRO = (roId) => {
+    const ro = roSupplierList.value.find(r => r.id === roId);
+    if (ro) {
+        selectedItemsForBulk.value = ro.items.map(item => item.itemKey);
+    }
+};
+
+// Apply bulk supplier to selected items
+const applyBulkSupplier = () => {
+    if (!bulkSupplier.value) {
+        Swal.fire('Error', 'Pilih supplier terlebih dahulu', 'error');
+        return;
+    }
+    
+    if (selectedItemsForBulk.value.length === 0) {
+        Swal.fire('Error', 'Pilih item terlebih dahulu', 'error');
+        return;
+    }
+    
+    selectedItemsForBulk.value.forEach(itemId => {
+        if (poForm.items_by_supplier[itemId]) {
+            poForm.items_by_supplier[itemId].forEach(split => {
+                split.supplier_id = bulkSupplier.value;
+            });
+        }
+    });
+    
+    Swal.fire('Success', 'Supplier berhasil diterapkan ke item yang dipilih', 'success');
+    selectedItemsForBulk.value = [];
+    bulkSupplier.value = null;
+};
+
+// Clear bulk selection
+const clearBulkSelection = () => {
+    selectedItemsForBulk.value = [];
+    bulkSupplier.value = null;
+};
+
 // Tambah baris split untuk item tertentu
 function addSplit(itemId) {
     poForm.items_by_supplier[itemId].push({
@@ -271,12 +322,17 @@ const generatePO = async () => {
                 });
             } else {
                 // Dari PR
+                // Cari item data dari prList
+                const prItem = prList.value.flatMap(pr => pr.items).find(item => item.id == itemId);
+                
                 itemsBySupplier[supplierId].push({
                     id: Number(itemId),
                     supplier_id: supplierId,
                     qty: split.qty,
                     price: split.price,
-                    source: 'pr_foods'
+                    arrival_date: prItem?.arrival_date || null,
+                    source: 'pr_foods',
+                    pr_item_id: prItem?.id || null
                 });
             }
         });
@@ -521,11 +577,51 @@ onMounted(async () => {
                             <label class="block text-sm font-medium text-gray-700 mb-1">Notes</label>
                             <textarea v-model="notes" rows="2" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-blue-500 focus:border-blue-500"></textarea>
                         </div>
-                        <!-- PPN Switch -->
-                        <div class="mb-6 flex items-center">
-                            <input type="checkbox" id="ppnSwitch" v-model="poForm.ppn_enabled" class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded">
-                            <label for="ppnSwitch" class="ml-2 text-sm text-gray-700">Include PPN (11%)</label>
-                        </div>
+                                                 <!-- PPN Switch -->
+                         <div class="mb-6 flex items-center">
+                             <input type="checkbox" id="ppnSwitch" v-model="poForm.ppn_enabled" class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded">
+                             <label for="ppnSwitch" class="ml-2 text-sm text-gray-700">Include PPN (11%)</label>
+                         </div>
+                         
+                         <!-- Bulk Supplier Selection -->
+                         <div class="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                             <h4 class="text-sm font-semibold text-blue-800 mb-3">Bulk Supplier Selection</h4>
+                             <div class="flex flex-wrap gap-4 items-end">
+                                 <div class="flex-1 min-w-64">
+                                     <label class="block text-sm font-medium text-gray-700 mb-1">Pilih Supplier</label>
+                                     <Multiselect
+                                         v-model="bulkSupplier"
+                                         :options="suppliers"
+                                         :searchable="true"
+                                         :close-on-select="true"
+                                         :clear-on-select="false"
+                                         :preserve-search="true"
+                                         placeholder="Pilih supplier untuk bulk assign..."
+                                         track-by="id"
+                                         label="name"
+                                         :preselect-first="false"
+                                     />
+                                 </div>
+                                 <div class="flex gap-2">
+                                     <button 
+                                         @click="applyBulkSupplier"
+                                         :disabled="!bulkSupplier || selectedItemsForBulk.length === 0"
+                                         class="px-4 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                                     >
+                                         Terapkan ke Item Dipilih
+                                     </button>
+                                     <button 
+                                         @click="clearBulkSelection"
+                                         class="px-4 py-2 bg-gray-500 text-white rounded-md text-sm font-medium hover:bg-gray-600"
+                                     >
+                                         Clear
+                                     </button>
+                                 </div>
+                             </div>
+                             <div v-if="selectedItemsForBulk.length > 0" class="mt-3 text-sm text-blue-600">
+                                 <strong>{{ selectedItemsForBulk.length }}</strong> item dipilih untuk bulk assign
+                             </div>
+                         </div>
                         <!-- PR List -->
                         <div v-if="loading" class="flex justify-center items-center py-8">
                             <svg class="animate-spin h-8 w-8 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -567,45 +663,78 @@ onMounted(async () => {
                                             class="bg-gray-50 px-4 py-3 flex justify-between items-center cursor-pointer hover:bg-gray-100"
                                             @click="togglePR(pr.id)"
                                         >
-                                            <div class="flex items-center">
-                                                <svg 
-                                                    class="w-5 h-5 mr-2 transition-transform"
-                                                    :class="{ 'transform rotate-90': expandedPRs[pr.id] }"
-                                                    fill="none" 
-                                                    stroke="currentColor" 
-                                                    viewBox="0 0 24 24"
-                                                >
-                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
-                                                </svg>
-                                                <span class="font-medium">{{ pr.number }} - {{ pr.date }}</span>
-                                            </div>
+                                                                                         <div class="flex items-center">
+                                                 <svg 
+                                                     class="w-5 h-5 mr-2 transition-transform"
+                                                     :class="{ 'transform rotate-90': expandedPRs[pr.id] }"
+                                                     fill="none" 
+                                                     stroke="currentColor" 
+                                                     viewBox="0 0 24 24"
+                                                 >
+                                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                                                 </svg>
+                                                 <div class="flex-1">
+                                                     <span class="font-medium">{{ pr.number }} - {{ pr.date }}</span>
+                                                     <div v-if="pr.description" class="text-sm text-gray-600 mt-1">
+                                                         <strong>Notes:</strong> {{ pr.description }}
+                                                     </div>
+                                                 </div>
+                                                 <button 
+                                                     @click.stop="selectAllItemsInPR(pr.id)"
+                                                     class="ml-2 px-3 py-1 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded text-xs font-medium"
+                                                 >
+                                                     Select All Items
+                                                 </button>
+                                             </div>
                                         </div>
 
                                         <!-- PR Items -->
                                         <div v-if="expandedPRs[pr.id]" class="p-4 border-t overflow-x-auto">
                                             <div class="overflow-x-auto">
                                                 <table class="min-w-full divide-y divide-gray-200">
-                                                    <thead class="bg-gray-50">
-                                                        <tr>
-                                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Item</th>
-                                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Quantity</th>
-                                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Unit</th>
-                                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tgl Kedatangan</th>
-                                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Supplier</th>
-                                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Price</th>
-                                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Subtotal</th>
-                                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Aksi</th>
-                                                        </tr>
-                                                    </thead>
+                                                                                                         <thead class="bg-gray-50">
+                                                         <tr>
+                                                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                                                 <input 
+                                                                     type="checkbox" 
+                                                                     @change="selectAllItemsInPR(pr.id)"
+                                                                     class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                                                 />
+                                                             </th>
+                                                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Item</th>
+                                                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Quantity</th>
+                                                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Unit</th>
+                                                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tgl Kedatangan</th>
+                                                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Notes</th>
+                                                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Supplier</th>
+                                                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Price</th>
+                                                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Subtotal</th>
+                                                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Aksi</th>
+                                                         </tr>
+                                                     </thead>
                                                     <tbody class="bg-white divide-y divide-gray-200">
-                                                        <template v-for="item in pr.items" :key="item.id">
-                                                            <tr v-for="(split, idx) in poForm.items_by_supplier[item.id]" :key="idx">
-                                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ item.name }}</td>
+                                                                                                                 <template v-for="item in pr.items" :key="item.id">
+                                                             <tr v-for="(split, idx) in poForm.items_by_supplier[item.id]" :key="idx">
+                                                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                                                     <input 
+                                                                         type="checkbox" 
+                                                                         :value="item.id"
+                                                                         v-model="selectedItemsForBulk"
+                                                                         class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                                                     />
+                                                                 </td>
+                                                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ item.name }}</td>
                                                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                                                                     <input type="number" v-model="split.qty" min="0" step="0.01" :max="item.quantity - totalQtyUsed(item.id, idx)" class="w-20 border rounded px-2 py-1" />
                                                                 </td>
                                                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ item.unit }}</td>
                                                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ item.arrival_date ? new Date(item.arrival_date).toLocaleDateString('id-ID') : '-' }}</td>
+                                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                                                    <div v-if="item.note" class="max-w-xs">
+                                                                        <span class="text-gray-600">{{ item.note }}</span>
+                                                                    </div>
+                                                                    <span v-else class="text-gray-400">-</span>
+                                                                </td>
                                                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                                                                     <Multiselect
                                                                         v-model="split.supplier_id"
@@ -690,44 +819,74 @@ onMounted(async () => {
                                                 class="bg-gray-50 px-4 py-3 flex justify-between items-center cursor-pointer hover:bg-gray-100"
                                                 @click="toggleRO(ro.id)"
                                             >
-                                                <div class="flex items-center">
-                                                    <svg 
-                                                        class="w-5 h-5 mr-2 transition-transform"
-                                                        :class="{ 'transform rotate-90': expandedROs[ro.id] }"
-                                                        fill="none" 
-                                                        stroke="currentColor" 
-                                                        viewBox="0 0 24 24"
-                                                    >
-                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
-                                                    </svg>
-                                                    <span class="font-medium">{{ ro.order_number }} - {{ ro.tanggal }}</span>
-                                                    <span class="ml-2 text-xs text-gray-500">({{ ro.outlet_name }})</span>
-                                                </div>
+                                                                                             <div class="flex items-center">
+                                                 <svg 
+                                                     class="w-5 h-5 mr-2 transition-transform"
+                                                     :class="{ 'transform rotate-90': expandedROs[ro.id] }"
+                                                     fill="none" 
+                                                     stroke="currentColor" 
+                                                     viewBox="0 0 24 24"
+                                                 >
+                                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                                                 </svg>
+                                                 <div class="flex-1">
+                                                     <span class="font-medium">{{ ro.order_number }} - {{ ro.tanggal }}</span>
+                                                     <span class="ml-2 text-xs text-gray-500">({{ ro.outlet_name }})</span>
+                                                 </div>
+                                                 <button 
+                                                     @click.stop="selectAllItemsInRO(ro.id)"
+                                                     class="ml-2 px-3 py-1 bg-green-100 hover:bg-green-200 text-green-700 rounded text-xs font-medium"
+                                                 >
+                                                     Select All Items
+                                                 </button>
+                                             </div>
                                             </div>
 
                                             <!-- RO Items -->
                                             <div v-if="expandedROs[ro.id]" class="p-4 border-t overflow-x-auto">
                                                 <div class="overflow-x-auto">
                                                     <table class="min-w-full divide-y divide-gray-200">
-                                                        <thead class="bg-gray-50">
-                                                            <tr>
-                                                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Item</th>
-                                                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Quantity</th>
-                                                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Unit</th>
-                                                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Supplier</th>
-                                                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Price</th>
-                                                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Subtotal</th>
-                                                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Aksi</th>
-                                                            </tr>
-                                                        </thead>
+                                                                                                                 <thead class="bg-gray-50">
+                                                                                                                     <tr>
+                                                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                                                 <input 
+                                                                     type="checkbox" 
+                                                                     @change="selectAllItemsInRO(ro.id)"
+                                                                     class="rounded border-gray-300 text-green-600 focus:ring-green-500"
+                                                                 />
+                                                             </th>
+                                                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Item</th>
+                                                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Quantity</th>
+                                                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Unit</th>
+                                                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Notes</th>
+                                                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Supplier</th>
+                                                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Price</th>
+                                                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Subtotal</th>
+                                                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Aksi</th>
+                                                         </tr>
+                                                         </thead>
                                                         <tbody class="bg-white divide-y divide-gray-200">
-                                                            <template v-for="item in ro.items" :key="item.id">
-                                                                <tr v-for="(split, idx) in poForm.items_by_supplier[item.itemKey]" :key="idx">
-                                                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ item.item_name }}</td>
+                                                                                                                         <template v-for="item in ro.items" :key="item.id">
+                                                                 <tr v-for="(split, idx) in poForm.items_by_supplier[item.itemKey]" :key="idx">
+                                                                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                                                         <input 
+                                                                             type="checkbox" 
+                                                                             :value="item.itemKey"
+                                                                             v-model="selectedItemsForBulk"
+                                                                             class="rounded border-gray-300 text-green-600 focus:ring-green-500"
+                                                                         />
+                                                                     </td>
+                                                                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ item.item_name }}</td>
                                                                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                                                                         <input type="number" v-model="split.qty" min="0" step="0.01" :max="item.qty - totalQtyUsed(item.itemKey, idx)" class="w-20 border rounded px-2 py-1" />
                                                                     </td>
                                                                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ item.unit }}</td>
+                                                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                                                        <div v-if="item.note" class="max-w-xs">
+                                                                            <span class="text-gray-600">{{ item.note }}</span>
+                                                                        </div>
+                                                                        <span v-else class="text-gray-400">-</span>
+                                                                    </td>
                                                                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                                                                         <Multiselect
                                                                             v-model="split.supplier_id"

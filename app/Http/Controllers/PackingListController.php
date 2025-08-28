@@ -30,13 +30,12 @@ class PackingListController extends Controller
 
     public function create()
     {
-        // Ambil semua FO yang approved
-        $floorOrders = FoodFloorOrder::where('food_floor_orders.status', 'approved')
+        // Ambil semua FO yang approved atau packing (karena setelah delete packing list, status bisa kembali ke approved)
+        $floorOrders = FoodFloorOrder::whereIn('food_floor_orders.status', ['approved', 'packing'])
             ->with(['outlet', 'user', 'items.item.smallUnit', 'items.item.mediumUnit', 'items.item.largeUnit', 'warehouseDivisions', 'warehouseOutlet'])
             ->join('tbl_data_outlet', 'food_floor_orders.id_outlet', '=', 'tbl_data_outlet.id_outlet')
             ->orderBy('food_floor_orders.tanggal', 'desc')
             ->orderBy('tbl_data_outlet.nama_outlet')
-            ->select('food_floor_orders.*')
             ->get();
 
         // Filter FO yang masih memiliki item yang belum di-packing untuk setiap warehouse division
@@ -53,9 +52,11 @@ class PackingListController extends Controller
                 
                 if ($itemsInDivision->count() > 0) {
                     // Cek apakah semua item di division ini sudah di-packing
+                    // Hanya cek packing list yang masih aktif (status = 'packing')
                     $packedItems = FoodPackingListItem::whereHas('packingList', function($q) use ($fo, $divisionId) {
                         $q->where('food_floor_order_id', $fo->id)
-                          ->where('warehouse_division_id', $divisionId);
+                          ->where('warehouse_division_id', $divisionId)
+                          ->where('status', 'packing'); // Hanya packing list yang masih aktif
                     })->pluck('food_floor_order_item_id')->toArray();
                     
                     // Jika masih ada item yang belum di-packing, FO ini masih valid
@@ -198,7 +199,73 @@ class PackingListController extends Controller
 
     public function destroy($id)
     {
-        return "Packing List Destroy: $id";
+        \DB::beginTransaction();
+        try {
+            $packingList = FoodPackingList::with(['items', 'floorOrder'])->findOrFail($id);
+            
+            // Cek apakah status masih 'packing' (bisa dihapus)
+            if ($packingList->status !== 'packing') {
+                return response()->json([
+                    'success' => false, 
+                    'message' => 'Packing List tidak dapat dihapus karena status bukan "packing"',
+                    'error' => 'Packing List tidak dapat dihapus karena status bukan "packing"'
+                ], 400);
+            }
+            
+            // Hapus semua item packing list
+            $packingList->items()->delete();
+            
+            // Hapus packing list
+            $packingList->delete();
+            
+            // Update status floor order jika perlu
+            $floorOrder = $packingList->floorOrder;
+            if ($floorOrder) {
+                // Cek apakah masih ada packing list lain untuk floor order ini
+                $remainingPackingLists = FoodPackingList::where('food_floor_order_id', $floorOrder->id)
+                    ->where('status', 'packing')
+                    ->count();
+                
+                // Jika tidak ada packing list lagi, kembalikan status ke 'approved'
+                if ($remainingPackingLists === 0) {
+                    $floorOrder->update(['status' => 'approved']);
+                }
+            }
+            
+            // Log activity
+            \App\Models\ActivityLog::create([
+                'user_id' => auth()->id(),
+                'activity_type' => 'delete',
+                'module' => 'packing_list',
+                'description' => 'Menghapus Packing List: ' . $packingList->packing_number,
+                'ip_address' => request()->ip(),
+                'user_agent' => request()->userAgent(),
+                'old_data' => json_encode($packingList->toArray()),
+                'new_data' => null,
+                'created_at' => now(),
+            ]);
+            
+            \DB::commit();
+            
+            return response()->json([
+                'success' => true, 
+                'message' => 'Packing List berhasil dihapus'
+            ]);
+            
+        } catch (\Exception $e) {
+            \DB::rollBack();
+            \Log::error('Error deleting packing list: ' . $e->getMessage(), [
+                'packing_list_id' => $id,
+                'user_id' => auth()->id(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'success' => false, 
+                'message' => 'Gagal menghapus Packing List: ' . $e->getMessage(),
+                'error' => 'Gagal menghapus Packing List: ' . $e->getMessage()
+            ], 500);
+        }
     }
 
     public function availableItems(Request $request)
@@ -215,9 +282,11 @@ class PackingListController extends Controller
             ->with(['item.smallUnit', 'item.mediumUnit', 'item.largeUnit', 'item.category'])
             ->get();
         // Item yang sudah pernah di-packing (qty berapapun)
+        // Hanya cek packing list yang masih aktif (status = 'packing')
         $packedItemIds = \App\Models\FoodPackingListItem::whereHas('packingList', function($q) use ($foId, $divisionId) {
             $q->where('food_floor_order_id', $foId)
-              ->where('warehouse_division_id', $divisionId);
+              ->where('warehouse_division_id', $divisionId)
+              ->where('status', 'packing'); // Hanya packing list yang masih aktif
         })->pluck('food_floor_order_item_id');
         // Filter hanya item yang belum pernah di-packing
         $itemsToPack = $foItems->whereNotIn('id', $packedItemIds)->values();
@@ -290,8 +359,8 @@ class PackingListController extends Controller
             'tanggal' => 'required|date',
         ]);
 
-        // Get all floor orders that are approved but not yet fully packed
-        $floorOrders = FoodFloorOrder::where('status', 'approved')
+        // Get all floor orders that are approved or packing but not yet fully packed
+        $floorOrders = FoodFloorOrder::whereIn('status', ['approved', 'packing'])
             ->whereDate('tanggal', $request->tanggal)
             ->with(['items.item', 'items.item.smallUnit', 'items.item.mediumUnit', 'items.item.largeUnit', 'items.item.warehouseDivision'])
             ->get();
@@ -304,7 +373,8 @@ class PackingListController extends Controller
 
                 // Check if this item has been packed
                 $isPacked = FoodPackingListItem::whereHas('packingList', function($q) use ($fo) {
-                    $q->where('food_floor_order_id', $fo->id);
+                    $q->where('food_floor_order_id', $fo->id)
+                      ->where('status', 'packing'); // Hanya packing list yang masih aktif
                 })->where('food_floor_order_item_id', $foItem->id)->exists();
 
                 if (!$isPacked) {
@@ -364,8 +434,8 @@ class PackingListController extends Controller
             'tanggal' => 'required|date',
         ]);
 
-        // Get all floor orders that are approved but not yet fully packed
-        $floorOrders = FoodFloorOrder::where('status', 'approved')
+        // Get all floor orders that are approved or packing but not yet fully packed
+        $floorOrders = FoodFloorOrder::whereIn('status', ['approved', 'packing'])
             ->whereDate('tanggal', $request->tanggal)
             ->with([
                 'outlet',
@@ -410,7 +480,8 @@ class PackingListController extends Controller
 
                 // Check if this item has been packed
                 $isPacked = FoodPackingListItem::whereHas('packingList', function($q) use ($fo) {
-                    $q->where('food_floor_order_id', $fo->id);
+                    $q->where('food_floor_order_id', $fo->id)
+                      ->where('status', 'packing'); // Hanya packing list yang masih aktif
                 })->where('food_floor_order_item_id', $foItem->id)->exists();
 
                 if (!$isPacked) {
@@ -475,8 +546,8 @@ class PackingListController extends Controller
             ini_set('memory_limit', '1G');
             set_time_limit(300); // 5 minutes timeout
 
-            // Get all floor orders that are approved but not yet fully packed
-            $floorOrders = FoodFloorOrder::where('status', 'approved')
+            // Get all floor orders that are approved or packing but not yet fully packed
+            $floorOrders = FoodFloorOrder::whereIn('status', ['approved', 'packing'])
                 ->whereDate('tanggal', $request->tanggal)
                 ->with([
                     'outlet',
@@ -521,7 +592,8 @@ class PackingListController extends Controller
 
                     // Check if this item has been packed
                     $isPacked = FoodPackingListItem::whereHas('packingList', function($q) use ($fo) {
-                        $q->where('food_floor_order_id', $fo->id);
+                        $q->where('food_floor_order_id', $fo->id)
+                          ->where('status', 'packing'); // Hanya packing list yang masih aktif
                     })->where('food_floor_order_item_id', $foItem->id)->exists();
 
                     if (!$isPacked) {
@@ -631,8 +703,8 @@ class PackingListController extends Controller
             ini_set('memory_limit', '1G');
             set_time_limit(300); // 5 minutes timeout
 
-            // Get all floor orders that are approved but not yet fully packed
-            $floorOrders = FoodFloorOrder::where('status', 'approved')
+            // Get all floor orders that are approved or packing but not yet fully packed
+            $floorOrders = FoodFloorOrder::whereIn('status', ['approved', 'packing'])
                 ->whereDate('tanggal', $request->tanggal)
                 ->with([
                     'items.item',
@@ -650,7 +722,8 @@ class PackingListController extends Controller
 
                     // Check if this item has been packed
                     $isPacked = FoodPackingListItem::whereHas('packingList', function($q) use ($fo) {
-                        $q->where('food_floor_order_id', $fo->id);
+                        $q->where('food_floor_order_id', $fo->id)
+                          ->where('status', 'packing'); // Hanya packing list yang masih aktif
                     })->where('food_floor_order_item_id', $foItem->id)->exists();
 
                     if (!$isPacked) {

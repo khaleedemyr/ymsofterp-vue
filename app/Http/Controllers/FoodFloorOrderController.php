@@ -70,6 +70,14 @@ class FoodFloorOrderController extends Controller
     // Method store untuk membuat floor order
     public function store(Request $request)
     {
+        // Validasi arrival_date wajib diisi
+        if (empty($request->arrival_date)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Tanggal kedatangan wajib diisi'
+            ], 422);
+        }
+        
         try {
             \DB::beginTransaction();
 
@@ -105,6 +113,7 @@ class FoodFloorOrderController extends Controller
                     'input_mode' => $request->input_mode ?? 'pc',
                     'fo_schedule_id' => $request->fo_schedule_id ?? null,
                     'warehouse_outlet_id' => $warehouseOutletId,
+                    'arrival_date' => $request->arrival_date ?? null,
                     'updated_at' => now()
                 ]);
                 $floorOrderId = $existingOrder->id;
@@ -117,6 +126,7 @@ class FoodFloorOrderController extends Controller
                     'fo_mode' => $request->fo_mode ?? 'RO Utama',
                     'input_mode' => $request->input_mode ?? 'pc',
                     'fo_schedule_id' => $request->fo_schedule_id ?? null,
+                    'arrival_date' => $request->arrival_date ?? null,
                     'id_outlet' => $idOutlet,
                     'user_id' => $userId,
                     'warehouse_outlet_id' => $warehouseOutletId,
@@ -187,6 +197,14 @@ class FoodFloorOrderController extends Controller
     // Method update untuk mengupdate floor order
     public function update(Request $request, $id)
     {
+        // Validasi arrival_date wajib diisi
+        if (empty($request->arrival_date)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Tanggal kedatangan wajib diisi'
+            ], 422);
+        }
+        
         $order = FoodFloorOrder::findOrFail($id);
         $oldData = $order->toArray();
         // --- VALIDASI warehouse_outlet_id ---
@@ -199,7 +217,7 @@ class FoodFloorOrderController extends Controller
             return response()->json(['success' => false, 'message' => 'Warehouse outlet tidak valid atau tidak aktif untuk outlet ini.'], 422);
         }
         $order->update(array_merge(
-            $request->only(['tanggal', 'description', 'fo_mode', 'input_mode', 'fo_schedule_id']),
+            $request->only(['tanggal', 'description', 'fo_mode', 'input_mode', 'fo_schedule_id', 'arrival_date']),
             ['warehouse_outlet_id' => $warehouseOutletId]
         ));
 

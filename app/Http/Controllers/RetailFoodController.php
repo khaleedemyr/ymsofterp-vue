@@ -38,11 +38,12 @@ class RetailFoodController extends Controller
         if (!$outletExists && $userOutletId != 1) {
             abort(403, 'Outlet tidak terdaftar');
         }
-        // Query dengan join warehouse outlet
+        // Query dengan join warehouse outlet dan supplier
         $query = RetailFood::query()
-            ->with(['outlet', 'creator', 'items'])
+            ->with(['outlet', 'creator', 'items', 'supplier'])
             ->leftJoin('warehouse_outlets as wo', 'retail_food.warehouse_outlet_id', '=', 'wo.id')
-            ->addSelect('retail_food.*', 'wo.name as warehouse_outlet_name')
+            ->leftJoin('suppliers as s', 'retail_food.supplier_id', '=', 's.id')
+            ->addSelect('retail_food.*', 'wo.name as warehouse_outlet_name', 's.name as supplier_name')
             ->orderByDesc('retail_food.created_at');
         if ($userOutletId != 1) {
             $query->where('retail_food.outlet_id', $userOutletId);
@@ -73,10 +74,19 @@ class RetailFoodController extends Controller
                 ->orderBy('name')
                 ->get();
         }
+        
+        // Ambil data supplier
+        $suppliers = DB::table('suppliers')
+            ->where('status', 'active')
+            ->select('id', 'name', 'code')
+            ->orderBy('name')
+            ->get();
+            
         return Inertia::render('RetailFood/Form', [
             'user' => $user,
             'outlets' => $outlets,
             'warehouse_outlets' => $warehouse_outlets,
+            'suppliers' => $suppliers,
         ]);
     }
 
@@ -91,6 +101,8 @@ class RetailFoodController extends Controller
             'items.*.unit' => 'required|string',
             'items.*.price' => 'required|numeric|min:0',
             'notes' => 'nullable|string',
+            'payment_method' => 'required|in:cash,contra_bon',
+            'supplier_id' => 'nullable|exists:suppliers,id',
         ]);
 
         try {
@@ -118,6 +130,8 @@ class RetailFoodController extends Controller
                 'transaction_date' => $request->transaction_date,
                 'total_amount' => $totalAmount,
                 'notes' => $request->notes,
+                'payment_method' => $request->payment_method,
+                'supplier_id' => $request->supplier_id,
                 'status' => 'approved'
             ]);
 
@@ -329,7 +343,7 @@ class RetailFoodController extends Controller
 
     public function show($id)
     {
-        $retailFood = RetailFood::with(['outlet', 'creator', 'items', 'invoices'])
+        $retailFood = RetailFood::with(['outlet', 'creator', 'items', 'invoices', 'supplier'])
             ->findOrFail($id);
 
         return Inertia::render('RetailFood/Detail', [
@@ -450,10 +464,18 @@ class RetailFoodController extends Controller
         $request->validate([
             'outlet_id' => 'required|exists:tbl_data_outlet,id_outlet',
             'transaction_date' => 'required|date',
+            'payment_method' => 'nullable|in:cash,contra_bon',
         ]);
-        $total = RetailFood::where('outlet_id', $request->outlet_id)
-            ->whereDate('transaction_date', $request->transaction_date)
-            ->sum('total_amount');
+        
+        $query = RetailFood::where('outlet_id', $request->outlet_id)
+            ->whereDate('transaction_date', $request->transaction_date);
+            
+        // Jika payment_method diisi, filter berdasarkan metode pembayaran
+        if ($request->payment_method) {
+            $query->where('payment_method', $request->payment_method);
+        }
+        
+        $total = $query->sum('total_amount');
         return response()->json(['total' => $total]);
     }
 } 

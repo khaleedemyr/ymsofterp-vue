@@ -19,6 +19,8 @@
                 <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">No. Transaksi</th>
                 <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Outlet</th>
                 <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Warehouse Outlet</th>
+                <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Supplier</th>
+                <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Metode Pembayaran</th>
                 <th class="px-6 py-3 text-right text-xs font-bold text-gray-700 uppercase tracking-wider">Total</th>
                 <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Status</th>
                 <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Aksi</th>
@@ -26,13 +28,23 @@
             </thead>
             <tbody class="bg-white divide-y divide-gray-200">
               <tr v-if="!props.retailFoods.data.length">
-                <td colspan="6" class="text-center py-10 text-gray-400">Tidak ada data.</td>
+                <td colspan="8" class="text-center py-10 text-gray-400">Tidak ada data.</td>
               </tr>
               <tr v-for="row in props.retailFoods.data" :key="row.id">
                 <td class="px-6 py-3">{{ formatDate(row.transaction_date) }}</td>
                 <td class="px-6 py-3">{{ row.retail_number }}</td>
                 <td class="px-6 py-3">{{ row.outlet?.nama_outlet || '-' }}</td>
                 <td class="px-6 py-3">{{ row.warehouse_outlet_name || '-' }}</td>
+                <td class="px-6 py-3">{{ row.supplier_name || '-' }}</td>
+                <td class="px-6 py-3">
+                  <span :class="{
+                    'px-2 py-1 text-xs font-semibold rounded-full': true,
+                    'bg-green-100 text-green-800': row.payment_method === 'cash',
+                    'bg-blue-100 text-blue-800': row.payment_method === 'contra_bon'
+                  }">
+                    {{ row.payment_method === 'cash' ? 'Cash' : 'Contra Bon' }}
+                  </span>
+                </td>
                 <td class="px-6 py-3 text-right">{{ formatRupiah(row.total_amount) }}</td>
                 <td class="px-6 py-3">
                   <span :class="{

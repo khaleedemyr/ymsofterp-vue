@@ -19,6 +19,8 @@ class RetailFood extends Model
         'transaction_date',
         'total_amount',
         'notes',
+        'payment_method',
+        'supplier_id',
         'status'
     ];
 
@@ -45,6 +47,11 @@ class RetailFood extends Model
     public function invoices()
     {
         return $this->hasMany(RetailFoodInvoice::class);
+    }
+
+    public function supplier()
+    {
+        return $this->belongsTo(Supplier::class);
     }
 
     public static function getDailyTotal($date)

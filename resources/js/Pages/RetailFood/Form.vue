@@ -2,30 +2,94 @@
   <AppLayout>
     <div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-white py-12 px-4 md:px-8">
       <div class="w-full max-w-4xl bg-white rounded-3xl shadow-3xl p-10 border border-blue-100 transition-all duration-300 hover:shadow-4xl">
-        <h1 class="text-3xl font-extrabold mb-10 flex items-center gap-3 text-blue-800 drop-shadow-lg">
-          <i class="fa-solid fa-store text-blue-500 text-3xl"></i> Input Retail Food
-        </h1>
+                 <h1 class="text-3xl font-extrabold mb-6 flex items-center gap-3 text-blue-800 drop-shadow-lg">
+           <i class="fa-solid fa-store text-blue-500 text-3xl"></i> Input Retail Food
+         </h1>
+
+         <!-- Informasi Cara Penggunaan -->
+         <div class="mb-8 p-4 bg-blue-50 border border-blue-200 rounded-xl">
+           <h3 class="text-lg font-semibold text-blue-800 mb-3 flex items-center gap-2">
+             <i class="fa-solid fa-info-circle text-blue-600"></i>
+             Cara Penggunaan Retail Food
+           </h3>
+           <div class="text-sm text-blue-700 space-y-2">
+                           <div class="flex items-start gap-2">
+                <span class="bg-blue-600 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5">1</span>
+                <span><strong>Isi Data Transaksi:</strong> Pilih tanggal, outlet, warehouse outlet, metode pembayaran (Cash/Contra Bon), dan supplier. <strong>Jika metode pembayaran Cash, pilih supplier "CASH SUPPLIER".</strong></span>
+              </div>
+             <div class="flex items-start gap-2">
+               <span class="bg-blue-600 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5">2</span>
+               <span><strong>Tambah Items:</strong> Cari item dengan mengetik nama item, pilih unit dan isi quantity serta harga. Klik "+ Tambah Item" untuk menambah item baru.</span>
+             </div>
+             <div class="flex items-start gap-2">
+               <span class="bg-blue-600 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5">3</span>
+               <span><strong>Upload Bukti:</strong> Upload foto bon/invoice dalam format JPG/PNG (bisa lebih dari 1 file).</span>
+             </div>
+             <div class="flex items-start gap-2">
+               <span class="bg-blue-600 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5">4</span>
+               <span><strong>Catatan:</strong> Total transaksi <strong>Cash</strong> per outlet per hari maksimal Rp 500.000. Transaksi <strong>Contra Bon</strong> tidak ada batasan. Sistem akan memberikan peringatan jika melebihi batas.</span>
+             </div>
+             <div class="flex items-start gap-2">
+               <span class="bg-blue-600 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5">5</span>
+               <span><strong>Simpan:</strong> Klik tombol "Simpan" untuk menyimpan transaksi. Data akan otomatis masuk ke inventory outlet.</span>
+             </div>
+           </div>
+         </div>
         <form @submit.prevent="submit" class="space-y-7">
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div>
-              <label class="block text-xs font-bold text-gray-600 mb-2">Tanggal</label>
-              <input type="date" v-model="form.transaction_date" class="input input-bordered w-full shadow-inner rounded-xl focus:ring-2 focus:ring-blue-300 transition-all duration-200" required />
-            </div>
-            <div>
-              <label class="block text-xs font-bold text-gray-600 mb-2">Outlet</label>
-              <select v-model="form.outlet_id" :disabled="outletDisabled" class="input input-bordered w-full shadow-inner rounded-xl focus:ring-2 focus:ring-blue-300 transition-all duration-200" required>
-                <option value="">Pilih Outlet</option>
-                <option v-for="o in props.outlets" :key="o.id_outlet" :value="o.id_outlet">{{ o.nama_outlet }}</option>
-              </select>
-            </div>
-            <div>
-              <label class="block text-xs font-bold text-gray-600 mb-2">Warehouse Outlet</label>
-              <select v-model="form.warehouse_outlet_id" class="input input-bordered w-full shadow-inner rounded-xl focus:ring-2 focus:ring-blue-300 transition-all duration-200" required>
-                <option value="">Pilih Warehouse Outlet</option>
-                <option v-for="w in filteredWarehouseOutlets" :key="w.id" :value="w.id">{{ w.name }}</option>
-              </select>
-            </div>
-          </div>
+                     <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+             <div>
+               <label class="block text-xs font-bold text-gray-600 mb-2">Tanggal</label>
+               <input type="date" v-model="form.transaction_date" class="input input-bordered w-full shadow-inner rounded-xl focus:ring-2 focus:ring-blue-300 transition-all duration-200" required />
+             </div>
+             <div>
+               <label class="block text-xs font-bold text-gray-600 mb-2">Outlet</label>
+               <select v-model="form.outlet_id" :disabled="outletDisabled" class="input input-bordered w-full shadow-inner rounded-xl focus:ring-2 focus:ring-blue-300 transition-all duration-200" required>
+                 <option value="">Pilih Outlet</option>
+                 <option v-for="o in props.outlets" :key="o.id_outlet" :value="o.id_outlet">{{ o.nama_outlet }}</option>
+               </select>
+             </div>
+             <div>
+               <label class="block text-xs font-bold text-gray-600 mb-2">Warehouse Outlet</label>
+               <select v-model="form.warehouse_outlet_id" class="input input-bordered w-full shadow-inner rounded-xl focus:ring-2 focus:ring-blue-300 transition-all duration-200" required>
+                 <option value="">Pilih Warehouse Outlet</option>
+                 <option v-for="w in filteredWarehouseOutlets" :key="w.id" :value="w.id">{{ w.name }}</option>
+               </select>
+             </div>
+           </div>
+
+           <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+             <div>
+               <label class="block text-xs font-bold text-gray-600 mb-2">Metode Pembayaran</label>
+               <select v-model="form.payment_method" class="input input-bordered w-full shadow-inner rounded-xl focus:ring-2 focus:ring-blue-300 transition-all duration-200" required>
+                 <option value="">Pilih Metode Pembayaran</option>
+                 <option value="cash">Cash</option>
+                 <option value="contra_bon">Contra Bon</option>
+               </select>
+             </div>
+             <div>
+               <label class="block text-xs font-bold text-gray-600 mb-2">Supplier</label>
+               <Multiselect
+                 v-model="form.supplier"
+                 :options="props.suppliers"
+                 :searchable="true"
+                 :close-on-select="true"
+                 :clear-on-select="false"
+                 :preserve-search="true"
+                 placeholder="Pilih atau cari supplier..."
+                 track-by="id"
+                 label="name"
+                 :preselect-first="false"
+                 class="w-full"
+               >
+                 <template #option="{ option }">
+                   <div class="flex justify-between items-center">
+                     <span>{{ option.name }}</span>
+                     <span class="text-xs text-gray-500">{{ option.code }}</span>
+                   </div>
+                 </template>
+               </Multiselect>
+             </div>
+           </div>
 
           <div>
             <label class="block text-xs font-bold text-gray-600 mb-1">Items</label>
@@ -123,10 +187,10 @@
             </div>
           </div>
 
-          <div>
-            <label class="block text-xs font-bold text-gray-600 mb-1">Catatan</label>
-            <textarea v-model="form.notes" class="input input-bordered w-full" rows="3"></textarea>
-          </div>
+                     <div>
+             <label class="block text-xs font-bold text-gray-600 mb-1">Catatan</label>
+             <textarea v-model="form.notes" class="input input-bordered w-full" rows="3"></textarea>
+           </div>
 
           <div>
             <label class="block text-xs font-bold text-gray-600 mb-1">Upload Bon/Invoice (jpg/png, bisa lebih dari 1)</label>
@@ -138,10 +202,10 @@
             </div>
           </div>
 
-          <div v-if="showLimitAlert" class="mb-4 p-4 rounded-xl bg-yellow-100 border border-yellow-300 text-yellow-800 shadow flex items-center gap-2 animate-pulse">
-            <i class="fa fa-triangle-exclamation text-xl"></i>
-            <span>Total transaksi retail food outlet hari ini sudah melebihi Rp 500.000!</span>
-          </div>
+                     <div v-if="showLimitAlert" class="mb-4 p-4 rounded-xl bg-yellow-100 border border-yellow-300 text-yellow-800 shadow flex items-center gap-2 animate-pulse">
+             <i class="fa fa-triangle-exclamation text-xl"></i>
+             <span>Total transaksi <strong>Cash</strong> outlet hari ini sudah melebihi Rp 500.000!</span>
+           </div>
 
           <div class="flex justify-end gap-2">
             <button type="button" @click="goBack" class="btn px-6 py-2 rounded-lg font-bold bg-gradient-to-r from-gray-200 to-gray-400 text-gray-700 shadow-md hover:from-gray-300 hover:to-gray-500 active:scale-95 transition-all">
@@ -164,10 +228,13 @@ import { ref, computed, watch } from 'vue'
 import { router, usePage } from '@inertiajs/vue3'
 import axios from 'axios'
 import Swal from 'sweetalert2'
+import Multiselect from 'vue-multiselect'
+import 'vue-multiselect/dist/vue-multiselect.min.css'
 
 const props = defineProps({
   outlets: Array,
-  warehouse_outlets: Array
+  warehouse_outlets: Array,
+  suppliers: Array
 })
 
 const page = usePage()
@@ -194,13 +261,19 @@ const form = ref({
   outlet_id: userOutletId.value == 1 ? '' : userOutletId.value,
   warehouse_outlet_id: '',
   notes: '',
+  payment_method: '',
+  supplier: null,
   items: [newItem()]
 })
 
 const outletDisabled = computed(() => userOutletId.value != 1)
 const loading = ref(false)
 const dailyTotal = ref(0)
-const showLimitAlert = computed(() => (dailyTotal.value + totalAmount.value) >= 500000)
+const showLimitAlert = computed(() => {
+  // Hanya tampilkan alert jika metode pembayaran adalah cash
+  if (form.value.payment_method !== 'cash') return false
+  return (dailyTotal.value + totalAmount.value) >= 500000
+})
 
 function addItem() {
   form.value.items.push(newItem())
@@ -307,7 +380,8 @@ async function fetchDailyTotal() {
     const res = await axios.get('/retail-food/daily-total', {
       params: {
         outlet_id: form.value.outlet_id,
-        transaction_date: form.value.transaction_date
+        transaction_date: form.value.transaction_date,
+        payment_method: 'cash' // Hanya ambil total transaksi cash
       }
     })
     dailyTotal.value = res.data.total || 0
@@ -319,8 +393,20 @@ async function fetchDailyTotal() {
 watch([
   () => form.value.outlet_id,
   () => form.value.transaction_date,
+  () => form.value.payment_method,
   () => form.value.items.map(i => [i.qty, i.price])
 ], fetchDailyTotal, { immediate: true, deep: true })
+
+// Watch untuk otomatis pilih CASH SUPPLIER jika metode pembayaran cash
+watch(() => form.value.payment_method, (newValue) => {
+  if (newValue === 'cash') {
+    // Cari supplier dengan nama "CASH SUPPLIER"
+    const cashSupplier = props.suppliers.find(s => s.name.toLowerCase().includes('cash supplier'))
+    if (cashSupplier) {
+      form.value.supplier = cashSupplier
+    }
+  }
+})
 
 const files = ref([])
 const filePreviews = ref([])
@@ -351,6 +437,8 @@ async function submit() {
     formData.append('warehouse_outlet_id', form.value.warehouse_outlet_id)
     formData.append('transaction_date', form.value.transaction_date)
     formData.append('notes', form.value.notes)
+    formData.append('payment_method', form.value.payment_method)
+    formData.append('supplier_id', form.value.supplier ? form.value.supplier.id : '')
     form.value.items.forEach((item, idx) => {
       formData.append(`items[${idx}][item_name]`, item.item_name)
       formData.append(`items[${idx}][qty]`, item.qty)

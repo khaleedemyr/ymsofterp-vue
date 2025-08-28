@@ -30,6 +30,8 @@ class ContraBon extends Model
         'gm_finance_approved_by',
         'gm_finance_note',
         'supplier_invoice_number',
+        'source_type',
+        'source_id',
     ];
 
     protected $casts = [
@@ -46,6 +48,11 @@ class ContraBon extends Model
     public function purchaseOrder()
     {
         return $this->belongsTo(PurchaseOrderFood::class, 'po_id');
+    }
+
+    public function retailFood()
+    {
+        return $this->belongsTo(RetailFood::class, 'source_id');
     }
 
     public function items()
