@@ -367,24 +367,30 @@ class OutletTransferController extends Controller
     {
         $user = auth()->user();
         
-        // Ambil data outlet menggunakan Eloquent model
+        // Ambil data outlet asal berdasarkan id_outlet user
         if ($user->id_outlet == 1) {
-            // Admin bisa pilih semua outlet
-            $outlets = \App\Models\Outlet::where('status', 'A')
+            // Admin bisa pilih semua outlet untuk outlet asal
+            $outlets_from = \App\Models\Outlet::where('status', 'A')
                 ->select('id_outlet', 'nama_outlet')
                 ->orderBy('nama_outlet')
                 ->get();
         } else {
-            // User biasa hanya bisa pilih outletnya sendiri
-            $outlets = \App\Models\Outlet::where('id_outlet', $user->id_outlet)
+            // User biasa hanya bisa pilih outletnya sendiri untuk outlet asal
+            $outlets_from = \App\Models\Outlet::where('id_outlet', $user->id_outlet)
                 ->where('status', 'A')
                 ->select('id_outlet', 'nama_outlet')
                 ->get();
         }
         
-        // Ambil warehouse outlets berdasarkan outlet user
+        // Ambil data outlet tujuan - semua outlet tanpa filter
+        $outlets_to = \App\Models\Outlet::where('status', 'A')
+            ->select('id_outlet', 'nama_outlet')
+            ->orderBy('nama_outlet')
+            ->get();
+        
+        // Ambil warehouse outlets berdasarkan outlet user untuk outlet asal
         if ($user->id_outlet == 1) {
-            $warehouse_outlets = DB::table('warehouse_outlets')
+            $warehouse_outlets_from = DB::table('warehouse_outlets')
                 ->join('tbl_data_outlet', 'warehouse_outlets.outlet_id', '=', 'tbl_data_outlet.id_outlet')
                 ->where('warehouse_outlets.status', 'active')
                 ->select('warehouse_outlets.id', 'warehouse_outlets.name', 'warehouse_outlets.outlet_id', 'tbl_data_outlet.nama_outlet')
@@ -392,7 +398,7 @@ class OutletTransferController extends Controller
                 ->orderBy('warehouse_outlets.name')
                 ->get();
         } else {
-            $warehouse_outlets = DB::table('warehouse_outlets')
+            $warehouse_outlets_from = DB::table('warehouse_outlets')
                 ->join('tbl_data_outlet', 'warehouse_outlets.outlet_id', '=', 'tbl_data_outlet.id_outlet')
                 ->where('warehouse_outlets.outlet_id', $user->id_outlet)
                 ->where('warehouse_outlets.status', 'active')
@@ -400,10 +406,21 @@ class OutletTransferController extends Controller
                 ->orderBy('warehouse_outlets.name')
                 ->get();
         }
+        
+        // Ambil warehouse outlets untuk outlet tujuan - semua warehouse tanpa filter
+        $warehouse_outlets_to = DB::table('warehouse_outlets')
+            ->join('tbl_data_outlet', 'warehouse_outlets.outlet_id', '=', 'tbl_data_outlet.id_outlet')
+            ->where('warehouse_outlets.status', 'active')
+            ->select('warehouse_outlets.id', 'warehouse_outlets.name', 'warehouse_outlets.outlet_id', 'tbl_data_outlet.nama_outlet')
+            ->orderBy('tbl_data_outlet.nama_outlet')
+            ->orderBy('warehouse_outlets.name')
+            ->get();
 
         return inertia('OutletTransfer/Form', [
-            'outlets' => $outlets,
-            'warehouse_outlets' => $warehouse_outlets,
+            'outlets_from' => $outlets_from,
+            'outlets_to' => $outlets_to,
+            'warehouse_outlets_from' => $warehouse_outlets_from,
+            'warehouse_outlets_to' => $warehouse_outlets_to,
             'user_outlet_id' => $user->id_outlet,
         ]);
     }
@@ -836,24 +853,30 @@ class OutletTransferController extends Controller
         $user = auth()->user();
         $transfer = OutletTransfer::with(['items', 'warehouseOutletFrom', 'warehouseOutletTo'])->findOrFail($id);
         
-        // Ambil data outlet menggunakan Eloquent model
+        // Ambil data outlet asal berdasarkan id_outlet user
         if ($user->id_outlet == 1) {
-            // Admin bisa pilih semua outlet
-            $outlets = \App\Models\Outlet::where('status', 'A')
+            // Admin bisa pilih semua outlet untuk outlet asal
+            $outlets_from = \App\Models\Outlet::where('status', 'A')
                 ->select('id_outlet', 'nama_outlet')
                 ->orderBy('nama_outlet')
                 ->get();
         } else {
-            // User biasa hanya bisa pilih outletnya sendiri
-            $outlets = \App\Models\Outlet::where('id_outlet', $user->id_outlet)
+            // User biasa hanya bisa pilih outletnya sendiri untuk outlet asal
+            $outlets_from = \App\Models\Outlet::where('id_outlet', $user->id_outlet)
                 ->where('status', 'A')
                 ->select('id_outlet', 'nama_outlet')
                 ->get();
         }
         
-        // Ambil warehouse outlets berdasarkan outlet user
+        // Ambil data outlet tujuan - semua outlet tanpa filter
+        $outlets_to = \App\Models\Outlet::where('status', 'A')
+            ->select('id_outlet', 'nama_outlet')
+            ->orderBy('nama_outlet')
+            ->get();
+        
+        // Ambil warehouse outlets berdasarkan outlet user untuk outlet asal
         if ($user->id_outlet == 1) {
-            $warehouse_outlets = DB::table('warehouse_outlets')
+            $warehouse_outlets_from = DB::table('warehouse_outlets')
                 ->join('tbl_data_outlet', 'warehouse_outlets.outlet_id', '=', 'tbl_data_outlet.id_outlet')
                 ->where('warehouse_outlets.status', 'active')
                 ->select('warehouse_outlets.id', 'warehouse_outlets.name', 'warehouse_outlets.outlet_id', 'tbl_data_outlet.nama_outlet')
@@ -861,7 +884,7 @@ class OutletTransferController extends Controller
                 ->orderBy('warehouse_outlets.name')
                 ->get();
         } else {
-            $warehouse_outlets = DB::table('warehouse_outlets')
+            $warehouse_outlets_from = DB::table('warehouse_outlets')
                 ->join('tbl_data_outlet', 'warehouse_outlets.outlet_id', '=', 'tbl_data_outlet.id_outlet')
                 ->where('warehouse_outlets.outlet_id', $user->id_outlet)
                 ->where('warehouse_outlets.status', 'active')
@@ -869,6 +892,15 @@ class OutletTransferController extends Controller
                 ->orderBy('warehouse_outlets.name')
                 ->get();
         }
+        
+        // Ambil warehouse outlets untuk outlet tujuan - semua warehouse tanpa filter
+        $warehouse_outlets_to = DB::table('warehouse_outlets')
+            ->join('tbl_data_outlet', 'warehouse_outlets.outlet_id', '=', 'tbl_data_outlet.id_outlet')
+            ->where('warehouse_outlets.status', 'active')
+            ->select('warehouse_outlets.id', 'warehouse_outlets.name', 'warehouse_outlets.outlet_id', 'tbl_data_outlet.nama_outlet')
+            ->orderBy('tbl_data_outlet.nama_outlet')
+            ->orderBy('warehouse_outlets.name')
+            ->get();
         
         // Ambil outlet_id dari warehouse outlet
         $outlet_from_id = $transfer->warehouseOutletFrom->outlet_id ?? null;
@@ -893,8 +925,10 @@ class OutletTransferController extends Controller
         });
         
         return inertia('OutletTransfer/Form', [
-            'outlets' => $outlets,
-            'warehouse_outlets' => $warehouse_outlets,
+            'outlets_from' => $outlets_from,
+            'outlets_to' => $outlets_to,
+            'warehouse_outlets_from' => $warehouse_outlets_from,
+            'warehouse_outlets_to' => $warehouse_outlets_to,
             'user_outlet_id' => $user->id_outlet,
             'editData' => [
                 'id' => $transfer->id,

@@ -7,8 +7,10 @@ import axios from 'axios';
 import Modal from '@/Components/Modal.vue';
 
 const props = defineProps({
-  outlets: Array,
-  warehouse_outlets: Array,
+  outlets_from: Array,
+  outlets_to: Array,
+  warehouse_outlets_from: Array,
+  warehouse_outlets_to: Array,
   user_outlet_id: Number,
   items: Array,
   editData: Object,
@@ -38,17 +40,10 @@ const warehouseOutletsFrom = ref([]);
 const warehouseOutletsTo = ref([]);
 
 // Watch untuk outlet_from_id
-watch(() => form.outlet_from_id, async (newOutletId) => {
+watch(() => form.outlet_from_id, (newOutletId) => {
   if (newOutletId) {
-    try {
-      const response = await axios.get('/api/warehouse-outlets/by-outlet', {
-        params: { outlet_id: newOutletId }
-      });
-      warehouseOutletsFrom.value = response.data;
-    } catch (error) {
-      console.error('Error fetching warehouse outlets:', error);
-      warehouseOutletsFrom.value = [];
-    }
+    // Filter warehouse outlets berdasarkan outlet yang dipilih
+    warehouseOutletsFrom.value = props.warehouse_outlets_from.filter(w => w.outlet_id == newOutletId);
   } else {
     warehouseOutletsFrom.value = [];
   }
@@ -57,17 +52,10 @@ watch(() => form.outlet_from_id, async (newOutletId) => {
 });
 
 // Watch untuk outlet_to_id
-watch(() => form.outlet_to_id, async (newOutletId) => {
+watch(() => form.outlet_to_id, (newOutletId) => {
   if (newOutletId) {
-    try {
-      const response = await axios.get('/api/warehouse-outlets/by-outlet', {
-        params: { outlet_id: newOutletId }
-      });
-      warehouseOutletsTo.value = response.data;
-    } catch (error) {
-      console.error('Error fetching warehouse outlets:', error);
-      warehouseOutletsTo.value = [];
-    }
+    // Filter warehouse outlets berdasarkan outlet yang dipilih
+    warehouseOutletsTo.value = props.warehouse_outlets_to.filter(w => w.outlet_id == newOutletId);
   } else {
     warehouseOutletsTo.value = [];
   }
@@ -79,6 +67,16 @@ watch(() => form.outlet_to_id, async (newOutletId) => {
 onMounted(() => {
   if (props.user_outlet_id && props.user_outlet_id !== 1) {
     form.outlet_from_id = props.user_outlet_id;
+  }
+  
+  // Inisialisasi warehouse outlets jika ada editData
+  if (props.editData) {
+    if (props.editData.outlet_from_id) {
+      warehouseOutletsFrom.value = props.warehouse_outlets_from.filter(w => w.outlet_id == props.editData.outlet_from_id);
+    }
+    if (props.editData.outlet_to_id) {
+      warehouseOutletsTo.value = props.warehouse_outlets_to.filter(w => w.outlet_id == props.editData.outlet_to_id);
+    }
   }
 });
 
@@ -452,7 +450,7 @@ onUnmounted(() => {
             <label class="block text-sm font-medium text-gray-700">Outlet Asal</label>
             <select v-model="form.outlet_from_id" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500" required :disabled="user_outlet_id !== 1">
               <option value="">Pilih Outlet Asal</option>
-              <option v-for="outlet in outlets" :key="outlet.id_outlet" :value="outlet.id_outlet">{{ outlet.nama_outlet }}</option>
+              <option v-for="outlet in outlets_from" :key="outlet.id_outlet" :value="outlet.id_outlet">{{ outlet.nama_outlet }}</option>
             </select>
             <div v-if="form.errors.outlet_from_id" class="text-xs text-red-500 mt-1">{{ form.errors.outlet_from_id }}</div>
           </div>
@@ -468,7 +466,7 @@ onUnmounted(() => {
             <label class="block text-sm font-medium text-gray-700">Outlet Tujuan</label>
             <select v-model="form.outlet_to_id" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500" required>
               <option value="">Pilih Outlet Tujuan</option>
-              <option v-for="outlet in outlets" :key="outlet.id_outlet" :value="outlet.id_outlet">{{ outlet.nama_outlet }}</option>
+              <option v-for="outlet in outlets_to" :key="outlet.id_outlet" :value="outlet.id_outlet">{{ outlet.nama_outlet }}</option>
             </select>
             <div v-if="form.errors.outlet_to_id" class="text-xs text-red-500 mt-1">{{ form.errors.outlet_to_id }}</div>
           </div>
