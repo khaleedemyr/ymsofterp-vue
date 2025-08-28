@@ -99,6 +99,11 @@ const clearSearch = () => {
   searchRO.value = '';
 };
 
+// Function untuk mengisi quantity satu item
+const fillItemQuantity = (item) => {
+  item.input_qty = item.qty ?? item.qty_order;
+};
+
 // Original methods
 watch([selectedFO, selectedDivision], async ([fo, div]) => {
   if (fo && div) {
@@ -433,6 +438,13 @@ watch(selectedRO, (newValue) => {
         <div v-if="error" class="text-red-600 mb-3 text-sm">{{ error }}</div>
         
         <div v-if="items.length">
+          <!-- Info Total Items -->
+          <div class="mb-3">
+            <div class="text-sm text-gray-600">
+              Total items: {{ items.filter(item => item.checked).length }} dari {{ items.length }}
+            </div>
+          </div>
+          
           <div v-for="(catItems, catName) in itemsByCategory" :key="catName" class="mb-4">
             <div class="font-bold text-blue-700 text-sm mb-2">{{ catName }}</div>
             <div class="overflow-x-auto">
@@ -445,6 +457,7 @@ watch(selectedRO, (newValue) => {
                     <th class="py-1 px-2 text-left">Qty Order</th>
                     <th class="py-1 px-2 text-left">Input Qty</th>
                     <th class="py-1 px-2 text-left">Unit</th>
+                    <th class="py-1 px-2 text-left">Action</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -457,6 +470,15 @@ watch(selectedRO, (newValue) => {
                       <input type="number" v-model.number="item.input_qty" min="0" step="0.01" class="w-16 px-1 py-0.5 text-xs border border-gray-300 rounded text-right" :placeholder="'Qty'" />
                     </td>
                     <td class="py-1 px-2">{{ item.unit }}</td>
+                    <td class="py-1 px-2">
+                      <button 
+                        @click="fillItemQuantity(item)"
+                        class="text-blue-600 hover:text-blue-800 text-xs px-1 py-0.5 rounded hover:bg-blue-50"
+                        title="Isi otomatis quantity packing sesuai quantity request"
+                      >
+                        <i class="fas fa-equals"></i>
+                      </button>
+                    </td>
                   </tr>
                 </tbody>
               </table>
