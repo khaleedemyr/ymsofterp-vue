@@ -92,36 +92,101 @@ class RetailFoodController extends Controller
 
     public function store(Request $request)
     {
-        $request->validate([
-            'outlet_id' => 'required|exists:tbl_data_outlet,id_outlet',
-            'transaction_date' => 'required|date',
-            'items' => 'required|array|min:1',
-            'items.*.item_name' => 'required|string',
-            'items.*.qty' => 'required|numeric|min:0',
-            'items.*.unit' => 'required|string',
-            'items.*.price' => 'required|numeric|min:0',
-            'notes' => 'nullable|string',
-            'payment_method' => 'required|in:cash,contra_bon',
-            'supplier_id' => 'nullable|exists:suppliers,id',
+        \Log::info('RETAIL_FOOD_STORE: Mulai proses simpan retail food', [
+            'user_id' => auth()->id(),
+            'request_data' => $request->all(),
+            'has_files' => $request->hasFile('invoices'),
+            'file_count' => $request->hasFile('invoices') ? count($request->file('invoices')) : 0
         ]);
 
         try {
+            \Log::info('RETAIL_FOOD_STORE: Mulai validasi request');
+            $request->validate([
+                'outlet_id' => 'required|exists:tbl_data_outlet,id_outlet',
+                'transaction_date' => 'required|date',
+                'items' => 'required|array|min:1',
+                'items.*.item_name' => 'required|string',
+                'items.*.qty' => 'required|numeric|min:0',
+                'items.*.unit' => 'required|string',
+                'items.*.price' => 'required|numeric|min:0',
+                'notes' => 'nullable|string',
+                'payment_method' => 'required|in:cash,contra_bon',
+                'supplier_id' => 'nullable|exists:suppliers,id',
+            ]);
+            \Log::info('RETAIL_FOOD_STORE: Validasi berhasil');
+
+            // Validasi tambahan untuk warehouse_outlet_id dan supplier_id
+            if ($request->warehouse_outlet_id) {
+                $warehouseExists = DB::table('warehouse_outlets')
+                    ->where('id', $request->warehouse_outlet_id)
+                    ->where('status', 'active')
+                    ->exists();
+                if (!$warehouseExists) {
+                    \Log::error('RETAIL_FOOD_STORE: Warehouse outlet tidak ditemukan atau tidak aktif', [
+                        'warehouse_outlet_id' => $request->warehouse_outlet_id
+                    ]);
+                    return response()->json([
+                        'message' => 'Warehouse outlet tidak ditemukan atau tidak aktif'
+                    ], 422);
+                }
+            }
+
+            if ($request->supplier_id) {
+                $supplierExists = DB::table('suppliers')
+                    ->where('id', $request->supplier_id)
+                    ->where('status', 'active')
+                    ->exists();
+                if (!$supplierExists) {
+                    \Log::error('RETAIL_FOOD_STORE: Supplier tidak ditemukan atau tidak aktif', [
+                        'supplier_id' => $request->supplier_id
+                    ]);
+                    return response()->json([
+                        'message' => 'Supplier tidak ditemukan atau tidak aktif'
+                    ], 422);
+                }
+            }
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            \Log::error('RETAIL_FOOD_STORE: Validasi gagal', [
+                'errors' => $e->errors(),
+                'request_data' => $request->all()
+            ]);
+            return response()->json([
+                'message' => 'Validasi gagal',
+                'errors' => $e->errors()
+            ], 422);
+        }
+
+        try {
+            \Log::info('RETAIL_FOOD_STORE: Mulai transaction database');
             DB::beginTransaction();
 
             // Generate nomor retail food
+            \Log::info('RETAIL_FOOD_STORE: Generate retail number');
             $retailNumber = $this->generateRetailNumber();
+            \Log::info('RETAIL_FOOD_STORE: Retail number generated', ['retail_number' => $retailNumber]);
 
             // Hitung total amount
+            \Log::info('RETAIL_FOOD_STORE: Hitung total amount');
             $totalAmount = collect($request->items)->sum(function ($item) {
                 return $item['qty'] * $item['price'];
             });
+            \Log::info('RETAIL_FOOD_STORE: Total amount calculated', ['total_amount' => $totalAmount]);
 
             // Cek total transaksi hari ini
+            \Log::info('RETAIL_FOOD_STORE: Cek total transaksi hari ini');
             $dailyTotal = RetailFood::whereDate('transaction_date', $request->transaction_date)
                 ->where('status', 'approved')
                 ->sum('total_amount');
+            \Log::info('RETAIL_FOOD_STORE: Daily total checked', ['daily_total' => $dailyTotal]);
 
             // Buat retail food
+            \Log::info('RETAIL_FOOD_STORE: Buat retail food record', [
+                'outlet_id' => $request->outlet_id,
+                'warehouse_outlet_id' => $request->warehouse_outlet_id,
+                'supplier_id' => $request->supplier_id,
+                'payment_method' => $request->payment_method
+            ]);
             $retailFood = RetailFood::create([
                 'retail_number' => $retailNumber,
                 'outlet_id' => $request->outlet_id,
@@ -134,19 +199,53 @@ class RetailFoodController extends Controller
                 'supplier_id' => $request->supplier_id,
                 'status' => 'approved'
             ]);
+            \Log::info('RETAIL_FOOD_STORE: Retail food created', ['retail_food_id' => $retailFood->id]);
 
             // Simpan items dan proses inventory outlet
-            foreach ($request->items as $item) {
+            \Log::info('RETAIL_FOOD_STORE: Mulai proses items', ['item_count' => count($request->items)]);
+            foreach ($request->items as $index => $item) {
+                \Log::info('RETAIL_FOOD_STORE: Proses item ke-' . ($index + 1), [
+                    'item_name' => $item['item_name'],
+                    'qty' => $item['qty'],
+                    'unit' => $item['unit'],
+                    'price' => $item['price']
+                ]);
+                
                 // 1. Cari item master
+                \Log::info('RETAIL_FOOD_STORE: Cari item master', ['item_name' => $item['item_name']]);
                 $itemMaster = DB::table('items')->where('name', $item['item_name'])->first();
                 if (!$itemMaster) {
+                    \Log::error('RETAIL_FOOD_STORE: Item tidak ditemukan', ['item_name' => $item['item_name']]);
                     throw new \Exception('Item tidak ditemukan: ' . $item['item_name']);
                 }
+                \Log::info('RETAIL_FOOD_STORE: Item master ditemukan', [
+                    'item_id' => $itemMaster->id,
+                    'item_name' => $itemMaster->name,
+                    'small_unit_id' => $itemMaster->small_unit_id,
+                    'medium_unit_id' => $itemMaster->medium_unit_id,
+                    'large_unit_id' => $itemMaster->large_unit_id,
+                    'requested_unit_id' => $item['unit_id']
+                ]);
+                
+                // Validasi unit_id
+                $validUnits = [$itemMaster->small_unit_id, $itemMaster->medium_unit_id, $itemMaster->large_unit_id];
+                if (!in_array($item['unit_id'], $validUnits)) {
+                    \Log::error('RETAIL_FOOD_STORE: Unit tidak valid', [
+                        'item_name' => $item['item_name'],
+                        'requested_unit_id' => $item['unit_id'],
+                        'valid_units' => $validUnits
+                    ]);
+                    throw new \Exception('Unit tidak valid untuk item: ' . $item['item_name']);
+                }
+                \Log::info('RETAIL_FOOD_STORE: Unit valid', ['unit_id' => $item['unit_id']]);
+                
                 // 2. Cek/insert outlet_food_inventory_items
+                \Log::info('RETAIL_FOOD_STORE: Cek inventory item');
                 $inventoryItem = DB::table('outlet_food_inventory_items')
                     ->where('item_id', $itemMaster->id)
                     ->first();
                 if (!$inventoryItem) {
+                    \Log::info('RETAIL_FOOD_STORE: Buat inventory item baru');
                     $inventoryItemId = DB::table('outlet_food_inventory_items')->insertGetId([
                         'item_id' => $itemMaster->id,
                         'small_unit_id' => $itemMaster->small_unit_id,
@@ -155,10 +254,20 @@ class RetailFoodController extends Controller
                         'created_at' => now(),
                         'updated_at' => now(),
                     ]);
+                    \Log::info('RETAIL_FOOD_STORE: Inventory item dibuat', ['inventory_item_id' => $inventoryItemId]);
                 } else {
                     $inventoryItemId = $inventoryItem->id;
+                    \Log::info('RETAIL_FOOD_STORE: Inventory item sudah ada', ['inventory_item_id' => $inventoryItemId]);
                 }
                 // 3. Konversi qty ke small, medium, large
+                \Log::info('RETAIL_FOOD_STORE: Konversi quantity', [
+                    'unit_id' => $item['unit_id'],
+                    'large_unit_id' => $itemMaster->large_unit_id,
+                    'medium_unit_id' => $itemMaster->medium_unit_id,
+                    'small_unit_id' => $itemMaster->small_unit_id,
+                    'small_conv' => $itemMaster->small_conversion_qty,
+                    'medium_conv' => $itemMaster->medium_conversion_qty
+                ]);
                 $smallConv = $itemMaster->small_conversion_qty ?: 1;
                 $mediumConv = $itemMaster->medium_conversion_qty ?: 1;
                 $qty_small = 0; $qty_medium = 0; $qty_large = 0; $qty_small_for_value = 0;
@@ -178,7 +287,15 @@ class RetailFoodController extends Controller
                     $qty_large = ($smallConv > 0 && $mediumConv > 0) ? $qty_small / ($smallConv * $mediumConv) : 0;
                     $qty_small_for_value = $qty_small;
                 }
+                \Log::info('RETAIL_FOOD_STORE: Quantity converted', [
+                    'qty_small' => $qty_small,
+                    'qty_medium' => $qty_medium,
+                    'qty_large' => $qty_large,
+                    'qty_small_for_value' => $qty_small_for_value
+                ]);
+                
                 // 4. Hitung cost
+                \Log::info('RETAIL_FOOD_STORE: Hitung cost', ['price' => $item['price']]);
                 $cost = $item['price'];
                 $cost_small = $cost;
                 if ($item['unit_id'] == $itemMaster->large_unit_id) {
@@ -188,10 +305,18 @@ class RetailFoodController extends Controller
                 }
                 $cost_medium = $cost_small * ($itemMaster->small_conversion_qty ?: 1);
                 $cost_large = $cost_medium * ($itemMaster->medium_conversion_qty ?: 1);
-                // 5. Insert/update outlet_food_inventory_stocks (MAC)
+                \Log::info('RETAIL_FOOD_STORE: Cost calculated', [
+                    'cost_small' => $cost_small,
+                    'cost_medium' => $cost_medium,
+                    'cost_large' => $cost_large
+                ]);
+                
+                // 5. Insert/update outlet_food_inventory_stocks (MAC) - Mengikuti pola Good Receive Outlet Food
+                \Log::info('RETAIL_FOOD_STORE: Cek existing stock');
                 $existingStock = DB::table('outlet_food_inventory_stocks')
                     ->where('inventory_item_id', $inventoryItemId)
                     ->where('id_outlet', $request->outlet_id)
+                    ->where('warehouse_outlet_id', $request->warehouse_outlet_id)
                     ->first();
                 $qty_lama = $existingStock ? $existingStock->qty_small : 0;
                 $nilai_lama = $existingStock ? $existingStock->value : 0;
@@ -200,7 +325,17 @@ class RetailFoodController extends Controller
                 $total_qty = $qty_lama + $qty_baru;
                 $total_nilai = $nilai_lama + $nilai_baru;
                 $mac = $total_qty > 0 ? $total_nilai / $total_qty : $cost_small;
+                \Log::info('RETAIL_FOOD_STORE: Stock calculation', [
+                    'qty_lama' => $qty_lama,
+                    'nilai_lama' => $nilai_lama,
+                    'qty_baru' => $qty_baru,
+                    'nilai_baru' => $nilai_baru,
+                    'total_qty' => $total_qty,
+                    'total_nilai' => $total_nilai,
+                    'mac' => $mac
+                ]);
                 if ($existingStock) {
+                    \Log::info('RETAIL_FOOD_STORE: Update existing stock', ['stock_id' => $existingStock->id]);
                     DB::table('outlet_food_inventory_stocks')
                         ->where('id', $existingStock->id)
                         ->update([
@@ -211,10 +346,11 @@ class RetailFoodController extends Controller
                             'last_cost_small' => $mac,
                             'last_cost_medium' => $cost_medium,
                             'last_cost_large' => $cost_large,
-                            'warehouse_outlet_id' => $request->warehouse_outlet_id,
                             'updated_at' => now(),
                         ]);
+                    \Log::info('RETAIL_FOOD_STORE: Stock berhasil diupdate');
                 } else {
+                    \Log::info('RETAIL_FOOD_STORE: Insert new stock');
                     DB::table('outlet_food_inventory_stocks')->insert([
                         'inventory_item_id' => $inventoryItemId,
                         'id_outlet' => $request->outlet_id,
@@ -223,17 +359,21 @@ class RetailFoodController extends Controller
                         'qty_medium' => $qty_medium,
                         'qty_large' => $qty_large,
                         'value' => $nilai_baru,
-                        'last_cost_small' => $cost_small,
+                        'last_cost_small' => $mac,
                         'last_cost_medium' => $cost_medium,
                         'last_cost_large' => $cost_large,
                         'created_at' => now(),
                         'updated_at' => now(),
                     ]);
+                    \Log::info('RETAIL_FOOD_STORE: Stock baru berhasil diinsert');
                 }
-                // 6. Hitung saldo kartu stok (stock card)
+                
+                // 6. Hitung saldo kartu stok (stock card) - Mengikuti pola Good Receive Outlet Food
+                \Log::info('RETAIL_FOOD_STORE: Hitung saldo kartu stok');
                 $lastCard = DB::table('outlet_food_inventory_cards')
                     ->where('inventory_item_id', $inventoryItemId)
                     ->where('id_outlet', $request->outlet_id)
+                    ->where('warehouse_outlet_id', $request->warehouse_outlet_id)
                     ->orderByDesc('date')
                     ->orderByDesc('id')
                     ->first();
@@ -241,12 +381,20 @@ class RetailFoodController extends Controller
                     $saldo_qty_small = $lastCard->saldo_qty_small + $qty_small;
                     $saldo_qty_medium = $lastCard->saldo_qty_medium + $qty_medium;
                     $saldo_qty_large = $lastCard->saldo_qty_large + $qty_large;
+                    \Log::info('RETAIL_FOOD_STORE: Saldo dari kartu terakhir', [
+                        'last_saldo_small' => $lastCard->saldo_qty_small,
+                        'last_saldo_medium' => $lastCard->saldo_qty_medium,
+                        'last_saldo_large' => $lastCard->saldo_qty_large
+                    ]);
                 } else {
                     $saldo_qty_small = $qty_small;
                     $saldo_qty_medium = $qty_medium;
                     $saldo_qty_large = $qty_large;
+                    \Log::info('RETAIL_FOOD_STORE: Kartu stok pertama');
                 }
+                
                 // 7. Insert ke outlet_food_inventory_cards
+                \Log::info('RETAIL_FOOD_STORE: Insert kartu stok');
                 DB::table('outlet_food_inventory_cards')->insert([
                     'inventory_item_id' => $inventoryItemId,
                     'id_outlet' => $request->outlet_id,
@@ -260,7 +408,7 @@ class RetailFoodController extends Controller
                     'out_qty_small' => 0,
                     'out_qty_medium' => 0,
                     'out_qty_large' => 0,
-                    'cost_per_small' => $cost_small,
+                    'cost_per_small' => $mac,
                     'cost_per_medium' => $cost_medium,
                     'cost_per_large' => $cost_large,
                     'value_in' => $qty_small_for_value * $cost_small,
@@ -268,15 +416,19 @@ class RetailFoodController extends Controller
                     'saldo_qty_small' => $saldo_qty_small,
                     'saldo_qty_medium' => $saldo_qty_medium,
                     'saldo_qty_large' => $saldo_qty_large,
-                    'saldo_value' => ($existingStock ? ($existingStock->qty_small + $qty_small) : $qty_small) * $cost_small,
+                    'saldo_value' => $saldo_qty_small * $mac,
                     'description' => 'Retail Food: ' . $retailNumber,
                     'created_at' => now(),
                     'updated_at' => now(),
                 ]);
-                // 8. Insert ke outlet_food_inventory_cost_histories
+                \Log::info('RETAIL_FOOD_STORE: Kartu stok berhasil diinsert');
+                
+                // 8. Insert ke outlet_food_inventory_cost_histories - Mengikuti pola Good Receive Outlet Food
+                \Log::info('RETAIL_FOOD_STORE: Insert cost history');
                 $lastCostHistory = DB::table('outlet_food_inventory_cost_histories')
                     ->where('inventory_item_id', $inventoryItemId)
                     ->where('id_outlet', $request->outlet_id)
+                    ->where('warehouse_outlet_id', $request->warehouse_outlet_id)
                     ->orderByDesc('date')
                     ->orderByDesc('created_at')
                     ->first();
@@ -294,7 +446,10 @@ class RetailFoodController extends Controller
                     'reference_id' => $retailFood->id,
                     'created_at' => now(),
                 ]);
+                \Log::info('RETAIL_FOOD_STORE: Cost history berhasil diinsert');
+                
                 // 9. Simpan item retail food
+                \Log::info('RETAIL_FOOD_STORE: Simpan retail food item');
                 RetailFoodItem::create([
                     'retail_food_id' => $retailFood->id,
                     'item_name' => $item['item_name'],
@@ -303,37 +458,104 @@ class RetailFoodController extends Controller
                     'price' => $item['price'],
                     'subtotal' => $item['qty'] * $item['price']
                 ]);
+                \Log::info('RETAIL_FOOD_STORE: Retail food item berhasil disimpan');
             }
 
+            \Log::info('RETAIL_FOOD_STORE: Semua items berhasil diproses');
+            
             // Setelah RetailFood berhasil dibuat
+            \Log::info('RETAIL_FOOD_STORE: Proses file upload');
             if ($request->hasFile('invoices')) {
-                foreach ($request->file('invoices') as $file) {
+                \Log::info('RETAIL_FOOD_STORE: Ada file invoices', ['file_count' => count($request->file('invoices'))]);
+                foreach ($request->file('invoices') as $index => $file) {
+                    \Log::info('RETAIL_FOOD_STORE: Proses file ke-' . ($index + 1), [
+                        'filename' => $file->getClientOriginalName(),
+                        'extension' => $file->extension(),
+                        'size' => $file->getSize()
+                    ]);
                     if (in_array($file->extension(), ['jpg', 'jpeg', 'png'])) {
                         $path = $file->store('retail_food_invoices', 'public');
+                        \Log::info('RETAIL_FOOD_STORE: File disimpan', ['path' => $path]);
                         $retailFood->invoices()->create([
                             'file_path' => $path
                         ]);
+                    } else {
+                        \Log::warning('RETAIL_FOOD_STORE: File extension tidak didukung', ['extension' => $file->extension()]);
                     }
                 }
+            } else {
+                \Log::info('RETAIL_FOOD_STORE: Tidak ada file invoices');
             }
 
+            \Log::info('RETAIL_FOOD_STORE: Commit transaction');
             DB::commit();
+            \Log::info('RETAIL_FOOD_STORE: Transaction berhasil di-commit');
+
+            // Activity log
+            \Log::info('RETAIL_FOOD_STORE: Insert activity log');
+            try {
+                DB::table('activity_logs')->insert([
+                    'user_id' => auth()->id(),
+                    'activity_type' => 'create',
+                    'module' => 'retail_food',
+                    'description' => 'Membuat retail food: ' . $retailNumber,
+                    'ip_address' => $request->ip(),
+                    'user_agent' => $request->userAgent(),
+                    'old_data' => null,
+                    'new_data' => json_encode([
+                        'retail_number' => $retailNumber,
+                        'outlet_id' => $request->outlet_id,
+                        'total_amount' => $totalAmount,
+                        'payment_method' => $request->payment_method,
+                        'item_count' => count($request->items)
+                    ]),
+                    'created_at' => now()
+                ]);
+                \Log::info('RETAIL_FOOD_STORE: Activity log berhasil diinsert');
+            } catch (\Exception $e) {
+                \Log::warning('RETAIL_FOOD_STORE: Gagal insert activity log', [
+                    'error' => $e->getMessage()
+                ]);
+                // Tidak throw error karena activity log bukan critical
+            }
 
             // Cek apakah total hari ini sudah melebihi 500rb
+            \Log::info('RETAIL_FOOD_STORE: Cek limit harian', [
+                'daily_total' => $dailyTotal,
+                'total_amount' => $totalAmount,
+                'total_combined' => $dailyTotal + $totalAmount,
+                'limit' => 500000
+            ]);
             if ($dailyTotal + $totalAmount >= 500000) {
+                \Log::info('RETAIL_FOOD_STORE: Total hari ini melebihi 500rb', ['daily_total' => $dailyTotal, 'total_amount' => $totalAmount]);
                 return response()->json([
                     'message' => 'Transaksi berhasil disimpan, namun total pembelian hari ini sudah melebihi Rp 500.000',
                     'data' => $retailFood->load('items')
                 ], 201);
             }
 
+            \Log::info('RETAIL_FOOD_STORE: Transaksi berhasil disimpan');
+            \Log::info('RETAIL_FOOD_STORE: Response success', [
+                'retail_food_id' => $retailFood->id,
+                'retail_number' => $retailNumber,
+                'total_amount' => $totalAmount
+            ]);
             return response()->json([
                 'message' => 'Transaksi berhasil disimpan',
                 'data' => $retailFood->load('items')
             ], 201);
 
         } catch (\Exception $e) {
+            \Log::error('RETAIL_FOOD_STORE: Error terjadi', [
+                'message' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => $e->getTraceAsString(),
+                'request_data' => $request->all(),
+                'user_id' => auth()->id()
+            ]);
             DB::rollBack();
+            \Log::info('RETAIL_FOOD_STORE: Transaction di-rollback');
             return response()->json([
                 'message' => 'Gagal menyimpan transaksi',
                 'error' => $e->getMessage()
