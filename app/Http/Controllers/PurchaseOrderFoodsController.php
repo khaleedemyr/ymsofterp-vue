@@ -168,8 +168,11 @@ class PurchaseOrderFoodsController extends Controller
     public function generatePO(Request $request)
     {
         // Debug logging
+        \Log::info('=== START GENERATE PO ===');
         \Log::info('Generate PO Request Data:', [
-            'items_by_supplier' => $request->items_by_supplier
+            'items_by_supplier' => $request->items_by_supplier,
+            'ppn_enabled' => $request->ppn_enabled,
+            'notes' => $request->notes
         ]);
         
         $request->validate([
@@ -184,6 +187,7 @@ class PurchaseOrderFoodsController extends Controller
 
         try {
             DB::beginTransaction();
+            \Log::info('Database transaction started');
 
             // Collect all PR IDs that will be processed (only for PR Foods)
             $prIds = collect($request->items_by_supplier)
@@ -196,6 +200,8 @@ class PurchaseOrderFoodsController extends Controller
                 })
                 ->unique()
                 ->values();
+
+            \Log::info('PR IDs collected:', ['pr_ids' => $prIds->toArray()]);
 
             // Group items by supplier
             $itemsBySupplier = collect($request->items_by_supplier)
@@ -218,10 +224,17 @@ class PurchaseOrderFoodsController extends Controller
                     });
                 });
 
+            \Log::info('Items grouped by supplier:', ['items_by_supplier' => $itemsBySupplier->toArray()]);
+
             $createdPOs = [];
 
             foreach ($itemsBySupplier as $supplierId => $items) {
-                if (empty($items)) continue;
+                if (empty($items)) {
+                    \Log::info('Skipping empty supplier items', ['supplier_id' => $supplierId]);
+                    continue;
+                }
+
+                \Log::info('Processing supplier:', ['supplier_id' => $supplierId, 'items_count' => count($items)]);
 
                 // Generate PO number
                 $prefix = 'POF';
@@ -238,6 +251,7 @@ class PurchaseOrderFoodsController extends Controller
                 }
 
                 $poNumber = $prefix . $date . str_pad($sequence, 4, '0', STR_PAD_LEFT);
+                \Log::info('Generated PO number:', ['po_number' => $poNumber]);
 
                 // Calculate subtotal for this PO
                 $subtotal = collect($items)->sum(function ($item) {
@@ -284,7 +298,7 @@ class PurchaseOrderFoodsController extends Controller
                 ]);
                 
                 // Create PO
-                $po = PurchaseOrderFood::create([
+                $poData = [
                     'number' => $poNumber,
                     'date' => now(),
                     'supplier_id' => $supplierId,
@@ -298,7 +312,12 @@ class PurchaseOrderFoodsController extends Controller
                     'grand_total' => $grandTotal,
                     'source_type' => $sourceType,
                     'source_id' => $sourceId,
-                ]);
+                ];
+
+                \Log::info('Creating PO with data:', $poData);
+
+                $po = PurchaseOrderFood::create($poData);
+                \Log::info('PO created successfully:', ['po_id' => $po->id, 'po_number' => $po->number]);
 
                 $createdPOs[] = $po;
 
@@ -319,6 +338,8 @@ class PurchaseOrderFoodsController extends Controller
                         ->whereIn('id', $prItemIds)
                         ->get();
                 }
+
+                \Log::info('Processing items for PO:', ['po_id' => $po->id, 'items_count' => count($items)]);
 
                 foreach ($items as $itemData) {
                     // Debug logging for each item
@@ -378,7 +399,10 @@ class PurchaseOrderFoodsController extends Controller
                     } else {
                         // PR Foods item
                         $prItem = $prItems->firstWhere('id', $itemData['pr_item_id']);
-                        if (!$prItem) continue;
+                        if (!$prItem) {
+                            \Log::error('PR item not found:', ['pr_item_id' => $itemData['pr_item_id']]);
+                            continue;
+                        }
                         
                         $itemId = $prItem->item_id;
                         $itemName = $prItem->item->name ?? 'Unknown Item';
@@ -537,7 +561,7 @@ class PurchaseOrderFoodsController extends Controller
                         $sourceId = $itemData['pr_id'] ?? ($prItemId ? \App\Models\PurchaseRequisitionFoodItem::find($prItemId)->pr_food_id : null);
                     }
 
-                    $poItem = PurchaseOrderFoodItem::create([
+                    $poItemData = [
                         'purchase_order_food_id' => $po->id,
                         'pr_food_item_id' => $prItemId, // This will be food_floor_order_item_id for RO Supplier
                         'item_id' => $itemId,
@@ -551,26 +575,31 @@ class PurchaseOrderFoodsController extends Controller
                         'source_id' => $sourceId,
                         'ro_id' => $itemData['ro_id'] ?? null,
                         'ro_number' => $itemData['ro_number'] ?? null,
-                    ]);
+                    ];
 
-                    // Debug logging after PO item created successfully
-                    \Log::info('PO item created successfully:', [
-                        'po_item_id' => $poItem->id,
-                        'pr_food_item_id' => $poItem->pr_food_item_id,
-                        'item_id' => $poItem->item_id,
-                        'source_type' => $poItem->source_type,
-                        'source_id' => $poItem->source_id,
-                        'ro_id' => $poItem->ro_id,
-                        'ro_number' => $poItem->ro_number,
-                        'is_ro_supplier' => isset($itemData['source']) && $itemData['source'] === 'ro_supplier'
-                    ]);
+                    \Log::info('Attempting to create PO item with data:', $poItemData);
 
-                    // Debug logging after creating PO item
-                    \Log::info('PO item created successfully:', [
-                        'po_item_id' => $poItem->id,
-                        'item_id' => $poItem->item_id,
-                        'source_type' => $poItem->source_type
-                    ]);
+                    try {
+                        $poItem = PurchaseOrderFoodItem::create($poItemData);
+                        
+                        // Debug logging after PO item created successfully
+                        \Log::info('PO item created successfully:', [
+                            'po_item_id' => $poItem->id,
+                            'pr_food_item_id' => $poItem->pr_food_item_id,
+                            'item_id' => $poItem->item_id,
+                            'source_type' => $poItem->source_type,
+                            'source_id' => $poItem->source_id,
+                            'ro_id' => $poItem->ro_id,
+                            'ro_number' => $poItem->ro_number,
+                            'is_ro_supplier' => isset($itemData['source']) && $itemData['source'] === 'ro_supplier'
+                        ]);
+                    } catch (\Exception $e) {
+                        \Log::error('Failed to create PO item:', [
+                            'error' => $e->getMessage(),
+                            'data' => $poItemData
+                        ]);
+                        throw $e;
+                    }
                 }
 
                 // Kirim notifikasi jika ada perubahan harga
@@ -635,6 +664,7 @@ class PurchaseOrderFoodsController extends Controller
             }
 
             DB::commit();
+            \Log::info('=== PO GENERATION COMPLETED SUCCESSFULLY ===');
 
             return response()->json([
                 'success' => true,
@@ -644,6 +674,10 @@ class PurchaseOrderFoodsController extends Controller
 
         } catch (\Exception $e) {
             DB::rollBack();
+            \Log::error('=== PO GENERATION FAILED ===', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
             return response()->json([
                 'success' => false,
                 'message' => 'Terjadi kesalahan: ' . $e->getMessage()

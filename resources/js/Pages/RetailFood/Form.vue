@@ -365,9 +365,11 @@ function getDropdownStyle(idx) {
   if (!input) return {}
   const rect = input.getBoundingClientRect()
   return {
-    top: `${rect.bottom + window.scrollY}px`,
-    left: `${rect.left + window.scrollX}px`,
-    width: `${rect.width}px`
+    position: 'fixed',
+    left: `${rect.left}px`,
+    top: `${rect.bottom}px`,
+    width: `${rect.width}px`,
+    zIndex: 99999
   }
 }
 
