@@ -104,33 +104,129 @@ const fillItemQuantity = (item) => {
   item.input_qty = item.qty ?? item.qty_order;
 };
 
-// Original methods
-watch([selectedFO, selectedDivision], async ([fo, div]) => {
-  if (fo && div) {
-    loadingItems.value = true;
-    error.value = '';
-    try {
-      const res = await axios.get('/api/packing-list/available-items', {
-        params: { fo_id: fo, division_id: div }
-      });
-      items.value = (res.data.items || []).map(item => ({
-        ...item,
-        source: 'warehouse',
-        checked: true,
-        input_qty: null
-      }));
-    } catch (e) {
-      error.value = 'Gagal mengambil data item.';
-      items.value = [];
-    } finally {
-      loadingItems.value = false;
-    }
-  } else {
-    items.value = [];
-  }
+// Computed untuk summary data
+const summaryData = computed(() => {
+  const selectedItems = items.value.filter(i => i.checked);
+  const totalItems = selectedItems.length;
+  const totalQty = selectedItems.reduce((sum, item) => sum + (item.input_qty || 0), 0);
+  
+  return {
+    selectedItems,
+    totalItems,
+    totalQty,
+    warehouseDivision: props.warehouseDivisions.find(d => d.id == selectedDivision.value),
+    floorOrder: props.floorOrders.find(f => f.id == selectedFO.value)
+  };
 });
 
-async function onSubmit() {
+// Function untuk menampilkan modal summary
+const showSummaryModal = async () => {
+  if (!selectedFO.value || !selectedDivision.value || items.value.length === 0) return;
+  
+  const selectedItems = items.value.filter(i => i.checked);
+  if (selectedItems.length === 0) {
+    await Swal.fire({
+      icon: 'warning',
+      title: 'Peringatan',
+      text: 'Pilih minimal satu item untuk di-packing!'
+    });
+    return;
+  }
+
+  // Validasi input quantity
+  const invalidItems = selectedItems.filter(item => !item.input_qty || item.input_qty <= 0);
+  if (invalidItems.length > 0) {
+    await Swal.fire({
+      icon: 'warning',
+      title: 'Peringatan',
+      text: 'Semua item yang dipilih harus memiliki quantity yang valid!'
+    });
+    return;
+  }
+
+  // Buat HTML untuk summary
+  const summaryHtml = `
+    <div class="text-left">
+      <div class="mb-4">
+        <h3 class="font-bold text-lg mb-2 text-blue-600">Summary Packing List</h3>
+        
+        <!-- RO Info -->
+        <div class="bg-blue-50 p-3 rounded-lg mb-3">
+          <h4 class="font-semibold text-blue-800 mb-2">Detail Request Order</h4>
+          <div class="grid grid-cols-2 gap-2 text-sm">
+            <div><span class="font-medium">Outlet:</span> ${summaryData.value.floorOrder?.outlet?.nama_outlet || '-'}</div>
+            <div><span class="font-medium">Nomor RO:</span> <span class="font-mono">${summaryData.value.floorOrder?.order_number || '-'}</span></div>
+            <div><span class="font-medium">Tanggal:</span> ${formatDate(summaryData.value.floorOrder?.tanggal)}</div>
+            <div><span class="font-medium">Warehouse Division:</span> ${summaryData.value.warehouseDivision?.name || '-'}</div>
+          </div>
+        </div>
+
+        <!-- Items Summary -->
+        <div class="bg-gray-50 p-3 rounded-lg mb-3">
+          <h4 class="font-semibold text-gray-800 mb-2">Items yang akan di-packing</h4>
+          <div class="text-sm mb-2">
+            <span class="font-medium">Total Items:</span> ${summaryData.value.totalItems} item(s)
+          </div>
+          <div class="text-sm mb-3">
+            <span class="font-medium">Total Quantity:</span> ${summaryData.value.totalQty}
+          </div>
+          
+          <div class="max-h-40 overflow-y-auto">
+            <table class="w-full text-xs">
+              <thead class="bg-gray-100">
+                <tr>
+                  <th class="py-1 px-2 text-left">No</th>
+                  <th class="py-1 px-2 text-left">Item</th>
+                  <th class="py-1 px-2 text-left">Qty Order</th>
+                  <th class="py-1 px-2 text-left">Qty Packing</th>
+                  <th class="py-1 px-2 text-left">Unit</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${selectedItems.map((item, idx) => `
+                  <tr class="border-b border-gray-200">
+                    <td class="py-1 px-2">${idx + 1}</td>
+                    <td class="py-1 px-2">${item.item?.name || item.item_name}</td>
+                    <td class="py-1 px-2 text-right">${item.qty ?? item.qty_order}</td>
+                    <td class="py-1 px-2 text-right font-medium text-blue-600">${item.input_qty}</td>
+                    <td class="py-1 px-2">${item.unit}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="text-sm text-gray-600">
+          <i class="fas fa-info-circle mr-1"></i>
+          Pastikan semua data sudah benar sebelum melanjutkan.
+        </div>
+      </div>
+    </div>
+  `;
+
+  const result = await Swal.fire({
+    title: 'Konfirmasi Packing List',
+    html: summaryHtml,
+    icon: 'question',
+    showCancelButton: true,
+    confirmButtonText: 'Ya, Buat Packing List',
+    cancelButtonText: 'Batal',
+    confirmButtonColor: '#3B82F6',
+    cancelButtonColor: '#6B7280',
+    width: '600px',
+    customClass: {
+      container: 'summary-modal-container'
+    }
+  });
+
+  if (result.isConfirmed) {
+    await submitPackingList();
+  }
+};
+
+// Function untuk submit packing list
+async function submitPackingList() {
   if (!selectedFO.value || !selectedDivision.value || items.value.length === 0) return;
   
   const data = {
@@ -166,6 +262,34 @@ async function onSubmit() {
     });
   }
 }
+
+// Original methods
+watch([selectedFO, selectedDivision], async ([fo, div]) => {
+  if (fo && div) {
+    loadingItems.value = true;
+    error.value = '';
+    try {
+      const res = await axios.get('/api/packing-list/available-items', {
+        params: { fo_id: fo, division_id: div }
+      });
+      items.value = (res.data.items || []).map(item => ({
+        ...item,
+        source: 'warehouse',
+        checked: true,
+        input_qty: null
+      }));
+    } catch (e) {
+      error.value = 'Gagal mengambil data item.';
+      items.value = [];
+    } finally {
+      loadingItems.value = false;
+    }
+  } else {
+    items.value = [];
+  }
+});
+
+
 
 // Watch for RO selection changes
 watch(selectedRO, (newValue) => {
@@ -486,7 +610,7 @@ watch(selectedRO, (newValue) => {
           </div>
         </div>
         
-        <button @click="onSubmit" :disabled="!selectedFO || !selectedDivision || !items.length || isSubmitting" class="w-full px-4 py-2 rounded bg-blue-600 text-white font-semibold text-sm hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed">
+        <button @click="showSummaryModal" :disabled="!selectedFO || !selectedDivision || !items.length || isSubmitting" class="w-full px-4 py-2 rounded bg-blue-600 text-white font-semibold text-sm hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed">
           <i class="fas fa-save mr-2"></i> Submit Packing List
           <span v-if="isSubmitting" class="ml-2"><i class="fas fa-spinner fa-spin"></i></span>
         </button>
@@ -494,3 +618,70 @@ watch(selectedRO, (newValue) => {
     </div>
   </AppLayout>
 </template>
+
+<style scoped>
+/* Custom styles for summary modal */
+:deep(.summary-modal-container) {
+  z-index: 9999;
+}
+
+:deep(.summary-modal-container .swal2-popup) {
+  font-size: 14px;
+}
+
+:deep(.summary-modal-container .swal2-title) {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+:deep(.summary-modal-container .swal2-html-container) {
+  margin: 0;
+  padding: 0;
+}
+
+:deep(.summary-modal-container table) {
+  border-collapse: collapse;
+}
+
+:deep(.summary-modal-container th),
+:deep(.summary-modal-container td) {
+  padding: 4px 8px;
+  border: 1px solid #e5e7eb;
+}
+
+:deep(.summary-modal-container th) {
+  background-color: #f3f4f6;
+  font-weight: 600;
+  font-size: 11px;
+}
+
+:deep(.summary-modal-container td) {
+  font-size: 11px;
+}
+
+:deep(.summary-modal-container .max-h-40) {
+  max-height: 160px;
+}
+
+:deep(.summary-modal-container .overflow-y-auto) {
+  overflow-y: auto;
+}
+
+:deep(.summary-modal-container .overflow-y-auto::-webkit-scrollbar) {
+  width: 6px;
+}
+
+:deep(.summary-modal-container .overflow-y-auto::-webkit-scrollbar-track) {
+  background: #f1f1f1;
+  border-radius: 3px;
+}
+
+:deep(.summary-modal-container .overflow-y-auto::-webkit-scrollbar-thumb) {
+  background: #c1c1c1;
+  border-radius: 3px;
+}
+
+:deep(.summary-modal-container .overflow-y-auto::-webkit-scrollbar-thumb:hover) {
+  background: #a8a8a8;
+}
+</style>

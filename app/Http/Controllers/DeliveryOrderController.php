@@ -1215,7 +1215,8 @@ class DeliveryOrderController extends Controller
     }
 
     /**
-     * Check and update floor order status to delivered only if all packing lists have been created DO
+     * Check and update floor order status to delivered only if all warehouse divisions have been created packing list
+     * AND all packing lists have status 'done' or 'delivered'
      */
     private function checkAndUpdateFloorOrderStatus($floorOrderId, $sourceType)
     {
@@ -1243,6 +1244,40 @@ class DeliveryOrderController extends Controller
             return;
         }
 
+        // Get floor order details to check warehouse divisions
+        $floorOrder = DB::table('food_floor_orders')
+            ->where('id', $floorOrderId)
+            ->first();
+
+        if (!$floorOrder) {
+            Log::info('Floor order not found', ['floor_order_id' => $floorOrderId]);
+            return;
+        }
+
+        // Get all warehouse divisions that should have packing lists for this RO
+        // Ini bisa dari item-item di floor order atau dari konfigurasi warehouse
+        $warehouseDivisions = DB::table('food_floor_order_items as foi')
+            ->join('items as i', 'foi.item_id', '=', 'i.id')
+            ->where('foi.floor_order_id', $floorOrderId)
+            ->select('foi.warehouse_division_id')
+            ->distinct()
+            ->pluck('warehouse_division_id')
+            ->filter() // Remove null values
+            ->toArray();
+
+        Log::info('Warehouse divisions for floor order', [
+            'floor_order_id' => $floorOrderId,
+            'warehouse_divisions' => $warehouseDivisions
+        ]);
+
+        // Jika tidak ada warehouse division, berarti ini floor order yang belum dibuat packing list
+        if (empty($warehouseDivisions)) {
+            Log::info('No warehouse divisions found for floor order, keeping current status', [
+                'floor_order_id' => $floorOrderId
+            ]);
+            return;
+        }
+
         // Get all packing lists for this floor order
         $allPackingLists = DB::table('food_packing_lists')
             ->where('food_floor_order_id', $floorOrderId)
@@ -1254,11 +1289,16 @@ class DeliveryOrderController extends Controller
             'packing_lists' => $allPackingLists->pluck('id')->toArray()
         ]);
 
-        // Jika tidak ada packing list sama sekali, berarti ini floor order yang belum dibuat packing list
-        // Status tetap sesuai status sebelumnya (approved atau packing)
-        if ($allPackingLists->count() == 0) {
-            Log::info('No packing lists found for floor order, keeping current status', [
-                'floor_order_id' => $floorOrderId
+        // Cek apakah semua warehouse division sudah dibuat packing list
+        $packingListWarehouseDivisions = $allPackingLists->pluck('warehouse_division_id')->toArray();
+        $missingWarehouseDivisions = array_diff($warehouseDivisions, $packingListWarehouseDivisions);
+
+        if (!empty($missingWarehouseDivisions)) {
+            Log::info('Not all warehouse divisions have packing lists yet, keeping floor order status as packing', [
+                'floor_order_id' => $floorOrderId,
+                'required_warehouse_divisions' => $warehouseDivisions,
+                'existing_warehouse_divisions' => $packingListWarehouseDivisions,
+                'missing_warehouse_divisions' => $missingWarehouseDivisions
             ]);
             return;
         }
@@ -1279,23 +1319,46 @@ class DeliveryOrderController extends Controller
 
         // Check if all packing lists have been created DO
         if (count($packingListsWithDO) === count($packingListIds)) {
-            Log::info('All packing lists have DO, updating floor order status to delivered', [
+            // TAMBAHAN VALIDASI: Cek apakah semua packing list sudah selesai (status 'done' atau 'delivered')
+            $completedPackingLists = DB::table('food_packing_lists')
+                ->whereIn('id', $packingListIds)
+                ->whereIn('status', ['done', 'delivered'])
+                ->pluck('id')
+                ->toArray();
+
+            Log::info('Completed packing lists check', [
                 'floor_order_id' => $floorOrderId,
-                'source_type' => $sourceType
+                'total_packing_lists' => count($packingListIds),
+                'completed_packing_lists' => count($completedPackingLists),
+                'completed_packing_lists_ids' => $completedPackingLists
             ]);
-            
-            // Update status to delivered
-            DB::table('food_floor_orders')
-                ->where('id', $floorOrderId)
-                ->update([
-                    'status' => 'delivered',
-                    'updated_at' => now()
+
+            // Hanya update ke delivered jika semua packing list sudah selesai
+            if (count($completedPackingLists) === count($packingListIds)) {
+                Log::info('All warehouse divisions have packing lists, all packing lists have DO AND are completed, updating floor order status to delivered', [
+                    'floor_order_id' => $floorOrderId,
+                    'source_type' => $sourceType
                 ]);
-            
-            Log::info('Updated floor order status to delivered', [
-                'floor_order_id' => $floorOrderId,
-                'source_type' => $sourceType
-            ]);
+                
+                // Update status to delivered
+                DB::table('food_floor_orders')
+                    ->where('id', $floorOrderId)
+                    ->update([
+                        'status' => 'delivered',
+                        'updated_at' => now()
+                    ]);
+                
+                Log::info('Updated floor order status to delivered', [
+                    'floor_order_id' => $floorOrderId,
+                    'source_type' => $sourceType
+                ]);
+            } else {
+                Log::info('All packing lists have DO but not all are completed yet, keeping floor order status as packing', [
+                    'floor_order_id' => $floorOrderId,
+                    'source_type' => $sourceType,
+                    'incomplete_packing_lists' => array_diff($packingListIds, $completedPackingLists)
+                ]);
+            }
         } else {
             Log::info('Not all packing lists have DO yet, keeping floor order status as packing', [
                 'floor_order_id' => $floorOrderId,
