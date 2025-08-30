@@ -779,6 +779,94 @@ $bomItems = \App\Models\Item::whereIn('id', $bomMaterialIds)->get();
         ];
         return response()->json(['item' => $itemData]);
     }
+    
+    public function showDetail($id)
+    {
+        $item = \App\Models\Item::with([
+            'images', 
+            'category', 
+            'subCategory', 
+            'smallUnit', 
+            'mediumUnit', 
+            'largeUnit', 
+            'warehouseDivision'
+        ])->find($id);
+
+        if (!$item) {
+            return redirect()->route('items.index')->with('error', 'Item tidak ditemukan');
+        }
+        
+        // Ambil informasi pembelian (Good Receive) untuk item ini
+        $goodReceives = DB::table('food_good_receive_items')
+            ->join('food_good_receives', 'food_good_receive_items.good_receive_id', '=', 'food_good_receives.id')
+            ->join('suppliers', 'food_good_receives.supplier_id', '=', 'suppliers.id')
+            ->where('food_good_receive_items.item_id', $id)
+            ->select(
+                'food_good_receives.id',
+                'food_good_receives.gr_number',
+                'food_good_receives.receive_date',
+                'suppliers.name as supplier_name',
+                'food_good_receive_items.qty_received'
+            )
+            ->orderBy('food_good_receives.receive_date', 'desc')
+            ->limit(10)
+            ->get();
+            
+
+            
+        // Ambil informasi Butcher Process untuk item ini (jika item PCS)
+        $butcherProcesses = DB::table('butcher_process_items')
+            ->join('butcher_processes', 'butcher_process_items.butcher_process_id', '=', 'butcher_processes.id')
+            ->join('items as whole_item', 'butcher_process_items.whole_item_id', '=', 'whole_item.id')
+            ->where('butcher_process_items.pcs_item_id', $id)
+            ->select(
+                'butcher_processes.id',
+                'butcher_processes.number',
+                'butcher_processes.process_date',
+                'whole_item.name as whole_item_name',
+                'butcher_process_items.pcs_qty',
+                'butcher_process_items.whole_qty'
+            )
+            ->orderBy('butcher_processes.process_date', 'desc')
+            ->limit(10)
+            ->get();
+            
+
+            
+
+            
+        // Ambil sertifikat halal yang terkait dengan item ini (melalui butcher process)
+        $halalCertificates = DB::table('butcher_halal_certificates')
+            ->join('butcher_processes', 'butcher_halal_certificates.butcher_process_id', '=', 'butcher_processes.id')
+            ->join('butcher_process_items', 'butcher_processes.id', '=', 'butcher_process_items.butcher_process_id')
+            ->where('butcher_process_items.pcs_item_id', $id)
+            ->select(
+                'butcher_halal_certificates.id',
+                'butcher_halal_certificates.producer_name',
+                'butcher_halal_certificates.certificate_number',
+                'butcher_halal_certificates.file_path',
+                'butcher_processes.process_date'
+            )
+            ->orderBy('butcher_processes.process_date', 'desc')
+            ->limit(5)
+            ->get();
+            
+
+            
+        // Ambil barcode untuk item ini
+        $barcodes = DB::table('item_barcodes')
+            ->where('item_id', $id)
+            ->orderBy('created_at', 'desc')
+            ->get();
+            
+                        return Inertia::render('Items/Detail', [
+                    'item' => $item,
+                    'goodReceives' => $goodReceives,
+                    'butcherProcesses' => $butcherProcesses,
+                    'halalCertificates' => $halalCertificates,
+                    'barcodes' => $barcodes,
+                ]);
+    }
 
     public function toggleStatus($id, Request $request)
     {
@@ -2317,5 +2405,35 @@ $bomItems = \App\Models\Item::whereIn('id', $bomMaterialIds)->get();
         ]);
 
         return response()->json($items);
+    }
+
+    /**
+     * API: Get barcodes for an item
+     */
+    public function getItemBarcodes($itemId)
+    {
+        try {
+            $barcodes = \DB::table('item_barcodes')
+                ->where('item_id', $itemId)
+                ->select('id', 'barcode', 'created_at')
+                ->orderBy('created_at', 'desc')
+                ->get();
+
+            return response()->json([
+                'success' => true,
+                'barcodes' => $barcodes
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Error getting item barcodes', [
+                'item_id' => $itemId,
+                'error' => $e->getMessage()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Error getting barcodes',
+                'barcodes' => []
+            ], 500);
+        }
     }
 } 

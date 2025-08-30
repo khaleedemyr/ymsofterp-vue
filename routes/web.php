@@ -393,7 +393,9 @@ Route::get('/api/items/search-for-pr', [ItemController::class, 'searchForPr']);
 Route::post('/items/{id}/toggle-status', [ItemController::class, 'toggleStatus'])->name('items.toggleStatus');
 
 Route::get('/api/items/{id}', [App\Http\Controllers\ItemController::class, 'show']);
+Route::get('/items/{id}/detail', [App\Http\Controllers\ItemController::class, 'showDetail'])->name('items.detail');
 Route::get('/api/items/{id}/detail', [App\Http\Controllers\ItemController::class, 'apiDetail']);
+Route::get('/api/items/{id}/barcodes', [App\Http\Controllers\ItemController::class, 'getItemBarcodes']);
 
 Route::get('/items/search-for-warehouse-transfer', [ItemController::class, 'searchForWarehouseTransfer']);
 Route::get('/api/items/by-fo-schedule/{fo_schedule_id}', [App\Http\Controllers\ItemController::class, 'getByFOSchedule']);

@@ -486,14 +486,30 @@ class MKProductionController extends Controller
         if (!$prod) {
             return redirect()->route('mk-production.index')->with('error', 'Data produksi tidak ditemukan');
         }
-        $item = DB::table('items')->where('id', $prod->item_id)->first();
+        
+        // Join item dengan units untuk mendapatkan nama unit
+        $item = DB::table('items')
+            ->leftJoin('units as small_unit', 'items.small_unit_id', '=', 'small_unit.id')
+            ->leftJoin('units as medium_unit', 'items.medium_unit_id', '=', 'medium_unit.id')
+            ->leftJoin('units as large_unit', 'items.large_unit_id', '=', 'large_unit.id')
+            ->where('items.id', $prod->item_id)
+            ->select(
+                'items.*',
+                'small_unit.name as small_unit_name',
+                'medium_unit.name as medium_unit_name',
+                'large_unit.name as large_unit_name'
+            )
+            ->first();
+            
         $warehouse = DB::table('warehouses')->where('id', $prod->warehouse_id)->first();
         $details = [];
+        
         // Ambil kartu stok hasil produksi
         $stockCard = DB::table('food_inventory_cards')
             ->where('reference_type', 'mk_production')
             ->where('reference_id', $id)
             ->get();
+            
         // Ambil BOM
         $bom = DB::table('item_bom')
             ->join('items as material', 'item_bom.material_item_id', '=', 'material.id')
@@ -501,6 +517,7 @@ class MKProductionController extends Controller
             ->where('item_bom.item_id', $prod->item_id)
             ->select('item_bom.*', 'material.name as material_name', 'units.name as unit_name')
             ->get();
+            
         return inertia('MKProduction/Show', [
             'prod' => $prod,
             'item' => $item,

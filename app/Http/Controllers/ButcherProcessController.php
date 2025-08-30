@@ -480,12 +480,35 @@ class ButcherProcessController extends Controller
             'certificates'
         ])->findOrFail($id);
 
+        // Debug: Log the loaded data
+        \Log::info('ButcherProcess Show - Raw data', [
+            'butcher_process_id' => $butcherProcess->id,
+            'items_count' => $butcherProcess->items->count(),
+            'items_data' => $butcherProcess->items->map(function($item) {
+                return [
+                    'id' => $item->id,
+                    'pcs_item_id' => $item->pcs_item_id,
+                    'pcsItem' => $item->pcsItem ? [
+                        'id' => $item->pcsItem->id,
+                        'name' => $item->pcsItem->name
+                    ] : null,
+                    'whole_item_id' => $item->whole_item_id,
+                    'wholeItem' => $item->wholeItem ? [
+                        'id' => $item->wholeItem->id,
+                        'name' => $item->wholeItem->name
+                    ] : null
+                ];
+            })->toArray()
+        ]);
+
         // Mapping manual nama item agar selalu muncul di frontend
         $butcherProcess->items->transform(function ($item) {
             $item->whole_item_name = $item->wholeItem ? $item->wholeItem->name : null;
             $item->pcs_item_name = $item->pcsItem ? $item->pcsItem->name : null;
             // Ambil small_conversion_qty dari relasi pcsItem
             $item->small_conversion_qty = $item->pcsItem ? $item->pcsItem->small_conversion_qty : null;
+            // Ambil exp dari relasi pcsItem untuk expire date calculation
+            $item->pcs_item_exp = $item->pcsItem ? $item->pcsItem->exp : null;
             // Ambil hanya satu detail (paling awal)
             $item->details = collect($item->details)->take(1)->values();
             return $item;
