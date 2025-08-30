@@ -68,34 +68,34 @@
                                     {{ barcode.barcode }}
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium flex items-center justify-end gap-2">
-                                    <input type="number" v-model.number="qtyPrint[barcode.id]" min="1" class="w-14 border rounded px-1 mr-2" />
-                                    <button
-                                        @click="downloadPDF(barcode.barcode, qtyPrint[barcode.id] || 1)"
-                                        class="text-blue-600 hover:text-blue-900 mr-2"
-                                        title="Download PDF"
-                                    >
-                                        <i class="fa-solid fa-print"></i>
-                                    </button>
-                                    <button
-                                        @click="printBarcode(barcode.barcode, props.item?.name, qtyPrint[barcode.id] || 1)"
-                                        class="text-green-600 hover:text-green-900 mr-2"
-                                        title="Print ZPL"
-                                    >
-                                        <i class="fa-solid fa-barcode"></i> Print ZPL
-                                    </button>
-                                    <button
-                                        @click="downloadZPL(barcode.barcode, props.item?.name)"
-                                        class="text-orange-600 hover:text-orange-900 mr-2"
-                                        title="Download ZPL"
-                                    >
-                                        <i class="fa-solid fa-download"></i> ZPL
-                                    </button>
-                                    <button
-                                        @click="deleteBarcode(barcode)"
-                                        class="text-red-600 hover:text-red-900"
-                                    >
-                                        Delete
-                                    </button>
+                                                                         <input type="number" v-model.number="qtyPrint[barcode.id]" min="1" class="w-14 border rounded px-1 mr-2" />
+                                      <button
+                                          @click="openSmallPrintPreview(barcode.barcode, qtyPrint[barcode.id] || 1)"
+                                          class="text-teal-600 hover:text-teal-900 mr-2"
+                                          title="Small Label Preview"
+                                      >
+                                          <i class="fa-solid fa-tag"></i>
+                                      </button>
+                                                                          <button
+                                          @click="downloadPDF(barcode.barcode, qtyPrint[barcode.id] || 1)"
+                                          class="text-blue-600 hover:text-blue-900 mr-2"
+                                          title="Download PDF (10x5cm)"
+                                      >
+                                          <i class="fa-solid fa-file-pdf"></i>
+                                      </button>
+                                      <button
+                                          @click="downloadSmallPDF(barcode.barcode, qtyPrint[barcode.id] || 1)"
+                                          class="text-indigo-600 hover:text-indigo-900 mr-2"
+                                          title="Download Small Label PDF (3x1.5cm)"
+                                      >
+                                          <i class="fa-solid fa-tag"></i>
+                                      </button>
+                                     <button
+                                         @click="deleteBarcode(barcode)"
+                                         class="text-red-600 hover:text-red-900"
+                                     >
+                                         Delete
+                                     </button>
                                 </td>
                             </tr>
                         </tbody>
@@ -110,20 +110,21 @@
             </div>
         </div>
     </Modal>
-    <teleport to="body">
-      <div v-if="showPrintPreview" class="fixed inset-0 z-[99999] flex items-center justify-center bg-black/60">
-        <div class="bg-white rounded-xl shadow-lg p-4">
-          <PrintPreview
-            :sku="printPreviewData.sku"
-            :name="printPreviewData.name"
-            :qty="printPreviewData.qty"
-          />
-          <div class="flex justify-end mt-4">
-            <button @click="showPrintPreview = false" class="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300">Tutup</button>
-          </div>
-        </div>
-      </div>
-    </teleport>
+         
+     <teleport to="body">
+       <div v-if="showSmallPrintPreview" class="fixed inset-0 z-[99999] flex items-center justify-center bg-black/60">
+         <div class="bg-white rounded-xl shadow-lg p-4">
+           <SmallPrintPreview
+             :sku="printPreviewData.sku"
+             :name="printPreviewData.name"
+             :qty="printPreviewData.qty"
+           />
+           <div class="flex justify-end mt-4">
+             <button @click="showSmallPrintPreview = false" class="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300">Tutup</button>
+           </div>
+         </div>
+       </div>
+     </teleport>
 </template>
 
 <script setup>
@@ -134,7 +135,7 @@ import PrimaryButton from '@/Components/PrimaryButton.vue';
 import SecondaryButton from '@/Components/SecondaryButton.vue';
 import { useForm } from '@inertiajs/vue3';
 import axios from 'axios';
-import PrintPreview from './PrintPreview.vue';
+import SmallPrintPreview from './SmallPrintPreview.vue';
 import JsBarcode from 'jsbarcode';
 import jsPDF from 'jspdf';
 
@@ -153,8 +154,12 @@ const selectedCameraId = ref('');
 let html5QrCode = null;
 const isSaving = ref(false);
 const qtyPrint = ref({});
-const showPrintPreview = ref(false);
-const printPreviewData = ref({ sku: '', name: '', qty: 1 });
+const showSmallPrintPreview = ref(false);
+const printPreviewData = ref({ 
+    sku: '', 
+    name: '', 
+    qty: 1
+});
 
 const form = useForm({
     barcode: '',
@@ -315,137 +320,36 @@ onBeforeUnmount(() => {
     }
 });
 
-function generateZplBarcode(sku, name) {
-    // Konfigurasi label
-    const labelWidth = 30; // 3cm = 30mm
-    const labelHeight = 15; // 1.5cm = 15mm
-    const gap = 2; // 0.2cm = 2mm
-    const dpi = 203; // DPI Zebra ZD220
-    
-    // Konversi mm ke dots (1mm = 8 dots pada 203 DPI)
-    const widthInDots = labelWidth * 8;
-    const heightInDots = labelHeight * 8;
-    const gapInDots = gap * 8;
-    
-    // Generate ZPL code
-    let zpl = '';
-    
-    // Set label size dan gap
-    zpl += `^Q${heightInDots},${gapInDots}\n`; // Set label height and gap
-    zpl += `^W${widthInDots}\n`; // Set label width
-    
-    // Set font dan ukuran
-    zpl += `^A0N,20,20\n`; // Font 0, height 20, width 20
-    
-    // Barcode Code128
-    zpl += `^FO10,10^BY2\n`; // Field Origin, Barcode field default
-    zpl += `^BCN,40,Y,N,N\n`; // Code128, height 40, print human readable, no check digit
-    zpl += `^FD${sku}^FS\n`; // Field Data, Field Separator
-    
-    // SKU di bawah barcode
-    zpl += `^FO10,55^A0N,12,12^FD${sku}^FS\n`;
-    
-    // Nama item di bawah SKU (2 baris jika panjang)
-    const maxCharsPerLine = 20;
-    if (name.length > maxCharsPerLine) {
-        const firstLine = name.substring(0, maxCharsPerLine);
-        const secondLine = name.substring(maxCharsPerLine, maxCharsPerLine * 2);
-        zpl += `^FO10,70^A0N,10,10^FD${firstLine}^FS\n`;
-        if (secondLine) {
-            zpl += `^FO10,82^A0N,10,10^FD${secondLine}^FS\n`;
-        }
-    } else {
-        zpl += `^FO10,70^A0N,10,10^FD${name}^FS\n`;
-    }
-    
-    return zpl;
-}
 
-function printBarcode(sku, name, qty = 1) {
-    // Generate array barcode sesuai qty
-    const barcodes = Array(qty).fill({ sku, name });
-    
-    // Bagi per 3 untuk 1 baris label
-    const rows = [];
-    for (let i = 0; i < barcodes.length; i += 3) {
-        rows.push(barcodes.slice(i, i + 3));
-    }
-    
-    // Gabungkan ZPL untuk semua baris
-    let zplData = '';
-    rows.forEach(row => {
-        row.forEach(item => {
-            zplData += generateZplBarcode(item.sku, item.name);
-        });
-        zplData += '\n';
-    });
-    
-    // Print menggunakan Web USB API
-    async function printWithWebUSB() {
-        try {
-            // Request printer device (filter kosong)
-            const device = await navigator.usb.requestDevice({ filters: [] });
-            console.log(device);
-            await device.open();
-            await device.selectConfiguration(1);
-            await device.claimInterface(device.configuration.interfaces[0].interfaceNumber);
-            const encoder = new TextEncoder();
-            const data = encoder.encode(zplData);
-            await device.transferOut(1, data);
-            await device.close();
-            alert('Print berhasil!');
-        } catch (error) {
-            console.error('Print error:', error);
-            alert('Gagal print: ' + error.message);
-        }
-    }
-    
-    // Cek apakah Web USB API didukung
-    if (navigator.usb) {
-        printWithWebUSB();
-    } else {
-        alert('Browser Anda tidak mendukung Web USB API. Gunakan Chrome, Edge, atau Opera terbaru.');
-    }
-}
 
-function openPrintPreview(barcode, qty) {
+function openSmallPrintPreview(barcode, qty) {
     printPreviewData.value = {
         sku: barcode,
         name: props.item?.name || '',
-        qty: qty || 1,
+        qty: qty || 1
     };
-    showPrintPreview.value = true;
+    showSmallPrintPreview.value = true;
 }
 
-function downloadZPL(sku, name) {
-    const zpl = generateZplBarcode(sku, name);
-    const blob = new Blob([zpl], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${sku}.zpl`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-}
+
 
 function downloadPDF(barcode, qty) {
-    // Setup label dan PDF
-    const labelWidth = 30; // 3cm
-    const labelHeight = 15; // 1.5cm
-    const gap = 3; // 0.3cm
-    const marginLeft = 0; // mm, margin kiri dihilangkan
+    // Setup label dan PDF - Ukuran baru 10x5 cm
+    const labelWidth = 100; // 10cm
+    const labelHeight = 50; // 5cm
+    const gap = 5; // 0.5cm gap antar label
+    const marginLeft = 5; // mm, margin kiri
+    const marginTop = 5; // mm, margin atas
     const numLabels = qty || 1;
-    const numRows = Math.ceil(numLabels / 3);
-    const pdfWidth = 94; // 9.4cm (tetap sama)
-    const pdfHeight = numRows * labelHeight;
+    const numRows = Math.ceil(numLabels / 3); // 3 label per baris untuk landscape
+    const pdfWidth = 297; // A4 landscape width (29.7cm)
+    const pdfHeight = 210; // A4 landscape height (21cm)
     
     const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: [pdfWidth, pdfHeight] });
 
     // Generate array barcode sesuai qty
     const barcodes = Array(numLabels).fill(barcode);
-    let y = 0;
+    let y = marginTop;
     for (let rowIdx = 0; rowIdx < numRows; rowIdx++) {
         for (let colIdx = 0; colIdx < 3; colIdx++) {
             const idx = rowIdx * 3 + colIdx;
@@ -453,41 +357,136 @@ function downloadPDF(barcode, qty) {
             const x = marginLeft + colIdx * (labelWidth + gap);
             const sku = barcodes[idx];
             
-            // Render barcode ke canvas proporsional, scale 3x
-            const areaBarcodeW = labelWidth - 4; // 26mm
-            const areaBarcodeH = 8; // mm, diperkecil agar ada ruang untuk 2 baris teks
-            const scale = 3;
-            const canvas = document.createElement('canvas');
-            canvas.width = areaBarcodeW * scale;
-            canvas.height = areaBarcodeH * scale;
-            JsBarcode(canvas, sku, { width: 1.5 * scale, height: areaBarcodeH * scale, displayValue: false });
+            // Border untuk label
+            doc.setDrawColor(0, 0, 0);
+            doc.setLineWidth(0.5);
+            doc.rect(x, y, labelWidth, labelHeight);
             
-            // Masukkan barcode ke PDF (ukuran asli)
-            doc.addImage(canvas, 'PNG', x + 2, y + 1, areaBarcodeW, areaBarcodeH);
+                         // Render barcode ke canvas - ukuran lebih besar
+             const areaBarcodeW = labelWidth - 10; // 90mm
+             const areaBarcodeH = 20; // 20mm untuk barcode
+             const scale = 3;
+             const canvas = document.createElement('canvas');
+             canvas.width = areaBarcodeW * scale;
+             canvas.height = areaBarcodeH * scale;
+             JsBarcode(canvas, sku, { width: 1.5 * scale, height: areaBarcodeH * scale, displayValue: false });
+             
+             // Masukkan barcode ke PDF (ukuran asli) - center aligned
+             const barcodeX = x + (labelWidth - areaBarcodeW) / 2;
+             doc.addImage(canvas, 'PNG', barcodeX, y + 3, areaBarcodeW, areaBarcodeH);
+             
+             // Informasi lengkap di bawah barcode
+             const startY = y + areaBarcodeH + 5;
+             let currentY = startY;
             
-            // SKU di bawah barcode
-            doc.setFontSize(6);
-            doc.text(sku, x + labelWidth / 2, y + areaBarcodeH + 2, { align: 'center' });
-            
-            // Nama item di bawah SKU (dipotong jika terlalu panjang)
-            const itemName = props.item?.name || '';
-            const maxChars = 20; // Maksimal karakter per baris
-            doc.setFontSize(5);
-            if (itemName.length > maxChars) {
-                const firstLine = itemName.substring(0, maxChars);
-                const secondLine = itemName.substring(maxChars, maxChars * 2);
-                doc.text(firstLine, x + labelWidth / 2, y + areaBarcodeH + 4, { align: 'center' });
-                if (secondLine) {
-                    doc.text(secondLine, x + labelWidth / 2, y + areaBarcodeH + 6, { align: 'center' });
-                }
-            } else {
-                doc.text(itemName, x + labelWidth / 2, y + areaBarcodeH + 4, { align: 'center' });
-            }
+                         // SKU/Barcode
+             doc.setFontSize(8);
+             doc.setFont(undefined, 'bold');
+             doc.text(`SKU: ${sku}`, x + labelWidth/2, currentY, { align: 'center' });
+             currentY += 4;
+             
+             // Nama Item
+             const itemName = props.item?.name || '';
+             doc.setFontSize(9);
+             doc.setFont(undefined, 'bold');
+             doc.text(`Nama: ${itemName}`, x + labelWidth/2, currentY, { align: 'center' });
+             currentY += 4.5;
+             
+             // Warehouse Division
+             const warehouseDivision = props.item?.warehouse_division?.name || '-';
+             doc.setFontSize(6);
+             doc.setFont(undefined, 'normal');
+             doc.text(`Warehouse: ${warehouseDivision}`, x + labelWidth/2, currentY, { align: 'center' });
+             currentY += 3;
+             
+             // Category
+             const category = props.item?.category?.name || '-';
+             doc.text(`Category: ${category}`, x + labelWidth/2, currentY, { align: 'center' });
+             currentY += 3;
+             
+             // Sub Category
+             const subCategory = props.item?.sub_category?.name || '-';
+             doc.text(`Sub Category: ${subCategory}`, x + labelWidth/2, currentY, { align: 'center' });
+             currentY += 3;
+             
+             // Item Code/SKU (jika ada)
+             const itemCode = props.item?.sku || props.item?.code || '-';
+             doc.text(`Code: ${itemCode}`, x + labelWidth/2, currentY, { align: 'center' });
         }
-        y += labelHeight;
+        y += labelHeight + gap;
     }
-    doc.save(`${barcode}_labels.pdf`);
-}
+         doc.save(`${barcode}_labels_10x5cm.pdf`);
+ }
+ 
+ function downloadSmallPDF(barcode, qty) {
+    // Setup label dan PDF - Ukuran kecil yang disesuaikan
+    const labelWidth = 25; // 2.5cm - dikurangi untuk menghindari cutoff
+    const labelHeight = 12; // 1.2cm - dikurangi untuk menghindari cutoff
+    const gap = 3; // 0.3cm gap antar label - ditambah untuk spacing yang lebih baik
+    const marginLeft = 25; // mm, margin kiri yang lebih besar lagi untuk alignment yang tepat
+    const marginTop = 2; // mm, margin atas minimal
+    const numLabels = qty || 1;
+    const numRows = Math.ceil(numLabels / 3); // 3 label per baris
+    const pdfWidth = 297; // A4 landscape width (29.7cm)
+    const pdfHeight = 210; // A4 landscape height (21cm)
+     
+     const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: [pdfWidth, pdfHeight] });
+ 
+     // Generate array barcode sesuai qty
+     const barcodes = Array(numLabels).fill(barcode);
+     let y = marginTop;
+     for (let rowIdx = 0; rowIdx < numRows; rowIdx++) {
+         for (let colIdx = 0; colIdx < 3; colIdx++) {
+             const idx = rowIdx * 3 + colIdx;
+             if (idx >= barcodes.length) continue;
+             
+             // Posisi tetap untuk setiap label
+             let x;
+             if (colIdx === 0) {
+                 x = 5; // Label kiri: 5mm dari tepi
+             } else if (colIdx === 1) {
+                 x = 35; // Label tengah: 35mm dari tepi (5 + 30)
+             } else {
+                 x = 65; // Label kanan: 65mm dari tepi (35 + 30)
+             }
+             
+             const sku = barcodes[idx];
+             
+                           // Border dihilangkan untuk tampilan yang lebih bersih
+             
+                                          // Render barcode ke canvas - ukuran diperbesar
+               const areaBarcodeW = labelWidth - 1; // 24mm - diperbesar
+               const areaBarcodeH = 9; // 9mm untuk barcode - disesuaikan
+              const scale = 2;
+              const canvas = document.createElement('canvas');
+              canvas.width = areaBarcodeW * scale;
+              canvas.height = areaBarcodeH * scale;
+              JsBarcode(canvas, sku, { width: 1 * scale, height: areaBarcodeH * scale, displayValue: false });
+              
+                             // Masukkan barcode ke PDF (ukuran asli) - center aligned
+               const barcodeX = x + (labelWidth - areaBarcodeW) / 2;
+               doc.addImage(canvas, 'PNG', barcodeX, y + 0.2, areaBarcodeW, areaBarcodeH);
+              
+                             // Informasi di bawah barcode
+               const startY = y + areaBarcodeH + 0.5;
+              let currentY = startY;
+             
+                                          // SKU/Barcode
+               doc.setFontSize(4);
+               doc.setFont(undefined, 'bold');
+               doc.text(sku, x + labelWidth/2, currentY, { align: 'center' });
+               currentY += 1.5;
+               
+               // Nama Item
+               const itemName = props.item?.name || '';
+               doc.setFontSize(3);
+               doc.setFont(undefined, 'bold');
+               doc.text(itemName, x + labelWidth/2, currentY, { align: 'center' });
+         }
+         y += labelHeight + gap;
+     }
+     doc.save(`${barcode}_small_labels_3x1.5cm.pdf`);
+ }
 </script>
 
 <style>

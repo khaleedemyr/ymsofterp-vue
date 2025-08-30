@@ -67,16 +67,17 @@ onMounted(async () => {
       loadingPOGR.value = false;
     }
     
-    // Load Retail Food data
-    loadingRetailFood.value = true;
-    try {
-      const res = await axios.get('/api/contra-bon/retail-food-contra-bon');
-      retailFoodList.value = res.data;
-    } catch (e) {
-      Swal.fire('Error', 'Gagal mengambil data Retail Food', 'error');
-    } finally {
-      loadingRetailFood.value = false;
-    }
+         // Load Retail Food data
+     loadingRetailFood.value = true;
+           try {
+        const res = await axios.get('/api/contra-bon/retail-food-contra-bon');
+        retailFoodList.value = res.data;
+      } catch (e) {
+       console.error('Error loading retail food:', e);
+       Swal.fire('Error', 'Gagal mengambil data Retail Food', 'error');
+     } finally {
+       loadingRetailFood.value = false;
+     }
   } else {
     // Mode edit: set preview image jika ada
     if (props.contraBon?.image_path) {
@@ -143,35 +144,51 @@ async function onRetailFoodChange() {
     return;
   }
   
-  const retailFood = retailFoodList.value.find(rf => String(rf.retail_food_id) === selectedRetailFoodKey.value);
-  selectedRetailFood.value = retailFood;
+  // Show loading spinner
+  loadingRetailFood.value = true;
   
-  if (retailFood) {
-    form.items = retailFood.items.map(item => ({
-      gr_item_id: null,
-      item_id: item.item_id,
-      po_item_id: null,
-      unit_id: item.unit_id,
-      quantity: item.qty,
-      price: item.price,
-      notes: '',
-      _rowKey: Date.now() + '-' + Math.random(),
-    }));
+    try {
+    const retailFood = retailFoodList.value.find(rf => 
+      rf.retail_food_id == selectedRetailFoodKey.value
+    );
     
-    // Fetch supplier detail
-    if (retailFood.supplier_id) {
-      try {
-        const res = await axios.get(`/api/suppliers/${retailFood.supplier_id}`);
-        supplierDetail.value = res.data;
-      } catch (e) {
+    selectedRetailFood.value = retailFood;
+    
+          if (retailFood) {
+        form.items = retailFood.items.map(item => ({
+          gr_item_id: null,
+          item_id: null, // Tidak ada item_id karena menggunakan item_name
+          po_item_id: null,
+          unit_id: null, // Tidak ada unit_id karena menggunakan unit string
+          quantity: item.qty,
+          price: item.price,
+          notes: '',
+          item_name: item.item_name,
+          unit_name: item.unit_name,
+          _rowKey: Date.now() + '-' + Math.random(),
+        }));
+      
+      // Fetch supplier detail
+      if (retailFood.supplier_id) {
+        try {
+          const res = await axios.get(`/api/suppliers/${retailFood.supplier_id}`);
+          supplierDetail.value = res.data;
+        } catch (e) {
+          supplierDetail.value = null;
+        }
+      } else {
         supplierDetail.value = null;
       }
     } else {
+      form.items = [];
       supplierDetail.value = null;
     }
-  } else {
-    form.items = [];
-    supplierDetail.value = null;
+  } catch (error) {
+    console.error('Error in onRetailFoodChange:', error);
+    Swal.fire('Error', 'Gagal memuat data retail food', 'error');
+  } finally {
+    // Hide loading spinner
+    loadingRetailFood.value = false;
   }
 }
 
@@ -323,20 +340,25 @@ function goBack() {
           </div>
         </div>
 
-        <!-- Retail Food Selection -->
-        <div v-if="sourceType === 'retail_food'" class="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label class="block text-sm font-medium text-gray-700">Retail Food</label>
-            <select v-model="selectedRetailFoodKey" @change="onRetailFoodChange" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500" required>
-              <option value="">Pilih Retail Food - Supplier</option>
-              <option v-for="rf in retailFoodList" :key="rf.retail_food_id" :value="rf.retail_food_id">
-                {{ rf.retail_number }} - {{ rf.supplier_name }}
-              </option>
-            </select>
-            <input type="hidden" v-model="form.po_id" />
-            <input type="hidden" v-model="form.gr_id" />
-            <div v-if="form.errors.po_id" class="text-xs text-red-500 mt-1">{{ form.errors.po_id }}</div>
-          </div>
+                 <!-- Retail Food Selection -->
+         <div v-if="sourceType === 'retail_food'" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+           <div>
+             <label class="block text-sm font-medium text-gray-700">Retail Food</label>
+             <div class="relative">
+               <select v-model="selectedRetailFoodKey" @change="onRetailFoodChange" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500" required :disabled="loadingRetailFood">
+                 <option value="">Pilih Retail Food - Supplier</option>
+                 <option v-for="rf in retailFoodList" :key="rf.retail_food_id" :value="rf.retail_food_id">
+                   {{ rf.retail_number }} - {{ rf.supplier_name }}
+                 </option>
+               </select>
+               <div v-if="loadingRetailFood" class="absolute inset-y-0 right-0 flex items-center pr-3">
+                 <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+               </div>
+             </div>
+             <input type="hidden" v-model="form.po_id" />
+             <input type="hidden" v-model="form.gr_id" />
+             <div v-if="form.errors.po_id" class="text-xs text-red-500 mt-1">{{ form.errors.po_id }}</div>
+           </div>
           <div>
             <label class="block text-sm font-medium text-gray-700">Tanggal</label>
             <input type="date" v-model="form.date" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500" />
@@ -362,16 +384,18 @@ function goBack() {
           </div>
         </div>
 
-        <!-- Card Info Retail Food -->
-        <div v-if="selectedRetailFood" class="bg-purple-50 rounded-lg p-4 shadow mb-4">
-          <h3 class="font-bold mb-2">Info Retail Food</h3>
-          <div>No. Retail Food: {{ selectedRetailFood.retail_number }}</div>
-          <div>Tanggal Transaksi: {{ selectedRetailFood.transaction_date }}</div>
-          <div>Supplier: <b>{{ selectedRetailFood.supplier_name }}</b></div>
-          <div>Dibuat oleh: {{ selectedRetailFood.creator_name }}</div>
-          <div>Total Amount: <b>{{ formatCurrency(selectedRetailFood.total_amount) }}</b></div>
-          <div v-if="selectedRetailFood.notes">Notes: {{ selectedRetailFood.notes }}</div>
-        </div>
+                 <!-- Card Info Retail Food -->
+         <div v-if="selectedRetailFood" class="bg-purple-50 rounded-lg p-4 shadow mb-4">
+           <h3 class="font-bold mb-2">Info Retail Food</h3>
+           <div>No. Retail Food: {{ selectedRetailFood.retail_number }}</div>
+           <div>Tanggal Transaksi: {{ selectedRetailFood.transaction_date }}</div>
+           <div>Outlet: <b>{{ selectedRetailFood.outlet_name || '-' }}</b></div>
+           <div>Warehouse Outlet: <b>{{ selectedRetailFood.warehouse_outlet_name || '-' }}</b></div>
+           <div>Supplier: <b>{{ selectedRetailFood.supplier_name }}</b></div>
+           <div>Dibuat oleh: {{ selectedRetailFood.creator_name }}</div>
+           <div>Total Amount: <b>{{ formatCurrency(selectedRetailFood.total_amount) }}</b></div>
+           <div v-if="selectedRetailFood.notes">Notes: {{ selectedRetailFood.notes }}</div>
+         </div>
 
         <!-- Card Info Supplier -->
         <div v-if="supplierDetail" class="bg-yellow-50 rounded-lg p-4 shadow mb-4">
@@ -402,45 +426,55 @@ function goBack() {
           <div v-if="form.errors.supplier_invoice_number" class="text-xs text-red-500 mt-1">{{ form.errors.supplier_invoice_number }}</div>
         </div>
 
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-2">Detail Item</label>
-          <div class="overflow-x-auto">
-            <table class="w-full min-w-full divide-y divide-gray-200">
-              <thead class="bg-gradient-to-r from-blue-50 to-blue-100">
-                <tr>
-                  <th class="px-3 py-2 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Item</th>
-                  <th class="px-3 py-2 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Qty</th>
-                  <th class="px-3 py-2 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Unit</th>
-                  <th class="px-3 py-2 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Price</th>
-                  <th class="px-3 py-2 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Total</th>
-                  <th class="px-3 py-2 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Notes</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="(item, idx) in form.items" :key="item._rowKey || idx">
-                  <td class="px-3 py-2 min-w-[200px]">
-                    {{ isEdit ? (item.item?.name || '-') : (selectedPOGR?.items.find(i => i.item_id === item.item_id)?.item_name || '-') }}
-                  </td>
-                  <td class="px-3 py-2 min-w-[100px]">
-                    {{ item.quantity }}
-                  </td>
-                  <td class="px-3 py-2 min-w-[100px]">
-                    {{ selectedPOGR?.items.find(i => i.item_id === item.item_id)?.unit_name || item.unit?.name || '-' }}
-                  </td>
-                  <td class="px-3 py-2 min-w-[100px]">
-                    {{ formatCurrency(item.price) }}
-                  </td>
-                  <td class="px-3 py-2 min-w-[100px]">
-                    {{ formatCurrency(item.quantity * item.price) }}
-                  </td>
-                  <td class="px-3 py-2 min-w-[120px]">
-                    <input type="text" v-model="item.notes" class="w-full rounded border-gray-300" />
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
+                 <div>
+           <label class="block text-sm font-medium text-gray-700 mb-2">Detail Item</label>
+           <div class="overflow-x-auto">
+             <!-- Loading spinner for items -->
+             <div v-if="loadingRetailFood" class="flex justify-center items-center py-8">
+               <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+               <span class="ml-2 text-gray-600">Memuat data item...</span>
+             </div>
+             
+             <!-- Items table -->
+             <table v-else class="w-full min-w-full divide-y divide-gray-200">
+               <thead class="bg-gradient-to-r from-blue-50 to-blue-100">
+                 <tr>
+                   <th class="px-3 py-2 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Item</th>
+                   <th class="px-3 py-2 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Qty</th>
+                   <th class="px-3 py-2 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Unit</th>
+                   <th class="px-3 py-2 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Price</th>
+                   <th class="px-3 py-2 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Total</th>
+                   <th class="px-3 py-2 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Notes</th>
+                 </tr>
+               </thead>
+               <tbody>
+                 <tr v-if="form.items.length === 0" class="text-center text-gray-500">
+                   <td colspan="6" class="px-3 py-4">Tidak ada data item</td>
+                 </tr>
+                 <tr v-for="(item, idx) in form.items" :key="item._rowKey || idx">
+                   <td class="px-3 py-2 min-w-[200px]">
+                     {{ isEdit ? (item.item?.name || '-') : (sourceType === 'retail_food' ? (item.item_name || '-') : (selectedPOGR?.items.find(i => i.item_id === item.item_id)?.item_name || '-')) }}
+                   </td>
+                   <td class="px-3 py-2 min-w-[100px]">
+                     {{ item.quantity }}
+                   </td>
+                   <td class="px-3 py-2 min-w-[100px]">
+                     {{ sourceType === 'retail_food' ? (item.unit_name || '-') : (selectedPOGR?.items.find(i => i.item_id === item.item_id)?.unit_name || item.unit?.name || '-') }}
+                   </td>
+                   <td class="px-3 py-2 min-w-[100px]">
+                     {{ formatCurrency(item.price) }}
+                   </td>
+                   <td class="px-3 py-2 min-w-[100px]">
+                     {{ formatCurrency(item.quantity * item.price) }}
+                   </td>
+                   <td class="px-3 py-2 min-w-[120px]">
+                     <input type="text" v-model="item.notes" class="w-full rounded border-gray-300" />
+                   </td>
+                 </tr>
+               </tbody>
+             </table>
+           </div>
+         </div>
         <div>
           <label class="block text-sm font-medium text-gray-700">Notes</label>
           <textarea v-model="form.notes" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500"></textarea>

@@ -297,6 +297,176 @@ watch(selectedRO, (newValue) => {
     selectedFO.value = newValue;
   }
 });
+
+// Function untuk print Packing List
+const printPackingList = () => {
+  if (!selectedFO.value || !selectedDivision.value || items.value.length === 0) {
+    Swal.fire({
+      icon: 'warning',
+      title: 'Peringatan',
+      text: 'Pilih RO dan Warehouse Division terlebih dahulu!'
+    });
+    return;
+  }
+
+  const selectedItems = items.value.filter(i => i.checked);
+  if (selectedItems.length === 0) {
+    Swal.fire({
+      icon: 'warning',
+      title: 'Peringatan',
+      text: 'Pilih minimal satu item untuk di-print!'
+    });
+    return;
+  }
+
+  // Data untuk print
+  const roData = props.floorOrders.find(f => f.id == selectedFO.value);
+  const divisionData = props.warehouseDivisions.find(d => d.id == selectedDivision.value);
+  
+  const printData = {
+    orderNumber: roData?.order_number || '-',
+    date: formatDate(roData?.tanggal),
+    outlet: roData?.outlet?.nama_outlet || '-',
+    items: selectedItems.map(item => ({
+      name: item.item?.name || item.item_name || '-',
+      qty: item.input_qty || item.qty || item.qty_order || 0,
+      unit: item.unit || '-'
+    })),
+    divisionName: divisionData?.name || '-',
+    roNumber: roData?.order_number || '-',
+    roDate: formatDate(roData?.tanggal),
+    roCreatorName: roData?.user?.nama_lengkap || '-',
+    arrivalDate: roData?.arrival_date ? formatDate(roData?.arrival_date) : '-'
+  };
+
+  // Buka window print
+  const printWindow = window.open('', '_blank', 'width=600,height=600');
+  printWindow.document.write(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>Packing List - ${printData.orderNumber}</title>
+      <style>
+        @media print {
+          @page {
+            size: 58mm auto;
+            margin: 0;
+          }
+          body {
+            width: 58mm;
+            margin: 0;
+            padding: 2mm;
+            font-family: 'Courier New', monospace;
+            font-size: 10px;
+            line-height: 1.2;
+          }
+        }
+        body {
+          font-family: 'Courier New', monospace;
+          font-size: 10px;
+          line-height: 1.2;
+          width: 58mm;
+          margin: 0;
+          padding: 2mm;
+        }
+        .header {
+          text-align: center;
+          font-weight: bold;
+          margin-bottom: 4mm;
+        }
+        .title {
+          font-size: 12px;
+          margin-bottom: 2mm;
+        }
+        .company {
+          font-size: 10px;
+          margin-bottom: 2mm;
+        }
+        .info {
+          margin-bottom: 4mm;
+        }
+        .info div {
+          margin-bottom: 1mm;
+        }
+        .separator {
+          border-top: 1px solid #000;
+          margin: 2mm 0;
+        }
+        .items {
+          margin-bottom: 4mm;
+        }
+        .item {
+          margin-bottom: 2mm;
+        }
+                 .item-name {
+           font-weight: bold;
+         }
+        .summary {
+          margin-top: 4mm;
+        }
+        .footer {
+          text-align: center;
+          margin-top: 4mm;
+          font-size: 9px;
+        }
+        @media screen {
+          body {
+            border: 1px solid #ccc;
+            margin: 10px auto;
+          }
+        }
+      </style>
+    </head>
+    <body>
+      <div class="header">
+        <div class="title">PACKING LIST</div>
+        <div class="company">JUSTUS GROUP</div>
+        <div class="company">${printData.divisionName}</div>
+      </div>
+      
+      <div class="info">
+        <div>No: ${printData.orderNumber}</div>
+        <div>Tanggal: ${printData.date}</div>
+        <div>Outlet: ${printData.outlet}</div>
+        <div>RO: ${printData.roNumber}</div>
+        <div>Tgl RO: ${printData.roDate}</div>
+        <div>Kedatangan: ${printData.arrivalDate}</div>
+        <div>Pembuat RO: ${printData.roCreatorName}</div>
+      </div>
+      
+      <div class="separator"></div>
+      
+               <div class="items">
+           <div style="font-weight: bold; margin-bottom: 2mm;">ITEMS:</div>
+                       ${printData.items.map((item, index) => `
+              <div class="item">
+                <div class="item-name">${item.qty} ${item.unit} ${item.name}</div>
+              </div>
+            `).join('')}
+         </div>
+      
+      <div class="separator"></div>
+      
+             <div class="summary">
+         <div style="font-weight: bold; margin-bottom: 2mm;">SUMMARY:</div>
+         <div>Total Items: ${printData.items.length}</div>
+       </div>
+      
+      <div class="footer">
+        <div>Generated: ${new Date().toLocaleString('id-ID')}</div>
+        <div style="margin-top: 2mm;">Terima kasih</div>
+      </div>
+    </body>
+    </html>
+  `);
+  printWindow.document.close();
+  printWindow.focus();
+  
+  // Auto print setelah window terbuka
+  setTimeout(() => {
+    printWindow.print();
+  }, 500);
+};
 </script>
 
 <template>
@@ -610,10 +780,15 @@ watch(selectedRO, (newValue) => {
           </div>
         </div>
         
-        <button @click="showSummaryModal" :disabled="!selectedFO || !selectedDivision || !items.length || isSubmitting" class="w-full px-4 py-2 rounded bg-blue-600 text-white font-semibold text-sm hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed">
-          <i class="fas fa-save mr-2"></i> Submit Packing List
-          <span v-if="isSubmitting" class="ml-2"><i class="fas fa-spinner fa-spin"></i></span>
-        </button>
+        <div class="flex gap-2">
+          <button @click="printPackingList" :disabled="!selectedFO || !selectedDivision || !items.length" class="flex-1 px-4 py-2 rounded bg-green-600 text-white font-semibold text-sm hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed">
+            <i class="fas fa-print mr-2"></i> Print Packing List
+          </button>
+          <button @click="showSummaryModal" :disabled="!selectedFO || !selectedDivision || !items.length || isSubmitting" class="flex-1 px-4 py-2 rounded bg-blue-600 text-white font-semibold text-sm hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed">
+            <i class="fas fa-save mr-2"></i> Submit Packing List
+            <span v-if="isSubmitting" class="ml-2"><i class="fas fa-spinner fa-spin"></i></span>
+          </button>
+        </div>
       </div>
     </div>
   </AppLayout>

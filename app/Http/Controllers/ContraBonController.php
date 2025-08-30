@@ -135,12 +135,32 @@ class ContraBonController extends Controller
 
             // Create contra bon items
             foreach ($request->items as $item) {
+                // Untuk retail food, item_id dan unit_id bisa null
+                $itemId = $item['item_id'] ?? null;
+                $unitId = $item['unit_id'] ?? null;
+                
+                // Jika dari retail food dan tidak ada item_id, coba cari berdasarkan item_name
+                if ($sourceType === 'retail_food' && !$itemId && isset($item['item_name'])) {
+                    $foundItem = \DB::table('items')->where('name', $item['item_name'])->first();
+                    if ($foundItem) {
+                        $itemId = $foundItem->id;
+                    }
+                }
+                
+                // Jika dari retail food dan tidak ada unit_id, coba cari berdasarkan unit_name
+                if ($sourceType === 'retail_food' && !$unitId && isset($item['unit_name'])) {
+                    $foundUnit = \DB::table('units')->where('name', $item['unit_name'])->first();
+                    if ($foundUnit) {
+                        $unitId = $foundUnit->id;
+                    }
+                }
+                
                 ContraBonItem::create([
                     'contra_bon_id' => $contraBon->id,
-                    'item_id' => $item['item_id'],
+                    'item_id' => $itemId,
                     'po_item_id' => $item['po_item_id'] ?? null,
                     'quantity' => $item['quantity'],
-                    'unit_id' => $item['unit_id'],
+                    'unit_id' => $unitId,
                     'price' => $item['price'],
                     'total' => $item['quantity'] * $item['price'],
                     'notes' => $item['notes'] ?? null
@@ -443,6 +463,8 @@ class ContraBonController extends Controller
             $retailFoods = \DB::table('retail_food as rf')
                 ->join('suppliers as s', 'rf.supplier_id', '=', 's.id')
                 ->join('users as creator', 'rf.created_by', '=', 'creator.id')
+                ->leftJoin('tbl_data_outlet as o', 'rf.outlet_id', '=', 'o.id_outlet')
+                ->leftJoin('warehouse_outlets as wo', 'rf.warehouse_outlet_id', '=', 'wo.id')
                 ->where('rf.payment_method', 'contra_bon')
                 ->where('rf.status', 'approved')
                 ->whereNotIn('rf.id', $usedRetailFoods)
@@ -454,7 +476,9 @@ class ContraBonController extends Controller
                     'rf.notes',
                     's.id as supplier_id',
                     's.name as supplier_name',
-                    'creator.nama_lengkap as creator_name'
+                    'creator.nama_lengkap as creator_name',
+                    'o.nama_outlet as outlet_name',
+                    'wo.name as warehouse_outlet_name'
                 )
                 ->orderByDesc('rf.transaction_date')
                 ->get();
@@ -462,15 +486,11 @@ class ContraBonController extends Controller
             $result = [];
             foreach ($retailFoods as $row) {
                 $items = \DB::table('retail_food_items as rfi')
-                    ->join('items as i', 'rfi.item_id', '=', 'i.id')
-                    ->join('units as u', 'rfi.unit_id', '=', 'u.id')
                     ->where('rfi.retail_food_id', $row->retail_food_id)
                     ->select(
                         'rfi.id',
-                        'rfi.item_id',
-                        'i.name as item_name',
-                        'rfi.unit_id',
-                        'u.name as unit_name',
+                        'rfi.item_name',
+                        'rfi.unit as unit_name',
                         'rfi.qty',
                         'rfi.price'
                     )
@@ -484,6 +504,8 @@ class ContraBonController extends Controller
                     'supplier_id' => $row->supplier_id,
                     'supplier_name' => $row->supplier_name,
                     'creator_name' => $row->creator_name,
+                    'outlet_name' => $row->outlet_name,
+                    'warehouse_outlet_name' => $row->warehouse_outlet_name,
                     'items' => $items,
                 ];
             }
