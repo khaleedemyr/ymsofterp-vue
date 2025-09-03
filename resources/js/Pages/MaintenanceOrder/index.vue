@@ -1,9 +1,14 @@
 <template>
   <div class="flex justify-between items-center mb-6">
     <h1 class="text-2xl font-bold text-blue-900">Maintenance Order</h1>
-    <a href="/maintenance-order/schedule-calendar" class="btn-primary">
-      <i class="fas fa-calendar-alt mr-2"></i> Lihat Kalender Jadwal
-    </a>
+    <div class="flex gap-3">
+      <a href="/maintenance-order/list" class="btn-secondary">
+        <i class="fas fa-list mr-2"></i> List View
+      </a>
+      <a href="/maintenance-order/schedule-calendar" class="btn-primary">
+        <i class="fas fa-calendar-alt mr-2"></i> Lihat Kalender Jadwal
+      </a>
+    </div>
   </div>
   <div class="mb-2 text-sm text-gray-500">ID Outlet User Login: {{ userOutlet }}</div>
   <FilterBar
@@ -112,4 +117,14 @@ import AppLayout from '@/Layouts/AppLayout.vue';
 export default {
   layout: AppLayout
 }
-</script> 
+</script>
+
+<style scoped>
+.btn-primary {
+  @apply px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors;
+}
+
+.btn-secondary {
+  @apply px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors;
+}
+</style> 

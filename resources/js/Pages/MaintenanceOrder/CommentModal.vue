@@ -69,7 +69,15 @@
 
               <!-- Daftar Komentar -->
               <div class="space-y-4 max-h-[500px] overflow-y-auto mb-4 pr-2">
-                <div v-for="comment in comments" :key="comment.id" class="bg-gray-50 rounded-lg p-4">
+                <div v-if="isLoadingComments" class="text-center py-4">
+                  <i class="fas fa-spinner fa-spin text-blue-500 text-2xl"></i>
+                  <p class="text-gray-600 mt-2">Memuat komentar...</p>
+                </div>
+                <div v-else-if="comments.length === 0" class="text-center py-4">
+                  <i class="far fa-comment text-gray-400 text-2xl"></i>
+                  <p class="text-gray-500 mt-2">Belum ada komentar</p>
+                </div>
+                <div v-else v-for="comment in comments" :key="comment.id" class="bg-gray-50 rounded-lg p-4">
                   <div class="flex items-start gap-3">
                     <div class="w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center text-white">
                       {{ getInitials(comment.user_name) }}
@@ -119,11 +127,25 @@
               <div class="border-t pt-4">
                 <textarea 
                   v-model="newComment"
+                  @input="saveDraft"
                   rows="4"
-                  class="w-full border rounded-lg p-3 mb-3 text-base"
-                  placeholder="Tulis komentar..."
+                  class="w-full border rounded-lg p-3 mb-3 text-base focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="Tulis komentar... (Ctrl+Enter untuk kirim)"
                 ></textarea>
                 
+                <!-- Draft info -->
+                <div v-if="newComment.trim() || uploadedFiles.length > 0" class="text-xs text-gray-500 mb-3 flex items-center gap-2">
+                  <i class="fas fa-save text-blue-500"></i>
+                  <span>Draft tersimpan otomatis</span>
+                </div>
+                
+                <!-- Keyboard shortcuts info -->
+                <div class="text-xs text-gray-400 mb-3">
+                  <span class="font-medium">Keyboard shortcuts:</span> 
+                  <kbd class="px-1 py-0.5 bg-gray-100 rounded text-xs">Ctrl+Enter</kbd> untuk kirim, 
+                  <kbd class="px-1 py-0.5 bg-gray-100 rounded text-xs">Esc</kbd> untuk tutup
+                </div>
+
                 <!-- Preview Media -->
                 <div v-if="uploadedFiles.length" class="flex flex-wrap gap-3 mb-3">
                   <div v-for="(file, i) in uploadedFiles" :key="i" class="relative group">
@@ -167,13 +189,14 @@
                   </div>
                   <button 
                     @click="submitComment"
-                    :disabled="!canSubmit"
+                    :disabled="!canSubmit || isSubmitting"
                     :class="[
-                      'px-6 py-2 rounded-lg text-white text-base font-medium transition-all',
-                      canSubmit ? 'bg-blue-500 hover:bg-blue-600' : 'bg-gray-300 cursor-not-allowed'
+                      'px-6 py-2 rounded-lg text-white text-base font-medium transition-all flex items-center gap-2',
+                      canSubmit && !isSubmitting ? 'bg-blue-500 hover:bg-blue-600' : 'bg-gray-300 cursor-not-allowed'
                     ]"
                   >
-                    Kirim
+                    <i v-if="isSubmitting" class="fas fa-spinner fa-spin"></i>
+                    {{ isSubmitting ? 'Menyimpan...' : 'Kirim' }}
                   </button>
                 </div>
               </div>
@@ -186,7 +209,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { usePage } from '@inertiajs/vue3';
 import {
   TransitionRoot,
@@ -213,6 +236,8 @@ const newComment = ref('');
 const uploadedFiles = ref([]);
 const showCameraModal = ref(false);
 const cameraMode = ref('photo');
+const isSubmitting = ref(false); // Loading state untuk submit comment
+const isLoadingComments = ref(false); // Loading state untuk fetch comments
 
 // Ambil user login
 const user = usePage().props.auth?.user || {};
@@ -224,15 +249,96 @@ const previewType = ref('');
 
 // Ambil data komentar saat komponen dimount
 const fetchComments = async () => {
+  if (!props.taskId) {
+    console.error('fetchComments: No taskId provided');
+    return;
+  }
+  
+  console.log('Fetching comments for taskId:', props.taskId);
+  isLoadingComments.value = true;
+  
   try {
     const response = await axios.get(`/api/maintenance-comments/${props.taskId}`);
+    console.log('Comments fetched successfully:', response.data);
     comments.value = response.data;
   } catch (error) {
     console.error('Error fetching comments:', error);
+  } finally {
+    isLoadingComments.value = false;
   }
 };
 
-fetchComments();
+// Keyboard shortcuts
+function handleKeydown(event) {
+  // Ctrl/Cmd + Enter to submit comment
+  if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+    event.preventDefault();
+    submitComment();
+  }
+  
+  // Escape to close modal
+  if (event.key === 'Escape') {
+    emit('close');
+  }
+}
+
+// Auto-save draft
+function saveDraft() {
+  if (newComment.value.trim() || uploadedFiles.value.length > 0) {
+    localStorage.setItem(`comment_draft_${props.taskId}`, JSON.stringify({
+      comment: newComment.value,
+      timestamp: Date.now()
+    }));
+  }
+}
+
+// Load draft
+function loadDraft() {
+  try {
+    const draft = localStorage.getItem(`comment_draft_${props.taskId}`);
+    if (draft) {
+      const draftData = JSON.parse(draft);
+      // Only load draft if it's less than 1 hour old
+      if (Date.now() - draftData.timestamp < 3600000) {
+        newComment.value = draftData.comment;
+      } else {
+        localStorage.removeItem(`comment_draft_${props.taskId}`);
+      }
+    }
+  } catch (error) {
+    console.error('Error loading draft:', error);
+  }
+}
+
+// Clear draft after successful submission
+function clearDraft() {
+  localStorage.removeItem(`comment_draft_${props.taskId}`);
+}
+
+// Lifecycle
+onMounted(() => {
+  console.log('CommentModal mounted with taskId:', props.taskId);
+  
+  // Validasi taskId
+  if (!props.taskId) {
+    console.error('CommentModal: No taskId provided');
+    Swal.fire({
+      title: 'Error',
+      text: 'Task ID tidak valid. Silakan coba lagi.',
+      icon: 'error'
+    });
+    emit('close');
+    return;
+  }
+  
+  fetchComments();
+  loadDraft();
+  document.addEventListener('keydown', handleKeydown);
+});
+
+onUnmounted(() => {
+  document.removeEventListener('keydown', handleKeydown);
+});
 
 const canSubmit = computed(() => {
   return newComment.value.trim() !== '' || uploadedFiles.value.length > 0;
@@ -321,11 +427,40 @@ function dataURLtoFile(dataurl, filename) {
 
 async function submitComment() {
   if (!canSubmit.value) return;
+  if (isSubmitting.value) return; // Prevent double submission
+
+  // Validasi taskId
+  if (!props.taskId) {
+    Swal.fire({
+      title: 'Error',
+      text: 'Task ID tidak valid. Silakan coba lagi.',
+      icon: 'error'
+    });
+    return;
+  }
+
+  // Konfirmasi jika comment kosong tapi ada file
+  if (!newComment.value.trim() && uploadedFiles.value.length > 0) {
+    const result = await Swal.fire({
+      title: 'Konfirmasi',
+      text: 'Anda tidak menulis komentar. Apakah Anda yakin ingin mengirim hanya file saja?',
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonText: 'Ya, kirim file',
+      cancelButtonText: 'Tulis komentar dulu'
+    });
+    
+    if (!result.isConfirmed) {
+      return;
+    }
+  }
+
+  isSubmitting.value = true;
 
   try {
     const formData = new FormData();
     formData.append('task_id', props.taskId);
-    formData.append('comment', newComment.value);
+    formData.append('comment', newComment.value || 'File attachment only');
     
     uploadedFiles.value.forEach((item, i) => {
       formData.append(`attachments[]`, item.file);
@@ -342,9 +477,41 @@ async function submitComment() {
       uploadedFiles.value = [];
       await fetchComments();
       emit('comment-added');
+      clearDraft(); // Clear draft after successful submission
+      
+      // Show success message
+      Swal.fire({
+        title: 'Berhasil!',
+        text: 'Komentar berhasil ditambahkan.',
+        icon: 'success',
+        timer: 2000,
+        showConfirmButton: false
+      });
     }
   } catch (error) {
     console.error('Error submitting comment:', error);
+    
+    let errorMessage = 'Terjadi kesalahan saat menyimpan komentar.';
+    
+    if (error.response?.status === 422) {
+      errorMessage = 'Data komentar tidak valid. Silakan periksa input Anda.';
+    } else if (error.response?.status === 413) {
+      errorMessage = 'Ukuran file terlalu besar. Silakan gunakan file yang lebih kecil.';
+    } else if (error.response?.status === 500) {
+      errorMessage = 'Server error. Silakan coba lagi nanti.';
+    }
+    
+    Swal.fire({
+      title: 'Gagal Menyimpan Komentar',
+      text: errorMessage,
+      icon: 'error',
+      didOpen: () => {
+        const swal = document.querySelector('.swal2-container');
+        if (swal) swal.style.zIndex = 200000;
+      }
+    });
+  } finally {
+    isSubmitting.value = false;
   }
 }
 

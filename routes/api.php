@@ -39,6 +39,24 @@ Route::get('/outlet', [MaintenanceOrderController::class, 'getOutlets']);
 Route::get('/ruko', [MaintenanceOrderController::class, 'getRukos']);
 Route::get('/maintenance-order', [MaintenanceOrderController::class, 'index']);
 Route::patch('/maintenance-order/{id}', [MaintenanceOrderController::class, 'updateStatus']);
+
+// Endpoint API untuk List View Maintenance Order
+Route::get('/maintenance-order-list', [MaintenanceOrderController::class, 'listAll']);
+
+// Endpoint API untuk Get Assignable Users (harus di atas route dengan parameter)
+Route::get('/maintenance-order/assignable-users', [MaintenanceOrderController::class, 'getAssignableUsers']);
+
+// Endpoint API untuk Maintenance Order Detail
+Route::get('/maintenance-order/{id}', [MaintenanceOrderController::class, 'show']);
+
+// Endpoint API untuk Maintenance Order Update
+Route::put('/maintenance-order/{id}', [MaintenanceOrderController::class, 'update']);
+
+// Endpoint API untuk Assign Member
+Route::post('/maintenance-order/{id}/assign-members', [MaintenanceOrderController::class, 'assignMembers']);
+
+// Endpoint API untuk Remove Member
+Route::delete('/maintenance-order/{id}/remove-member/{memberId}', [MaintenanceOrderController::class, 'removeMember']);
 Route::get('/maintenance-labels', [MaintenanceLabelController::class, 'index']);
 Route::get('/maintenance-priorities', [MaintenancePriorityController::class, 'index']);
 Route::middleware(['auth:web'])->group(function () {

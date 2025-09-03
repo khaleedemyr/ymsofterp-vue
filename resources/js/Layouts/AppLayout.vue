@@ -41,6 +41,7 @@ const menuGroups = [
         menus: [
             { name: () => 'MT Dashboard', icon: 'fa-solid fa-gauge', route: route('dashboard.maintenance'), code: 'mt_dashboard' },
             { name: () => 'Maintenance Order', icon: 'fa-solid fa-clipboard-check', route: '/maintenance-order', code: 'maintenance_order' },
+            { name: () => 'Maintenance Order List', icon: 'fa-solid fa-list', route: '/maintenance-order/list', code: 'maintenance_order_list' },
             { name: () => 'Kalender Jadwal', icon: 'fa-solid fa-calendar-alt', route: '/maintenance-order/schedule-calendar', code: 'maintenance_schedule_calendar' },
         ],
     },
@@ -316,16 +317,14 @@ const menuGroups = [
         collapsible: true,
         open: ref(false),
         menus: [
-            { name: () => 'LMS Dashboard', icon: 'fa-solid fa-chart-line', route: '/lms/dashboard', code: 'lms-dashboard' },
+           
             { name: () => 'Kategori Training', icon: 'fa-solid fa-folder', route: '/lms/categories', code: 'lms-categories' },
-            { name: () => 'Training', icon: 'fa-solid fa-book', route: '/lms/courses', code: 'lms-courses' },
-            { name: () => 'Lesson', icon: 'fa-solid fa-play-circle', route: '/lms/lessons', code: 'lms-lessons' },
-            { name: () => 'Enrollment', icon: 'fa-solid fa-user-plus', route: '/lms/enrollments', code: 'lms-enrollments' },
+            { name: () => 'Training', icon: 'fa-solid fa-book', route: '/lms/courses', code: 'lms-courses' },      
             { name: () => 'Quiz', icon: 'fa-solid fa-question-circle', route: '/lms/quizzes', code: 'lms-quizzes' },
-            { name: () => 'Assignment', icon: 'fa-solid fa-tasks', route: '/lms/assignments', code: 'lms-assignments' },
+            { name: () => 'Kuesioner', icon: 'fa-solid fa-clipboard-list', route: '/lms/questionnaires', code: 'lms-questionnaires' },    
             { name: () => 'Sertifikat', icon: 'fa-solid fa-certificate', route: '/lms/certificates', code: 'lms-certificates' },
-            { name: () => 'Diskusi', icon: 'fa-solid fa-comments', route: '/lms/discussions', code: 'lms-discussions' },
-            { name: () => 'Laporan LMS', icon: 'fa-solid fa-chart-bar', route: '/lms/reports', code: 'lms-reports' },
+            { name: () => 'Template Sertifikat', icon: 'fa-solid fa-file-certificate', route: '/lms/certificate-templates', code: 'lms-certificate-templates' },          
+            { name: () => 'Jadwal Training', icon: 'fa-solid fa-calendar-alt', route: '/lms/schedules', code: 'lms-schedules' },
         ],
     },
 ];
@@ -455,6 +454,18 @@ async function markAllAsRead() {
 
 function handleNotifClick(notif) {
     markAsRead(notif.id);
+    
+    // Redirect ke URL notifikasi jika ada
+    if (notif.url) {
+        // Jika URL adalah external (full URL), gunakan window.location.href
+        if (notif.url.startsWith('http://') || notif.url.startsWith('https://')) {
+            window.location.href = notif.url;
+        } else {
+            // Jika URL relatif, gunakan Inertia router
+            window.location.href = notif.url;
+        }
+    }
+    
     showToast({ 
         title: notif.type === 'success' ? 'Success' : notif.type === 'error' ? 'Error' : 'Info',
         message: notif.message, 
@@ -606,6 +617,9 @@ onMounted(() => {
                                     <div class="font-semibold text-sm text-gray-800">{{ notif.type === 'success' ? 'Success' : notif.type === 'error' ? 'Error' : 'Info' }}</div>
                                     <div class="text-xs text-gray-600">{{ notif.message }}</div>
                                     <div class="text-xs text-gray-400 mt-1">{{ notif.time }}</div>
+                                    <div v-if="notif.url" class="text-xs text-blue-500 mt-1">
+                                        <i class="fas fa-link mr-1"></i>{{ notif.url }}
+                                    </div>
                                 </div>
                             </div>
                         </div>

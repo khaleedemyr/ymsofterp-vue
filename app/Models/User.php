@@ -63,9 +63,54 @@ class User extends Authenticatable
     public function outlet() {
         return $this->belongsTo(\App\Models\Outlet::class, 'id_outlet', 'id_outlet');
     }
+    
+
 
     public function userPins()
     {
         return $this->hasMany(UserPin::class, 'user_id', 'id');
+    }
+
+    /**
+     * Check if user has specific permission
+     */
+    public function hasPermission($permissionCode)
+    {
+        if ($this->is_admin) {
+            return true;
+        }
+
+        // Check if user has the permission through their role
+        return $this->role && $this->role->permissions()
+            ->where('code', $permissionCode)
+            ->exists();
+    }
+
+    /**
+     * Check if user can manage training schedules
+     */
+    public function canManageTrainingSchedules()
+    {
+        return $this->hasPermission('lms-schedules-view') || 
+               $this->hasPermission('lms-schedules-create') ||
+               $this->hasPermission('lms-schedules-update') ||
+               $this->hasPermission('lms-schedules-delete');
+    }
+
+    /**
+     * Check if user can invite participants
+     */
+    public function canInviteParticipants()
+    {
+        return $this->hasPermission('lms-schedules-invitation') ||
+               $this->hasPermission('lms-schedules-invitation-create');
+    }
+
+    /**
+     * Check if user can use QR scanner
+     */
+    public function canUseQRScanner()
+    {
+        return $this->hasPermission('lms-schedules-qr-scanner');
     }
 }

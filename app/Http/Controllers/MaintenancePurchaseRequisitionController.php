@@ -98,7 +98,7 @@ class MaintenancePurchaseRequisitionController extends Controller
                 'task_id' => $pr->task_id,
                 'type' => 'pr_approval',
                 'message' => $message,
-                'url' => '/maintenance-order/' . $pr->task_id,
+                'url' => config('app.url') . '/maintenance-order/' . $pr->task_id,
                 'is_read' => 0,
                 'created_at' => now(),
                 'updated_at' => now()

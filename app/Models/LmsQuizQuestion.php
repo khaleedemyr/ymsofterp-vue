@@ -4,11 +4,10 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\SoftDeletes;
 
 class LmsQuizQuestion extends Model
 {
-    use HasFactory, SoftDeletes;
+    use HasFactory;
 
     protected $table = 'lms_quiz_questions';
 
@@ -17,20 +16,18 @@ class LmsQuizQuestion extends Model
         'question_text',
         'question_type',
         'points',
-        'order_number',
+        'image_path',
+        'image_alt_text',
         'is_required',
-        'status',
-        'created_by',
-        'updated_by',
+        'order_number'
     ];
 
     protected $casts = [
         'points' => 'integer',
-        'order_number' => 'integer',
         'is_required' => 'boolean',
+        'order_number' => 'integer',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
-        'deleted_at' => 'datetime',
     ];
 
     // Relationships
@@ -41,33 +38,23 @@ class LmsQuizQuestion extends Model
 
     public function options()
     {
-        return $this->hasMany(LmsQuizOption::class, 'question_id');
+        return $this->hasMany(LmsQuizOption::class, 'question_id')->orderBy('order_number');
     }
 
-    public function creator()
+    public function answers()
     {
-        return $this->belongsTo(User::class, 'created_by');
-    }
-
-    public function updater()
-    {
-        return $this->belongsTo(User::class, 'updated_by');
+        return $this->hasMany(LmsQuizAnswer::class, 'question_id');
     }
 
     // Scopes
-    public function scopeActive($query)
+    public function scopeOrdered($query)
     {
-        return $query->where('status', 'active');
+        return $query->orderBy('order_number');
     }
 
     public function scopeRequired($query)
     {
         return $query->where('is_required', true);
-    }
-
-    public function scopeOrdered($query)
-    {
-        return $query->orderBy('order_number');
     }
 
     public function scopeByType($query, $type)
@@ -76,73 +63,48 @@ class LmsQuizQuestion extends Model
     }
 
     // Accessors
-    public function getQuestionTypeTextAttribute()
-    {
-        $types = [
-            'multiple_choice' => 'Pilihan Ganda',
-            'true_false' => 'Benar/Salah',
-            'short_answer' => 'Jawaban Singkat',
-            'essay' => 'Essay',
-            'matching' => 'Menjodohkan'
-        ];
-        
-        return $types[$this->question_type] ?? $this->question_type;
-    }
-
     public function getCorrectOptionsAttribute()
     {
         return $this->options()->where('is_correct', true)->get();
     }
 
-    public function getOptionsCountAttribute()
+    public function getHasCorrectAnswerAttribute()
     {
-        return $this->options()->count();
+        return $this->options()->where('is_correct', true)->exists();
     }
 
     // Methods
-    public function getCorrectAnswer()
-    {
-        if ($this->question_type === 'multiple_choice') {
-            return $this->options()->where('is_correct', true)->first();
-        } elseif ($this->question_type === 'true_false') {
-            return $this->options()->where('is_correct', true)->first();
-        }
-        
-        return null;
-    }
-
     public function isCorrectAnswer($answer)
     {
         if ($this->question_type === 'multiple_choice') {
-            $correctOption = $this->getCorrectAnswer();
-            return $correctOption && $correctOption->id == $answer;
-        } elseif ($this->question_type === 'true_false') {
-            $correctOption = $this->getCorrectAnswer();
-            return $correctOption && $correctOption->id == $answer;
+            $correctOption = $this->options()->where('is_correct', true)->first();
+            return $correctOption && $answer === $correctOption->id;
         }
-        
-        return false;
+
+        if ($this->question_type === 'true_false') {
+            $correctOption = $this->options()->where('is_correct', true)->first();
+            return $correctOption && $answer === $correctOption->option_text;
+        }
+
+        // Essay questions need manual grading
+        return null;
     }
 
-    // Boot method
-    protected static function boot()
+    public function getMaxPoints()
     {
-        parent::boot();
+        return $this->points;
+    }
 
-        static::creating(function ($question) {
-            if (!$question->created_by) {
-                $question->created_by = auth()->id();
-            }
-            if (!$question->updated_by) {
-                $question->updated_by = auth()->id();
-            }
-            if (!$question->order_number) {
-                $question->order_number = static::where('quiz_id', $question->quiz_id)->max('order_number') + 1;
-            }
-        });
+    public function getImageUrlAttribute()
+    {
+        if ($this->image_path) {
+            return request()->getSchemeAndHttpHost() . '/storage/' . $this->image_path;
+        }
+        return null;
+    }
 
-        static::updating(function ($question) {
-            $question->updated_by = auth()->id();
-        });
+    public function hasImage()
+    {
+        return !empty($this->image_path);
     }
 } 

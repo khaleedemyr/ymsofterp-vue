@@ -34,6 +34,16 @@ function applyFilter() {
     <div class="max-w-5xl mx-auto px-2 md:px-0 py-8">
       <div class="text-2xl font-bold text-gray-800 mb-2">Attendance Summary per Outlet</div>
       <div class="text-sm text-gray-500 mb-6">Periode: {{ period?.start }} s.d. {{ period?.end }}</div>
+      
+      <!-- Navigation Links -->
+      <div class="flex gap-2 mb-4">
+        <a href="/attendance-report" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-xl shadow flex items-center gap-2">
+          <i class="fa fa-calendar"></i> Detail Report
+        </a>
+        <a href="/attendance-report/employee-summary" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-xl shadow flex items-center gap-2">
+          <i class="fa fa-users"></i> Employee Summary
+        </a>
+      </div>
 
       <div class="flex flex-col md:flex-row md:items-end gap-4 mb-6">
         <div class="flex-1 min-w-[180px]">

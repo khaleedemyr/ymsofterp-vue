@@ -209,7 +209,7 @@ const exportExcel = () => {
           </button>
         </div>
       </div>
-      <div class="flex justify-end mb-4">
+      <div class="flex justify-end items-center mb-4">
         <button @click="exportExcel" :disabled="isLoading || isExporting" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-6 rounded-xl shadow flex items-center gap-2">
           <i class="fa fa-file-excel-o"></i> Export to Excel
         </button>

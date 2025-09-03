@@ -17,7 +17,9 @@ class LmsQuiz extends Model
         'title',
         'description',
         'instructions',
+        'time_limit_type',
         'time_limit_minutes',
+        'time_per_question_seconds',
         'passing_score',
         'max_attempts',
         'is_randomized',
@@ -27,8 +29,16 @@ class LmsQuiz extends Model
         'updated_by',
     ];
 
+    protected $appends = [
+        'questions_count',
+        'attempts_count',
+        'average_score',
+        'pass_rate'
+    ];
+
     protected $casts = [
         'time_limit_minutes' => 'integer',
+        'time_per_question_seconds' => 'integer',
         'passing_score' => 'integer',
         'max_attempts' => 'integer',
         'is_randomized' => 'boolean',
@@ -38,7 +48,8 @@ class LmsQuiz extends Model
         'deleted_at' => 'datetime',
     ];
 
-    // Relationships
+
+
     public function course()
     {
         return $this->belongsTo(LmsCourse::class, 'course_id');
@@ -78,21 +89,34 @@ class LmsQuiz extends Model
     // Accessors
     public function getQuestionsCountAttribute()
     {
+        if (isset($this->attributes['questions_count'])) {
+            return $this->attributes['questions_count'];
+        }
         return $this->questions()->count();
     }
 
     public function getAttemptsCountAttribute()
     {
+        if (isset($this->attributes['attempts_count'])) {
+            return $this->attributes['attempts_count'];
+        }
         return $this->attempts()->count();
     }
 
     public function getAverageScoreAttribute()
     {
-        return $this->attempts()->avg('score') ?? 0;
+        if (isset($this->attributes['average_score'])) {
+            return $this->attributes['average_score'];
+        }
+        return round($this->attempts()->avg('score') ?? 0, 1);
     }
 
     public function getPassRateAttribute()
     {
+        if (isset($this->attributes['pass_rate'])) {
+            return $this->attributes['pass_rate'];
+        }
+        
         $totalAttempts = $this->attempts()->count();
         if ($totalAttempts === 0) {
             return 0;
@@ -102,7 +126,7 @@ class LmsQuiz extends Model
             ->where('score', '>=', $this->passing_score)
             ->count();
 
-        return round(($passedAttempts / $totalAttempts) * 100, 2);
+        return round(($passedAttempts / $totalAttempts) * 100, 1);
     }
 
     // Methods

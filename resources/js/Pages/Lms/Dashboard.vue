@@ -184,8 +184,19 @@
                   <div v-for="course in recentCourses" :key="course.id" 
                        class="backdrop-blur-sm bg-white/5 border border-white/10 rounded-xl p-4 hover:bg-white/10 transition-all duration-300 cursor-pointer">
                     <div class="flex items-center space-x-3">
-                      <div class="w-10 h-10 bg-gradient-to-br from-green-500 to-blue-500 rounded-lg flex items-center justify-center">
-                        <i class="fas fa-play text-white"></i>
+                      <div class="w-10 h-10 rounded-lg overflow-hidden flex-shrink-0">
+                        <img 
+                          v-if="course.thumbnail_url" 
+                          :src="course.thumbnail_url" 
+                          :alt="course.title" 
+                          class="w-full h-full object-cover"
+                        />
+                        <div 
+                          v-else
+                          class="w-full h-full bg-gradient-to-br from-green-500 to-blue-500 flex items-center justify-center"
+                        >
+                          <i class="fas fa-play text-white text-sm"></i>
+                        </div>
                       </div>
                       <div class="flex-1">
                         <h4 class="font-semibold text-white drop-shadow-md text-sm">{{ course.title }}</h4>

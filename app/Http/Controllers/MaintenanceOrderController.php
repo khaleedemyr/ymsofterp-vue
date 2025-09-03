@@ -88,6 +88,79 @@ class MaintenanceOrderController extends Controller
         }
     }
 
+    // Ambil semua task maintenance order untuk list view (tanpa filter outlet/ruko)
+    public function listAll(Request $request)
+    {
+        \Log::info('Fetching all maintenance tasks for list view');
+
+        try {
+            $query = DB::table('maintenance_tasks')
+                ->select(
+                    'maintenance_tasks.*',
+                    'users.nama_lengkap as created_by_name',
+                    'maintenance_labels.name as label_name',
+                    'maintenance_priorities.priority as priority_name'
+                )
+                ->leftJoin('users', 'maintenance_tasks.created_by', '=', 'users.id')
+                ->leftJoin('maintenance_labels', 'maintenance_tasks.label_id', '=', 'maintenance_labels.id')
+                ->leftJoin('maintenance_priorities', 'maintenance_tasks.priority_id', '=', 'maintenance_priorities.id');
+
+            // Apply search filter if provided
+            if ($request->has('search') && !empty($request->search)) {
+                $search = $request->search;
+                $query->where(function($q) use ($search) {
+                    $q->where('maintenance_tasks.title', 'like', "%{$search}%")
+                      ->orWhere('maintenance_tasks.description', 'like', "%{$search}%")
+                      ->orWhere('maintenance_tasks.task_number', 'like', "%{$search}%");
+                });
+            }
+
+            // Apply status filter if provided
+            if ($request->has('status') && !empty($request->status)) {
+                $query->where('maintenance_tasks.status', $request->status);
+            }
+
+            // Apply outlet filter if provided
+            if ($request->has('outlet') && !empty($request->outlet)) {
+                $query->where('maintenance_tasks.id_outlet', $request->outlet);
+            }
+
+            $tasks = $query->orderBy('maintenance_tasks.created_at', 'desc')->get();
+
+            // Ambil media, dokumen, dan member untuk setiap task
+            foreach ($tasks as $task) {
+                $task->media = DB::table('maintenance_media')
+                    ->where('task_id', $task->id)
+                    ->get();
+                $task->documents = DB::table('maintenance_documents')
+                    ->where('task_id', $task->id)
+                    ->get();
+                // Ambil semua member (creator & ASSIGNEE)
+                $task->members = DB::table('maintenance_members')
+                    ->join('users', 'maintenance_members.user_id', '=', 'users.id')
+                    ->where('maintenance_members.task_id', $task->id)
+                    ->select('users.id', 'users.nama_lengkap', 'maintenance_members.role')
+                    ->get();
+            }
+
+            \Log::info('All tasks fetched successfully', [
+                'count' => $tasks->count()
+            ]);
+
+            return response()->json($tasks);
+        } catch (\Exception $e) {
+            \Log::error('Error in MaintenanceOrderController@listAll', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'request' => $request->all()
+            ]);
+            
+            return response()->json([
+                'error' => 'Terjadi kesalahan saat mengambil data: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
     // Update status task (drag & drop)
     public function updateStatus(Request $request, $id)
     {
@@ -191,7 +264,7 @@ class MaintenanceOrderController extends Controller
                     'task_id' => $id,
                     'type' => 'task_status_changed',
                     'message' => "Task {$task->task_number} - {$task->title} di outlet {$outlet->nama_outlet} telah dipindahkan dari {$statusMessages[$oldStatus]} ke {$statusMessages[$request->status]} oleh {$user->nama_lengkap}",
-                    'url' => '/maintenance-order/' . $id,
+                    'url' => config('app.url') . '/maintenance-order/' . $id,
                     'is_read' => 0,
                     'created_at' => now(),
                     'updated_at' => now()
@@ -226,7 +299,7 @@ class MaintenanceOrderController extends Controller
                         'task_id' => $id,
                         'type' => 'pr_approved_for_po',
                         'message' => $message,
-                        'url' => '/maintenance-order/' . $id,
+                        'url' => config('app.url') . '/maintenance-order/' . $id,
                         'is_read' => 0,
                         'created_at' => now(),
                         'updated_at' => now()
@@ -370,7 +443,7 @@ class MaintenanceOrderController extends Controller
                     'task_id' => $taskId,
                     'type' => 'task_created',
                     'message' => "Task baru telah dibuat:\n\nNo: {$request->task_number}\nJudul: {$request->title}\nOutlet: {$outlet->nama_outlet}\nDibuat oleh: {$creator->nama_lengkap}",
-                    'url' => '/maintenance-order/' . $taskId,
+                    'url' => config('app.url') . '/maintenance-order/' . $taskId,
                     'is_read' => 0,
                     'created_at' => now(),
                     'updated_at' => now(),
@@ -474,12 +547,151 @@ class MaintenanceOrderController extends Controller
                 'task_id' => $taskId,
                 'type' => 'assign_member',
                 'message' => 'Anda di-assign ke task: ' . $task->title . ' | Outlet: ' . ($outlet->nama_outlet ?? '-') . ' | No: ' . $task->task_number,
-                'url' => '/maintenance-order/' . $taskId,
+                'url' => config('app.url') . '/maintenance-order/' . $taskId,
                 'is_read' => 0,
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);
         }
         return response()->json(['success' => true]);
+    }
+
+    // API: Get assignable users untuk dropdown
+    public function getAssignableUsers()
+    {
+        try {
+            $users = DB::table('users')
+                ->where('division_id', 20)
+                ->where('status', 'A')
+                ->select('id', 'nama_lengkap', 'email')
+                ->orderBy('nama_lengkap')
+                ->get();
+
+            return response()->json($users);
+        } catch (\Exception $e) {
+            \Log::error('Error in MaintenanceOrderController@getAssignableUsers', [
+                'error' => $e->getMessage()
+            ]);
+            
+            return response()->json([
+                'error' => 'Terjadi kesalahan saat mengambil data users: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    // API: Remove member dari task
+    public function removeMember($taskId, $memberId)
+    {
+        try {
+            // Hapus member dari maintenance_members
+            $deleted = DB::table('maintenance_members')
+                ->where('task_id', $taskId)
+                ->where('user_id', $memberId)
+                ->delete();
+
+            if (!$deleted) {
+                return response()->json(['error' => 'Member not found or already removed'], 404);
+            }
+
+            return response()->json(['success' => true, 'message' => 'Member removed successfully']);
+        } catch (\Exception $e) {
+            \Log::error('Error in MaintenanceOrderController@removeMember', [
+                'error' => $e->getMessage(),
+                'task_id' => $taskId,
+                'member_id' => $memberId
+            ]);
+            
+            return response()->json([
+                'error' => 'Terjadi kesalahan saat remove member: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    // Ambil detail maintenance order berdasarkan ID
+    public function show($id)
+    {
+        try {
+            $task = DB::table('maintenance_tasks')
+                ->select(
+                    'maintenance_tasks.*',
+                    'users.nama_lengkap as created_by_name',
+                    'maintenance_labels.name as label_name',
+                    'maintenance_priorities.priority as priority_name'
+                )
+                ->leftJoin('users', 'maintenance_tasks.created_by', '=', 'users.id')
+                ->leftJoin('maintenance_labels', 'maintenance_tasks.label_id', '=', 'maintenance_labels.id')
+                ->leftJoin('maintenance_priorities', 'maintenance_tasks.priority_id', '=', 'maintenance_priorities.id')
+                ->where('maintenance_tasks.id', $id)
+                ->first();
+
+            if (!$task) {
+                return response()->json(['error' => 'Task not found'], 404);
+            }
+
+            // Ambil media, dokumen, dan member untuk task
+            $task->media = DB::table('maintenance_media')
+                ->where('task_id', $id)
+                ->get();
+            $task->documents = DB::table('maintenance_documents')
+                ->where('task_id', $id)
+                ->get();
+            $task->members = DB::table('maintenance_members')
+                ->join('users', 'maintenance_members.user_id', '=', 'users.id')
+                ->where('maintenance_members.task_id', $id)
+                ->select('users.id', 'users.nama_lengkap', 'maintenance_members.role')
+                ->get();
+
+            return response()->json($task);
+        } catch (\Exception $e) {
+            \Log::error('Error in MaintenanceOrderController@show', [
+                'error' => $e->getMessage(),
+                'task_id' => $id
+            ]);
+            
+            return response()->json([
+                'error' => 'Terjadi kesalahan saat mengambil data task: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    // Update maintenance order
+    public function update(Request $request, $id)
+    {
+        try {
+            $request->validate([
+                'title' => 'required|string|max:255',
+                'description' => 'required|string',
+                'priority_id' => 'required|exists:maintenance_priorities,id',
+                'label_id' => 'required|exists:maintenance_labels,id',
+                'due_date' => 'required|date'
+            ]);
+
+            $updated = DB::table('maintenance_tasks')
+                ->where('id', $id)
+                ->update([
+                    'title' => $request->title,
+                    'description' => $request->description,
+                    'priority_id' => $request->priority_id,
+                    'label_id' => $request->label_id,
+                    'due_date' => $request->due_date,
+                    'updated_at' => now()
+            ]);
+
+            if (!$updated) {
+                return response()->json(['error' => 'Task not found or no changes made'], 404);
+            }
+
+            return response()->json(['success' => true, 'message' => 'Task updated successfully']);
+        } catch (\Exception $e) {
+            \Log::error('Error in MaintenanceOrderController@update', [
+                'error' => $e->getMessage(),
+                'task_id' => $id,
+                'request' => $request->all()
+            ]);
+            
+            return response()->json([
+                'error' => 'Terjadi kesalahan saat update task: ' . $e->getMessage()
+            ], 500);
+        }
     }
 }

@@ -91,7 +91,7 @@ use App\Http\Controllers\VideoTutorialController;
 use App\Http\Controllers\VideoTutorialGroupController;
 use App\Http\Controllers\LmsController;
 use App\Http\Controllers\LmsCategoryController;
-use App\Http\Controllers\LmsLessonController;
+// use App\Http\Controllers\LmsLessonController; // REMOVED - using sessions instead
 use App\Http\Controllers\LmsEnrollmentController;
 use App\Http\Controllers\LmsQuizController;
 use App\Http\Controllers\LmsAssignmentController;
@@ -102,6 +102,8 @@ use App\Http\Controllers\MemberReportsController;
 use App\Http\Controllers\PointManagementController;
 use App\Http\Controllers\SharedDocumentController;
 use App\Http\Controllers\FoodGoodReceiveReportController;
+use App\Http\Controllers\TrainingScheduleController;
+use App\Http\Controllers\LmsCurriculumController;
 
 
 Route::get('/', function () {
@@ -130,6 +132,21 @@ Route::middleware('auth')->group(function () {
     Route::get('/maintenance-order', function () {
         return Inertia::render('MaintenanceOrder/index');
     })->name('maintenance-order');
+
+    // Route untuk Maintenance Order List View
+    Route::get('/maintenance-order/list', function () {
+        return Inertia::render('MaintenanceOrder/List');
+    })->name('maintenance-order.list');
+
+    // Route untuk Maintenance Order Detail
+    Route::get('/maintenance-order/{id}', function ($id) {
+        return Inertia::render('MaintenanceOrder/Detail', ['id' => $id]);
+    })->name('maintenance-order.detail');
+
+    // Route untuk Maintenance Order Edit
+    Route::get('/maintenance-order/{id}/edit', function ($id) {
+        return Inertia::render('MaintenanceOrder/Edit', ['id' => $id]);
+    })->name('maintenance-order.edit');
 
     Route::post('/signature', [SignatureController::class, 'store'])->name('signature.store');
 
@@ -1120,6 +1137,8 @@ Route::get('attendance-report/detail', [App\Http\Controllers\AttendanceReportCon
 Route::get('/attendance-report/shift-info', [\App\Http\Controllers\AttendanceReportController::class, 'shiftInfo']);
 Route::get('/api/attendance-report/employees', [\App\Http\Controllers\AttendanceReportController::class, 'getEmployees']);
 Route::get('attendance-report/export', [App\Http\Controllers\AttendanceReportController::class, 'exportExcel'])->name('attendance-report.export');
+Route::get('attendance-report/employee-summary', [App\Http\Controllers\AttendanceReportController::class, 'employeeSummary'])->name('attendance-report.employee-summary');
+Route::get('attendance-report/employee-summary/export', [App\Http\Controllers\AttendanceReportController::class, 'exportEmployeeSummary'])->name('attendance-report.employee-summary.export');
 
 Route::get('/report/sales-simple/export-order-detail', [\App\Http\Controllers\ReportController::class, 'exportOrderDetail'])->name('report.sales-simple.export-order-detail');
 
@@ -1168,8 +1187,13 @@ Route::middleware(['auth'])->prefix('lms')->name('lms.')->group(function () {
     
     // Courses
     Route::get('/courses', [App\Http\Controllers\LmsController::class, 'courses'])->name('courses.index');
+    Route::get('/courses/archived', [App\Http\Controllers\LmsController::class, 'archivedCourses'])->name('courses.archived');
     Route::post('/courses', [App\Http\Controllers\LmsController::class, 'storeCourse'])->name('courses.store');
     Route::get('/courses/{course}', [App\Http\Controllers\LmsController::class, 'showCourse'])->name('courses.show');
+    Route::get('/courses/{course}/edit', [App\Http\Controllers\LmsController::class, 'editCourse'])->name('courses.edit');
+    Route::put('/courses/{course}', [App\Http\Controllers\LmsController::class, 'updateCourse'])->name('courses.update');
+    Route::put('/courses/{course}/archive', [App\Http\Controllers\LmsController::class, 'archiveCourse'])->name('courses.archive');
+    Route::put('/courses/{course}/publish', [App\Http\Controllers\LmsController::class, 'publishCourse'])->name('courses.publish');
     Route::post('/courses/{course}/enroll', [App\Http\Controllers\LmsController::class, 'enroll'])->name('courses.enroll');
     
     // My Courses
@@ -1178,17 +1202,32 @@ Route::middleware(['auth'])->prefix('lms')->name('lms.')->group(function () {
     // Reports
     Route::get('/reports', [App\Http\Controllers\LmsController::class, 'reports'])->name('reports');
     
+    // File Management
+    Route::post('/cleanup-files', [App\Http\Controllers\LmsController::class, 'cleanupInvalidFiles'])->name('cleanup-files');
+    
     // Categories
     Route::resource('categories', App\Http\Controllers\LmsCategoryController::class);
     
-    // Lessons
-    Route::resource('lessons', App\Http\Controllers\LmsLessonController::class);
+    // Lessons - REMOVED - using sessions instead
+    // Route::resource('lessons', App\Http\Controllers\LmsLessonController::class);
     
     // Enrollments
     Route::resource('enrollments', App\Http\Controllers\LmsEnrollmentController::class);
     
-    // Quizzes
+        // Quizzes
     Route::resource('quizzes', App\Http\Controllers\LmsQuizController::class);
+    Route::resource('quizzes.questions', App\Http\Controllers\LmsQuizQuestionController::class)->except(['show']);
+    
+    // Questionnaire routes
+    Route::resource('questionnaires', App\Http\Controllers\LmsQuestionnaireController::class);
+    Route::resource('questionnaires.questions', App\Http\Controllers\LmsQuestionnaireQuestionController::class)->except(['show']);
+    
+    // Course Quiz and Questionnaire Management
+    Route::post('/courses/{course}/quizzes/attach', [App\Http\Controllers\LmsController::class, 'attachQuiz'])->name('courses.quizzes.attach');
+    Route::post('/courses/{course}/questionnaires/attach', [App\Http\Controllers\LmsController::class, 'attachQuestionnaire'])->name('courses.questionnaires.attach');
+    
+    // Course Curriculum
+    Route::get('/courses/{course}/curriculum', [App\Http\Controllers\LmsController::class, 'showCourse'])->name('courses.curriculum');
     
     // Assignments
     Route::resource('assignments', App\Http\Controllers\LmsAssignmentController::class);
@@ -1196,8 +1235,70 @@ Route::middleware(['auth'])->prefix('lms')->name('lms.')->group(function () {
     // Certificates
     Route::resource('certificates', App\Http\Controllers\LmsCertificateController::class);
     
+    // Certificate Templates
+    Route::resource('certificate-templates', App\Http\Controllers\CertificateTemplateController::class);
+    Route::get('/certificate-templates/{template}/preview', [App\Http\Controllers\CertificateTemplateController::class, 'preview'])
+        ->name('certificate-templates.preview');
+    
+    // Certificate Download
+    Route::get('/certificates/{certificate}/download', [App\Http\Controllers\LmsCertificateController::class, 'download'])
+        ->name('certificates.download');
+    
+    // Issue certificates for a training schedule (attended participants)
+    Route::post('/schedules/{schedule}/issue-certificates', [TrainingScheduleController::class, 'issueCertificates'])
+        ->name('schedules.issue-certificates');
+    
     // Discussions
     Route::resource('discussions', App\Http\Controllers\LmsDiscussionController::class);
 });
+
+// Training Schedule Routes
+Route::middleware(['auth', 'verified'])->prefix('lms')->name('lms.')->group(function () {
+    // Training Schedules
+    Route::get('/schedules', [TrainingScheduleController::class, 'index'])->name('schedules.index');
+    Route::get('/schedules/create', [TrainingScheduleController::class, 'create'])->name('schedules.create');
+    Route::post('/schedules', [TrainingScheduleController::class, 'store'])->name('schedules.store');
+    Route::get('/schedules/{schedule}', [TrainingScheduleController::class, 'show'])->name('schedules.show');
+    Route::get('/schedules/{schedule}/edit', [TrainingScheduleController::class, 'edit'])->name('schedules.edit');
+    Route::put('/schedules/{schedule}', [TrainingScheduleController::class, 'update'])->name('schedules.update');
+    Route::delete('/schedules/{schedule}', [TrainingScheduleController::class, 'destroy'])->name('schedules.destroy');
+    
+    // Invitations
+    Route::post('/schedules/{schedule}/invite', [TrainingScheduleController::class, 'inviteParticipants'])->name('schedules.invite');
+    Route::delete('/schedules/{schedule}/participants/{invitation}', [TrainingScheduleController::class, 'removeParticipant'])->name('schedules.remove-participant');
+Route::put('/schedules/{schedule}/participants/{invitation}/mark-attended', [TrainingScheduleController::class, 'markAttended'])->name('schedules.mark-attended');
+    
+    // QR Code Check-in/out
+    Route::post('/check-in', [TrainingScheduleController::class, 'checkIn'])->name('check-in');
+    Route::post('/check-out', [TrainingScheduleController::class, 'checkOut'])->name('check-out');
+    
+    // Auto complete
+    Route::post('/auto-complete', [TrainingScheduleController::class, 'autoComplete'])->name('auto-complete');
+    
+    // Export attendance
+    Route::get('/schedules/{schedule}/export-attendance', [TrainingScheduleController::class, 'exportAttendance'])->name('schedules.export-attendance');
+});
+
+// LMS Curriculum Routes
+Route::middleware(['auth', 'verified'])->prefix('lms/courses/{course}/curriculum')->name('lms.curriculum.')->group(function () {
+    Route::get('/', [LmsCurriculumController::class, 'index'])->name('index');
+    
+    // Curriculum Sessions
+    Route::post('/sessions', [LmsCurriculumController::class, 'storeSession'])->name('sessions.store');
+    Route::put('/sessions/{item}', [LmsCurriculumController::class, 'updateSession'])->name('sessions.update');
+    Route::delete('/sessions/{item}', [LmsCurriculumController::class, 'destroySession'])->name('sessions.destroy');
+    Route::post('/reorder', [LmsCurriculumController::class, 'reorderItems'])->name('reorder');
+    
+    // Curriculum Materials
+    Route::post('/sessions/{item}/materials', [LmsCurriculumController::class, 'storeMaterial'])->name('materials.store');
+    Route::put('/sessions/{item}/materials/{material}', [LmsCurriculumController::class, 'updateMaterial'])->name('materials.update');
+    Route::delete('/sessions/{item}/materials/{material}', [LmsCurriculumController::class, 'destroyMaterial'])->name('materials.destroy');
+});
+
+// LMS Curriculum Page Route
+Route::middleware(['auth', 'verified'])->get('/lms/courses/{course}/curriculum-page', function ($course) {
+    $courseData = \App\Models\LmsCourse::findOrFail($course);
+    return Inertia::render('Lms/Courses/Curriculum/Index', ['course' => $courseData]);
+})->name('lms.courses.curriculum');
 
 require __DIR__.'/auth.php';

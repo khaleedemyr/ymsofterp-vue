@@ -101,7 +101,7 @@ class MaintenanceCommentController extends Controller
                     'task_id' => $request->task_id,
                     'type' => 'comment',
                     'message' => 'Komentar baru oleh ' . (Auth::user()->nama_lengkap ?? Auth::user()->name) . ' pada task: ' . $task->title . ' | No: ' . $task->task_number . ' | Outlet: ' . ($outlet->nama_outlet ?? '-'),
-                    'url' => '/maintenance-order/' . $request->task_id,
+                    'url' => config('app.url') . '/maintenance-order/' . $request->task_id,
                     'is_read' => 0,
                     'created_at' => now(),
                     'updated_at' => now(),

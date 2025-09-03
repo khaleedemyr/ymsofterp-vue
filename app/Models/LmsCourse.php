@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use App\Models\DataOutlet;
 
 class LmsCourse extends Model
 {
@@ -19,27 +20,58 @@ class LmsCourse extends Model
         'short_description',
         'category_id',
         'instructor_id',
-        'difficulty_level',
+        'trainer_type',
+        // 'difficulty_level', // REMOVED - field removed
         'target_type',
         'target_division_id',
         'target_divisions',
+        'target_jabatan_ids',
+        'target_outlet_ids',
         'duration_minutes',
+        'duration_hours',
         'thumbnail',
+        'thumbnail_path',
         'status',
+        'learning_objectives',
+        'requirements',
+        'external_trainer_name',
+        'external_trainer_description',
+        'certificate_template_id',
+        'type',
         'is_featured',
         'meta_title',
         'meta_description',
+        'max_students',
+        'price',
+        'is_free',
         'created_by',
         'updated_by',
     ];
 
     protected $casts = [
         'duration_minutes' => 'integer',
-        'is_featured' => 'boolean',
         'target_divisions' => 'array',
+        'target_jabatan_ids' => 'array',
+        'target_outlet_ids' => 'array',
+        'learning_objectives' => 'array',
+        'requirements' => 'array',
+        'type' => 'string',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
         'deleted_at' => 'datetime',
+    ];
+
+    protected $appends = [
+        'thumbnail_url',
+        'duration_formatted',
+        // 'difficulty_text', // REMOVED - difficulty_level field removed
+        'instructor_name',
+        'target_division_name',
+        'target_jabatan_names',
+        'target_outlet_names',
+        // 'lessons_count', // REMOVED - lessons relationship removed
+        'enrollments_count',
+        'type_text',
     ];
 
     // Relationships
@@ -63,9 +95,29 @@ class LmsCourse extends Model
         return $this->belongsToMany(Divisi::class, 'lms_course_divisions', 'course_id', 'division_id');
     }
 
-    public function lessons()
+    public function targetJabatans()
     {
-        return $this->hasMany(LmsLesson::class, 'course_id')->orderBy('order_number');
+        return $this->belongsToMany(Jabatan::class, 'lms_course_jabatans', 'course_id', 'jabatan_id', 'id', 'id_jabatan');
+    }
+
+    public function targetOutlets()
+    {
+        return $this->belongsToMany(DataOutlet::class, 'lms_course_outlets', 'course_id', 'outlet_id', 'id', 'id_outlet');
+    }
+
+    // public function lessons() // REMOVED - using sessions instead
+    // {
+    //     return $this->hasMany(LmsLesson::class, 'course_id')->orderBy('order_number');
+    // }
+
+    // public function curriculumItems() // REMOVED - using sessions instead
+    // {
+    //     return $this->hasMany(LmsCurriculumItem::class, 'course_id')->orderBy('order_number');
+    // }
+
+    public function sessions()
+    {
+        return $this->hasMany(LmsSession::class, 'course_id')->orderBy('order_number');
     }
 
     public function enrollments()
@@ -76,6 +128,11 @@ class LmsCourse extends Model
     public function quizzes()
     {
         return $this->hasMany(LmsQuiz::class, 'course_id');
+    }
+
+    public function questionnaires()
+    {
+        return $this->hasMany(LmsQuestionnaire::class, 'course_id');
     }
 
     public function assignments()
@@ -91,6 +148,11 @@ class LmsCourse extends Model
     public function certificates()
     {
         return $this->hasMany(LmsCertificate::class, 'course_id');
+    }
+
+    public function certificateTemplate()
+    {
+        return $this->belongsTo(CertificateTemplate::class, 'certificate_template_id');
     }
 
     public function creator()
@@ -119,10 +181,10 @@ class LmsCourse extends Model
         return $query->where('category_id', $categoryId);
     }
 
-    public function scopeByDifficulty($query, $difficulty)
-    {
-        return $query->where('difficulty_level', $difficulty);
-    }
+    // public function scopeByDifficulty($query, $difficulty) // REMOVED - difficulty_level field removed
+    // {
+    //     return $query->where('difficulty_level', $difficulty);
+    // }
 
     public function scopeByDivision($query, $divisionId)
     {
@@ -155,16 +217,16 @@ class LmsCourse extends Model
         return $minutes . ' menit';
     }
 
-    public function getDifficultyTextAttribute()
-    {
-        $difficulties = [
-            'beginner' => 'Pemula',
-            'intermediate' => 'Menengah',
-            'advanced' => 'Lanjutan'
-        ];
-        
-        return $difficulties[$this->difficulty_level] ?? $this->difficulty_level;
-    }
+    // public function getDifficultyTextAttribute() // REMOVED - difficulty_level field removed
+    // {
+    //     $difficulties = [
+    //         'beginner' => 'Pemula',
+    //         'intermediate' => 'Menengah',
+    //         'advanced' => 'Lanjutan'
+    //     ];
+    //     
+    //     return $difficulties[$this->difficulty_level] ?? $this->difficulty_level;
+    // }
 
     public function getInstructorNameAttribute()
     {
@@ -190,9 +252,35 @@ class LmsCourse extends Model
             return $this->targetDivision->nama_divisi;
         } elseif ($this->target_type === 'multiple' && $this->targetDivisions->count() > 0) {
             return $this->targetDivisions->pluck('nama_divisi')->implode(', ');
+        } elseif ($this->target_type === 'multiple' && is_array($this->target_divisions) && count($this->target_divisions) > 0) {
+            // Fallback untuk data yang belum di-sync dengan relasi
+            $divisionNames = [];
+            foreach ($this->target_divisions as $divisionId) {
+                $division = \App\Models\Divisi::find($divisionId);
+                if ($division) {
+                    $divisionNames[] = $division->nama_divisi;
+                }
+            }
+            return implode(', ', $divisionNames);
         }
         
         return 'Divisi tidak ditentukan';
+    }
+
+    public function getTargetJabatanNamesAttribute()
+    {
+        if ($this->targetJabatans->count() > 0) {
+            return $this->targetJabatans->pluck('nama_jabatan')->implode(', ');
+        }
+        return 'Jabatan tidak ditentukan';
+    }
+
+    public function getTargetOutletNamesAttribute()
+    {
+        if ($this->targetOutlets->count() > 0) {
+            return $this->targetOutlets->pluck('nama_outlet')->implode(', ');
+        }
+        return 'Outlet tidak ditentukan';
     }
 
     public function getTargetDivisionIdsAttribute()
@@ -208,14 +296,24 @@ class LmsCourse extends Model
         return [];
     }
 
-    public function getLessonsCountAttribute()
-    {
-        return $this->lessons()->count();
-    }
+    // public function getLessonsCountAttribute() // REMOVED - lessons relationship removed
+    // {
+    //     return $this->lessons()->count();
+    // }
 
     public function getEnrollmentsCountAttribute()
     {
         return $this->enrollments()->count();
+    }
+
+    public function getTypeTextAttribute()
+    {
+        $types = [
+            'online' => 'Online',
+            'offline' => 'Offline'
+        ];
+        
+        return $types[$this->type] ?? $this->type;
     }
 
     public function getCompletedEnrollmentsCountAttribute()
@@ -231,10 +329,11 @@ class LmsCourse extends Model
     public function getThumbnailUrlAttribute()
     {
         if ($this->thumbnail) {
-            return asset('storage/' . $this->thumbnail);
+            return request()->getSchemeAndHttpHost() . '/storage/' . $this->thumbnail;
         }
         
-        return asset('images/default-course-thumbnail.jpg');
+        // Return null so frontend can handle fallback
+        return null;
     }
 
     public function getSlugAttribute($value)
@@ -266,6 +365,38 @@ class LmsCourse extends Model
         }
         
         return false;
+    }
+
+    // Methods for session management
+    public function createSession($data)
+    {
+        $maxOrder = $this->sessions()->max('order_number') ?? 0;
+        
+        return $this->sessions()->create([
+            'session_number' => $maxOrder + 1,
+            'session_title' => $data['title'],
+            'session_description' => $data['description'] ?? '',
+            'order_number' => $maxOrder + 1,
+            'estimated_duration_minutes' => $data['duration_minutes'] ?? 0,
+            'created_by' => auth()->id(),
+        ]);
+    }
+
+    public function reorderSessions($sessionIds)
+    {
+        foreach ($sessionIds as $index => $sessionId) {
+            $this->sessions()->where('id', $sessionId)->update(['order_number' => $index + 1]);
+        }
+    }
+
+    public function getTotalSessionDurationAttribute()
+    {
+        return $this->sessions()->sum('estimated_duration_minutes') ?? 0;
+    }
+
+    public function getActiveSessionsCountAttribute()
+    {
+        return $this->sessions()->where('status', 'active')->count();
     }
 
     public function syncTargetDivisions($divisionIds)

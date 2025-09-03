@@ -72,7 +72,7 @@ class MaintenanceTaskController extends Controller
                 'task_id' => $task->id,
                 'type' => 'task_status_changed',
                 'message' => "Task {$task->task_number} - {$task->title} di outlet {$outlet->nama_outlet} telah dipindahkan dari {$statusMessages[$oldStatus]} ke {$statusMessages[$request->status]} oleh {$user->nama_lengkap}",
-                'url' => '/maintenance-order/' . $task->id,
+                'url' => config('app.url') . '/maintenance-order/' . $task->id,
                 'is_read' => 0,
                 'created_at' => now(),
                 'updated_at' => now()
@@ -107,7 +107,7 @@ class MaintenanceTaskController extends Controller
                     'task_id' => $task->id,
                     'type' => 'pr_approved_for_po',
                     'message' => $message,
-                    'url' => '/maintenance-order/' . $task->id,
+                    'url' => config('app.url') . '/maintenance-order/' . $task->id,
                     'is_read' => 0,
                     'created_at' => now(),
                     'updated_at' => now()
@@ -252,7 +252,7 @@ class MaintenanceTaskController extends Controller
                 'task_id' => $taskId,
                 'type' => 'pr_created',
                 'message' => "PR {$request->pr_number} telah dibuat untuk task {$task->task_number} - {$task->title} di outlet {$task->nama_outlet}",
-                'url' => '/maintenance-order/' . $taskId,
+                'url' => config('app.url') . '/maintenance-order/' . $taskId,
                 'is_read' => 0,
                 'created_at' => now(),
                 'updated_at' => now()
@@ -271,7 +271,7 @@ class MaintenanceTaskController extends Controller
                 'task_id' => $taskId,
                 'type' => 'pr_approval_request',
                 'message' => "PR {$request->pr_number} untuk task {$task->task_number} - {$task->title} di outlet {$task->nama_outlet} membutuhkan persetujuan Anda",
-                'url' => '/maintenance-order/' . $taskId,
+                'url' => config('app.url') . '/maintenance-order/' . $taskId,
                 'is_read' => 0,
                 'created_at' => now(),
                 'updated_at' => now()
@@ -365,7 +365,7 @@ class MaintenanceTaskController extends Controller
                 'task_id' => $taskId,
                 'type' => 'pr_deleted',
                 'message' => "PR {$pr->pr_number} untuk task {$task->task_number} - {$task->title} di outlet {$task->nama_outlet} telah dihapus",
-                'url' => '/maintenance-order/' . $taskId,
+                'url' => config('app.url') . '/maintenance-order/' . $taskId,
                 'is_read' => 0,
                 'created_at' => now(),
                 'updated_at' => now()
@@ -583,7 +583,7 @@ class MaintenanceTaskController extends Controller
                     'task_id' => $task_id,
                     'type' => 'bidding_completed',
                     'message' => "Bidding untuk task {$task->task_number} - {$task->title} di outlet {$task->nama_outlet} telah selesai. Pemenang bidding: {$supplierList}. Silakan review dan approve PO yang telah dibuat.",
-                    'url' => '/maintenance-order/' . $task_id,
+                    'url' => config('app.url') . '/maintenance-order/' . $task_id,
                     'is_read' => 0,
                     'created_at' => now(),
                     'updated_at' => now()
@@ -722,7 +722,7 @@ class MaintenanceTaskController extends Controller
                     'task_id' => $id,
                     'type' => 'task_deleted',
                     'message' => "Task {$task->task_number} - {$task->title} telah dihapus oleh {$user->nama_lengkap}",
-                    'url' => '/maintenance-order',
+                    'url' => config('app.url') . '/maintenance-order',
                     'is_read' => 0,
                     'created_at' => now(),
                     'updated_at' => now()

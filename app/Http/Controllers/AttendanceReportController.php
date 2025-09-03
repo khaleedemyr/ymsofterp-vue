@@ -5,6 +5,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use App\Exports\AttendanceReportExport;
+use App\Exports\EmployeeSummaryExport;
 
 class AttendanceReportController extends Controller
 {
@@ -1152,5 +1153,805 @@ class AttendanceReportController extends Controller
             ],
             'period' => [ 'start' => $start, 'end' => $end ],
         ]);
+    }
+
+    // Endpoint untuk summary per karyawan
+    public function employeeSummary(Request $request)
+    {
+        // Set timeout untuk mencegah loading terlalu lama
+        set_time_limit(300); // 5 menit
+        
+        // Tambahkan progress tracking
+        $startTime = microtime(true);
+        $maxExecutionTime = 280; // 4.5 menit untuk safety margin
+        
+        \Log::info('=== EMPLOYEE SUMMARY START ===');
+        \Log::info('Request received at: ' . now());
+        \Log::info('Max execution time set to: ' . $maxExecutionTime . ' seconds');
+        
+        $outletId = $request->input('outlet_id');
+        $divisionId = $request->input('division_id');
+        $bulan = $request->input('bulan');
+        $tahun = $request->input('tahun');
+
+        // Log filter values for debugging
+        \Log::info('Employee Summary Filter Values', [
+            'outlet_id' => $outletId,
+            'division_id' => $divisionId,
+            'bulan' => $bulan,
+            'tahun' => $tahun,
+        ]);
+
+        $rows = collect();
+        if (!empty($outletId) || !empty($divisionId) || !empty($bulan) || !empty($tahun)) {
+            $bulan = $bulan ?: date('m');
+            $tahun = $tahun ?: date('Y');
+            $start = date('Y-m-d', strtotime("$tahun-$bulan-26 -1 month"));
+            $end = date('Y-m-d', strtotime("$tahun-$bulan-25"));
+
+            \Log::info('Date range calculated', [
+                'start' => $start,
+                'end' => $end
+            ]);
+
+            // Query data absensi dengan optimasi
+            \Log::info('Starting database query at: ' . now());
+            
+            try {
+                // Check execution time before starting heavy operations
+                $elapsedTime = microtime(true) - $startTime;
+                if ($elapsedTime > $maxExecutionTime) {
+                    throw new \Exception('Execution time limit exceeded before processing started');
+                }
+                
+                // Optimasi: Gunakan chunk untuk data yang besar
+                $chunkSize = 5000;
+                $rawData = collect();
+                
+                $sub = DB::table('att_log as a')
+                    ->join('tbl_data_outlet as o', 'a.sn', '=', 'o.sn')
+                    ->join('user_pins as up', function($q) {
+                        $q->on('a.pin', '=', 'up.pin')->on('o.id_outlet', '=', 'up.outlet_id');
+                    })
+                    ->join('users as u', 'up.user_id', '=', 'u.id')
+                    ->select(
+                        'a.scan_date',
+                        'a.inoutmode',
+                        'u.id as user_id',
+                        'u.nama_lengkap',
+                        'u.division_id',
+                        'o.id_outlet',
+                        'o.nama_outlet'
+                    )
+                    ->whereBetween(DB::raw('DATE(a.scan_date)'), [$start, $end]);
+
+                // Apply filters
+                if (!empty($outletId)) {
+                    $sub->where('o.id_outlet', $outletId);
+                    \Log::info('Applied outlet filter: ' . $outletId);
+                }
+                if (!empty($divisionId)) {
+                    $sub->where('u.division_id', $divisionId);
+                    \Log::info('Applied division filter: ' . $divisionId);
+                }
+
+                // Gunakan chunk untuk mencegah memory overflow
+                \Log::info('Executing query with chunking...');
+                $sub->orderBy('a.scan_date')->chunk($chunkSize, function($chunk) use (&$rawData) {
+                    $rawData = $rawData->merge($chunk);
+                    \Log::info('Chunk processed, current total: ' . $rawData->count());
+                });
+
+                \Log::info('Query completed at: ' . now());
+                \Log::info('Raw data count: ' . $rawData->count());
+                \Log::info('Memory usage after query: ' . memory_get_usage(true) / 1024 / 1024 . ' MB');
+
+                if ($rawData->count() > 10000) {
+                    \Log::warning('Large dataset detected: ' . $rawData->count() . ' records. This may cause performance issues.');
+                }
+
+                // Proses data manual untuk menangani cross-day
+                \Log::info('Starting data processing step 1: Grouping scans...');
+                $processedData = [];
+                
+                // Step 1: Kelompokkan scan berdasarkan user, outlet, dan tanggal
+                $processedCount = 0;
+                $totalScans = $rawData->count();
+                
+                foreach ($rawData as $index => $scan) {
+                    if ($index % 1000 == 0) {
+                        \Log::info('Processing scan ' . $index . ' of ' . $totalScans);
+                        // Force garbage collection untuk mencegah memory leak
+                        if (function_exists('gc_collect_cycles')) {
+                            gc_collect_cycles();
+                        }
+                    }
+                    
+                    $date = date('Y-m-d', strtotime($scan->scan_date));
+                    $key = $scan->user_id . '_' . $scan->id_outlet . '_' . $date;
+                    
+                    if (!isset($processedData[$key])) {
+                        $processedData[$key] = [
+                            'tanggal' => $date,
+                            'user_id' => $scan->user_id,
+                            'nama_lengkap' => $scan->nama_lengkap,
+                            'division_id' => $scan->division_id,
+                            'id_outlet' => $scan->id_outlet,
+                            'nama_outlet' => $scan->nama_outlet,
+                            'scans' => []
+                        ];
+                    }
+                    
+                    $processedData[$key]['scans'][] = [
+                        'scan_date' => $scan->scan_date,
+                        'inoutmode' => $scan->inoutmode
+                    ];
+                }
+                
+                \Log::info('Step 1 completed. Processed data groups: ' . count($processedData));
+                \Log::info('Memory usage after step 1: ' . memory_get_usage(true) / 1024 / 1024 . ' MB');
+                
+                // Clear raw data untuk menghemat memory
+                $rawData = null;
+                if (function_exists('gc_collect_cycles')) {
+                    gc_collect_cycles();
+                }
+                
+                // Step 2: Proses setiap kelompok untuk menentukan jam masuk/keluar
+                \Log::info('Starting data processing step 2: Processing time calculations...');
+                $finalData = [];
+                $totalGroups = count($processedData);
+                $groupIndex = 0;
+                
+                foreach ($processedData as $key => $data) {
+                    $groupIndex++;
+                    if ($groupIndex % 100 == 0) {
+                        \Log::info('Processing group ' . $groupIndex . ' of ' . $totalGroups);
+                        // Force garbage collection
+                        if (function_exists('gc_collect_cycles')) {
+                            gc_collect_cycles();
+                        }
+                    }
+                    
+                    $scans = collect($data['scans'])->sortBy('scan_date');
+                    $inScans = $scans->where('inoutmode', 1);
+                    $outScans = $scans->where('inoutmode', 2);
+                    
+                    // Ambil scan masuk pertama
+                    $jamMasuk = $inScans->first()['scan_date'] ?? null;
+                    
+                    // Cari scan keluar yang sesuai
+                    $jamKeluar = null;
+                    $isCrossDay = false;
+                    $totalMasuk = $inScans->count();
+                    $totalKeluar = $outScans->count();
+                    
+                    if ($jamMasuk) {
+                        // Cari scan keluar di hari yang sama
+                        $sameDayOut = $outScans->where('scan_date', '>', $jamMasuk)->first();
+                        
+                        if ($sameDayOut) {
+                            $jamKeluar = $sameDayOut['scan_date'];
+                            $isCrossDay = false;
+                        } else {
+                            // Cari scan keluar di hari berikutnya
+                            $nextDay = date('Y-m-d', strtotime($data['tanggal'] . ' +1 day'));
+                            $nextDayKey = $data['user_id'] . '_' . $data['id_outlet'] . '_' . $nextDay;
+                            
+                            if (isset($processedData[$nextDayKey])) {
+                                $nextDayScans = collect($processedData[$nextDayKey]['scans'])->sortBy('scan_date');
+                                $nextDayOut = $nextDayScans->where('inoutmode', 2)->first();
+                                
+                                if ($nextDayOut) {
+                                    $jamKeluar = $nextDayOut['scan_date'];
+                                    $isCrossDay = true;
+                                    $totalKeluar = 1;
+                                }
+                            }
+                        }
+                    }
+                    
+                    $finalData[] = [
+                        'tanggal' => $data['tanggal'],
+                        'user_id' => $data['user_id'],
+                        'nama_lengkap' => $data['nama_lengkap'],
+                        'division_id' => $data['division_id'],
+                        'id_outlet' => $data['id_outlet'],
+                        'nama_outlet' => $data['nama_outlet'],
+                        'jam_masuk' => $jamMasuk,
+                        'jam_keluar' => $jamKeluar,
+                        'total_masuk' => $totalMasuk,
+                        'total_keluar' => $totalKeluar,
+                        'is_cross_day' => $isCrossDay
+                    ];
+                }
+                
+                \Log::info('Step 2 completed. Final data count: ' . count($finalData));
+                \Log::info('Memory usage after step 2: ' . memory_get_usage(true) / 1024 / 1024 . ' MB');
+
+                $dataRows = collect($finalData);
+                
+                // Clear processed data untuk menghemat memory
+                $processedData = null;
+                if (function_exists('gc_collect_cycles')) {
+                    gc_collect_cycles();
+                }
+
+                // Ambil data shift untuk perhitungan lembur
+                \Log::info('Fetching shift data...');
+                $shiftData = DB::table('shifts')->first();
+                \Log::info('Shift data fetched: ' . ($shiftData ? 'Yes' : 'No'));
+
+                // Hitung lembur untuk setiap baris
+                \Log::info('Calculating overtime for each row...');
+                $overtimeCount = 0;
+                foreach ($dataRows as $index => $row) {
+                    if ($index % 100 == 0) {
+                        \Log::info('Calculating overtime for row ' . $index . ' of ' . $dataRows->count());
+                        // Force garbage collection
+                        if (function_exists('gc_collect_cycles')) {
+                            gc_collect_cycles();
+                        }
+                    }
+                    
+                    if ($row['jam_masuk'] && $row['jam_keluar'] && $shiftData) {
+                        $shiftStart = $shiftData->time_start ?? '08:00:00';
+                        $shiftEnd = $shiftData->time_end ?? '17:00:00';
+                        
+                        $shiftEndDateTime = date('Y-m-d', strtotime($row['jam_masuk'])) . ' ' . $shiftEnd;
+                        $scanOutDateTime = $row['jam_keluar'];
+                        
+                        if ($row['is_cross_day']) {
+                            $shiftEndDateTime = date('Y-m-d', strtotime($row['jam_masuk'] . ' +1 day')) . ' ' . $shiftEnd;
+                        }
+                        
+                        $shiftEndTime = strtotime($shiftEndDateTime);
+                        $scanOutTime = strtotime($scanOutDateTime);
+                        
+                        if ($scanOutTime > $shiftEndTime) {
+                            $lemburHours = round(($scanOutTime - $shiftEndTime) / 3600, 2);
+                            $row['lembur'] = $lemburHours;
+                            $overtimeCount++;
+                        } else {
+                            $row['lembur'] = 0;
+                        }
+                    } else {
+                        $row['lembur'] = 0;
+                    }
+                }
+                
+                \Log::info('Overtime calculation completed. Rows with overtime: ' . $overtimeCount);
+
+                // Ambil semua tanggal libur dalam periode
+                \Log::info('Fetching holiday data...');
+                $holidays = DB::table('tbl_kalender_perusahaan')
+                    ->whereBetween('tgl_libur', [$start, $end])
+                    ->pluck('keterangan', 'tgl_libur');
+                \Log::info('Holiday data fetched. Count: ' . $holidays->count());
+
+                // Build rows for each tanggal in period
+                \Log::info('Building final rows with shift and holiday data...');
+                $rows = collect();
+                $rowsWithShift = 0;
+                
+                // OPTIMASI: Batch query untuk shift data untuk mencegah N+1 query problem
+                \Log::info('Fetching all shift data in batch...');
+                $allShiftData = DB::table('user_shifts as us')
+                    ->leftJoin('shifts as s', 'us.shift_id', '=', 's.id')
+                    ->whereIn('us.tanggal', $dataRows->pluck('tanggal')->unique()->values())
+                    ->whereIn('us.outlet_id', $dataRows->pluck('id_outlet')->unique()->values())
+                    ->select('us.user_id', 'us.tanggal', 'us.outlet_id', 's.time_start', 's.time_end', 's.shift_name', 'us.shift_id')
+                    ->get()
+                    ->groupBy(function($item) {
+                        return $item->user_id . '_' . $item->tanggal . '_' . $item->outlet_id;
+                    });
+                
+                \Log::info('Batch shift data fetched. Total shift records: ' . $allShiftData->count());
+                
+                // OPTIMASI: Progress tracking yang lebih detail dengan time estimation
+                $startRowBuildingTime = microtime(true);
+                $estimatedTimePerRow = 0.1; // 0.1 detik per row (estimasi)
+                $totalEstimatedTime = $dataRows->count() * $estimatedTimePerRow;
+                
+                \Log::info('Estimated time for building rows: ' . round($totalEstimatedTime, 1) . ' seconds');
+                \Log::info('Processing ' . $dataRows->count() . ' rows with batch optimization...');
+                
+                foreach ($dataRows as $index => $row) {
+                    // Check execution time every 50 iterations (lebih sering untuk mencegah timeout)
+                    if ($index % 50 == 0) {
+                        $elapsedTime = microtime(true) - $startTime;
+                        $remainingTime = $maxExecutionTime - $elapsedTime;
+                        
+                        if ($elapsedTime > $maxExecutionTime) {
+                            throw new \Exception('Execution time limit exceeded during row building');
+                        }
+                        
+                        // Calculate progress dan estimated remaining time
+                        $progress = round(($index / $dataRows->count()) * 100, 1);
+                        $elapsedRowTime = microtime(true) - $startRowBuildingTime;
+                        $avgTimePerRow = $elapsedRowTime / max(1, $index);
+                        $remainingRows = $dataRows->count() - $index;
+                        $estimatedRemainingTime = $remainingRows * $avgTimePerRow;
+                        
+                        \Log::info('Building row ' . $index . ' of ' . $dataRows->count() . ' (' . $progress . '%) - ETA: ' . round($estimatedRemainingTime, 1) . 's');
+                        
+                        // Warning jika estimated remaining time melebihi remaining execution time
+                        if ($estimatedRemainingTime > $remainingTime) {
+                            \Log::warning('WARNING: Estimated remaining time (' . round($estimatedRemainingTime, 1) . 's) exceeds remaining execution time (' . round($remainingTime, 1) . 's)');
+                        }
+                        
+                        // Force garbage collection
+                        if (function_exists('gc_collect_cycles')) {
+                            gc_collect_cycles();
+                        }
+                    }
+                    
+                    $jam_masuk = $row['jam_masuk'] ? date('H:i:s', strtotime($row['jam_masuk'])) : null;
+                    $jam_keluar = $row['jam_keluar'] ? date('H:i:s', strtotime($row['jam_keluar'])) : null;
+                    $telat = 0;
+                    $lembur = 0;
+                    
+                    // OPTIMASI: Gunakan cached shift data instead of individual query
+                    $shiftKey = $row['user_id'] . '_' . $row['tanggal'] . '_' . $row['id_outlet'];
+                    $shift = $allShiftData->get($shiftKey, collect())->first();
+
+                    if ($shift) {
+                        $rowsWithShift++;
+                        
+                        // Hitung telat dan lembur berdasarkan shift
+                        if ($shift->time_start && $jam_masuk) {
+                            $shiftStartTime = strtotime($shift->time_start);
+                            $masukTime = strtotime($jam_masuk);
+                            $diff = $masukTime - $shiftStartTime;
+                            $telat = $diff > 0 ? round($diff/60) : 0;
+                        }
+                        if ($shift->time_end && $jam_keluar) {
+                            $shiftEndDateTime = date('Y-m-d', strtotime($row['tanggal'])) . ' ' . $shift->time_end;
+                            $scanOutDateTime = $row['jam_keluar'];
+                            $shiftEndTime = strtotime($shiftEndDateTime);
+                            $keluarTime = strtotime($scanOutDateTime);
+                            $diff = $keluarTime - $shiftEndTime;
+                            $lembur = $diff > 0 ? floor($diff/3600) : 0;
+                        }
+                    }
+
+                    $rows->push((object)[
+                        'tanggal' => $row['tanggal'],
+                        'user_id' => $row['user_id'],
+                        'nama_lengkap' => $row['nama_lengkap'],
+                        'division_id' => $row['division_id'],
+                        'outlet_id' => $row['id_outlet'],
+                        'nama_outlet' => $row['nama_outlet'],
+                        'jam_masuk' => $jam_masuk,
+                        'jam_keluar' => $jam_keluar,
+                        'total_masuk' => $row['total_masuk'],
+                        'total_keluar' => $row['total_keluar'],
+                        'telat' => $telat,
+                        'lembur' => $lembur,
+                        'is_cross_day' => $row['is_cross_day'],
+                    ]);
+                }
+                
+                $totalRowBuildingTime = microtime(true) - $startRowBuildingTime;
+                \Log::info('Final rows built. Total rows: ' . $rows->count());
+                \Log::info('Rows with shift data: ' . $rowsWithShift);
+                \Log::info('Total time for building rows: ' . round($totalRowBuildingTime, 2) . ' seconds');
+                \Log::info('Average time per row: ' . round($totalRowBuildingTime / $dataRows->count(), 4) . ' seconds');
+                \Log::info('Memory usage after building rows: ' . memory_get_usage(true) / 1024 / 1024 . ' MB');
+                
+                // Clear data rows dan shift data untuk menghemat memory
+                $dataRows = null;
+                $allShiftData = null;
+                if (function_exists('gc_collect_cycles')) {
+                    gc_collect_cycles();
+                }
+
+                // Group by employee and calculate summary
+                \Log::info('Processing employee summary, rows count: ' . $rows->count());
+                
+                // Tambah progress logging
+                $totalEmployees = $rows->groupBy('user_id')->count();
+                \Log::info('Total unique employees to process: ' . $totalEmployees);
+                
+                // Tambahkan progress tracking untuk mencegah infinite loop
+                $processedEmployees = 0;
+                $maxEmployeeProcessingTime = 30; // 30 detik per employee
+                $employeeSummary = collect();
+                
+                // Gunakan foreach biasa untuk mencegah infinite loop pada map
+                $employeeGroups = $rows->groupBy('user_id');
+                $employeeIndex = 0;
+                
+                foreach ($employeeGroups as $userId => $employeeRows) {
+                    $employeeIndex++;
+                    $employeeStartTime = microtime(true);
+                    
+                    // Check execution time during employee processing
+                    $elapsedTime = microtime(true) - $startTime;
+                    if ($elapsedTime > $maxExecutionTime) {
+                        throw new \Exception('Execution time limit exceeded during employee summary processing');
+                    }
+                    
+                    \Log::info('Processing employee ' . $employeeIndex . ' of ' . $totalEmployees . ': ' . $employeeRows->first()->nama_lengkap);
+                    
+                    try {
+                        $firstRow = $employeeRows->first();
+                        
+                        $result = [
+                            'user_id' => $firstRow->user_id,
+                            'nama_lengkap' => $firstRow->nama_lengkap,
+                            'division_id' => $firstRow->division_id,
+                            'outlet_id' => $firstRow->outlet_id,
+                            'nama_outlet' => $firstRow->nama_outlet,
+                            'total_telat' => $employeeRows->sum('telat'),
+                            'total_lembur' => $employeeRows->sum('lembur'),
+                            'total_days' => $employeeRows->count(),
+                        ];
+                        
+                        $employeeSummary->push($result);
+                        $processedEmployees++;
+                        $employeeProcessingTime = microtime(true) - $employeeStartTime;
+                        
+                        if ($employeeProcessingTime > $maxEmployeeProcessingTime) {
+                            \Log::warning('Employee ' . $firstRow->nama_lengkap . ' took too long to process: ' . round($employeeProcessingTime, 2) . ' seconds');
+                        }
+                        
+                        \Log::info('Employee ' . $firstRow->nama_lengkap . ' processed in ' . round($employeeProcessingTime, 2) . ' seconds');
+                        
+                        // Progress update setiap 10 employee
+                        if ($employeeIndex % 10 == 0) {
+                            \Log::info('Progress: ' . $employeeIndex . ' of ' . $totalEmployees . ' employees processed (' . round(($employeeIndex / $totalEmployees) * 100, 1) . '%)');
+                        }
+                        
+                    } catch (\Exception $e) {
+                        \Log::error('Error processing employee ' . ($employeeRows->first()->nama_lengkap ?? 'Unknown') . ': ' . $e->getMessage());
+                        // Return default values untuk employee yang error
+                        $errorResult = [
+                            'user_id' => $employeeRows->first()->user_id ?? 0,
+                            'nama_lengkap' => $employeeRows->first()->nama_lengkap ?? 'Error Processing',
+                            'division_id' => $employeeRows->first()->division_id ?? 0,
+                            'outlet_id' => $employeeRows->first()->outlet_id ?? 0,
+                            'nama_outlet' => $employeeRows->first()->nama_outlet ?? 'Error',
+                            'total_telat' => 0,
+                            'total_lembur' => 0,
+                            'total_days' => 0,
+                        ];
+                        
+                        $employeeSummary->push($errorResult);
+                        $processedEmployees++;
+                    }
+                }
+                
+                // Sort employee summary by nama_lengkap
+                $employeeSummary = $employeeSummary->sortBy('nama_lengkap')->values();
+                
+                \Log::info('Employee summary completed, employee count: ' . $employeeSummary->count());
+                \Log::info('Successfully processed employees: ' . $processedEmployees);
+                \Log::info('Memory usage after employee summary: ' . memory_get_usage(true) / 1024 / 1024 . ' MB');
+                
+                // Clear rows untuk menghemat memory
+                $rows = null;
+                if (function_exists('gc_collect_cycles')) {
+                    gc_collect_cycles();
+                }
+                
+            } catch (\Exception $e) {
+                \Log::error('Error in employee summary processing: ' . $e->getMessage());
+                \Log::error('Stack trace: ' . $e->getTraceAsString());
+                throw $e;
+            }
+        }
+
+        // Dropdown filter
+        \Log::info('Fetching dropdown data...');
+        $outlets = DB::table('tbl_data_outlet')->select('id_outlet as id', 'nama_outlet as name')->orderBy('nama_outlet')->get();
+        $divisions = DB::table('tbl_data_divisi')->select('id', 'nama_divisi as name')->orderBy('nama_divisi')->get();
+        \Log::info('Dropdown data fetched. Outlets: ' . $outlets->count() . ', Divisions: ' . $divisions->count());
+
+        \Log::info('=== EMPLOYEE SUMMARY COMPLETED ===');
+        \Log::info('Final memory usage: ' . memory_get_usage(true) / 1024 / 1024 . ' MB');
+        \Log::info('Total execution time: ' . (microtime(true) - $_SERVER['REQUEST_TIME_FLOAT']) . ' seconds');
+
+        return Inertia::render('AttendanceReport/EmployeeSummary', [
+            'rows' => $employeeSummary ?? collect(),
+            'outlets' => $outlets,
+            'divisions' => $divisions,
+            'filter' => [
+                'outlet_id' => $outletId,
+                'division_id' => $divisionId,
+                'bulan' => $bulan,
+                'tahun' => $tahun,
+            ],
+            'period' => isset($start) ? ['start' => $start, 'end' => $end] : null,
+        ]);
+    }
+
+    // Export Excel untuk Employee Summary
+    public function exportEmployeeSummary(Request $request)
+    {
+        $outletId = $request->input('outlet_id');
+        $divisionId = $request->input('division_id');
+        $bulan = $request->input('bulan');
+        $tahun = $request->input('tahun');
+
+        // Set timeout untuk mencegah loading terlalu lama
+        set_time_limit(300); // 5 menit
+        
+        \Log::info('=== EXPORT EMPLOYEE SUMMARY START ===');
+        \Log::info('Export request received at: ' . now());
+        
+        if (!empty($outletId) || !empty($divisionId) || !empty($bulan) || !empty($tahun)) {
+            $bulan = $bulan ?: date('m');
+            $tahun = $tahun ?: date('Y');
+            $start = date('Y-m-d', strtotime("$tahun-$bulan-26 -1 month"));
+            $end = date('Y-m-d', strtotime("$tahun-$bulan-25"));
+
+            \Log::info('Date range calculated', [
+                'start' => $start,
+                'end' => $end
+            ]);
+
+            try {
+                // Query data absensi dengan optimasi
+                \Log::info('Starting database query for export...');
+                
+                $chunkSize = 5000;
+                $rawData = collect();
+                
+                $sub = DB::table('att_log as a')
+                    ->join('tbl_data_outlet as o', 'a.sn', '=', 'o.sn')
+                    ->join('user_pins as up', function($q) {
+                        $q->on('a.pin', '=', 'up.pin')->on('o.id_outlet', '=', 'up.outlet_id');
+                    })
+                    ->join('users as u', 'up.user_id', '=', 'u.id')
+                    ->select(
+                        'a.scan_date',
+                        'a.inoutmode',
+                        'u.id as user_id',
+                        'u.nama_lengkap',
+                        'u.division_id',
+                        'o.id_outlet',
+                        'o.nama_outlet'
+                    )
+                    ->whereBetween(DB::raw('DATE(a.scan_date)'), [$start, $end]);
+
+                // Apply filters
+                if (!empty($outletId)) {
+                    $sub->where('o.id_outlet', $outletId);
+                }
+                if (!empty($divisionId)) {
+                    $sub->where('u.division_id', $divisionId);
+                }
+
+                $sub->orderBy('a.scan_date')->chunk($chunkSize, function($chunk) use (&$rawData) {
+                    $rawData = $rawData->merge($chunk);
+                });
+
+                \Log::info('Query completed. Raw data count: ' . $rawData->count());
+
+                // Proses data seperti di employeeSummary
+                $processedData = [];
+                foreach ($rawData as $scan) {
+                    $date = date('Y-m-d', strtotime($scan->scan_date));
+                    $key = $scan->user_id . '_' . $scan->id_outlet . '_' . $date;
+                    
+                    if (!isset($processedData[$key])) {
+                        $processedData[$key] = [
+                            'tanggal' => $date,
+                            'user_id' => $scan->user_id,
+                            'nama_lengkap' => $scan->nama_lengkap,
+                            'division_id' => $scan->division_id,
+                            'id_outlet' => $scan->id_outlet,
+                            'nama_outlet' => $scan->nama_outlet,
+                            'scans' => []
+                        ];
+                    }
+                    
+                    $processedData[$key]['scans'][] = [
+                        'scan_date' => $scan->scan_date,
+                        'inoutmode' => $scan->inoutmode
+                    ];
+                }
+
+                $finalData = [];
+                foreach ($processedData as $key => $data) {
+                    $scans = collect($data['scans'])->sortBy('scan_date');
+                    $inScans = $scans->where('inoutmode', 1);
+                    $outScans = $scans->where('inoutmode', 2);
+                    
+                    $jamMasuk = $inScans->first()['scan_date'] ?? null;
+                    $jamKeluar = null;
+                    $isCrossDay = false;
+                    
+                    if ($jamMasuk) {
+                        $sameDayOut = $outScans->where('scan_date', '>', $jamMasuk)->first();
+                        
+                        if ($sameDayOut) {
+                            $jamKeluar = $sameDayOut['scan_date'];
+                            $isCrossDay = false;
+                        } else {
+                            $nextDay = date('Y-m-d', strtotime($data['tanggal'] . ' +1 day'));
+                            $nextDayKey = $data['user_id'] . '_' . $data['id_outlet'] . '_' . $nextDay;
+                            
+                            if (isset($processedData[$nextDayKey])) {
+                                $nextDayScans = collect($processedData[$nextDayKey]['scans'])->sortBy('scan_date');
+                                $nextDayOut = $nextDayScans->where('inoutmode', 2)->first();
+                                
+                                if ($nextDayOut) {
+                                    $jamKeluar = $nextDayOut['scan_date'];
+                                    $isCrossDay = true;
+                                }
+                            }
+                        }
+                    }
+                    
+                    $finalData[] = [
+                        'tanggal' => $data['tanggal'],
+                        'user_id' => $data['user_id'],
+                        'nama_lengkap' => $data['nama_lengkap'],
+                        'division_id' => $data['division_id'],
+                        'id_outlet' => $data['id_outlet'],
+                        'nama_outlet' => $data['nama_outlet'],
+                        'jam_masuk' => $jamMasuk,
+                        'jam_keluar' => $jamKeluar,
+                        'is_cross_day' => $isCrossDay
+                    ];
+                }
+
+                $dataRows = collect($finalData);
+
+                // Ambil data shift untuk perhitungan lembur
+                $shiftData = DB::table('shifts')->first();
+
+                // Hitung lembur untuk setiap baris
+                foreach ($dataRows as $row) {
+                    if ($row['jam_masuk'] && $row['jam_keluar'] && $shiftData) {
+                        $shiftStart = $shiftData->time_start ?? '08:00:00';
+                        $shiftEnd = $shiftData->time_end ?? '17:00:00';
+                        
+                        $shiftEndDateTime = date('Y-m-d', strtotime($row['jam_masuk'])) . ' ' . $shiftEnd;
+                        $scanOutDateTime = $row['jam_keluar'];
+                        
+                        if ($row['is_cross_day']) {
+                            $shiftEndDateTime = date('Y-m-d', strtotime($row['jam_masuk'] . ' +1 day')) . ' ' . $shiftEnd;
+                        }
+                        
+                        $shiftEndTime = strtotime($shiftEndDateTime);
+                        $scanOutTime = strtotime($scanOutDateTime);
+                        
+                        if ($scanOutTime > $shiftEndTime) {
+                            $lemburHours = round(($scanOutTime - $shiftEndTime) / 3600, 2);
+                            $row['lembur'] = $lemburHours;
+                        } else {
+                            $row['lembur'] = 0;
+                        }
+                    } else {
+                        $row['lembur'] = 0;
+                    }
+                }
+
+                // Build rows dengan shift data
+                $rows = collect();
+                $allShiftData = DB::table('user_shifts as us')
+                    ->leftJoin('shifts as s', 'us.shift_id', '=', 's.id')
+                    ->whereIn('us.tanggal', $dataRows->pluck('tanggal')->unique()->values())
+                    ->whereIn('us.outlet_id', $dataRows->pluck('id_outlet')->unique()->values())
+                    ->select('us.user_id', 'us.tanggal', 'us.outlet_id', 's.time_start', 's.time_end', 's.shift_name', 'us.shift_id')
+                    ->get()
+                    ->groupBy(function($item) {
+                        return $item->user_id . '_' . $item->tanggal . '_' . $item->outlet_id;
+                    });
+
+                foreach ($dataRows as $row) {
+                    $jam_masuk = $row['jam_masuk'] ? date('H:i:s', strtotime($row['jam_masuk'])) : null;
+                    $jam_keluar = $row['jam_keluar'] ? date('H:i:s', strtotime($row['jam_keluar'])) : null;
+                    $telat = 0;
+                    $lembur = 0;
+                    
+                    $shiftKey = $row['user_id'] . '_' . $row['tanggal'] . '_' . $row['id_outlet'];
+                    $shift = $allShiftData->get($shiftKey, collect())->first();
+
+                    if ($shift) {
+                        if ($shift->time_start && $jam_masuk) {
+                            $shiftStartTime = strtotime($shift->time_start);
+                            $masukTime = strtotime($jam_masuk);
+                            $diff = $masukTime - $shiftStartTime;
+                            $telat = $diff > 0 ? round($diff/60) : 0;
+                        }
+                        if ($shift->time_end && $jam_keluar) {
+                            $shiftEndDateTime = date('Y-m-d', strtotime($row['tanggal'])) . ' ' . $shift->time_end;
+                            $scanOutDateTime = $row['jam_keluar'];
+                            $shiftEndTime = strtotime($shiftEndDateTime);
+                            $keluarTime = strtotime($scanOutDateTime);
+                            $diff = $keluarTime - $shiftEndTime;
+                            $lembur = $diff > 0 ? floor($diff/3600) : 0;
+                        }
+                    }
+
+                    $rows->push((object)[
+                        'tanggal' => $row['tanggal'],
+                        'user_id' => $row['user_id'],
+                        'nama_lengkap' => $row['nama_lengkap'],
+                        'division_id' => $row['division_id'],
+                        'outlet_id' => $row['id_outlet'],
+                        'nama_outlet' => $row['nama_outlet'],
+                        'jam_masuk' => $jam_masuk,
+                        'jam_keluar' => $jam_keluar,
+                        'telat' => $telat,
+                        'lembur' => $lembur,
+                        'is_cross_day' => $row['is_cross_day'],
+                    ]);
+                }
+
+                // Group by employee dan hitung summary
+                $employeeSummary = collect();
+                $employeeGroups = $rows->groupBy('user_id');
+                
+                foreach ($employeeGroups as $userId => $employeeRows) {
+                    $firstRow = $employeeRows->first();
+                    
+                    $result = (object)[
+                        'user_id' => $firstRow->user_id,
+                        'nama_lengkap' => $firstRow->nama_lengkap,
+                        'division_id' => $firstRow->division_id,
+                        'outlet_id' => $firstRow->outlet_id,
+                        'nama_outlet' => $firstRow->nama_outlet,
+                        'total_telat' => $employeeRows->sum('telat'),
+                        'total_lembur' => $employeeRows->sum('lembur'),
+                        'total_days' => $employeeRows->count(),
+                    ];
+                    
+                    $employeeSummary->push($result);
+                }
+
+                // Sort employee summary by nama_lengkap
+                $employeeSummary = $employeeSummary->sortBy('nama_lengkap')->values();
+
+                \Log::info('Employee summary prepared for export. Count: ' . $employeeSummary->count());
+
+                // Ambil nama outlet dan divisi untuk nama file
+                $outletName = null;
+                $divisionName = null;
+                
+                if (!empty($outletId)) {
+                    $outlet = DB::table('tbl_data_outlet')->where('id_outlet', $outletId)->first();
+                    $outletName = $outlet ? $outlet->nama_outlet : null;
+                }
+                
+                if (!empty($divisionId)) {
+                    $division = DB::table('tbl_data_divisi')->where('id', $divisionId)->first();
+                    $divisionName = $division ? $division->nama_divisi : null;
+                }
+
+                // Generate nama file
+                $fileName = 'employee_summary_';
+                if ($outletName) {
+                    $fileName .= str_replace(' ', '_', $outletName) . '_';
+                }
+                if ($divisionName) {
+                    $fileName .= str_replace(' ', '_', $divisionName) . '_';
+                }
+                $fileName .= $start . '_sampai_' . $end . '.xlsx';
+
+                \Log::info('Exporting to file: ' . $fileName);
+
+                $export = new EmployeeSummaryExport($employeeSummary);
+                $export->fileName = $fileName;
+                
+                \Log::info('=== EXPORT EMPLOYEE SUMMARY COMPLETED ===');
+                
+                return $export;
+
+            } catch (\Exception $e) {
+                \Log::error('Error in employee summary export: ' . $e->getMessage());
+                \Log::error('Stack trace: ' . $e->getTraceAsString());
+                throw $e;
+            }
+        }
+
+        // Jika tidak ada filter, return empty export
+        $export = new EmployeeSummaryExport(collect());
+        $export->fileName = 'employee_summary_no_filter.xlsx';
+        return $export;
     }
 } 

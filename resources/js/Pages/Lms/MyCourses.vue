@@ -76,7 +76,16 @@
             
             <!-- Course Header -->
             <div class="relative h-48 rounded-t-2xl overflow-hidden">
-              <div class="w-full h-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
+              <img 
+                v-if="enrollment.course.thumbnail_url" 
+                :src="enrollment.course.thumbnail_url" 
+                :alt="enrollment.course.title" 
+                class="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
+              />
+              <div 
+                v-else
+                class="w-full h-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center"
+              >
                 <i class="fas fa-graduation-cap text-6xl text-white/50 group-hover:scale-110 transition-transform duration-300"></i>
               </div>
               <div class="absolute top-4 right-4">

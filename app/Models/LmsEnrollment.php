@@ -46,9 +46,9 @@ class LmsEnrollment extends Model
         return $this->belongsTo(User::class, 'user_id');
     }
 
-    public function lessonProgress()
+    public function sessionProgress()
     {
-        return $this->hasMany(LmsLessonProgress::class, 'enrollment_id');
+        return $this->hasMany(LmsSessionProgress::class, 'enrollment_id');
     }
 
     public function quizAttempts()
@@ -154,17 +154,17 @@ class LmsEnrollment extends Model
     // Methods
     public function updateProgress()
     {
-        $totalLessons = $this->course->lessons()->count();
-        if ($totalLessons === 0) {
+        $totalSessions = $this->course->sessions()->count();
+        if ($totalSessions === 0) {
             $this->progress_percentage = 0;
             return;
         }
 
-        $completedLessons = $this->lessonProgress()
+        $completedSessions = $this->sessionProgress()
             ->where('is_completed', true)
             ->count();
 
-        $this->progress_percentage = round(($completedLessons / $totalLessons) * 100, 2);
+        $this->progress_percentage = round(($completedSessions / $totalSessions) * 100, 2);
         
         // Update status based on progress
         if ($this->progress_percentage >= 100) {
@@ -212,20 +212,20 @@ class LmsEnrollment extends Model
         $this->save();
     }
 
-    public function canAccessLesson($lessonId)
+    public function canAccessSession($sessionId)
     {
         // Check if user is enrolled and active
         if (!$this->isActive) {
             return false;
         }
 
-        // Check if lesson belongs to the course
-        $lesson = $this->course->lessons()->find($lessonId);
-        if (!$lesson) {
+        // Check if session belongs to the course
+        $session = $this->course->sessions()->find($sessionId);
+        if (!$session) {
             return false;
         }
 
-        // For now, allow access to all lessons
+        // For now, allow access to all sessions
         // You can implement prerequisites logic here
         return true;
     }

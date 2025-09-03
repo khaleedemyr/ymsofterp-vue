@@ -59,6 +59,11 @@ class LmsCertificate extends Model
         return $this->belongsTo(User::class, 'updated_by');
     }
 
+    public function template()
+    {
+        return $this->belongsTo(CertificateTemplate::class, 'template_id');
+    }
+
     // Scopes
     public function scopeActive($query)
     {

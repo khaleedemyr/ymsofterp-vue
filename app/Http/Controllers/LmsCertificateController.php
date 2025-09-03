@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\LmsCertificate;
 use App\Models\LmsCourse;
+use App\Services\CertificatePdfService;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 
@@ -94,12 +95,18 @@ class LmsCertificateController extends Controller
             ->with('success', 'Sertifikat berhasil dihapus');
     }
 
-    public function download(LmsCertificate $certificate)
+    public function download(LmsCertificate $certificate, CertificatePdfService $pdfService)
     {
-        // Generate PDF certificate
-        // This is a placeholder - you would implement actual PDF generation
-        return response()->json([
-            'message' => 'Certificate download functionality would be implemented here'
-        ]);
+        try {
+            $certificate->load(['course', 'user', 'template']);
+            
+            if (!$certificate->template) {
+                return back()->withErrors(['error' => 'Template sertifikat tidak ditemukan']);
+            }
+            
+            return $pdfService->downloadPdf($certificate);
+        } catch (\Exception $e) {
+            return back()->withErrors(['error' => 'Gagal mengunduh sertifikat: ' . $e->getMessage()]);
+        }
     }
 } 

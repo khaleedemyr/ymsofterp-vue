@@ -278,7 +278,7 @@ class MaintenancePurchaseOrderController extends Controller
         $taskTitle = $task->title ?? '-';
         $poNumber = $po->po_number;
         $userName = $user->nama_lengkap ?? $user->name ?? '-';
-        $notifUrl = '/maintenance-order/' . $task->id;
+        $notifUrl = config('app.url') . '/maintenance-order/' . $task->id;
 
         // Ambil seluruh member dan commenter
         $memberIds = DB::table('maintenance_members')->where('task_id', $task->id)->pluck('user_id')->toArray();
@@ -359,7 +359,7 @@ class MaintenancePurchaseOrderController extends Controller
                     'task_id' => $po->task_id,
                     'type' => 'po_approved_for_payment',
                     'message' => $notifMsg,
-                    'url' => '/maintenance-order/' . $po->task_id,
+                    'url' => config('app.url') . '/maintenance-order/' . $po->task_id,
                     'is_read' => 0,
                     'created_at' => now(),
                     'updated_at' => now()

@@ -53,7 +53,7 @@ class MaintenancePurchaseOrderReceiveController extends Controller
                 'task_id' => $po->task_id,
                 'type' => 'good_receive_upload',
                 'message' => $notifMsg,
-                'url' => '/maintenance-order/' . $po->task_id,
+                'url' => config('app.url') . '/maintenance-order/' . $po->task_id,
                 'is_read' => 0,
                 'created_at' => now(),
                 'updated_at' => now(),

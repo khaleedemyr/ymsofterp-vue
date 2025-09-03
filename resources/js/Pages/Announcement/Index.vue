@@ -52,6 +52,15 @@ function onFilterChange() {
   debouncedFetch();
 }
 
+function resetFilter() {
+  filters.value = {
+    search: '',
+    startDate: '',
+    endDate: ''
+  };
+  onFilterChange();
+}
+
 async function hapus(id) {
   const result = await Swal.fire({
     title: 'Hapus Announcement?',
@@ -103,15 +112,15 @@ function onEditSuccess() {
 }
 
 function onCreateSuccess() {
-  // opsional: fetch ulang data
+  debouncedFetch();
+  showCreateModal.value = false;
 }
 
 function formatDateOnly(dateStr) {
   if (!dateStr) return '-';
   const d = new Date(dateStr);
   if (isNaN(d)) return dateStr;
-  // return d.toLocaleDateString('id-ID'); // DD/MM/YYYY
-  return d.toISOString().slice(0, 10); // YYYY-MM-DD
+  return d.toLocaleDateString('id-ID');
 }
 
 async function publishAnnouncement(id) {
@@ -152,111 +161,115 @@ async function publishAnnouncement(id) {
 </script>
 
 <template>
-  <AppLayout title="Announcement">
-    <div>
-      <h1 class="text-3xl font-bold mb-6">📢 Announcement</h1>
-      <button @click="showCreateModal = true" class="btn btn-primary mb-6">+ Buat Announcement</button>
-      <!-- FILTER BAR -->
-      <div class="flex flex-wrap gap-3 mb-6 items-end bg-gradient-to-r from-blue-50 to-blue-100 rounded-xl px-4 py-4 shadow-md">
+  <AppLayout>
+    <div class="max-w-7xl mx-auto py-8 px-2">
+      <div class="flex justify-between items-center mb-6">
+        <h1 class="text-2xl font-bold text-gray-800 flex items-center gap-2">
+          <i class="fa-solid fa-bullhorn text-blue-500"></i> Announcement
+        </h1>
+        <button 
+          @click="showCreateModal = true" 
+          class="bg-gradient-to-r from-blue-500 to-blue-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold"
+        >
+          + Buat Announcement
+        </button>
+      </div>
+
+      <!-- Search & Filter -->
+      <form @submit.prevent="onFilterChange" class="flex flex-wrap gap-2 mb-4 items-center">
         <input
           v-model="filters.search"
-          @input="onFilterChange"
           type="text"
-          placeholder="Cari Judul Announcement..."
-          class="rounded-lg border border-blue-200 px-3 py-2 focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition w-56 bg-white shadow-sm"
+          placeholder="Cari judul announcement..."
+          class="border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-200"
+          style="min-width:200px"
         />
         <input
           v-model="filters.startDate"
-          @change="onFilterChange"
           type="date"
-          class="rounded-lg border border-blue-200 px-3 py-2 focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition bg-white shadow-sm"
+          class="border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-200"
         />
         <span class="text-gray-400">-</span>
         <input
           v-model="filters.endDate"
-          @change="onFilterChange"
           type="date"
-          class="rounded-lg border border-blue-200 px-3 py-2 focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition bg-white shadow-sm"
+          class="border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-200"
         />
-      </div>
-      <!-- END FILTER BAR -->
+        <button type="submit" class="bg-blue-500 text-white px-4 py-2 rounded font-semibold hover:bg-blue-600 transition">Cari</button>
+        <button v-if="filters.search || filters.startDate || filters.endDate" type="button" @click="resetFilter" class="ml-2 bg-gray-200 text-gray-700 px-3 py-2 rounded hover:bg-gray-300 transition">Reset</button>
+      </form>
 
-      <div class="bg-white rounded-2xl shadow p-0 overflow-x-auto">
-        <table class="min-w-full">
-          <thead>
-            <tr class="bg-blue-50">
-              <th class="px-4 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider rounded-tl-2xl">Judul</th>
-              <th class="px-4 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Tanggal</th>
-              <th class="px-4 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Status</th>
-              <th class="px-4 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Target</th>
-              <th class="px-4 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">File</th>
-              <th class="px-4 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider rounded-tr-2xl">Aksi</th>
+      <div class="bg-white rounded-2xl shadow-2xl overflow-x-auto transition-all">
+        <table class="w-full min-w-full divide-y divide-gray-200">
+          <thead class="bg-gradient-to-r from-blue-50 to-blue-100">
+            <tr>
+              <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider rounded-tl-2xl">No</th>
+              <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Judul</th>
+              <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Tanggal</th>
+              <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Status</th>
+              <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Target</th>
+              <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">File</th>
+              <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider rounded-tr-2xl">Aksi</th>
             </tr>
           </thead>
           <tbody>
-            <tr v-if="props.announcements.length === 0">
-              <td colspan="6" class="text-center py-12 text-gray-400 text-base font-medium">
-                Tidak ada data announcement.
-              </td>
+            <tr v-if="!props.announcements.length">
+              <td colspan="7" class="text-center py-10 text-blue-300">Tidak ada data Announcement.</td>
             </tr>
-            <tr v-for="a in props.announcements" :key="a.id" class="hover:bg-blue-50 transition">
-              <td class="px-4 py-3 font-medium">{{ a.title }}</td>
-              <td class="px-4 py-3 text-xs text-gray-500">{{ formatDateOnly(a.created_at) }}</td>
-              <td class="px-4 py-3 text-xs">
-                <span :class="a.status === 'Publish' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'" class="px-2 py-1 rounded text-xs font-semibold">
-                  {{ a.status }}
+            <tr v-for="(announcement, idx) in props.announcements" :key="announcement.id" class="hover:bg-blue-50 transition shadow-sm">
+              <td class="px-6 py-3">{{ idx + 1 }}</td>
+              <td class="px-6 py-3 font-medium">{{ announcement.title }}</td>
+              <td class="px-6 py-3">{{ formatDateOnly(announcement.created_at) }}</td>
+              <td class="px-6 py-3">
+                <span :class="announcement.status === 'Publish' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-500'" class="px-2 py-1 rounded-full text-xs font-bold">
+                  {{ announcement.status }}
                 </span>
               </td>
-              <td class="px-4 py-3">
+              <td class="px-6 py-3">
                 <div class="flex flex-wrap gap-1">
-                  <span v-for="t in a.targets" :key="t.id" class="bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-xs">
+                  <span v-for="t in announcement.targets" :key="t.id" class="bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-xs">
                     {{ t.target_type }}: {{ t.target_name || t.target_id }}
                   </span>
                 </div>
               </td>
-              <td class="px-4 py-3">
+              <td class="px-6 py-3">
                 <div class="flex flex-wrap gap-2">
-                  <span v-for="f in a.files" :key="f.id" class="flex items-center text-xs">
-                    <svg class="w-4 h-4 mr-1 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path d="M12 4v16m8-8H4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                    </svg>
-                    <a :href="`/storage/${f.file_path}`" target="_blank" class="text-blue-600 underline">{{ f.file_name }}</a>
+                  <span v-for="f in announcement.files" :key="f.id" class="flex items-center text-xs">
+                    <i class="fa fa-file mr-1 text-gray-400"></i>
+                    <a :href="`/storage/${f.file_path}`" target="_blank" class="text-blue-600 hover:underline">{{ f.file_name }}</a>
                   </span>
                 </div>
               </td>
-              <td class="px-4 py-3">
+              <td class="px-6 py-3">
                 <div class="flex gap-2">
                   <button 
-                    @click="detail(a)"
-                    class="inline-flex items-center btn btn-xs bg-blue-100 text-blue-700 hover:bg-blue-200 rounded px-2 py-1 font-semibold transition"
+                    @click="detail(announcement)"
+                    class="inline-flex items-center btn btn-xs bg-blue-100 text-blue-800 hover:bg-blue-200 rounded px-2 py-1 font-semibold transition"
                   >
-                    <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path d="M2.458 12C3.732 7.943 7.523 5 12 5c4.477 0 8.268 2.943 9.542 7-1.274 4.057-5.065 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
-                    Detail
+                    <i class="fa fa-eye mr-1"></i> Detail
                   </button>
                   <button 
-                    @click="hapus(a.id)" 
-                    :disabled="isDeleting"
-                    class="inline-flex items-center btn btn-xs bg-red-100 text-red-700 hover:bg-red-200 rounded px-2 py-1 font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed"
+                    @click="edit(announcement)"
+                    class="inline-flex items-center btn btn-xs bg-yellow-100 text-yellow-800 hover:bg-yellow-200 rounded px-2 py-1 font-semibold transition"
                   >
-                    <svg v-if="isDeleting" class="animate-spin -ml-1 mr-2 h-4 w-4 text-red-700" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                      <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    <svg v-else class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12"/></svg>
-                    {{ isDeleting ? 'Menghapus...' : 'Hapus' }}
+                    <i class="fa fa-edit mr-1"></i> Edit
+                  </button>
+                  <button 
+                    @click="hapus(announcement.id)" 
+                    :disabled="isDeleting"
+                    class="inline-flex items-center btn btn-xs bg-red-100 text-red-800 hover:bg-red-200 rounded px-2 py-1 font-semibold transition disabled:opacity-50"
+                  >
+                    <i v-if="isDeleting" class="fa fa-spinner fa-spin mr-1"></i>
+                    <i v-else class="fa fa-trash mr-1"></i> Delete
                   </button>
                   <button
-                    v-if="a.status === 'DRAFT'"
-                    @click="publishAnnouncement(a.id)"
+                    v-if="announcement.status === 'DRAFT'"
+                    @click="publishAnnouncement(announcement.id)"
                     :disabled="isPublishing"
-                    class="inline-flex items-center btn btn-xs bg-green-100 text-green-700 hover:bg-green-200 rounded px-2 py-1 font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed"
+                    class="inline-flex items-center btn btn-xs bg-green-100 text-green-800 hover:bg-green-200 rounded px-2 py-1 font-semibold transition disabled:opacity-50"
                   >
-                    <svg v-if="isPublishing" class="animate-spin -ml-1 mr-2 h-4 w-4 text-green-700" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                      <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    <svg v-else class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
-                    {{ isPublishing ? 'Publishing...' : 'Publish' }}
+                    <i v-if="isPublishing" class="fa fa-spinner fa-spin mr-1"></i>
+                    <i v-else class="fa fa-check mr-1"></i> Publish
                   </button>
                 </div>
               </td>
