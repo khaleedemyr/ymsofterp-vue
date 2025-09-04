@@ -332,3 +332,7 @@ Route::post('/outlet', [OutletController::class, 'store']);
 Route::put('/outlet/{id}', [OutletController::class, 'update']);
 Route::delete('/outlet/{id}', [OutletController::class, 'destroy']);
 
+// PR Foods routes
+Route::get('/pr-foods/available', [PurchaseOrderFoodsController::class, 'getAvailablePR']);
+Route::post('/pr-foods/items', [PurchaseOrderFoodsController::class, 'getPRItems']);
+

@@ -432,6 +432,10 @@ Route::post('/items/price-update/preview', [ItemController::class, 'previewPrice
 Route::post('/items/price-update/import', [ItemController::class, 'importPriceUpdate'])->name('items.price-update.import');
 Route::resource('modifiers', ModifierController::class);
 Route::resource('modifier-options', ModifierOptionController::class);
+// PR Foods specific routes MUST come BEFORE resource route to avoid conflicts
+Route::get('/pr-foods/available', [PurchaseOrderFoodsController::class, 'getAvailablePR']);
+Route::post('/pr-foods/items', [PurchaseOrderFoodsController::class, 'getPRItems']);
+
 Route::resource('pr-foods', PrFoodController::class);
 Route::post('pr-foods/{id}/approve-assistant-ssd-manager', [PrFoodController::class, 'approveAssistantSsdManager'])->name('pr-foods.approve-assistant-ssd-manager');
 Route::post('pr-foods/{id}/approve-ssd-manager', [PrFoodController::class, 'approveSsdManager'])->name('pr-foods.approve-ssd-manager');
@@ -450,8 +454,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/po-foods', [PurchaseOrderFoodsController::class, 'index'])->name('po-foods.index');
     Route::get('/po-foods/create', [PurchaseOrderFoodsController::class, 'create'])->name('po-foods.create');
     Route::get('/api/po-foods', [PurchaseOrderFoodsController::class, 'getPOList'])->name('po-foods.list');
-    Route::get('/api/pr-foods/available', [PurchaseOrderFoodsController::class, 'getAvailablePR'])->name('pr-foods.available');
-    Route::post('/api/pr-foods/items', [PurchaseOrderFoodsController::class, 'getPRItems'])->name('pr-foods.items');
+    // PR Foods routes moved to api.php
     Route::post('/api/po-foods/generate', [PurchaseOrderFoodsController::class, 'generatePO'])->name('po-foods.generate');
     Route::get('/api/po-foods/pending-gm-finance', [PurchaseOrderFoodsController::class, 'getPendingGMFINANCEPOs'])->name('po-foods.pending-gm-finance');
 });
