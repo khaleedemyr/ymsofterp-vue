@@ -17,12 +17,45 @@ class MaintenanceOrderController extends Controller
     // Ambil semua ruko berdasarkan outlet
     public function getRukos(Request $request)
     {
-        $query = DB::table('tbl_data_ruko');
-        if ($request->has('id_outlet')) {
-            $query->where('id_outlet', $request->id_outlet);
+        try {
+            \Log::info('Fetching rukos', [
+                'outlet_id' => $request->get('id_outlet'),
+                'request_params' => $request->all()
+            ]);
+
+            $query = DB::table('tbl_data_ruko');
+            
+            // Filter by outlet if provided
+            if ($request->has('id_outlet')) {
+                $query->where('id_outlet', $request->id_outlet);
+            }
+            
+            // Filter only active rukos (assuming there's a status field)
+            // If no status field exists, this will still work
+            if (DB::getSchemaBuilder()->hasColumn('tbl_data_ruko', 'status')) {
+                $query->where('status', 'A');
+            }
+            
+            $rukos = $query->orderBy('nama_ruko', 'asc')->get();
+            
+            \Log::info('Rukos fetched successfully', [
+                'count' => $rukos->count(),
+                'outlet_id' => $request->get('id_outlet'),
+                'sample_ruko' => $rukos->first()
+            ]);
+            
+            return response()->json($rukos);
+        } catch (\Exception $e) {
+            \Log::error('Error fetching rukos', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'request' => $request->all()
+            ]);
+            
+            return response()->json([
+                'error' => 'Terjadi kesalahan saat mengambil data ruko: ' . $e->getMessage()
+            ], 500);
         }
-        $rukos = $query->get();
-        return response()->json($rukos);
     }
 
     // Ambil semua task maintenance order (filter outlet & ruko)
@@ -691,6 +724,60 @@ class MaintenanceOrderController extends Controller
             
             return response()->json([
                 'error' => 'Terjadi kesalahan saat update task: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    // Get media for a specific maintenance task
+    public function getMedia($id)
+    {
+        try {
+            // Check if task exists
+            $task = DB::table('maintenance_tasks')->where('id', $id)->first();
+            if (!$task) {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'Task not found'
+                ], 404);
+            }
+
+            // Get media from maintenance_media table using correct column names
+            $media = DB::table('maintenance_media')
+                ->where('task_id', $id)
+                ->select('id', 'file_name as filename', 'file_path', 'file_type as mime_type', 'file_size as size', 'created_at', 'uploaded_by')
+                ->orderBy('created_at', 'desc')
+                ->get();
+
+            // Map media types and create proper URLs
+            $media = $media->map(function ($item) {
+                // Create full URL from file_path
+                $item->url = '/storage/' . $item->file_path;
+                
+                // Determine media type based on mime type
+                if (str_starts_with($item->mime_type, 'image/')) {
+                    $item->media_type = 'image';
+                } elseif (str_starts_with($item->mime_type, 'video/')) {
+                    $item->media_type = 'video';
+                } else {
+                    $item->media_type = 'document';
+                }
+                
+                return $item;
+            });
+
+            return response()->json([
+                'success' => true,
+                'data' => $media
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Error in MaintenanceOrderController@getMedia', [
+                'error' => $e->getMessage(),
+                'task_id' => $id
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'error' => 'Terjadi kesalahan saat mengambil media: ' . $e->getMessage()
             ], 500);
         }
     }

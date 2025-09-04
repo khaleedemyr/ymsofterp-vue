@@ -38,6 +38,15 @@ const localOutlet = ref(String(props.selectedOutlet));
 const localRuko = ref(props.selectedRuko);
 const showRuko = computed(() => localOutlet.value == "1");
 
+// Debug logging
+console.log('FilterBar props:', {
+  outlets: props.outlets,
+  rukos: props.rukos,
+  selectedOutlet: props.selectedOutlet,
+  selectedRuko: props.selectedRuko,
+  showRuko: showRuko.value
+});
+
 const canLoadTasks = computed(() => {
   if (!localOutlet.value) return false;
   if (localOutlet.value == "1" && !localRuko.value) return false;

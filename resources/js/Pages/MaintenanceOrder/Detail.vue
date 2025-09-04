@@ -101,12 +101,36 @@
         <!-- Media Files -->
         <div v-if="task.media && task.media.length > 0" class="mb-6">
           <h3 class="text-lg font-medium text-gray-800 mb-3">Media Files</h3>
-          <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div v-for="media in task.media" :key="media.id" class="text-center">
-              <div class="w-20 h-20 bg-gray-100 rounded-lg flex items-center justify-center mx-auto mb-2">
-                <i class="fas fa-image text-gray-400 text-xl"></i>
+          
+          <!-- Photos -->
+          <div v-if="mediaFiles.images.length > 0" class="mb-4">
+            <div class="text-sm text-gray-600 mb-2">Photos ({{ mediaFiles.images.length }})</div>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div v-for="(image, index) in displayedImages" :key="image.id" 
+                   class="w-20 h-20 rounded-lg border cursor-pointer overflow-hidden hover:shadow-md transition-shadow"
+                   @click="openImagePreview(image)">
+                <img :src="image.url" :alt="image.name" class="w-full h-full object-cover" />
               </div>
-              <p class="text-xs text-gray-600 truncate">{{ media.file_name || 'Media File' }}</p>
+              <div v-if="mediaFiles.images.length > 4" 
+                   class="w-20 h-20 rounded-lg border bg-gray-100 flex items-center justify-center text-xs text-gray-600 cursor-pointer hover:shadow-md transition-shadow"
+                   @click="openMediaSlider('image', 4)">
+                +{{ mediaFiles.images.length - 4 }}
+              </div>
+            </div>
+          </div>
+          
+          <!-- Videos -->
+          <div v-if="mediaFiles.videos.length > 0" class="mb-4">
+            <div class="text-sm text-gray-600 mb-2">Videos ({{ mediaFiles.videos.length }})</div>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div v-for="video in mediaFiles.videos" :key="video.id"
+                   class="w-20 h-20 rounded-lg bg-gray-100 flex items-center justify-center cursor-pointer relative group hover:shadow-md transition-shadow"
+                   @click="openVideoPlayer(video)">
+                <div class="absolute inset-0 bg-black/40 group-hover:bg-black/60 flex items-center justify-center transition-all rounded-lg">
+                  <i class="fas fa-play text-white text-xl"></i>
+                </div>
+                <span class="text-xs text-gray-600">{{ video.name }}</span>
+              </div>
             </div>
           </div>
         </div>
@@ -186,6 +210,168 @@
       @close="showCommentModal = false"
       @comment-added="onCommentAdded"
     />
+
+    <!-- Image Preview Modal -->
+    <TransitionRoot appear :show="showImagePreview" as="template">
+      <Dialog as="div" @close="closeImagePreview" class="relative z-50">
+        <TransitionChild
+          enter="duration-300 ease-out"
+          enter-from="opacity-0"
+          enter-to="opacity-100"
+          leave="duration-200 ease-in"
+          leave-from="opacity-100"
+          leave-to="opacity-0"
+        >
+          <DialogOverlay class="fixed inset-0 bg-black/75" />
+        </TransitionChild>
+
+        <div class="fixed inset-0 overflow-y-auto">
+          <div class="flex min-h-full items-center justify-center p-4">
+            <TransitionChild
+              enter="duration-300 ease-out"
+              enter-from="opacity-0 scale-95"
+              enter-to="opacity-100 scale-100"
+              leave="duration-200 ease-in"
+              leave-from="opacity-100 scale-100"
+              leave-to="opacity-0 scale-95"
+            >
+              <DialogPanel class="relative bg-white rounded-lg max-w-3xl">
+                <button @click="closeImagePreview" class="absolute -top-10 right-0 text-white hover:text-gray-300">
+                  <i class="fas fa-times text-xl"></i>
+                </button>
+                <img v-if="currentImage" 
+                     :src="currentImage.url" 
+                     :alt="currentImage.name"
+                     class="rounded-lg" />
+              </DialogPanel>
+            </TransitionChild>
+          </div>
+        </div>
+      </Dialog>
+    </TransitionRoot>
+
+    <!-- Media Slider Modal -->
+    <TransitionRoot appear :show="showMediaSlider" as="template">
+      <Dialog as="div" @close="closeMediaSlider" class="relative z-50">
+        <TransitionChild
+          enter="duration-300 ease-out"
+          enter-from="opacity-0"
+          enter-to="opacity-100"
+          leave="duration-200 ease-in"
+          leave-from="opacity-100"
+          leave-to="opacity-0"
+        >
+          <DialogOverlay class="fixed inset-0 bg-black/90" />
+        </TransitionChild>
+
+        <div class="fixed inset-0 overflow-y-auto">
+          <div class="flex min-h-full items-center justify-center">
+            <TransitionChild
+              enter="duration-300 ease-out"
+              enter-from="opacity-0 scale-95"
+              enter-to="opacity-100 scale-100"
+              leave="duration-200 ease-in"
+              leave-from="opacity-100 scale-100"
+              leave-to="opacity-0 scale-95"
+            >
+              <DialogPanel class="relative w-full max-w-4xl p-4">
+                <!-- Navigation Buttons -->
+                <button v-if="currentSlideIndex > 0"
+                        @click="prevSlide" 
+                        class="absolute left-4 top-1/2 -translate-y-1/2 text-white hover:text-gray-300 z-10">
+                  <i class="fas fa-chevron-left text-3xl"></i>
+                </button>
+                <button v-if="currentSlideIndex < totalSlides - 1"
+                        @click="nextSlide" 
+                        class="absolute right-4 top-1/2 -translate-y-1/2 text-white hover:text-gray-300 z-10">
+                  <i class="fas fa-chevron-right text-3xl"></i>
+                </button>
+
+                <!-- Close Button -->
+                <button @click="closeMediaSlider" 
+                        class="absolute top-4 right-4 text-white hover:text-gray-300 z-10">
+                  <i class="fas fa-times text-xl"></i>
+                </button>
+
+                <!-- Main Content -->
+                <div class="relative aspect-video bg-black rounded-lg overflow-hidden">
+                  <img v-if="currentSlide.mediaType === 'image'"
+                       :src="currentSlide.url"
+                       :alt="currentSlide.name"
+                       class="w-full h-full object-contain" />
+                  <video v-else-if="currentSlide.mediaType === 'video'"
+                         :src="currentSlide.url"
+                         :ref="el => { if (currentSlide.mediaType === 'video') videoPlayer = el }"
+                         controls
+                         class="w-full h-full" />
+                </div>
+
+                <!-- Thumbnails -->
+                <div class="flex justify-center gap-2 mt-4">
+                  <button v-for="(media, index) in allMedia" 
+                          :key="media.id"
+                          @click="goToSlide(index)"
+                          :class="[
+                            'w-16 h-12 rounded overflow-hidden border-2',
+                            currentSlideIndex === index ? 'border-white' : 'border-transparent'
+                          ]">
+                    <img v-if="media.mediaType === 'image'"
+                         :src="media.url"
+                         :alt="media.name"
+                         class="w-full h-full object-cover" />
+                    <div v-else
+                         class="w-full h-full bg-gray-800 flex items-center justify-center">
+                      <i class="fas fa-play text-white"></i>
+                    </div>
+                  </button>
+                </div>
+              </DialogPanel>
+            </TransitionChild>
+          </div>
+        </div>
+      </Dialog>
+    </TransitionRoot>
+
+    <!-- Video Player Modal -->
+    <TransitionRoot appear :show="showVideoPlayer" as="template">
+      <Dialog as="div" @close="closeVideoPlayer" class="relative z-50">
+        <TransitionChild
+          enter="duration-300 ease-out"
+          enter-from="opacity-0"
+          enter-to="opacity-100"
+          leave="duration-200 ease-in"
+          leave-from="opacity-100"
+          leave-to="opacity-0"
+        >
+          <DialogOverlay class="fixed inset-0 bg-black/75" />
+        </TransitionChild>
+
+        <div class="fixed inset-0 overflow-y-auto">
+          <div class="flex min-h-full items-center justify-center p-4">
+            <TransitionChild
+              enter="duration-300 ease-out"
+              enter-from="opacity-0 scale-95"
+              enter-to="opacity-100 scale-100"
+              leave="duration-200 ease-in"
+              leave-from="opacity-100 scale-100"
+              leave-to="opacity-0 scale-95"
+            >
+              <DialogPanel class="relative bg-black rounded-lg overflow-hidden max-w-3xl">
+                <button @click="closeVideoPlayer" 
+                        class="absolute top-4 right-4 text-white hover:text-gray-300 z-10">
+                  <i class="fas fa-times text-xl"></i>
+                </button>
+                <video v-if="currentVideo"
+                       :src="currentVideo.url"
+                       ref="videoPlayer"
+                       controls
+                       class="w-full" />
+              </DialogPanel>
+            </TransitionChild>
+          </div>
+        </div>
+      </Dialog>
+    </TransitionRoot>
   </div>
 </template>
 
@@ -195,6 +381,13 @@ import { usePage } from '@inertiajs/vue3';
 import axios from 'axios';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import CommentModal from './CommentModal.vue';
+import {
+  TransitionRoot,
+  TransitionChild,
+  Dialog,
+  DialogOverlay,
+  DialogPanel,
+} from '@headlessui/vue';
 
 // Props
 const props = defineProps({
@@ -208,9 +401,56 @@ const error = ref(null);
 const comments = ref([]);
 const showCommentModal = ref(false);
 
+// Modal state variables
+const showImagePreview = ref(false);
+const showMediaSlider = ref(false);
+const showVideoPlayer = ref(false);
+const currentImage = ref(null);
+const currentVideo = ref(null);
+const currentSlideIndex = ref(0);
+const videoPlayer = ref(null);
+
 // Computed properties
 const page = usePage();
 const currentUserId = computed(() => page.props.auth?.user?.id || null);
+
+// Media computed properties
+const mediaFiles = computed(() => {
+  if (!task.value?.media) return { images: [], videos: [] };
+  
+  return task.value.media.reduce((acc, media) => {
+    if (media.file_type && media.file_type.startsWith('image/')) {
+      acc.images.push({
+        id: media.id,
+        url: `/storage/${media.file_path}`,
+        name: media.file_name || 'Image',
+        type: media.file_type
+      });
+    } else if (media.file_type && media.file_type.startsWith('video/')) {
+      acc.videos.push({
+        id: media.id,
+        url: `/storage/${media.file_path}`,
+        name: media.file_name || 'Video',
+        type: media.file_type
+      });
+    }
+    return acc;
+  }, { images: [], videos: [] });
+});
+
+const displayedImages = computed(() => {
+  return mediaFiles.value.images.slice(0, 4);
+});
+
+const allMedia = computed(() => {
+  const images = mediaFiles.value.images.map(img => ({ ...img, mediaType: 'image' }));
+  const videos = mediaFiles.value.videos.map(vid => ({ ...vid, mediaType: 'video' }));
+  return [...images, ...videos];
+});
+
+const totalSlides = computed(() => allMedia.value.length);
+
+const currentSlide = computed(() => allMedia.value[currentSlideIndex.value] || {});
 
 // Methods
 async function loadTask() {
@@ -293,8 +533,54 @@ function getPriorityBadgeClass(priority) {
 }
 
 function formatDate(date) {
-  if (!date) return '-';
   return new Date(date).toLocaleDateString('id-ID');
+}
+
+// Media handling methods
+function openImagePreview(image) {
+  currentImage.value = image;
+  showImagePreview.value = true;
+}
+
+function closeImagePreview() {
+  showImagePreview.value = false;
+  currentImage.value = null;
+}
+
+function openMediaSlider(type, index) {
+  currentSlideIndex.value = index;
+  showMediaSlider.value = true;
+}
+
+function closeMediaSlider() {
+  showMediaSlider.value = false;
+  currentSlideIndex.value = 0;
+}
+
+function prevSlide() {
+  if (currentSlideIndex.value > 0) {
+    currentSlideIndex.value--;
+  }
+}
+
+function nextSlide() {
+  if (currentSlideIndex.value < totalSlides.value - 1) {
+    currentSlideIndex.value++;
+  }
+}
+
+function goToSlide(index) {
+  currentSlideIndex.value = index;
+}
+
+function openVideoPlayer(video) {
+  currentVideo.value = video;
+  showVideoPlayer.value = true;
+}
+
+function closeVideoPlayer() {
+  showVideoPlayer.value = false;
+  currentVideo.value = null;
 }
 
 // Lifecycle

@@ -38,6 +38,16 @@ class OutletController extends Controller
         ]);
     }
 
+    public function getActiveOutlets()
+    {
+        $outlets = DB::table('tbl_data_outlet')
+            ->where('status', 'A')
+            ->orderBy('nama_outlet', 'asc')
+            ->get(['id_outlet', 'nama_outlet', 'lokasi']);
+        
+        return response()->json($outlets);
+    }
+
     public function store(Request $request)
     {
         $validated = $request->validate([

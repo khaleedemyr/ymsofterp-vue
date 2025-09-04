@@ -32,11 +32,30 @@ use App\Http\Controllers\ReportDailyOutletRevenueController;
 use App\Http\Controllers\ReportWeeklyOutletFbRevenueController;
 use App\Http\Controllers\ReportDailyRevenueForecastController;
 use App\Http\Controllers\ReportMonthlyFbRevenuePerformanceController;
+use App\Http\Controllers\OutletController;
 
 
 // Endpoint API untuk Kanban Maintenance Order
-Route::get('/outlet', [MaintenanceOrderController::class, 'getOutlets']);
+Route::get('/maintenance-outlet', [MaintenanceOrderController::class, 'getOutlets']);
 Route::get('/ruko', [MaintenanceOrderController::class, 'getRukos']);
+Route::get('/ruko/test', function() {
+    try {
+        $rukos = DB::table('tbl_data_ruko')->get();
+        return response()->json([
+            'success' => true,
+            'count' => $rukos->count(),
+            'data' => $rukos,
+            'table_exists' => DB::getSchemaBuilder()->hasTable('tbl_data_ruko'),
+            'columns' => DB::getSchemaBuilder()->getColumnListing('tbl_data_ruko')
+        ]);
+    } catch (\Exception $e) {
+        return response()->json([
+            'success' => false,
+            'error' => $e->getMessage(),
+            'table_exists' => DB::getSchemaBuilder()->hasTable('tbl_data_ruko')
+        ]);
+    }
+});
 Route::get('/maintenance-order', [MaintenanceOrderController::class, 'index']);
 Route::patch('/maintenance-order/{id}', [MaintenanceOrderController::class, 'updateStatus']);
 
@@ -57,6 +76,10 @@ Route::post('/maintenance-order/{id}/assign-members', [MaintenanceOrderControlle
 
 // Endpoint API untuk Remove Member
 Route::delete('/maintenance-order/{id}/remove-member/{memberId}', [MaintenanceOrderController::class, 'removeMember']);
+
+// Endpoint API untuk Media
+Route::get('/maintenance-order/{id}/media', [MaintenanceOrderController::class, 'getMedia']);
+
 Route::get('/maintenance-labels', [MaintenanceLabelController::class, 'index']);
 Route::get('/maintenance-priorities', [MaintenancePriorityController::class, 'index']);
 Route::middleware(['auth:web'])->group(function () {
@@ -300,4 +323,12 @@ Route::middleware(['auth:web'])->group(function () {
     Route::post('/report/daily-revenue-forecast/settings', [\App\Http\Controllers\ReportDailyRevenueForecastController::class, 'storeForecastSettings']);
     Route::get('/report/monthly-fb-revenue-performance', [\App\Http\Controllers\ReportMonthlyFbRevenuePerformanceController::class, 'index']);
 });
+
+// Outlet routes
+Route::get('/outlet', [OutletController::class, 'index']);
+Route::get('/outlet/active', [OutletController::class, 'getActiveOutlets']);
+Route::get('/outlet/{id}', [OutletController::class, 'show']);
+Route::post('/outlet', [OutletController::class, 'store']);
+Route::put('/outlet/{id}', [OutletController::class, 'update']);
+Route::delete('/outlet/{id}', [OutletController::class, 'destroy']);
 

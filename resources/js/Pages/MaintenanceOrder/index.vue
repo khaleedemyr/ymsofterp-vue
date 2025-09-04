@@ -29,7 +29,7 @@
 </template>
 
 <script setup>
-import { ref, watch, onMounted, computed } from 'vue';
+import { ref, watch, onMounted, computed, nextTick } from 'vue';
 import axios from 'axios';
 import FilterBar from './FilterBar.vue';
 import KanbanBoard from './KanbanBoard.vue';
@@ -51,32 +51,71 @@ const isOutletFixed = computed(() => userOutlet.value && userOutlet.value != 1);
 
 async function fetchOutlets() {
   console.log('Fetching outlets...');
-  const { data } = await axios.get('/api/outlet');
+  const { data } = await axios.get('/api/outlet/active');
   outlets.value = data;
   console.log('Outlets fetched:', data);
 }
 
 async function fetchRukos(outletId) {
   console.log('Fetching rukos for outlet:', outletId);
-  if (outletId == 1) {
-    const { data } = await axios.get('/api/ruko', { params: { id_outlet: 1 } });
-    rukos.value = data;
-    console.log('Rukos fetched:', data);
-  } else {
+  try {
+    if (outletId == 1) {
+      // Test endpoint first
+      console.log('Testing ruko endpoint...');
+      const testResponse = await axios.get('/api/ruko/test');
+      console.log('Ruko test response:', testResponse.data);
+      
+      const response = await axios.get('/api/ruko', { params: { id_outlet: 1 } });
+      console.log('Rukos API response:', response);
+      rukos.value = response.data;
+      console.log('Rukos fetched:', response.data);
+      console.log('Rukos count:', rukos.value.length);
+    } else {
+      rukos.value = [];
+      console.log('Rukos cleared for non-outlet-1');
+    }
+  } catch (error) {
+    console.error('Error fetching rukos:', error);
+    console.error('Error response:', error.response);
     rukos.value = [];
-    console.log('Rukos cleared for non-outlet-1');
   }
 }
 
 async function onOutletChange(val) {
+  console.log('=== OUTLET CHANGE START ===');
   console.log('Outlet changed to:', val);
   selectedOutlet.value = String(val);
-  if (val != 1) selectedRuko.value = '';
+  
+  // Reset ruko selection when outlet changes
+  selectedRuko.value = '';
+  console.log('Ruko selection reset');
+  
+  // Fetch rukos for the new outlet
   await fetchRukos(val);
+  
+  // If outlet is 1 and we have rukos, select the first one automatically
+  if (val == 1 && rukos.value.length > 0) {
+    selectedRuko.value = rukos.value[0].id_ruko;
+    console.log('Auto-selected first ruko:', selectedRuko.value);
+    
+    // Wait for next tick to ensure state is updated
+    await nextTick();
+    console.log('After nextTick - selectedRuko:', selectedRuko.value);
+  }
+  
+  console.log('Final state - selectedOutlet:', selectedOutlet.value, 'selectedRuko:', selectedRuko.value);
+  console.log('Rukos array state:', rukos.value);
+  console.log('Rukos length:', rukos.value.length);
+  if (rukos.value.length > 0) {
+    console.log('First ruko data:', rukos.value[0]);
+  }
+  
   if (kanbanBoard.value?.refreshTasks) {
     console.log('Refreshing tasks after outlet change');
     await kanbanBoard.value.refreshTasks();
   }
+  
+  console.log('=== OUTLET CHANGE END ===');
 }
 
 async function onRukoChange(val) {
@@ -89,16 +128,36 @@ async function onRukoChange(val) {
 }
 
 onMounted(async () => {
+  console.log('=== COMPONENT MOUNTED START ===');
   console.log('Component mounted, userOutlet:', userOutlet.value);
   await fetchOutlets();
+  
   if (isOutletFixed.value) {
     selectedOutlet.value = String(userOutlet.value);
     await fetchRukos(userOutlet.value);
   } else if (userOutlet.value == 1) {
     selectedOutlet.value = '1';
     await fetchRukos(1);
+    
+    // Auto-select first ruko if available
+    if (rukos.value.length > 0) {
+      selectedRuko.value = rukos.value[0].id_ruko;
+      console.log('Auto-selected first ruko on mount:', selectedRuko.value);
+      
+      // Wait for next tick to ensure state is updated
+      await nextTick();
+      console.log('After nextTick - selectedRuko:', selectedRuko.value);
+    }
+  }
+  
+  console.log('Final mounted state - selectedOutlet:', selectedOutlet.value, 'selectedRuko:', selectedRuko.value);
+  console.log('Rukos array state:', rukos.value);
+  console.log('Rukos length:', rukos.value.length);
+  if (rukos.value.length > 0) {
+    console.log('First ruko data:', rukos.value[0]);
   }
   document.title = 'Maintenance Order - YMSoft';
+  console.log('=== COMPONENT MOUNTED END ===');
 });
 
 watch(userOutlet, (val) => {

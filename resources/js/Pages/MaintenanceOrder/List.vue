@@ -102,6 +102,9 @@
               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">
                 Comments
               </th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-32">
+                Media
+              </th>
               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">
                 Actions
               </th>
@@ -241,6 +244,43 @@
                        class="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-10 max-w-xs">
                     <div class="font-medium mb-1">Latest comment:</div>
                     <div class="truncate">{{ task.latest_comment }}</div>
+                    <div class="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
+                  </div>
+                </div>
+              </td>
+
+              <!-- Media -->
+              <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                <div class="relative group">
+                  <button 
+                    @click="openMediaModal(task)"
+                    @keydown.enter="openMediaModal(task)"
+                    @keydown.space="openMediaModal(task)"
+                    class="media-button flex items-center gap-2 text-blue-600 hover:text-blue-800 hover:bg-blue-50 px-3 py-2 rounded-lg transition-all duration-200 hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 relative"
+                    :title="`View Media for task ${task.task_number}${task.media_count > 0 ? ` (${task.media_count} media)` : ''}`"
+                    :disabled="task.loading_media"
+                    :aria-label="`View or add media for task ${task.task_number}. Currently has ${task.media_count || 0} media.`"
+                    role="button"
+                    tabindex="0"
+                  >
+                    <i v-if="task.loading_media" class="fas fa-spinner fa-spin text-blue-600" aria-hidden="true"></i>
+                    <i v-else class="far fa-images text-lg" aria-hidden="true"></i>
+                    <span class="font-medium">{{ task.media_count || 0 }}</span>
+                    <span class="text-xs text-blue-500">{{ (task.media_count || 0) === 1 ? 'media' : 'media' }}</span>
+                    
+                    <!-- New media indicator -->
+                    <span v-if="task.has_new_media" 
+                          class="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full animate-pulse"
+                          title="New media available"
+                          aria-label="New media available">
+                    </span>
+                  </button>
+                  
+                  <!-- Quick media preview tooltip -->
+                  <div v-if="task.media_count > 0 && task.latest_media" 
+                       class="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-10 max-w-xs">
+                    <div class="font-medium mb-1">Latest media:</div>
+                    <div class="truncate">{{ task.latest_media }}</div>
                     <div class="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
                   </div>
                 </div>
@@ -411,6 +451,113 @@
       @close="closeCommentModal"
       @comment-added="onCommentAdded"
     />
+
+    <!-- Retail Modal -->
+    <div v-if="showRetailModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+      <div class="relative top-10 mx-auto p-5 border w-full max-w-4xl shadow-lg rounded-md bg-white">
+        <div class="flex justify-between items-center mb-4">
+          <h3 class="text-lg font-medium text-gray-900">Retail Management</h3>
+          <button @click="closeRetailModal" class="text-gray-400 hover:text-gray-500">
+            <i class="fas fa-times"></i>
+          </button>
+        </div>
+        
+        <div class="mb-4">
+          <button @click="showAddRetailForm = true" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+            <i class="fas fa-plus mr-2"></i> Add Retail Item
+          </button>
+        </div>
+
+        <!-- Add Retail Form -->
+        <div v-if="showAddRetailForm" class="mb-6 p-4 border rounded-lg bg-gray-50">
+          <AddRetailItem 
+            :task-id="selectedTask?.id"
+            @saved="onRetailSaved"
+          />
+        </div>
+
+        <!-- Retail List -->
+        <div v-if="!showAddRetailForm">
+          <RetailList 
+            ref="retailList"
+            :task-id="selectedTask?.id" 
+          />
+        </div>
+      </div>
+    </div>
+
+    <!-- Media Modal with Lightbox -->
+    <div v-if="showMediaModal" class="fixed inset-0 bg-gray-900 bg-opacity-95 overflow-y-auto h-full w-full z-[9999]">
+      <div class="relative min-h-full flex items-center justify-center p-4">
+        <!-- Close Button -->
+        <button @click="closeMediaModal" class="absolute top-4 right-4 text-white hover:text-gray-300 text-2xl z-10">
+          <i class="fas fa-times"></i>
+        </button>
+        
+        <!-- Navigation Arrows -->
+        <button v-if="currentMediaIndex > 0" @click="previousMedia" class="absolute left-4 top-1/2 transform -translate-y-1/2 text-white hover:text-gray-300 text-3xl z-10">
+          <i class="fas fa-chevron-left"></i>
+        </button>
+        <button v-if="currentMediaIndex < (taskMedia.length - 1)" @click="nextMedia" class="absolute right-4 top-1/2 transform -translate-y-1/2 text-white hover:text-gray-300 text-3xl z-10">
+          <i class="fas fa-chevron-right"></i>
+        </button>
+        
+        <!-- Media Content -->
+        <div class="max-w-4xl max-h-full mx-auto">
+          <!-- Image -->
+          <img v-if="currentMedia && currentMedia.mediaType === 'image'" 
+               :src="currentMedia.url" 
+               :alt="currentMedia.filename || 'Image'"
+               class="max-w-full max-h-[80vh] object-contain rounded-lg shadow-2xl"
+               @click="nextMedia" />
+          
+          <!-- Video -->
+          <video v-else-if="currentMedia && currentMedia.mediaType === 'video'" 
+                 :src="currentMedia.url" 
+                 controls
+                 class="max-w-full max-h-[80vh] rounded-lg shadow-2xl"
+                 @click.stop />
+          
+          <!-- Media Info -->
+          <div class="text-center mt-4 text-white">
+            <p class="text-lg font-medium">{{ currentMedia?.filename || 'Media' }}</p>
+            <p class="text-sm text-gray-300">{{ currentMediaIndex + 1 }} of {{ taskMedia.length }}</p>
+          </div>
+        </div>
+        
+        <!-- Thumbnail Navigation -->
+        <div v-if="taskMedia.length > 1" class="absolute bottom-4 left-1/2 transform -translate-x-1/2 flex gap-2 max-w-4xl overflow-x-auto px-4">
+          <button v-for="(media, index) in taskMedia" 
+                  :key="index"
+                  @click="goToMedia(index)"
+                  class="flex-shrink-0 w-20 h-20 rounded-lg overflow-hidden border-2 transition-all hover:scale-110"
+                  :class="index === currentMediaIndex ? 'border-blue-400 scale-110 shadow-lg' : 'border-gray-600 hover:border-gray-400'">
+            
+            <!-- Image Thumbnail -->
+            <img v-if="media.mediaType === 'image'" 
+                 :src="media.url" 
+                 :alt="media.filename"
+                 class="w-full h-full object-cover" />
+            
+            <!-- Video Thumbnail -->
+            <div v-else-if="media.mediaType === 'video'" class="w-full h-full bg-gray-800 flex items-center justify-center relative">
+              <i class="fas fa-play text-white text-xl"></i>
+              <div class="absolute bottom-1 right-1 bg-black bg-opacity-70 text-white text-xs px-1 rounded">
+                <i class="fas fa-video mr-1"></i>
+              </div>
+            </div>
+            
+            <!-- Document Thumbnail -->
+            <div v-else class="w-full h-full bg-gray-700 flex items-center justify-center">
+              <i class="fas fa-file-alt text-white text-xl"></i>
+              <div class="absolute bottom-1 right-1 bg-black bg-opacity-70 text-white text-xs px-1 rounded">
+                <i class="fas fa-file mr-1"></i>
+              </div>
+            </div>
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -421,6 +568,8 @@ import axios from 'axios';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import Swal from 'sweetalert2';
 import CommentModal from './CommentModal.vue';
+import AddRetailItem from './AddRetailItem.vue';
+import RetailList from './RetailList.vue';
 
 // Reactive data
 const tasks = ref([]);
@@ -439,6 +588,17 @@ const selectedUserIds = ref([]);
 const assigningMembers = ref(false);
 const assignMemberError = ref('');
 const commentLoading = ref(false);
+
+// Retail modal state
+const showRetailModal = ref(false);
+const showAddRetailForm = ref(false);
+const retailList = ref(null);
+
+// Media modal state
+const showMediaModal = ref(false);
+const taskMedia = ref([]); // Array of media objects for the current task
+const currentMediaIndex = ref(0); // Index of the currently displayed media
+const currentMedia = ref(null); // The media object currently being displayed
 
 // Filters
 const filters = ref({
@@ -513,7 +673,7 @@ const availableStatuses = [
 async function fetchData() {
   try {
     const [outletsRes, tasksRes] = await Promise.all([
-      axios.get('/api/outlet'),
+      axios.get('/api/outlet/active'),
       axios.get('/api/maintenance-order-list')
     ]);
 
@@ -522,6 +682,9 @@ async function fetchData() {
 
     // Fetch comment count for each task
     await fetchCommentCounts();
+
+    // Fetch media count for each task
+    await fetchMediaCounts();
 
     if (userOutlet.value && userOutlet.value != 1) {
       filters.value.outlet = userOutlet.value;
@@ -554,6 +717,32 @@ async function fetchCommentCounts() {
     });
   } catch (error) {
     console.error('Error fetching comment counts:', error);
+  }
+}
+
+async function fetchMediaCounts() {
+  try {
+    const mediaCountPromises = tasks.value.map(async (task) => {
+      try {
+        const response = await axios.get(`/api/maintenance-order/${task.id}/media`);
+        return { taskId: task.id, count: response.data.success ? response.data.data.length : 0 };
+      } catch (error) {
+        console.error(`Error fetching media count for task ${task.id}:`, error);
+        return { taskId: task.id, count: 0 };
+      }
+    });
+
+    const mediaCounts = await Promise.all(mediaCountPromises);
+    
+    // Update tasks with media counts
+    mediaCounts.forEach(({ taskId, count }) => {
+      const taskIndex = tasks.value.findIndex(t => t.id === taskId);
+      if (taskIndex !== -1) {
+        tasks.value[taskIndex].media_count = count;
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching media counts:', error);
   }
 }
 
@@ -881,7 +1070,28 @@ function openActionPlanModal() {
 
 function openRetailModal() {
   console.log('Open retail modal for task:', selectedTask.value?.id);
+  showRetailModal.value = true;
+  showAddRetailForm.value = false;
   closeTaskMenu();
+}
+
+function closeRetailModal() {
+  showRetailModal.value = false;
+  showAddRetailForm.value = false;
+}
+
+function onRetailSaved() {
+  showAddRetailForm.value = false;
+  if (retailList.value?.loadRetailData) {
+    retailList.value.loadRetailData();
+  }
+  Swal.fire({
+    icon: 'success',
+    title: 'Berhasil!',
+    text: 'Data retail berhasil disimpan',
+    timer: 1500,
+    showConfirmButton: false
+  });
 }
 
 function openTimelineModal() {
@@ -1046,6 +1256,110 @@ function handleKeydown(event) {
   if (event.key === 'Escape' && showCommentModal.value) {
     closeCommentModal();
   }
+  
+  // Escape to close media modal
+  if (event.key === 'Escape' && showMediaModal.value) {
+    closeMediaModal();
+  }
+  
+  // Arrow keys for media navigation
+  if (showMediaModal.value && taskMedia.value.length > 1) {
+    if (event.key === 'ArrowRight') {
+      event.preventDefault();
+      nextMedia();
+    } else if (event.key === 'ArrowLeft') {
+      event.preventDefault();
+      previousMedia();
+    }
+  }
+}
+
+// Media modal methods
+async function openMediaModal(task) {
+  console.log('openMediaModal called with task:', task);
+  
+  if (!task || !task.id) {
+    console.error('Invalid task for media modal:', task);
+    return;
+  }
+  
+  try {
+    selectedTask.value = task;
+    showMediaModal.value = true;
+    console.log('Modal opened, fetching media for task:', task.id);
+    
+    // Fetch media data for this task
+    const response = await axios.get(`/api/maintenance-order/${task.id}/media`);
+    console.log('Media API response:', response.data);
+    
+    if (response.data.success) {
+      taskMedia.value = response.data.data.map(media => ({
+        id: media.id,
+        url: media.url,
+        filename: media.filename,
+        mediaType: media.media_type || 'image', // Default to image if not specified
+        mimeType: media.mime_type,
+        size: media.size,
+        created_at: media.created_at
+      }));
+      
+      console.log('Processed media data:', taskMedia.value);
+      
+      if (taskMedia.value.length > 0) {
+        currentMediaIndex.value = 0;
+        currentMedia.value = taskMedia.value[0];
+        console.log('Media modal ready with media:', currentMedia.value);
+      } else {
+        // No media available
+        console.log('No media available for this task');
+        Swal.fire({
+          icon: 'info',
+          title: 'No Media',
+          text: 'This task has no media attachments.',
+          timer: 2000,
+          showConfirmButton: false
+        });
+        closeMediaModal();
+      }
+    } else {
+      throw new Error(response.data.error || 'Failed to fetch media');
+    }
+  } catch (error) {
+    console.error('Error fetching media:', error);
+    Swal.fire({
+      icon: 'error',
+      title: 'Error',
+      text: 'Failed to load media for this task.',
+    });
+    closeMediaModal();
+  }
+}
+
+function closeMediaModal() {
+  showMediaModal.value = false;
+  selectedTask.value = null;
+  taskMedia.value = [];
+  currentMediaIndex.value = 0;
+  currentMedia.value = null;
+}
+
+function nextMedia() {
+  if (taskMedia.value.length > 0) {
+    currentMediaIndex.value = (currentMediaIndex.value + 1) % taskMedia.value.length;
+    currentMedia.value = taskMedia.value[currentMediaIndex.value];
+  }
+}
+
+function previousMedia() {
+  if (taskMedia.value.length > 0) {
+    currentMediaIndex.value = (currentMediaIndex.value - 1 + taskMedia.value.length) % taskMedia.value.length;
+    currentMedia.value = taskMedia.value[currentMediaIndex.value];
+  }
+}
+
+function goToMedia(index) {
+  currentMediaIndex.value = index;
+  currentMedia.value = taskMedia.value[currentMediaIndex.value];
 }
 
 // Lifecycle
@@ -1119,6 +1433,7 @@ export default {
   .col-due-date { width: 140px; }
   .col-members { width: 180px; }
   .col-comments { width: 140px; }
+  .col-media { width: 140px; }
   .col-actions { width: 120px; }
 }
 </style>
