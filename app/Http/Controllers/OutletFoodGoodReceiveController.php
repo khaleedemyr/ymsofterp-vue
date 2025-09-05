@@ -92,6 +92,7 @@ class OutletFoodGoodReceiveController extends Controller
             
             $outletId = $user->id_outlet;
             $warehouseOutletId = null;
+            $floorOrderId = null; // Initialize floorOrderId
             
             if ($do->source_type === 'ro_supplier_gr') {
                 // Untuk RO Supplier GR, ambil data dari purchase order
@@ -99,7 +100,8 @@ class OutletFoodGoodReceiveController extends Controller
                 if ($gr) {
                     $po = DB::table('purchase_order_foods')->where('id', $gr->po_id)->first();
                     if ($po) {
-                        $floorOrder = DB::table('food_floor_orders')->where('id', $po->source_id)->first();
+                        $floorOrderId = $po->source_id; // Set floorOrderId dari PO source_id
+                        $floorOrder = DB::table('food_floor_orders')->where('id', $floorOrderId)->first();
                         if ($floorOrder && isset($floorOrder->warehouse_outlet_id)) {
                             $warehouseOutletId = $floorOrder->warehouse_outlet_id;
                         }
@@ -358,9 +360,15 @@ class OutletFoodGoodReceiveController extends Controller
             }
             DB::commit();
             \Log::info('DEBUG STORE OUTLET GR SUCCESS');
-            DB::table('food_floor_orders')
-                ->where('id', $floorOrderId)
-                ->update(['status' => 'received']);
+            
+            // Update floor order status jika floorOrderId tersedia
+            if ($floorOrderId) {
+                DB::table('food_floor_orders')
+                    ->where('id', $floorOrderId)
+                    ->update(['status' => 'received']);
+                \Log::info('DEBUG FLOOR ORDER STATUS UPDATED', ['floorOrderId' => $floorOrderId]);
+            }
+            
             return response()->json(['success' => true, 'message' => 'Good Receive Outlet berhasil disimpan']);
         } catch (\Throwable $e) {
             DB::rollBack();
