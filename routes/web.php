@@ -128,6 +128,16 @@ Route::middleware('auth')->group(function () {
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
     Route::get('/home', [\App\Http\Controllers\HomeController::class, 'show'])->name('home');
     
+    // API route for user announcements
+    Route::get('/api/user-announcements', [AnnouncementController::class, 'getUserAnnouncements'])->name('api.user-announcements');
+    
+    // API routes for user pins
+    Route::get('/api/user-pins', [\App\Http\Controllers\UserPinController::class, 'index'])->name('api.user-pins');
+    Route::post('/api/user-pins', [\App\Http\Controllers\UserPinController::class, 'store'])->name('api.user-pins.store');
+    Route::put('/api/user-pins/{id}', [\App\Http\Controllers\UserPinController::class, 'update'])->name('api.user-pins.update');
+    Route::delete('/api/user-pins/{id}', [\App\Http\Controllers\UserPinController::class, 'destroy'])->name('api.user-pins.destroy');
+    Route::get('/api/outlets', [\App\Http\Controllers\UserPinController::class, 'getOutlets'])->name('api.outlets');
+    
     // Tambahkan route untuk Maintenance Order
     Route::get('/maintenance-order', function () {
         return Inertia::render('MaintenanceOrder/index');
@@ -1325,5 +1335,12 @@ Route::middleware(['auth', 'verified'])->get('/lms/courses/{course}/curriculum-p
     $courseData = \App\Models\LmsCourse::findOrFail($course);
     return Inertia::render('Lms/Courses/Curriculum/Index', ['course' => $courseData]);
 })->name('lms.courses.curriculum');
+
+// Attendance Routes
+Route::middleware(['auth', 'verified'])->group(function () {
+    Route::get('/attendance', [\App\Http\Controllers\AttendanceController::class, 'index'])->name('attendance.index');
+    Route::get('/api/attendance/calendar-data', [\App\Http\Controllers\AttendanceController::class, 'getCalendarData'])->name('api.attendance.calendar-data');
+    Route::post('/api/attendance/absent-request', [\App\Http\Controllers\AttendanceController::class, 'submitAbsentRequest'])->name('api.attendance.absent-request');
+});
 
 require __DIR__.'/auth.php';

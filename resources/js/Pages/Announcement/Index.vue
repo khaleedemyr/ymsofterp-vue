@@ -1,7 +1,7 @@
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue'
 import { Link, router } from '@inertiajs/vue3';
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 import { debounce } from 'lodash';
 import AnnouncementCreateModal from './AnnouncementCreateModal.vue'
 import AnnouncementDetailModal from './AnnouncementDetailModal.vue'
@@ -11,7 +11,7 @@ import axios from 'axios';
 import Swal from 'sweetalert2';
 
 const props = defineProps({
-  announcements: Array,
+  announcements: [Array, Object],
   users: Array,
   jabatans: Array,
   divisis: Array,
@@ -40,6 +40,32 @@ const form = useForm({
 
 const isPublishing = ref(false);
 const isDeleting = ref(false);
+
+// Computed property untuk menangani data announcements
+const announcementsData = computed(() => {
+  if (props.announcements && props.announcements.data) {
+    return props.announcements.data;
+  }
+  return props.announcements || [];
+});
+
+// Computed property untuk pagination info
+const paginationInfo = computed(() => {
+  if (props.announcements && typeof props.announcements === 'object') {
+    return {
+      from: props.announcements.from || 0,
+      to: props.announcements.to || 0,
+      total: props.announcements.total || 0,
+      links: props.announcements.links || []
+    };
+  }
+  return {
+    from: 0,
+    to: 0,
+    total: 0,
+    links: []
+  };
+});
 
 const debouncedFetch = debounce(() => {
   router.get(route('announcement.index'), filters.value, {
@@ -213,10 +239,10 @@ async function publishAnnouncement(id) {
             </tr>
           </thead>
           <tbody>
-            <tr v-if="!props.announcements.length">
+            <tr v-if="!announcementsData || !announcementsData.length">
               <td colspan="7" class="text-center py-10 text-blue-300">Tidak ada data Announcement.</td>
             </tr>
-            <tr v-for="(announcement, idx) in props.announcements" :key="announcement.id" class="hover:bg-blue-50 transition shadow-sm">
+            <tr v-for="(announcement, idx) in announcementsData" :key="announcement.id" class="hover:bg-blue-50 transition shadow-sm">
               <td class="px-6 py-3">{{ idx + 1 }}</td>
               <td class="px-6 py-3 font-medium">{{ announcement.title }}</td>
               <td class="px-6 py-3">{{ formatDateOnly(announcement.created_at) }}</td>
@@ -276,6 +302,33 @@ async function publishAnnouncement(id) {
             </tr>
           </tbody>
         </table>
+      </div>
+
+      <!-- Pagination -->
+      <div v-if="announcementsData && announcementsData.length > 0 && paginationInfo.links.length > 0" class="mt-6 flex items-center justify-between">
+        <div class="text-sm text-gray-700 dark:text-gray-300">
+          Menampilkan {{ paginationInfo.from }} sampai {{ paginationInfo.to }} dari {{ paginationInfo.total }} data
+        </div>
+        <div class="flex items-center space-x-2">
+          <template v-for="link in paginationInfo.links" :key="link.label">
+            <Link
+              v-if="link.url"
+              :href="link.url"
+              v-html="link.label"
+              :class="[
+                'px-3 py-2 text-sm border rounded-md transition-colors cursor-pointer',
+                link.active 
+                  ? 'bg-indigo-600 text-white border-indigo-600' 
+                  : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600 dark:hover:bg-gray-700'
+              ]"
+            />
+            <span
+              v-else
+              v-html="link.label"
+              class="px-3 py-2 text-sm border rounded-md transition-colors opacity-50 cursor-not-allowed bg-gray-100 text-gray-500 border-gray-300"
+            />
+          </template>
+        </div>
       </div>
 
       <AnnouncementCreateModal

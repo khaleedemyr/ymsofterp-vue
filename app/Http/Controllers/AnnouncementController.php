@@ -12,7 +12,7 @@ class AnnouncementController extends Controller
 {
     public function index(Request $request)
     {
-        $query = Announcement::with(['targets', 'files']);
+        $query = DB::table('announcements');
 
         if ($request->filled('search')) {
             $query->where('title', 'like', '%' . $request->search . '%');
@@ -24,7 +24,7 @@ class AnnouncementController extends Controller
             $query->whereDate('created_at', '<=', $request->endDate);
         }
 
-        $announcements = $query->orderBy('created_at', 'desc')->get();
+        $announcements = $query->orderBy('created_at', 'desc')->paginate(10);
 
         // Tambahkan data target
         $users = User::where('status', 'A')->select('id', 'nama_lengkap', 'id_jabatan', 'division_id', 'id_outlet')->get();
@@ -33,8 +33,19 @@ class AnnouncementController extends Controller
         $levels = \DB::table('tbl_data_level')->select('id', 'nama_level')->get();
         $outlets = \DB::table('tbl_data_outlet')->select('id_outlet', 'nama_outlet')->get();
 
-        // Tambahkan target_name untuk setiap target di setiap announcement
-        foreach ($announcements as $a) {
+        // Tambahkan data target dan files untuk setiap announcement
+        foreach ($announcements->items() as $a) {
+            // Get targets
+            $a->targets = DB::table('announcement_targets')
+                ->where('announcement_id', $a->id)
+                ->get();
+            
+            // Get files
+            $a->files = DB::table('announcement_files')
+                ->where('announcement_id', $a->id)
+                ->get();
+            
+            // Add target names
             foreach ($a->targets as $t) {
                 if ($t->target_type == 'user') {
                     $t->target_name = \DB::table('users')->where('id', $t->target_id)->value('nama_lengkap');
@@ -120,6 +131,9 @@ class AnnouncementController extends Controller
                 'target_id' => $target['id'],
             ]);
         }
+
+        // Send notification to target users when announcement is created
+        $this->sendAnnouncementNotification($announcement, $request->targets, 'created');
 
         return redirect()->route('announcement.index')->with('success', 'Announcement berhasil dibuat!');
     }
@@ -240,47 +254,169 @@ class AnnouncementController extends Controller
         // Update status
         \DB::table('announcements')->where('id', $id)->update(['status' => 'Publish']);
 
-        // Kirim notifikasi ke semua user target (logic sama seperti store)
-        $userIds = collect();
+        // Get targets and send notification
         $targets = \DB::table('announcement_targets')->where('announcement_id', $id)->get();
+        $targetArray = $targets->map(function($target) {
+            return ['type' => $target->target_type, 'id' => $target->target_id];
+        })->toArray();
+        
+        // Send notification using helper method
+        $this->sendAnnouncementNotification($id, $targetArray, 'published');
+
+        return response()->json(['success' => true]);
+    }
+
+    /**
+     * Get announcements relevant to the authenticated user
+     */
+    public function getUserAnnouncements()
+    {
+        $user = auth()->user();
+        if (!$user) {
+            return response()->json(['announcements' => []]);
+        }
+
+        // Get user's data for targeting
+        $userId = $user->id;
+        $userJabatan = $user->id_jabatan;
+        $userDivisi = $user->division_id;
+        $userOutlet = $user->id_outlet;
+
+        // Get user's level through jabatan
+        $userLevel = null;
+        if ($userJabatan) {
+            $userLevel = DB::table('tbl_data_jabatan')
+                ->where('id_jabatan', $userJabatan)
+                ->value('id_level');
+        }
+
+        // Get announcements that target this user
+        $announcements = DB::table('announcements')
+            ->where('status', 'Publish')
+            ->whereExists(function ($query) use ($userId, $userJabatan, $userDivisi, $userLevel, $userOutlet) {
+                $query->select(DB::raw(1))
+                    ->from('announcement_targets')
+                    ->whereColumn('announcement_targets.announcement_id', 'announcements.id')
+                    ->where(function ($subQuery) use ($userId, $userJabatan, $userDivisi, $userLevel, $userOutlet) {
+                        $subQuery->where(function ($q) use ($userId) {
+                            $q->where('target_type', 'user')
+                              ->where('target_id', $userId);
+                        })
+                        ->orWhere(function ($q) use ($userJabatan) {
+                            $q->where('target_type', 'jabatan')
+                              ->where('target_id', $userJabatan);
+                        })
+                        ->orWhere(function ($q) use ($userDivisi) {
+                            $q->where('target_type', 'divisi')
+                              ->where('target_id', $userDivisi);
+                        })
+                        ->orWhere(function ($q) use ($userLevel) {
+                            $q->where('target_type', 'level')
+                              ->where('target_id', $userLevel);
+                        })
+                        ->orWhere(function ($q) use ($userOutlet) {
+                            $q->where('target_type', 'outlet')
+                              ->where('target_id', $userOutlet);
+                        });
+                    });
+            })
+            ->orderBy('created_at', 'desc')
+            ->limit(3) // Limit to 3 most recent announcements
+            ->get();
+
+        // Add target names and format data
+        foreach ($announcements as $announcement) {
+            // Get files
+            $announcement->files = DB::table('announcement_files')
+                ->where('announcement_id', $announcement->id)
+                ->get();
+
+            // Get targets with names
+            $targets = DB::table('announcement_targets')
+                ->where('announcement_id', $announcement->id)
+                ->get();
+
+            foreach ($targets as $target) {
+                if ($target->target_type == 'user') {
+                    $target->target_name = DB::table('users')->where('id', $target->target_id)->value('nama_lengkap');
+                } elseif ($target->target_type == 'jabatan') {
+                    $target->target_name = DB::table('tbl_data_jabatan')->where('id_jabatan', $target->target_id)->value('nama_jabatan');
+                } elseif ($target->target_type == 'divisi') {
+                    $target->target_name = DB::table('tbl_data_divisi')->where('id', $target->target_id)->value('nama_divisi');
+                } elseif ($target->target_type == 'level') {
+                    $target->target_name = DB::table('tbl_data_level')->where('id', $target->target_id)->value('nama_level');
+                } elseif ($target->target_type == 'outlet') {
+                    $target->target_name = DB::table('tbl_data_outlet')->where('id_outlet', $target->target_id)->value('nama_outlet');
+                }
+            }
+
+            $announcement->targets = $targets;
+            
+            // Format created_at
+            $announcement->created_at_formatted = \Carbon\Carbon::parse($announcement->created_at)->format('d M Y, H:i');
+        }
+
+        return response()->json(['announcements' => $announcements]);
+    }
+
+    /**
+     * Send notification to target users
+     */
+    private function sendAnnouncementNotification($announcementId, $targets, $action = 'created')
+    {
+        $announcement = \DB::table('announcements')->where('id', $announcementId)->first();
+        if (!$announcement) return;
+
+        // Get user IDs based on targets
+        $userIds = collect();
         foreach ($targets as $target) {
-            if ($target->target_type == 'user') {
+            if ($target['type'] == 'user') {
                 $userIds = $userIds->merge(
-                    \DB::table('users')->where('status', 'A')->where('id', $target->target_id)->pluck('id')
+                    \DB::table('users')->where('status', 'A')->where('id', $target['id'])->pluck('id')
                 );
-            } elseif ($target->target_type == 'jabatan') {
+            } elseif ($target['type'] == 'jabatan') {
                 $userIds = $userIds->merge(
-                    \DB::table('users')->where('status', 'A')->where('id_jabatan', $target->target_id)->pluck('id')
+                    \DB::table('users')->where('status', 'A')->where('id_jabatan', $target['id'])->pluck('id')
                 );
-            } elseif ($target->target_type == 'divisi') {
+            } elseif ($target['type'] == 'divisi') {
                 $userIds = $userIds->merge(
-                    \DB::table('users')->where('status', 'A')->where('division_id', $target->target_id)->pluck('id')
+                    \DB::table('users')->where('status', 'A')->where('division_id', $target['id'])->pluck('id')
                 );
-            } elseif ($target->target_type == 'level') {
+            } elseif ($target['type'] == 'level') {
                 $userIds = $userIds->merge(
                     \DB::table('users')
                         ->join('tbl_data_jabatan', 'users.id_jabatan', '=', 'tbl_data_jabatan.id_jabatan')
                         ->where('users.status', 'A')
-                        ->where('tbl_data_jabatan.id_level', $target->target_id)
+                        ->where('tbl_data_jabatan.id_level', $target['id'])
                         ->pluck('users.id')
                 );
-            } elseif ($target->target_type == 'outlet') {
+            } elseif ($target['type'] == 'outlet') {
                 $userIds = $userIds->merge(
-                    \DB::table('users')->where('status', 'A')->where('id_outlet', $target->target_id)->pluck('id')
+                    \DB::table('users')->where('status', 'A')->where('id_outlet', $target['id'])->pluck('id')
                 );
             }
         }
         $userIds = $userIds->unique();
 
+        // Get creator name
+        $creator = auth()->user();
+        
+        // Prepare notification message based on action
+        $title = $action === 'created' ? 'Pengumuman Baru Dibuat' : 'Pengumuman Baru Dipublish';
+        $message = $action === 'created' 
+            ? "Pengumuman baru telah dibuat:\n\nJudul: {$announcement->title}\n\nDibuat oleh: {$creator->nama_lengkap}\n\nStatus: DRAFT\n\nSilakan tunggu hingga dipublish untuk melihat detail lengkap."
+            : "Pengumuman baru telah dipublish:\n\nJudul: {$announcement->title}\n\nDibuat oleh: {$creator->nama_lengkap}\n\nSilakan cek halaman pengumuman untuk informasi lebih lanjut.";
+
         foreach ($userIds as $userId) {
             \DB::table('notifications')->insert([
                 'user_id' => $userId,
-                'title' => 'Pengumuman Baru',
-                'message' => 'Terdapat pengumuman baru: "' . $announcement->title . '". Silakan cek halaman pengumuman untuk informasi lebih lanjut.',
+                'title' => $title,
+                'message' => $message,
+                'url' => config('app.url') . '/announcement/' . $announcementId,
+                'is_read' => 0,
                 'created_at' => now(),
+                'updated_at' => now(),
             ]);
         }
-
-        return response()->json(['success' => true]);
     }
 }

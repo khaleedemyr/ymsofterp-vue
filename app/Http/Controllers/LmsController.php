@@ -484,6 +484,7 @@ class LmsController extends Controller
                 'external_trainer_description' => 'nullable|string',
                 'duration_minutes' => 'required|integer|min:1',
                 'type' => 'required|in:online,offline',
+                'course_type' => 'required|in:mandatory,optional',
                 'status' => 'required|in:draft,published,archived',
                 // 'max_students' => 'nullable|integer|min:1', // REMOVED
                 'sessions' => 'required|array|min:1',
@@ -708,6 +709,7 @@ class LmsController extends Controller
                 'external_trainer_description' => $validated['external_trainer_description'] ?? null,
                 'duration_minutes' => $validated['duration_minutes'],
                 'type' => $validated['type'],
+                'course_type' => $validated['course_type'],
                 'status' => $validated['status'],
                 // 'max_students' => $validated['max_students'] ?? null, // REMOVED
                 'thumbnail' => $validated['thumbnail'] ?? null,
@@ -1438,6 +1440,7 @@ class LmsController extends Controller
             'target_outlet_ids.*' => 'exists:tbl_data_outlet,id_outlet',
             'duration_minutes' => 'required|integer|min:1',
             'type' => 'required|in:online,offline',
+            'course_type' => 'required|in:mandatory,optional',
             // 'requirements' => 'nullable|array', // REMOVED - requirements field removed
             // 'requirements.*' => 'string|max:500', // REMOVED - requirements field removed
             'trainer_type' => 'required|in:internal,external',

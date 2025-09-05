@@ -1,0 +1,169 @@
+<script setup>
+import AppLayout from '@/Layouts/AppLayout.vue'
+import { Head, Link } from '@inertiajs/vue3'
+import { ref, onMounted } from 'vue'
+
+const props = defineProps({
+  announcement: Object,
+})
+
+function formatDate(dateStr) {
+  if (!dateStr) return '-';
+  const d = new Date(dateStr);
+  if (isNaN(d)) return dateStr;
+  return d.toLocaleDateString('id-ID', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+}
+
+function getTargetIcon(targetType) {
+  const icons = {
+    user: 'fa fa-user',
+    jabatan: 'fa fa-id-badge',
+    divisi: 'fa fa-building',
+    level: 'fa fa-layer-group',
+    outlet: 'fa fa-store'
+  };
+  return icons[targetType] || 'fa fa-users';
+}
+</script>
+
+<template>
+  <AppLayout>
+    <Head :title="announcement?.title || 'Detail Announcement'" />
+    
+    <div class="max-w-4xl mx-auto py-8 px-4">
+      <!-- Header -->
+      <div class="mb-6">
+        <Link 
+          :href="route('home')" 
+          class="inline-flex items-center text-blue-600 hover:text-blue-800 mb-4 transition-colors"
+        >
+          <i class="fa fa-arrow-left mr-2"></i>
+          Kembali ke Beranda
+        </Link>
+        
+        <div class="bg-gradient-to-r from-blue-500 to-blue-700 rounded-2xl p-6 text-white">
+          <div class="flex items-center gap-3 mb-4">
+            <i class="fa-solid fa-bullhorn text-3xl"></i>
+            <div>
+              <h1 class="text-2xl font-bold">{{ announcement?.title }}</h1>
+              <p class="text-blue-100">{{ formatDate(announcement?.created_at) }}</p>
+            </div>
+          </div>
+          
+          <div class="flex items-center gap-4">
+            <span :class="announcement?.status === 'Publish' ? 'bg-green-500' : 'bg-gray-500'"
+                  class="px-3 py-1 rounded-full text-sm font-semibold">
+              <i :class="announcement?.status === 'Publish' ? 'fa fa-check' : 'fa fa-clock'" class="mr-1"></i>
+              {{ announcement?.status }}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Content -->
+      <div class="bg-white rounded-2xl shadow-xl overflow-hidden">
+        <!-- Image Header -->
+        <div v-if="announcement?.image_path" class="h-64 overflow-hidden">
+          <img 
+            :src="`/storage/${announcement.image_path}`" 
+            :alt="announcement.title"
+            class="w-full h-full object-cover"
+          />
+        </div>
+
+        <!-- Main Content -->
+        <div class="p-8">
+          <!-- Target Penerima -->
+          <div class="mb-8">
+            <h3 class="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+              <i class="fa fa-users text-blue-500"></i>
+              Target Penerima
+            </h3>
+            <div class="flex flex-wrap gap-3">
+              <span v-for="t in announcement?.targets" :key="t.id"
+                    class="bg-blue-100 text-blue-700 px-4 py-2 rounded-full text-sm flex items-center gap-2">
+                <i :class="getTargetIcon(t.target_type)" class="text-blue-500"></i>
+                <span class="font-medium">{{ t.target_type }}:</span>
+                <span>{{ t.target_name || t.target_id }}</span>
+              </span>
+            </div>
+            <div v-if="!announcement?.targets?.length" class="text-gray-500 text-sm">
+              <i class="fa fa-info-circle mr-1"></i>Tidak ada target spesifik
+            </div>
+          </div>
+
+          <!-- Content -->
+          <div v-if="announcement?.content" class="mb-8">
+            <h3 class="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+              <i class="fa fa-file-text text-blue-500"></i>
+              Isi Pengumuman
+            </h3>
+            <div class="bg-gray-50 rounded-xl p-6 border">
+              <p class="text-gray-900 whitespace-pre-line leading-relaxed text-lg">{{ announcement.content }}</p>
+            </div>
+          </div>
+
+          <!-- Files -->
+          <div v-if="announcement?.files?.length" class="mb-8">
+            <h3 class="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+              <i class="fa fa-paperclip text-blue-500"></i>
+              Lampiran File
+            </h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div v-for="f in announcement.files" :key="f.id" 
+                   class="bg-gray-50 rounded-xl p-4 border hover:shadow-md transition-shadow">
+                <a :href="`/storage/${f.file_path}`" 
+                   target="_blank" 
+                   class="flex items-center gap-4 text-blue-600 hover:text-blue-800 transition-colors">
+                  <div class="bg-blue-100 p-3 rounded-lg">
+                    <i class="fa fa-file text-xl text-blue-600"></i>
+                  </div>
+                  <div class="flex-1">
+                    <p class="font-medium">{{ f.file_name }}</p>
+                    <p class="text-sm text-gray-500">Klik untuk download</p>
+                  </div>
+                  <i class="fa fa-external-link-alt"></i>
+                </a>
+              </div>
+            </div>
+          </div>
+
+          <!-- Empty State -->
+          <div v-if="!announcement?.content && !announcement?.files?.length" class="text-center py-12">
+            <i class="fa fa-info-circle text-4xl text-gray-400 mb-4"></i>
+            <p class="text-gray-500">Tidak ada konten tambahan untuk pengumuman ini.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Actions -->
+      <div class="mt-8 flex justify-center gap-4">
+        <Link 
+          :href="route('home')" 
+          class="bg-gray-600 hover:bg-gray-700 text-white px-6 py-3 rounded-xl font-semibold transition-colors"
+        >
+          <i class="fa fa-home mr-2"></i>
+          Kembali ke Beranda
+        </Link>
+        <Link 
+          :href="route('announcement.index')" 
+          class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl font-semibold transition-colors"
+        >
+          <i class="fa fa-list mr-2"></i>
+          Lihat Semua Announcement
+        </Link>
+      </div>
+    </div>
+  </AppLayout>
+</template>
+
+<style scoped>
+/* Custom styles if needed */
+</style>

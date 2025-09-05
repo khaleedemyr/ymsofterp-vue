@@ -604,6 +604,20 @@
                     <option value="online">Online (Virtual)</option>
                   </select>
                 </div>
+
+                <div>
+                  <label class="block text-sm font-medium text-gray-300 mb-2">Jenis Course <span class="text-red-400">*</span></label>
+                  <select
+                    v-model="form.course_type"
+                    required
+                    class="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    :disabled="loading"
+                  >
+                    <option value="">Pilih Jenis</option>
+                    <option value="mandatory">Wajib</option>
+                    <option value="optional">Opsional</option>
+                  </select>
+                </div>
               </div>
             </div>
 
@@ -1077,44 +1091,6 @@
               >
                 Batal
               </button>
-              <!-- Debug button -->
-              <button
-                type="button"
-                @click="() => console.log('Form validation result:', isFormValid)"
-                class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg mr-2"
-              >
-                Debug Validation
-              </button>
-              
-              <!-- Temporary bypass button for testing -->
-              <button
-                type="button"
-                @click="() => console.log('Form data:', form.value)"
-                class="bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2 rounded-lg mr-2"
-              >
-                Show Form Data
-              </button>
-              
-              <!-- Temporary force submit button for testing -->
-              <button
-                type="button"
-                @click="submitForm"
-                class="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg mr-2"
-              >
-                Force Submit
-              </button>
-              
-              <!-- Debug Buttons -->
-              <div class="flex space-x-2 mb-4">
-                <button type="button" @click="() => { dataLoading = false; loading = false; }" 
-                        class="px-3 py-2 bg-red-500 text-white rounded text-sm">
-                  Force Stop Loading
-                </button>
-                <button type="button" @click="() => console.log('Current loading state:', { loading: loading.value, dataLoading: dataLoading.value })" 
-                        class="px-3 py-2 bg-blue-500 text-white rounded text-sm">
-                  Debug Loading State
-                </button>
-              </div>
 
               <button
                 type="submit"
@@ -1294,6 +1270,7 @@ const form = ref({
   difficulty_level: '',
   duration_minutes: '',
   type: 'offline',
+  course_type: 'optional',
   status: 'published',
   // requirements: ['', ''], // REMOVED - requirements field removed
   curriculum: [
@@ -1431,8 +1408,6 @@ const filteredOutlets = computed(() => {
 
 // Form validation
 const isFormValid = computed(() => {
-  // Debug logging
-  console.log('=== FORM VALIDATION DEBUG ===')
   console.log('Title:', form.value.title.trim())
   console.log('Category ID:', form.value.category_id)
   console.log('Difficulty Level:', form.value.difficulty_level)
@@ -1547,6 +1522,8 @@ const closeModal = () => {
     target_outlet_ids: [], // For outlet targeting
     difficulty_level: '',
     duration_minutes: '',
+    type: 'offline',
+    course_type: 'optional',
     status: 'published',
     // requirements: ['', ''], // REMOVED - requirements field removed
     curriculum: [
@@ -1833,8 +1810,6 @@ const createCourse = async () => {
   // })
   
      try {
-     // Debug: Log form data before sending
-     console.log('Form data before sending:', form.value)
      console.log('=== STARTING FORM SUBMISSION ===')
      
      // Create FormData for file upload
@@ -1912,8 +1887,6 @@ const createCourse = async () => {
        }
      })
      
-     // Debug: Log FormData contents
-     console.log('FormData contents:')
      for (let [key, value] of formData.entries()) {
        console.log(`${key}:`, value)
      }

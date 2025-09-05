@@ -38,6 +38,7 @@ class LmsCourse extends Model
         'external_trainer_description',
         'certificate_template_id',
         'type',
+        'course_type',
         'is_featured',
         'meta_title',
         'meta_description',
@@ -72,6 +73,7 @@ class LmsCourse extends Model
         // 'lessons_count', // REMOVED - lessons relationship removed
         'enrollments_count',
         'type_text',
+        'course_type_text',
     ];
 
     // Relationships
@@ -314,6 +316,16 @@ class LmsCourse extends Model
         ];
         
         return $types[$this->type] ?? $this->type;
+    }
+
+    public function getCourseTypeTextAttribute()
+    {
+        $types = [
+            'mandatory' => 'Wajib',
+            'optional' => 'Opsional'
+        ];
+        
+        return $types[$this->course_type] ?? $this->course_type;
     }
 
     public function getCompletedEnrollmentsCountAttribute()

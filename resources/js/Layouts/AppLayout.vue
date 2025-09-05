@@ -6,6 +6,7 @@ import axios from 'axios';
 import ESignatureModal from '@/Components/ESignatureModal.vue';
 import NavLink from '@/Components/NavLink.vue';
 import ProfileUpdateModal from '@/Components/ProfileUpdateModal.vue';
+import UserPinModal from '@/Components/UserPinModal.vue';
 
 const sidebarOpen = ref(true);
 const showLang = ref(false);
@@ -19,6 +20,7 @@ const menuGroups = [
         icon: 'fa-solid fa-bars',
         menus: [
             { name: () => t('sidebar.dashboard'), icon: 'fa-solid fa-home', route: '/home', code: 'dashboard' },
+            { name: () => 'My Attendance', icon: 'fa-solid fa-user-clock', route: '/attendance', code: 'my_attendance' },
             { name: () => 'Video Tutorial Gallery', icon: 'fa-solid fa-play-circle', route: '/video-tutorials/gallery' },
             //{ name: () => 'Dashboard Outlet', icon: 'fa-solid fa-map-location-dot', route: '/dashboard-outlet', code: 'dashboard_outlet' },
         ],
@@ -371,6 +373,7 @@ const avatarUrl = user.avatar ? `/storage/${user.avatar}` : '/images/avatar-defa
 const showProfileDropdown = ref(false);
 const showESignatureModal = ref(false);
 const showProfileModal = ref(false);
+const showUserPinModal = ref(false);
 
 // Notification state
 const notifications = ref([]);
@@ -647,6 +650,9 @@ onMounted(() => {
                         <button @click="showESignatureModal = true; showProfileDropdown = false" class="flex items-center gap-2 w-full text-left px-4 py-2 hover:bg-blue-50">
                             <i class="fa-solid fa-pen-nib"></i> {{ t('profile.esign') }}
                         </button>
+                        <button @click="showUserPinModal = true; showProfileDropdown = false" class="flex items-center gap-2 w-full text-left px-4 py-2 hover:bg-blue-50">
+                            <i class="fa-solid fa-key"></i> Kelola PIN Outlet
+                        </button>
                         <Link
                             :href="route('logout')"
                             method="post"
@@ -704,6 +710,11 @@ onMounted(() => {
     <ProfileUpdateModal
         :show="showProfileModal"
         @close="showProfileModal = false"
+    />
+
+    <UserPinModal
+        :show="showUserPinModal"
+        @close="showUserPinModal = false"
     />
 </div>
 </template>

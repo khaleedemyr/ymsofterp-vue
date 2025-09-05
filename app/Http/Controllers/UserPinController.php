@@ -1,72 +1,199 @@
 <?php
+
 namespace App\Http\Controllers;
 
-use App\Models\UserPin;
-use App\Models\Outlet;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Auth;
 
 class UserPinController extends Controller
 {
-    // List all pins for a user
-    public function index($userId)
+    /**
+     * Get user pins for the authenticated user
+     */
+    public function index()
     {
-        $pins = UserPin::with('outlet')
-            ->where('user_id', $userId)
+        $user = Auth::user();
+        
+        $userPins = DB::table('user_pins')
+            ->join('tbl_data_outlet', 'user_pins.outlet_id', '=', 'tbl_data_outlet.id_outlet')
+            ->where('user_pins.user_id', $user->id)
+            ->select(
+                'user_pins.*',
+                'tbl_data_outlet.nama_outlet'
+            )
+            ->orderBy('user_pins.created_at', 'desc')
             ->get();
-        $outlets = Outlet::select('id_outlet', 'nama_outlet')->orderBy('nama_outlet')->get();
-        return response()->json([
-            'pins' => $pins,
-            'outlets' => $outlets,
-        ]);
+
+        return response()->json($userPins);
     }
 
-    // Store new pin for user
-    public function store(Request $request, $userId)
+    /**
+     * Store a new user pin
+     */
+    public function store(Request $request)
     {
-        $validated = $request->validate([
-            'outlet_id' => 'required|exists:tbl_data_outlet,id_outlet',
-            'pin' => 'required|string|max:20',
-            'is_active' => 'boolean',
+        $request->validate([
+            'outlet_id' => 'required|integer|exists:tbl_data_outlet,id_outlet',
+            'pin' => 'required|string|min:1|max:10',
         ]);
-        // Optional: pastikan kombinasi user_id + outlet_id unik
-        $exists = UserPin::where('user_id', $userId)
-            ->where('outlet_id', $validated['outlet_id'])
-            ->exists();
-        if ($exists) {
-            return response()->json(['message' => 'PIN untuk outlet ini sudah ada.'], 422);
+
+        $user = Auth::user();
+
+        // Check if user already has a pin for this outlet
+        $existingPin = DB::table('user_pins')
+            ->where('user_id', $user->id)
+            ->where('outlet_id', $request->outlet_id)
+            ->where('is_active', 1)
+            ->first();
+
+        if ($existingPin) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Anda sudah memiliki PIN untuk outlet ini. Silakan update PIN yang sudah ada.'
+            ], 400);
         }
-        $validated['user_id'] = $userId;
-        $pin = UserPin::create($validated);
-        return response()->json(['success' => true, 'pin' => $pin]);
+
+        try {
+            $pinId = DB::table('user_pins')->insertGetId([
+                'user_id' => $user->id,
+                'outlet_id' => $request->outlet_id,
+                'pin' => $request->pin,
+                'is_active' => 1,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+            // Get outlet name for response
+            $outlet = DB::table('tbl_data_outlet')
+                ->where('id_outlet', $request->outlet_id)
+                ->first();
+
+            return response()->json([
+                'success' => true,
+                'message' => "PIN berhasil dibuat untuk outlet {$outlet->nama_outlet}",
+                'data' => [
+                    'id' => $pinId,
+                    'outlet_name' => $outlet->nama_outlet,
+                    'pin' => $request->pin
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal membuat PIN: ' . $e->getMessage()
+            ], 500);
+        }
     }
 
-    // Update pin
+    /**
+     * Update an existing user pin
+     */
     public function update(Request $request, $id)
     {
-        $validated = $request->validate([
-            'outlet_id' => 'required|exists:tbl_data_outlet,id_outlet',
-            'pin' => 'required|string|max:20',
-            'is_active' => 'boolean',
+        $request->validate([
+            'pin' => 'required|string|min:1|max:10',
         ]);
-        $pin = UserPin::findOrFail($id);
-        // Optional: pastikan kombinasi user_id + outlet_id unik (kecuali record ini)
-        $exists = UserPin::where('user_id', $pin->user_id)
-            ->where('outlet_id', $validated['outlet_id'])
-            ->where('id', '!=', $id)
-            ->exists();
-        if ($exists) {
-            return response()->json(['message' => 'PIN untuk outlet ini sudah ada.'], 422);
+
+        $user = Auth::user();
+
+        // Check if pin belongs to user
+        $userPin = DB::table('user_pins')
+            ->where('id', $id)
+            ->where('user_id', $user->id)
+            ->first();
+
+        if (!$userPin) {
+            return response()->json([
+                'success' => false,
+                'message' => 'PIN tidak ditemukan atau tidak memiliki akses'
+            ], 404);
         }
-        $pin->update($validated);
-        return response()->json(['success' => true, 'pin' => $pin]);
+
+        try {
+            DB::table('user_pins')
+                ->where('id', $id)
+                ->update([
+                    'pin' => $request->pin,
+                    'updated_at' => now(),
+                ]);
+
+            // Get outlet name for response
+            $outlet = DB::table('tbl_data_outlet')
+                ->where('id_outlet', $userPin->outlet_id)
+                ->first();
+
+            return response()->json([
+                'success' => true,
+                'message' => "PIN berhasil diupdate untuk outlet {$outlet->nama_outlet}",
+                'data' => [
+                    'id' => $id,
+                    'outlet_name' => $outlet->nama_outlet,
+                    'pin' => $request->pin
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal mengupdate PIN: ' . $e->getMessage()
+            ], 500);
+        }
     }
 
-    // Delete pin
+    /**
+     * Delete a user pin
+     */
     public function destroy($id)
     {
-        $pin = UserPin::findOrFail($id);
-        $pin->delete();
-        return response()->json(['success' => true]);
+        $user = Auth::user();
+
+        // Check if pin belongs to user
+        $userPin = DB::table('user_pins')
+            ->where('id', $id)
+            ->where('user_id', $user->id)
+            ->first();
+
+        if (!$userPin) {
+            return response()->json([
+                'success' => false,
+                'message' => 'PIN tidak ditemukan atau tidak memiliki akses'
+            ], 404);
+        }
+
+        try {
+            DB::table('user_pins')->where('id', $id)->delete();
+
+            // Get outlet name for response
+            $outlet = DB::table('tbl_data_outlet')
+                ->where('id_outlet', $userPin->outlet_id)
+                ->first();
+
+            return response()->json([
+                'success' => true,
+                'message' => "PIN berhasil dihapus untuk outlet {$outlet->nama_outlet}"
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal menghapus PIN: ' . $e->getMessage()
+            ], 500);
+        }
     }
-} 
+
+    /**
+     * Get outlets for dropdown
+     */
+    public function getOutlets()
+    {
+        $outlets = DB::table('tbl_data_outlet')
+            ->where('status', 'A')
+            ->select('id_outlet', 'nama_outlet')
+            ->orderBy('nama_outlet')
+            ->get();
+
+        return response()->json($outlets);
+    }
+}

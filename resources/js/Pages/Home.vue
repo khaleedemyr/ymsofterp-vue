@@ -4,6 +4,7 @@ import { Head, usePage } from '@inertiajs/vue3';
 import AnalogClock from '@/Components/AnalogClock.vue';
 import WeatherIcon from '@/Components/WeatherIcon.vue';
 import AppLayout from '@/Layouts/AppLayout.vue';
+import AnnouncementList from '@/Components/AnnouncementList.vue';
 import { useI18n } from 'vue-i18n';
 
 const page = usePage();
@@ -99,8 +100,8 @@ watch(locale, () => {
     <AppLayout>
         <Head title="Home" />
         <div :class="[
-            'min-h-screen w-full flex items-center justify-center transition-all duration-700 relative',
-            isNight ? 'bg-gradient-to-b from-[#0a183d] via-[#1a237e] to-[#232946]' : 'bg-gradient-to-b from-blue-100 via-white to-blue-300'
+            'min-h-screen w-full transition-all duration-700 relative',
+            isNight ? 'bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900' : 'bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50'
         ]">
             <!-- Animasi bintang jika malam -->
             <div v-if="isNight" class="absolute inset-0 z-0 overflow-hidden pointer-events-none">
@@ -115,65 +116,81 @@ watch(locale, () => {
                     opacity: Math.random()
                 }"></div>
             </div>
-            <div class="relative z-10 w-full max-w-5xl mx-auto p-4 md:p-10 rounded-3xl shadow-2xl transition-all duration-500 group overflow-hidden animate-fade-in"
-                :class="isNight ? 'bg-[#1a223a]/80 border-blue-900' : 'bg-white/70 border-blue-200 hover:shadow-blue-300'">
-                <!-- Avatar user -->
-                <div class="absolute left-6 top-6 flex items-center gap-2 z-20">
-                    <div v-if="user.avatar" class="w-24 h-24 rounded-full overflow-hidden border-4 border-white shadow-lg">
-                        <img :src="user.avatar ? `/storage/${user.avatar}` : '/images/avatar-default.png'" alt="Avatar" class="w-full h-full object-cover" />
-                    </div>
-                    <div v-else class="w-24 h-24 rounded-full bg-gradient-to-br from-blue-700 to-blue-400 flex items-center justify-center text-white text-4xl font-bold border-4 border-white shadow-lg">
-                        {{ getInitials(user.nama_lengkap) }}
-                    </div>
-                </div>
-                <div class="ml-24 md:ml-32">
-                    <div class="flex flex-col md:flex-row items-center justify-center gap-10 md:gap-20">
-                        <!-- Kiri: Sapaan, nama, quotes -->
-                        <div class="flex-1 flex flex-col items-center md:items-start text-center md:text-left gap-6">
-                            <div class="text-3xl md:text-5xl font-extrabold" :class="isNight ? 'text-white' : 'text-gray-800'">{{ greeting }},</div>
-                            <div class="text-2xl md:text-3xl font-bold" :class="isNight ? 'text-blue-100' : 'text-blue-900'">{{ user.nama_lengkap }}</div>
-                            <div class="mt-6 max-w-xl mx-auto p-4 rounded-xl min-h-[100px] flex flex-col justify-center border"
-                                :class="[
-                                    isNight ? 'bg-white/10 text-blue-100 border-blue-300' : 'bg-blue-50/80 text-blue-900 border-blue-100',
-                                    'shadow', 'animate-fade-in'
-                                ]">
-                                <div class="flex items-center gap-2 mb-2">
-                                    <span class="text-blue-700 font-semibold" :class="isNight ? 'text-blue-200' : 'text-blue-700'">{{ t('home.quote_of_the_day') }}</span>
-                                </div>
-                                <div v-if="loadingQuote" class="italic text-gray-400">{{ t('home.loading_quote') }}</div>
-                                <template v-else>
-                                    <div class="italic text-lg md:text-xl">"{{ quote.text }}"</div>
-                                    <div class="mt-2 text-right font-semibold" :class="isNight ? 'text-blue-200' : 'text-blue-700'">- {{ quote.author }}</div>
-                                </template>
+            
+            <!-- Main Content Grid -->
+            <div class="relative z-10 w-full max-w-7xl mx-auto p-4 md:p-6 h-screen flex flex-col">
+                <!-- Top Section: Welcome Card -->
+                <div class="flex-shrink-0 mb-4">
+                    <div class="backdrop-blur-md rounded-2xl shadow-2xl border p-4 md:p-6 transition-all duration-500 animate-fade-in hover:shadow-3xl"
+                        :class="isNight ? 'bg-slate-800/90 border-slate-600/50' : 'bg-white/90 border-white/20'">
+                        <!-- Avatar user -->
+                        <div class="flex items-center gap-4 mb-4">
+                            <div v-if="user.avatar" class="w-16 h-16 rounded-full overflow-hidden border-3 border-white shadow-lg">
+                                <img :src="user.avatar ? `/storage/${user.avatar}` : '/images/avatar-default.png'" alt="Avatar" class="w-full h-full object-cover" />
+                            </div>
+                            <div v-else class="w-16 h-16 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-2xl font-bold border-3 border-white shadow-lg">
+                                {{ getInitials(user.nama_lengkap) }}
+                            </div>
+                            <div class="flex-1">
+                                <div class="text-2xl md:text-3xl font-extrabold" :class="isNight ? 'text-white' : 'text-slate-800'">{{ greeting }},</div>
+                                <div class="text-lg md:text-xl font-bold" :class="isNight ? 'text-indigo-200' : 'text-indigo-700'">{{ user.nama_lengkap }}</div>
                             </div>
                         </div>
-                        <!-- Kanan: Jam analog, cuaca -->
-                        <div class="flex-1 flex flex-col items-center gap-4 md:gap-8">
-                            <AnalogClock :date="time" class="scale-125 md:scale-150 mb-2 animate-slide-in" />
-                            <div v-if="weather.city && weather.code" class="flex flex-col items-center gap-2 animate-fade-in mt-2">
+                        
+                        <!-- Quote Section -->
+                        <div class="p-4 rounded-xl border shadow-lg animate-fade-in"
+                            :class="[
+                                isNight ? 'bg-slate-700/80 text-white border-slate-600' : 'bg-gradient-to-r from-indigo-50 to-purple-50 text-slate-800 border-indigo-200'
+                            ]">
+                            <div class="flex items-center gap-2 mb-2">
+                                <span class="font-semibold text-sm" :class="isNight ? 'text-indigo-300' : 'text-indigo-600'">{{ t('home.quote_of_the_day') }}</span>
+                            </div>
+                            <div v-if="loadingQuote" class="italic text-sm" :class="isNight ? 'text-slate-300' : 'text-slate-500'">{{ t('home.loading_quote') }}</div>
+                            <template v-else>
+                                <div class="italic text-sm md:text-base" :class="isNight ? 'text-slate-200' : 'text-slate-700'">"{{ quote.text }}"</div>
+                                <div class="mt-1 text-right font-semibold text-xs" :class="isNight ? 'text-indigo-300' : 'text-indigo-600'">- {{ quote.author }}</div>
+                            </template>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Bottom Section: Clock, Weather, and Announcements -->
+                <div class="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-4 min-h-0">
+                    <!-- Left: Clock and Weather -->
+                    <div class="lg:col-span-1 flex flex-col gap-4">
+                        <!-- Clock Card -->
+                        <div class="backdrop-blur-md rounded-2xl shadow-2xl border p-4 transition-all duration-500 hover:shadow-3xl"
+                            :class="isNight ? 'bg-slate-800/90 border-slate-600/50' : 'bg-white/90 border-white/20'">
+                            <div class="flex justify-center">
+                                <AnalogClock :date="time" class="scale-100 md:scale-110 animate-slide-in" />
+                            </div>
+                        </div>
+                        
+                        <!-- Weather Card -->
+                        <div v-if="weather.city && weather.code" class="backdrop-blur-md rounded-2xl shadow-2xl border p-4 transition-all duration-500 animate-fade-in hover:shadow-3xl"
+                            :class="isNight ? 'bg-slate-800/90 border-slate-600/50' : 'bg-white/90 border-white/20'">
+                            <div class="flex flex-col items-center gap-2">
                                 <div class="flex items-center gap-2">
                                     <WeatherIcon :code="weather.code" />
                                 </div>
-                                <div class="text-xl md:text-2xl font-semibold" :class="isNight ? 'text-blue-100' : 'text-blue-800'">{{ weather.city }}</div>
-                                <div class="text-base md:text-lg" :class="isNight ? 'text-blue-200' : 'text-gray-600'">{{ weather.temp }} - {{ weather.desc }}</div>
+                                <div class="text-lg font-semibold" :class="isNight ? 'text-white' : 'text-slate-800'">{{ weather.city }}</div>
+                                <div class="text-sm" :class="isNight ? 'text-slate-300' : 'text-slate-600'">{{ weather.temp }} - {{ weather.desc }}</div>
                             </div>
                         </div>
                     </div>
-                    <!-- Ilustrasi cityscape SVG -->
-                    <svg class="absolute bottom-0 right-0 w-64 h-32 opacity-40 pointer-events-none select-none" viewBox="0 0 400 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <rect x="0" y="60" width="400" height="40" :fill="isNight ? '#23395d' : '#90caf9'" />
-                        <rect x="20" y="40" width="30" height="60" :fill="isNight ? '#2e4a7d' : '#64b5f6'" />
-                        <rect x="60" y="50" width="20" height="50" :fill="isNight ? '#3b5998' : '#1976d2'" />
-                        <rect x="90" y="30" width="40" height="70" :fill="isNight ? '#4f6fa5' : '#42a5f5'" />
-                        <rect x="140" y="55" width="25" height="45" :fill="isNight ? '#3b5998' : '#1976d2'" />
-                        <rect x="180" y="45" width="35" height="55" :fill="isNight ? '#2e4a7d' : '#64b5f6'" />
-                        <rect x="230" y="60" width="20" height="40" :fill="isNight ? '#3b5998' : '#1976d2'" />
-                        <rect x="260" y="35" width="30" height="65" :fill="isNight ? '#4f6fa5' : '#42a5f5'" />
-                        <rect x="300" y="50" width="25" height="50" :fill="isNight ? '#3b5998' : '#1976d2'" />
-                        <rect x="340" y="40" width="40" height="60" :fill="isNight ? '#2e4a7d' : '#64b5f6'" />
-                    </svg>
-                    <!-- Footer mini -->
-                    <div class="w-full text-center text-xs mt-8 opacity-90" :class="isNight ? 'text-blue-200' : 'text-blue-400'">{{ t('home.powered') }} &copy; {{ new Date().getFullYear() }}</div>
+
+                    <!-- Right: Announcements -->
+                    <div class="lg:col-span-2">
+                        <div class="backdrop-blur-md rounded-2xl shadow-2xl border p-4 h-full transition-all duration-500 hover:shadow-3xl"
+                            :class="isNight ? 'bg-slate-800/90 border-slate-600/50' : 'bg-white/90 border-white/20'">
+                            <AnnouncementList :is-night="isNight" />
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer -->
+                <div class="flex-shrink-0 mt-4 text-center text-xs opacity-90" :class="isNight ? 'text-indigo-300' : 'text-indigo-500'">
+                    {{ t('home.powered') }} &copy; {{ new Date().getFullYear() }}
                 </div>
             </div>
         </div>
@@ -194,5 +211,33 @@ watch(locale, () => {
 @keyframes slideIn {
     from { opacity: 0; transform: translateY(-40px) scale(0.8); }
     to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* Enhanced shadow effects */
+.hover\:shadow-3xl:hover {
+    box-shadow: 0 35px 60px -12px rgba(0, 0, 0, 0.25);
+}
+
+/* Glass morphism effect */
+.backdrop-blur-md {
+    backdrop-filter: blur(12px);
+}
+
+/* Gradient text effect */
+.gradient-text {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+/* Subtle glow effect */
+.glow-effect {
+    box-shadow: 0 0 20px rgba(99, 102, 241, 0.1);
+}
+
+/* Smooth transitions */
+* {
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 </style> 
