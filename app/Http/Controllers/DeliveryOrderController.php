@@ -86,6 +86,7 @@ class DeliveryOrderController extends Controller
             'o.nama_outlet',
             'u.nama_lengkap as creator_name',
             'wd.name as division_name',
+            'wd.id as warehouse_division_id',
             'w.name as warehouse_name',
             'wo.name as warehouse_outlet_name'
         )
@@ -120,6 +121,7 @@ class DeliveryOrderController extends Controller
                 'o.nama_outlet',
                 'u.nama_lengkap as creator_name',
                 DB::raw("'Perishable' as division_name"),
+                DB::raw("1 as warehouse_division_id"),
                 DB::raw("'Warehouse 1' as warehouse_name"),
                 'wo.name as warehouse_outlet_name',
                 DB::raw("'ro_supplier_gr' as source_type"),
@@ -133,9 +135,16 @@ class DeliveryOrderController extends Controller
         // Convert to array to ensure proper JSON serialization
         $roSupplierGRs = $roSupplierGRs->toArray();
 
+        // Ambil semua warehouse divisions
+        $warehouseDivisions = DB::table('warehouse_division')
+            ->select('id', 'name')
+            ->orderBy('name')
+            ->get();
+
         return Inertia::render('DeliveryOrder/Form', [
             'packingLists' => $packingLists,
-            'roSupplierGRs' => $roSupplierGRs
+            'roSupplierGRs' => $roSupplierGRs,
+            'warehouseDivisions' => $warehouseDivisions
         ]);
     }
 

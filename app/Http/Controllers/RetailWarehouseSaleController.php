@@ -14,7 +14,7 @@ class RetailWarehouseSaleController extends Controller
 {
     public function index(Request $request)
     {
-        $sales = DB::table('retail_warehouse_sales as rws')
+        $query = DB::table('retail_warehouse_sales as rws')
             ->leftJoin('customers as c', 'rws.customer_id', '=', 'c.id')
             ->leftJoin('warehouses as w', 'rws.warehouse_id', '=', 'w.id')
             ->leftJoin('warehouse_division as wd', 'rws.warehouse_division_id', '=', 'wd.id')
@@ -26,12 +26,35 @@ class RetailWarehouseSaleController extends Controller
                 'w.name as warehouse_name',
                 'wd.name as division_name',
                 'u.nama_lengkap as created_by_name'
-            )
-            ->orderByDesc('rws.created_at')
-            ->get();
+            );
+
+        // Filter search
+        if ($request->filled('search')) {
+            $search = '%' . $request->search . '%';
+            $query->where(function($q) use ($search) {
+                $q->where('rws.number', 'like', $search)
+                  ->orWhere('c.name', 'like', $search)
+                  ->orWhere('c.code', 'like', $search)
+                  ->orWhere('w.name', 'like', $search)
+                  ->orWhere('wd.name', 'like', $search);
+            });
+        }
+
+        // Filter tanggal dari
+        if ($request->filled('from')) {
+            $query->whereDate('rws.created_at', '>=', $request->from);
+        }
+
+        // Filter tanggal sampai
+        if ($request->filled('to')) {
+            $query->whereDate('rws.created_at', '<=', $request->to);
+        }
+
+        $sales = $query->orderByDesc('rws.created_at')->get();
 
         return Inertia::render('RetailWarehouseSale/Index', [
-            'sales' => $sales
+            'sales' => $sales,
+            'filters' => $request->only(['search', 'from', 'to'])
         ]);
     }
 

@@ -1,11 +1,16 @@
 <script setup>
-import { ref } from 'vue';
+import { ref, watch } from 'vue';
 import { router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 
 const props = defineProps({
   sales: Array,
+  filters: Object,
 });
+
+const search = ref(props.filters?.search || '');
+const from = ref(props.filters?.from || '');
+const to = ref(props.filters?.to || '');
 
 function goToCreate() {
   router.visit(route('retail-warehouse-sale.create'));
@@ -25,6 +30,40 @@ function formatCurrency(amount) {
     currency: 'IDR'
   }).format(amount);
 }
+
+// Watch untuk auto search
+watch(
+  () => props.filters,
+  (filters) => {
+    search.value = filters?.search || '';
+    from.value = filters?.from || '';
+    to.value = filters?.to || '';
+  },
+  { immediate: true }
+);
+
+function debouncedSearch() {
+  router.get('/retail-warehouse-sale', { 
+    search: search.value, 
+    from: from.value, 
+    to: to.value 
+  }, { preserveState: true, replace: true });
+}
+
+function onSearchInput() {
+  debouncedSearch();
+}
+
+function onDateChange() {
+  debouncedSearch();
+}
+
+function clearFilters() {
+  search.value = '';
+  from.value = '';
+  to.value = '';
+  debouncedSearch();
+}
 </script>
 
 <template>
@@ -38,6 +77,55 @@ function formatCurrency(amount) {
         <button @click="goToCreate" class="bg-gradient-to-r from-blue-500 to-blue-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold">
           + Buat Penjualan Baru
         </button>
+      </div>
+
+      <!-- Search dan Filter -->
+      <div class="bg-white rounded-xl shadow-lg p-6 mb-6">
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+          <!-- Search -->
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">Cari</label>
+            <input
+              v-model="search"
+              @input="onSearchInput"
+              type="text"
+              placeholder="Cari nomor, customer, warehouse..."
+              class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            />
+          </div>
+          
+          <!-- Filter Tanggal Dari -->
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">Dari Tanggal</label>
+            <input
+              v-model="from"
+              @change="onDateChange"
+              type="date"
+              class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            />
+          </div>
+          
+          <!-- Filter Tanggal Sampai -->
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">Sampai Tanggal</label>
+            <input
+              v-model="to"
+              @change="onDateChange"
+              type="date"
+              class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            />
+          </div>
+          
+          <!-- Tombol Clear -->
+          <div>
+            <button
+              @click="clearFilters"
+              class="w-full px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors"
+            >
+              Clear Filter
+            </button>
+          </div>
+        </div>
       </div>
 
       <div class="bg-white rounded-2xl shadow-2xl overflow-x-auto transition-all">

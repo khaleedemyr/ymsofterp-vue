@@ -35,6 +35,18 @@ const expandedSummaryDivisions = ref(new Set());
 const exportLoading = ref(false);
 const summaryExportLoading = ref(false);
 
+// Matrix Cross-tabulation variables
+const matrixDate = ref(dayjs().format('YYYY-MM-DD'));
+const matrixLoading = ref(false);
+const matrixError = ref('');
+const matrixData = ref([]);
+const matrixOutlets = ref([]);
+const matrixItems = ref([]);
+const matrixTable = ref([]);
+const showMatrixModal = ref(false);
+const warehouseDivisions = ref([]);
+const selectedWarehouseDivision = ref('');
+
 watch(
   () => props.filters,
   (filters) => {
@@ -129,6 +141,7 @@ async function openSummaryModal() {
   showSummaryModal.value = true;
   await fetchSummary();
 }
+
 async function fetchSummary() {
   summaryLoading.value = true;
   summaryError.value = '';
@@ -287,6 +300,78 @@ async function exportSummaryData() {
     summaryExportLoading.value = false;
   }
 }
+
+async function exportMatrix() {
+  matrixLoading.value = true;
+  matrixError.value = '';
+  try {
+    const response = await axios.get('/api/packing-list/export-matrix', {
+      params: { 
+        tanggal: matrixDate.value,
+        warehouse_division_id: selectedWarehouseDivision.value || null
+      },
+      responseType: 'blob'
+    });
+    
+    // Create download link
+    const url = window.URL.createObjectURL(new Blob([response.data]));
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `Matrix_Cross_Tabulation_${matrixDate.value}.xlsx`);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+    
+    Swal.fire({
+      icon: 'success',
+      title: 'Berhasil',
+      text: 'File Excel berhasil diunduh.',
+      timer: 1500,
+      showConfirmButton: false
+    });
+  } catch (e) {
+    console.error('Export error:', e);
+    let errorMessage = 'Gagal mengunduh file Excel.';
+    
+    if (e.response?.data?.error) {
+      errorMessage = e.response.data.error;
+    } else if (e.response?.status === 404) {
+      errorMessage = 'Tidak ada data untuk di-export pada tanggal ini.';
+    }
+    
+    Swal.fire({
+      icon: 'error',
+      title: 'Gagal',
+      text: errorMessage
+    });
+  } finally {
+    matrixLoading.value = false;
+  }
+}
+
+async function openMatrixModal() {
+  showMatrixModal.value = true;
+  await fetchWarehouseDivisions();
+}
+
+async function fetchWarehouseDivisions() {
+  try {
+    const res = await axios.get('/api/packing-list/warehouse-divisions');
+    warehouseDivisions.value = res.data;
+  } catch (e) {
+    console.error('Warehouse divisions error:', e);
+    matrixError.value = 'Gagal mengambil data warehouse division.';
+  }
+}
+
+function closeMatrixModal() {
+  showMatrixModal.value = false;
+  selectedWarehouseDivision.value = '';
+  matrixError.value = '';
+}
+
+
 </script>
 <template>
   <AppLayout>
@@ -304,6 +389,9 @@ async function exportSummaryData() {
         <div class="flex gap-2">
           <button @click="openSummaryModal" class="bg-gradient-to-r from-green-500 to-green-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold">
             <i class="fa fa-list mr-1"></i> Rangkuman Packing List
+          </button>
+          <button @click="openMatrixModal" class="bg-gradient-to-r from-purple-500 to-purple-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold">
+            <i class="fa fa-table mr-1"></i> Matrix Cross-tabulation
           </button>
           <button 
             @click="openUnpickedModal"
@@ -646,6 +734,66 @@ async function exportSummaryData() {
               </div>
             </div>
           </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Modal Matrix Cross-tabulation -->
+      <div v-if="showMatrixModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40">
+        <div class="bg-white rounded-xl shadow-lg w-full max-w-2xl relative">
+          <!-- Header -->
+          <div class="p-6 border-b border-gray-200">
+            <button @click="closeMatrixModal" class="absolute top-3 right-3 text-gray-400 hover:text-gray-600">
+              <i class="fas fa-times text-lg"></i>
+            </button>
+            <h2 class="text-xl font-bold mb-4">Matrix Cross-tabulation Packing List</h2>
+            
+            <!-- Filters -->
+            <div class="space-y-4">
+              <!-- Tanggal Kedatangan -->
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-2">Tanggal Kedatangan *</label>
+                <input 
+                  v-model="matrixDate" 
+                  type="date" 
+                  class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-purple-500 focus:border-purple-500"
+                  required
+                />
+              </div>
+              
+              <!-- Warehouse Division -->
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-2">Warehouse Division</label>
+                <select 
+                  v-model="selectedWarehouseDivision"
+                  class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-purple-500 focus:border-purple-500"
+                >
+                  <option value="">Semua Warehouse Division</option>
+                  <option v-for="division in warehouseDivisions" :key="division.id" :value="division.id">
+                    {{ division.name }}
+                  </option>
+                </select>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Footer -->
+          <div class="p-6 border-t border-gray-200 flex justify-end gap-3">
+            <button 
+              @click="closeMatrixModal"
+              class="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+            >
+              Batal
+            </button>
+            <button 
+              @click="exportMatrix" 
+              :disabled="!matrixDate || matrixLoading"
+              class="px-6 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-200 disabled:cursor-not-allowed flex items-center gap-2"
+            >
+              <i v-if="matrixLoading" class="fas fa-spinner fa-spin"></i>
+              <i v-else class="fas fa-file-excel"></i>
+              {{ matrixLoading ? 'Exporting...' : 'Export Excel' }}
+            </button>
           </div>
         </div>
       </div>

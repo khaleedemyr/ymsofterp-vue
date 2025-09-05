@@ -571,6 +571,14 @@ onMounted(() => {
                                                             {{ sourceNumber }}
                                                         </span>
                                                     </div>
+                                                    <!-- Outlet Names for RO Supplier -->
+                                                    <div v-if="po.source_type === 'ro_supplier' && po.source_outlets && po.source_outlets.length > 0" 
+                                                         class="flex flex-wrap gap-1 mt-1">
+                                                        <span v-for="outlet in po.source_outlets" :key="outlet" 
+                                                              class="bg-orange-100 text-orange-800 text-xs px-2 py-1 rounded-full">
+                                                            {{ outlet }}
+                                                        </span>
+                                                    </div>
                                                 </div>
                                             </td>
                                             <td class="px-6 py-3">{{ po.supplier?.name }}</td>

@@ -51,11 +51,25 @@ class PurchaseOrderFoodsController extends Controller
                 $prIds = \App\Models\PurchaseRequisitionFoodItem::whereIn('id', $prItemIds)->pluck('pr_food_id')->unique()->toArray();
                 $prNumbers = \App\Models\PurchaseRequisitionFood::whereIn('id', $prIds)->pluck('pr_number')->unique()->toArray();
                 $po->source_numbers = $prNumbers;
+                $po->source_outlets = []; // PR Foods tidak punya outlet
             } elseif ($po->source_type === 'ro_supplier') {
                 $roNumbers = $po->items->pluck('ro_number')->unique()->filter()->toArray();
                 $po->source_numbers = $roNumbers;
+                
+                // Get outlet information for RO Supplier
+                $roIds = $po->items->pluck('ro_id')->unique()->filter()->toArray();
+                $outlets = DB::table('food_floor_orders as fo')
+                    ->leftJoin('tbl_data_outlet as o', 'fo.id_outlet', '=', 'o.id_outlet')
+                    ->whereIn('fo.id', $roIds)
+                    ->select('o.nama_outlet')
+                    ->pluck('o.nama_outlet')
+                    ->unique()
+                    ->filter()
+                    ->toArray();
+                $po->source_outlets = $outlets;
             } else {
                 $po->source_numbers = [];
+                $po->source_outlets = [];
             }
             
             return $po;

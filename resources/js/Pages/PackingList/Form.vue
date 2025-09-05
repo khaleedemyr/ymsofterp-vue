@@ -21,6 +21,7 @@ const searchRO = ref('');
 const statusFilter = ref('');
 const selectedRO = ref(null);
 const viewMode = ref('cards');
+const arrivalDateFilter = ref(''); // Filter tanggal kedatangan
 
 const foDetail = computed(() => props.floorOrders.find(f => f.id == selectedFO.value) || {});
 
@@ -55,6 +56,15 @@ const filteredROs = computed(() => {
 
   if (statusFilter.value) {
     filtered = filtered.filter(ro => ro.status === statusFilter.value);
+  }
+
+  // Filter berdasarkan tanggal kedatangan
+  if (arrivalDateFilter.value) {
+    filtered = filtered.filter(ro => {
+      if (!ro.arrival_date) return false;
+      const roArrivalDate = new Date(ro.arrival_date).toISOString().split('T')[0];
+      return roArrivalDate === arrivalDateFilter.value;
+    });
   }
 
   return filtered;
@@ -97,6 +107,16 @@ const clearSelection = () => {
 
 const clearSearch = () => {
   searchRO.value = '';
+};
+
+const filterByArrivalDate = () => {
+  // Filter akan otomatis terupdate melalui computed property
+};
+
+const clearAllFilters = () => {
+  searchRO.value = '';
+  statusFilter.value = '';
+  arrivalDateFilter.value = '';
 };
 
 // Function untuk mengisi quantity satu item
@@ -512,6 +532,27 @@ const printPackingList = () => {
                 <option value="approved">Approved</option>
                 <option value="packing">Packing</option>
               </select>
+            </div>
+
+            <!-- Filter by Arrival Date -->
+            <div>
+              <label class="block text-xs font-medium text-gray-700 mb-1">Tanggal Kedatangan</label>
+              <input 
+                type="date" 
+                v-model="arrivalDateFilter" 
+                @change="filterByArrivalDate"
+                class="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+              />
+            </div>
+
+            <!-- Clear Filters Button -->
+            <div>
+              <button 
+                @click="clearAllFilters" 
+                class="w-full px-3 py-2 text-sm bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 transition-colors"
+              >
+                <i class="fas fa-times mr-2"></i>Clear All Filters
+              </button>
             </div>
           </div>
         </div>

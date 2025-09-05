@@ -22,7 +22,7 @@
           v-model="search"
           @input="onSearchInput"
           type="text"
-          placeholder="Cari PO, Supplier, atau Petugas..."
+          placeholder="Cari Nomor GR, PO, Supplier, atau Petugas..."
           class="w-64 px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition"
         />
         <input type="date" v-model="from" @change="onDateChange" class="px-2 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition" placeholder="Dari tanggal" />
@@ -33,7 +33,8 @@
         <table class="w-full min-w-full divide-y divide-gray-200">
           <thead class="bg-gradient-to-r from-blue-50 to-blue-100">
             <tr>
-              <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider rounded-tl-2xl">Tanggal</th>
+              <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider rounded-tl-2xl">Nomor GR</th>
+              <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Tanggal</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">No. PO</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Supplier</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Petugas</th>
@@ -42,9 +43,10 @@
           </thead>
           <tbody>
             <tr v-if="!goodReceives.data || !goodReceives.data.length">
-              <td colspan="5" class="text-center py-10 text-gray-400">Belum ada data Good Receive.</td>
+              <td colspan="6" class="text-center py-10 text-gray-400">Belum ada data Good Receive.</td>
             </tr>
             <tr v-for="gr in goodReceives.data" :key="gr.id" class="hover:bg-blue-50 transition shadow-sm">
+              <td class="px-6 py-3 font-semibold">{{ gr.gr_number }}</td>
               <td class="px-6 py-3">{{ gr.receive_date }}</td>
               <td class="px-6 py-3">{{ gr.po_number }}</td>
               <td class="px-6 py-3">{{ gr.supplier_name }}</td>

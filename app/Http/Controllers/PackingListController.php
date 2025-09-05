@@ -28,13 +28,21 @@ class PackingListController extends Controller
         ]);
     }
 
-    public function create()
+    public function create(Request $request)
     {
         // Ambil semua FO yang approved atau packing (karena setelah delete packing list, status bisa kembali ke approved)
-        $floorOrders = FoodFloorOrder::whereIn('food_floor_orders.status', ['approved', 'packing'])
+        // Exclude RO Supplier dari pilihan packing list
+        $query = FoodFloorOrder::whereIn('food_floor_orders.status', ['approved', 'packing'])
+            ->where('food_floor_orders.fo_mode', '!=', 'RO Supplier') // Filter out RO Supplier
             ->with(['outlet', 'user', 'items.item.smallUnit', 'items.item.mediumUnit', 'items.item.largeUnit', 'warehouseDivisions', 'warehouseOutlet'])
-            ->join('tbl_data_outlet', 'food_floor_orders.id_outlet', '=', 'tbl_data_outlet.id_outlet')
-            ->orderBy('food_floor_orders.tanggal', 'desc')
+            ->join('tbl_data_outlet', 'food_floor_orders.id_outlet', '=', 'tbl_data_outlet.id_outlet');
+
+        // Filter berdasarkan tanggal kedatangan jika ada
+        if ($request->filled('arrival_date')) {
+            $query->whereDate('food_floor_orders.arrival_date', $request->arrival_date);
+        }
+
+        $floorOrders = $query->orderBy('food_floor_orders.tanggal', 'desc')
             ->orderBy('tbl_data_outlet.nama_outlet')
             ->get();
 
@@ -435,7 +443,9 @@ class PackingListController extends Controller
         ]);
 
         // Get all floor orders that are approved or packing but not yet fully packed
+        // Exclude RO Supplier from unpicked floor orders
         $floorOrders = FoodFloorOrder::whereIn('status', ['approved', 'packing'])
+            ->where('fo_mode', '!=', 'RO Supplier') // Filter out RO Supplier
             ->whereDate('tanggal', $request->tanggal)
             ->with([
                 'outlet',
@@ -547,7 +557,9 @@ class PackingListController extends Controller
             set_time_limit(300); // 5 minutes timeout
 
             // Get all floor orders that are approved or packing but not yet fully packed
+            // Exclude RO Supplier from export data
             $floorOrders = FoodFloorOrder::whereIn('status', ['approved', 'packing'])
+                ->where('fo_mode', '!=', 'RO Supplier') // Filter out RO Supplier
                 ->whereDate('tanggal', $request->tanggal)
                 ->with([
                     'outlet',
@@ -704,7 +716,9 @@ class PackingListController extends Controller
             set_time_limit(300); // 5 minutes timeout
 
             // Get all floor orders that are approved or packing but not yet fully packed
+            // Exclude RO Supplier from CSV export
             $floorOrders = FoodFloorOrder::whereIn('status', ['approved', 'packing'])
+                ->where('fo_mode', '!=', 'RO Supplier') // Filter out RO Supplier
                 ->whereDate('tanggal', $request->tanggal)
                 ->with([
                     'items.item',
@@ -807,9 +821,341 @@ class PackingListController extends Controller
                 ->header('Content-Length', strlen($csvContent));
 
         } catch (\Exception $e) {
-            \Log::error('Summary export error: ' . $e->getMessage());
+            \Log::error('CSV export error: ' . $e->getMessage());
             \Log::error('Memory usage: ' . memory_get_usage(true) / 1024 / 1024 . ' MB');
             return response()->json(['error' => 'Gagal mengunduh file CSV: ' . $e->getMessage()], 500);
+        }
+    }
+
+    public function matrix(Request $request)
+    {
+        $request->validate([
+            'tanggal' => 'required|date',
+        ]);
+
+        try {
+            // Get all floor orders that are approved or packing but not yet fully packed
+            // Exclude RO Supplier from matrix
+            $floorOrders = FoodFloorOrder::whereIn('status', ['approved', 'packing'])
+                ->where('fo_mode', '!=', 'RO Supplier') // Filter out RO Supplier
+                ->whereDate('tanggal', $request->tanggal)
+                ->with([
+                    'outlet',
+                    'items.item',
+                    'items.item.warehouseDivision'
+                ])
+                ->get();
+
+            // Collect unique outlets and items
+            $outlets = [];
+            $items = [];
+            $matrixData = [];
+
+            foreach ($floorOrders as $fo) {
+                $outletId = $fo->outlet->id;
+                $outletName = $fo->outlet->nama_outlet;
+                
+                // Add outlet if not exists
+                if (!isset($outlets[$outletId])) {
+                    $outlets[$outletId] = [
+                        'id' => $outletId,
+                        'nama_outlet' => $outletName
+                    ];
+                }
+
+                foreach ($fo->items as $foItem) {
+                    $item = $foItem->item;
+                    if (!$item) continue;
+
+                    $itemId = $item->id;
+                    $itemName = $item->name;
+                    $itemUnit = $foItem->unit;
+                    
+                    // Add item if not exists
+                    if (!isset($items[$itemId])) {
+                        $items[$itemId] = [
+                            'id' => $itemId,
+                            'name' => $itemName,
+                            'unit' => $itemUnit
+                        ];
+                    }
+
+                    // Check if this item has been packed
+                    $isPacked = FoodPackingListItem::whereHas('packingList', function($q) use ($fo) {
+                        $q->where('food_floor_order_id', $fo->id)
+                          ->where('status', 'packing'); // Hanya packing list yang masih aktif
+                    })->where('food_floor_order_item_id', $foItem->id)->exists();
+
+                    if (!$isPacked) {
+                        // Add to matrix data
+                        $matrixData[] = [
+                            'outlet_id' => $fo->outlet->id,
+                            'item_id' => $itemId,
+                            'qty' => $foItem->qty
+                        ];
+                    }
+                }
+            }
+
+            // Convert to indexed arrays
+            $outletsArray = array_values($outlets);
+            $itemsArray = array_values($items);
+
+            return response()->json([
+                'outlets' => $outletsArray,
+                'items' => $itemsArray,
+                'matrix' => $matrixData,
+                'data' => $floorOrders
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error('Matrix error: ' . $e->getMessage());
+            return response()->json(['error' => 'Gagal mengambil data matrix: ' . $e->getMessage()], 500);
+        }
+    }
+
+    public function exportMatrix(Request $request)
+    {
+        $request->validate([
+            'tanggal' => 'required|date',
+            'warehouse_division_id' => 'nullable|integer',
+        ]);
+
+        try {
+            $tanggal = $request->tanggal;
+
+            // Ambil semua outlet aktif (seperti report good receive outlet)
+            $outlets = \DB::table('tbl_data_outlet')
+                ->where('status', 'A')
+                ->orderBy('nama_outlet')
+                ->get();
+
+            // Ambil data floor orders yang belum di-packing (seperti report good receive outlet)
+            $query = FoodFloorOrder::whereIn('status', ['approved', 'packing'])
+                ->where('fo_mode', '!=', 'RO Supplier')
+                ->whereDate('arrival_date', $tanggal);
+
+            if ($request->filled('warehouse_division_id')) {
+                $query->whereHas('items.item.warehouseDivision', function($q) use ($request) {
+                    $q->where('id', $request->warehouse_division_id);
+                });
+            }
+
+            $floorOrders = $query->with([
+                    'outlet',
+                    'items.item',
+                    'items.item.warehouseDivision'
+                ])
+                ->get();
+
+            // Debug logging
+            \Log::info('Matrix Export Debug - Total Floor Orders: ' . $floorOrders->count());
+            \Log::info('Matrix Export Debug - Date: ' . $tanggal);
+            \Log::info('Matrix Export Debug - Total Outlets (All): ' . $outlets->count());
+
+            // Bentuk data seperti report good receive outlet
+            $data = [];
+            foreach ($floorOrders as $fo) {
+                foreach ($fo->items as $foItem) {
+                    $item = $foItem->item;
+                    if (!$item) continue;
+
+                    // Check if this item has been packed
+                    $isPacked = FoodPackingListItem::whereHas('packingList', function($q) use ($fo) {
+                        $q->where('food_floor_order_id', $fo->id)
+                          ->where('status', 'packing');
+                    })->where('food_floor_order_item_id', $foItem->id)->exists();
+
+                    if (!$isPacked) {
+                        $data[] = (object)[
+                            'item_id' => $item->id,
+                            'item_name' => $item->name,
+                            'unit_name' => $foItem->unit,
+                            'id_outlet' => $fo->outlet->id,
+                            'nama_outlet' => $fo->outlet->nama_outlet,
+                            'qty' => $foItem->qty,
+                            'warehouse_division' => $item->warehouseDivision ? $item->warehouseDivision->name : 'Unknown'
+                        ];
+                    }
+                }
+            }
+
+            \Log::info('Matrix Export Debug - Total Data: ' . count($data));
+
+            // Bentuk pivot seperti report good receive outlet
+            $pivot = [];
+            foreach ($data as $row) {
+                $key = $row->item_id . '|' . $row->unit_name;
+                if (!isset($pivot[$key])) {
+                    $pivot[$key] = [
+                        'item_name' => $row->item_name,
+                        'unit_name' => $row->unit_name,
+                        'warehouse_division' => $row->warehouse_division
+                    ];
+                }
+                // Jika sudah ada data untuk outlet ini, tambahkan qty
+                if (isset($pivot[$key][$row->nama_outlet])) {
+                    $pivot[$key][$row->nama_outlet] += $row->qty;
+                } else {
+                    $pivot[$key][$row->nama_outlet] = $row->qty;
+                }
+            }
+
+            $items = array_values($pivot);
+
+            // Prepare data for export (seperti report good receive outlet)
+            $exportData = [];
+            foreach ($items as $item) {
+                $row = [
+                    'Warehouse Division' => $item['warehouse_division'],
+                    'Nama Items' => $item['item_name'],
+                    'Unit' => $item['unit_name'],
+                ];
+                
+                foreach ($outlets as $outlet) {
+                    $row[$outlet->nama_outlet] = isset($item[$outlet->nama_outlet]) ? number_format($item[$outlet->nama_outlet], 2) : '';
+                }
+                
+                $exportData[] = $row;
+            }
+
+            // Debug logging
+            \Log::info('Matrix Export Debug - Export Data Count: ' . count($exportData));
+            \Log::info('Matrix Export Debug - Export Data Sample: ' . json_encode(array_slice($exportData, 0, 2)));
+
+            // Generate filename based on filters
+            $filename = 'Matrix_Packing_List_Arrival_Date_' . date('Y-m-d', strtotime($tanggal));
+            if ($request->filled('warehouse_division_id')) {
+                $warehouseDivision = \App\Models\WarehouseDivision::find($request->warehouse_division_id);
+                if ($warehouseDivision) {
+                    $filename .= '_' . str_replace(' ', '_', $warehouseDivision->name);
+                }
+            }
+            $filename .= '.xlsx';
+
+            return \Maatwebsite\Excel\Facades\Excel::download(
+                new \App\Exports\PackingListMatrixExport($exportData, $outlets),
+                $filename
+            );
+
+        } catch (\Exception $e) {
+            \Log::error('Matrix export error: ' . $e->getMessage());
+            \Log::error('Matrix export error trace: ' . $e->getTraceAsString());
+            return response()->json(['error' => 'Gagal export matrix: ' . $e->getMessage()], 500);
+        }
+    }
+
+    public function getWarehouseDivisions()
+    {
+        try {
+            $warehouseDivisions = \App\Models\WarehouseDivision::orderBy('name')->get();
+            return response()->json($warehouseDivisions);
+        } catch (\Exception $e) {
+            \Log::error('Get warehouse divisions error: ' . $e->getMessage());
+            return response()->json(['error' => 'Gagal mengambil data warehouse division'], 500);
+        }
+    }
+
+    public function testMatrixData(Request $request)
+    {
+        $request->validate([
+            'tanggal' => 'required|date',
+            'warehouse_division_id' => 'nullable|integer',
+        ]);
+
+        try {
+            // Get all floor orders that are approved or packing but not yet fully packed
+            $query = FoodFloorOrder::whereIn('status', ['approved', 'packing'])
+                ->where('fo_mode', '!=', 'RO Supplier')
+                ->whereDate('arrival_date', $request->tanggal);
+
+            if ($request->filled('warehouse_division_id')) {
+                $query->whereHas('items.item.warehouseDivision', function($q) use ($request) {
+                    $q->where('id', $request->warehouse_division_id);
+                });
+            }
+
+            $floorOrders = $query->with([
+                    'outlet',
+                    'items.item',
+                    'items.item.warehouseDivision'
+                ])
+                ->get();
+
+            // Get ALL outlets from database (seperti exportMatrix)
+            $outlets = \DB::table('tbl_data_outlet')
+                ->where('status', 'A')
+                ->orderBy('nama_outlet')
+                ->get();
+
+            $debugData = [
+                'tanggal' => $request->tanggal,
+                'total_floor_orders' => $floorOrders->count(),
+                'total_all_outlets' => $outlets->count(),
+                'floor_orders_detail' => [],
+                'outlets_found' => [],
+                'items_found' => [],
+                'matrix_data' => []
+            ];
+
+            foreach ($floorOrders as $fo) {
+                $foData = [
+                    'id' => $fo->id,
+                    'fo_number' => $fo->fo_number,
+                    'outlet' => [
+                        'id' => $fo->outlet->id,
+                        'nama_outlet' => $fo->outlet->nama_outlet
+                    ],
+                    'items' => []
+                ];
+
+                foreach ($fo->items as $foItem) {
+                    $item = $foItem->item;
+                    if (!$item) continue;
+
+                    $isPacked = FoodPackingListItem::whereHas('packingList', function($q) use ($fo) {
+                        $q->where('food_floor_order_id', $fo->id)
+                          ->where('status', 'packing');
+                    })->where('food_floor_order_item_id', $foItem->id)->exists();
+
+                    $foData['items'][] = [
+                        'item_id' => $item->id,
+                        'item_name' => $item->name,
+                        'unit' => $foItem->unit,
+                        'qty' => $foItem->qty,
+                        'warehouse_division' => $item->warehouseDivision ? $item->warehouseDivision->name : 'Unknown',
+                        'is_packed' => $isPacked
+                    ];
+
+                    // Collect unique items
+                    if (!isset($debugData['items_found'][$item->id])) {
+                        $debugData['items_found'][$item->id] = $item->name;
+                    }
+
+                    if (!$isPacked) {
+                        $debugData['matrix_data'][] = [
+                            'outlet_id' => $fo->outlet->id,
+                            'outlet_name' => $fo->outlet->nama_outlet,
+                            'item_id' => $item->id,
+                            'item_name' => $item->name,
+                            'qty' => $foItem->qty
+                        ];
+                    }
+                }
+
+                $debugData['floor_orders_detail'][] = $foData;
+            }
+
+            // Add all outlets to debug data
+            foreach ($outlets as $outlet) {
+                $debugData['outlets_found'][$outlet->id_outlet] = $outlet->nama_outlet;
+            }
+
+            return response()->json($debugData);
+
+        } catch (\Exception $e) {
+            \Log::error('Test matrix data error: ' . $e->getMessage());
+            return response()->json(['error' => 'Gagal test matrix data: ' . $e->getMessage()], 500);
         }
     }
 } 

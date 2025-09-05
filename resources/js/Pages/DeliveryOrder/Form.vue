@@ -4,18 +4,29 @@
       <h1 class="text-3xl font-bold mb-8 text-blue-800 flex items-center gap-3">
         <i class="fa-solid fa-barcode text-blue-500"></i> Delivery Order (Scan Barang)
       </h1>
+      <!-- Filter Warehouse Division -->
+      <div class="mb-6 flex flex-col md:flex-row gap-4 items-center w-full max-w-xl">
+        <label class="font-semibold text-lg">Warehouse Division</label>
+        <select v-model="selectedWarehouseDivision" @change="onWarehouseDivisionChange" class="border-2 border-blue-400 rounded-lg px-3 py-2 w-full max-w-xs focus:ring-2 focus:ring-blue-500">
+          <option value="">Semua Warehouse Division</option>
+          <option v-for="division in warehouseDivisions" :key="division.id" :value="division.id">
+            {{ division.name }}
+          </option>
+        </select>
+      </div>
+      
       <!-- Pilih Packing List atau RO Supplier GR -->
       <div class="mb-6 flex flex-col md:flex-row gap-4 items-center w-full max-w-xl">
         <label class="font-semibold text-lg">Pilih Sumber</label>
-        <select v-model="selectedPackingListId" @change="onPackingListChange" class="border-2 border-blue-400 rounded-lg px-3 py-2 w-full max-w-xs focus:ring-2 focus:ring-blue-500">
+        <select v-model="selectedPackingListId" @change="onPackingListChange" class="border-2 border-blue-400 rounded-lg px-3 py-2 w-full max-w-xs focus:ring-2 focus:ring-blue-500" :disabled="!selectedWarehouseDivision">
           <option value="">Pilih Packing List atau RO Supplier GR...</option>
           <optgroup label="Packing List">
-            <option v-for="pl in packingLists" :key="pl.id" :value="pl.id">
+            <option v-for="pl in filteredPackingLists" :key="pl.id" :value="pl.id">
               {{ new Date(pl.created_at).toLocaleDateString('id-ID') }} - {{ pl.nama_outlet || '-' }} - {{ pl.division_name || '-' }} - {{ pl.packing_number }}
             </option>
           </optgroup>
           <optgroup label="RO Supplier GR">
-            <option v-for="gr in roSupplierGRs" :key="'gr_' + gr.gr_id" :value="'gr_' + gr.gr_id">
+            <option v-for="gr in filteredROSupplierGRs" :key="'gr_' + gr.gr_id" :value="'gr_' + gr.gr_id">
               {{ new Date(gr.created_at).toLocaleDateString('id-ID') }} - {{ gr.nama_outlet || '-' }} - {{ gr.division_name || '-' }} - {{ gr.packing_number }} ({{ gr.supplier_name }})
             </option>
           </optgroup>
@@ -150,9 +161,11 @@ import Swal from 'sweetalert2';
 const props = defineProps({
   packingLists: Array,
   roSupplierGRs: Array,
+  warehouseDivisions: Array,
 });
 const packingLists = ref(props.packingLists || []);
 const roSupplierGRs = ref(props.roSupplierGRs || []);
+const warehouseDivisions = ref(props.warehouseDivisions || []);
 
 // Debug logging
 console.log('Packing Lists:', packingLists.value);
@@ -161,6 +174,7 @@ console.log('Packing Lists length:', packingLists.value.length);
 console.log('RO Supplier GRs length:', roSupplierGRs.value.length);
 const packingListItems = reactive([]);
 const selectedPackingListId = ref('');
+const selectedWarehouseDivision = ref('');
 const isLoadingItems = ref(false);
 const barcodeInputVal = ref('');
 const scanFeedback = ref('');
@@ -188,6 +202,18 @@ const isROSupplierGR = computed(() => {
   const value = selectedPackingListId.value;
   return value && typeof value === 'string' && value.startsWith('gr_');
 });
+
+// Filter packing lists berdasarkan warehouse division
+const filteredPackingLists = computed(() => {
+  if (!selectedWarehouseDivision.value) return [];
+  return packingLists.value.filter(pl => pl.warehouse_division_id == selectedWarehouseDivision.value);
+});
+
+// Filter RO Supplier GR berdasarkan warehouse division
+const filteredROSupplierGRs = computed(() => {
+  if (!selectedWarehouseDivision.value) return [];
+  return roSupplierGRs.value.filter(gr => gr.warehouse_division_id == selectedWarehouseDivision.value);
+});
 const selectedPackingList = computed(() => {
   const value = selectedPackingListId.value;
   if (!value) return null;
@@ -199,6 +225,17 @@ const selectedPackingList = computed(() => {
     return packingLists.value.find(pl => pl.id == value) || null;
   }
 });
+
+function onWarehouseDivisionChange() {
+  console.log('=== onWarehouseDivisionChange START ===');
+  console.log('selectedWarehouseDivision.value:', selectedWarehouseDivision.value);
+  
+  // Reset selected packing list
+  selectedPackingListId.value = '';
+  packingListItems.splice(0, packingListItems.length);
+  
+  console.log('=== onWarehouseDivisionChange END ===');
+}
 
 async function onPackingListChange() {
   console.log('=== onPackingListChange START ===');

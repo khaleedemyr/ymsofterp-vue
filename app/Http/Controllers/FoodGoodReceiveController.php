@@ -19,6 +19,7 @@ class FoodGoodReceiveController extends Controller
             ->leftJoin('users as u', 'gr.received_by', '=', 'u.id')
             ->select(
                 'gr.id',
+                'gr.gr_number',
                 'gr.receive_date',
                 'po.number as po_number',
                 's.name as supplier_name',
@@ -27,7 +28,8 @@ class FoodGoodReceiveController extends Controller
         if ($request->search) {
             $search = $request->search;
             $query->where(function($q) use ($search) {
-                $q->where('po.number', 'like', "%$search%")
+                $q->where('gr.gr_number', 'like', "%$search%")
+                  ->orWhere('po.number', 'like', "%$search%")
                   ->orWhere('s.name', 'like', "%$search%")
                   ->orWhere('u.nama_lengkap', 'like', "%$search%")
                 ;
