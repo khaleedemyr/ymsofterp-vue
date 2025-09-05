@@ -19,7 +19,7 @@
               </div>
              <div class="flex items-start gap-2">
                <span class="bg-blue-600 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5">2</span>
-               <span><strong>Tambah Items:</strong> Cari item dengan mengetik nama item, pilih unit dan isi quantity serta harga. Klik "+ Tambah Item" untuk menambah item baru.</span>
+               <span><strong>Tambah Items:</strong> Cari item dengan mengetik nama item, pilih unit dan isi quantity serta harga. <strong>Jika metode pembayaran Contra Bon, unit medium dan harga akan otomatis terisi.</strong> Klik "+ Tambah Item" untuk menambah item baru.</span>
              </div>
              <div class="flex items-start gap-2">
                <span class="bg-blue-600 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5">3</span>
@@ -153,13 +153,27 @@
                       <input type="number" min="0.01" step="0.01" v-model.number="item.qty" @input="calculateSubtotal(idx)" class="input input-bordered w-full" required />
                     </td>
                     <td class="px-3 py-2 min-w-[100px]">
-                      <select v-model="item.unit_id" class="input input-bordered w-full" required>
-                        <option value="">Pilih Unit</option>
-                        <option v-for="u in item.unitOptions" :key="u.id" :value="u.id">{{ u.name }}</option>
-                      </select>
+                      <div class="relative">
+                        <select v-model="item.unit_id" class="input input-bordered w-full" required>
+                          <option value="">Pilih Unit</option>
+                          <option v-for="u in item.unitOptions" :key="u.id" :value="u.id">
+                            {{ u.name }}{{ u.is_medium ? ' (Medium)' : '' }}
+                          </option>
+                        </select>
+                        <div v-if="form.payment_method === 'contra_bon' && item.unitOptions.find(u => u.id === item.unit_id)?.is_medium" 
+                             class="absolute -top-1 -right-1 bg-blue-500 text-white text-xs px-1 rounded-full">
+                          Auto
+                        </div>
+                      </div>
                     </td>
                     <td class="px-3 py-2 min-w-[150px]">
-                      <input type="number" min="0" step="0.01" v-model.number="item.price" @input="calculateSubtotal(idx)" class="input input-bordered w-full" required />
+                      <div class="relative">
+                        <input type="number" min="0" step="0.01" v-model.number="item.price" @input="calculateSubtotal(idx)" class="input input-bordered w-full" required />
+                        <div v-if="form.payment_method === 'contra_bon' && item.price > 0" 
+                             class="absolute -top-1 -right-1 bg-green-500 text-white text-xs px-1 rounded-full">
+                          Auto
+                        </div>
+                      </div>
                     </td>
                     <td class="px-3 py-2 min-w-[150px] text-right">
                       {{ formatRupiah(item.subtotal) }}
@@ -325,14 +339,52 @@ function onItemInput(idx, e) {
 }
 
 async function selectItem(idx, item) {
+  console.log('selectItem called', {
+    idx,
+    item: item.name,
+    payment_method: form.value.payment_method,
+    outlet_id: form.value.outlet_id,
+    region_id: page.props.auth?.user?.region_id
+  });
+
   form.value.items[idx].item_id = item.id
   form.value.items[idx].item_name = item.name
   form.value.items[idx].suggestions = []
   form.value.items[idx].showDropdown = false
   form.value.items[idx].highlightedIndex = -1
-  const res = await axios.get(`/retail-food/get-item-units/${item.id}`)
+  
+  // Get units with payment method and outlet info for contra bon
+  const res = await axios.get(`/retail-food/get-item-units/${item.id}`, {
+    params: {
+      payment_method: form.value.payment_method,
+      outlet_id: form.value.outlet_id,
+      region_id: page.props.auth?.user?.region_id
+    }
+  })
+  
+  console.log('API response:', res.data);
+  
   form.value.items[idx].unitOptions = res.data.units
-  form.value.items[idx].unit_id = ''
+  
+  // Auto-fill unit and price for contra bon payment method
+  if (form.value.payment_method === 'contra_bon' && res.data.default_unit) {
+    console.log('Auto-filling for contra bon:', {
+      default_unit: res.data.default_unit,
+      default_price: res.data.default_price
+    });
+    
+    form.value.items[idx].unit_id = res.data.default_unit.id
+    if (res.data.default_price > 0) {
+      form.value.items[idx].price = res.data.default_price
+    }
+    calculateSubtotal(idx)
+  } else {
+    console.log('Not auto-filling:', {
+      payment_method: form.value.payment_method,
+      has_default_unit: !!res.data.default_unit
+    });
+    form.value.items[idx].unit_id = ''
+  }
 }
 
 function onItemBlur(idx) {
@@ -400,12 +452,38 @@ watch([
 ], fetchDailyTotal, { immediate: true, deep: true })
 
 // Watch untuk otomatis pilih CASH SUPPLIER jika metode pembayaran cash
-watch(() => form.value.payment_method, (newValue) => {
+watch(() => form.value.payment_method, async (newValue) => {
   if (newValue === 'cash') {
     // Cari supplier dengan nama "CASH SUPPLIER"
     const cashSupplier = props.suppliers.find(s => s.name.toLowerCase().includes('cash supplier'))
     if (cashSupplier) {
       form.value.supplier = cashSupplier
+    }
+  } else if (newValue === 'contra_bon') {
+    // Auto-fill unit medium and price for existing items when switching to contra bon
+    for (let idx = 0; idx < form.value.items.length; idx++) {
+      const item = form.value.items[idx]
+      if (item.item_id && item.item_id !== '') {
+        try {
+          const res = await axios.get(`/retail-food/get-item-units/${item.item_id}`, {
+            params: {
+              payment_method: 'contra_bon',
+              outlet_id: form.value.outlet_id,
+              region_id: page.props.auth?.user?.region_id
+            }
+          })
+          
+          if (res.data.default_unit) {
+            form.value.items[idx].unit_id = res.data.default_unit.id
+            if (res.data.default_price > 0) {
+              form.value.items[idx].price = res.data.default_price
+            }
+            calculateSubtotal(idx)
+          }
+        } catch (error) {
+          console.error('Error updating item for contra bon:', error)
+        }
+      }
     }
   }
 })

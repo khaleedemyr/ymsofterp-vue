@@ -3,28 +3,28 @@
     <div class="max-w-7xl mx-auto py-8 px-2">
       <div class="flex justify-between items-center mb-6">
         <h1 class="text-2xl font-bold text-gray-800 flex items-center gap-2">
-          <i class="fa-solid fa-store text-blue-500"></i> Outlet Retail Food
+          <i class="fa-solid fa-undo text-orange-500"></i> Outlet Food Return
         </h1>
-        <button @click="goCreate" class="bg-gradient-to-r from-blue-500 to-blue-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold">
-          + Tambah Baru
+        <button @click="goCreate" class="bg-gradient-to-r from-orange-500 to-orange-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold">
+          + Buat Return
         </button>
       </div>
 
       <!-- Filter Section -->
       <div class="bg-white rounded-xl shadow-lg p-6 mb-6">
         <h3 class="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
-          <i class="fa-solid fa-filter text-blue-500"></i> Filter Data
+          <i class="fa-solid fa-filter text-orange-500"></i> Filter Data
         </h3>
         
-        <form @submit.prevent="applyFilters" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <form @submit.prevent="applyFilters" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           <!-- Search -->
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Cari</label>
             <input 
               type="text" 
               v-model="filters.search" 
-              placeholder="No. transaksi, supplier, outlet..."
-              class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              placeholder="No. return, GR, outlet..."
+              class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
             />
           </div>
 
@@ -34,7 +34,7 @@
             <input 
               type="date" 
               v-model="filters.date_from" 
-              class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
             />
           </div>
 
@@ -44,29 +44,15 @@
             <input 
               type="date" 
               v-model="filters.date_to" 
-              class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
             />
           </div>
-
-          <!-- Payment Method -->
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">Metode Pembayaran</label>
-            <select 
-              v-model="filters.payment_method" 
-              class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            >
-              <option value="">Semua</option>
-              <option value="cash">Cash</option>
-              <option value="contra_bon">Contra Bon</option>
-            </select>
-          </div>
-
         </form>
 
         <!-- Filter Actions -->
         <div class="flex justify-between items-center mt-4">
           <div class="text-sm text-gray-600">
-            <span v-if="hasActiveFilters" class="text-blue-600 font-medium">
+            <span v-if="hasActiveFilters" class="text-orange-600 font-medium">
               Filter aktif: {{ activeFiltersCount }}
             </span>
             <span v-else class="text-gray-500">
@@ -83,7 +69,7 @@
             </button>
             <button 
               @click="applyFilters" 
-              class="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
+              class="px-4 py-2 text-sm font-medium text-white bg-orange-600 border border-orange-600 rounded-lg hover:bg-orange-700 transition-colors"
             >
               <i class="fa-solid fa-search mr-1"></i> Terapkan Filter
             </button>
@@ -92,16 +78,16 @@
       </div>
 
       <!-- Results Info -->
-      <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+      <div class="bg-orange-50 border border-orange-200 rounded-lg p-4 mb-4">
         <div class="flex justify-between items-center">
-          <div class="text-sm text-blue-800">
+          <div class="text-sm text-orange-800">
             <i class="fa-solid fa-info-circle mr-1"></i>
-            Menampilkan {{ props.retailFoods.data.length }} dari {{ props.retailFoods.total }} transaksi
+            Menampilkan {{ props.returns.data.length }} dari {{ props.returns.total }} return
             <span v-if="hasActiveFilters" class="ml-2 font-medium">
               (dengan filter aktif)
             </span>
           </div>
-          <div v-if="hasActiveFilters" class="text-xs text-blue-600">
+          <div v-if="hasActiveFilters" class="text-xs text-orange-600">
             <i class="fa-solid fa-filter mr-1"></i>
             Filter: {{ activeFiltersCount }} aktif
           </div>
@@ -114,47 +100,36 @@
             <thead class="bg-gray-50">
               <tr>
                 <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Tanggal</th>
-                <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">No. Transaksi</th>
+                <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">No. Return</th>
+                <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">No. GR</th>
                 <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Outlet</th>
                 <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Warehouse Outlet</th>
-                <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Supplier</th>
-                <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Metode Pembayaran</th>
-                <th class="px-6 py-3 text-right text-xs font-bold text-gray-700 uppercase tracking-wider">Total</th>
                 <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Status</th>
                 <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Aksi</th>
               </tr>
             </thead>
             <tbody class="bg-white divide-y divide-gray-200">
-              <tr v-if="!props.retailFoods.data.length">
-                <td colspan="8" class="text-center py-10 text-gray-400">Tidak ada data.</td>
+              <tr v-if="!props.returns.data.length">
+                <td colspan="7" class="text-center py-10 text-gray-400">Tidak ada data.</td>
               </tr>
-              <tr v-for="row in props.retailFoods.data" :key="row.id">
-                <td class="px-6 py-3">{{ formatDate(row.transaction_date) }}</td>
-                <td class="px-6 py-3">{{ row.retail_number }}</td>
-                <td class="px-6 py-3">{{ row.outlet?.nama_outlet || '-' }}</td>
-                <td class="px-6 py-3">{{ row.warehouse_outlet_name || '-' }}</td>
-                <td class="px-6 py-3">{{ row.supplier_name || '-' }}</td>
-                <td class="px-6 py-3">
-                  <span :class="{
-                    'px-2 py-1 text-xs font-semibold rounded-full': true,
-                    'bg-green-100 text-green-800': row.payment_method === 'cash',
-                    'bg-blue-100 text-blue-800': row.payment_method === 'contra_bon'
-                  }">
-                    {{ row.payment_method === 'cash' ? 'Cash' : 'Contra Bon' }}
-                  </span>
-                </td>
-                <td class="px-6 py-3 text-right">{{ formatRupiah(row.total_amount) }}</td>
+              <tr v-for="row in props.returns.data" :key="row.id">
+                <td class="px-6 py-3">{{ formatDate(row.return_date) }}</td>
+                <td class="px-6 py-3">{{ row.return_number }}</td>
+                <td class="px-6 py-3">{{ row.gr_number }}</td>
+                <td class="px-6 py-3">{{ row.nama_outlet }}</td>
+                <td class="px-6 py-3">{{ row.warehouse_outlet_name }}</td>
                 <td class="px-6 py-3">
                   <span :class="{
                     'px-2 py-1 text-xs font-semibold rounded-full': true,
                     'bg-yellow-100 text-yellow-800': row.status === 'draft',
-                    'bg-green-100 text-green-800': row.status === 'approved'
+                    'bg-green-100 text-green-800': row.status === 'approved',
+                    'bg-red-100 text-red-800': row.status === 'rejected'
                   }">
-                    {{ row.status === 'draft' ? 'Draft' : 'Approved' }}
+                    {{ formatStatus(row.status) }}
                   </span>
                 </td>
                 <td class="px-6 py-3">
-                  <button class="inline-flex items-center btn btn-xs bg-blue-100 text-blue-800 hover:bg-blue-200 rounded px-2 py-1 font-semibold transition" @click="goDetail(row.id)">
+                  <button class="inline-flex items-center btn btn-xs bg-orange-100 text-orange-800 hover:bg-orange-200 rounded px-2 py-1 font-semibold transition" @click="goDetail(row.id)">
                     <i class="fa fa-eye mr-1"></i> Detail
                   </button>
                   <button 
@@ -162,7 +137,7 @@
                     class="inline-flex items-center btn btn-xs bg-red-100 text-red-700 hover:bg-red-200 rounded px-2 py-1 font-semibold transition ml-2" 
                     @click="onDelete(row)" 
                     :disabled="loadingId === row.id"
-                    title="Hapus transaksi"
+                    title="Hapus return"
                   >
                     <span v-if="loadingId === row.id"><i class="fa fa-spinner fa-spin mr-1"></i> Menghapus...</span>
                     <span v-else><i class="fa fa-trash mr-1"></i> Hapus</span>
@@ -170,7 +145,7 @@
                   <span 
                     v-else-if="!canDelete" 
                     class="inline-flex items-center text-xs text-gray-400 ml-2"
-                    title="Hanya admin yang dapat menghapus transaksi"
+                    title="Hanya admin yang dapat menghapus return"
                   >
                     <i class="fa fa-lock mr-1"></i> Hapus
                   </span>
@@ -184,14 +159,14 @@
       <!-- Pagination -->
       <div class="flex justify-end mt-4 gap-2">
         <button
-          v-for="link in props.retailFoods.links"
+          v-for="link in props.returns.links"
           :key="link.label"
           :disabled="!link.url"
           @click="goToPage(link.url)"
           v-html="link.label"
           class="px-3 py-1 rounded-lg border text-sm font-semibold"
           :class="[
-            link.active ? 'bg-blue-600 text-white shadow-lg' : 'bg-white text-blue-700 hover:bg-blue-50',
+            link.active ? 'bg-orange-600 text-white shadow-lg' : 'bg-white text-orange-700 hover:bg-orange-50',
             !link.url ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
           ]"
         />
@@ -206,10 +181,11 @@ import { router } from '@inertiajs/vue3'
 import Swal from 'sweetalert2'
 import { ref, computed, watch } from 'vue'
 import { debounce } from 'lodash'
+import axios from 'axios'
 
 const props = defineProps({
   user: Object,
-  retailFoods: Object,
+  returns: Object,
   filters: Object
 })
 
@@ -219,16 +195,14 @@ const loadingId = ref(null)
 const filters = ref({
   search: props.filters?.search || '',
   date_from: props.filters?.date_from || '',
-  date_to: props.filters?.date_to || '',
-  payment_method: props.filters?.payment_method || ''
+  date_to: props.filters?.date_to || ''
 })
 
 // Computed properties for filter status
 const hasActiveFilters = computed(() => {
   return filters.value.search || 
          filters.value.date_from || 
-         filters.value.date_to || 
-         filters.value.payment_method
+         filters.value.date_to
 })
 
 const activeFiltersCount = computed(() => {
@@ -236,7 +210,6 @@ const activeFiltersCount = computed(() => {
   if (filters.value.search) count++
   if (filters.value.date_from) count++
   if (filters.value.date_to) count++
-  if (filters.value.payment_method) count++
   return count
 })
 
@@ -262,9 +235,8 @@ function applyFilters() {
   if (filters.value.search) filterParams.search = filters.value.search
   if (filters.value.date_from) filterParams.date_from = filters.value.date_from
   if (filters.value.date_to) filterParams.date_to = filters.value.date_to
-  if (filters.value.payment_method) filterParams.payment_method = filters.value.payment_method
   
-  router.get('/retail-food', filterParams, { 
+  router.get('/outlet-food-return', filterParams, { 
     preserveState: true, 
     replace: true 
   })
@@ -274,31 +246,39 @@ function clearFilters() {
   filters.value = {
     search: '',
     date_from: '',
-    date_to: '',
-    payment_method: ''
+    date_to: ''
   }
-  router.get('/retail-food', {}, { 
+  router.get('/outlet-food-return', {}, { 
     preserveState: true, 
     replace: true 
   })
 }
 
 function goCreate() {
-  router.visit('/retail-food/create')
+  router.visit('/outlet-food-return/create')
 }
 
 function goDetail(id) {
-  router.visit(`/retail-food/${id}`)
+  router.visit(`/outlet-food-return/${id}`)
 }
 
 function goToPage(url) {
   if (url) router.visit(url, { preserveState: true, replace: true })
 }
 
+function formatStatus(status) {
+  const statusMap = {
+    draft: 'Draft',
+    approved: 'Approved',
+    rejected: 'Rejected'
+  }
+  return statusMap[status] || status
+}
+
 async function onDelete(row) {
   const result = await Swal.fire({
-    title: 'Hapus Transaksi?',
-    text: `Yakin ingin menghapus transaksi ${row.retail_number}?`,
+    title: 'Hapus Return?',
+    text: `Yakin ingin menghapus return ${row.return_number}?`,
     icon: 'warning',
     showCancelButton: true,
     confirmButtonColor: '#3085d6',
@@ -311,7 +291,7 @@ async function onDelete(row) {
 
   loadingId.value = row.id
   try {
-    const res = await axios.delete(`/retail-food/${row.id}`)
+    const res = await axios.delete(`/outlet-food-return/${row.id}`)
     if (res.data && res.data.message) {
       Swal.fire({
         icon: 'success',
@@ -326,7 +306,7 @@ async function onDelete(row) {
     Swal.fire({
       icon: 'error',
       title: 'Gagal',
-      text: e.response?.data?.message || 'Gagal menghapus transaksi'
+      text: e.response?.data?.message || 'Gagal menghapus return'
     })
   } finally {
     loadingId.value = null
@@ -337,9 +317,4 @@ function formatDate(date) {
   if (!date) return '-'
   return new Date(date).toLocaleDateString('id-ID')
 }
-
-function formatRupiah(val) {
-  if (!val) return 'Rp 0'
-  return 'Rp ' + Number(val).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-}
-</script> 
+</script>

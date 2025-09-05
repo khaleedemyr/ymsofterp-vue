@@ -30,7 +30,7 @@ class RetailFoodController extends Controller
         return $prefix . $date . str_pad($sequence, 4, '0', STR_PAD_LEFT);
     }
 
-    public function index()
+    public function index(Request $request)
     {
         $user = auth()->user()->load('outlet');
         $userOutletId = $user->id_outlet;
@@ -38,6 +38,13 @@ class RetailFoodController extends Controller
         if (!$outletExists && $userOutletId != 1) {
             abort(403, 'Outlet tidak terdaftar');
         }
+
+        // Get filter parameters
+        $search = $request->get('search', '');
+        $dateFrom = $request->get('date_from', '');
+        $dateTo = $request->get('date_to', '');
+        $paymentMethod = $request->get('payment_method', '');
+
         // Query dengan join warehouse outlet dan supplier
         $query = RetailFood::query()
             ->with(['outlet', 'creator', 'items', 'supplier'])
@@ -45,13 +52,48 @@ class RetailFoodController extends Controller
             ->leftJoin('suppliers as s', 'retail_food.supplier_id', '=', 's.id')
             ->addSelect('retail_food.*', 'wo.name as warehouse_outlet_name', 's.name as supplier_name')
             ->orderByDesc('retail_food.created_at');
+
+        // Apply outlet filter
         if ($userOutletId != 1) {
             $query->where('retail_food.outlet_id', $userOutletId);
         }
-        $retailFoods = $query->paginate(10);
+
+        // Apply search filter
+        if ($search) {
+            $query->where(function($q) use ($search) {
+                $q->where('retail_food.retail_number', 'like', "%{$search}%")
+                  ->orWhere('s.name', 'like', "%{$search}%")
+                  ->orWhere('wo.name', 'like', "%{$search}%")
+                  ->orWhereHas('outlet', function($outletQuery) use ($search) {
+                      $outletQuery->where('nama_outlet', 'like', "%{$search}%");
+                  });
+            });
+        }
+
+        // Apply date filter
+        if ($dateFrom) {
+            $query->whereDate('retail_food.transaction_date', '>=', $dateFrom);
+        }
+        if ($dateTo) {
+            $query->whereDate('retail_food.transaction_date', '<=', $dateTo);
+        }
+
+        // Apply payment method filter
+        if ($paymentMethod) {
+            $query->where('retail_food.payment_method', $paymentMethod);
+        }
+
+        $retailFoods = $query->paginate(10)->withQueryString();
+
         return Inertia::render('RetailFood/Index', [
             'user' => $user,
             'retailFoods' => $retailFoods,
+            'filters' => [
+                'search' => $search,
+                'date_from' => $dateFrom,
+                'date_to' => $dateTo,
+                'payment_method' => $paymentMethod,
+            ]
         ]);
     }
 
@@ -575,110 +617,271 @@ class RetailFoodController extends Controller
 
     public function destroy($id)
     {
-        DB::beginTransaction();
         try {
-            $retailFood = RetailFood::with('items')->findOrFail($id);
-            if ($retailFood->status === 'approved') {
+            $user = auth()->user();
+            
+            // Check if user has permission to delete (only admin with id_outlet = 1)
+            if ($user->id_outlet !== 1) {
                 return response()->json([
-                    'message' => 'Tidak dapat menghapus transaksi yang sudah diapprove'
-                ], 422);
+                    'success' => false,
+                    'message' => 'Anda tidak memiliki izin untuk menghapus transaksi retail food'
+                ], 403);
             }
-            $outletId = $retailFood->outlet_id;
-            foreach ($retailFood->items as $item) {
-                $itemMaster = DB::table('items')->where('name', $item->item_name)->first();
-                if (!$itemMaster) continue;
-                $inventoryItem = DB::table('outlet_food_inventory_items')->where('item_id', $itemMaster->id)->first();
-                if (!$inventoryItem) continue;
-                // Konversi qty ke small, medium, large
-                $smallConv = $itemMaster->small_conversion_qty ?: 1;
-                $mediumConv = $itemMaster->medium_conversion_qty ?: 1;
-                $qty_small = 0; $qty_medium = 0; $qty_large = 0;
-                if ($item->unit == DB::table('units')->where('id', $itemMaster->large_unit_id)->value('name')) {
-                    $qty_large = (float) $item->qty;
-                    $qty_medium = $qty_large * $mediumConv;
-                    $qty_small = $qty_medium * $smallConv;
-                } elseif ($item->unit == DB::table('units')->where('id', $itemMaster->medium_unit_id)->value('name')) {
-                    $qty_medium = (float) $item->qty;
-                    $qty_large = $mediumConv > 0 ? $qty_medium / $mediumConv : 0;
-                    $qty_small = $qty_medium * $smallConv;
-                } elseif ($item->unit == DB::table('units')->where('id', $itemMaster->small_unit_id)->value('name')) {
-                    $qty_small = (float) $item->qty;
-                    $qty_medium = $smallConv > 0 ? $qty_small / $smallConv : 0;
-                    $qty_large = ($smallConv > 0 && $mediumConv > 0) ? $qty_small / ($smallConv * $mediumConv) : 0;
-                }
-                // Rollback stok
-                $stock = DB::table('outlet_food_inventory_stocks')
-                    ->where('inventory_item_id', $inventoryItem->id)
-                    ->where('id_outlet', $outletId)
-                    ->first();
-                if ($stock) {
-                    DB::table('outlet_food_inventory_stocks')
-                        ->where('id', $stock->id)
-                        ->update([
-                            'qty_small' => $stock->qty_small - $qty_small,
-                            'qty_medium' => $stock->qty_medium - $qty_medium,
-                            'qty_large' => $stock->qty_large - $qty_large,
-                            'value' => $stock->value - ($qty_small * $item->price),
-                            'updated_at' => now(),
-                        ]);
-                }
-                // Hapus kartu stok terkait transaksi ini
-                DB::table('outlet_food_inventory_cards')
-                    ->where('reference_type', 'retail_food')
-                    ->where('reference_id', $retailFood->id)
-                    ->where('inventory_item_id', $inventoryItem->id)
-                    ->where('id_outlet', $outletId)
-                    ->delete();
-                // Hapus cost history terkait transaksi ini
-                DB::table('outlet_food_inventory_cost_histories')
-                    ->where('reference_type', 'retail_food')
-                    ->where('reference_id', $retailFood->id)
-                    ->where('inventory_item_id', $inventoryItem->id)
-                    ->where('id_outlet', $outletId)
-                    ->delete();
-            }
-            // Hapus retail food dan items
-            RetailFoodItem::where('retail_food_id', $retailFood->id)->delete();
-            $retailFood->delete();
-            DB::commit();
-            return response()->json([
-                'message' => 'Transaksi berhasil dihapus'
+
+            $retailFood = RetailFood::findOrFail($id);
+
+            \Log::info('RETAIL_FOOD_DELETE: Starting deletion process', [
+                'user_id' => $user->id,
+                'retail_food_id' => $id,
+                'retail_number' => $retailFood->retail_number
             ]);
+
+            DB::beginTransaction();
+
+            // Get items to rollback inventory
+            $items = $retailFood->items;
+            
+            // Rollback inventory for each item
+            foreach ($items as $item) {
+                $this->rollbackInventory($item, $retailFood->outlet_id);
+            }
+
+            // Delete retail food items
+            $retailFood->items()->delete();
+            
+            // Delete retail food
+            $retailFood->delete();
+
+            DB::commit();
+
+            \Log::info('RETAIL_FOOD_DELETE: Deletion completed successfully', [
+                'retail_food_id' => $id,
+                'retail_number' => $retailFood->retail_number
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Transaksi retail food berhasil dihapus'
+            ]);
+
         } catch (\Exception $e) {
             DB::rollBack();
+            
+            \Log::error('RETAIL_FOOD_DELETE: Deletion failed', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'retail_food_id' => $id
+            ]);
+
             return response()->json([
-                'message' => 'Gagal menghapus transaksi',
-                'error' => $e->getMessage()
+                'success' => false,
+                'message' => 'Gagal menghapus transaksi: ' . $e->getMessage()
             ], 500);
         }
     }
 
-    public function getItemUnits($itemId)
+    private function rollbackInventory($item, $outletId)
     {
+        try {
+            // Find item master
+            $itemMaster = DB::table('items')->where('name', $item->item_name)->first();
+            if (!$itemMaster) {
+                \Log::warning('RETAIL_FOOD_DELETE: Item master not found', ['item_name' => $item->item_name]);
+                return;
+            }
+
+            // Find inventory item
+            $inventoryItem = DB::table('food_inventory_items')->where('item_id', $itemMaster->id)->first();
+            if (!$inventoryItem) {
+                \Log::warning('RETAIL_FOOD_DELETE: Inventory item not found', ['item_id' => $itemMaster->id]);
+                return;
+            }
+
+            $inventory_item_id = $inventoryItem->id;
+            $unit = $item->unit;
+            $qty_input = $item->qty;
+            
+            // Get unit names
+            $unitSmall = DB::table('units')->where('id', $itemMaster->small_unit_id)->value('name');
+            $unitMedium = DB::table('units')->where('id', $itemMaster->medium_unit_id)->value('name');
+            $unitLarge = DB::table('units')->where('id', $itemMaster->large_unit_id)->value('name');
+            $smallConv = $itemMaster->small_conversion_qty ?: 1;
+            $mediumConv = $itemMaster->medium_conversion_qty ?: 1;
+
+            // Convert quantity to small unit
+            $qty_small = 0;
+            if ($unit === $unitSmall) {
+                $qty_small = $qty_input;
+            } elseif ($unit === $unitMedium) {
+                $qty_small = $qty_input * $smallConv;
+            } elseif ($unit === $unitLarge) {
+                $qty_small = $qty_input * $smallConv * $mediumConv;
+            } else {
+                $qty_small = $qty_input;
+            }
+
+            // Find outlet inventory stock
+            $stock = DB::table('food_inventory_stocks')
+                ->where('inventory_item_id', $inventory_item_id)
+                ->where('outlet_id', $outletId)
+                ->first();
+
+            if ($stock) {
+                // Rollback stock (subtract the quantity)
+                DB::table('food_inventory_stocks')
+                    ->where('inventory_item_id', $inventory_item_id)
+                    ->where('outlet_id', $outletId)
+                    ->update([
+                        'qty_small' => $stock->qty_small - $qty_small,
+                        'updated_at' => now()
+                    ]);
+
+                \Log::info('RETAIL_FOOD_DELETE: Inventory rolled back', [
+                    'item_name' => $item->item_name,
+                    'qty_removed' => $qty_small,
+                    'new_stock' => $stock->qty_small - $qty_small
+                ]);
+            } else {
+                \Log::warning('RETAIL_FOOD_DELETE: Stock not found for rollback', [
+                    'inventory_item_id' => $inventory_item_id,
+                    'outlet_id' => $outletId
+                ]);
+            }
+
+        } catch (\Exception $e) {
+            \Log::error('RETAIL_FOOD_DELETE: Rollback inventory failed', [
+                'error' => $e->getMessage(),
+                'item_name' => $item->item_name
+            ]);
+        }
+    }
+
+    public function getItemUnits(Request $request, $itemId)
+    {
+        \Log::info('getItemUnits called', [
+            'itemId' => $itemId,
+            'payment_method' => $request->get('payment_method'),
+            'outlet_id' => $request->get('outlet_id'),
+            'region_id' => $request->get('region_id')
+        ]);
+
         $item = \DB::table('items')->where('id', $itemId)->first();
         if (!$item) {
+            \Log::warning('Item not found', ['itemId' => $itemId]);
             return response()->json(['units' => []]);
         }
+
+        $paymentMethod = $request->get('payment_method', 'cash');
+        $outletId = $request->get('outlet_id');
+        $regionId = $request->get('region_id');
+
+        // Get unit names
+        $unitSmall = \DB::table('units')->where('id', $item->small_unit_id)->value('name');
+        $unitMedium = \DB::table('units')->where('id', $item->medium_unit_id)->value('name');
+        $unitLarge = \DB::table('units')->where('id', $item->large_unit_id)->value('name');
+
         $units = [];
+        $defaultUnit = null;
+        $defaultPrice = 0;
+
+        // Build units array
         if ($item->small_unit_id) {
             $units[] = [
                 'id' => $item->small_unit_id,
-                'name' => \DB::table('units')->where('id', $item->small_unit_id)->value('name')
+                'name' => $unitSmall,
+                'is_medium' => false
             ];
         }
         if ($item->medium_unit_id) {
             $units[] = [
                 'id' => $item->medium_unit_id,
-                'name' => \DB::table('units')->where('id', $item->medium_unit_id)->value('name')
+                'name' => $unitMedium,
+                'is_medium' => true
             ];
         }
         if ($item->large_unit_id) {
             $units[] = [
                 'id' => $item->large_unit_id,
-                'name' => \DB::table('units')->where('id', $item->large_unit_id)->value('name')
+                'name' => $unitLarge,
+                'is_medium' => false
             ];
         }
-        return response()->json(['units' => $units]);
+
+        // For contra bon payment method, prioritize medium unit and get price
+        if ($paymentMethod === 'contra_bon') {
+            \Log::info('Processing contra bon payment method', [
+                'item_id' => $itemId,
+                'medium_unit_id' => $item->medium_unit_id,
+                'small_unit_id' => $item->small_unit_id
+            ]);
+
+            // Set default unit to medium if available
+            if ($item->medium_unit_id) {
+                $defaultUnit = [
+                    'id' => $item->medium_unit_id,
+                    'name' => $unitMedium
+                ];
+                \Log::info('Using medium unit as default', ['unit' => $defaultUnit]);
+            } else {
+                // Fallback to small unit if medium not available
+                $defaultUnit = [
+                    'id' => $item->small_unit_id,
+                    'name' => $unitSmall
+                ];
+                \Log::info('Using small unit as default (medium not available)', ['unit' => $defaultUnit]);
+            }
+
+            // Get price from item_prices with same priority as floor order
+            $price = \DB::table('item_prices')
+                ->where('item_id', $itemId)
+                ->where(function($q) use ($outletId, $regionId) {
+                    $q->where('availability_price_type', 'all');
+                    if ($outletId) {
+                        $q->orWhere(function($q2) use ($outletId) {
+                            $q2->where('availability_price_type', 'outlet')->where('outlet_id', $outletId);
+                        });
+                    }
+                    if ($regionId) {
+                        $q->orWhere(function($q2) use ($regionId) {
+                            $q2->where('availability_price_type', 'region')->where('region_id', $regionId);
+                        });
+                    }
+                })
+                ->orderByRaw("CASE 
+                    WHEN availability_price_type = 'outlet' THEN 1
+                    WHEN availability_price_type = 'region' THEN 2
+                    ELSE 3 END")
+                ->orderByDesc('id')
+                ->first();
+
+            \Log::info('Price query result', [
+                'price_found' => $price ? true : false,
+                'price_data' => $price
+            ]);
+
+            if ($price) {
+                $finalPrice = $price->price;
+                // Round up to nearest 100 (same as floor order)
+                $defaultPrice = ceil($finalPrice / 100) * 100;
+                \Log::info('Price calculated', [
+                    'original_price' => $finalPrice,
+                    'rounded_price' => $defaultPrice
+                ]);
+            } else {
+                \Log::warning('No price found for item', ['item_id' => $itemId]);
+            }
+        }
+
+        $response = [
+            'units' => $units,
+            'default_unit' => $defaultUnit,
+            'default_price' => $defaultPrice,
+            'payment_method' => $paymentMethod
+        ];
+
+        \Log::info('getItemUnits response', $response);
+
+        return response()->json($response);
     }
 
     public function dailyTotal(Request $request)

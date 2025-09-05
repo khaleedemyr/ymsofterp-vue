@@ -800,6 +800,18 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     Route::resource('retail-non-food', \App\Http\Controllers\RetailNonFoodController::class);
     Route::get('retail-non-food/daily-total', [\App\Http\Controllers\RetailNonFoodController::class, 'dailyTotal']);
+    
+    // Outlet Food Return
+    Route::resource('outlet-food-return', \App\Http\Controllers\OutletFoodReturnController::class);
+    Route::get('outlet-food-return/get-warehouse-outlets', [\App\Http\Controllers\OutletFoodReturnController::class, 'getWarehouseOutlets'])->name('outlet-food-return.get-warehouse-outlets');
+    Route::get('outlet-food-return/get-good-receives', [\App\Http\Controllers\OutletFoodReturnController::class, 'getGoodReceives'])->name('outlet-food-return.get-good-receives');
+    Route::get('outlet-food-return/get-good-receive-items', [\App\Http\Controllers\OutletFoodReturnController::class, 'getGoodReceiveItems'])->name('outlet-food-return.get-good-receive-items');
+    Route::post('outlet-food-return/{id}/approve', [\App\Http\Controllers\OutletFoodReturnController::class, 'approve'])->name('outlet-food-return.approve');
+    
+    // Head Office Return Management
+    Route::resource('head-office-return', \App\Http\Controllers\HeadOfficeReturnController::class);
+    Route::post('head-office-return/{id}/approve', [\App\Http\Controllers\HeadOfficeReturnController::class, 'approve'])->name('head-office-return.approve');
+    Route::post('head-office-return/{id}/reject', [\App\Http\Controllers\HeadOfficeReturnController::class, 'reject'])->name('head-office-return.reject');
 });
 
 Route::resource('item-supplier', \App\Http\Controllers\ItemSupplierController::class);
@@ -927,6 +939,12 @@ Route::middleware(['auth'])->group(function () {
 // Route API untuk fetch warehouse outlet (dropdown, dsb)
 Route::get('/api/warehouse-outlets', [\App\Http\Controllers\WarehouseOutletController::class, 'apiListByOutlet']);
 Route::get('/api/warehouse-outlets/by-outlet/{outletId}', [\App\Http\Controllers\WarehouseOutletController::class, 'getByOutletId']);
+
+// Route API untuk outlet food return (auth only, no verified middleware)
+Route::middleware(['auth'])->group(function () {
+    Route::get('/api/outlet-food-return/get-good-receives', [\App\Http\Controllers\OutletFoodReturnController::class, 'getGoodReceives'])->name('api.outlet-food-return.get-good-receives');
+    Route::get('/api/outlet-food-return/get-good-receive-items', [\App\Http\Controllers\OutletFoodReturnController::class, 'getGoodReceiveItems'])->name('api.outlet-food-return.get-good-receive-items');
+});
 
 Route::post('promos/api-item-prices', [App\Http\Controllers\PromoController::class, 'apiItemPrices'])->name('promos.apiItemPrices');
 

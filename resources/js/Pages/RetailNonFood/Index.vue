@@ -10,6 +10,90 @@
         </button>
       </div>
 
+      <!-- Filter Section -->
+      <div class="bg-white rounded-xl shadow-lg p-6 mb-6">
+        <h3 class="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+          <i class="fa-solid fa-filter text-green-500"></i> Filter Data
+        </h3>
+        
+        <form @submit.prevent="applyFilters" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <!-- Search -->
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Cari</label>
+            <input 
+              type="text" 
+              v-model="filters.search" 
+              placeholder="No. transaksi, outlet..."
+              class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+            />
+          </div>
+
+          <!-- Date From -->
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Tanggal Dari</label>
+            <input 
+              type="date" 
+              v-model="filters.date_from" 
+              class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+            />
+          </div>
+
+          <!-- Date To -->
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Tanggal Sampai</label>
+            <input 
+              type="date" 
+              v-model="filters.date_to" 
+              class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+            />
+          </div>
+        </form>
+
+        <!-- Filter Actions -->
+        <div class="flex justify-between items-center mt-4">
+          <div class="text-sm text-gray-600">
+            <span v-if="hasActiveFilters" class="text-green-600 font-medium">
+              Filter aktif: {{ activeFiltersCount }}
+            </span>
+            <span v-else class="text-gray-500">
+              Tidak ada filter aktif
+            </span>
+          </div>
+          <div class="flex gap-2">
+            <button 
+              @click="clearFilters" 
+              v-if="hasActiveFilters"
+              class="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 border border-gray-300 rounded-lg hover:bg-gray-200 transition-colors"
+            >
+              <i class="fa-solid fa-times mr-1"></i> Reset Filter
+            </button>
+            <button 
+              @click="applyFilters" 
+              class="px-4 py-2 text-sm font-medium text-white bg-green-600 border border-green-600 rounded-lg hover:bg-green-700 transition-colors"
+            >
+              <i class="fa-solid fa-search mr-1"></i> Terapkan Filter
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Results Info -->
+      <div class="bg-green-50 border border-green-200 rounded-lg p-4 mb-4">
+        <div class="flex justify-between items-center">
+          <div class="text-sm text-green-800">
+            <i class="fa-solid fa-info-circle mr-1"></i>
+            Menampilkan {{ props.retailNonFoods.data.length }} dari {{ props.retailNonFoods.total }} transaksi
+            <span v-if="hasActiveFilters" class="ml-2 font-medium">
+              (dengan filter aktif)
+            </span>
+          </div>
+          <div v-if="hasActiveFilters" class="text-xs text-green-600">
+            <i class="fa-solid fa-filter mr-1"></i>
+            Filter: {{ activeFiltersCount }} aktif
+          </div>
+        </div>
+      </div>
+
       <div class="bg-white rounded-xl shadow-lg overflow-hidden">
         <div class="overflow-x-auto">
           <table class="min-w-full divide-y divide-gray-200">
@@ -46,10 +130,23 @@
                   <button class="inline-flex items-center btn btn-xs bg-green-100 text-green-800 hover:bg-green-200 rounded px-2 py-1 font-semibold transition" @click="goDetail(row.id)">
                     <i class="fa fa-eye mr-1"></i> Detail
                   </button>
-                  <button v-if="row.status === 'pending'" class="inline-flex items-center btn btn-xs bg-red-100 text-red-700 hover:bg-red-200 rounded px-2 py-1 font-semibold transition ml-2" @click="onDelete(row)" :disabled="loadingId === row.id">
+                  <button 
+                    v-if="canDelete" 
+                    class="inline-flex items-center btn btn-xs bg-red-100 text-red-700 hover:bg-red-200 rounded px-2 py-1 font-semibold transition ml-2" 
+                    @click="onDelete(row)" 
+                    :disabled="loadingId === row.id"
+                    title="Hapus transaksi"
+                  >
                     <span v-if="loadingId === row.id"><i class="fa fa-spinner fa-spin mr-1"></i> Menghapus...</span>
                     <span v-else><i class="fa fa-trash mr-1"></i> Hapus</span>
                   </button>
+                  <span 
+                    v-else-if="!canDelete" 
+                    class="inline-flex items-center text-xs text-gray-400 ml-2"
+                    title="Hanya admin yang dapat menghapus transaksi"
+                  >
+                    <i class="fa fa-lock mr-1"></i> Hapus
+                  </span>
                 </td>
               </tr>
             </tbody>
@@ -80,15 +177,80 @@
 import AppLayout from '@/Layouts/AppLayout.vue'
 import { router } from '@inertiajs/vue3'
 import Swal from 'sweetalert2'
-import { ref } from 'vue'
+import { ref, computed, watch } from 'vue'
+import { debounce } from 'lodash'
 import axios from 'axios'
 
 const props = defineProps({
   user: Object,
-  retailNonFoods: Object
+  retailNonFoods: Object,
+  filters: Object
 })
 
 const loadingId = ref(null)
+
+// Filter state
+const filters = ref({
+  search: props.filters?.search || '',
+  date_from: props.filters?.date_from || '',
+  date_to: props.filters?.date_to || ''
+})
+
+// Computed properties for filter status
+const hasActiveFilters = computed(() => {
+  return filters.value.search || 
+         filters.value.date_from || 
+         filters.value.date_to
+})
+
+const activeFiltersCount = computed(() => {
+  let count = 0
+  if (filters.value.search) count++
+  if (filters.value.date_from) count++
+  if (filters.value.date_to) count++
+  return count
+})
+
+// Check if user can delete (only admin with id_outlet = 1)
+const canDelete = computed(() => {
+  return props.user?.id_outlet === 1
+})
+
+// Debounced search function
+const debouncedSearch = debounce(() => {
+  applyFilters()
+}, 500)
+
+// Watch for search input changes
+watch(() => filters.value.search, () => {
+  debouncedSearch()
+})
+
+// Filter functions
+function applyFilters() {
+  const filterParams = {}
+  
+  if (filters.value.search) filterParams.search = filters.value.search
+  if (filters.value.date_from) filterParams.date_from = filters.value.date_from
+  if (filters.value.date_to) filterParams.date_to = filters.value.date_to
+  
+  router.get('/retail-non-food', filterParams, { 
+    preserveState: true, 
+    replace: true 
+  })
+}
+
+function clearFilters() {
+  filters.value = {
+    search: '',
+    date_from: '',
+    date_to: ''
+  }
+  router.get('/retail-non-food', {}, { 
+    preserveState: true, 
+    replace: true 
+  })
+}
 
 function goCreate() {
   router.visit('/retail-non-food/create')

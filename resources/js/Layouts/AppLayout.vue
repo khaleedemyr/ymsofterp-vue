@@ -121,6 +121,7 @@ const menuGroups = [
             { name: () => 'Internal Warehouse Transfer', icon: 'fas fa-exchange-alt', route: '/internal-warehouse-transfer', code: 'internal_warehouse_transfer' },
             { name: () => 'Retail Food', icon: 'fa-solid fa-store', route: '/retail-food', code: 'view-retail-food' },
             { name: () => 'Retail Non Food', icon: 'fa-solid fa-shopping-bag', route: '/retail-non-food', code: 'view-retail-non-food' },
+            { name: () => 'Outlet Food Return', icon: 'fa-solid fa-undo', route: '/outlet-food-return', code: 'outlet_food_return' },
             { name: () => 'Report Invoice Outlet', icon: 'fa-solid fa-file-invoice', route: '/report-invoice-outlet', code: 'report_invoice_outlet' },
             { name: () => 'Stock Cut', icon: 'fa-solid fa-scissors', route: '/stock-cut', code: 'stock_cut' },
             { name: () => 'Outlet WIP Production', icon: 'fa-solid fa-industry', route: '/outlet-wip', code: 'outlet_wip_production' },
@@ -195,6 +196,7 @@ const menuGroups = [
             { name: () => 'Internal Use & Waste', icon: 'fa-solid fa-recycle', route: '/internal-use-waste', code: 'internal_use_waste' },
             { name: () => 'Penjualan Antar Gudang', icon: 'fas fa-exchange-alt', route: '/warehouse-sales', code: 'warehouse_sales' },
             { name: () => 'Outlet Rejection', icon: 'fas fa-undo', route: '/outlet-rejections', code: 'outlet_rejection' },
+            { name: () => 'Kelola Return Outlet', icon: 'fa-solid fa-building', route: '/head-office-return', code: 'head_office_return' },
         ],
     },
     {

@@ -30,7 +30,7 @@ class RetailNonFoodController extends Controller
         return $prefix . $date . str_pad($sequence, 4, '0', STR_PAD_LEFT);
     }
 
-    public function index()
+    public function index(Request $request)
     {
         $user = auth()->user()->load('outlet');
         $userOutletId = $user->id_outlet;
@@ -38,21 +38,50 @@ class RetailNonFoodController extends Controller
         if (!$outletExists && $userOutletId != 1) {
             abort(403, 'Outlet tidak terdaftar');
         }
+
+        // Get filter parameters
+        $search = $request->get('search', '');
+        $dateFrom = $request->get('date_from', '');
+        $dateTo = $request->get('date_to', '');
         
         // Query dengan join warehouse outlet
         $query = RetailNonFood::query()
             ->with(['outlet', 'creator', 'items'])
             ->orderByDesc('created_at');
             
+        // Apply outlet filter
         if ($userOutletId != 1) {
             $query->where('outlet_id', $userOutletId);
         }
+
+        // Apply search filter
+        if ($search) {
+            $query->where(function($q) use ($search) {
+                $q->where('retail_number', 'like', "%{$search}%")
+                  ->orWhereHas('outlet', function($outletQuery) use ($search) {
+                      $outletQuery->where('nama_outlet', 'like', "%{$search}%");
+                  });
+            });
+        }
+
+        // Apply date filter
+        if ($dateFrom) {
+            $query->whereDate('transaction_date', '>=', $dateFrom);
+        }
+        if ($dateTo) {
+            $query->whereDate('transaction_date', '<=', $dateTo);
+        }
         
-        $retailNonFoods = $query->paginate(10);
+        $retailNonFoods = $query->paginate(10)->withQueryString();
         
         return Inertia::render('RetailNonFood/Index', [
             'user' => $user,
             'retailNonFoods' => $retailNonFoods,
+            'filters' => [
+                'search' => $search,
+                'date_from' => $dateFrom,
+                'date_to' => $dateTo,
+            ]
         ]);
     }
 
@@ -175,28 +204,54 @@ class RetailNonFoodController extends Controller
 
     public function destroy($id)
     {
-        DB::beginTransaction();
         try {
-            $retailNonFood = RetailNonFood::with('items')->findOrFail($id);
-            if ($retailNonFood->status === 'approved') {
+            $user = auth()->user();
+            
+            // Check if user has permission to delete (only admin with id_outlet = 1)
+            if ($user->id_outlet !== 1) {
                 return response()->json([
-                    'message' => 'Tidak dapat menghapus transaksi yang sudah diapprove'
-                ], 422);
+                    'success' => false,
+                    'message' => 'Anda tidak memiliki izin untuk menghapus transaksi retail non food'
+                ], 403);
             }
+
+            $retailNonFood = RetailNonFood::findOrFail($id);
+
+            \Log::info('RETAIL_NON_FOOD_DELETE: Starting deletion process', [
+                'user_id' => $user->id,
+                'retail_non_food_id' => $id,
+                'retail_number' => $retailNonFood->retail_number
+            ]);
+
+            DB::beginTransaction();
             
             // Hapus retail non food dan items (tanpa inventory rollback)
             RetailNonFoodItem::where('retail_non_food_id', $retailNonFood->id)->delete();
             $retailNonFood->delete();
             
             DB::commit();
+
+            \Log::info('RETAIL_NON_FOOD_DELETE: Deletion completed successfully', [
+                'retail_non_food_id' => $id,
+                'retail_number' => $retailNonFood->retail_number
+            ]);
+
             return response()->json([
-                'message' => 'Transaksi berhasil dihapus'
+                'success' => true,
+                'message' => 'Transaksi retail non food berhasil dihapus'
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
+            
+            \Log::error('RETAIL_NON_FOOD_DELETE: Deletion failed', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'retail_non_food_id' => $id
+            ]);
+
             return response()->json([
-                'message' => 'Gagal menghapus transaksi',
-                'error' => $e->getMessage()
+                'success' => false,
+                'message' => 'Gagal menghapus transaksi: ' . $e->getMessage()
             ], 500);
         }
     }
