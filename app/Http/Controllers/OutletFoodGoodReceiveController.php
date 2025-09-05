@@ -155,12 +155,21 @@ class OutletFoodGoodReceiveController extends Controller
                 // Ambil cost berdasarkan source type
                 $ffoi = null;
                 if ($do->source_type === 'ro_supplier_gr') {
-                    // Untuk RO Supplier GR, ambil dari GR items
+                    // Untuk RO Supplier GR, ambil dari PO items (karena GR items tidak ada price)
                     $grItem = DB::table('food_good_receive_items')
                         ->where('good_receive_id', $do->ro_supplier_gr_id)
                         ->where('item_id', $item['item_id'])
                         ->first();
-                    $cost = $grItem ? $grItem->price : 0;
+                    
+                    if ($grItem) {
+                        // Ambil price dari PO item
+                        $poItem = DB::table('purchase_order_food_items')
+                            ->where('id', $grItem->po_item_id)
+                            ->first();
+                        $cost = $poItem ? $poItem->price : 0;
+                    } else {
+                        $cost = 0;
+                    }
                 } else {
                     // Untuk Packing List biasa
                     $ffoi = DB::table('food_floor_order_items')
