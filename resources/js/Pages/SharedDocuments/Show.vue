@@ -25,6 +25,14 @@
                                     <i class="fas fa-arrow-left mr-2"></i>
                                     Kembali
                                 </Link>
+                                <a
+                                    :href="downloadUrl"
+                                    download
+                                    class="inline-flex items-center px-4 py-2 bg-white/20 backdrop-blur-sm rounded-xl text-white hover:bg-white/30 transition-all duration-300"
+                                >
+                                    <i class="fas fa-download mr-2"></i>
+                                    Download
+                                </a>
                                 <button
                                     v-if="canEdit"
                                     @click="showShareModal = true"
@@ -119,6 +127,14 @@
                             Mode: {{ canEdit ? 'Edit' : 'View' }}
                         </span>
                         <div class="w-3 h-3 bg-green-500 rounded-full animate-pulse shadow-lg"></div>
+                        <a
+                            :href="downloadUrl"
+                            download
+                            class="inline-flex items-center px-3 py-1 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors"
+                        >
+                            <i class="fas fa-download mr-1"></i>
+                            Download
+                        </a>
                     </div>
                 </div>
                 
@@ -129,11 +145,31 @@
                     
                     <!-- Fallback Viewer -->
                     <div id="fallback-viewer" class="w-full h-full hidden">
-                        <iframe 
-                            :src="`https://docs.google.com/viewer?url=${encodeURIComponent(downloadUrl)}&embedded=true`"
-                            class="w-full h-full border-0"
-                            frameborder="0">
-                        </iframe>
+                        <div class="fallback-content w-full h-full bg-gray-100 rounded-xl flex items-center justify-center">
+                            <div class="text-center">
+                                <div class="w-16 h-16 mx-auto mb-4 bg-gray-200 rounded-full flex items-center justify-center">
+                                    <i class="fas fa-file-alt text-2xl text-gray-400"></i>
+                                </div>
+                                <h3 class="text-lg font-medium text-gray-900 mb-2">Preview Tidak Tersedia</h3>
+                                <p class="text-sm text-gray-500 mb-4">Gunakan tombol download untuk membuka dokumen</p>
+                                <a 
+                                    :href="downloadUrl" 
+                                    class="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                                    download
+                                >
+                                    <i class="fas fa-download mr-2"></i>
+                                    Download Dokumen
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Loading State -->
+                    <div id="loading-viewer" class="w-full h-full flex items-center justify-center bg-gray-50">
+                        <div class="text-center">
+                            <div class="w-8 h-8 mx-auto mb-4 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                            <p class="text-sm text-gray-600">Memuat editor...</p>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -332,8 +368,16 @@ onMounted(async () => {
     // Set download URL
     downloadUrl.value = `${window.location.origin}/shared-documents/${props.document.id}/download`
     
-    // Initialize OnlyOffice editor
-    if (window.DocsAPI) {
+    // Show loading state
+    showLoadingState()
+    
+    // Wait a bit to show loading state
+    await new Promise(resolve => setTimeout(resolve, 1500))
+    
+    // Check if OnlyOffice is available
+    const onlyOfficeAvailable = await checkOnlyOfficeAvailability()
+    
+    if (onlyOfficeAvailable && window.DocsAPI) {
         console.log('Initializing OnlyOffice editor with document:', props.document);
         
         const config = {
@@ -368,22 +412,110 @@ onMounted(async () => {
         
         try {
             editorInstance.value = new window.DocsAPI.DocEditor('onlyoffice-editor', config)
+            hideLoadingState()
+            showOnlyOfficeEditor()
         } catch (error) {
             console.error('OnlyOffice initialization failed:', error)
-            showFallbackViewer()
+            hideLoadingState()
+            showGoogleDocsViewer()
         }
     } else {
-        console.error('OnlyOffice DocsAPI not found');
-        showFallbackViewer()
+        console.log('OnlyOffice not available, using Google Docs Viewer');
+        hideLoadingState()
+        showGoogleDocsViewer()
     }
 })
+
+const showLoadingState = () => {
+    const onlyofficeEditor = document.getElementById('onlyoffice-editor')
+    const fallbackViewer = document.getElementById('fallback-viewer')
+    const loadingViewer = document.getElementById('loading-viewer')
+    
+    if (onlyofficeEditor) onlyofficeEditor.classList.add('hidden')
+    if (fallbackViewer) fallbackViewer.classList.add('hidden')
+    if (loadingViewer) loadingViewer.classList.remove('hidden')
+}
+
+const hideLoadingState = () => {
+    const loadingViewer = document.getElementById('loading-viewer')
+    if (loadingViewer) loadingViewer.classList.add('hidden')
+}
 
 const showFallbackViewer = () => {
     const onlyofficeEditor = document.getElementById('onlyoffice-editor')
     const fallbackViewer = document.getElementById('fallback-viewer')
+    const loadingViewer = document.getElementById('loading-viewer')
     
     if (onlyofficeEditor) onlyofficeEditor.classList.add('hidden')
     if (fallbackViewer) fallbackViewer.classList.remove('hidden')
+    if (loadingViewer) loadingViewer.classList.add('hidden')
+}
+
+const showOnlyOfficeEditor = () => {
+    const onlyofficeEditor = document.getElementById('onlyoffice-editor')
+    const fallbackViewer = document.getElementById('fallback-viewer')
+    const loadingViewer = document.getElementById('loading-viewer')
+    
+    if (onlyofficeEditor) onlyofficeEditor.classList.remove('hidden')
+    if (fallbackViewer) fallbackViewer.classList.add('hidden')
+    if (loadingViewer) loadingViewer.classList.add('hidden')
+}
+
+const checkOnlyOfficeAvailability = async () => {
+    try {
+        const response = await fetch(`${window.location.origin}/web-apps/apps/api/documents/api.js`, {
+            method: 'HEAD',
+            mode: 'no-cors'
+        })
+        return true
+    } catch (error) {
+        console.log('OnlyOffice server not available:', error)
+        return false
+    }
+}
+
+const showGoogleDocsViewer = () => {
+    const onlyofficeEditor = document.getElementById('onlyoffice-editor')
+    const fallbackViewer = document.getElementById('fallback-viewer')
+    const loadingViewer = document.getElementById('loading-viewer')
+    
+    if (onlyofficeEditor) onlyofficeEditor.classList.add('hidden')
+    if (fallbackViewer) fallbackViewer.classList.remove('hidden')
+    if (loadingViewer) loadingViewer.classList.add('hidden')
+    
+    // Update fallback viewer with Google Docs Viewer
+    const fallbackContent = fallbackViewer?.querySelector('.fallback-content')
+    if (fallbackContent) {
+        fallbackContent.innerHTML = `
+            <div class="w-full h-full bg-gray-100 rounded-xl flex items-center justify-center">
+                <div class="text-center">
+                    <div class="w-16 h-16 mx-auto mb-4 bg-blue-100 rounded-full flex items-center justify-center">
+                        <i class="fas fa-file-alt text-2xl text-blue-500"></i>
+                    </div>
+                    <h3 class="text-lg font-medium text-gray-900 mb-2">Preview Dokumen</h3>
+                    <p class="text-sm text-gray-500 mb-4">Menggunakan Google Docs Viewer</p>
+                    <div class="space-y-2">
+                        <a 
+                            href="https://docs.google.com/viewer?url=${encodeURIComponent(downloadUrl.value)}&embedded=true"
+                            target="_blank"
+                            class="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors mr-2"
+                        >
+                            <i class="fas fa-external-link-alt mr-2"></i>
+                            Buka di Tab Baru
+                        </a>
+                        <a 
+                            href="${downloadUrl.value}" 
+                            download
+                            class="inline-flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                        >
+                            <i class="fas fa-download mr-2"></i>
+                            Download
+                        </a>
+                    </div>
+                </div>
+            </div>
+        `
+    }
 }
 
 onUnmounted(() => {

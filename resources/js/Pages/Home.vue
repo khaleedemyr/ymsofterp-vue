@@ -559,6 +559,38 @@ async function rejectCorrection(approvalId) {
     }
 }
 
+// Format correction value for display
+function formatCorrectionValue(approval) {
+    if (approval.type === 'schedule') {
+        return `Dari: ${approval.old_value} → Ke: ${approval.new_value}`;
+    } else if (approval.type === 'attendance') {
+        try {
+            // Try to parse JSON data for new format
+            const oldData = JSON.parse(approval.old_value);
+            const newData = JSON.parse(approval.new_value);
+            
+            const oldTime = new Date(oldData.scan_date).toLocaleTimeString('id-ID', {
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            });
+            const newTime = new Date(newData.scan_date).toLocaleTimeString('id-ID', {
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            });
+            
+            const inoutMode = oldData.inoutmode === 1 ? 'Masuk' : 'Keluar';
+            
+            return `Waktu ${inoutMode}: ${oldTime} → ${newTime}`;
+        } catch (error) {
+            // Fallback for old format (non-JSON)
+            return `Dari: ${approval.old_value} → Ke: ${approval.new_value}`;
+        }
+    }
+    return `Dari: ${approval.old_value} → Ke: ${approval.new_value}`;
+}
+
 // Lightbox state
 const lightboxVisible = ref(false);
 const lightboxImages = ref([]);
@@ -900,7 +932,7 @@ watch(locale, () => {
                                             {{ approval.type === 'schedule' ? 'Koreksi Schedule' : 'Koreksi Attendance' }} • {{ approval.nama_outlet }}
                                         </div>
                                         <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
-                                            {{ new Date(approval.tanggal).toLocaleDateString('id-ID') }} • Dari: {{ approval.old_value }} → Ke: {{ approval.new_value }}
+                                            {{ new Date(approval.tanggal).toLocaleDateString('id-ID') }} • {{ formatCorrectionValue(approval) }}
                                         </div>
                                     </div>
                                 </div>

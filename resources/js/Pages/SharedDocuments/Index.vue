@@ -100,18 +100,27 @@
                         </div>
 
                         <!-- Actions with 3D Buttons -->
-                        <div class="flex gap-3">
+                        <div class="flex gap-2">
                             <Link
                                 :href="route('shared-documents.show', document.id)"
-                                class="flex-1 inline-flex items-center justify-center px-4 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white font-medium rounded-xl shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300"
+                                class="flex-1 inline-flex items-center justify-center px-3 py-2 bg-gradient-to-r from-blue-600 to-blue-700 text-white font-medium rounded-lg shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300 text-sm"
                             >
-                                <i class="fas fa-eye mr-2"></i>
+                                <i class="fas fa-eye mr-1"></i>
                                 Buka
                             </Link>
                             <button
+                                v-if="canManagePermissions(document)"
+                                @click="openPermissionModal(document)"
+                                class="px-3 py-2 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-lg shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300 text-sm"
+                                title="Kelola Permission"
+                            >
+                                <i class="fas fa-users"></i>
+                            </button>
+                            <button
                                 v-if="document.created_by === $page.props.auth.user.id"
                                 @click="deleteDocument(document.id)"
-                                class="px-4 py-3 bg-gradient-to-r from-red-500 to-red-600 text-white rounded-xl shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300"
+                                class="px-3 py-2 bg-gradient-to-r from-red-500 to-red-600 text-white rounded-lg shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300 text-sm"
+                                title="Hapus Dokumen"
                             >
                                 <i class="fas fa-trash"></i>
                             </button>
@@ -138,6 +147,15 @@
                 </div>
             </div>
         </div>
+
+        <!-- Permission Management Modal -->
+        <DocumentPermissionModal
+            :show="showPermissionModal"
+            :document-id="selectedDocument?.id"
+            :document-title="selectedDocument?.title"
+            @close="closePermissionModal"
+            @saved="onPermissionsSaved"
+        />
     </AppLayout>
 </template>
 
@@ -145,6 +163,7 @@
 import { ref, computed } from 'vue'
 import { Link, router } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
+import DocumentPermissionModal from '@/Components/DocumentPermissionModal.vue'
 
 const props = defineProps({
     documents: {
@@ -155,6 +174,8 @@ const props = defineProps({
 
 const search = ref('')
 const filterType = ref('')
+const showPermissionModal = ref(false)
+const selectedDocument = ref(null)
 
 const filteredDocuments = computed(() => {
     let filtered = props.documents
@@ -197,6 +218,33 @@ const deleteDocument = (documentId) => {
     if (confirm('Apakah Anda yakin ingin menghapus dokumen ini?')) {
         router.delete(route('shared-documents.destroy', documentId))
     }
+}
+
+const canManagePermissions = (document) => {
+    const user = props.$page?.props?.auth?.user
+    if (!user) return false
+    
+    // Creator can always manage permissions
+    if (document.created_by === user.id) return true
+    
+    // Check if user has admin permission
+    const userPermission = document.permissions?.find(p => p.user_id === user.id)
+    return userPermission?.permission === 'admin'
+}
+
+const openPermissionModal = (document) => {
+    selectedDocument.value = document
+    showPermissionModal.value = true
+}
+
+const closePermissionModal = () => {
+    showPermissionModal.value = false
+    selectedDocument.value = null
+}
+
+const onPermissionsSaved = () => {
+    // Refresh the page to get updated permissions
+    router.reload()
 }
 </script>
 

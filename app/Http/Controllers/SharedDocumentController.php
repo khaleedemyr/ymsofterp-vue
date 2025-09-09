@@ -18,6 +18,7 @@ class SharedDocumentController extends Controller
     {
         $user = Auth::user();
         
+        // Show all documents that user has access to
         $documents = SharedDocument::with(['creator', 'permissions.user'])
             ->where(function ($query) use ($user) {
                 $query->where('created_by', $user->id)
@@ -240,6 +241,7 @@ class SharedDocumentController extends Controller
     public function removeShare(Request $request, $id)
     {
         $user = Auth::user();
+        $document = SharedDocument::findOrFail($id);
         
         if (!$document->hasPermission($user, 'edit')) {
             abort(403, 'Anda tidak memiliki izin untuk mengelola akses dokumen ini.');
@@ -255,6 +257,68 @@ class SharedDocumentController extends Controller
         ])->delete();
 
         return back()->with('success', 'Akses dokumen berhasil dihapus!');
+    }
+
+    /**
+     * Update document permissions in bulk
+     */
+    public function updatePermissions(Request $request, $id)
+    {
+        $user = Auth::user();
+        $document = SharedDocument::findOrFail($id);
+        
+        if (!$document->hasPermission($user, 'edit')) {
+            abort(403, 'Anda tidak memiliki izin untuk mengelola akses dokumen ini.');
+        }
+
+        $request->validate([
+            'permissions' => 'required|array',
+            'permissions.*.user_id' => 'required|exists:users,id',
+            'permissions.*.permission' => 'required|in:view,edit,admin',
+            'is_public' => 'boolean',
+        ]);
+
+        // Update document public status
+        $document->update([
+            'is_public' => $request->is_public ?? false,
+        ]);
+
+        // Delete existing permissions
+        DocumentPermission::where('document_id', $document->id)->delete();
+
+        // Add new permissions
+        foreach ($request->permissions as $permission) {
+            DocumentPermission::create([
+                'document_id' => $document->id,
+                'user_id' => $permission['user_id'],
+                'permission' => $permission['permission'],
+            ]);
+        }
+
+        return back()->with('success', 'Permission dokumen berhasil diperbarui!');
+    }
+
+    /**
+     * Get document permissions for management
+     */
+    public function getPermissions($id)
+    {
+        $user = Auth::user();
+        $document = SharedDocument::findOrFail($id);
+        
+        if (!$document->hasPermission($user, 'view')) {
+            abort(403, 'Anda tidak memiliki akses ke dokumen ini.');
+        }
+
+        $permissions = DocumentPermission::with('user')
+            ->where('document_id', $document->id)
+            ->get();
+
+        return response()->json([
+            'success' => true,
+            'data' => $permissions,
+            'is_public' => $document->is_public
+        ]);
     }
 
     public function download($id)

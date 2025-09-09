@@ -268,17 +268,21 @@ class ScheduleAttendanceCorrectionController extends Controller
                 ->where('att_log.sn', $sn)
                 ->where('att_log.pin', $pin)
                 ->where('att_log.scan_date', $oldScanDate)
-                ->select('att_log.*', 'users.nama_lengkap', 'users.division_id', 'tbl_data_outlet.id_outlet')
+                ->select('att_log.*', 'users.id as user_id', 'users.nama_lengkap', 'users.division_id', 'tbl_data_outlet.id_outlet')
                 ->first();
             
             if (!$oldRecord) {
                 throw new \Exception('Record attendance tidak ditemukan');
             }
             
+            if (!$oldRecord->user_id) {
+                throw new \Exception('User ID tidak ditemukan untuk PIN: ' . $pin);
+            }
+            
             $oldValue = date('d/m/Y H:i:s', strtotime($oldRecord->scan_date));
             $newValue = date('d/m/Y H:i:s', strtotime($newScanDate));
             
-            // Insert approval request
+            // Insert approval request with additional data for attendance update
             $approvalId = DB::table('schedule_attendance_correction_approvals')->insertGetId([
                 'type' => 'attendance',
                 'record_id' => 0, // att_log doesn't have ID, use 0
@@ -286,8 +290,22 @@ class ScheduleAttendanceCorrectionController extends Controller
                 'outlet_id' => $oldRecord->id_outlet,
                 'division_id' => $oldRecord->division_id,
                 'tanggal' => date('Y-m-d', strtotime($oldRecord->scan_date)),
-                'old_value' => $oldValue,
-                'new_value' => $newValue,
+                'old_value' => json_encode([
+                    'sn' => $sn,
+                    'pin' => $pin,
+                    'scan_date' => $oldScanDate,
+                    'inoutmode' => $inoutmode,
+                    'verifymode' => $oldRecord->verifymode,
+                    'device_ip' => $oldRecord->device_ip
+                ]),
+                'new_value' => json_encode([
+                    'sn' => $sn,
+                    'pin' => $pin,
+                    'scan_date' => $newScanDate,
+                    'inoutmode' => $inoutmode,
+                    'verifymode' => $oldRecord->verifymode,
+                    'device_ip' => $oldRecord->device_ip
+                ]),
                 'reason' => $reason,
                 'status' => 'pending',
                 'requested_by' => $userId,
@@ -424,10 +442,27 @@ class ScheduleAttendanceCorrectionController extends Controller
                     ]);
                     
             } elseif ($approval->type === 'attendance') {
-                // For attendance, we need to find the record and update it
-                // This is more complex as att_log doesn't have a direct ID
-                // We'll need to store more specific data in the approval record
-                // For now, we'll log that it was approved
+                // Parse the old and new values from JSON
+                $oldData = json_decode($approval->old_value, true);
+                $newData = json_decode($approval->new_value, true);
+                
+                // Update the attendance record in att_log
+                $updated = DB::table('att_log')
+                    ->where('sn', $oldData['sn'])
+                    ->where('pin', $oldData['pin'])
+                    ->where('scan_date', $oldData['scan_date'])
+                    ->where('inoutmode', $oldData['inoutmode'])
+                    ->update([
+                        'scan_date' => $newData['scan_date'],
+                        'verifymode' => $newData['verifymode'],
+                        'device_ip' => $newData['device_ip']
+                    ]);
+                
+                if ($updated === 0) {
+                    throw new \Exception('Gagal mengupdate data attendance');
+                }
+                
+                // Log the correction for audit trail
                 DB::table('schedule_attendance_corrections')->insert([
                     'type' => 'attendance',
                     'record_id' => 0,
@@ -435,7 +470,7 @@ class ScheduleAttendanceCorrectionController extends Controller
                     'new_value' => $approval->new_value,
                     'reason' => $approval->reason,
                     'corrected_by' => $user->id,
-                'corrected_at' => now(),
+                    'corrected_at' => now(),
                     'created_at' => now(),
                     'updated_at' => now(),
                 ]);

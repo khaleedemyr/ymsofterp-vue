@@ -95,7 +95,7 @@ const menuGroups = [
             { name: () => 'Input Shift Mingguan', icon: 'fa-solid fa-calendar-days', route: '/user-shifts', code: 'user_shift_view' },
             { name: () => 'Kalender Jadwal Shift', icon: 'fa-solid fa-calendar-week', route: '/user-shifts/calendar', code: 'user_shift_calendar_view' },
             { name: () => 'Schedule/Attendance Correction', icon: 'fa-solid fa-edit', route: '/schedule-attendance-correction', code: 'schedule_attendance_correction' },
-            { name: () => 'Schedule/Attendance Correction Report', icon: 'fa-solid fa-chart-bar', route: '/schedule-attendance-correction/report', code: 'schedule_attendance_correction_report' },
+            { name: () => 'Report Schedule/Attendance Correction', icon: 'fa-solid fa-chart-bar', route: '/schedule-attendance-correction/report', code: 'schedule_attendance_correction_report' },
             { name: () => 'Report Absent', icon: 'fa-solid fa-file-lines', route: '/attendance/report', code: 'absent-report' },
             { name: () => 'Libur Nasional', icon: 'fa-solid fa-calendar-day', route: '/kalender-perusahaan', code: 'libur_nasional' },
             { name: () => 'Report Attendance', icon: 'fa-solid fa-fingerprint', route: '/attendance-report', code: 'attendance_report' },
@@ -320,7 +320,7 @@ const menuGroups = [
         ],
     },
     {
-        title: () => 'Learning Management System',
+        title: () => 'LMS',
         icon: 'fa-solid fa-graduation-cap',
         collapsible: true,
         open: ref(false),
@@ -533,7 +533,7 @@ onMounted(() => {
     <audio ref="notificationSound" src="/sounds/aya_gawean_anyar_ringtone.mp3" preload="auto"></audio>
     
     <!-- Sidebar -->
-    <aside :class="['transition-all duration-300 bg-white shadow-lg border-r border-gray-200 flex flex-col fixed z-30 h-full', sidebarOpen ? 'w-64' : 'w-20']">
+    <aside :class="['transition-all duration-300 bg-white shadow-lg border-r border-gray-200 flex flex-col fixed z-30 h-full', sidebarOpen ? 'w-72' : 'w-20']">
         <div class="flex items-center justify-between h-20 border-b border-gray-200 px-4">
             <img v-if="sidebarOpen" src="/images/logo.png" alt="Logo" class="h-12 w-auto transition-all duration-300" />
             <img v-else src="/images/logo-icon.png" alt="Logo Icon" class="h-10 w-10 transition-all duration-300" />
@@ -544,36 +544,39 @@ onMounted(() => {
         <nav class="flex-1 overflow-y-auto py-4">
             <div v-for="(group, idx) in filteredMenuGroups" :key="group.title" class="mb-4">
                 <div
-                    class="px-6 py-2 text-xs font-bold uppercase flex items-center gap-2 justify-between cursor-pointer group-title"
+                    class="px-4 py-3 text-xs font-bold uppercase flex items-center gap-2 cursor-pointer group-title mx-2"
                     :class="sidebarOpen ? 'text-gray-500' : 'text-gray-400'"
                     @click="toggleGroup(group)"
                     v-if="group.collapsible"
+                    :title="!sidebarOpen ? (typeof group.title === 'function' ? group.title() : group.title) : ''"
                 >
-                    <span class="text-lg"><i :class="group.icon"></i></span>
-                    <span v-if="sidebarOpen">{{ typeof group.title === 'function' ? group.title() : group.title }}</span>
-                    <svg v-if="sidebarOpen" :class="['w-4 h-4 transition-transform', group.open.value ? 'rotate-90' : '']" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>
+                    <span class="text-lg flex-shrink-0"><i :class="group.icon"></i></span>
+                    <span v-if="sidebarOpen" class="truncate flex-1">{{ typeof group.title === 'function' ? group.title() : group.title }}</span>
+                    <svg v-if="sidebarOpen" :class="['w-4 h-4 transition-transform flex-shrink-0', group.open.value ? 'rotate-90' : '']" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>
                 </div>
                 <div
                     v-else
-                    class="px-6 py-2 text-xs font-bold uppercase flex items-center gap-2 group-title"
+                    class="px-4 py-3 text-xs font-bold uppercase flex items-center gap-2 group-title mx-2"
                     :class="sidebarOpen ? 'text-gray-500' : 'text-gray-400'"
+                    :title="!sidebarOpen ? (typeof group.title === 'function' ? group.title() : group.title) : ''"
                 >
-                    <span class="text-lg"><i :class="group.icon"></i></span>
-                    <span v-if="sidebarOpen">{{ typeof group.title === 'function' ? group.title() : group.title }}</span>
+                    <span class="text-lg flex-shrink-0"><i :class="group.icon"></i></span>
+                    <span v-if="sidebarOpen" class="truncate flex-1">{{ typeof group.title === 'function' ? group.title() : group.title }}</span>
                 </div>
                 <div v-show="!group.collapsible || group.open.value">
                     <Link
                         v-for="menu in group.menus"
                         :key="menu.name"
                         :href="menu.route"
-                        class="flex items-center gap-3 px-6 py-2 my-1 rounded-lg text-gray-700 hover:bg-blue-100 transition-all sidebar-menu"
+                        class="flex items-center gap-3 px-4 py-2.5 my-1 mx-2 rounded-lg text-gray-700 hover:bg-blue-100 transition-all sidebar-menu relative"
                         :class="[
                             sidebarOpen ? 'justify-start' : 'justify-center',
                             $page.url.startsWith(menu.route) ? 'bg-blue-50 font-bold text-blue-700' : ''
                         ]"
+                        :title="!sidebarOpen ? (typeof menu.name === 'function' ? menu.name() : menu.name) : ''"
                     >
-                        <span class="text-lg w-7 flex justify-center"><i :class="menu.icon"></i></span>
-                        <span v-if="sidebarOpen" class="whitespace-nowrap">{{ typeof menu.name === 'function' ? menu.name() : menu.name }}</span>
+                        <span class="text-lg w-6 flex justify-center flex-shrink-0"><i :class="menu.icon"></i></span>
+                        <span v-if="sidebarOpen" class="text-sm leading-tight truncate">{{ typeof menu.name === 'function' ? menu.name() : menu.name }}</span>
                     </Link>
                 </div>
                 <hr v-if="idx < filteredMenuGroups.length - 1" class="my-2 border-gray-200" />
@@ -581,7 +584,7 @@ onMounted(() => {
         </nav>
     </aside>
     <!-- Main Content -->
-    <div :class="['flex-1 flex flex-col min-h-screen transition-all duration-300', sidebarOpen ? 'ml-64' : 'ml-20']">
+    <div :class="['flex-1 flex flex-col min-h-screen transition-all duration-300', sidebarOpen ? 'ml-72' : 'ml-20']">
         <!-- Navbar -->
         <header class="h-16 bg-white border-b border-gray-200 flex items-center px-6 justify-between shadow-sm">
             <div class="flex items-center gap-4">
@@ -763,19 +766,29 @@ onMounted(() => {
 }
 
 .group-title {
-    letter-spacing: 1px;
-    font-size: 13px;
-    margin-bottom: 2px;
+    letter-spacing: 0.5px;
+    font-size: 12px;
+    margin-bottom: 4px;
+    border-radius: 6px;
+}
+.group-title:hover {
+    background-color: #f8fafc;
 }
 .sidebar-menu {
-    font-size: 15px;
-    transition: background 0.2s, color 0.2s;
+    font-size: 14px;
+    transition: all 0.2s ease;
+    border-radius: 8px;
+}
+.sidebar-menu:hover {
+    background-color: #f1f5f9 !important;
+    transform: translateX(2px);
 }
 .sidebar-menu.router-link-exact-active,
 .sidebar-menu.bg-blue-50 {
-    background: #e8f0fe !important;
-    color: #2563eb !important;
-    font-weight: bold;
+    background: #dbeafe !important;
+    color: #1d4ed8 !important;
+    font-weight: 600;
+    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.1);
 }
 hr {
     border: none;

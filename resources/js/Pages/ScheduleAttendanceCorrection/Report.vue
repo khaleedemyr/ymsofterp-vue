@@ -202,8 +202,8 @@
                                         <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{{ item.employee_name }}</td>
                                         <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{{ item.nama_outlet }}</td>
                                         <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{{ item.nama_divisi }}</td>
-                                        <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{{ item.old_value }}</td>
-                                        <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{{ item.new_value }}</td>
+                                        <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{{ formatCorrectionValue(item, 'old') }}</td>
+                                        <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{{ formatCorrectionValue(item, 'new') }}</td>
                                         <td class="px-4 py-3 whitespace-nowrap">
                                             <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full"
                                                   :class="getStatusClass(item.status)">
@@ -347,6 +347,34 @@ function getStatusText(status) {
 }
 
 // Load initial data
+// Format correction value for display
+function formatCorrectionValue(item, type) {
+    const value = type === 'old' ? item.old_value : item.new_value;
+    
+    if (item.type === 'schedule') {
+        return value;
+    } else if (item.type === 'attendance') {
+        try {
+            // Try to parse JSON data for new format
+            const data = JSON.parse(value);
+            
+            const time = new Date(data.scan_date).toLocaleTimeString('id-ID', {
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            });
+            
+            const inoutMode = data.inoutmode === 1 ? 'Masuk' : 'Keluar';
+            
+            return `${inoutMode} ${time}`;
+        } catch (error) {
+            // Fallback for old format (non-JSON)
+            return value;
+        }
+    }
+    return value;
+}
+
 onMounted(() => {
     // Set default date range to September 2025 to show existing data
     filters.value.startDate = '2025-09-01';

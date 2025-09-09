@@ -1105,6 +1105,10 @@ Route::middleware(['auth'])->group(function () {
     Route::post('shared-documents/{document}/share', [SharedDocumentController::class, 'share'])->name('shared-documents.share');
     Route::delete('shared-documents/{document}/remove-share', [SharedDocumentController::class, 'removeShare'])->name('shared-documents.remove-share');
     
+    // Enhanced permission management
+    Route::post('shared-documents/{document}/permissions', [SharedDocumentController::class, 'updatePermissions'])->name('shared-documents.permissions.update');
+    Route::get('shared-documents/{document}/permissions', [SharedDocumentController::class, 'getPermissions'])->name('shared-documents.permissions.get');
+    
     // User search endpoints
     Route::get('shared-documents/users/search', [SharedDocumentController::class, 'searchUsers'])->name('shared-documents.users.search');
     Route::get('shared-documents/users/dropdown', [SharedDocumentController::class, 'getDropdownData'])->name('shared-documents.users.dropdown');
