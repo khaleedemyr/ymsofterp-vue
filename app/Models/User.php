@@ -113,4 +113,30 @@ class User extends Authenticatable
     {
         return $this->hasPermission('lms-schedules-qr-scanner');
     }
+
+    // Approval relationships
+    public function approvalRequests()
+    {
+        return $this->hasMany(ApprovalRequest::class, 'user_id');
+    }
+
+    public function pendingApprovals()
+    {
+        return $this->hasMany(ApprovalRequest::class, 'approver_id')->where('status', 'pending');
+    }
+
+    public function approvedRequests()
+    {
+        return $this->hasMany(ApprovalRequest::class, 'approver_id')->where('status', 'approved');
+    }
+
+    public function rejectedRequests()
+    {
+        return $this->hasMany(ApprovalRequest::class, 'approver_id')->where('status', 'rejected');
+    }
+
+    public function pendingHrdApprovals()
+    {
+        return $this->hasMany(ApprovalRequest::class, 'hrd_approver_id')->where('status', 'approved')->where('hrd_status', 'pending');
+    }
 }

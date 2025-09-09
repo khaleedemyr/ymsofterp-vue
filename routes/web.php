@@ -85,6 +85,7 @@ use App\Http\Controllers\UserController;
 use App\Http\Controllers\UserPinController;
 use App\Http\Controllers\ShiftController;
 use App\Http\Controllers\UserShiftController;
+use App\Http\Controllers\ScheduleAttendanceCorrectionController;
 use App\Http\Controllers\AttendanceReportController;
 use App\Http\Controllers\PayrollController;
 use App\Http\Controllers\VideoTutorialController;
@@ -1065,6 +1066,7 @@ Route::post('users/{user}/activate', [UserController::class, 'activate'])->name(
 Route::get('employee-movements/search/employee', [\App\Http\Controllers\EmployeeMovementController::class, 'searchEmployee'])->name('employee-movements.search-employee');
 Route::get('employee-movements/employee/{id}', [\App\Http\Controllers\EmployeeMovementController::class, 'getEmployeeDetails'])->name('employee-movements.employee-details');
 Route::get('employee-movements/dropdown-data', [\App\Http\Controllers\EmployeeMovementController::class, 'getDropdownData'])->name('employee-movements.dropdown-data');
+Route::get('employee-movements/approvers', [\App\Http\Controllers\EmployeeMovementController::class, 'getApprovers'])->name('employee-movements.approvers');
 Route::resource('employee-movements', \App\Http\Controllers\EmployeeMovementController::class);
 
 // Roulette download template (no auth required)
@@ -1161,6 +1163,22 @@ Route::middleware(['auth'])->group(function () {
 Route::middleware(['auth'])->group(function () {
     Route::get('user-shifts/calendar', [UserShiftController::class, 'calendarView'])->name('user-shifts.calendar');
     Route::resource('user-shifts', UserShiftController::class)->only(['index', 'store']);
+    
+    // Schedule/Attendance Correction Routes
+    Route::get('schedule-attendance-correction', [ScheduleAttendanceCorrectionController::class, 'index'])->name('schedule-attendance-correction.index');
+    Route::post('schedule-attendance-correction/schedule', [ScheduleAttendanceCorrectionController::class, 'updateSchedule'])->name('schedule-attendance-correction.schedule');
+    Route::post('schedule-attendance-correction/attendance', [ScheduleAttendanceCorrectionController::class, 'updateAttendance'])->name('schedule-attendance-correction.attendance');
+    Route::get('schedule-attendance-correction/history', [ScheduleAttendanceCorrectionController::class, 'getCorrectionHistory'])->name('schedule-attendance-correction.history');
+    
+    // Report Routes
+    Route::get('schedule-attendance-correction/report', [ScheduleAttendanceCorrectionController::class, 'report'])->name('schedule-attendance-correction.report');
+    Route::get('api/schedule-attendance-correction/report-data', [ScheduleAttendanceCorrectionController::class, 'getReportData'])->name('schedule-attendance-correction.report-data');
+    Route::get('schedule-attendance-correction/export-report', [ScheduleAttendanceCorrectionController::class, 'exportReport'])->name('schedule-attendance-correction.export-report');
+    
+    // Approval Routes
+    Route::get('api/schedule-attendance-correction/pending-approvals', [ScheduleAttendanceCorrectionController::class, 'getPendingApprovals'])->name('schedule-attendance-correction.pending-approvals');
+    Route::post('api/schedule-attendance-correction/approve/{id}', [ScheduleAttendanceCorrectionController::class, 'approveCorrection'])->name('schedule-attendance-correction.approve');
+    Route::post('api/schedule-attendance-correction/reject/{id}', [ScheduleAttendanceCorrectionController::class, 'rejectCorrection'])->name('schedule-attendance-correction.reject');
 });
 
 Route::get('/user-shifts/calendar/export-excel', [\App\Http\Controllers\UserShiftController::class, 'exportCalendarExcel'])->name('user-shifts.calendar.export-excel');
@@ -1341,6 +1359,50 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/attendance', [\App\Http\Controllers\AttendanceController::class, 'index'])->name('attendance.index');
     Route::get('/api/attendance/calendar-data', [\App\Http\Controllers\AttendanceController::class, 'getCalendarData'])->name('api.attendance.calendar-data');
     Route::post('/api/attendance/absent-request', [\App\Http\Controllers\AttendanceController::class, 'submitAbsentRequest'])->name('api.attendance.absent-request');
+});
+
+// Approval Routes
+Route::middleware(['auth', 'verified'])->prefix('api/approval')->group(function () {
+    Route::get('/pending', [\App\Http\Controllers\ApprovalController::class, 'getPendingApprovals'])->name('api.approval.pending');
+    Route::get('/pending-hrd', [\App\Http\Controllers\ApprovalController::class, 'getPendingHrdApprovals'])->name('api.approval.pending-hrd');
+    Route::get('/stats', [\App\Http\Controllers\ApprovalController::class, 'getApprovalStats'])->name('api.approval.stats');
+    Route::get('/my-requests', [\App\Http\Controllers\ApprovalController::class, 'getMyRequests'])->name('api.approval.my-requests');
+    Route::get('/notifications', [\App\Http\Controllers\ApprovalController::class, 'getLeaveNotifications'])->name('api.approval.notifications');
+    Route::get('/{id}', [\App\Http\Controllers\ApprovalController::class, 'getApprovalDetails'])->name('api.approval.details');
+    Route::post('/{id}/approve', [\App\Http\Controllers\ApprovalController::class, 'approve'])->name('api.approval.approve');
+    Route::post('/{id}/reject', [\App\Http\Controllers\ApprovalController::class, 'reject'])->name('api.approval.reject');
+    Route::post('/{id}/hrd-approve', [\App\Http\Controllers\ApprovalController::class, 'hrdApprove'])->name('api.approval.hrd-approve');
+    Route::post('/{id}/hrd-reject', [\App\Http\Controllers\ApprovalController::class, 'hrdReject'])->name('api.approval.hrd-reject');
+});
+
+// Holiday Attendance Routes
+Route::middleware(['auth', 'verified'])->group(function () {
+    Route::get('/holiday-attendance', [\App\Http\Controllers\HolidayAttendanceController::class, 'index'])->name('holiday-attendance.index');
+    Route::post('/api/holiday-attendance/process', [\App\Http\Controllers\HolidayAttendanceController::class, 'processHoliday'])->name('api.holiday-attendance.process');
+    Route::get('/api/holiday-attendance/workers', [\App\Http\Controllers\HolidayAttendanceController::class, 'getHolidayWorkers'])->name('api.holiday-attendance.workers');
+    Route::get('/api/holiday-attendance/employee-history/{userId}', [\App\Http\Controllers\HolidayAttendanceController::class, 'getEmployeeHistory'])->name('api.holiday-attendance.employee-history');
+    Route::post('/api/holiday-attendance/use-extra-off', [\App\Http\Controllers\HolidayAttendanceController::class, 'useExtraOffDay'])->name('api.holiday-attendance.use-extra-off');
+    Route::get('/api/holiday-attendance/my-extra-off-days', [\App\Http\Controllers\HolidayAttendanceController::class, 'getMyExtraOffDays'])->name('api.holiday-attendance.my-extra-off-days');
+    Route::get('/api/holiday-attendance/statistics', [\App\Http\Controllers\HolidayAttendanceController::class, 'getStatistics'])->name('api.holiday-attendance.statistics');
+    Route::get('/holiday-attendance/export', [\App\Http\Controllers\HolidayAttendanceController::class, 'export'])->name('holiday-attendance.export');
+    
+    // Extra Off API Routes
+    Route::prefix('api/extra-off')->group(function () {
+        // User routes (authenticated users)
+        Route::get('/balance', [\App\Http\Controllers\ExtraOffController::class, 'getBalance'])->name('api.extra-off.balance');
+        Route::get('/transactions', [\App\Http\Controllers\ExtraOffController::class, 'getTransactions'])->name('api.extra-off.transactions');
+        Route::post('/use', [\App\Http\Controllers\ExtraOffController::class, 'useExtraOff'])->name('api.extra-off.use');
+        
+        // Admin routes (require admin middleware)
+        Route::middleware('admin')->group(function () {
+            Route::post('/adjust', [\App\Http\Controllers\ExtraOffController::class, 'adjustBalance'])->name('api.extra-off.adjust');
+            Route::post('/detect', [\App\Http\Controllers\ExtraOffController::class, 'detectUnscheduledWork'])->name('api.extra-off.detect');
+            Route::get('/statistics', [\App\Http\Controllers\ExtraOffController::class, 'getStatistics'])->name('api.extra-off.statistics');
+            Route::post('/initialize', [\App\Http\Controllers\ExtraOffController::class, 'initializeBalances'])->name('api.extra-off.initialize');
+            Route::get('/balances', [\App\Http\Controllers\ExtraOffController::class, 'getAllBalances'])->name('api.extra-off.balances');
+            Route::get('/all-transactions', [\App\Http\Controllers\ExtraOffController::class, 'getAllTransactions'])->name('api.extra-off.all-transactions');
+        });
+    });
 });
 
 require __DIR__.'/auth.php';

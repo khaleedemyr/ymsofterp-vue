@@ -57,14 +57,38 @@ class UserShiftController extends Controller
                 ->get();
         }
         $holidays = collect();
+        $approvedAbsents = collect();
         if (!empty($dates)) {
             $holidays = DB::table('tbl_kalender_perusahaan')
                 ->whereIn('tgl_libur', $dates)
                 ->select('tgl_libur as date', 'keterangan as name')
                 ->get();
+            
+            // Get approved absents for the selected users and date range
+            if ($users->isNotEmpty()) {
+                $userIds = $users->pluck('id');
+                $startDate = min($dates);
+                $endDate = max($dates);
+                
+                $approvedAbsents = DB::table('absent_requests')
+                    ->leftJoin('leave_types', 'absent_requests.leave_type_id', '=', 'leave_types.id')
+                    ->whereIn('absent_requests.user_id', $userIds)
+                    ->where('absent_requests.status', 'approved')
+                    ->where(function($query) use ($startDate, $endDate) {
+                        $query->whereBetween('absent_requests.date_from', [$startDate, $endDate])
+                              ->orWhereBetween('absent_requests.date_to', [$startDate, $endDate])
+                              ->orWhere(function($q) use ($startDate, $endDate) {
+                                  $q->where('absent_requests.date_from', '<=', $startDate)
+                                    ->where('absent_requests.date_to', '>=', $endDate);
+                              });
+                    })
+                    ->select('absent_requests.user_id', 'absent_requests.date_from', 'absent_requests.date_to', 'leave_types.name as leave_type_name', 'absent_requests.reason')
+                    ->get();
+            }
         }
         \Log::info('USERSHIFT_INDEX_DATES', $dates);
         \Log::info('USERSHIFT_INDEX_HOLIDAYS', $holidays->toArray());
+        \Log::info('USERSHIFT_INDEX_APPROVED_ABSENTS', $approvedAbsents->toArray());
         return Inertia::render('UserShift/Index', [
             'outlets' => $outlets,
             'divisions' => $divisions,
@@ -73,6 +97,7 @@ class UserShiftController extends Controller
             'dates' => $dates,
             'userShifts' => $userShifts,
             'holidays' => $holidays,
+            'approvedAbsents' => $approvedAbsents,
             'filter' => [
                 'outlet_id' => $outletId,
                 'division_id' => $divisionId,

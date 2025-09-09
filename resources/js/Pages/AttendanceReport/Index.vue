@@ -234,21 +234,29 @@ const exportExcel = () => {
             <tr v-for="(row, idx) in props.data" :key="row.tanggal + '-' + row.nama_lengkap + '-' + (row.outlet_id || 'no-outlet')"
               :class="[
                 row.is_holiday ? 'bg-red-100 text-red-700 font-bold' : '',
-                !row.is_holiday && row.is_off ? 'bg-gray-200 text-gray-500 font-bold italic' : '',
-                !row.is_holiday && !row.is_off && idx % 2 === 1 ? 'bg-blue-50' : ''
+                !row.is_holiday && row.is_approved_absent ? 'bg-green-100 text-green-700 font-bold' : '',
+                !row.is_holiday && !row.is_approved_absent && row.is_off ? 'bg-gray-200 text-gray-500 font-bold italic' : '',
+                !row.is_holiday && !row.is_approved_absent && !row.is_off && idx % 2 === 1 ? 'bg-blue-50' : ''
               ]">
-              <td class="px-4 py-2 whitespace-nowrap font-mono" :title="row.is_holiday ? row.holiday_name : ''">
+              <td class="px-4 py-2 whitespace-nowrap font-mono" :title="row.is_holiday ? row.holiday_name : (row.is_approved_absent ? row.approved_absent_name : '')">
                 {{ row.tanggal }}
                 <span v-if="row.is_holiday && row.holiday_name" class="ml-1 text-xs font-semibold">({{ row.holiday_name }})</span>
+                <span v-if="!row.is_holiday && row.is_approved_absent && row.approved_absent_name" class="ml-1 text-xs font-semibold">({{ row.approved_absent_name }})</span>
               </td>
               <td class="px-4 py-2 whitespace-nowrap">{{ row.nama_lengkap }}</td>
               <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-600">{{ row.nama_outlet || '-' }}</td>
               <td class="px-4 py-2 whitespace-nowrap text-center font-mono">
                 <span v-if="row.is_off">OFF</span>
+                <span v-else-if="row.approved_absent" class="text-green-600 font-semibold">
+                  <i class="fa-solid fa-check-circle mr-1"></i>{{ row.approved_absent.leave_type_name }}
+                </span>
                 <span v-else>{{ row.jam_masuk || '-' }}</span>
               </td>
               <td class="px-4 py-2 whitespace-nowrap text-center font-mono">
                 <span v-if="row.is_off">OFF</span>
+                <span v-else-if="row.approved_absent" class="text-green-600 font-semibold">
+                  <i class="fa-solid fa-check-circle mr-1"></i>{{ row.approved_absent.leave_type_name }}
+                </span>
                 <span v-else>{{ row.jam_keluar || '-' }}</span>
               </td>
               <td class="px-4 py-2 whitespace-nowrap text-center font-mono text-xs">

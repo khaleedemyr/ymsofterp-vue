@@ -117,6 +117,10 @@ class EmployeeMovementController extends Controller
             'psikotest_attachment' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:2048',
             'training_attachment' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:2048',
             'other_attachments.*' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:2048',
+            'hod_approver_id' => 'nullable|exists:users,id',
+            'gm_approver_id' => 'nullable|exists:users,id',
+            'gm_hr_approver_id' => 'nullable|exists:users,id',
+            'bod_approver_id' => 'nullable|exists:users,id',
             'status' => 'required|in:draft,pending,approved,rejected',
         ]);
 
@@ -158,7 +162,13 @@ class EmployeeMovementController extends Controller
 
     public function show(EmployeeMovement $employeeMovement)
     {
-        $employeeMovement->load(['employee:id,nama_lengkap,nik,id_jabatan,id_outlet,division_id,tanggal_masuk']);
+        $employeeMovement->load([
+            'employee:id,nama_lengkap,nik,id_jabatan,id_outlet,division_id,tanggal_masuk',
+            'hodApprover:id,nama_lengkap,nik',
+            'gmApprover:id,nama_lengkap,nik',
+            'gmHrApprover:id,nama_lengkap,nik',
+            'bodApprover:id,nama_lengkap,nik'
+        ]);
         
         return Inertia::render('EmployeeMovement/Show', [
             'movement' => $employeeMovement,
@@ -216,6 +226,10 @@ class EmployeeMovementController extends Controller
             'psikotest_attachment' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:2048',
             'training_attachment' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:2048',
             'other_attachments.*' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:2048',
+            'hod_approver_id' => 'nullable|exists:users,id',
+            'gm_approver_id' => 'nullable|exists:users,id',
+            'gm_hr_approver_id' => 'nullable|exists:users,id',
+            'bod_approver_id' => 'nullable|exists:users,id',
             'status' => 'required|in:draft,pending,approved,rejected',
         ]);
 
@@ -397,6 +411,20 @@ class EmployeeMovementController extends Controller
             'levels' => $levels,
             'divisions' => $divisions,
             'outlets' => $outlets,
+        ]);
+    }
+
+    public function getApprovers()
+    {
+        $approvers = User::where('status', 'A')
+                        ->select('id', 'nama_lengkap', 'nik', 'id_jabatan')
+                        ->with(['jabatan:id_jabatan,nama_jabatan'])
+                        ->orderBy('nama_lengkap')
+                        ->get();
+
+        return response()->json([
+            'success' => true,
+            'approvers' => $approvers,
         ]);
     }
 }

@@ -234,8 +234,8 @@ function formatDate(date) {
   return new Date(date).toLocaleDateString('id-ID')
 }
 
-function approveReturn() {
-  Swal.fire({
+async function approveReturn() {
+  const result = await Swal.fire({
     title: 'Approve Return?',
     text: 'Apakah Anda yakin ingin approve return ini?',
     icon: 'question',
@@ -245,30 +245,30 @@ function approveReturn() {
     confirmButtonColor: '#10b981',
     cancelButtonColor: '#6b7280',
     reverseButtons: true
-  }).then((result) => {
-    if (result.isConfirmed) {
-      router.post(`/head-office-return/${returnData.id}/approve`, {}, {
-        onSuccess: () => {
-          Swal.fire({
-            icon: 'success',
-            title: 'Berhasil',
-            text: 'Return berhasil diapprove',
-            timer: 1500,
-            showConfirmButton: false
-          }).then(() => {
-            router.visit('/head-office-return')
-          })
-        },
-        onError: (errors) => {
-          Swal.fire({
-            icon: 'error',
-            title: 'Gagal',
-            text: errors.message || 'Gagal approve return'
-          })
-        }
-      })
+  });
+
+  if (result.isConfirmed) {
+    try {
+      const response = await axios.post(`/head-office-return/${returnData.id}/approve`);
+      if (response.data.success) {
+        await Swal.fire({
+          icon: 'success',
+          title: 'Berhasil',
+          text: response.data.message,
+          timer: 1500,
+          showConfirmButton: false
+        });
+        router.visit('/head-office-return');
+      }
+    } catch (error) {
+      console.error('Error approving return:', error);
+      await Swal.fire({
+        icon: 'error',
+        title: 'Gagal',
+        text: error.response?.data?.message || 'Gagal approve return'
+      });
     }
-  })
+  }
 }
 
 function showRejectModal() {
@@ -281,37 +281,38 @@ function closeRejectModal() {
   rejectReason.value = ''
 }
 
-function rejectReturn() {
+async function rejectReturn() {
   if (!rejectReason.value.trim()) {
-    Swal.fire({
+    await Swal.fire({
       icon: 'warning',
       title: 'Perhatian',
       text: 'Alasan reject harus diisi'
-    })
-    return
+    });
+    return;
   }
 
-  router.post(`/head-office-return/${returnData.id}/reject`, {
-    rejection_reason: rejectReason.value
-  }, {
-    onSuccess: () => {
-      Swal.fire({
+  try {
+    const response = await axios.post(`/head-office-return/${returnData.id}/reject`, {
+      rejection_reason: rejectReason.value
+    });
+    
+    if (response.data.success) {
+      await Swal.fire({
         icon: 'success',
         title: 'Berhasil',
-        text: 'Return berhasil direject',
+        text: response.data.message,
         timer: 1500,
         showConfirmButton: false
-      }).then(() => {
-        router.visit('/head-office-return')
-      })
-    },
-    onError: (errors) => {
-      Swal.fire({
-        icon: 'error',
-        title: 'Gagal',
-        text: errors.message || 'Gagal reject return'
-      })
+      });
+      router.visit('/head-office-return');
     }
-  })
+  } catch (error) {
+    console.error('Error rejecting return:', error);
+    await Swal.fire({
+      icon: 'error',
+      title: 'Gagal',
+      text: error.response?.data?.message || 'Gagal reject return'
+    });
+  }
 }
 </script>

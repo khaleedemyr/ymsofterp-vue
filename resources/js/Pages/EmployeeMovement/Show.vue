@@ -395,13 +395,62 @@ function downloadFile(path) {
               </div>
             </div>
 
-            <!-- Approval Section -->
+            <!-- Approval Assignment Section -->
             <div class="mb-8">
-              <h3 class="text-lg font-medium text-gray-900 mb-4 bg-gray-100 p-3 rounded-md">Acknowledgement & Approval</h3>
+              <h3 class="text-lg font-medium text-gray-900 mb-4 bg-gray-100 p-3 rounded-md">Approval Assignment</h3>
               <div class="bg-gray-50 p-4 rounded-md">
                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                   <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">HOD</label>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">HOD Approver</label>
+                    <div class="p-2 bg-white rounded-md min-h-[60px]">
+                      <div v-if="movement.hod_approver" class="text-sm">
+                        <div class="font-medium">{{ movement.hod_approver.nama_lengkap }}</div>
+                        <div class="text-gray-500">{{ movement.hod_approver.nik }}</div>
+                      </div>
+                      <div v-else class="text-gray-500 text-sm">Not assigned</div>
+                    </div>
+                  </div>
+                  <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">GM Approver</label>
+                    <div class="p-2 bg-white rounded-md min-h-[60px]">
+                      <div v-if="movement.gm_approver" class="text-sm">
+                        <div class="font-medium">{{ movement.gm_approver.nama_lengkap }}</div>
+                        <div class="text-gray-500">{{ movement.gm_approver.nik }}</div>
+                      </div>
+                      <div v-else class="text-gray-500 text-sm">Not assigned</div>
+                    </div>
+                  </div>
+                  <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">GM HR Approver</label>
+                    <div class="p-2 bg-white rounded-md min-h-[60px]">
+                      <div v-if="movement.gm_hr_approver" class="text-sm">
+                        <div class="font-medium">{{ movement.gm_hr_approver.nama_lengkap }}</div>
+                        <div class="text-gray-500">{{ movement.gm_hr_approver.nik }}</div>
+                      </div>
+                      <div v-else class="text-gray-500 text-sm">Not assigned</div>
+                    </div>
+                  </div>
+                  <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">BOD Approver</label>
+                    <div class="p-2 bg-white rounded-md min-h-[60px]">
+                      <div v-if="movement.bod_approver" class="text-sm">
+                        <div class="font-medium">{{ movement.bod_approver.nama_lengkap }}</div>
+                        <div class="text-gray-500">{{ movement.bod_approver.nik }}</div>
+                      </div>
+                      <div v-else class="text-gray-500 text-sm">Not assigned</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Approval Status Section -->
+            <div class="mb-8">
+              <h3 class="text-lg font-medium text-gray-900 mb-4 bg-gray-100 p-3 rounded-md">Approval Status</h3>
+              <div class="bg-gray-50 p-4 rounded-md">
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">HOD Approval</label>
                     <div class="p-2 bg-white rounded-md min-h-[60px] flex items-center justify-center">
                       {{ movement.hod_approval || 'Not signed' }}
                     </div>
@@ -410,7 +459,7 @@ function downloadFile(path) {
                     </div>
                   </div>
                   <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">GM</label>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">GM Approval</label>
                     <div class="p-2 bg-white rounded-md min-h-[60px] flex items-center justify-center">
                       {{ movement.gm_approval || 'Not signed' }}
                     </div>
@@ -419,7 +468,7 @@ function downloadFile(path) {
                     </div>
                   </div>
                   <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">GM HR</label>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">GM HR Approval</label>
                     <div class="p-2 bg-white rounded-md min-h-[60px] flex items-center justify-center">
                       {{ movement.gm_hr_approval || 'Not signed' }}
                     </div>
@@ -428,7 +477,7 @@ function downloadFile(path) {
                     </div>
                   </div>
                   <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">BOD</label>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">BOD Approval</label>
                     <div class="p-2 bg-white rounded-md min-h-[60px] flex items-center justify-center">
                       {{ movement.bod_approval || 'Not signed' }}
                     </div>

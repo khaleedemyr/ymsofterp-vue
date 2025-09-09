@@ -13,6 +13,7 @@ const props = defineProps({
   userShifts: Array,
   filter: Object,
   holidays: Array,
+  approvedAbsents: Array,
 });
 
 const page = usePage();
@@ -49,6 +50,16 @@ const userShiftMap = computed(() => {
 
 const loading = ref(false);
 
+// Bulk input functionality
+const showBulkInput = ref(false);
+const bulkInput = ref({
+  shift_id: null,
+  selectedUsers: [],
+  selectedDates: [],
+  applyToAllUsers: false,
+  applyToAllDates: false
+});
+
 const holidayMap = computed(() => {
   const map = {};
   (props.holidays || []).forEach(h => {
@@ -60,9 +71,40 @@ const holidayMap = computed(() => {
 
 const tglKey = (tgl) => String(formatDateLocal(tgl)).trim();
 
+// Computed property untuk mendapatkan approved absent berdasarkan tanggal dan user
+const getApprovedAbsentForDate = computed(() => {
+  return (dateString, userId) => {
+    if (!props.approvedAbsents) return null
+    
+    const date = new Date(dateString).toISOString().split('T')[0]
+    
+    return props.approvedAbsents.find(absent => {
+      const fromDate = new Date(absent.date_from).toISOString().split('T')[0]
+      const toDate = new Date(absent.date_to).toISOString().split('T')[0]
+      
+      return absent.user_id === userId && date >= fromDate && date <= toDate
+    })
+  }
+});
+
+// Computed property untuk mengecek apakah tanggal sudah lewat
+const isPastDate = computed(() => {
+  return (dateString) => {
+    const today = new Date()
+    const date = new Date(dateString)
+    
+    // Set time to start of day for accurate comparison
+    today.setHours(0, 0, 0, 0)
+    date.setHours(0, 0, 0, 0)
+    
+    return date < today
+  }
+});
+
 console.log('dates:', props.dates);
 console.log('holidays:', props.holidays);
 console.log('holidayMap:', holidayMap.value);
+console.log('approvedAbsents:', props.approvedAbsents);
 
 const form = useForm({
   outlet_id: outletId.value,
@@ -136,6 +178,83 @@ function hideTooltip() {
   tooltipVisible.value = false;
 }
 
+// Bulk input functions
+function toggleBulkInput() {
+  showBulkInput.value = !showBulkInput.value;
+  if (!showBulkInput.value) {
+    resetBulkInput();
+  }
+}
+
+function resetBulkInput() {
+  bulkInput.value = {
+    shift_id: null,
+    selectedUsers: [],
+    selectedDates: [],
+    applyToAllUsers: false,
+    applyToAllDates: false
+  };
+}
+
+function applyBulkInput() {
+  if (!bulkInput.value.shift_id) {
+    Swal.fire('Pilih Shift', 'Silakan pilih shift yang akan diterapkan!', 'warning');
+    return;
+  }
+
+  if (!bulkInput.value.applyToAllUsers && bulkInput.value.selectedUsers.length === 0) {
+    Swal.fire('Pilih Karyawan', 'Silakan pilih karyawan atau centang "Terapkan ke Semua Karyawan"!', 'warning');
+    return;
+  }
+
+  if (!bulkInput.value.applyToAllDates && bulkInput.value.selectedDates.length === 0) {
+    Swal.fire('Pilih Tanggal', 'Silakan pilih tanggal atau centang "Terapkan ke Semua Tanggal"!', 'warning');
+    return;
+  }
+
+  // Apply bulk input
+  const usersToApply = bulkInput.value.applyToAllUsers ? props.users : props.users.filter(u => bulkInput.value.selectedUsers.includes(u.id));
+  const datesToApply = bulkInput.value.applyToAllDates ? props.dates : bulkInput.value.selectedDates;
+
+  let appliedCount = 0;
+  let skippedCount = 0;
+
+  usersToApply.forEach(user => {
+    datesToApply.forEach(date => {
+      // Skip if date is past or user has approved absent
+      if (isPastDate.value(date) || getApprovedAbsentForDate.value(date, user.id)) {
+        skippedCount++;
+        return;
+      }
+
+      // Apply shift (convert 'OFF' string to null)
+      form.shifts[user.id][date] = bulkInput.value.shift_id === 'OFF' ? null : bulkInput.value.shift_id;
+      appliedCount++;
+    });
+  });
+
+  // Show result
+  const shiftName = bulkInput.value.shift_id === 'OFF' ? 'OFF (Tidak Masuk Kerja)' : 
+    props.shifts.find(s => s.id == bulkInput.value.shift_id)?.shift_name || 'Shift';
+  let message = `Berhasil menerapkan ${shiftName} ke ${appliedCount} slot jadwal.`;
+  if (skippedCount > 0) {
+    message += ` ${skippedCount} slot dilewati (tanggal lewat atau ada absen).`;
+  }
+
+  Swal.fire('Bulk Input Berhasil', message, 'success');
+  resetBulkInput();
+  showBulkInput.value = false;
+}
+
+// Computed properties for bulk input
+const availableDates = computed(() => {
+  return props.dates.filter(date => !isPastDate.value(date));
+});
+
+const availableUsers = computed(() => {
+  return props.users;
+});
+
 // Jika user bukan HO, set outletId ke outlet sendiri dan disable select
 if (userOutletId && userOutletId != 1) {
   outletId.value = userOutletId;
@@ -169,6 +288,133 @@ if (userOutletId && userOutletId != 1) {
           Tampilkan
         </button>
       </div>
+      
+      <!-- Bulk Input Section -->
+      <div v-if="users.length && dates.length" class="mb-6">
+        <div class="bg-white rounded-2xl shadow-lg p-6">
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="text-lg font-semibold text-gray-800 flex items-center">
+              <i class="fa-solid fa-layer-group mr-2 text-blue-600"></i>
+              Bulk Input Shift
+            </h3>
+            <button 
+              type="button"
+              @click="toggleBulkInput"
+              :class="[
+                'px-4 py-2 rounded-lg font-medium transition-colors',
+                showBulkInput ? 'bg-red-100 text-red-700 hover:bg-red-200' : 'bg-blue-100 text-blue-700 hover:bg-blue-200'
+              ]"
+            >
+              <i :class="showBulkInput ? 'fa-solid fa-times' : 'fa-solid fa-plus'" class="mr-2"></i>
+              {{ showBulkInput ? 'Tutup' : 'Bulk Input' }}
+            </button>
+          </div>
+          
+          <div v-if="showBulkInput" class="space-y-4">
+            <!-- Shift Selection -->
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-2">
+                Pilih Shift <span class="text-red-500">*</span>
+              </label>
+              <select 
+                v-model="bulkInput.shift_id"
+                class="w-full form-input rounded-lg border-gray-300 focus:border-blue-500 focus:ring-blue-500"
+              >
+                <option :value="null">-- Pilih Shift --</option>
+                <option :value="'OFF'">OFF (Tidak Masuk Kerja)</option>
+                <option v-for="shift in shifts" :key="shift.id" :value="shift.id">
+                  {{ shift.shift_name }} ({{ shift.time_start }} - {{ shift.time_end }})
+                </option>
+              </select>
+            </div>
+            
+            <!-- User Selection -->
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-2">
+                Pilih Karyawan
+              </label>
+              <div class="space-y-2">
+                <label class="flex items-center">
+                  <input 
+                    type="checkbox" 
+                    v-model="bulkInput.applyToAllUsers"
+                    class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  >
+                  <span class="ml-2 text-sm text-gray-700">Terapkan ke Semua Karyawan</span>
+                </label>
+                <div v-if="!bulkInput.applyToAllUsers" class="max-h-32 overflow-y-auto border border-gray-200 rounded-lg p-2">
+                  <label 
+                    v-for="user in availableUsers" 
+                    :key="user.id"
+                    class="flex items-center py-1"
+                  >
+                    <input 
+                      type="checkbox" 
+                      :value="user.id"
+                      v-model="bulkInput.selectedUsers"
+                      class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    >
+                    <span class="ml-2 text-sm text-gray-700">{{ user.nama_lengkap }}</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Date Selection -->
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-2">
+                Pilih Tanggal
+              </label>
+              <div class="space-y-2">
+                <label class="flex items-center">
+                  <input 
+                    type="checkbox" 
+                    v-model="bulkInput.applyToAllDates"
+                    class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  >
+                  <span class="ml-2 text-sm text-gray-700">Terapkan ke Semua Tanggal (kecuali yang sudah lewat)</span>
+                </label>
+                <div v-if="!bulkInput.applyToAllDates" class="flex flex-wrap gap-2">
+                  <label 
+                    v-for="date in availableDates" 
+                    :key="date"
+                    class="flex items-center"
+                  >
+                    <input 
+                      type="checkbox" 
+                      :value="date"
+                      v-model="bulkInput.selectedDates"
+                      class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    >
+                    <span class="ml-2 text-sm text-gray-700">{{ getDayName(date) }} ({{ date }})</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Action Buttons -->
+            <div class="flex justify-end space-x-3 pt-4 border-t">
+              <button 
+                type="button"
+                @click="resetBulkInput"
+                class="px-4 py-2 text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+              >
+                <i class="fa-solid fa-undo mr-2"></i>
+                Reset
+              </button>
+              <button 
+                type="button"
+                @click="applyBulkInput"
+                class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                <i class="fa-solid fa-check mr-2"></i>
+                Terapkan
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+      
       <form @submit.prevent="submit">
         <div v-if="users.length && dates.length" class="bg-white rounded-2xl shadow-lg overflow-x-auto">
           <table class="min-w-full divide-y divide-blue-200">
@@ -198,11 +444,48 @@ if (userOutletId && userOutletId != 1) {
                 <td v-for="tgl in dates" :key="tgl"
                   :class="[
                     'px-4 py-2 text-center',
-                    isLibur(tgl) ? 'holiday-cell' : ''
+                    isLibur(tgl) ? 'holiday-cell' : '',
+                    getApprovedAbsentForDate(tgl, user.id) ? 'bg-green-50' : '',
+                    isPastDate(tgl) ? 'bg-gray-100' : ''
                   ]"
-                  :title="holidayMap.value && holidayMap.value[tglKey(tgl)] ? holidayMap.value[tglKey(tgl)] : ''"
+                  :title="getApprovedAbsentForDate(tgl, user.id) ? 
+                    `Sudah ada absen: ${getApprovedAbsentForDate(tgl, user.id).leave_type_name} - ${getApprovedAbsentForDate(tgl, user.id).reason}` : 
+                    isPastDate(tgl) ? 'Tanggal sudah lewat - tidak dapat diedit' :
+                    (holidayMap.value && holidayMap.value[tglKey(tgl)] ? holidayMap.value[tglKey(tgl)] : '')"
                 >
-                  <select v-model="form.shifts[user.id][tgl]" class="form-input rounded">
+                  <!-- Past Date Indicator -->
+                  <div v-if="isPastDate(tgl)" class="mb-1">
+                    <div class="w-full text-xs bg-gray-500 text-white px-1 py-0.5 rounded">
+                      <i class="fa-solid fa-clock sm:mr-1"></i>
+                      <span class="hidden sm:inline">Tanggal Lewat</span>
+                      <span class="sm:hidden">⏰</span>
+                    </div>
+                    <div class="text-xs text-gray-600 mt-0.5">
+                      Tidak dapat diedit
+                    </div>
+                  </div>
+                  
+                  <!-- Approved Absent Indicator -->
+                  <div v-else-if="getApprovedAbsentForDate(tgl, user.id)" class="mb-1">
+                    <div class="w-full text-xs bg-green-500 text-white px-1 py-0.5 rounded">
+                      <i class="fa-solid fa-check-circle sm:mr-1"></i>
+                      <span class="hidden sm:inline">{{ getApprovedAbsentForDate(tgl, user.id).leave_type_name }}</span>
+                      <span class="sm:hidden">✓</span>
+                    </div>
+                    <div class="text-xs text-green-600 mt-0.5">
+                      {{ getApprovedAbsentForDate(tgl, user.id).reason }}
+                    </div>
+                  </div>
+                  
+                  <!-- Shift Select - Disabled if has approved absent or is past date -->
+                  <select 
+                    v-model="form.shifts[user.id][tgl]" 
+                    :disabled="getApprovedAbsentForDate(tgl, user.id) || isPastDate(tgl)"
+                    :class="[
+                      'form-input rounded',
+                      (getApprovedAbsentForDate(tgl, user.id) || isPastDate(tgl)) ? 'bg-gray-100 cursor-not-allowed opacity-50' : ''
+                    ]"
+                  >
                     <option :value="null">OFF</option>
                     <option v-for="s in shifts" :key="s.id" :value="s.id">{{ s.shift_name }}</option>
                   </select>

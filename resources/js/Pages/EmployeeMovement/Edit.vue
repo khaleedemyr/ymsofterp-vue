@@ -53,6 +53,10 @@ const form = useForm({
   psikotest_attachment: null,
   training_attachment: null,
   other_attachments: [],
+  hod_approver_id: props.movement.hod_approver_id || '',
+  gm_approver_id: props.movement.gm_approver_id || '',
+  gm_hr_approver_id: props.movement.gm_hr_approver_id || '',
+  bod_approver_id: props.movement.bod_approver_id || '',
   status: props.movement.status || 'draft',
 });
 
@@ -67,6 +71,7 @@ const positions = ref([]);
 const levels = ref([]);
 const divisions = ref([]);
 const outlets = ref([]);
+const approvers = ref([]);
 
 // Salary formatting function
 const formatCurrency = (value) => {
@@ -108,10 +113,30 @@ const fetchDropdownData = async () => {
   }
 };
 
+// Fetch approvers data
+const fetchApprovers = async () => {
+  try {
+    console.log('Fetching approvers data...');
+    const url = route('employee-movements.approvers');
+    const response = await axios.get(url);
+    console.log('Approvers data response:', response.data);
+    if (response.data.success) {
+      approvers.value = response.data.approvers;
+      console.log('Approvers loaded:', approvers.value.length);
+    } else {
+      console.error('API returned success: false');
+    }
+  } catch (error) {
+    console.error('Error fetching approvers data:', error);
+    console.error('Error details:', error.response?.data);
+  }
+};
+
 // Initialize on mount
 onMounted(() => {
   console.log('Component mounted, fetching dropdown data...');
   fetchDropdownData();
+  fetchApprovers();
   
   // Debug: Check data after a delay
   setTimeout(() => {
@@ -119,6 +144,7 @@ onMounted(() => {
     console.log('Levels after delay:', levels.value);
     console.log('Divisions after delay:', divisions.value);
     console.log('Outlets after delay:', outlets.value);
+    console.log('Approvers after delay:', approvers.value);
   }, 2000);
 });
 
@@ -812,6 +838,110 @@ const goBack = () => {
                   class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="Enter comments here..."
                 ></textarea>
+              </div>
+            </div>
+
+            <!-- Approval Section -->
+            <div class="mb-8">
+              <h3 class="text-lg font-medium text-gray-900 mb-4">Approval Assignment</h3>
+              <div class="bg-gray-50 p-4 rounded-md">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <!-- HOD Approver -->
+                  <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">HOD Approver</label>
+                    <Multiselect
+                      v-model="form.hod_approver_id"
+                      :options="approvers"
+                      :searchable="true"
+                      :clear-on-select="false"
+                      :close-on-select="true"
+                      :show-labels="false"
+                      track-by="id"
+                      label="nama_lengkap"
+                      placeholder="Select HOD Approver..."
+                      class="w-full"
+                    >
+                      <template #option="{ option }">
+                        <div class="text-sm">
+                          <div class="font-medium">{{ option.nama_lengkap }}</div>
+                          <div class="text-gray-500">{{ option.nik }} - {{ option.jabatan?.nama_jabatan || 'No Position' }}</div>
+                        </div>
+                      </template>
+                    </Multiselect>
+                  </div>
+
+                  <!-- GM Approver -->
+                  <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">GM Approver</label>
+                    <Multiselect
+                      v-model="form.gm_approver_id"
+                      :options="approvers"
+                      :searchable="true"
+                      :clear-on-select="false"
+                      :close-on-select="true"
+                      :show-labels="false"
+                      track-by="id"
+                      label="nama_lengkap"
+                      placeholder="Select GM Approver..."
+                      class="w-full"
+                    >
+                      <template #option="{ option }">
+                        <div class="text-sm">
+                          <div class="font-medium">{{ option.nama_lengkap }}</div>
+                          <div class="text-gray-500">{{ option.nik }} - {{ option.jabatan?.nama_jabatan || 'No Position' }}</div>
+                        </div>
+                      </template>
+                    </Multiselect>
+                  </div>
+
+                  <!-- GM HR Approver -->
+                  <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">GM HR Approver</label>
+                    <Multiselect
+                      v-model="form.gm_hr_approver_id"
+                      :options="approvers"
+                      :searchable="true"
+                      :clear-on-select="false"
+                      :close-on-select="true"
+                      :show-labels="false"
+                      track-by="id"
+                      label="nama_lengkap"
+                      placeholder="Select GM HR Approver..."
+                      class="w-full"
+                    >
+                      <template #option="{ option }">
+                        <div class="text-sm">
+                          <div class="font-medium">{{ option.nama_lengkap }}</div>
+                          <div class="text-gray-500">{{ option.nik }} - {{ option.jabatan?.nama_jabatan || 'No Position' }}</div>
+                        </div>
+                      </template>
+                    </Multiselect>
+                  </div>
+
+                  <!-- BOD Approver -->
+                  <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">BOD Approver</label>
+                    <Multiselect
+                      v-model="form.bod_approver_id"
+                      :options="approvers"
+                      :searchable="true"
+                      :clear-on-select="false"
+                      :close-on-select="true"
+                      :show-labels="false"
+                      track-by="id"
+                      label="nama_lengkap"
+                      placeholder="Select BOD Approver..."
+                      class="w-full"
+                    >
+                      <template #option="{ option }">
+                        <div class="text-sm">
+                          <div class="font-medium">{{ option.nama_lengkap }}</div>
+                          <div class="text-gray-500">{{ option.nik }} - {{ option.jabatan?.nama_jabatan || 'No Position' }}</div>
+                        </div>
+                      </template>
+                    </Multiselect>
+                  </div>
+                </div>
               </div>
             </div>
 

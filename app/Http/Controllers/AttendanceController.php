@@ -59,6 +59,9 @@ class AttendanceController extends Controller
             ->select('tgl_libur as date', 'keterangan as name')
             ->get();
         
+        // Get approved absent requests for the date range
+        $approvedAbsents = $this->getApprovedAbsentRequests($user->id, $startDate, $endDate);
+        
         // Get active leave types
         $leaveTypes = LeaveType::active()
             ->select('id', 'name', 'max_days', 'requires_document', 'description')
@@ -71,6 +74,7 @@ class AttendanceController extends Controller
             'attendanceSummary' => $attendanceSummary,
             'calendar' => $calendar,
             'holidays' => $holidays,
+            'approvedAbsents' => $approvedAbsents,
             'leaveTypes' => $leaveTypes,
             'filters' => [
                 'bulan' => $bulan,
@@ -510,14 +514,17 @@ class AttendanceController extends Controller
                 'date_from' => 'required|date',
                 'date_to' => 'required|date|after_or_equal:date_from',
                 'reason' => 'required|string|max:1000',
-                'document' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:5120' // 5MB max
+                'document' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:5120', // 5MB max
+                'documents' => 'nullable|array',
+                'documents.*' => 'file|mimes:pdf,jpg,jpeg,png|max:5120' // 5MB max per file
             ]);
             
             // Get leave type information
             $leaveType = LeaveType::findOrFail($request->leave_type_id);
             
             // Validate document requirement
-            if ($leaveType->requires_document && !$request->hasFile('document')) {
+            $hasDocument = $request->hasFile('document') || $request->hasFile('documents');
+            if ($leaveType->requires_document && !$hasDocument) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Dokumen pendukung wajib diupload untuk jenis izin/cuti ini'
@@ -563,11 +570,25 @@ class AttendanceController extends Controller
             }
             
             // Handle file upload
-            $documentPath = null;
+            $documentPaths = [];
+            
+            // Handle single document (legacy support)
             if ($request->hasFile('document')) {
                 $file = $request->file('document');
-                $documentPath = $file->store('absent-documents', 'public');
+                $documentPaths[] = $file->store('absent-documents', 'public');
             }
+            
+            // Handle multiple documents
+            if ($request->hasFile('documents')) {
+                foreach ($request->file('documents') as $file) {
+                    if ($file) {
+                        $documentPaths[] = $file->store('absent-documents', 'public');
+                    }
+                }
+            }
+            
+            // Use first document path for backward compatibility
+            $documentPath = !empty($documentPaths) ? $documentPaths[0] : null;
             
             // Insert absent request
             $absentRequestId = DB::table('absent_requests')->insertGetId([
@@ -577,13 +598,53 @@ class AttendanceController extends Controller
                 'date_to' => $request->date_to,
                 'reason' => $request->reason,
                 'document_path' => $documentPath,
+                'document_paths' => !empty($documentPaths) ? json_encode($documentPaths) : null, // Store multiple paths as JSON
                 'status' => 'pending',
                 'created_at' => now(),
                 'updated_at' => now()
             ]);
             
-            // Send notification to supervisor/HR (optional)
-            // You can implement notification logic here
+            // Find approver (atasan) based on user's jabatan and outlet
+            $approver = $this->findApprover($user);
+            
+            if ($approver) {
+                // Find HRD approver
+                $hrdApprover = $this->findHrdApprover();
+                
+                // Create approval request
+                $approvalRequestId = DB::table('approval_requests')->insertGetId([
+                    'user_id' => $user->id,
+                    'approver_id' => $approver->id,
+                    'hrd_approver_id' => $hrdApprover ? $hrdApprover->id : null,
+                    'leave_type_id' => $request->leave_type_id,
+                    'date_from' => $request->date_from,
+                    'date_to' => $request->date_to,
+                    'reason' => $request->reason,
+                    'document_path' => $documentPath,
+                    'document_paths' => !empty($documentPaths) ? json_encode($documentPaths) : null, // Store multiple paths as JSON
+                    'status' => 'pending',
+                    'hrd_status' => $hrdApprover ? 'pending' : null,
+                    'created_at' => now(),
+                    'updated_at' => now()
+                ]);
+
+                // Link absent request with approval request
+                DB::table('absent_requests')
+                    ->where('id', $absentRequestId)
+                    ->update(['approval_request_id' => $approvalRequestId]);
+
+                // Kirim notifikasi ke atasan
+                DB::table('notifications')->insert([
+                    'user_id' => $approver->id,
+                    'type' => 'leave_approval_request',
+                    'message' => "Permohonan izin/cuti baru dari {$user->nama_lengkap} ({$leaveType->name}) untuk periode {$request->date_from} - {$request->date_to} membutuhkan persetujuan Anda.",
+                    'url' => config('app.url') . '/home',
+                    'is_read' => 0,
+                    'approval_id' => $approvalRequestId,
+                    'created_at' => now(),
+                    'updated_at' => now()
+                ]);
+            }
             
             return response()->json([
                 'success' => true,
@@ -611,5 +672,77 @@ class AttendanceController extends Controller
                 'message' => 'Terjadi kesalahan saat mengirim permohonan'
             ], 500);
         }
+    }
+    
+    /**
+     * Find approver (atasan) for a user based on jabatan hierarchy and outlet
+     */
+    private function findApprover($user)
+    {
+        // Get user's jabatan information
+        $userJabatan = DB::table('tbl_data_jabatan')
+            ->where('id_jabatan', $user->id_jabatan)
+            ->first();
+            
+        if (!$userJabatan || !$userJabatan->id_atasan) {
+            return null;
+        }
+        
+        // Find user with id_atasan jabatan in the same outlet
+        $approver = DB::table('users as u')
+            ->join('tbl_data_jabatan as j', 'u.id_jabatan', '=', 'j.id_jabatan')
+            ->where('j.id_jabatan', $userJabatan->id_atasan)
+            ->where('u.id_outlet', $user->id_outlet)
+            ->where('u.status', 'A')
+            ->select('u.id', 'u.nama_lengkap', 'u.email', 'j.nama_jabatan')
+            ->first();
+            
+        return $approver;
+    }
+    
+    /**
+     * Find HRD approver (user with division_id=6 and status=A)
+     */
+    private function findHrdApprover()
+    {
+        $hrdApprover = DB::table('users')
+            ->where('division_id', 6)
+            ->where('status', 'A')
+            ->select('id', 'nama_lengkap', 'email')
+            ->first();
+            
+        return $hrdApprover;
+    }
+    
+    /**
+     * Get approved absent requests for the user in the date range
+     */
+    private function getApprovedAbsentRequests($userId, $startDate, $endDate)
+    {
+        $approvedAbsents = DB::table('absent_requests')
+            ->join('leave_types', 'absent_requests.leave_type_id', '=', 'leave_types.id')
+            ->where('absent_requests.user_id', $userId)
+            ->where('absent_requests.status', 'approved')
+            ->where(function($query) use ($startDate, $endDate) {
+                $query->whereBetween('absent_requests.date_from', [$startDate, $endDate])
+                      ->orWhereBetween('absent_requests.date_to', [$startDate, $endDate])
+                      ->orWhere(function($q) use ($startDate, $endDate) {
+                          $q->where('absent_requests.date_from', '<=', $startDate)
+                            ->where('absent_requests.date_to', '>=', $endDate);
+                      });
+            })
+            ->select([
+                'absent_requests.id',
+                'absent_requests.date_from',
+                'absent_requests.date_to',
+                'absent_requests.reason',
+                'leave_types.name as leave_type_name',
+                'absent_requests.approved_at',
+                'absent_requests.hrd_approved_at'
+            ])
+            ->orderBy('absent_requests.date_from')
+            ->get();
+            
+        return $approvedAbsents;
     }
 }

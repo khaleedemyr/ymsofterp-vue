@@ -257,8 +257,20 @@
                     </div>
                   </div>
                   
-                  <!-- Absent Button - Show only if no attendance data, is in payroll period, and not past date -->
-                  <div v-if="day.isInPayrollPeriod && !day.holiday && !hasAttendanceData(day) && !isPastDate(day.date)" class="mt-1">
+                  <!-- Approved Absent Display -->
+                  <div v-if="getApprovedAbsentForDate(day.date)" class="mt-1">
+                    <div class="w-full text-xs bg-green-500 text-white px-1 py-0.5 rounded">
+                      <i class="fa-solid fa-check-circle sm:mr-1"></i>
+                      <span class="hidden sm:inline">{{ getApprovedAbsentForDate(day.date).leave_type_name }}</span>
+                      <span class="sm:hidden">✓</span>
+                    </div>
+                    <div class="text-xs text-green-600 dark:text-green-400 mt-0.5">
+                      {{ getApprovedAbsentForDate(day.date).reason }}
+                    </div>
+                  </div>
+                  
+                  <!-- Absent Button - Show only if no attendance data, no approved absent, is in payroll period, and not past date -->
+                  <div v-else-if="day.isInPayrollPeriod && !day.holiday && !hasAttendanceData(day) && !isPastDate(day.date)" class="mt-1">
                     <button 
                       @click="showAbsentModal(day.date)"
                       class="w-full text-xs bg-red-500 hover:bg-red-600 text-white px-1 py-0.5 rounded transition-colors"
@@ -412,6 +424,140 @@
                 </p>
               </div>
               
+              <!-- Public Holiday Extra Off Days Balance - Show only if Public Holiday is selected -->
+              <div v-if="isPublicHolidayType" class="mt-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-700">
+                <div class="flex items-center justify-between">
+                  <div>
+                    <h4 class="text-sm font-medium text-blue-900 dark:text-blue-100">Saldo Extra Off dari Public Holiday</h4>
+                    <p class="text-xs text-blue-700 dark:text-blue-300 mt-1">
+                      Total hari extra off dari kerja di hari libur nasional
+                    </p>
+                  </div>
+                  <div class="text-right">
+                    <div v-if="loadingExtraOff" class="flex items-center">
+                      <i class="fas fa-spinner fa-spin text-blue-600 mr-2"></i>
+                      <span class="text-sm text-blue-600">Loading...</span>
+                    </div>
+                    <div v-else>
+                      <span class="text-2xl font-bold text-blue-900 dark:text-blue-100">
+                        {{ totalExtraOffDays }}
+                      </span>
+                      <span class="text-sm text-blue-700 dark:text-blue-300 ml-1">hari</span>
+                    </div>
+                  </div>
+                </div>
+                
+                <!-- Show warning if no extra off days available -->
+                <div v-if="!loadingExtraOff && totalExtraOffDays === 0" class="mt-3 p-2 bg-yellow-50 dark:bg-yellow-900/20 rounded border border-yellow-200 dark:border-yellow-700">
+                  <div class="flex items-center">
+                    <i class="fas fa-exclamation-triangle text-yellow-600 mr-2"></i>
+                    <span class="text-sm text-yellow-800 dark:text-yellow-200">
+                      Anda tidak memiliki saldo extra off dari kerja di hari libur nasional.
+                    </span>
+                  </div>
+                </div>
+                
+                <!-- Show extra off days details -->
+                <div v-if="!loadingExtraOff && totalExtraOffDays > 0" class="mt-3">
+                  <details class="text-xs">
+                    <summary class="cursor-pointer text-blue-700 dark:text-blue-300 hover:text-blue-900 dark:hover:text-blue-100">
+                      Lihat detail extra off days
+                    </summary>
+                    <div class="mt-2 space-y-1">
+                      <div v-for="extraOff in extraOffDays" :key="extraOff.id" class="flex justify-between items-center p-2 bg-white dark:bg-gray-800 rounded border">
+                        <div>
+                          <span class="font-medium">{{ extraOff.holiday_name }}</span>
+                          <span class="text-gray-500 dark:text-gray-400 ml-2">({{ extraOff.holiday_date }})</span>
+                        </div>
+                        <span class="text-green-600 dark:text-green-400 font-medium">1 hari</span>
+                      </div>
+                    </div>
+                  </details>
+                </div>
+              </div>
+              
+              <!-- Annual Leave Balance - Show only if Annual Leave is selected -->
+              <div v-if="isAnnualLeaveType" class="mt-4 p-3 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-700">
+                <div class="flex items-center justify-between">
+                  <div>
+                    <h4 class="text-sm font-medium text-green-900 dark:text-green-100">Saldo Cuti Tahunan</h4>
+                    <p class="text-xs text-green-700 dark:text-green-300 mt-1">
+                      Total hari cuti tahunan yang tersedia
+                    </p>
+                  </div>
+                  <div class="text-right">
+                    <span class="text-2xl font-bold text-green-900 dark:text-green-100">
+                      {{ annualLeaveBalance }}
+                    </span>
+                    <span class="text-sm text-green-700 dark:text-green-300 ml-1">hari</span>
+                  </div>
+                </div>
+                
+                <!-- Show warning if no annual leave balance available -->
+                <div v-if="annualLeaveBalance === 0" class="mt-3 p-2 bg-yellow-50 dark:bg-yellow-900/20 rounded border border-yellow-200 dark:border-yellow-700">
+                  <div class="flex items-center">
+                    <i class="fas fa-exclamation-triangle text-yellow-600 mr-2"></i>
+                    <span class="text-sm text-yellow-800 dark:text-yellow-200">
+                      Anda tidak memiliki saldo cuti tahunan yang tersedia.
+                    </span>
+                  </div>
+                </div>
+                
+                <!-- Show info if annual leave balance is available -->
+                <div v-if="annualLeaveBalance > 0" class="mt-3 p-2 bg-blue-50 dark:bg-blue-900/20 rounded border border-blue-200 dark:border-blue-700">
+                  <div class="flex items-center">
+                    <i class="fas fa-info-circle text-blue-600 mr-2"></i>
+                    <span class="text-sm text-blue-800 dark:text-blue-200">
+                      Anda dapat menggunakan {{ annualLeaveBalance }} hari cuti tahunan.
+                    </span>
+                  </div>
+                </div>
+              </div>
+              
+              <!-- Regular Extra Off Balance - Show only if Extra Off is selected -->
+              <div v-if="isExtraOffType" class="mt-4 p-3 bg-purple-50 dark:bg-purple-900/20 rounded-lg border border-purple-200 dark:border-purple-700">
+                <div class="flex items-center justify-between">
+                  <div>
+                    <h4 class="text-sm font-medium text-purple-900 dark:text-purple-100">Saldo Extra Off</h4>
+                    <p class="text-xs text-purple-700 dark:text-purple-300 mt-1">
+                      Total hari extra off dari kerja tanpa shift
+                    </p>
+                  </div>
+                  <div class="text-right">
+                    <div v-if="loadingExtraOffBalance" class="flex items-center">
+                      <i class="fas fa-spinner fa-spin text-purple-600 mr-2"></i>
+                      <span class="text-sm text-purple-600">Loading...</span>
+                    </div>
+                    <div v-else>
+                      <span class="text-2xl font-bold text-purple-900 dark:text-purple-100">
+                        {{ regularExtraOffBalance }}
+                      </span>
+                      <span class="text-sm text-purple-700 dark:text-purple-300 ml-1">hari</span>
+                    </div>
+                  </div>
+                </div>
+                
+                <!-- Show warning if no extra off balance available -->
+                <div v-if="!loadingExtraOffBalance && regularExtraOffBalance === 0" class="mt-3 p-2 bg-yellow-50 dark:bg-yellow-900/20 rounded border border-yellow-200 dark:border-yellow-700">
+                  <div class="flex items-center">
+                    <i class="fas fa-exclamation-triangle text-yellow-600 mr-2"></i>
+                    <span class="text-sm text-yellow-800 dark:text-yellow-200">
+                      Anda tidak memiliki saldo extra off yang tersedia.
+                    </span>
+                  </div>
+                </div>
+                
+                <!-- Show info if extra off balance is available -->
+                <div v-if="!loadingExtraOffBalance && regularExtraOffBalance > 0" class="mt-3 p-2 bg-blue-50 dark:bg-blue-900/20 rounded border border-blue-200 dark:border-blue-700">
+                  <div class="flex items-center">
+                    <i class="fas fa-info-circle text-blue-600 mr-2"></i>
+                    <span class="text-sm text-blue-800 dark:text-blue-200">
+                      Anda dapat menggunakan {{ regularExtraOffBalance }} hari extra off.
+                    </span>
+                  </div>
+                </div>
+              </div>
+              
               <!-- Date Range -->
               <div>
                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -444,6 +590,45 @@
                 </div>
               </div>
               
+              <!-- Days Count and Validation -->
+              <div v-if="selectedLeaveType && (isPublicHolidayType || isAnnualLeaveType || isExtraOffType)">
+                <div class="p-3 bg-gray-50 dark:bg-gray-700 rounded-lg border">
+                  <div class="flex items-center justify-between mb-2">
+                    <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Jumlah Hari yang Dipilih:</span>
+                    <span class="text-lg font-bold" :class="isExceedingBalance ? 'text-red-600' : 'text-green-600'">
+                      {{ selectedDaysCount }} hari
+                    </span>
+                  </div>
+                  
+                  <div class="flex items-center justify-between">
+                    <span class="text-sm text-gray-600 dark:text-gray-400">Saldo Tersedia:</span>
+                    <span class="text-sm font-medium text-blue-600 dark:text-blue-400">
+                      {{ availableBalance }} hari
+                    </span>
+                  </div>
+                  
+                  <!-- Error message if exceeding balance -->
+                  <div v-if="isExceedingBalance" class="mt-3 p-2 bg-red-50 dark:bg-red-900/20 rounded border border-red-200 dark:border-red-700">
+                    <div class="flex items-center">
+                      <i class="fas fa-exclamation-triangle text-red-600 mr-2"></i>
+                      <span class="text-sm text-red-800 dark:text-red-200">
+                        {{ balanceErrorMessage }}
+                      </span>
+                    </div>
+                  </div>
+                  
+                  <!-- Success message if within balance -->
+                  <div v-else-if="selectedDaysCount > 0 && availableBalance > 0" class="mt-3 p-2 bg-green-50 dark:bg-green-900/20 rounded border border-green-200 dark:border-green-700">
+                    <div class="flex items-center">
+                      <i class="fas fa-check-circle text-green-600 mr-2"></i>
+                      <span class="text-sm text-green-800 dark:text-green-200">
+                        Jumlah hari yang dipilih masih dalam batas saldo yang tersedia.
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
               <!-- Reason -->
               <div>
                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -459,26 +644,85 @@
               </div>
               
               
-              <!-- Supporting Document -->
+              <!-- Supporting Document - Camera Capture -->
               <div>
                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Dokumen Pendukung
                   <span v-if="selectedLeaveType && selectedLeaveType.requires_document" class="text-red-500">*</span>
                   <span v-else class="text-gray-500">(Opsional)</span>
                 </label>
-                <input 
-                  type="file"
-                  @change="handleFileUpload"
-                  accept=".pdf,.jpg,.jpeg,.png"
-                  :required="selectedLeaveType && selectedLeaveType.requires_document"
-                  class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-gray-100"
-                >
-                <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                  Format yang didukung: PDF, JPG, JPEG, PNG (Max 5MB)
-                  <span v-if="selectedLeaveType && selectedLeaveType.requires_document" class="text-red-500">
-                    - Dokumen wajib diupload
-                  </span>
-                </p>
+                
+                <!-- Camera Capture Button -->
+                <div v-if="capturedImages.length === 0" class="space-y-3">
+                  <button 
+                    type="button"
+                    @click="openCameraModal"
+                    class="w-full px-4 py-3 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg hover:border-blue-500 dark:hover:border-blue-400 transition-colors flex items-center justify-center space-x-2"
+                  >
+                    <i class="fa-solid fa-camera text-2xl text-gray-400"></i>
+                    <span class="text-gray-600 dark:text-gray-300">Ambil Foto dengan Kamera</span>
+                  </button>
+                  <p class="text-xs text-gray-500 dark:text-gray-400 text-center">
+                    Klik untuk membuka kamera dan ambil foto dokumen pendukung
+                    <span v-if="selectedLeaveType && selectedLeaveType.requires_document" class="text-red-500 block">
+                      - Dokumen wajib diambil
+                    </span>
+                  </p>
+                </div>
+                
+                <!-- Captured Images Preview -->
+                <div v-else class="space-y-3">
+                  <!-- Photo Thumbnails Grid -->
+                  <div class="grid grid-cols-2 gap-3">
+                    <div 
+                      v-for="image in capturedImages" 
+                      :key="image.id"
+                      class="relative group"
+                    >
+                      <img 
+                        :src="image.preview" 
+                        :alt="`Captured Document ${image.id}`"
+                        class="w-full h-32 object-cover rounded-lg border border-gray-300 dark:border-gray-600"
+                      >
+                      <!-- Remove Button -->
+                      <button 
+                        type="button"
+                        @click="removePhoto(image.id)"
+                        class="absolute -top-2 -right-2 p-1 bg-red-600 text-white rounded-full hover:bg-red-700 transition-colors opacity-0 group-hover:opacity-100"
+                        title="Hapus Foto"
+                      >
+                        <i class="fa-solid fa-times text-xs"></i>
+                      </button>
+                    </div>
+                  </div>
+                  
+                  <!-- Add More Photos Button -->
+                  <button 
+                    type="button"
+                    @click="openCameraModal"
+                    class="w-full px-4 py-2 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg hover:border-blue-500 dark:hover:border-blue-400 transition-colors flex items-center justify-center space-x-2"
+                  >
+                    <i class="fa-solid fa-plus text-gray-400"></i>
+                    <span class="text-gray-600 dark:text-gray-300">Tambah Foto Lainnya</span>
+                  </button>
+                  
+                  <!-- Clear All Button -->
+                  <button 
+                    v-if="capturedImages.length > 0"
+                    type="button"
+                    @click="clearAllPhotos"
+                    class="w-full px-4 py-2 text-red-600 border border-red-300 dark:border-red-600 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors flex items-center justify-center space-x-2"
+                  >
+                    <i class="fa-solid fa-trash text-sm"></i>
+                    <span>Hapus Semua Foto</span>
+                  </button>
+                  
+                  <!-- Status Message -->
+                  <p class="text-xs text-green-600 dark:text-green-400 text-center">
+                    <i class="fa-solid fa-check-circle mr-1"></i>
+                    {{ capturedImages.length }} foto berhasil diambil dan siap digunakan
+                  </p>
+                </div>
               </div>
             </div>
             
@@ -492,7 +736,7 @@
               </button>
               <button 
                 type="submit"
-                :disabled="submittingAbsent"
+                :disabled="submittingAbsent || (isPublicHolidayType && totalExtraOffDays === 0) || (isAnnualLeaveType && annualLeaveBalance === 0) || (isExtraOffType && regularExtraOffBalance === 0) || isExceedingBalance"
                 class="px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 disabled:bg-red-400 rounded-md transition-colors"
               >
                 <i v-if="submittingAbsent" class="fa-solid fa-spinner fa-spin mr-2"></i>
@@ -504,14 +748,102 @@
         </div>
       </div>
     </div>
+
+    <!-- Camera Modal -->
+    <div v-if="showCameraModal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
+      <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-2xl w-full mx-4">
+        <div class="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
+          <h3 class="text-lg font-semibold text-gray-900 dark:text-gray-100">
+            Ambil Foto Dokumen
+          </h3>
+          <button 
+            @click="closeCameraModal"
+            class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+          >
+            <i class="fa-solid fa-times text-xl"></i>
+          </button>
+        </div>
+        
+        <div class="p-4">
+          <!-- Camera Error -->
+          <div v-if="cameraError" class="mb-4 p-3 bg-red-50 dark:bg-red-900/20 rounded-lg border border-red-200 dark:border-red-700">
+            <div class="flex items-center">
+              <i class="fas fa-exclamation-triangle text-red-600 mr-2"></i>
+              <span class="text-sm text-red-800 dark:text-red-200">{{ cameraError }}</span>
+            </div>
+          </div>
+          
+          <!-- Camera View -->
+          <div v-else class="space-y-4">
+            <div class="relative bg-black rounded-lg overflow-hidden">
+              <video 
+                ref="videoRef"
+                autoplay
+                playsinline
+                muted
+                class="w-full h-64 object-cover"
+              ></video>
+              
+              <!-- Camera Controls Overlay -->
+              <div class="absolute bottom-4 left-1/2 transform -translate-x-1/2 flex items-center space-x-4">
+                <!-- Switch Camera Button -->
+                <button 
+                  v-if="availableCameras.length > 1"
+                  @click="switchCamera"
+                  class="p-3 bg-white bg-opacity-20 backdrop-blur-sm rounded-full hover:bg-opacity-30 transition-all"
+                  title="Ganti Kamera"
+                >
+                  <i class="fa-solid fa-camera-rotate text-white text-xl"></i>
+                </button>
+                
+                <!-- Capture Button -->
+                <button 
+                  @click="capturePhoto"
+                  class="p-4 bg-white rounded-full hover:bg-gray-100 transition-all shadow-lg"
+                  title="Ambil Foto"
+                >
+                  <i class="fa-solid fa-camera text-gray-800 text-2xl"></i>
+                </button>
+                
+                <!-- Close Button -->
+                <button 
+                  @click="closeCameraModal"
+                  class="p-3 bg-white bg-opacity-20 backdrop-blur-sm rounded-full hover:bg-opacity-30 transition-all"
+                  title="Tutup"
+                >
+                  <i class="fa-solid fa-times text-white text-xl"></i>
+                </button>
+              </div>
+              
+              <!-- Camera Info -->
+              <div class="absolute top-4 left-4 bg-black bg-opacity-50 text-white px-3 py-1 rounded-full text-sm">
+                <i class="fa-solid fa-camera mr-1"></i>
+                {{ currentCamera === 'user' ? 'Kamera Depan' : 'Kamera Belakang' }}
+              </div>
+            </div>
+            
+            <!-- Instructions -->
+            <div class="text-center">
+              <p class="text-sm text-gray-600 dark:text-gray-300">
+                Posisikan dokumen dalam frame kamera, lalu klik tombol kamera untuk mengambil foto
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Hidden Canvas for Photo Capture -->
+    <canvas ref="canvasRef" style="display: none;"></canvas>
   </AppLayout>
 </template>
 
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue'
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { router } from '@inertiajs/vue3'
 import axios from 'axios'
+import Swal from 'sweetalert2'
 
 const props = defineProps({
   workSchedules: Array,
@@ -519,6 +851,7 @@ const props = defineProps({
   attendanceSummary: Object,
   calendar: Object,
   holidays: Array,
+  approvedAbsents: Array,
   leaveTypes: Array,
   filters: Object,
   user: Object
@@ -537,6 +870,14 @@ const loadingDetail = ref(false)
 
 const calendarData = ref({})
 const loading = ref(false)
+
+// Extra off days data
+const extraOffDays = ref([])
+const loadingExtraOff = ref(false)
+
+// Regular extra off balance data
+const extraOffBalance = ref(0)
+const loadingExtraOffBalance = ref(false)
 
 // Year options for dropdown
 const yearOptions = computed(() => {
@@ -590,6 +931,22 @@ const calendarDays = computed(() => {
   }
   
   return days
+})
+
+// Computed property untuk mendapatkan approved absent berdasarkan tanggal
+const getApprovedAbsentForDate = computed(() => {
+  return (dateString) => {
+    if (!props.approvedAbsents) return null
+    
+    const date = new Date(dateString).toISOString().split('T')[0]
+    
+    return props.approvedAbsents.find(absent => {
+      const fromDate = new Date(absent.date_from).toISOString().split('T')[0]
+      const toDate = new Date(absent.date_to).toISOString().split('T')[0]
+      
+      return date >= fromDate && date <= toDate
+    })
+  }
 })
 
 // Methods
@@ -655,10 +1012,57 @@ const absentForm = ref({
   date_to: ''
 })
 
+// Camera capture states
+const showCameraModal = ref(false)
+const cameraStream = ref(null)
+const videoRef = ref(null)
+const canvasRef = ref(null)
+const capturedImages = ref([]) // Array untuk multiple foto
+const currentCamera = ref('user') // 'user' for front camera, 'environment' for back camera
+const availableCameras = ref([])
+const cameraError = ref('')
+
 // Computed property untuk mendapatkan leave type yang dipilih
 const selectedLeaveType = computed(() => {
   if (!absentForm.value.leave_type_id || !props.leaveTypes) return null
   return props.leaveTypes.find(lt => lt.id == absentForm.value.leave_type_id)
+})
+
+// Computed property untuk mengecek apakah leave type adalah public holiday
+const isPublicHolidayType = computed(() => {
+  return selectedLeaveType.value && selectedLeaveType.value.name && 
+         (selectedLeaveType.value.name.toLowerCase().includes('public holiday') ||
+          selectedLeaveType.value.name.toLowerCase().includes('libur nasional') ||
+          selectedLeaveType.value.name.toLowerCase().includes('hari libur'))
+})
+
+// Computed property untuk mengecek apakah leave type adalah annual leave
+const isAnnualLeaveType = computed(() => {
+  return selectedLeaveType.value && selectedLeaveType.value.name && 
+         (selectedLeaveType.value.name.toLowerCase().includes('annual leave') ||
+          selectedLeaveType.value.name.toLowerCase().includes('cuti tahunan') ||
+          selectedLeaveType.value.name.toLowerCase().includes('cuti'))
+})
+
+// Computed property untuk mengecek apakah leave type adalah extra off
+const isExtraOffType = computed(() => {
+  return selectedLeaveType.value && selectedLeaveType.value.name && 
+         selectedLeaveType.value.name.toLowerCase().includes('extra off')
+})
+
+// Computed property untuk menghitung total saldo extra off
+const totalExtraOffDays = computed(() => {
+  return extraOffDays.value.length
+})
+
+// Computed property untuk mendapatkan saldo cuti tahunan dari user
+const annualLeaveBalance = computed(() => {
+  return props.user?.cuti || 0
+})
+
+// Computed property untuk mendapatkan saldo extra off biasa
+const regularExtraOffBalance = computed(() => {
+  return extraOffBalance.value
 })
 
 // Computed property untuk menghitung tanggal to berdasarkan max_days
@@ -677,6 +1081,56 @@ const calculatedDateTo = computed(() => {
     dateTo.setDate(dateTo.getDate() + maxDays)
     return dateTo.toISOString().split('T')[0]
   }
+})
+
+// Computed property untuk menghitung jumlah hari yang dipilih
+const selectedDaysCount = computed(() => {
+  if (!absentForm.value.date_from || !absentForm.value.date_to) return 0
+  
+  const dateFrom = new Date(absentForm.value.date_from)
+  const dateTo = new Date(absentForm.value.date_to)
+  
+  if (dateTo < dateFrom) return 0
+  
+  const timeDiff = dateTo.getTime() - dateFrom.getTime()
+  const daysDiff = Math.ceil(timeDiff / (1000 * 3600 * 24)) + 1
+  
+  return daysDiff
+})
+
+// Computed property untuk mendapatkan saldo yang tersedia berdasarkan jenis cuti
+const availableBalance = computed(() => {
+  if (isPublicHolidayType.value) {
+    return totalExtraOffDays.value
+  } else if (isAnnualLeaveType.value) {
+    return annualLeaveBalance.value
+  } else if (isExtraOffType.value) {
+    return regularExtraOffBalance.value
+  }
+  return 0
+})
+
+// Computed property untuk mengecek apakah jumlah hari melebihi saldo
+const isExceedingBalance = computed(() => {
+  if (!selectedLeaveType.value) return false
+  
+  // Hanya validasi untuk jenis cuti yang memiliki saldo
+  if (isPublicHolidayType.value || isAnnualLeaveType.value || isExtraOffType.value) {
+    return selectedDaysCount.value > availableBalance.value
+  }
+  
+  return false
+})
+
+// Computed property untuk mendapatkan pesan error
+const balanceErrorMessage = computed(() => {
+  if (!isExceedingBalance.value) return ''
+  
+  const leaveTypeName = selectedLeaveType.value?.name || 'jenis cuti ini'
+  const available = availableBalance.value
+  const selected = selectedDaysCount.value
+  
+  return `Jumlah hari yang dipilih (${selected} hari) melebihi saldo yang tersedia (${available} hari) untuk ${leaveTypeName}.`
 })
 
 // Watch untuk update date_to ketika leave_type_id atau date_from berubah
@@ -718,7 +1172,7 @@ const isPastDate = (dateString) => {
 const showAbsentModal = (date) => {
   selectedAbsentDate.value = date
   showAbsentModalFlag.value = true
-  // Reset form
+  // Reset form and captured images
   absentForm.value = {
     leave_type_id: '',
     reason: '',
@@ -726,28 +1180,234 @@ const showAbsentModal = (date) => {
     date_from: date,
     date_to: date
   }
+  capturedImages.value = []
+  // Load extra off days and balance
+  loadExtraOffDays()
+  loadExtraOffBalance()
+}
+
+// Function to load extra off days
+const loadExtraOffDays = async () => {
+  loadingExtraOff.value = true
+  try {
+    const response = await axios.get('/api/holiday-attendance/my-extra-off-days')
+    if (response.data.success) {
+      extraOffDays.value = response.data.extra_off_days
+    }
+  } catch (error) {
+    console.error('Error loading extra off days:', error)
+  } finally {
+    loadingExtraOff.value = false
+  }
+}
+
+// Function to load regular extra off balance
+const loadExtraOffBalance = async () => {
+  loadingExtraOffBalance.value = true
+  try {
+    const response = await axios.get('/api/extra-off/balance')
+    if (response.data.success) {
+      extraOffBalance.value = response.data.balance
+    }
+  } catch (error) {
+    console.error('Error loading extra off balance:', error)
+  } finally {
+    loadingExtraOffBalance.value = false
+  }
 }
 
 const closeAbsentModal = () => {
   showAbsentModalFlag.value = false
   selectedAbsentDate.value = ''
   submittingAbsent.value = false
+  // Reset camera states
+  showCameraModal.value = false
+  capturedImages.value = []
+  absentForm.value.document = null
+  stopCamera()
 }
 
-const handleFileUpload = (event) => {
-  const file = event.target.files[0]
-  if (file) {
-    // Validate file size (5MB max)
-    if (file.size > 5 * 1024 * 1024) {
-      alert('Ukuran file maksimal 5MB')
-      event.target.value = ''
+// Camera functions
+const openCameraModal = async () => {
+  showCameraModal.value = true
+  cameraError.value = ''
+  await nextTick()
+  await initializeCamera()
+}
+
+const closeCameraModal = () => {
+  showCameraModal.value = false
+  stopCamera()
+}
+
+const initializeCamera = async () => {
+  try {
+    // Get available cameras
+    const devices = await navigator.mediaDevices.enumerateDevices()
+    availableCameras.value = devices.filter(device => device.kind === 'videoinput')
+    
+    if (availableCameras.value.length === 0) {
+      cameraError.value = 'Tidak ada kamera yang tersedia'
       return
     }
-    absentForm.value.document = file
+    
+    // Start camera stream
+    const constraints = {
+      video: {
+        facingMode: currentCamera.value,
+        width: { ideal: 1280 },
+        height: { ideal: 720 }
+      }
+    }
+    
+    cameraStream.value = await navigator.mediaDevices.getUserMedia(constraints)
+    
+    if (videoRef.value) {
+      videoRef.value.srcObject = cameraStream.value
+    }
+  } catch (error) {
+    console.error('Camera error:', error)
+    if (error.name === 'NotAllowedError') {
+      cameraError.value = 'Akses kamera ditolak. Silakan berikan izin kamera di browser.'
+    } else if (error.name === 'NotFoundError') {
+      cameraError.value = 'Tidak ada kamera yang ditemukan di perangkat ini.'
+    } else if (error.name === 'NotSupportedError') {
+      cameraError.value = 'Browser tidak mendukung akses kamera.'
+    } else {
+      cameraError.value = 'Gagal mengakses kamera. Pastikan izin kamera sudah diberikan.'
+    }
   }
 }
 
+const stopCamera = () => {
+  if (cameraStream.value) {
+    cameraStream.value.getTracks().forEach(track => track.stop())
+    cameraStream.value = null
+  }
+}
+
+const switchCamera = async () => {
+  if (availableCameras.value.length <= 1) {
+    return // Don't switch if only one camera available
+  }
+  
+  currentCamera.value = currentCamera.value === 'user' ? 'environment' : 'user'
+  stopCamera()
+  await nextTick()
+  await initializeCamera()
+}
+
+const capturePhoto = () => {
+  if (!videoRef.value || !canvasRef.value) return
+  
+  const video = videoRef.value
+  const canvas = canvasRef.value
+  const context = canvas.getContext('2d')
+  
+  // Set canvas size to match video
+  canvas.width = video.videoWidth
+  canvas.height = video.videoHeight
+  
+  // Draw video frame to canvas
+  context.drawImage(video, 0, 0, canvas.width, canvas.height)
+  
+  // Convert canvas to blob
+  canvas.toBlob((blob) => {
+    if (blob) {
+      // Create file from blob with unique name
+      const timestamp = new Date().getTime()
+      const file = new File([blob], `camera-capture-${timestamp}.jpg`, { type: 'image/jpeg' })
+      
+      // Add to captured images array
+      capturedImages.value.push({
+        id: timestamp,
+        file: file,
+        preview: URL.createObjectURL(blob)
+      })
+      
+      // Close camera modal immediately
+      closeCameraModal()
+      
+      // Show success message
+      Swal.fire({
+        icon: 'success',
+        title: 'Foto Berhasil Diambil',
+        text: 'Foto telah berhasil diambil dan ditambahkan ke dokumen pendukung.',
+        confirmButtonText: 'OK',
+        confirmButtonColor: '#10B981',
+        timer: 2000,
+        showConfirmButton: false
+      })
+    }
+  }, 'image/jpeg', 0.8)
+}
+
+const removePhoto = (photoId) => {
+  const index = capturedImages.value.findIndex(img => img.id === photoId)
+  if (index > -1) {
+    // Revoke object URL to free memory
+    URL.revokeObjectURL(capturedImages.value[index].preview)
+    capturedImages.value.splice(index, 1)
+  }
+}
+
+const clearAllPhotos = () => {
+  // Revoke all object URLs to free memory
+  capturedImages.value.forEach(img => {
+    URL.revokeObjectURL(img.preview)
+  })
+  capturedImages.value = []
+}
+
 const submitAbsentRequest = async () => {
+  // Validate public holiday extra off days availability
+  if (isPublicHolidayType.value && totalExtraOffDays.value === 0) {
+    await Swal.fire({
+      icon: 'warning',
+      title: 'Saldo Tidak Tersedia',
+      text: 'Anda tidak memiliki saldo extra off dari kerja di hari libur nasional yang tersedia untuk mengajukan izin ini.',
+      confirmButtonText: 'OK',
+      confirmButtonColor: '#3B82F6'
+    })
+    return
+  }
+  
+  // Validate annual leave balance
+  if (isAnnualLeaveType.value && annualLeaveBalance.value === 0) {
+    await Swal.fire({
+      icon: 'warning',
+      title: 'Saldo Tidak Tersedia',
+      text: 'Anda tidak memiliki saldo cuti tahunan yang tersedia untuk mengajukan izin ini.',
+      confirmButtonText: 'OK',
+      confirmButtonColor: '#3B82F6'
+    })
+    return
+  }
+  
+  // Validate regular extra off balance
+  if (isExtraOffType.value && regularExtraOffBalance.value === 0) {
+    await Swal.fire({
+      icon: 'warning',
+      title: 'Saldo Tidak Tersedia',
+      text: 'Anda tidak memiliki saldo extra off yang tersedia untuk mengajukan izin ini.',
+      confirmButtonText: 'OK',
+      confirmButtonColor: '#3B82F6'
+    })
+    return
+  }
+  
+  // Validate if selected days exceed available balance
+  if (isExceedingBalance.value) {
+    await Swal.fire({
+      icon: 'error',
+      title: 'Jumlah Hari Melebihi Saldo',
+      text: balanceErrorMessage.value,
+      confirmButtonText: 'OK',
+      confirmButtonColor: '#EF4444'
+    })
+    return
+  }
+  
   submittingAbsent.value = true
   
   try {
@@ -757,8 +1417,11 @@ const submitAbsentRequest = async () => {
     formData.append('date_to', absentForm.value.date_to)
     formData.append('reason', absentForm.value.reason)
     
-    if (absentForm.value.document) {
-      formData.append('document', absentForm.value.document)
+    // Add captured images to FormData
+    if (capturedImages.value.length > 0) {
+      capturedImages.value.forEach((img, index) => {
+        formData.append('documents[]', img.file)
+      })
     }
     
     const response = await axios.post('/api/attendance/absent-request', formData, {
@@ -768,12 +1431,24 @@ const submitAbsentRequest = async () => {
     })
     
     if (response.data.success) {
-      alert('Permohonan izin/cuti berhasil dikirim!')
+      await Swal.fire({
+        icon: 'success',
+        title: 'Berhasil!',
+        text: 'Permohonan izin/cuti berhasil dikirim!',
+        confirmButtonText: 'OK',
+        confirmButtonColor: '#10B981'
+      })
       closeAbsentModal()
       // Optionally refresh the calendar data
       // loadCalendarData()
     } else {
-      alert('Gagal mengirim permohonan: ' + (response.data.message || 'Terjadi kesalahan'))
+      await Swal.fire({
+        icon: 'error',
+        title: 'Gagal Mengirim',
+        text: 'Gagal mengirim permohonan: ' + (response.data.message || 'Terjadi kesalahan'),
+        confirmButtonText: 'OK',
+        confirmButtonColor: '#EF4444'
+      })
     }
   } catch (error) {
     console.error('Error submitting absent request:', error)
@@ -781,9 +1456,21 @@ const submitAbsentRequest = async () => {
       // Handle validation errors
       const errors = error.response.data.errors
       const errorMessages = Object.values(errors).flat().join('\n')
-      alert('Data tidak valid:\n' + errorMessages)
+      await Swal.fire({
+        icon: 'error',
+        title: 'Data Tidak Valid',
+        html: 'Data tidak valid:<br>' + errorMessages.replace(/\n/g, '<br>'),
+        confirmButtonText: 'OK',
+        confirmButtonColor: '#EF4444'
+      })
     } else {
-      alert('Terjadi kesalahan saat mengirim permohonan')
+      await Swal.fire({
+        icon: 'error',
+        title: 'Terjadi Kesalahan',
+        text: 'Terjadi kesalahan saat mengirim permohonan',
+        confirmButtonText: 'OK',
+        confirmButtonColor: '#EF4444'
+      })
     }
   } finally {
     submittingAbsent.value = false

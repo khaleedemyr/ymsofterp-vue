@@ -64,10 +64,21 @@ class HandleInertiaRequests extends Middleware
                     'division_id' => $request->user()->division_id,
                     'nama_lengkap' => $request->user()->nama_lengkap ?? $request->user()->name,
                     'avatar' => $request->user()->avatar ?? null,
-                    'jabatan' => optional($request->user()->jabatan)->nama_jabatan,
-                    'divisi' => optional($request->user()->divisi)->nama_divisi,
+                    'jabatan' => $request->user()->load(['jabatan.level'])->jabatan ? [
+                        'nama_jabatan' => $request->user()->jabatan->nama_jabatan,
+                        'level' => $request->user()->jabatan->level ? [
+                            'nama_level' => $request->user()->jabatan->level->nama_level
+                        ] : null
+                    ] : null,
+                    'divisi' => $request->user()->load('divisi')->divisi ? [
+                        'nama_divisi' => $request->user()->divisi->nama_divisi
+                    ] : null,
                     'region' => optional($request->user()->region)->name,
-                    'outlet' => optional($request->user()->outlet)->nama_outlet,
+                    'outlet' => $request->user()->load('outlet')->outlet ? [
+                        'nama_outlet' => $request->user()->outlet->nama_outlet
+                    ] : null,
+                    'pending_approvals_count' => $request->user()->pendingApprovals()->count(),
+                    'pending_hrd_approvals_count' => $request->user()->division_id == 6 ? $request->user()->pendingHrdApprovals()->count() : 0,
                     'signature_path' => $request->user()->signature_path,
                     'region_id' => $request->user()->id_outlet
                         ? \DB::table('tbl_data_outlet')

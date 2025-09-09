@@ -94,12 +94,15 @@ const menuGroups = [
             { name: () => 'Master Jam Kerja', icon: 'fa-solid fa-clock', route: '/shifts', code: 'shift_view' },
             { name: () => 'Input Shift Mingguan', icon: 'fa-solid fa-calendar-days', route: '/user-shifts', code: 'user_shift_view' },
             { name: () => 'Kalender Jadwal Shift', icon: 'fa-solid fa-calendar-week', route: '/user-shifts/calendar', code: 'user_shift_calendar_view' },
+            { name: () => 'Schedule/Attendance Correction', icon: 'fa-solid fa-edit', route: '/schedule-attendance-correction', code: 'schedule_attendance_correction' },
+            { name: () => 'Schedule/Attendance Correction Report', icon: 'fa-solid fa-chart-bar', route: '/schedule-attendance-correction/report', code: 'schedule_attendance_correction_report' },
             { name: () => 'Libur Nasional', icon: 'fa-solid fa-calendar-day', route: '/kalender-perusahaan', code: 'libur_nasional' },
             { name: () => 'Report Attendance', icon: 'fa-solid fa-fingerprint', route: '/attendance-report', code: 'attendance_report' },
             { name: () => 'Attendance per Outlet', icon: 'fa-solid fa-fingerprint', route: '/attendance-report/outlet-summary', code: 'attendance_outlet_summary' },
+            { name: () => 'Holiday Attendance', icon: 'fa-solid fa-calendar-day', route: '/holiday-attendance', code: 'holiday_attendance' },
             { name: () => 'Master Payroll', icon: 'fa-solid fa-money-check-dollar', route: '/payroll/master', code: 'payroll_master' },
-                                   { name: () => 'Payroll', icon: 'fa-solid fa-file-invoice-dollar', route: '/payroll/report', code: 'payroll_report' },
-                       { name: () => 'Employee Movement', icon: 'fa-solid fa-people-arrows', route: '/employee-movements', code: 'employee_movement' },
+            { name: () => 'Payroll', icon: 'fa-solid fa-file-invoice-dollar', route: '/payroll/report', code: 'payroll_report' },
+            { name: () => 'Employee Movement', icon: 'fa-solid fa-people-arrows', route: '/employee-movements', code: 'employee_movement' },
         ],
     },
     {
@@ -370,6 +373,12 @@ function toggleFullscreen() {
 
 const user = usePage().props.auth?.user || { nama_lengkap: '', avatar: null };
 const avatarUrl = user.avatar ? `/storage/${user.avatar}` : '/images/avatar-default.png';
+
+// Computed properties for user information
+const userOutlet = computed(() => user.outlet?.nama_outlet || 'N/A');
+const userDivisi = computed(() => user.divisi?.nama_divisi || 'N/A');
+const userLevel = computed(() => user.jabatan?.level?.nama_level || 'N/A');
+const userJabatan = computed(() => user.jabatan?.nama_jabatan || 'N/A');
 const showProfileDropdown = ref(false);
 const showESignatureModal = ref(false);
 const showProfileModal = ref(false);
@@ -640,9 +649,20 @@ onMounted(() => {
                     <div v-if="showProfileDropdown" class="absolute right-0 mt-2 w-64 bg-white border rounded shadow z-50">
                         <div class="px-4 py-3 border-b">
                             <div class="font-bold text-gray-800">{{ user.nama_lengkap }}</div>
-                            <div class="text-xs text-gray-500" v-if="user.jabatan">{{ user.jabatan }}</div>
-                            <div class="text-xs text-gray-500" v-if="user.divisi">{{ user.divisi }}</div>
-                            <div class="text-xs text-gray-500" v-if="user.outlet">{{ user.outlet }}</div>
+                            <div class="mt-2 space-y-1">
+                                <div class="text-xs text-gray-500" v-if="userJabatan !== 'N/A'">
+                                    <span class="font-medium">Jabatan:</span> {{ userJabatan }}
+                                </div>
+                                <div class="text-xs text-gray-500" v-if="userLevel !== 'N/A'">
+                                    <span class="font-medium">Level:</span> {{ userLevel }}
+                                </div>
+                                <div class="text-xs text-gray-500" v-if="userDivisi !== 'N/A'">
+                                    <span class="font-medium">Divisi:</span> {{ userDivisi }}
+                                </div>
+                                <div class="text-xs text-gray-500" v-if="userOutlet !== 'N/A'">
+                                    <span class="font-medium">Outlet:</span> {{ userOutlet }}
+                                </div>
+                            </div>
                         </div>
                         <button @click="showProfileModal = true; showProfileDropdown = false" class="flex items-center gap-2 w-full text-left px-4 py-2 hover:bg-blue-50">
                             <i class="fa-solid fa-user"></i> {{ t('profile.profile') }}

@@ -269,11 +269,11 @@ class AnnouncementController extends Controller
     /**
      * Get announcements relevant to the authenticated user
      */
-    public function getUserAnnouncements()
+    public function getUserAnnouncements(Request $request)
     {
         $user = auth()->user();
         if (!$user) {
-            return response()->json(['announcements' => []]);
+            return response()->json(['success' => false, 'announcements' => []]);
         }
 
         // Get user's data for targeting
@@ -290,8 +290,8 @@ class AnnouncementController extends Controller
                 ->value('id_level');
         }
 
-        // Get announcements that target this user
-        $announcements = DB::table('announcements')
+        // Build query for announcements that target this user
+        $query = DB::table('announcements')
             ->where('status', 'Publish')
             ->whereExists(function ($query) use ($userId, $userJabatan, $userDivisi, $userLevel, $userOutlet) {
                 $query->select(DB::raw(1))
@@ -319,13 +319,49 @@ class AnnouncementController extends Controller
                               ->where('target_id', $userOutlet);
                         });
                     });
-            })
-            ->orderBy('created_at', 'desc')
-            ->limit(3) // Limit to 3 most recent announcements
-            ->get();
+            });
+
+        // Apply filters
+        if ($request->filled('search')) {
+            $query->where(function ($q) use ($request) {
+                $q->where('title', 'like', '%' . $request->search . '%')
+                  ->orWhere('content', 'like', '%' . $request->search . '%');
+            });
+        }
+
+        if ($request->filled('date_from')) {
+            $query->whereDate('created_at', '>=', $request->date_from);
+        }
+
+        if ($request->filled('date_to')) {
+            $query->whereDate('created_at', '<=', $request->date_to);
+        }
+
+        if ($request->filled('target')) {
+            $query->whereExists(function ($subQuery) use ($request) {
+                $subQuery->select(DB::raw(1))
+                    ->from('announcement_targets')
+                    ->whereColumn('announcement_targets.announcement_id', 'announcements.id')
+                    ->where('target_type', $request->target);
+            });
+        }
+
+        // Get pagination parameters
+        $perPage = $request->get('per_page', 10);
+        $page = $request->get('page', 1);
+
+        // If no pagination requested (for home page), limit to 3
+        if (!$request->has('page') && !$request->has('per_page')) {
+            $announcements = $query->orderBy('created_at', 'desc')->limit(3)->get();
+        } else {
+            // Use pagination
+            $announcements = $query->orderBy('created_at', 'desc')->paginate($perPage, ['*'], 'page', $page);
+        }
 
         // Add target names and format data
-        foreach ($announcements as $announcement) {
+        $announcementList = $announcements instanceof \Illuminate\Pagination\LengthAwarePaginator ? $announcements->items() : $announcements;
+        
+        foreach ($announcementList as $announcement) {
             // Get files
             $announcement->files = DB::table('announcement_files')
                 ->where('announcement_id', $announcement->id)
@@ -356,7 +392,10 @@ class AnnouncementController extends Controller
             $announcement->created_at_formatted = \Carbon\Carbon::parse($announcement->created_at)->format('d M Y, H:i');
         }
 
-        return response()->json(['announcements' => $announcements]);
+        return response()->json([
+            'success' => true,
+            'announcements' => $announcements
+        ]);
     }
 
     /**

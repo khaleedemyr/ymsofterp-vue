@@ -6,14 +6,14 @@
         <i class="fas fa-bullhorn" :class="isNight ? 'text-indigo-400' : 'text-indigo-600'"></i>
         Pengumuman Terbaru
       </h3>
-      <Link 
-        :href="route('announcement.index')" 
+      <button 
+        @click="$emit('show-all')"
         class="text-xs flex items-center gap-1"
         :class="isNight ? 'text-indigo-400 hover:text-indigo-300' : 'text-indigo-600 hover:text-indigo-800'"
       >
         Lihat Semua
         <i class="fas fa-arrow-right text-xs"></i>
-      </Link>
+      </button>
     </div>
 
     <!-- Content Area -->
@@ -108,6 +108,8 @@ const props = defineProps({
     default: false
   }
 })
+
+const emit = defineEmits(['show-all'])
 
 const announcements = ref([])
 const loading = ref(true)

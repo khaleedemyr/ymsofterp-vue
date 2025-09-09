@@ -35,6 +35,9 @@ class AttendanceReportController extends Controller
             $start = date('Y-m-d', strtotime("$tahun-$bulan-26 -1 month"));
             $end = date('Y-m-d', strtotime("$tahun-$bulan-25"));
 
+            // Get approved absent requests for the date range
+            $approvedAbsents = $this->getApprovedAbsentRequests($start, $end);
+
             // Query data absensi - Ambil semua scan dan proses manual
             $sub = DB::table('att_log as a')
                 ->join('tbl_data_outlet as o', 'a.sn', '=', 'o.sn')
@@ -191,6 +194,54 @@ class AttendanceReportController extends Controller
             // Ambil nama karyawan dari hasil query (atau dari search)
             $namaKaryawan = $dataRows->first() ? $dataRows->first()->nama_lengkap : '';
             $userId = $dataRows->first() ? $dataRows->first()->user_id : null;
+            
+            // Jika tidak ada data dari attendance records, coba ambil dari search atau approved absents
+            if (!$userId || !$namaKaryawan) {
+                if (!empty($search)) {
+                    // Ambil user dari search
+                    $user = DB::table('users')
+                        ->where('nama_lengkap', 'like', "%$search%")
+                        ->when(!empty($outletId), function($query) use ($outletId) {
+                            return $query->where('id_outlet', $outletId);
+                        })
+                        ->when(!empty($divisionId), function($query) use ($divisionId) {
+                            return $query->where('division_id', $divisionId);
+                        })
+                        ->select('id', 'nama_lengkap')
+                        ->first();
+                        
+                    if ($user) {
+                        $userId = $user->id;
+                        $namaKaryawan = $user->nama_lengkap;
+                    }
+                } else {
+                    // Ambil user dari approved absents
+                    $approvedAbsentUser = DB::table('absent_requests')
+                        ->join('users', 'absent_requests.user_id', '=', 'users.id')
+                        ->where('absent_requests.status', 'approved')
+                        ->where(function($query) use ($start, $end) {
+                            $query->whereBetween('absent_requests.date_from', [$start, $end])
+                                  ->orWhereBetween('absent_requests.date_to', [$start, $end])
+                                  ->orWhere(function($q) use ($start, $end) {
+                                      $q->where('absent_requests.date_from', '<=', $start)
+                                        ->where('absent_requests.date_to', '>=', $end);
+                                  });
+                        })
+                        ->when(!empty($outletId), function($query) use ($outletId) {
+                            return $query->where('users.id_outlet', $outletId);
+                        })
+                        ->when(!empty($divisionId), function($query) use ($divisionId) {
+                            return $query->where('users.division_id', $divisionId);
+                        })
+                        ->select('users.id', 'users.nama_lengkap')
+                        ->first();
+                        
+                    if ($approvedAbsentUser) {
+                        $userId = $approvedAbsentUser->id;
+                        $namaKaryawan = $approvedAbsentUser->nama_lengkap;
+                    }
+                }
+            }
 
             // Ambil data shift untuk perhitungan lembur
             $shiftData = DB::table('shifts')
@@ -315,6 +366,17 @@ class AttendanceReportController extends Controller
                         }
                         $summary['total_telat'] += $telat;
                         $summary['total_lembur'] += $lembur;
+                        
+                        // Check if user has approved absent for this date
+                        $approvedAbsent = null;
+                        $is_approved_absent = false;
+                        $approved_absent_name = null;
+                        if (isset($approvedAbsents[$rowUserId][$tanggal])) {
+                            $approvedAbsent = $approvedAbsents[$rowUserId][$tanggal];
+                            $is_approved_absent = true;
+                            $approved_absent_name = $approvedAbsent['leave_type_name'];
+                        }
+                        
                         $rows->push((object)[
                             'tanggal' => $tanggal,
                             'user_id' => $rowUserId,
@@ -332,6 +394,9 @@ class AttendanceReportController extends Controller
                             'is_holiday' => $is_holiday,
                             'holiday_name' => $holiday_name,
                             'is_cross_day' => $row->is_cross_day ?? false,
+                            'approved_absent' => $approvedAbsent,
+                            'is_approved_absent' => $is_approved_absent,
+                            'approved_absent_name' => $approved_absent_name,
                         ]);
                     }
                 } else {
@@ -364,6 +429,17 @@ class AttendanceReportController extends Controller
                         $is_holiday = true;
                         $holiday_name = $holidays[$tanggal];
                     }
+                    
+                    // Check if user has approved absent for this date
+                    $approvedAbsent = null;
+                    $is_approved_absent = false;
+                    $approved_absent_name = null;
+                    if (isset($approvedAbsents[$rowUserId][$tanggal])) {
+                        $approvedAbsent = $approvedAbsents[$rowUserId][$tanggal];
+                        $is_approved_absent = true;
+                        $approved_absent_name = $approvedAbsent['leave_type_name'];
+                    }
+                    
                     $rows->push((object)[
                         'tanggal' => $tanggal,
                         'user_id' => $rowUserId,
@@ -381,12 +457,25 @@ class AttendanceReportController extends Controller
                         'is_holiday' => $is_holiday,
                         'holiday_name' => $holiday_name,
                         'is_cross_day' => false,
+                        'approved_absent' => $approvedAbsent,
+                        'is_approved_absent' => $is_approved_absent,
+                        'approved_absent_name' => $approved_absent_name,
                     ]);
                 }
             }
+            
+            // Note: Approved absent data is already handled in the main loop above
+            // The else block (lines 348-404) already adds rows for dates without attendance data
+            // and includes approved_absent information, so no need to add it again here
         } else {
             \Log::info('No filters provided, returning empty data');
         }
+
+        // Sort rows by tanggal and user_id to ensure proper chronological order
+        $rows = $rows->sortBy([
+            ['tanggal', 'asc'],
+            ['user_id', 'asc']
+        ])->values();
 
         // Dropdown filter
         $outlets = DB::table('tbl_data_outlet')->select('id_outlet as id', 'nama_outlet as name')->orderBy('nama_outlet')->get();
@@ -1953,5 +2042,55 @@ class AttendanceReportController extends Controller
         $export = new EmployeeSummaryExport(collect());
         $export->fileName = 'employee_summary_no_filter.xlsx';
         return $export;
+    }
+    
+    /**
+     * Get approved absent requests for all users in the date range
+     */
+    private function getApprovedAbsentRequests($startDate, $endDate)
+    {
+        $approvedAbsents = DB::table('absent_requests')
+            ->join('leave_types', 'absent_requests.leave_type_id', '=', 'leave_types.id')
+            ->where('absent_requests.status', 'approved')
+            ->where(function($query) use ($startDate, $endDate) {
+                $query->whereBetween('absent_requests.date_from', [$startDate, $endDate])
+                      ->orWhereBetween('absent_requests.date_to', [$startDate, $endDate])
+                      ->orWhere(function($q) use ($startDate, $endDate) {
+                          $q->where('absent_requests.date_from', '<=', $startDate)
+                            ->where('absent_requests.date_to', '>=', $endDate);
+                      });
+            })
+            ->select([
+                'absent_requests.user_id',
+                'absent_requests.date_from',
+                'absent_requests.date_to',
+                'absent_requests.reason',
+                'leave_types.name as leave_type_name'
+            ])
+            ->get();
+            
+        // Group by user_id and date for easy lookup
+        $groupedAbsents = [];
+        foreach ($approvedAbsents as $absent) {
+            $userId = $absent->user_id;
+            if (!isset($groupedAbsents[$userId])) {
+                $groupedAbsents[$userId] = [];
+            }
+            
+            // Add all dates in the range
+            $fromDate = new \DateTime($absent->date_from);
+            $toDate = new \DateTime($absent->date_to);
+            
+            while ($fromDate <= $toDate) {
+                $dateStr = $fromDate->format('Y-m-d');
+                $groupedAbsents[$userId][$dateStr] = [
+                    'leave_type_name' => $absent->leave_type_name,
+                    'reason' => $absent->reason
+                ];
+                $fromDate->modify('+1 day');
+            }
+        }
+        
+        return $groupedAbsents;
     }
 } 

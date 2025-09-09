@@ -55,12 +55,16 @@ class EmployeeMovement extends Model
          'other_attachments',
          'hod_approval',
         'hod_approval_date',
+        'hod_approver_id',
         'gm_approval',
         'gm_approval_date',
+        'gm_approver_id',
         'gm_hr_approval',
         'gm_hr_approval_date',
+        'gm_hr_approver_id',
         'bod_approval',
         'bod_approval_date',
+        'bod_approver_id',
         'status',
     ];
 
@@ -91,6 +95,26 @@ class EmployeeMovement extends Model
     public function employee()
     {
         return $this->belongsTo(User::class, 'employee_id', 'id');
+    }
+
+    public function hodApprover()
+    {
+        return $this->belongsTo(User::class, 'hod_approver_id', 'id');
+    }
+
+    public function gmApprover()
+    {
+        return $this->belongsTo(User::class, 'gm_approver_id', 'id');
+    }
+
+    public function gmHrApprover()
+    {
+        return $this->belongsTo(User::class, 'gm_hr_approver_id', 'id');
+    }
+
+    public function bodApprover()
+    {
+        return $this->belongsTo(User::class, 'bod_approver_id', 'id');
     }
 
     public function scopeDraft($query)

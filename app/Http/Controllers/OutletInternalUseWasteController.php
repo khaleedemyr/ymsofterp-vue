@@ -148,6 +148,7 @@ class OutletInternalUseWasteController extends Controller
                 DB::table('outlet_food_inventory_stocks')
                     ->where('inventory_item_id', $inventoryItem->id)
                     ->where('id_outlet', $request->outlet_id)
+                    ->where('warehouse_outlet_id', $request->warehouse_outlet_id)
                     ->update([
                         'qty_small' => $stock->qty_small - $qty_small,
                         'qty_medium' => $stock->qty_medium - $qty_medium,
@@ -259,11 +260,13 @@ class OutletInternalUseWasteController extends Controller
             $stock = DB::table('outlet_food_inventory_stocks')
                 ->where('inventory_item_id', $inventory_item_id)
                 ->where('id_outlet', $data->outlet_id)
+                ->where('warehouse_outlet_id', $data->warehouse_outlet_id)
                 ->first();
             if ($stock) {
                 DB::table('outlet_food_inventory_stocks')
                     ->where('inventory_item_id', $inventory_item_id)
                     ->where('id_outlet', $data->outlet_id)
+                    ->where('warehouse_outlet_id', $data->warehouse_outlet_id)
                     ->update([
                         'qty_small' => $stock->qty_small + $qty_small,
                         'qty_medium' => $stock->qty_medium + $qty_medium,

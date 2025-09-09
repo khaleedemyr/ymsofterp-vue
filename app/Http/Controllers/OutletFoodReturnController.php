@@ -349,6 +349,7 @@ class OutletFoodReturnController extends Controller
                 ->leftJoin('outlet_food_inventory_items as ofii', 'ofri.item_id', '=', 'ofii.item_id')
                 ->select(
                     'ofri.*',
+                    'ofii.id as inventory_item_id',
                     'i.small_unit_id',
                     'i.medium_unit_id',
                     'i.large_unit_id',
@@ -378,7 +379,7 @@ class OutletFoodReturnController extends Controller
                 
                 // Check current stock
                 $currentStock = DB::table('outlet_food_inventory_stocks')
-                    ->where('inventory_item_id', $item->item_id)
+                    ->where('inventory_item_id', $item->inventory_item_id)
                     ->where('id_outlet', $return->outlet_id)
                     ->where('warehouse_outlet_id', $return->warehouse_outlet_id)
                     ->first();
@@ -389,7 +390,7 @@ class OutletFoodReturnController extends Controller
                 
                 // Update inventory stock (decrease)
                 DB::table('outlet_food_inventory_stocks')
-                    ->where('inventory_item_id', $item->item_id)
+                    ->where('inventory_item_id', $item->inventory_item_id)
                     ->where('id_outlet', $return->outlet_id)
                     ->where('warehouse_outlet_id', $return->warehouse_outlet_id)
                     ->update([
