@@ -435,7 +435,7 @@ class ScheduleAttendanceCorrectionController extends Controller
                     'new_value' => $approval->new_value,
                     'reason' => $approval->reason,
                     'corrected_by' => $user->id,
-                    'corrected_at' => now(),
+                'corrected_at' => now(),
                     'created_at' => now(),
                     'updated_at' => now(),
                 ]);
@@ -596,6 +596,7 @@ class ScheduleAttendanceCorrectionController extends Controller
         $status = $request->input('status'); // pending, approved, rejected
         $type = $request->input('type'); // schedule, attendance
         
+        
         // First, let's get the base data without joins to debug
         $baseQuery = DB::table('schedule_attendance_correction_approvals as saca');
         
@@ -626,6 +627,7 @@ class ScheduleAttendanceCorrectionController extends Controller
         
         // Get base data first
         $baseData = $baseQuery->orderBy('saca.created_at', 'desc')->get();
+        
         
         // For now, let's use the base data and manually add the related information
         $data = $baseData->map(function($item) {

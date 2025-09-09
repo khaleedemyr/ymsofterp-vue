@@ -16,11 +16,11 @@
             </div>
         </template>
 
-        <div class="py-6">
-            <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
+        <div>
+            <div>
                 <!-- Filter Section -->
                 <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg mb-6">
-                    <div class="p-6">
+                    <div class="p-4">
                         <h3 class="text-lg font-semibold mb-4">Filter Report</h3>
                         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
                             <!-- Date Range -->
@@ -165,58 +165,70 @@
                             <table class="min-w-full divide-y divide-gray-200">
                                 <thead class="bg-gray-50">
                                     <tr>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tipe</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tanggal</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Karyawan</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Outlet</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Divisi</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nilai Lama</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nilai Baru</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Diminta Oleh</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Disetujui Oleh</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tanggal Permintaan</th>
+                                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tipe</th>
+                                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tanggal</th>
+                                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Karyawan</th>
+                                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Outlet</th>
+                                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Divisi</th>
+                                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nilai Lama</th>
+                                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nilai Baru</th>
+                                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Diminta Oleh</th>
+                                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Disetujui Oleh</th>
                                     </tr>
                                 </thead>
                                 <tbody class="bg-white divide-y divide-gray-200">
                                     <tr v-if="loading">
-                                        <td colspan="12" class="px-6 py-4 text-center">
+                                        <td colspan="10" class="px-4 py-3 text-center">
                                             <div class="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500"></div>
                                             <p class="text-sm mt-2 text-gray-600">Memuat data...</p>
                                         </td>
                                     </tr>
                                     <tr v-else-if="reportData.length === 0">
-                                        <td colspan="12" class="px-6 py-4 text-center text-gray-500">
+                                        <td colspan="12" class="px-4 py-3 text-center text-gray-500">
                                             Tidak ada data ditemukan
                                         </td>
                                     </tr>
                                     <tr v-else v-for="item in reportData" :key="item.id" class="hover:bg-gray-50">
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ item.id }}</td>
-                                        <td class="px-6 py-4 whitespace-nowrap">
+                                        <td class="px-4 py-3 whitespace-nowrap">
                                             <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full"
                                                   :class="item.type === 'schedule' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'">
                                                 {{ item.type === 'schedule' ? 'Schedule' : 'Attendance' }}
                                             </span>
                                         </td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                        <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
                                             {{ new Date(item.tanggal).toLocaleDateString('id-ID') }}
                                         </td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ item.employee_name }}</td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ item.nama_outlet }}</td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ item.nama_divisi }}</td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ item.old_value }}</td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ item.new_value }}</td>
-                                        <td class="px-6 py-4 whitespace-nowrap">
+                                        <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{{ item.employee_name }}</td>
+                                        <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{{ item.nama_outlet }}</td>
+                                        <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{{ item.nama_divisi }}</td>
+                                        <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{{ item.old_value }}</td>
+                                        <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{{ item.new_value }}</td>
+                                        <td class="px-4 py-3 whitespace-nowrap">
                                             <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full"
                                                   :class="getStatusClass(item.status)">
                                                 {{ getStatusText(item.status) }}
                                             </span>
                                         </td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ item.requested_by_name }}</td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ item.approved_by_name || '-' }}</td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                            {{ new Date(item.created_at).toLocaleDateString('id-ID') }} {{ new Date(item.created_at).toLocaleTimeString('id-ID', {hour: '2-digit', minute: '2-digit'}) }}
+                                        <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+                                            <div class="space-y-1">
+                                                <div class="font-medium">{{ item.requested_by_name }}</div>
+                                                <div class="text-xs text-gray-500">
+                                                    {{ new Date(item.created_at).toLocaleDateString('id-ID') }} {{ new Date(item.created_at).toLocaleTimeString('id-ID', {hour: '2-digit', minute: '2-digit'}) }}
+                                                </div>
+                                            </div>
+                                        </td>
+                                        <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+                                            <div class="space-y-1">
+                                                <div class="font-medium">{{ item.approved_by_name || '-' }}</div>
+                                                <div v-if="item.approved_at" class="text-xs text-green-600">
+                                                    {{ new Date(item.approved_at).toLocaleDateString('id-ID') }} {{ new Date(item.approved_at).toLocaleTimeString('id-ID', {hour: '2-digit', minute: '2-digit'}) }}
+                                                </div>
+                                                <div v-else class="text-xs text-gray-400">
+                                                    <i class="fa-solid fa-clock mr-1"></i>
+                                                    Belum disetujui
+                                                </div>
+                                            </div>
                                         </td>
                                     </tr>
                                 </tbody>
@@ -336,13 +348,9 @@ function getStatusText(status) {
 
 // Load initial data
 onMounted(() => {
-    // Set default date range to current month
-    const now = new Date();
-    const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
-    const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-    
-    filters.value.startDate = firstDay.toISOString().split('T')[0];
-    filters.value.endDate = lastDay.toISOString().split('T')[0];
+    // Set default date range to September 2025 to show existing data
+    filters.value.startDate = '2025-09-01';
+    filters.value.endDate = '2025-09-30';
     
     loadReportData();
 });
