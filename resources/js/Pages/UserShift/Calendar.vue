@@ -10,6 +10,7 @@ const props = defineProps({
   calendar: Object,
   filter: Object,
   holidays: Array,
+  absentCalendar: Object,
 });
 
 const outletId = ref(props.filter?.outlet_id || '');
@@ -110,7 +111,22 @@ function getShiftsForDay(dateStr) {
   return Object.values(dayData);
 }
 
-function getBadgeColor(shiftName) {
+function getAbsentForDay(dateStr) {
+  return props.absentCalendar?.[dateStr] || [];
+}
+
+function isUserAbsent(dateStr, userId) {
+  const absentData = getAbsentForDay(dateStr);
+  return absentData.some(absent => absent.user_id === userId);
+}
+
+function getAbsentInfo(dateStr, userId) {
+  const absentData = getAbsentForDay(dateStr);
+  return absentData.find(absent => absent.user_id === userId);
+}
+
+function getBadgeColor(shiftName, isAbsent = false) {
+  if (isAbsent) return 'bg-red-500 text-white border-2 border-red-600';
   if (!shiftName) return 'bg-gray-300 text-gray-600';
   if (shiftName.toLowerCase().includes('off')) return 'bg-gray-400 text-white';
   if (shiftName.toLowerCase().includes('malam')) return 'bg-blue-600 text-white';
@@ -201,13 +217,19 @@ function exportExcel() {
                     v-for="shift in getShiftsForDay(formatDateLocal(date))"
                     :key="shift.user_id"
                     class="rounded-xl px-2 py-1 mb-1 font-semibold text-xs shadow shift-badge-3d animate-bounce-in cursor-pointer relative"
-                    :class="getBadgeColor(shift.shift_name)"
+                    :class="getBadgeColor(shift.shift_name, isUserAbsent(formatDateLocal(date), shift.user_id))"
                     @mouseenter="showTooltip(formatDateLocal(date) + '-' + shift.user_id)"
                     @mouseleave="hideTooltip()"
                     @click="showTooltip(formatDateLocal(date) + '-' + shift.user_id)"
                   >
                     <span class="block truncate">{{ shift.nama_lengkap }}</span>
-                    <span class="block text-[11px] font-normal">{{ shift.shift_name || 'OFF' }}</span>
+                    <span class="block text-[11px] font-normal">
+                      <span v-if="isUserAbsent(formatDateLocal(date), shift.user_id)" class="flex items-center gap-1">
+                        <i class="fa-solid fa-user-xmark text-xs"></i>
+                        {{ getAbsentInfo(formatDateLocal(date), shift.user_id)?.leave_type_name || 'ABSENT' }}
+                      </span>
+                      <span v-else>{{ shift.shift_name || 'OFF' }}</span>
+                    </span>
                     <!-- Tooltip -->
                     <transition name="fade">
                       <div
@@ -218,8 +240,22 @@ function exportExcel() {
                         <div class="font-bold text-blue-700 mb-1">{{ shift.nama_lengkap }}</div>
                         <div>Hari: <b>{{ getDayName(formatDateLocal(date)) }}</b></div>
                         <div>Tanggal: <b>{{ formatDateLocal(date) }}</b></div>
-                        <div v-if="shift.time_start && shift.time_end">Jam Kerja: <b>{{ shift.time_start }} - {{ shift.time_end }}</b></div>
-                        <div v-else>Jam Kerja: <b>OFF</b></div>
+                        <div v-if="isUserAbsent(formatDateLocal(date), shift.user_id)">
+                          <div class="text-red-600 font-bold mb-1">
+                            <i class="fa-solid fa-user-xmark mr-1"></i>
+                            {{ getAbsentInfo(formatDateLocal(date), shift.user_id)?.leave_type_name || 'ABSENT' }}
+                          </div>
+                          <div v-if="getAbsentInfo(formatDateLocal(date), shift.user_id)?.reason">
+                            Alasan: <b>{{ getAbsentInfo(formatDateLocal(date), shift.user_id).reason }}</b>
+                          </div>
+                          <div v-if="getAbsentInfo(formatDateLocal(date), shift.user_id)?.date_from !== getAbsentInfo(formatDateLocal(date), shift.user_id)?.date_to">
+                            Periode: <b>{{ getAbsentInfo(formatDateLocal(date), shift.user_id).date_from }} - {{ getAbsentInfo(formatDateLocal(date), shift.user_id).date_to }}</b>
+                          </div>
+                        </div>
+                        <div v-else>
+                          <div v-if="shift.time_start && shift.time_end">Jam Kerja: <b>{{ shift.time_start }} - {{ shift.time_end }}</b></div>
+                          <div v-else>Jam Kerja: <b>OFF</b></div>
+                        </div>
                       </div>
                     </transition>
                   </div>

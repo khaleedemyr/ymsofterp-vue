@@ -221,12 +221,74 @@ class UserShiftController extends Controller
             ->whereBetween('tgl_libur', [$startDate, $endDate])
             ->select('tgl_libur as date', 'keterangan as name')
             ->get();
+            
+        // Ambil data absent untuk highlight
+        $absentQuery = DB::table('absent_requests')
+            ->leftJoin('users', 'absent_requests.user_id', '=', 'users.id')
+            ->leftJoin('leave_types', 'absent_requests.leave_type_id', '=', 'leave_types.id')
+            ->select([
+                'absent_requests.user_id',
+                'absent_requests.date_from',
+                'absent_requests.date_to',
+                'absent_requests.status',
+                'absent_requests.reason',
+                'users.nama_lengkap',
+                'leave_types.name as leave_type_name'
+            ])
+            ->where('absent_requests.status', 'approved')
+            ->where(function($query) use ($startDate, $endDate) {
+                $query->whereBetween('absent_requests.date_from', [$startDate, $endDate])
+                      ->orWhereBetween('absent_requests.date_to', [$startDate, $endDate])
+                      ->orWhere(function($q) use ($startDate, $endDate) {
+                          $q->where('absent_requests.date_from', '<=', $startDate)
+                            ->where('absent_requests.date_to', '>=', $endDate);
+                      });
+            });
+            
+        if ($outletId) {
+            $absentQuery->where('users.id_outlet', $outletId);
+        }
+        if ($divisionId) {
+            $absentQuery->where('users.division_id', $divisionId);
+        }
+        if ($userId) {
+            $absentQuery->where('absent_requests.user_id', $userId);
+        }
+        
+        $absentData = $absentQuery->get();
+        
+        // Format absent data untuk kalender
+        $absentCalendar = [];
+        foreach ($absentData as $absent) {
+            $startDateAbsent = new \DateTime($absent->date_from);
+            $endDateAbsent = new \DateTime($absent->date_to);
+            
+            // Generate all dates between start and end
+            $currentDate = clone $startDateAbsent;
+            while ($currentDate <= $endDateAbsent) {
+                $dateStr = $currentDate->format('Y-m-d');
+                if (!isset($absentCalendar[$dateStr])) {
+                    $absentCalendar[$dateStr] = [];
+                }
+                $absentCalendar[$dateStr][] = [
+                    'user_id' => $absent->user_id,
+                    'nama_lengkap' => $absent->nama_lengkap,
+                    'leave_type_name' => $absent->leave_type_name,
+                    'reason' => $absent->reason,
+                    'date_from' => $absent->date_from,
+                    'date_to' => $absent->date_to
+                ];
+                $currentDate->add(new \DateInterval('P1D'));
+            }
+        }
+        
         return Inertia::render('UserShift/Calendar', [
             'outlets' => $outlets,
             'divisions' => $divisions,
             'users' => $users,
             'calendar' => $calendar,
             'holidays' => $holidays,
+            'absentCalendar' => $absentCalendar,
             'filter' => [
                 'outlet_id' => $outletId,
                 'division_id' => $divisionId,
