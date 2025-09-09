@@ -31,6 +31,10 @@
           </select>
           <span class="text-sm">data</span>
         </div>
+        <button @click="exportToExcel" class="inline-flex items-center px-4 py-2 bg-green-600 text-white rounded-md font-semibold hover:bg-green-700 mr-2">
+          <i class="fas fa-file-excel mr-2"></i>
+          Export Excel
+        </button>
         <button @click="reloadData" :disabled="loadingReload" class="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-md font-semibold hover:bg-blue-700">
           <span v-if="loadingReload" class="animate-spin mr-2"><i class="fas fa-spinner"></i></span>
           <span v-else class="mr-2"><i class="fas fa-sync-alt"></i></span>
@@ -160,5 +164,17 @@ function formatRupiah(value) {
     currency: 'IDR',
     minimumFractionDigits: 0
   }).format(value || 0);
+}
+
+function exportToExcel() {
+  const params = new URLSearchParams({
+    search: search.value,
+    gudang: selectedWarehouse.value,
+    outlet: selectedOutlet.value,
+    dateFrom: dateFrom.value,
+    dateTo: dateTo.value
+  });
+  
+  window.open(`/report-sales-all-item-all-outlet/export?${params.toString()}`, '_blank');
 }
 </script> 

@@ -13,6 +13,8 @@ use App\Exports\ItemEngineeringSheetExport;
 use App\Exports\ModifierEngineeringSheetExport;
 use App\Exports\SalesPivotPerOutletSubCategoryExport;
 use App\Exports\SalesPivotSpecialExport;
+use App\Exports\ReportSalesAllItemAllOutletExport;
+use Maatwebsite\Excel\Facades\Excel;
 
 class ReportController extends Controller
 {
@@ -256,6 +258,82 @@ class ReportController extends Controller
             'perPage' => $perPage,
             'page' => $page,
         ]);
+    }
+
+    public function exportSalesAllItemAllOutlet(Request $request)
+    {
+        $query = DB::table('outlet_food_good_receives as gr')
+            ->join('outlet_food_good_receive_items as i', 'gr.id', '=', 'i.outlet_food_good_receive_id')
+            ->join('items as it', 'i.item_id', '=', 'it.id')
+            ->join('units as u', 'i.unit_id', '=', 'u.id')
+            ->join('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
+            ->join('food_packing_lists as pl', 'do.packing_list_id', '=', 'pl.id')
+            ->join('warehouse_division as wd', 'pl.warehouse_division_id', '=', 'wd.id')
+            ->join('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
+            ->join('food_floor_order_items as fo', function($join) {
+                $join->on('i.item_id', '=', 'fo.item_id')
+                     ->on('fo.floor_order_id', '=', 'pl.food_floor_order_id');
+            })
+            ->join('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
+            ->select(
+                DB::raw('DATE_FORMAT(gr.receive_date, "%d %M %Y") as tanggal'),
+                'w.name as gudang',
+                'o.nama_outlet as outlet',
+                'it.name as nama_barang',
+                DB::raw('SUM(i.received_qty) as qty'),
+                'u.name as unit',
+                'fo.price as harga',
+                DB::raw('SUM(i.received_qty * fo.price) as subtotal')
+            );
+
+        if ($request->filled('gudang')) {
+            $query->where('w.name', $request->gudang);
+        }
+        if ($request->filled('outlet')) {
+            $query->where('o.nama_outlet', $request->outlet);
+        }
+        if ($request->filled('dateFrom')) {
+            $query->whereDate('gr.receive_date', '>=', $request->dateFrom);
+        }
+        if ($request->filled('dateTo')) {
+            $query->whereDate('gr.receive_date', '<=', $request->dateTo);
+        }
+        if ($request->filled('search')) {
+            $search = '%' . $request->search . '%';
+            $query->where(function($q) use ($search) {
+                $q->where('w.name', 'like', $search)
+                  ->orWhere('o.nama_outlet', 'like', $search)
+                  ->orWhere('it.name', 'like', $search);
+            });
+        }
+
+        $query->groupBy(
+            DB::raw('gr.receive_date'),
+            'w.name',
+            'o.nama_outlet',
+            'it.name',
+            'u.name',
+            'fo.price'
+        )
+        ->orderBy('gr.receive_date')
+        ->orderBy('w.name')
+        ->orderBy('o.nama_outlet')
+        ->orderBy('it.name');
+
+        $data = $query->get();
+
+        $filters = [
+            'search' => $request->search,
+            'gudang' => $request->gudang,
+            'outlet' => $request->outlet,
+            'dateFrom' => $request->dateFrom,
+            'dateTo' => $request->dateTo,
+        ];
+
+        $fileName = 'Report_Penjualan_All_Item_All_Outlet_' . date('Y-m-d_H-i-s') . '.xlsx';
+        $export = new ReportSalesAllItemAllOutletExport($data, $filters);
+        $export->fileName = $fileName;
+        return $export;
     }
 
     public function reportSalesPivotPerOutletSubCategory(Request $request)

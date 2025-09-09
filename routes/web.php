@@ -871,6 +871,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/report-sales-per-category', [ReportController::class, 'reportSalesPerCategory'])->name('report.sales-per-category');
     Route::get('/report-sales-per-tanggal', [\App\Http\Controllers\ReportController::class, 'reportSalesPerTanggal'])->name('report.sales-per-tanggal');
     Route::get('/report-sales-all-item-all-outlet', [\App\Http\Controllers\ReportController::class, 'reportSalesAllItemAllOutlet'])->name('report.sales-all-item-all-outlet');
+    Route::get('/report-sales-all-item-all-outlet/export', [\App\Http\Controllers\ReportController::class, 'exportSalesAllItemAllOutlet'])->name('report.sales-all-item-all-outlet.export');
     Route::get('/report-sales-pivot-per-outlet-sub-category', [\App\Http\Controllers\ReportController::class, 'reportSalesPivotPerOutletSubCategory'])->name('report.sales-pivot-per-outlet-sub-category');
 Route::get('/report-sales-pivot-per-outlet-sub-category/export', [\App\Http\Controllers\ReportController::class, 'exportSalesPivotPerOutletSubCategory'])->name('report.sales-pivot-per-outlet-sub-category.export');
     Route::get('/report-sales-pivot-special', [\App\Http\Controllers\ReportController::class, 'reportSalesPivotSpecial'])->name('report.sales-pivot-special');
