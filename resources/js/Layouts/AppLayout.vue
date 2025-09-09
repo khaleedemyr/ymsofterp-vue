@@ -96,6 +96,7 @@ const menuGroups = [
             { name: () => 'Kalender Jadwal Shift', icon: 'fa-solid fa-calendar-week', route: '/user-shifts/calendar', code: 'user_shift_calendar_view' },
             { name: () => 'Schedule/Attendance Correction', icon: 'fa-solid fa-edit', route: '/schedule-attendance-correction', code: 'schedule_attendance_correction' },
             { name: () => 'Schedule/Attendance Correction Report', icon: 'fa-solid fa-chart-bar', route: '/schedule-attendance-correction/report', code: 'schedule_attendance_correction_report' },
+            { name: () => 'Report Absent', icon: 'fa-solid fa-file-lines', route: '/attendance/report', code: 'absent-report' },
             { name: () => 'Libur Nasional', icon: 'fa-solid fa-calendar-day', route: '/kalender-perusahaan', code: 'libur_nasional' },
             { name: () => 'Report Attendance', icon: 'fa-solid fa-fingerprint', route: '/attendance-report', code: 'attendance_report' },
             { name: () => 'Attendance per Outlet', icon: 'fa-solid fa-fingerprint', route: '/attendance-report/outlet-summary', code: 'attendance_outlet_summary' },
@@ -686,7 +687,7 @@ onMounted(() => {
             </div>
         </header>
         <!-- Slot konten -->
-        <main class="flex-1 p-6 bg-gray-50">
+        <main class="flex-1 bg-gray-50">
             <slot />
         </main>
         

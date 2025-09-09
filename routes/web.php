@@ -1354,12 +1354,17 @@ Route::middleware(['auth', 'verified'])->get('/lms/courses/{course}/curriculum-p
     return Inertia::render('Lms/Courses/Curriculum/Index', ['course' => $courseData]);
 })->name('lms.courses.curriculum');
 
-// Attendance Routes
-Route::middleware(['auth', 'verified'])->group(function () {
+  // Attendance Routes
+  Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/attendance', [\App\Http\Controllers\AttendanceController::class, 'index'])->name('attendance.index');
     Route::get('/api/attendance/calendar-data', [\App\Http\Controllers\AttendanceController::class, 'getCalendarData'])->name('api.attendance.calendar-data');
     Route::post('/api/attendance/absent-request', [\App\Http\Controllers\AttendanceController::class, 'submitAbsentRequest'])->name('api.attendance.absent-request');
-});
+    
+    // Absent Report Routes
+    Route::get('/attendance/report', [\App\Http\Controllers\AttendanceController::class, 'report'])->name('attendance.report');
+    Route::get('/attendance/report/data', [\App\Http\Controllers\AttendanceController::class, 'getReportData'])->name('attendance.report.data');
+    Route::get('/attendance/report/export', [\App\Http\Controllers\AttendanceController::class, 'exportReport'])->name('attendance.report.export');
+  });
 
 // Approval Routes
 Route::middleware(['auth', 'verified'])->prefix('api/approval')->group(function () {

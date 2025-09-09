@@ -745,4 +745,210 @@ class AttendanceController extends Controller
             
         return $approvedAbsents;
     }
+
+    /**
+     * Show absent report page
+     */
+    public function report(Request $request)
+    {
+        $user = auth()->user();
+        
+        // Get filter parameters
+        $startDate = $request->get('start_date');
+        $endDate = $request->get('end_date');
+        $status = $request->get('status');
+        $outletId = $request->get('outlet_id');
+        $divisionId = $request->get('division_id');
+        $employeeName = $request->get('employee_name');
+        
+        // Get outlets for filter
+        $outlets = DB::table('tbl_data_outlet')
+            ->where('status', 'A')
+            ->orderBy('nama_outlet')
+            ->get();
+            
+        // Get divisions for filter
+        $divisions = DB::table('tbl_data_divisi')
+            ->where('status', 'A')
+            ->orderBy('nama_divisi')
+            ->get();
+        
+        return Inertia::render('Attendance/Report', [
+            'outlets' => $outlets,
+            'divisions' => $divisions,
+            'filters' => [
+                'start_date' => $startDate,
+                'end_date' => $endDate,
+                'status' => $status,
+                'outlet_id' => $outletId,
+                'division_id' => $divisionId,
+                'employee_name' => $employeeName
+            ]
+        ]);
+    }
+
+    /**
+     * Get absent report data
+     */
+    public function getReportData(Request $request)
+    {
+        $startDate = $request->get('start_date');
+        $endDate = $request->get('end_date');
+        $status = $request->get('status');
+        $outletId = $request->get('outlet_id');
+        $divisionId = $request->get('division_id');
+        $employeeName = $request->get('employee_name');
+        
+        
+        $query = DB::table('absent_requests')
+            ->leftJoin('users', 'absent_requests.user_id', '=', 'users.id')
+            ->leftJoin('leave_types', 'absent_requests.leave_type_id', '=', 'leave_types.id')
+            ->leftJoin('tbl_data_outlet', 'users.id_outlet', '=', 'tbl_data_outlet.id_outlet')
+            ->leftJoin('tbl_data_divisi', 'users.division_id', '=', 'tbl_data_divisi.id')
+            ->leftJoin('users as approvers', 'absent_requests.approved_by', '=', 'approvers.id')
+            ->leftJoin('users as hrd_approvers', 'absent_requests.hrd_approved_by', '=', 'hrd_approvers.id')
+            ->select([
+                'absent_requests.id',
+                'absent_requests.date_from',
+                'absent_requests.date_to',
+                'absent_requests.reason',
+                'absent_requests.status',
+                'absent_requests.created_at',
+                'absent_requests.approved_at',
+                'absent_requests.hrd_approved_at',
+                'absent_requests.rejection_reason',
+                'absent_requests.document_path',
+                'absent_requests.document_paths',
+                'users.nama_lengkap as employee_name',
+                'users.id as user_id',
+                'leave_types.name as leave_type_name',
+                'tbl_data_outlet.nama_outlet',
+                'tbl_data_divisi.nama_divisi',
+                'approvers.nama_lengkap as approver_name',
+                'hrd_approvers.nama_lengkap as hrd_approver_name'
+            ]);
+        
+        // Apply filters
+        if ($startDate) {
+            $query->where('absent_requests.date_from', '>=', $startDate);
+        }
+        
+        if ($endDate) {
+            $query->where('absent_requests.date_to', '<=', $endDate);
+        }
+        
+        if ($status) {
+            $query->where('absent_requests.status', $status);
+        }
+        
+        if ($outletId) {
+            $query->where('users.id_outlet', $outletId);
+        }
+        
+        if ($divisionId) {
+            $query->where('users.division_id', $divisionId);
+        }
+        
+        if ($employeeName) {
+            $query->where('users.nama_lengkap', 'LIKE', '%' . $employeeName . '%');
+        }
+        
+        // Get pagination parameters
+        $perPage = (int) $request->get('per_page', 15);
+        $page = (int) $request->get('page', 1);
+        
+        $data = $query->orderBy('absent_requests.created_at', 'desc')->paginate($perPage, ['*'], 'page', $page);
+        
+        
+        // Process document_paths for each item
+        $data->getCollection()->transform(function ($item) {
+            if ($item->document_paths) {
+                $item->document_paths = json_decode($item->document_paths, true) ?: [];
+            } else {
+                $item->document_paths = [];
+            }
+            return $item;
+        });
+        
+        return response()->json([
+            'success' => true,
+            'data' => $data->items(),
+            'pagination' => [
+                'current_page' => $data->currentPage(),
+                'last_page' => $data->lastPage(),
+                'per_page' => $data->perPage(),
+                'total' => $data->total(),
+                'from' => $data->firstItem(),
+                'to' => $data->lastItem(),
+                'has_more_pages' => $data->hasMorePages()
+            ]
+        ]);
+    }
+
+    /**
+     * Export absent report to Excel
+     */
+    public function exportReport(Request $request)
+    {
+        $startDate = $request->get('start_date');
+        $endDate = $request->get('end_date');
+        $status = $request->get('status');
+        $outletId = $request->get('outlet_id');
+        $divisionId = $request->get('division_id');
+        
+        $query = DB::table('absent_requests')
+            ->leftJoin('users', 'absent_requests.user_id', '=', 'users.id')
+            ->leftJoin('leave_types', 'absent_requests.leave_type_id', '=', 'leave_types.id')
+            ->leftJoin('tbl_data_outlet', 'users.id_outlet', '=', 'tbl_data_outlet.id_outlet')
+            ->leftJoin('tbl_data_divisi', 'users.division_id', '=', 'tbl_data_divisi.id')
+            ->leftJoin('users as approvers', 'absent_requests.approved_by', '=', 'approvers.id')
+            ->leftJoin('users as hrd_approvers', 'absent_requests.hrd_approved_by', '=', 'hrd_approvers.id')
+            ->select([
+                'absent_requests.id',
+                'absent_requests.date_from',
+                'absent_requests.date_to',
+                'absent_requests.reason',
+                'absent_requests.status',
+                'absent_requests.created_at',
+                'absent_requests.approved_at',
+                'absent_requests.hrd_approved_at',
+                'absent_requests.rejection_reason',
+                'users.nama_lengkap as employee_name',
+                'leave_types.name as leave_type_name',
+                'tbl_data_outlet.nama_outlet',
+                'tbl_data_divisi.nama_divisi',
+                'approvers.nama_lengkap as approver_name',
+                'hrd_approvers.nama_lengkap as hrd_approver_name'
+            ]);
+        
+        // Apply filters
+        if ($startDate) {
+            $query->where('absent_requests.date_from', '>=', $startDate);
+        }
+        
+        if ($endDate) {
+            $query->where('absent_requests.date_to', '<=', $endDate);
+        }
+        
+        if ($status) {
+            $query->where('absent_requests.status', $status);
+        }
+        
+        if ($outletId) {
+            $query->where('users.id_outlet', $outletId);
+        }
+        
+        if ($divisionId) {
+            $query->where('users.division_id', $divisionId);
+        }
+        
+        $data = $query->orderBy('absent_requests.created_at', 'desc')->get();
+        
+        // Create Excel export
+        $export = new \App\Exports\AbsentReportExport($data);
+        
+        $filename = 'absent_report_' . date('Y-m-d_H-i-s') . '.xlsx';
+        
+        return \Maatwebsite\Excel\Facades\Excel::download($export, $filename);
+    }
 }
