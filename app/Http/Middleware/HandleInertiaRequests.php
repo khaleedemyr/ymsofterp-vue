@@ -47,10 +47,6 @@ class HandleInertiaRequests extends Middleware
                 ->toArray();
         }
 
-        \Log::info('DEBUG INERTIA USER', [
-            'user' => $request->user(),
-            'region_id' => $request->user() ? \DB::table('tbl_data_outlet')->where('id_outlet', $request->user()->id_outlet)->value('region_id') : null,
-        ]);
 
         return array_merge(parent::share($request), [
             'auth' => [
