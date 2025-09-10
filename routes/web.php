@@ -330,6 +330,7 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/outlets', [OutletController::class, 'index'])->name('outlets.index');
     Route::get('/api/outlets', [\App\Http\Controllers\OutletController::class, 'apiList'])->name('outlets.list');
     Route::get('/api/outlets/report', [App\Http\Controllers\ReportController::class, 'apiOutlets'])->middleware(['auth']);
+    Route::get('/api/outlets/investor', [\App\Http\Controllers\InvestorController::class, 'outlets'])->middleware(['auth:sanctum']);
     Route::get('/api/outlets/{id}', [\App\Http\Controllers\OutletController::class, 'apiShow'])->name('outlets.show');
     Route::post('/outlets', [OutletController::class, 'store'])->name('outlets.store');
     Route::put('/outlets/{id}', [OutletController::class, 'update'])->name('outlets.update');
@@ -830,7 +831,6 @@ Route::resource('item-supplier', \App\Http\Controllers\ItemSupplierController::c
 // API autocomplete untuk Item Supplier
 Route::get('/api/suppliers', [\App\Http\Controllers\Api\SupplierController::class, 'index']);
 Route::get('/api/items', [\App\Http\Controllers\Api\ItemController::class, 'index']);
-Route::get('/api/outlets/investor', [\App\Http\Controllers\InvestorController::class, 'outlets']);
 
 Route::get('/test-email', function() {
     try {

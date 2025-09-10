@@ -311,7 +311,6 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::post('/investors', [InvestorController::class, 'store']);
     Route::put('/investors/{id}', [InvestorController::class, 'update']);
     Route::delete('/investors/{id}', [InvestorController::class, 'destroy']);
-    Route::get('/outlets', [InvestorController::class, 'outlets']);
 });
 
 // Report routes
@@ -323,6 +322,9 @@ Route::middleware(['auth:web'])->group(function () {
     Route::post('/report/daily-revenue-forecast/settings', [\App\Http\Controllers\ReportDailyRevenueForecastController::class, 'storeForecastSettings']);
     Route::get('/report/monthly-fb-revenue-performance', [\App\Http\Controllers\ReportMonthlyFbRevenuePerformanceController::class, 'index']);
 });
+
+// Investor outlet routes (must be before /outlet routes)
+Route::get('/outlets/investor', [InvestorController::class, 'outlets'])->middleware(['auth:sanctum']);
 
 // Outlet routes
 Route::get('/outlet', [OutletController::class, 'index']);

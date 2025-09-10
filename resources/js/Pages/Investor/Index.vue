@@ -150,15 +150,41 @@ const dataReady = ref(false);
 const isSubmitting = ref(false);
 
 onMounted(async () => {
-  const resOutlets = await axios.get('/api/outlets/investor');
-  outlets.value = resOutlets.data;
-  await fetchInvestors();
-  dataReady.value = true;
+  try {
+    const resOutlets = await axios.get('/api/outlets/investor');
+    
+    // Handle different response formats
+    if (resOutlets.data.outlets) {
+      outlets.value = resOutlets.data.outlets;
+      if (resOutlets.data.warning) {
+        Swal.fire('Warning', resOutlets.data.warning, 'warning');
+      }
+    } else if (Array.isArray(resOutlets.data)) {
+      outlets.value = resOutlets.data;
+    } else {
+      outlets.value = [];
+    }
+    
+    await fetchInvestors();
+    dataReady.value = true;
+  } catch (error) {
+    console.error('Error loading data:', error);
+    if (error.response && error.response.data && error.response.data.error) {
+      Swal.fire('Error', error.response.data.error, 'error');
+    } else {
+      Swal.fire('Error', 'Gagal memuat data outlet. Silakan refresh halaman.', 'error');
+    }
+  }
 });
 
 async function fetchInvestors() {
-  const res = await axios.get('/api/investors');
-  investors.value = res.data;
+  try {
+    const res = await axios.get('/api/investors');
+    investors.value = res.data;
+  } catch (error) {
+    console.error('Error fetching investors:', error);
+    Swal.fire('Error', 'Gagal memuat data investor. Silakan refresh halaman.', 'error');
+  }
 }
 
 const filteredInvestors = computed(() => {
