@@ -62,31 +62,31 @@ class ExtraOffService
                     u.id as user_id,
                     u.nama_lengkap,
                     u.nik,
-                    DATE(a.checktime) as work_date,
+                    DATE(a.scan_date) as work_date,
                     COUNT(*) as attendance_count
                 FROM att_log a
                 INNER JOIN users u ON a.userid = u.id
                 LEFT JOIN user_shifts us ON u.id = us.user_id 
-                    AND DATE(a.checktime) = DATE(us.shift_date)
+                    AND DATE(a.scan_date) = DATE(us.shift_date)
                     AND us.status = 'active'
                 WHERE 
                     a.inoutmode = 1
-                    AND DATE(a.checktime) = ?
+                    AND DATE(a.scan_date) = ?
                     AND us.id IS NULL
                     AND u.status = 'A'
                     AND NOT EXISTS (
                         SELECT 1 FROM extra_off_transactions eot 
                         WHERE eot.user_id = u.id 
-                        AND eot.source_date = DATE(a.checktime)
+                        AND eot.source_date = DATE(a.scan_date)
                         AND eot.source_type = 'unscheduled_work'
                         AND eot.transaction_type = 'earned'
                     )
                     AND NOT EXISTS (
                         SELECT 1 FROM tbl_kalender_perusahaan kp 
-                        WHERE kp.tgl_libur = DATE(a.checktime)
+                        WHERE kp.tgl_libur = DATE(a.scan_date)
                     )
-                GROUP BY u.id, DATE(a.checktime)
-                ORDER BY a.checktime DESC
+                GROUP BY u.id, DATE(a.scan_date)
+                ORDER BY a.scan_date DESC
             ", [$date]);
 
             $results['detected'] = count($unscheduledWorkers);

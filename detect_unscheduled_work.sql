@@ -6,14 +6,14 @@ SELECT
     u.id as user_id,
     u.nama_lengkap,
     u.nik,
-    a.checktime as work_date,
-    DATE(a.checktime) as work_date_only,
+    a.scan_date as work_date,
+    DATE(a.scan_date) as work_date_only,
     'Hari libur tanpa shift' as reason,
-    CONCAT('Karyawan kerja di hari libur (', DATE(a.checktime), ') tanpa ada jadwal shift') as description
+    CONCAT('Karyawan kerja di hari libur (', DATE(a.scan_date), ') tanpa ada jadwal shift') as description
 FROM `att_log` a
 INNER JOIN `users` u ON a.userid = u.id
 LEFT JOIN `user_shifts` us ON u.id = us.user_id 
-    AND DATE(a.checktime) = DATE(us.shift_date)
+    AND DATE(a.scan_date) = DATE(us.shift_date)
     AND us.status = 'active'
 WHERE 
     -- Cek apakah ada attendance (check-in)
@@ -26,21 +26,21 @@ WHERE
     AND NOT EXISTS (
         SELECT 1 FROM `extra_off_transactions` eot 
         WHERE eot.user_id = u.id 
-        AND eot.source_date = DATE(a.checktime)
+        AND eot.source_date = DATE(a.scan_date)
         AND eot.source_type = 'unscheduled_work'
         AND eot.transaction_type = 'earned'
     )
     -- Cek apakah bukan hari libur nasional (karena itu sudah ditangani di holiday_attendance_compensations)
     AND NOT EXISTS (
         SELECT 1 FROM `tbl_kalender_perusahaan` kp 
-        WHERE kp.tgl_libur = DATE(a.checktime)
+        WHERE kp.tgl_libur = DATE(a.scan_date)
     )
     -- Cek apakah tanggal dalam range yang wajar (misal 30 hari terakhir)
-    AND DATE(a.checktime) >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+    AND DATE(a.scan_date) >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
     -- Cek apakah tanggal tidak di masa depan
-    AND DATE(a.checktime) <= CURDATE()
-GROUP BY u.id, DATE(a.checktime)
-ORDER BY a.checktime DESC;
+    AND DATE(a.scan_date) <= CURDATE()
+GROUP BY u.id, DATE(a.scan_date)
+ORDER BY a.scan_date DESC;
 
 -- 2. Query untuk insert transaksi extra off yang dideteksi
 -- (Ini contoh query untuk insert, sesuaikan dengan hasil query di atas)
@@ -61,15 +61,15 @@ SELECT
     'earned' as transaction_type,
     1 as amount,
     'unscheduled_work' as source_type,
-    DATE(a.checktime) as source_date,
-    CONCAT('Extra off dari kerja tanpa shift di tanggal ', DATE(a.checktime)) as description,
+    DATE(a.scan_date) as source_date,
+    CONCAT('Extra off dari kerja tanpa shift di tanggal ', DATE(a.scan_date)) as description,
     'approved' as status,
     NOW() as created_at,
     NOW() as updated_at
 FROM `att_log` a
 INNER JOIN `users` u ON a.userid = u.id
 LEFT JOIN `user_shifts` us ON u.id = us.user_id 
-    AND DATE(a.checktime) = DATE(us.shift_date)
+    AND DATE(a.scan_date) = DATE(us.shift_date)
     AND us.status = 'active'
 WHERE 
     a.inoutmode = 1
@@ -78,17 +78,17 @@ WHERE
     AND NOT EXISTS (
         SELECT 1 FROM `extra_off_transactions` eot 
         WHERE eot.user_id = u.id 
-        AND eot.source_date = DATE(a.checktime)
+        AND eot.source_date = DATE(a.scan_date)
         AND eot.source_type = 'unscheduled_work'
         AND eot.transaction_type = 'earned'
     )
     AND NOT EXISTS (
         SELECT 1 FROM `tbl_kalender_perusahaan` kp 
-        WHERE kp.tgl_libur = DATE(a.checktime)
+        WHERE kp.tgl_libur = DATE(a.scan_date)
     )
-    AND DATE(a.checktime) >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
-    AND DATE(a.checktime) <= CURDATE()
-GROUP BY u.id, DATE(a.checktime);
+    AND DATE(a.scan_date) >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+    AND DATE(a.scan_date) <= CURDATE()
+GROUP BY u.id, DATE(a.scan_date);
 */
 
 -- 3. Query untuk update balance setelah insert transaksi
