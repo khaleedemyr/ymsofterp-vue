@@ -977,6 +977,10 @@ Route::get('/retail-warehouse-sale/create', [App\Http\Controllers\RetailWarehous
 Route::post('/retail-warehouse-sale', [App\Http\Controllers\RetailWarehouseSaleController::class, 'store'])->name('retail-warehouse-sale.store');
 Route::get('/retail-warehouse-sale/{id}', [App\Http\Controllers\RetailWarehouseSaleController::class, 'show'])->name('retail-warehouse-sale.show');
 Route::get('/retail-warehouse-sale/{id}/print', [App\Http\Controllers\RetailWarehouseSaleController::class, 'print'])->name('retail-warehouse-sale.print');
+
+// Sales Outlet Dashboard Routes
+Route::get('/sales-outlet-dashboard', [App\Http\Controllers\SalesOutletDashboardController::class, 'index'])->name('sales-outlet-dashboard.index');
+Route::get('/sales-outlet-dashboard/menu-region', [App\Http\Controllers\SalesOutletDashboardController::class, 'getMenuRegionData'])->name('sales-outlet-dashboard.menu-region');
 Route::delete('/retail-warehouse-sale/{id}', [App\Http\Controllers\RetailWarehouseSaleController::class, 'destroy'])->name('retail-warehouse-sale.destroy');
 Route::post('/retail-warehouse-sale/search-items', [App\Http\Controllers\RetailWarehouseSaleController::class, 'searchItems'])->name('retail-warehouse-sale.search-items');
 Route::post('/retail-warehouse-sale/search-customers', [App\Http\Controllers\RetailWarehouseSaleController::class, 'searchCustomers'])->name('retail-warehouse-sale.search-customers');

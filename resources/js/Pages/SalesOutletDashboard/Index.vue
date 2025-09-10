@@ -1,0 +1,2130 @@
+<script setup>
+import { ref, computed, onMounted, watch } from 'vue';
+import { Head, usePage, router } from '@inertiajs/vue3';
+import AppLayout from '@/Layouts/AppLayout.vue';
+import VueApexCharts from 'vue3-apexcharts';
+import axios from 'axios';
+import Swal from 'sweetalert2';
+
+const props = defineProps({
+    dashboardData: Object,
+    filters: Object
+});
+
+const loading = ref(false);
+
+// Modal state for menu region analysis
+const showMenuModal = ref(false);
+const selectedMenu = ref(null);
+const menuRegionData = ref(null);
+const menuRegionLoading = ref(false);
+
+// Filter states
+const filters = ref({
+    date_from: props.filters.date_from || new Date().toISOString().split('T')[0],
+    date_to: props.filters.date_to || new Date().toISOString().split('T')[0]
+});
+
+// ApexCharts data
+const salesTrendSeries = computed(() => {
+    if (!props.dashboardData?.salesTrend) return [];
+    
+    return [
+        {
+            name: 'Revenue',
+            type: 'line',
+            data: props.dashboardData.salesTrend.map(item => item.revenue)
+        },
+        {
+            name: 'Orders',
+            type: 'column',
+            data: props.dashboardData.salesTrend.map(item => item.orders)
+        }
+    ];
+});
+
+const salesTrendOptions = computed(() => ({
+    chart: {
+        type: 'line',
+        height: 350,
+        toolbar: { show: true },
+        dropShadow: {
+            enabled: true,
+            top: 4,
+            left: 2,
+            blur: 8,
+            opacity: 0.18
+        }
+    },
+    stroke: { 
+        width: 4, 
+        curve: 'smooth' 
+    },
+    markers: { 
+        size: 5, 
+        colors: ['#fff'], 
+        strokeColors: ['#3B82F6'], 
+        strokeWidth: 3, 
+        hover: { size: 8 } 
+    },
+    xaxis: {
+        categories: props.dashboardData?.salesTrend?.map(item => {
+            return new Date(item.period).toLocaleDateString('id-ID');
+        }) || []
+    },
+    yaxis: [
+        {
+            title: { text: 'Revenue (Rp)' },
+            labels: {
+                formatter: function(value) {
+                    return new Intl.NumberFormat('id-ID', {
+                        style: 'currency',
+                        currency: 'IDR',
+                        minimumFractionDigits: 0
+                    }).format(value);
+                }
+            }
+        },
+        {
+            opposite: true,
+            title: { text: 'Orders' }
+        }
+    ],
+    colors: ['#3B82F6', '#10B981'],
+    legend: { position: 'top' },
+    grid: { borderColor: '#e5e7eb' },
+    tooltip: {
+        y: {
+            formatter: function(value, { seriesIndex }) {
+                if (seriesIndex === 0) {
+                    return new Intl.NumberFormat('id-ID', {
+                        style: 'currency',
+                        currency: 'IDR',
+                        minimumFractionDigits: 0
+                    }).format(value);
+                }
+                return value;
+            }
+        }
+    }
+}));
+
+const hourlySalesSeries = computed(() => {
+    if (!props.dashboardData?.hourlySales) return [];
+    
+    return [
+        {
+            name: 'Orders',
+            type: 'column',
+            data: props.dashboardData.hourlySales.map(item => item.orders)
+        },
+        {
+            name: 'Revenue',
+            type: 'line',
+            data: props.dashboardData.hourlySales.map(item => item.revenue)
+        }
+    ];
+});
+
+const hourlySalesOptions = computed(() => ({
+    chart: {
+        type: 'line',
+        height: 350,
+        toolbar: { show: true },
+        animations: { enabled: true, easing: 'easeinout', speed: 800 }
+    },
+    xaxis: {
+        categories: props.dashboardData?.hourlySales?.map(item => `${item.hour}:00`) || [],
+        title: { text: 'Hour' },
+        labels: { style: { fontWeight: 600 } }
+    },
+    yaxis: [
+        {
+            title: { text: 'Number of Orders' },
+            min: 0,
+            labels: { 
+                style: { fontWeight: 600 },
+                formatter: (value) => value.toLocaleString()
+            }
+        },
+        {
+            opposite: true,
+            title: { text: 'Revenue (Rp)' },
+            min: 0,
+            labels: { 
+                style: { fontWeight: 600 },
+                formatter: (value) => formatNumber(value)
+            }
+        }
+    ],
+    colors: ['#6366F1', '#10b981'],
+    stroke: {
+        width: [0, 3],
+        curve: 'smooth'
+    },
+    plotOptions: {
+        bar: {
+            borderRadius: 8,
+            columnWidth: '60%'
+        }
+    },
+    dataLabels: { 
+        enabled: false 
+    },
+    legend: { 
+        position: 'top',
+        fontSize: '14px',
+        fontWeight: 600
+    },
+    grid: { 
+        borderColor: '#e5e7eb',
+        strokeDashArray: 4
+    },
+    tooltip: {
+        shared: true,
+        intersect: false,
+        custom: function({series, seriesIndex, dataPointIndex, w}) {
+            const data = props.dashboardData?.hourlySales?.[dataPointIndex];
+            if (data) {
+                return `
+                    <div class="px-3 py-2 rounded-lg bg-white shadow-lg border">
+                        <div class="font-semibold text-gray-900">${data.hour}:00</div>
+                        <div class="text-sm text-gray-600 mt-1">
+                            <div class="flex items-center gap-2">
+                                <div class="w-3 h-3 bg-indigo-500 rounded"></div>
+                                <span>Orders: ${data.orders.toLocaleString()}</span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <div class="w-3 h-3 bg-green-500 rounded"></div>
+                                <span>Revenue: ${formatCurrency(data.revenue)}</span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <div class="w-3 h-3 bg-gray-400 rounded"></div>
+                                <span>Avg Order: ${formatCurrency(data.avg_order_value)}</span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+            return '';
+        }
+    },
+    responsive: [{
+        breakpoint: 768,
+        options: {
+            chart: {
+                height: 300
+            },
+            legend: {
+                position: 'bottom',
+                fontSize: '12px'
+            }
+        }
+    }]
+}));
+
+const paymentMethodsSeries = computed(() => {
+    if (!props.dashboardData?.paymentMethods || props.dashboardData.paymentMethods.length === 0) return [];
+    
+    return props.dashboardData.paymentMethods.map(item => parseFloat(item.total_amount) || 0);
+});
+
+const paymentMethodsOptions = computed(() => ({
+    chart: {
+        type: 'donut',
+        height: 350,
+        toolbar: { show: true }
+    },
+    labels: props.dashboardData?.paymentMethods?.map(item => item.payment_code) || [],
+    colors: ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#F97316', '#84CC16', '#06B6D4', '#8B5A2B', '#DC2626', '#059669'],
+    legend: {
+        position: 'bottom',
+        fontSize: '12px',
+        fontFamily: 'Inter, sans-serif'
+    },
+    plotOptions: {
+        pie: {
+            donut: {
+                size: '70%',
+                labels: {
+                    show: true,
+                    name: {
+                        show: true,
+                        fontSize: '16px',
+                        fontFamily: 'Inter, sans-serif',
+                        fontWeight: 600,
+                        color: '#374151'
+                    },
+                    value: {
+                        show: true,
+                        fontSize: '14px',
+                        fontFamily: 'Inter, sans-serif',
+                        fontWeight: 400,
+                        color: '#6B7280',
+                        formatter: function (val) {
+                            return new Intl.NumberFormat('id-ID', {
+                                style: 'currency',
+                                currency: 'IDR',
+                                minimumFractionDigits: 0
+                            }).format(val);
+                        }
+                    }
+                }
+            }
+        }
+    },
+    tooltip: {
+        custom: function({series, seriesIndex, w}) {
+            const data = props.dashboardData?.paymentMethods?.[seriesIndex];
+            if (data) {
+                return `
+                    <div class="px-3 py-2 rounded-lg bg-white shadow-lg border">
+                        <div class="font-semibold text-gray-900">${data.payment_code}</div>
+                        <div class="text-sm text-gray-600 mt-1">
+                            <div>Total: ${new Intl.NumberFormat('id-ID', {
+                                style: 'currency',
+                                currency: 'IDR',
+                                minimumFractionDigits: 0
+                            }).format(data.total_amount)}</div>
+                            <div>Transactions: ${data.transaction_count.toLocaleString()}</div>
+                            <div>Average: ${new Intl.NumberFormat('id-ID', {
+                                style: 'currency',
+                                currency: 'IDR',
+                                minimumFractionDigits: 0
+                            }).format(data.avg_amount)}</div>
+                        </div>
+                    </div>
+                `;
+            }
+            return '';
+        }
+    },
+    dataLabels: {
+        enabled: false
+    },
+    responsive: [{
+        breakpoint: 480,
+        options: {
+            chart: {
+                width: 200
+            },
+            legend: {
+                position: 'bottom',
+                fontSize: '10px'
+            }
+        }
+    }]
+}));
+
+const lunchDinnerSeries = computed(() => {
+    if (!props.dashboardData?.lunchDinnerOrders) return [];
+    
+    const data = props.dashboardData.lunchDinnerOrders;
+    return [
+        {
+            name: 'Revenue',
+            type: 'column',
+            data: [data.lunch?.total_revenue || 0, data.dinner?.total_revenue || 0]
+        },
+        {
+            name: 'Orders',
+            type: 'column',
+            data: [data.lunch?.order_count || 0, data.dinner?.order_count || 0]
+        },
+        {
+            name: 'Pax',
+            type: 'column',
+            data: [data.lunch?.total_pax || 0, data.dinner?.total_pax || 0]
+        }
+    ];
+});
+
+const lunchDinnerOptions = computed(() => ({
+    chart: {
+        type: 'line',
+        height: 350,
+        toolbar: { show: true },
+        animations: { enabled: true, easing: 'easeinout', speed: 800 }
+    },
+    xaxis: {
+        categories: ['Lunch (≤17:00)', 'Dinner (>17:00)'],
+        title: { text: 'Period' },
+        labels: { style: { fontWeight: 600 } }
+    },
+    yaxis: [
+        {
+            title: { text: 'Count' },
+            min: 0,
+            labels: { 
+                style: { fontWeight: 600 },
+                formatter: (value) => value.toLocaleString()
+            }
+        },
+        {
+            opposite: true,
+            title: { text: 'Revenue (Rp)' },
+            min: 0,
+            labels: { 
+                style: { fontWeight: 600 },
+                formatter: (value) => formatNumber(value)
+            }
+        }
+    ],
+    colors: ['#10b981', '#3b82f6', '#f59e0b'],
+    stroke: {
+        width: [0, 0, 0],
+        curve: 'smooth'
+    },
+    plotOptions: {
+        bar: {
+            borderRadius: 8,
+            columnWidth: '60%'
+        }
+    },
+    dataLabels: { 
+        enabled: false 
+    },
+    legend: { 
+        position: 'top',
+        fontSize: '14px',
+        fontWeight: 600,
+        formatter: function(seriesName, opts) {
+            const data = props.dashboardData?.lunchDinnerOrders;
+            if (!data) return seriesName;
+            
+            if (seriesName === 'Revenue') {
+                const lunchRevenue = data.lunch?.total_revenue || 0;
+                const dinnerRevenue = data.dinner?.total_revenue || 0;
+                const totalRevenue = lunchRevenue + dinnerRevenue;
+                return `${seriesName}: ${formatCurrency(totalRevenue)}`;
+            } else if (seriesName === 'Orders') {
+                const lunchOrders = data.lunch?.order_count || 0;
+                const dinnerOrders = data.dinner?.order_count || 0;
+                const totalOrders = lunchOrders + dinnerOrders;
+                return `${seriesName}: ${totalOrders.toLocaleString()}`;
+        } else if (seriesName === 'Pax') {
+            const lunchPax = data.lunch?.total_pax || 0;
+            const dinnerPax = data.dinner?.total_pax || 0;
+            const totalPax = lunchPax + dinnerPax;
+            return `${seriesName}: ${totalPax.toLocaleString()}`;
+        }
+            return seriesName;
+        }
+    },
+    grid: { 
+        borderColor: '#e5e7eb',
+        strokeDashArray: 4
+    },
+    tooltip: {
+        shared: true,
+        intersect: false,
+        custom: function({series, seriesIndex, dataPointIndex, w}) {
+            const data = props.dashboardData?.lunchDinnerOrders;
+            const period = dataPointIndex === 0 ? 'lunch' : 'dinner';
+            const periodData = data?.[period];
+            
+            if (periodData) {
+                const avgCheck = periodData.total_pax > 0 ? periodData.total_revenue / periodData.total_pax : 0;
+                return `
+                    <div class="px-3 py-2 rounded-lg bg-white shadow-lg border">
+                        <div class="font-semibold text-gray-900">${dataPointIndex === 0 ? 'Lunch (≤17:00)' : 'Dinner (>17:00)'}</div>
+                        <div class="text-sm text-gray-600 mt-1">
+                            <div class="flex items-center gap-2">
+                                <div class="w-3 h-3 bg-green-500 rounded"></div>
+                                <span>Revenue: ${formatCurrency(periodData.total_revenue)}</span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <div class="w-3 h-3 bg-blue-500 rounded"></div>
+                                <span>Orders: ${periodData.order_count.toLocaleString()}</span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <div class="w-3 h-3 bg-orange-500 rounded"></div>
+                                <span>Pax: ${periodData.total_pax.toLocaleString()}</span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <div class="w-3 h-3 bg-gray-400 rounded"></div>
+                                <span>Avg Check: ${formatCurrency(avgCheck)}</span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+            return '';
+        }
+    },
+    responsive: [{
+        breakpoint: 768,
+        options: {
+            chart: {
+                height: 300
+            },
+            legend: {
+                position: 'bottom',
+                fontSize: '12px'
+            }
+        }
+    }]
+}));
+
+const weekdayWeekendSeries = computed(() => {
+    if (!props.dashboardData?.weekdayWeekendRevenue) return [];
+    
+    const data = props.dashboardData.weekdayWeekendRevenue;
+    return [
+        {
+            name: 'Revenue',
+            type: 'column',
+            data: [data.weekday?.total_revenue || 0, data.weekend?.total_revenue || 0]
+        },
+        {
+            name: 'Orders',
+            type: 'column',
+            data: [data.weekday?.order_count || 0, data.weekend?.order_count || 0]
+        },
+        {
+            name: 'Pax',
+            type: 'column',
+            data: [data.weekday?.total_pax || 0, data.weekend?.total_pax || 0]
+        }
+    ];
+});
+
+const weekdayWeekendOptions = computed(() => ({
+    chart: {
+        type: 'line',
+        height: 350,
+        toolbar: { show: true },
+        animations: { enabled: true, easing: 'easeinout', speed: 800 }
+    },
+    xaxis: {
+        categories: ['Weekday (Mon-Fri)', 'Weekend (Sat-Sun)'],
+        title: { text: 'Period' },
+        labels: { style: { fontWeight: 600 } }
+    },
+    yaxis: [
+        {
+            title: { text: 'Count' },
+            min: 0,
+            labels: { 
+                style: { fontWeight: 600 },
+                formatter: (value) => value.toLocaleString()
+            }
+        },
+        {
+            opposite: true,
+            title: { text: 'Revenue (Rp)' },
+            min: 0,
+            labels: { 
+                style: { fontWeight: 600 },
+                formatter: (value) => formatNumber(value)
+            }
+        }
+    ],
+    colors: ['#3b82f6', '#10b981', '#f59e0b'],
+    stroke: {
+        width: [0, 0, 0],
+        curve: 'smooth'
+    },
+    plotOptions: {
+        bar: {
+            borderRadius: 8,
+            columnWidth: '60%'
+        }
+    },
+    dataLabels: { 
+        enabled: false 
+    },
+    legend: { 
+        position: 'top',
+        fontSize: '14px',
+        fontWeight: 600,
+        formatter: function(seriesName, opts) {
+            const data = props.dashboardData?.weekdayWeekendRevenue;
+            if (!data) return seriesName;
+            
+            if (seriesName === 'Revenue') {
+                const weekdayRevenue = data.weekday?.total_revenue || 0;
+                const weekendRevenue = data.weekend?.total_revenue || 0;
+                const totalRevenue = weekdayRevenue + weekendRevenue;
+                return `${seriesName}: ${formatCurrency(totalRevenue)}`;
+            } else if (seriesName === 'Orders') {
+                const weekdayOrders = data.weekday?.order_count || 0;
+                const weekendOrders = data.weekend?.order_count || 0;
+                const totalOrders = weekdayOrders + weekendOrders;
+                return `${seriesName}: ${totalOrders.toLocaleString()}`;
+        } else if (seriesName === 'Pax') {
+            const weekdayPax = data.weekday?.total_pax || 0;
+            const weekendPax = data.weekend?.total_pax || 0;
+            const totalPax = weekdayPax + weekendPax;
+            return `${seriesName}: ${totalPax.toLocaleString()}`;
+        }
+            return seriesName;
+        }
+    },
+    grid: { 
+        borderColor: '#e5e7eb',
+        strokeDashArray: 4
+    },
+    tooltip: {
+        shared: true,
+        intersect: false,
+        custom: function({series, seriesIndex, dataPointIndex, w}) {
+            const data = props.dashboardData?.weekdayWeekendRevenue;
+            const period = dataPointIndex === 0 ? 'weekday' : 'weekend';
+            const periodData = data?.[period];
+            
+            if (periodData) {
+                const avgCheck = periodData.total_pax > 0 ? periodData.total_revenue / periodData.total_pax : 0;
+                return `
+                    <div class="px-3 py-2 rounded-lg bg-white shadow-lg border">
+                        <div class="font-semibold text-gray-900">${dataPointIndex === 0 ? 'Weekday (Mon-Fri)' : 'Weekend (Sat-Sun)'}</div>
+                        <div class="text-sm text-gray-600 mt-1">
+                            <div class="flex items-center gap-2">
+                                <div class="w-3 h-3 bg-blue-500 rounded"></div>
+                                <span>Revenue: ${formatCurrency(periodData.total_revenue)}</span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <div class="w-3 h-3 bg-green-500 rounded"></div>
+                                <span>Orders: ${periodData.order_count.toLocaleString()}</span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <div class="w-3 h-3 bg-orange-500 rounded"></div>
+                                <span>Pax: ${periodData.total_pax.toLocaleString()}</span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <div class="w-3 h-3 bg-gray-400 rounded"></div>
+                                <span>Avg Check: ${formatCurrency(avgCheck)}</span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+            return '';
+        }
+    },
+    responsive: [{
+        breakpoint: 768,
+        options: {
+            chart: {
+                height: 300
+            },
+            legend: {
+                position: 'bottom',
+                fontSize: '12px'
+            }
+        }
+    }]
+}));
+
+// Revenue per Outlet by Region
+const revenuePerOutletSeries = computed(() => {
+    if (!props.dashboardData?.revenuePerOutlet) return [];
+
+    const data = props.dashboardData.revenuePerOutlet;
+    const regions = Object.keys(data);
+    
+    if (regions.length === 0) return [];
+
+    // Create series for each region
+    const series = [];
+    const categories = [];
+    
+    // Get all unique outlets across all regions
+    const allOutlets = new Set();
+    regions.forEach(region => {
+        data[region].outlets.forEach(outlet => {
+            allOutlets.add(outlet.outlet_name);
+        });
+    });
+    
+    categories.push(...Array.from(allOutlets));
+    
+    // Create series for each region
+    regions.forEach(region => {
+        const regionData = new Array(categories.length).fill(0);
+        
+        data[region].outlets.forEach(outlet => {
+            const index = categories.indexOf(outlet.outlet_name);
+            if (index !== -1) {
+                regionData[index] = outlet.total_revenue;
+            }
+        });
+        
+        series.push({
+            name: region,
+            data: regionData
+        });
+    });
+
+    return series;
+});
+
+const revenuePerOutletOptions = computed(() => ({
+    chart: {
+        type: 'bar',
+        height: 400,
+        stacked: true,
+        toolbar: { show: true },
+        animations: { enabled: true, easing: 'easeinout', speed: 800 }
+    },
+    xaxis: {
+        categories: revenuePerOutletSeries.value.length > 0 ? 
+            (() => {
+                const data = props.dashboardData?.revenuePerOutlet;
+                if (!data) return [];
+                
+                const allOutlets = new Set();
+                Object.keys(data).forEach(region => {
+                    data[region].outlets.forEach(outlet => {
+                        allOutlets.add(outlet.outlet_name);
+                    });
+                });
+                
+                return Array.from(allOutlets);
+            })() : [],
+        title: { text: 'Outlets' },
+        labels: { 
+            style: { fontWeight: 600 },
+            rotate: -45,
+            maxHeight: 120
+        }
+    },
+    yaxis: {
+        title: { text: 'Revenue (Rp)' },
+        min: 0,
+        labels: {
+            style: { fontWeight: 600 },
+            formatter: (value) => formatNumber(value)
+        }
+    },
+    colors: ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#84cc16', '#f97316'],
+    plotOptions: {
+        bar: {
+            borderRadius: 4,
+            columnWidth: '60%'
+        }
+    },
+    dataLabels: {
+        enabled: false
+    },
+    legend: {
+        position: 'top',
+        fontSize: '14px',
+        fontWeight: 600,
+        formatter: function(seriesName, opts) {
+            const data = props.dashboardData?.revenuePerOutlet;
+            if (!data || !data[seriesName]) return seriesName;
+            
+            const regionData = data[seriesName];
+            return `${seriesName}: ${formatCurrency(regionData.total_revenue)} (${regionData.outlets.length} outlets)`;
+        }
+    },
+    grid: {
+        borderColor: '#e5e7eb',
+        strokeDashArray: 4
+    },
+    tooltip: {
+        shared: true,
+        intersect: false,
+        custom: function({series, seriesIndex, dataPointIndex, w}) {
+            const data = props.dashboardData?.revenuePerOutlet;
+            if (!data) return '';
+            
+            const regions = Object.keys(data);
+            const regionName = regions[seriesIndex];
+            const regionData = data[regionName];
+            
+            if (!regionData || !regionData.outlets[dataPointIndex]) return '';
+            
+            const outlet = regionData.outlets[dataPointIndex];
+            const avgCheck = outlet.total_pax > 0 ? outlet.total_revenue / outlet.total_pax : 0;
+            
+            return `
+                <div class="px-3 py-2 rounded-lg bg-white shadow-lg border">
+                    <div class="font-semibold text-gray-900">${outlet.outlet_name}</div>
+                    <div class="text-sm text-gray-600 mt-1">
+                        <div class="flex items-center gap-2">
+                            <div class="w-3 h-3 bg-blue-500 rounded"></div>
+                            <span>Region: ${regionName}</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <div class="w-3 h-3 bg-green-500 rounded"></div>
+                            <span>Revenue: ${formatCurrency(outlet.total_revenue)}</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <div class="w-3 h-3 bg-orange-500 rounded"></div>
+                            <span>Orders: ${outlet.order_count.toLocaleString()}</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <div class="w-3 h-3 bg-purple-500 rounded"></div>
+                            <span>Pax: ${outlet.total_pax.toLocaleString()}</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <div class="w-3 h-3 bg-gray-400 rounded"></div>
+                            <span>Avg Check: ${formatCurrency(avgCheck)}</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+    },
+    responsive: [{
+        breakpoint: 768,
+        options: {
+            chart: {
+                height: 300
+            },
+            legend: {
+                position: 'bottom',
+                fontSize: '12px'
+            },
+            xaxis: {
+                labels: {
+                    rotate: -90,
+                    maxHeight: 100
+                }
+            }
+        }
+    }]
+}));
+
+// Revenue per Region Charts
+const revenuePerRegionTotalSeries = computed(() => {
+    if (!props.dashboardData?.revenuePerRegion?.total_revenue) return [];
+
+    const data = props.dashboardData.revenuePerRegion.total_revenue;
+    
+    return [{
+        name: 'Revenue',
+        data: data.map(region => region.total_revenue)
+    }];
+});
+
+const revenuePerRegionTotalOptions = computed(() => ({
+    chart: {
+        type: 'bar',
+        height: 350,
+        toolbar: { show: true },
+        animations: { enabled: true, easing: 'easeinout', speed: 800 }
+    },
+    xaxis: {
+        categories: props.dashboardData?.revenuePerRegion?.total_revenue?.map(region => region.region_name) || [],
+        title: { text: 'Regions' },
+        labels: { 
+            style: { fontWeight: 600 },
+            rotate: -45
+        }
+    },
+    yaxis: {
+        title: { text: 'Revenue (Rp)' },
+        min: 0,
+        labels: {
+            style: { fontWeight: 600 },
+            formatter: (value) => formatNumber(value)
+        }
+    },
+    colors: ['#3b82f6'],
+    plotOptions: {
+        bar: {
+            borderRadius: 8,
+            columnWidth: '60%'
+        }
+    },
+    dataLabels: {
+        enabled: false
+    },
+    legend: {
+        position: 'top',
+        fontSize: '14px',
+        fontWeight: 600
+    },
+    grid: {
+        borderColor: '#e5e7eb',
+        strokeDashArray: 4
+    },
+    tooltip: {
+        custom: function({series, seriesIndex, dataPointIndex, w}) {
+            const data = props.dashboardData?.revenuePerRegion?.total_revenue;
+            if (!data || !data[dataPointIndex]) return '';
+            
+            const region = data[dataPointIndex];
+            const avgCheck = region.total_pax > 0 ? region.total_revenue / region.total_pax : 0;
+            
+            return `
+                <div class="px-3 py-2 rounded-lg bg-white shadow-lg border">
+                    <div class="font-semibold text-gray-900">${region.region_name}</div>
+                    <div class="text-sm text-gray-600 mt-1">
+                        <div class="flex items-center gap-2">
+                            <div class="w-3 h-3 bg-blue-500 rounded"></div>
+                            <span>Revenue: ${formatCurrency(region.total_revenue)}</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <div class="w-3 h-3 bg-green-500 rounded"></div>
+                            <span>Orders: ${region.total_orders.toLocaleString()}</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <div class="w-3 h-3 bg-orange-500 rounded"></div>
+                            <span>Pax: ${region.total_pax.toLocaleString()}</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <div class="w-3 h-3 bg-gray-400 rounded"></div>
+                            <span>Avg Check: ${formatCurrency(avgCheck)}</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+    },
+    responsive: [{
+        breakpoint: 768,
+        options: {
+            chart: {
+                height: 300
+            },
+            legend: {
+                position: 'bottom',
+                fontSize: '12px'
+            }
+        }
+    }]
+}));
+
+// Lunch/Dinner Revenue per Region
+const revenuePerRegionLunchDinnerSeries = computed(() => {
+    if (!props.dashboardData?.revenuePerRegion?.lunch_dinner) return [];
+
+    const data = props.dashboardData.revenuePerRegion.lunch_dinner;
+    const regions = Object.keys(data);
+    
+    if (regions.length === 0) return [];
+
+    return [
+        {
+            name: 'Lunch',
+            data: regions.map(region => data[region].lunch?.total_revenue || 0)
+        },
+        {
+            name: 'Dinner',
+            data: regions.map(region => data[region].dinner?.total_revenue || 0)
+        }
+    ];
+});
+
+const revenuePerRegionLunchDinnerOptions = computed(() => ({
+    chart: {
+        type: 'bar',
+        height: 350,
+        stacked: true,
+        toolbar: { show: true },
+        animations: { enabled: true, easing: 'easeinout', speed: 800 }
+    },
+    xaxis: {
+        categories: Object.keys(props.dashboardData?.revenuePerRegion?.lunch_dinner || {}),
+        title: { text: 'Regions' },
+        labels: { 
+            style: { fontWeight: 600 },
+            rotate: -45
+        }
+    },
+    yaxis: {
+        title: { text: 'Revenue (Rp)' },
+        min: 0,
+        labels: {
+            style: { fontWeight: 600 },
+            formatter: (value) => formatNumber(value)
+        }
+    },
+    colors: ['#10b981', '#f59e0b'],
+    plotOptions: {
+        bar: {
+            borderRadius: 4,
+            columnWidth: '60%'
+        }
+    },
+    dataLabels: {
+        enabled: false
+    },
+    legend: {
+        position: 'top',
+        fontSize: '14px',
+        fontWeight: 600,
+        formatter: function(seriesName, opts) {
+            const data = props.dashboardData?.revenuePerRegion?.lunch_dinner;
+            if (!data) return seriesName;
+            
+            let totalRevenue = 0;
+            Object.keys(data).forEach(region => {
+                if (seriesName === 'Lunch') {
+                    totalRevenue += data[region].lunch?.total_revenue || 0;
+                } else if (seriesName === 'Dinner') {
+                    totalRevenue += data[region].dinner?.total_revenue || 0;
+                }
+            });
+            
+            return `${seriesName}: ${formatCurrency(totalRevenue)}`;
+        }
+    },
+    grid: {
+        borderColor: '#e5e7eb',
+        strokeDashArray: 4
+    },
+    tooltip: {
+        shared: false,
+        intersect: true,
+        custom: function({series, seriesIndex, dataPointIndex, w}) {
+            const data = props.dashboardData?.revenuePerRegion?.lunch_dinner;
+            if (!data) return '';
+            
+            const regions = Object.keys(data);
+            const regionName = regions[dataPointIndex];
+            const regionData = data[regionName];
+            
+            if (!regionData) return '';
+            
+            const period = seriesIndex === 0 ? 'lunch' : 'dinner';
+            const periodData = regionData[period];
+            const avgCheck = periodData.total_pax > 0 ? periodData.total_revenue / periodData.total_pax : 0;
+            
+            return `
+                <div class="px-3 py-2 rounded-lg bg-white shadow-lg border">
+                    <div class="font-semibold text-gray-900">${regionName} - ${seriesIndex === 0 ? 'Lunch' : 'Dinner'}</div>
+                    <div class="text-sm text-gray-600 mt-1">
+                        <div class="flex items-center gap-2">
+                            <div class="w-3 h-3 ${seriesIndex === 0 ? 'bg-green-500' : 'bg-orange-500'} rounded"></div>
+                            <span>Revenue: ${formatCurrency(periodData.total_revenue)}</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <div class="w-3 h-3 bg-blue-500 rounded"></div>
+                            <span>Orders: ${periodData.order_count.toLocaleString()}</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <div class="w-3 h-3 bg-purple-500 rounded"></div>
+                            <span>Pax: ${periodData.total_pax.toLocaleString()}</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <div class="w-3 h-3 bg-gray-400 rounded"></div>
+                            <span>Avg Check: ${formatCurrency(avgCheck)}</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+    },
+    responsive: [{
+        breakpoint: 768,
+        options: {
+            chart: {
+                height: 300
+            },
+            legend: {
+                position: 'bottom',
+                fontSize: '12px'
+            }
+        }
+    }]
+}));
+
+// Weekday/Weekend Revenue per Region
+const revenuePerRegionWeekdayWeekendSeries = computed(() => {
+    if (!props.dashboardData?.revenuePerRegion?.weekday_weekend) return [];
+
+    const data = props.dashboardData.revenuePerRegion.weekday_weekend;
+    const regions = Object.keys(data);
+    
+    if (regions.length === 0) return [];
+
+    return [
+        {
+            name: 'Weekday',
+            data: regions.map(region => data[region].weekday?.total_revenue || 0)
+        },
+        {
+            name: 'Weekend',
+            data: regions.map(region => data[region].weekend?.total_revenue || 0)
+        }
+    ];
+});
+
+const revenuePerRegionWeekdayWeekendOptions = computed(() => ({
+    chart: {
+        type: 'bar',
+        height: 350,
+        stacked: true,
+        toolbar: { show: true },
+        animations: { enabled: true, easing: 'easeinout', speed: 800 }
+    },
+    xaxis: {
+        categories: Object.keys(props.dashboardData?.revenuePerRegion?.weekday_weekend || {}),
+        title: { text: 'Regions' },
+        labels: { 
+            style: { fontWeight: 600 },
+            rotate: -45
+        }
+    },
+    yaxis: {
+        title: { text: 'Revenue (Rp)' },
+        min: 0,
+        labels: {
+            style: { fontWeight: 600 },
+            formatter: (value) => formatNumber(value)
+        }
+    },
+    colors: ['#3b82f6', '#8b5cf6'],
+    plotOptions: {
+        bar: {
+            borderRadius: 4,
+            columnWidth: '60%'
+        }
+    },
+    dataLabels: {
+        enabled: false
+    },
+    legend: {
+        position: 'top',
+        fontSize: '14px',
+        fontWeight: 600,
+        formatter: function(seriesName, opts) {
+            const data = props.dashboardData?.revenuePerRegion?.weekday_weekend;
+            if (!data) return seriesName;
+            
+            let totalRevenue = 0;
+            Object.keys(data).forEach(region => {
+                if (seriesName === 'Weekday') {
+                    totalRevenue += data[region].weekday?.total_revenue || 0;
+                } else if (seriesName === 'Weekend') {
+                    totalRevenue += data[region].weekend?.total_revenue || 0;
+                }
+            });
+            
+            return `${seriesName}: ${formatCurrency(totalRevenue)}`;
+        }
+    },
+    grid: {
+        borderColor: '#e5e7eb',
+        strokeDashArray: 4
+    },
+    tooltip: {
+        shared: false,
+        intersect: true,
+        custom: function({series, seriesIndex, dataPointIndex, w}) {
+            const data = props.dashboardData?.revenuePerRegion?.weekday_weekend;
+            if (!data) return '';
+            
+            const regions = Object.keys(data);
+            const regionName = regions[dataPointIndex];
+            const regionData = data[regionName];
+            
+            if (!regionData) return '';
+            
+            const period = seriesIndex === 0 ? 'weekday' : 'weekend';
+            const periodData = regionData[period];
+            const avgCheck = periodData.total_pax > 0 ? periodData.total_revenue / periodData.total_pax : 0;
+            
+            return `
+                <div class="px-3 py-2 rounded-lg bg-white shadow-lg border">
+                    <div class="font-semibold text-gray-900">${regionName} - ${seriesIndex === 0 ? 'Weekday' : 'Weekend'}</div>
+                    <div class="text-sm text-gray-600 mt-1">
+                        <div class="flex items-center gap-2">
+                            <div class="w-3 h-3 ${seriesIndex === 0 ? 'bg-blue-500' : 'bg-purple-500'} rounded"></div>
+                            <span>Revenue: ${formatCurrency(periodData.total_revenue)}</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <div class="w-3 h-3 bg-green-500 rounded"></div>
+                            <span>Orders: ${periodData.order_count.toLocaleString()}</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <div class="w-3 h-3 bg-orange-500 rounded"></div>
+                            <span>Pax: ${periodData.total_pax.toLocaleString()}</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <div class="w-3 h-3 bg-gray-400 rounded"></div>
+                            <span>Avg Check: ${formatCurrency(avgCheck)}</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+    },
+    responsive: [{
+        breakpoint: 768,
+        options: {
+            chart: {
+                height: 300
+            },
+            legend: {
+                position: 'bottom',
+                fontSize: '12px'
+            }
+        }
+    }]
+}));
+
+
+// Utility functions
+function formatCurrency(amount) {
+    return new Intl.NumberFormat('id-ID', {
+        style: 'currency',
+        currency: 'IDR',
+        minimumFractionDigits: 0
+    }).format(amount);
+}
+
+function formatNumber(number) {
+    return new Intl.NumberFormat('id-ID').format(number);
+}
+
+function formatDate(date) {
+    return new Date(date).toLocaleDateString('id-ID', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric'
+    });
+}
+
+function formatDateTime(date) {
+    return new Date(date).toLocaleString('id-ID', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+    });
+}
+
+function getGrowthColor(growth) {
+    if (growth > 0) return 'text-green-600';
+    if (growth < 0) return 'text-red-600';
+    return 'text-gray-600';
+}
+
+function getGrowthIcon(growth) {
+    if (growth > 0) return 'fa-arrow-up';
+    if (growth < 0) return 'fa-arrow-down';
+    return 'fa-minus';
+}
+
+// Filter functions
+function applyFilters() {
+    loading.value = true;
+    router.get(route('sales-outlet-dashboard.index'), filters.value, {
+        preserveState: true,
+        onFinish: () => {
+            loading.value = false;
+        }
+    });
+}
+
+function resetFilters() {
+    filters.value = {
+        date_from: new Date().toISOString().split('T')[0],
+        date_to: new Date().toISOString().split('T')[0]
+    };
+    applyFilters();
+}
+
+
+// Watch for filter changes
+watch(filters, () => {
+    applyFilters();
+}, { deep: true });
+
+// Menu region analysis functions
+async function openMenuModal(menuItem) {
+    selectedMenu.value = menuItem;
+    showMenuModal.value = true;
+    menuRegionLoading.value = true;
+    
+    try {
+        const response = await axios.get(route('sales-outlet-dashboard.menu-region'), {
+            params: {
+                item_name: menuItem.item_name,
+                date_from: filters.value.date_from,
+                date_to: filters.value.date_to
+            }
+        });
+        
+        menuRegionData.value = response.data;
+    } catch (error) {
+        console.error('Error fetching menu region data:', error);
+        Swal.fire({
+            icon: 'error',
+            title: 'Error',
+            text: 'Failed to load menu region data'
+        });
+    } finally {
+        menuRegionLoading.value = false;
+    }
+}
+
+function closeMenuModal() {
+    showMenuModal.value = false;
+    selectedMenu.value = null;
+    menuRegionData.value = null;
+}
+
+// Computed properties for menu region chart
+const menuRegionChartSeries = computed(() => {
+    if (!menuRegionData.value) return [];
+    
+    return [
+        {
+            name: 'Revenue',
+            data: menuRegionData.value.map(item => item.total_revenue)
+        },
+        {
+            name: 'Orders',
+            data: menuRegionData.value.map(item => item.order_count)
+        },
+        {
+            name: 'Quantity',
+            data: menuRegionData.value.map(item => item.total_quantity)
+        }
+    ];
+});
+
+const menuRegionChartOptions = computed(() => ({
+    chart: {
+        type: 'bar',
+        height: 400,
+        toolbar: { show: true }
+    },
+    plotOptions: {
+        bar: {
+            horizontal: false,
+            columnWidth: '55%',
+            endingShape: 'rounded'
+        }
+    },
+    dataLabels: {
+        enabled: false
+    },
+    stroke: {
+        show: true,
+        width: 2,
+        colors: ['transparent']
+    },
+    xaxis: {
+        categories: menuRegionData.value?.map(item => item.region_name) || []
+    },
+    yaxis: [
+        {
+            title: { text: 'Revenue (Rp)' },
+            labels: {
+                formatter: function(value) {
+                    return new Intl.NumberFormat('id-ID', {
+                        style: 'currency',
+                        currency: 'IDR',
+                        minimumFractionDigits: 0
+                    }).format(value);
+                }
+            }
+        },
+        {
+            opposite: true,
+            title: { text: 'Orders & Quantity' }
+        }
+    ],
+    fill: {
+        opacity: 1
+    },
+    colors: ['#3B82F6', '#10B981', '#F59E0B'],
+    legend: { position: 'top' },
+    grid: { borderColor: '#e5e7eb' },
+    tooltip: {
+        shared: true,
+        intersect: false,
+        custom: function({series, seriesIndex, dataPointIndex, w}) {
+            const data = menuRegionData.value;
+            if (!data || !data[dataPointIndex]) return '';
+            
+            const regionData = data[dataPointIndex];
+            const avgPrice = regionData.total_quantity > 0 ? regionData.total_revenue / regionData.total_quantity : 0;
+            
+            return `
+                <div class="px-3 py-2 rounded-lg bg-white shadow-lg border">
+                    <div class="font-semibold text-gray-900">${regionData.region_name}</div>
+                    <div class="text-sm text-gray-600 mt-1">
+                        <div class="flex items-center gap-2">
+                            <div class="w-3 h-3 bg-blue-500 rounded"></div>
+                            <span>Revenue: ${formatCurrency(regionData.total_revenue)}</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <div class="w-3 h-3 bg-green-500 rounded"></div>
+                            <span>Orders: ${regionData.order_count.toLocaleString()}</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <div class="w-3 h-3 bg-yellow-500 rounded"></div>
+                            <span>Quantity: ${regionData.total_quantity.toLocaleString()}</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <div class="w-3 h-3 bg-gray-400 rounded"></div>
+                            <span>Avg Price: ${formatCurrency(avgPrice)}</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+    }
+}));
+</script>
+
+<template>
+    <AppLayout>
+        <Head title="Sales Outlet Dashboard" />
+        
+        <div class="w-full min-h-screen bg-gray-50">
+            <div class="w-full px-2 py-2">
+                <!-- Header -->
+                <div class="mb-6">
+                    <div>
+                        <h1 class="text-3xl font-bold text-gray-900">Sales Outlet Dashboard</h1>
+                        <p class="text-gray-600 mt-1">Analisis komprehensif performa sales outlet</p>
+                    </div>
+                </div>
+
+                <!-- Filters -->
+                <div class="bg-white rounded-lg shadow-sm border p-6 mb-6">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <!-- Date From -->
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Dari Tanggal</label>
+                            <input 
+                                v-model="filters.date_from"
+                                type="date"
+                                class="w-full rounded-lg border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                            />
+                        </div>
+
+                        <!-- Date To -->
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Sampai Tanggal</label>
+                            <input 
+                                v-model="filters.date_to"
+                                type="date"
+                                class="w-full rounded-lg border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                            />
+                        </div>
+                    </div>
+
+                    <div class="flex justify-end gap-2 mt-4">
+                        <button 
+                            @click="resetFilters"
+                            class="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+                        >
+                            Reset
+                        </button>
+                        <button 
+                            @click="applyFilters"
+                            :disabled="loading"
+                            class="px-4 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-lg transition-colors disabled:opacity-50"
+                        >
+                            {{ loading ? 'Loading...' : 'Apply Filters' }}
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Loading State -->
+                <div v-if="loading" class="text-center py-12">
+                    <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+                    <p class="text-gray-600 mt-2">Memuat data dashboard...</p>
+                </div>
+
+                <!-- Dashboard Content -->
+                <div v-else>
+                    <!-- Overview Metrics -->
+                    <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 xl:grid-cols-5 gap-4 mb-6">
+                        <!-- Total Orders -->
+                        <div class="bg-white rounded-lg shadow-sm border p-6">
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <p class="text-sm font-medium text-gray-600">Total Orders</p>
+                                    <p class="text-2xl font-bold text-gray-900">{{ formatNumber(dashboardData?.overview?.total_orders || 0) }}</p>
+                                    <p class="text-sm flex items-center mt-1" :class="getGrowthColor(dashboardData?.overview?.order_growth || 0)">
+                                        <i :class="['fa-solid', getGrowthIcon(dashboardData?.overview?.order_growth || 0), 'mr-1']"></i>
+                                        {{ Math.abs(dashboardData?.overview?.order_growth || 0).toFixed(1) }}%
+                                    </p>
+                                </div>
+                                <div class="p-3 bg-blue-100 rounded-full">
+                                    <i class="fa-solid fa-shopping-cart text-blue-600 text-xl"></i>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Total Revenue -->
+                        <div class="bg-white rounded-lg shadow-sm border p-6">
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <p class="text-sm font-medium text-gray-600">Total Revenue</p>
+                                    <p class="text-2xl font-bold text-gray-900">{{ formatCurrency(dashboardData?.overview?.total_revenue || 0) }}</p>
+                                    <p class="text-sm flex items-center mt-1" :class="getGrowthColor(dashboardData?.overview?.revenue_growth || 0)">
+                                        <i :class="['fa-solid', getGrowthIcon(dashboardData?.overview?.revenue_growth || 0), 'mr-1']"></i>
+                                        {{ Math.abs(dashboardData?.overview?.revenue_growth || 0).toFixed(1) }}%
+                                    </p>
+                                </div>
+                                <div class="p-3 bg-green-100 rounded-full">
+                                    <i class="fa-solid fa-chart-line text-green-600 text-xl"></i>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Average Order Value -->
+                        <div class="bg-white rounded-lg shadow-sm border p-6">
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <p class="text-sm font-medium text-gray-600">Avg Order Value</p>
+                                    <p class="text-2xl font-bold text-gray-900">{{ formatCurrency(dashboardData?.overview?.avg_order_value || 0) }}</p>
+                                    <p class="text-sm text-gray-500 mt-1">Per order</p>
+                                </div>
+                                <div class="p-3 bg-purple-100 rounded-full">
+                                    <i class="fa-solid fa-calculator text-purple-600 text-xl"></i>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Total Customers -->
+                        <div class="bg-white rounded-lg shadow-sm border p-6">
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <p class="text-sm font-medium text-gray-600">Total Customers</p>
+                                    <p class="text-2xl font-bold text-gray-900">{{ formatNumber(dashboardData?.overview?.total_customers || 0) }}</p>
+                                    <p class="text-sm text-gray-500 mt-1">Avg {{ dashboardData?.overview?.avg_pax_per_order?.toFixed(1) || 0 }} pax/order</p>
+                                </div>
+                                <div class="p-3 bg-orange-100 rounded-full">
+                                    <i class="fa-solid fa-users text-orange-600 text-xl"></i>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Average Check -->
+                        <div class="bg-white rounded-lg shadow-sm border p-6">
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <p class="text-sm font-medium text-gray-600">Average Check</p>
+                                    <p class="text-2xl font-bold text-gray-900">{{ formatCurrency(dashboardData?.overview?.avg_check || 0) }}</p>
+                                    <p class="text-sm text-gray-500 mt-1">Per customer</p>
+                                </div>
+                                <div class="p-3 bg-indigo-100 rounded-full">
+                                    <i class="fa-solid fa-receipt text-indigo-600 text-xl"></i>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Additional Metrics -->
+                    <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 gap-4 mb-6">
+                        <!-- Total Discount -->
+                        <div class="bg-white rounded-lg shadow-sm border p-6">
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <p class="text-sm font-medium text-gray-600">Total Discount</p>
+                                    <p class="text-xl font-bold text-gray-900">{{ formatCurrency(dashboardData?.overview?.total_discount || 0) }}</p>
+                                </div>
+                                <div class="p-3 bg-red-100 rounded-full">
+                                    <i class="fa-solid fa-percentage text-red-600 text-lg"></i>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Service Charge -->
+                        <div class="bg-white rounded-lg shadow-sm border p-6">
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <p class="text-sm font-medium text-gray-600">Service Charge</p>
+                                    <p class="text-xl font-bold text-gray-900">{{ formatCurrency(dashboardData?.overview?.total_service_charge || 0) }}</p>
+                                </div>
+                                <div class="p-3 bg-yellow-100 rounded-full">
+                                    <i class="fa-solid fa-hand-holding-dollar text-yellow-600 text-lg"></i>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Commission Fee -->
+                        <div class="bg-white rounded-lg shadow-sm border p-6">
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <p class="text-sm font-medium text-gray-600">Commission Fee</p>
+                                    <p class="text-xl font-bold text-gray-900">{{ formatCurrency(dashboardData?.overview?.total_commission_fee || 0) }}</p>
+                                </div>
+                                <div class="p-3 bg-indigo-100 rounded-full">
+                                    <i class="fa-solid fa-coins text-indigo-600 text-lg"></i>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Promo Usage -->
+                        <div class="bg-white rounded-lg shadow-sm border p-6">
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <p class="text-sm font-medium text-gray-600">Promo Usage</p>
+                                    <p class="text-xl font-bold text-gray-900">{{ dashboardData?.promoUsage?.orders_with_promo || 0 }}</p>
+                                    <p class="text-sm text-gray-500 mt-1">{{ dashboardData?.promoUsage?.promo_usage_percentage?.toFixed(1) || 0 }}% of orders</p>
+                                </div>
+                                <div class="p-3 bg-pink-100 rounded-full">
+                                    <i class="fa-solid fa-tags text-pink-600 text-lg"></i>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Charts Row 1 -->
+                    <div class="grid grid-cols-1 xl:grid-cols-2 gap-4 mb-6">
+                        <!-- Sales Trend -->
+                        <div class="bg-white rounded-lg shadow-sm border p-6">
+                            <h3 class="text-lg font-semibold text-gray-900 mb-4">Sales Trend</h3>
+                            <apexchart 
+                                v-if="salesTrendSeries.length > 0" 
+                                type="line" 
+                                height="350" 
+                                :options="salesTrendOptions" 
+                                :series="salesTrendSeries" 
+                            />
+                            <div v-else class="text-center py-8 text-gray-500">
+                                <i class="fa-solid fa-chart-line text-4xl mb-2"></i>
+                                <p>No sales trend data available</p>
+                            </div>
+                        </div>
+
+                        <!-- Hourly Sales -->
+                        <div class="bg-white rounded-lg shadow-sm border p-6">
+                            <h3 class="text-lg font-semibold text-gray-900 mb-4">Orders by Hour</h3>
+                            <apexchart 
+                                v-if="hourlySalesSeries.length > 0" 
+                                type="bar" 
+                                height="350" 
+                                :options="hourlySalesOptions" 
+                                :series="hourlySalesSeries" 
+                            />
+                            <div v-else class="text-center py-8 text-gray-500">
+                                <i class="fa-solid fa-clock text-4xl mb-2"></i>
+                                <p>No hourly sales data available</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Charts Row 2 -->
+                    <div class="grid grid-cols-1 xl:grid-cols-2 gap-4 mb-6">
+                        <!-- Lunch/Dinner Orders -->
+                        <div class="bg-white rounded-lg shadow-sm border p-6">
+                            <h3 class="text-lg font-semibold text-gray-900 mb-4">Orders by Lunch or Dinner</h3>
+                            <apexchart 
+                                v-if="lunchDinnerSeries.length > 0 && lunchDinnerSeries.some(series => series.data && series.data.some(val => val > 0))" 
+                                type="bar" 
+                                height="350" 
+                                :options="lunchDinnerOptions" 
+                                :series="lunchDinnerSeries" 
+                            />
+                            <div v-else class="text-center py-8 text-gray-500">
+                                <i class="fa-solid fa-utensils text-4xl mb-2"></i>
+                                <p>No lunch/dinner data available</p>
+                            </div>
+                            
+                            <!-- Lunch/Dinner Details -->
+                            <div v-if="dashboardData?.lunchDinnerOrders" class="mt-6">
+                                <h4 class="text-md font-semibold text-gray-800 mb-3">Period Details</h4>
+                                <div class="space-y-3">
+                                    <!-- Lunch Details -->
+                                    <div class="border rounded-lg p-4 bg-green-50">
+                                        <div class="flex items-center justify-between mb-2">
+                                            <h5 class="font-semibold text-gray-900 flex items-center">
+                                                <i class="fa-solid fa-sun text-green-600 mr-2"></i>
+                                                Lunch (≤17:00)
+                                            </h5>
+                                            <span class="text-sm font-medium text-green-600">
+                                                {{ formatCurrency(dashboardData.lunchDinnerOrders.lunch?.total_revenue || 0) }}
+                                            </span>
+                                        </div>
+                                         <div class="grid grid-cols-2 gap-2 text-sm">
+                                             <div class="flex justify-between">
+                                                 <span class="text-gray-600">Orders:</span>
+                                                 <span class="font-medium text-gray-900">{{ formatNumber(dashboardData.lunchDinnerOrders.lunch?.order_count || 0) }}</span>
+                                             </div>
+                                             <div class="flex justify-between">
+                                                 <span class="text-gray-600">Pax:</span>
+                                                 <span class="font-medium text-gray-900">{{ formatNumber(dashboardData.lunchDinnerOrders.lunch?.total_pax || 0) }}</span>
+                                             </div>
+                                             <div class="flex justify-between">
+                                                 <span class="text-gray-600">Avg Order:</span>
+                                                 <span class="font-medium text-gray-900">{{ formatCurrency(dashboardData.lunchDinnerOrders.lunch?.avg_order_value || 0) }}</span>
+                                             </div>
+                                             <div class="flex justify-between">
+                                                 <span class="text-gray-600">Avg Check:</span>
+                                                 <span class="font-medium text-gray-900">{{ formatCurrency((dashboardData.lunchDinnerOrders.lunch?.total_pax || 0) > 0 ? (dashboardData.lunchDinnerOrders.lunch?.total_revenue || 0) / (dashboardData.lunchDinnerOrders.lunch?.total_pax || 1) : 0) }}</span>
+                                             </div>
+                                         </div>
+                                    </div>
+
+                                    <!-- Dinner Details -->
+                                    <div class="border rounded-lg p-4 bg-orange-50">
+                                        <div class="flex items-center justify-between mb-2">
+                                            <h5 class="font-semibold text-gray-900 flex items-center">
+                                                <i class="fa-solid fa-moon text-orange-600 mr-2"></i>
+                                                Dinner (>17:00)
+                                            </h5>
+                                            <span class="text-sm font-medium text-orange-600">
+                                                {{ formatCurrency(dashboardData.lunchDinnerOrders.dinner?.total_revenue || 0) }}
+                                            </span>
+                                        </div>
+                                         <div class="grid grid-cols-2 gap-2 text-sm">
+                                             <div class="flex justify-between">
+                                                 <span class="text-gray-600">Orders:</span>
+                                                 <span class="font-medium text-gray-900">{{ formatNumber(dashboardData.lunchDinnerOrders.dinner?.order_count || 0) }}</span>
+                                             </div>
+                                             <div class="flex justify-between">
+                                                 <span class="text-gray-600">Pax:</span>
+                                                 <span class="font-medium text-gray-900">{{ formatNumber(dashboardData.lunchDinnerOrders.dinner?.total_pax || 0) }}</span>
+                                             </div>
+                                             <div class="flex justify-between">
+                                                 <span class="text-gray-600">Avg Order:</span>
+                                                 <span class="font-medium text-gray-900">{{ formatCurrency(dashboardData.lunchDinnerOrders.dinner?.avg_order_value || 0) }}</span>
+                                             </div>
+                                             <div class="flex justify-between">
+                                                 <span class="text-gray-600">Avg Check:</span>
+                                                 <span class="font-medium text-gray-900">{{ formatCurrency((dashboardData.lunchDinnerOrders.dinner?.total_pax || 0) > 0 ? (dashboardData.lunchDinnerOrders.dinner?.total_revenue || 0) / (dashboardData.lunchDinnerOrders.dinner?.total_pax || 1) : 0) }}</span>
+                                             </div>
+                                         </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Weekday/Weekend Revenue -->
+                        <div class="bg-white rounded-lg shadow-sm border p-6">
+                            <h3 class="text-lg font-semibold text-gray-900 mb-4">Revenue per Weekday and Weekend</h3>
+                            <apexchart 
+                                v-if="weekdayWeekendSeries.length > 0 && weekdayWeekendSeries.some(series => series.data && series.data.some(val => val > 0))" 
+                                type="bar" 
+                                height="350" 
+                                :options="weekdayWeekendOptions" 
+                                :series="weekdayWeekendSeries" 
+                            />
+                            <div v-else class="text-center py-8 text-gray-500">
+                                <i class="fa-solid fa-calendar-week text-4xl mb-2"></i>
+                                <p>No weekday/weekend data available</p>
+                            </div>
+                            
+                            <!-- Weekday/Weekend Details -->
+                            <div v-if="dashboardData?.weekdayWeekendRevenue" class="mt-6">
+                                <h4 class="text-md font-semibold text-gray-800 mb-3">Period Details</h4>
+                                <div class="space-y-3">
+                                    <!-- Weekday Details -->
+                                    <div class="border rounded-lg p-4 bg-blue-50">
+                                        <div class="flex items-center justify-between mb-2">
+                                            <h5 class="font-semibold text-gray-900 flex items-center">
+                                                <i class="fa-solid fa-briefcase text-blue-600 mr-2"></i>
+                                                Weekday (Mon-Fri)
+                                            </h5>
+                                            <span class="text-sm font-medium text-blue-600">
+                                                {{ formatCurrency(dashboardData.weekdayWeekendRevenue.weekday?.total_revenue || 0) }}
+                                            </span>
+                                        </div>
+                                         <div class="grid grid-cols-2 gap-2 text-sm">
+                                             <div class="flex justify-between">
+                                                 <span class="text-gray-600">Orders:</span>
+                                                 <span class="font-medium text-gray-900">{{ formatNumber(dashboardData.weekdayWeekendRevenue.weekday?.order_count || 0) }}</span>
+                                             </div>
+                                             <div class="flex justify-between">
+                                                 <span class="text-gray-600">Pax:</span>
+                                                 <span class="font-medium text-gray-900">{{ formatNumber(dashboardData.weekdayWeekendRevenue.weekday?.total_pax || 0) }}</span>
+                                             </div>
+                                             <div class="flex justify-between">
+                                                 <span class="text-gray-600">Avg Order:</span>
+                                                 <span class="font-medium text-gray-900">{{ formatCurrency(dashboardData.weekdayWeekendRevenue.weekday?.avg_order_value || 0) }}</span>
+                                             </div>
+                                             <div class="flex justify-between">
+                                                 <span class="text-gray-600">Avg Check:</span>
+                                                 <span class="font-medium text-gray-900">{{ formatCurrency((dashboardData.weekdayWeekendRevenue.weekday?.total_pax || 0) > 0 ? (dashboardData.weekdayWeekendRevenue.weekday?.total_revenue || 0) / (dashboardData.weekdayWeekendRevenue.weekday?.total_pax || 1) : 0) }}</span>
+                                             </div>
+                                         </div>
+                                    </div>
+
+                                    <!-- Weekend Details -->
+                                    <div class="border rounded-lg p-4 bg-orange-50">
+                                        <div class="flex items-center justify-between mb-2">
+                                            <h5 class="font-semibold text-gray-900 flex items-center">
+                                                <i class="fa-solid fa-calendar-weekend text-orange-600 mr-2"></i>
+                                                Weekend (Sat-Sun)
+                                            </h5>
+                                            <span class="text-sm font-medium text-orange-600">
+                                                {{ formatCurrency(dashboardData.weekdayWeekendRevenue.weekend?.total_revenue || 0) }}
+                                            </span>
+                                        </div>
+                                         <div class="grid grid-cols-2 gap-2 text-sm">
+                                             <div class="flex justify-between">
+                                                 <span class="text-gray-600">Orders:</span>
+                                                 <span class="font-medium text-gray-900">{{ formatNumber(dashboardData.weekdayWeekendRevenue.weekend?.order_count || 0) }}</span>
+                                             </div>
+                                             <div class="flex justify-between">
+                                                 <span class="text-gray-600">Pax:</span>
+                                                 <span class="font-medium text-gray-900">{{ formatNumber(dashboardData.weekdayWeekendRevenue.weekend?.total_pax || 0) }}</span>
+                                             </div>
+                                             <div class="flex justify-between">
+                                                 <span class="text-gray-600">Avg Order:</span>
+                                                 <span class="font-medium text-gray-900">{{ formatCurrency(dashboardData.weekdayWeekendRevenue.weekend?.avg_order_value || 0) }}</span>
+                                             </div>
+                                             <div class="flex justify-between">
+                                                 <span class="text-gray-600">Avg Check:</span>
+                                                 <span class="font-medium text-gray-900">{{ formatCurrency((dashboardData.weekdayWeekendRevenue.weekend?.total_pax || 0) > 0 ? (dashboardData.weekdayWeekendRevenue.weekend?.total_revenue || 0) / (dashboardData.weekdayWeekendRevenue.weekend?.total_pax || 1) : 0) }}</span>
+                                             </div>
+                                         </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Charts Row 3 - Payment Methods (Full Width) -->
+                    <div class="mb-6">
+                        <!-- Payment Methods -->
+                        <div class="bg-white rounded-lg shadow-sm border p-6">
+                            <h3 class="text-lg font-semibold text-gray-900 mb-4">Payment Methods Distribution</h3>
+                            <apexchart 
+                                v-if="paymentMethodsSeries.length > 0" 
+                                type="donut" 
+                                height="350" 
+                                :options="paymentMethodsOptions" 
+                                :series="paymentMethodsSeries" 
+                            />
+                            <div v-else class="text-center py-8 text-gray-500">
+                                <i class="fa-solid fa-credit-card text-4xl mb-2"></i>
+                                <p>No payment methods data available</p>
+                            </div>
+                            
+                            <!-- Payment Details by Type -->
+                            <div v-if="dashboardData?.paymentMethods?.length > 0" class="mt-6">
+                                <h4 class="text-md font-semibold text-gray-800 mb-3">Detail per Payment Type</h4>
+                                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                                    <div v-for="paymentMethod in dashboardData.paymentMethods" :key="paymentMethod.payment_code" class="border rounded-lg p-4">
+                                        <div class="flex items-center justify-between mb-2">
+                                            <h5 class="font-semibold text-gray-900">{{ paymentMethod.payment_code }}</h5>
+                                            <span class="text-sm font-medium text-blue-600">
+                                                {{ formatCurrency(paymentMethod.total_amount) }}
+                                            </span>
+                                        </div>
+                                        <div class="space-y-1">
+                                            <div v-for="detail in paymentMethod.details" :key="`${paymentMethod.payment_code}-${detail.payment_type}`" 
+                                                 class="flex items-center justify-between text-sm">
+                                                <span class="text-gray-600">{{ detail.payment_type }}</span>
+                                                <span class="font-medium text-gray-900">{{ formatCurrency(detail.total_amount) }}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Charts Row 4 - Revenue per Outlet by Region (Full Width) -->
+                    <div class="mb-6">
+                        <!-- Revenue per Outlet by Region -->
+                        <div class="bg-white rounded-lg shadow-sm border p-6">
+                            <h3 class="text-lg font-semibold text-gray-900 mb-4">Revenue per Outlet by Region</h3>
+                            <apexchart 
+                                v-if="revenuePerOutletSeries.length > 0" 
+                                type="bar" 
+                                height="400" 
+                                :options="revenuePerOutletOptions" 
+                                :series="revenuePerOutletSeries" 
+                            />
+                            <div v-else class="text-center py-8 text-gray-500">
+                                <i class="fa-solid fa-building text-4xl mb-2"></i>
+                                <p>No outlet revenue data available</p>
+                            </div>
+                            
+                            <!-- Region Summary -->
+                            <div v-if="dashboardData?.revenuePerOutlet && Object.keys(dashboardData.revenuePerOutlet).length > 0" class="mt-6">
+                                <h4 class="text-md font-semibold text-gray-800 mb-3">Region Summary</h4>
+                                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                                    <div v-for="(regionData, regionName) in dashboardData.revenuePerOutlet" :key="regionName" class="border rounded-lg p-4">
+                                        <div class="flex items-center justify-between mb-2">
+                                            <h5 class="font-semibold text-gray-900">{{ regionName }}</h5>
+                                            <span class="text-sm font-medium text-blue-600">
+                                                {{ formatCurrency(regionData.total_revenue) }}
+                                            </span>
+                                        </div>
+                                        <div class="space-y-1 text-sm">
+                                            <div class="flex justify-between">
+                                                <span class="text-gray-600">Outlets:</span>
+                                                <span class="font-medium text-gray-900">{{ regionData.outlets.length }}</span>
+                                            </div>
+                                            <div class="flex justify-between">
+                                                <span class="text-gray-600">Orders:</span>
+                                                <span class="font-medium text-gray-900">{{ formatNumber(regionData.total_orders) }}</span>
+                                            </div>
+                                            <div class="flex justify-between">
+                                                <span class="text-gray-600">Pax:</span>
+                                                <span class="font-medium text-gray-900">{{ formatNumber(regionData.total_pax) }}</span>
+                                            </div>
+                                            <div class="flex justify-between">
+                                                <span class="text-gray-600">Avg Check:</span>
+                                                <span class="font-medium text-gray-900">{{ formatCurrency(regionData.total_pax > 0 ? regionData.total_revenue / regionData.total_pax : 0) }}</span>
+                                            </div>
+                                        </div>
+                                        
+                                        <!-- Top Outlets in Region -->
+                                        <div class="mt-3 pt-3 border-t">
+                                            <h6 class="text-xs font-semibold text-gray-700 mb-2">Top Outlets:</h6>
+                                            <div class="space-y-1">
+                                                <div v-for="outlet in regionData.outlets.slice(0, 3)" :key="outlet.outlet_code" class="flex justify-between text-xs">
+                                                    <span class="text-gray-600 truncate">{{ outlet.outlet_name }}</span>
+                                                    <span class="font-medium text-gray-900">{{ formatCurrency(outlet.total_revenue) }}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Charts Row 5 - Revenue per Region (3 columns) -->
+                    <div class="grid grid-cols-1 xl:grid-cols-3 gap-4 mb-6">
+                        <!-- Total Revenue per Region -->
+                        <div class="bg-white rounded-lg shadow-sm border p-6">
+                            <h3 class="text-lg font-semibold text-gray-900 mb-4">Total Revenue per Region</h3>
+                            <apexchart 
+                                v-if="revenuePerRegionTotalSeries.length > 0" 
+                                type="bar" 
+                                height="350" 
+                                :options="revenuePerRegionTotalOptions" 
+                                :series="revenuePerRegionTotalSeries" 
+                            />
+                            <div v-else class="text-center py-8 text-gray-500">
+                                <i class="fa-solid fa-map text-4xl mb-2"></i>
+                                <p>No region revenue data available</p>
+                            </div>
+                        </div>
+
+                        <!-- Lunch/Dinner Revenue per Region -->
+                        <div class="bg-white rounded-lg shadow-sm border p-6">
+                            <h3 class="text-lg font-semibold text-gray-900 mb-4">Lunch/Dinner Revenue per Region</h3>
+                            <apexchart 
+                                v-if="revenuePerRegionLunchDinnerSeries.length > 0" 
+                                type="bar" 
+                                height="350" 
+                                :options="revenuePerRegionLunchDinnerOptions" 
+                                :series="revenuePerRegionLunchDinnerSeries" 
+                            />
+                            <div v-else class="text-center py-8 text-gray-500">
+                                <i class="fa-solid fa-utensils text-4xl mb-2"></i>
+                                <p>No lunch/dinner region data available</p>
+                            </div>
+                        </div>
+
+                        <!-- Weekday/Weekend Revenue per Region -->
+                        <div class="bg-white rounded-lg shadow-sm border p-6">
+                            <h3 class="text-lg font-semibold text-gray-900 mb-4">Weekday/Weekend Revenue per Region</h3>
+                            <apexchart 
+                                v-if="revenuePerRegionWeekdayWeekendSeries.length > 0" 
+                                type="bar" 
+                                height="350" 
+                                :options="revenuePerRegionWeekdayWeekendOptions" 
+                                :series="revenuePerRegionWeekdayWeekendSeries" 
+                            />
+                            <div v-else class="text-center py-8 text-gray-500">
+                                <i class="fa-solid fa-calendar-week text-4xl mb-2"></i>
+                                <p>No weekday/weekend region data available</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Top Items -->
+                    <div class="bg-white rounded-lg shadow-sm border p-6 mb-6">
+                        <h3 class="text-lg font-semibold text-gray-900 mb-4">Top Selling Items</h3>
+                        <div class="overflow-x-auto">
+                            <table class="min-w-full divide-y divide-gray-200">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Item</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Qty Sold</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Revenue</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Orders</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Avg Price</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="bg-white divide-y divide-gray-200">
+                                    <tr v-for="item in dashboardData?.topItems || []" :key="item.item_name">
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                            <button 
+                                                @click="openMenuModal(item)"
+                                                class="text-blue-600 hover:text-blue-800 hover:underline cursor-pointer transition-colors"
+                                            >
+                                                {{ item.item_name }}
+                                            </button>
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ formatNumber(item.total_qty) }}</td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ formatCurrency(item.total_revenue) }}</td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ formatNumber(item.order_count) }}</td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ formatCurrency(item.avg_price) }}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Recent Orders -->
+                    <div class="bg-white rounded-lg shadow-sm border p-6">
+                        <h3 class="text-lg font-semibold text-gray-900 mb-4">Recent Orders</h3>
+                        <div class="overflow-x-auto">
+                            <table class="min-w-full divide-y divide-gray-200">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Order #</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Outlet</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Table</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Customer</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Pax</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="bg-white divide-y divide-gray-200">
+                                    <tr v-for="order in dashboardData?.recentOrders || []" :key="order.id">
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ order.nomor }}</td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ order.outlet_name || order.kode_outlet || '-' }}</td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ order.table || '-' }}</td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ order.member_name || '-' }}</td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ order.pax || 0 }}</td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ formatCurrency(order.grand_total) }}</td>
+                                        <td class="px-6 py-4 whitespace-nowrap">
+                                            <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full"
+                                                  :class="{
+                                                      'bg-green-100 text-green-800': order.status === 'completed',
+                                                      'bg-yellow-100 text-yellow-800': order.status === 'pending',
+                                                      'bg-red-100 text-red-800': order.status === 'cancelled',
+                                                      'bg-blue-100 text-blue-800': order.status === 'processing'
+                                                  }">
+                                                {{ order.status }}
+                                            </span>
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ formatDateTime(order.created_at) }}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Menu Region Analysis Modal -->
+        <div v-if="showMenuModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50" @click="closeMenuModal">
+            <div class="relative top-20 mx-auto p-5 border w-11/12 max-w-4xl shadow-lg rounded-md bg-white" @click.stop>
+                <div class="mt-3">
+                    <!-- Modal Header -->
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-lg font-semibold text-gray-900">
+                            Menu Performance by Region: {{ selectedMenu?.item_name }}
+                        </h3>
+                        <button 
+                            @click="closeMenuModal"
+                            class="text-gray-400 hover:text-gray-600 transition-colors"
+                        >
+                            <i class="fa-solid fa-times text-xl"></i>
+                        </button>
+                    </div>
+
+                    <!-- Loading State -->
+                    <div v-if="menuRegionLoading" class="flex justify-center items-center py-12">
+                        <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+                    </div>
+
+                    <!-- Chart Content -->
+                    <div v-else-if="menuRegionData && menuRegionData.length > 0">
+                        <!-- Summary Cards -->
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                            <div class="bg-blue-50 p-4 rounded-lg">
+                                <div class="text-sm text-blue-600 font-medium">Total Revenue</div>
+                                <div class="text-2xl font-bold text-blue-900">
+                                    {{ formatCurrency(menuRegionData.reduce((sum, item) => sum + item.total_revenue, 0)) }}
+                                </div>
+                            </div>
+                            <div class="bg-green-50 p-4 rounded-lg">
+                                <div class="text-sm text-green-600 font-medium">Total Orders</div>
+                                <div class="text-2xl font-bold text-green-900">
+                                    {{ formatNumber(menuRegionData.reduce((sum, item) => sum + item.order_count, 0)) }}
+                                </div>
+                            </div>
+                            <div class="bg-yellow-50 p-4 rounded-lg">
+                                <div class="text-sm text-yellow-600 font-medium">Total Quantity</div>
+                                <div class="text-2xl font-bold text-yellow-900">
+                                    {{ formatNumber(menuRegionData.reduce((sum, item) => sum + item.total_quantity, 0)) }}
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Chart -->
+                        <div class="bg-white p-4 rounded-lg border">
+                            <h4 class="text-md font-semibold text-gray-900 mb-4">Performance by Region</h4>
+                            <apexchart 
+                                type="bar" 
+                                height="400" 
+                                :options="menuRegionChartOptions" 
+                                :series="menuRegionChartSeries"
+                            ></apexchart>
+                        </div>
+
+                        <!-- Region Details Table -->
+                        <div class="mt-6 bg-white p-4 rounded-lg border">
+                            <h4 class="text-md font-semibold text-gray-900 mb-4">Region Details</h4>
+                            <div class="overflow-x-auto">
+                                <table class="min-w-full divide-y divide-gray-200">
+                                    <thead class="bg-gray-50">
+                                        <tr>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Region</th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Revenue</th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Orders</th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Quantity</th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Avg Price</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="bg-white divide-y divide-gray-200">
+                                        <tr v-for="region in menuRegionData" :key="region.region_name">
+                                            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ region.region_name }}</td>
+                                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ formatCurrency(region.total_revenue) }}</td>
+                                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ formatNumber(region.order_count) }}</td>
+                                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ formatNumber(region.total_quantity) }}</td>
+                                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                {{ formatCurrency(region.total_quantity > 0 ? region.total_revenue / region.total_quantity : 0) }}
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- No Data State -->
+                    <div v-else class="text-center py-12">
+                        <i class="fa-solid fa-chart-bar text-4xl text-gray-400 mb-4"></i>
+                        <p class="text-gray-500">No region data available for this menu item</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </AppLayout>
+</template>
+
+<script>
+export default {
+    components: {
+        apexchart: VueApexCharts
+    }
+}
+</script>
+
+<style scoped>
+/* Custom styles for the dashboard */
+.animate-spin {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
+}
+</style>
