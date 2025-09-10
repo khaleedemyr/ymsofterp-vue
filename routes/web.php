@@ -1157,6 +1157,13 @@ Route::get('/test/users-dropdown', function() {
 })->name('test.users-dropdown');
 
 Route::middleware(['auth'])->group(function () {
+    // Admin routes for managing user pins (must be before the user-specific routes)
+    Route::get('admin/users/{userId}/pins', [UserPinController::class, 'getUserPins'])->name('users.pins.admin.index');
+    Route::post('admin/users/{userId}/pins', [UserPinController::class, 'storeUserPin'])->name('users.pins.admin.store');
+    Route::put('admin/user-pins/{id}', [UserPinController::class, 'updateUserPin'])->name('users.pins.admin.update');
+    Route::delete('admin/user-pins/{id}', [UserPinController::class, 'destroyUserPin'])->name('users.pins.admin.destroy');
+    
+    // User-specific routes (for authenticated users managing their own pins)
     Route::prefix('users/{user}')->group(function () {
         Route::get('pins', [UserPinController::class, 'index'])->name('users.pins.index');
         Route::post('pins', [UserPinController::class, 'store'])->name('users.pins.store');

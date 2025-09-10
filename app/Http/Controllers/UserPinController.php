@@ -196,4 +196,134 @@ class UserPinController extends Controller
 
         return response()->json($outlets);
     }
+
+    /**
+     * Get user pins for admin management (for specific user)
+     */
+    public function getUserPins($userId)
+    {
+        $userPins = DB::table('user_pins')
+            ->leftJoin('tbl_data_outlet', 'user_pins.outlet_id', '=', 'tbl_data_outlet.id_outlet')
+            ->where('user_pins.user_id', $userId)
+            ->select(
+                'user_pins.*',
+                'tbl_data_outlet.nama_outlet'
+            )
+            ->orderBy('user_pins.created_at', 'desc')
+            ->get();
+
+        $outlets = DB::table('tbl_data_outlet')
+            ->where('status', 'A')
+            ->select('id_outlet', 'nama_outlet')
+            ->orderBy('nama_outlet')
+            ->get();
+
+        return response()->json([
+            'pins' => $userPins,
+            'outlets' => $outlets
+        ]);
+    }
+
+    /**
+     * Store a new user pin for admin management
+     */
+    public function storeUserPin(Request $request, $userId)
+    {
+        $request->validate([
+            'outlet_id' => 'required|integer|exists:tbl_data_outlet,id_outlet',
+            'pin' => 'required|string|min:1|max:20',
+            'is_active' => 'required|boolean',
+        ]);
+
+        // Check if user already has a pin for this outlet
+        $existingPin = DB::table('user_pins')
+            ->where('user_id', $userId)
+            ->where('outlet_id', $request->outlet_id)
+            ->where('is_active', 1)
+            ->first();
+
+        if ($existingPin) {
+            return response()->json([
+                'success' => false,
+                'message' => 'User sudah memiliki PIN aktif untuk outlet ini.'
+            ], 400);
+        }
+
+        try {
+            $pinId = DB::table('user_pins')->insertGetId([
+                'user_id' => $userId,
+                'outlet_id' => $request->outlet_id,
+                'pin' => $request->pin,
+                'is_active' => $request->is_active ? 1 : 0,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'PIN berhasil ditambahkan'
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal membuat PIN: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Update an existing user pin for admin management
+     */
+    public function updateUserPin(Request $request, $id)
+    {
+        $request->validate([
+            'outlet_id' => 'required|integer|exists:tbl_data_outlet,id_outlet',
+            'pin' => 'required|string|min:1|max:20',
+            'is_active' => 'required|boolean',
+        ]);
+
+        try {
+            DB::table('user_pins')
+                ->where('id', $id)
+                ->update([
+                    'outlet_id' => $request->outlet_id,
+                    'pin' => $request->pin,
+                    'is_active' => $request->is_active ? 1 : 0,
+                    'updated_at' => now(),
+                ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'PIN berhasil diupdate'
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal mengupdate PIN: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Delete a user pin for admin management
+     */
+    public function destroyUserPin($id)
+    {
+        try {
+            DB::table('user_pins')->where('id', $id)->delete();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'PIN berhasil dihapus'
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal menghapus PIN: ' . $e->getMessage()
+            ], 500);
+        }
+    }
 }

@@ -19,10 +19,29 @@ const form = ref({ id: null, outlet_id: '', pin: '', is_active: true });
 
 function fetchPins() {
   isLoading.value = true;
-  axios.get(`/users/${props.userId}/pins`).then(res => {
-    pins.value = res.data.pins;
-    outlets.value = res.data.outlets;
-  }).finally(() => isLoading.value = false);
+  axios.get(`/admin/users/${props.userId}/pins`).then(res => {
+    pins.value = res.data.pins || [];
+    outlets.value = res.data.outlets || [];
+  }).catch(err => {
+    console.error('Error fetching pins:', err);
+    pins.value = [];
+    outlets.value = [];
+    
+    let errorMessage = 'Gagal memuat data PIN';
+    if (err.response?.status === 401) {
+      errorMessage = 'Anda harus login untuk mengakses data ini';
+    } else if (err.response?.status === 403) {
+      errorMessage = 'Anda tidak memiliki akses untuk mengelola PIN';
+    } else if (err.response?.status === 404) {
+      errorMessage = 'Data PIN tidak ditemukan';
+    } else if (err.response?.data?.message) {
+      errorMessage = err.response.data.message;
+    }
+    
+    Swal.fire('Error', errorMessage, 'error');
+  }).finally(() => {
+    isLoading.value = false;
+  });
 }
 
 watch(() => props.show, (val) => {
@@ -53,7 +72,7 @@ function savePin() {
     is_active: form.value.is_active ? 1 : 0,
   };
   if (isEdit.value && form.value.id) {
-    axios.put(`/user-pins/${form.value.id}`, payload)
+    axios.put(`/admin/user-pins/${form.value.id}`, payload)
       .then(() => {
         Swal.fire('Berhasil', 'PIN berhasil diupdate', 'success');
         fetchPins();
@@ -64,7 +83,7 @@ function savePin() {
       })
       .finally(() => isLoading.value = false);
   } else {
-    axios.post(`/users/${props.userId}/pins`, payload)
+    axios.post(`/admin/users/${props.userId}/pins`, payload)
       .then(() => {
         Swal.fire('Berhasil', 'PIN berhasil ditambahkan', 'success');
         fetchPins();
@@ -88,7 +107,7 @@ function deletePin(id) {
   }).then(result => {
     if (result.isConfirmed) {
       isLoading.value = true;
-      axios.delete(`/user-pins/${id}`)
+      axios.delete(`/admin/user-pins/${id}`)
         .then(() => {
           Swal.fire('Berhasil', 'PIN dihapus', 'success');
           fetchPins();
@@ -136,8 +155,8 @@ function closeModal() {
               </tr>
             </thead>
             <tbody>
-              <tr v-for="pin in pins" :key="pin.id" class="border-b">
-                <td class="py-2 px-3">{{ pin.outlet?.nama_outlet || '-' }}</td>
+              <tr v-for="pin in (pins || [])" :key="pin.id" class="border-b">
+                <td class="py-2 px-3">{{ pin.nama_outlet || '-' }}</td>
                 <td class="py-2 px-3 font-mono">{{ pin.pin }}</td>
                 <td class="py-2 px-3">
                   <span :class="pin.is_active ? 'text-green-600' : 'text-gray-400'">
@@ -149,7 +168,7 @@ function closeModal() {
                   <button @click="deletePin(pin.id)" class="text-red-600 hover:underline"><i class="fa fa-trash"></i> Hapus</button>
                 </td>
               </tr>
-              <tr v-if="pins.length === 0">
+              <tr v-if="!pins || pins.length === 0">
                 <td colspan="4" class="text-center text-gray-400 py-4">Belum ada PIN</td>
               </tr>
             </tbody>
@@ -163,7 +182,7 @@ function closeModal() {
               <label class="block text-sm font-medium mb-1">Outlet</label>
               <select v-model="form.outlet_id" class="form-input w-full" required>
                 <option value="">Pilih Outlet</option>
-                <option v-for="outlet in outlets" :key="outlet.id_outlet" :value="outlet.id_outlet">
+                <option v-for="outlet in (outlets || [])" :key="outlet.id_outlet" :value="outlet.id_outlet">
                   {{ outlet.nama_outlet }}
                 </option>
               </select>
