@@ -13,6 +13,7 @@ const props = defineProps({
 
 const form = ref({
   customer_id: '',
+  sale_date: new Date().toISOString().split('T')[0], // Default to today
   warehouse_id: '',
   warehouse_division_id: '',
   notes: '',
@@ -258,6 +259,16 @@ async function refreshItemPrice(index) {
                   <i class="fa-solid fa-plus"></i>
                 </button>
               </div>
+            </div>
+
+            <!-- Sale Date -->
+            <div class="mb-4">
+              <label class="block text-sm font-medium text-gray-700 mb-2">Tanggal Penjualan</label>
+              <input 
+                v-model="form.sale_date" 
+                type="date" 
+                class="w-full rounded-lg border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500"
+              />
             </div>
 
             <!-- Warehouse Selection -->

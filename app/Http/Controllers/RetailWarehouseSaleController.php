@@ -76,6 +76,20 @@ class RetailWarehouseSaleController extends Controller
     {
         Log::info('Mulai proses store Retail Warehouse Sale', $request->all());
         
+        // Validate request
+        $request->validate([
+            'customer_id' => 'required|exists:customers,id',
+            'sale_date' => 'required|date',
+            'warehouse_id' => 'required|exists:warehouses,id',
+            'warehouse_division_id' => 'nullable|exists:warehouse_division,id',
+            'items' => 'required|array|min:1',
+            'items.*.item_id' => 'required|exists:items,id',
+            'items.*.qty' => 'required|numeric|min:0.01',
+            'items.*.price' => 'required|numeric|min:0',
+            'total_amount' => 'required|numeric|min:0',
+            'notes' => 'nullable|string'
+        ]);
+        
         DB::beginTransaction();
         try {
             // Generate number
@@ -85,6 +99,7 @@ class RetailWarehouseSaleController extends Controller
             $saleId = DB::table('retail_warehouse_sales')->insertGetId([
                 'number' => $number,
                 'customer_id' => $request->customer_id,
+                'sale_date' => $request->sale_date ?? now()->toDateString(),
                 'warehouse_id' => $request->warehouse_id,
                 'warehouse_division_id' => $request->warehouse_division_id,
                 'total_amount' => $request->total_amount,
@@ -557,6 +572,62 @@ class RetailWarehouseSaleController extends Controller
 
         return response()->json([
             'price' => $price ? (float)$price : 0
+        ]);
+    }
+
+    public function print($id)
+    {
+        $sale = DB::table('retail_warehouse_sales as rws')
+            ->leftJoin('customers as c', 'rws.customer_id', '=', 'c.id')
+            ->leftJoin('warehouses as w', 'rws.warehouse_id', '=', 'w.id')
+            ->leftJoin('warehouse_division as wd', 'rws.warehouse_division_id', '=', 'wd.id')
+            ->leftJoin('users as u', 'rws.created_by', '=', 'u.id')
+            ->select(
+                'rws.*',
+                'c.name as customer_name',
+                'c.code as customer_code',
+                'c.phone as customer_phone',
+                'c.address as customer_address',
+                'w.name as warehouse_name',
+                'wd.name as division_name',
+                'u.nama_lengkap as created_by_name'
+            )
+            ->where('rws.id', $id)
+            ->first();
+
+        if (!$sale) {
+            return redirect()->route('retail-warehouse-sale.index')->with('error', 'Retail Warehouse Sale tidak ditemukan');
+        }
+
+        $items = DB::table('retail_warehouse_sale_items as rwsi')
+            ->leftJoin('items as i', 'rwsi.item_id', '=', 'i.id')
+            ->select(
+                'rwsi.id',
+                'i.name as item_name',
+                'rwsi.barcode',
+                'rwsi.qty',
+                'rwsi.unit',
+                'rwsi.price',
+                'rwsi.subtotal'
+            )
+            ->where('rwsi.retail_warehouse_sale_id', $id)
+            ->get();
+
+        return Inertia::render('RetailWarehouseSale/PrintStruk', [
+            'sale' => $sale,
+            'items' => $items,
+            'customer' => [
+                'name' => $sale->customer_name,
+                'code' => $sale->customer_code,
+                'phone' => $sale->customer_phone,
+                'address' => $sale->customer_address
+            ],
+            'warehouse' => [
+                'name' => $sale->warehouse_name
+            ],
+            'division' => [
+                'name' => $sale->division_name
+            ]
         ]);
     }
 } 

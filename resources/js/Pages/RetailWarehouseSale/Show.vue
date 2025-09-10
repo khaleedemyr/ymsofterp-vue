@@ -46,8 +46,8 @@ async function deleteSale() {
 }
 
 function printReceipt() {
-  // Implement print functionality
-  window.print();
+  // Open print page in new window
+  window.open(route('retail-warehouse-sale.print', props.sale.id), '_blank');
 }
 </script>
 
@@ -87,8 +87,8 @@ function printReceipt() {
               </div>
 
               <div>
-                <label class="block text-sm font-medium text-gray-500">Tanggal</label>
-                <p class="text-gray-800">{{ formatDate(sale.created_at) }}</p>
+                <label class="block text-sm font-medium text-gray-500">Tanggal Penjualan</label>
+                <p class="text-gray-800">{{ formatDate(sale.sale_date || sale.created_at) }}</p>
               </div>
 
               <div>
