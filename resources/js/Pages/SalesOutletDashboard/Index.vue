@@ -724,8 +724,8 @@ const revenuePerOutletOptions = computed(() => ({
         strokeDashArray: 4
     },
     tooltip: {
-        shared: true,
-        intersect: false,
+        shared: false,
+        intersect: true,
         custom: function({series, seriesIndex, dataPointIndex, w}) {
             const data = props.dashboardData?.revenuePerOutlet;
             if (!data) return '';
@@ -734,9 +734,14 @@ const revenuePerOutletOptions = computed(() => ({
             const regionName = regions[seriesIndex];
             const regionData = data[regionName];
             
-            if (!regionData || !regionData.outlets[dataPointIndex]) return '';
+            if (!regionData) return '';
             
-            const outlet = regionData.outlets[dataPointIndex];
+            // Find the outlet that corresponds to this data point
+            const outletName = w.globals.labels[dataPointIndex];
+            const outlet = regionData.outlets.find(o => o.outlet_name === outletName);
+            
+            if (!outlet) return '';
+            
             const avgCheck = outlet.total_pax > 0 ? outlet.total_revenue / outlet.total_pax : 0;
             
             return `
