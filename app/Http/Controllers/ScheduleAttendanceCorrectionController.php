@@ -241,7 +241,7 @@ class ScheduleAttendanceCorrectionController extends Controller
             'sn' => 'required|string',
             'pin' => 'required|string',
             'scan_date' => 'required|date',
-            'inoutmode' => 'required|integer|in:0,1',
+            'inoutmode' => 'required|in:1,2,3,4,5,"1","2","3","4","5"', // Accept both string and integer
             'old_scan_date' => 'required|date',
             'reason' => 'required|string|max:500',
         ]);
@@ -249,7 +249,7 @@ class ScheduleAttendanceCorrectionController extends Controller
         $sn = $request->input('sn');
         $pin = $request->input('pin');
         $newScanDate = $request->input('scan_date');
-        $inoutmode = $request->input('inoutmode');
+        $inoutmode = (int) $request->input('inoutmode'); // Convert to integer
         $oldScanDate = $request->input('old_scan_date');
         $reason = $request->input('reason');
         $userId = auth()->id();

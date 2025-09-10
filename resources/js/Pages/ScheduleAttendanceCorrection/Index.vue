@@ -503,9 +503,9 @@ if (userOutletId && userOutletId != 1) {
                     {{ formatDateTime(attendance.scan_date) }}
                   </td>
                   <td class="px-6 py-4 whitespace-nowrap">
-                    <span :class="attendance.inoutmode === 1 ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'" 
+                    <span :class="attendance.inoutmode == 1 ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'" 
                           class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full">
-                      {{ attendance.inoutmode === 1 ? 'IN' : 'OUT' }}
+                      {{ attendance.inoutmode == 1 ? 'IN' : 'OUT' }}
                     </span>
                   </td>
                   <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">

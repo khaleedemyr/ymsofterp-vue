@@ -134,15 +134,15 @@ class AttendanceController extends Controller
             ->whereBetween(DB::raw('DATE(a.scan_date)'), [$startDate, $endDate])
             ->select([
                 DB::raw('DATE(a.scan_date) as attendance_date'),
-                DB::raw('MIN(CASE WHEN a.inoutmode = 0 THEN a.scan_date END) as check_in_time'),
-                DB::raw('MAX(CASE WHEN a.inoutmode = 1 THEN a.scan_date END) as check_out_time'),
+                DB::raw('MIN(CASE WHEN a.inoutmode = 1 THEN a.scan_date END) as check_in_time'),
+                DB::raw('MAX(CASE WHEN a.inoutmode = 2 THEN a.scan_date END) as check_out_time'),
                 's.shift_name',
                 's.time_start as start_time',
                 's.time_end as end_time',
                 'o.nama_outlet',
                 'us.shift_id',
                 'o.id_outlet as outlet_id',
-                DB::raw('TIMESTAMPDIFF(MINUTE, MIN(CASE WHEN a.inoutmode = 0 THEN a.scan_date END), MAX(CASE WHEN a.inoutmode = 1 THEN a.scan_date END)) as work_duration_minutes')
+                DB::raw('TIMESTAMPDIFF(MINUTE, MIN(CASE WHEN a.inoutmode = 1 THEN a.scan_date END), MAX(CASE WHEN a.inoutmode = 2 THEN a.scan_date END)) as work_duration_minutes')
             ])
             ->groupBy(DB::raw('DATE(a.scan_date)'), 'u.id', 'o.id_outlet', 's.shift_name', 's.time_start', 's.time_end', 'o.nama_outlet', 'us.shift_id')
             ->orderBy(DB::raw('DATE(a.scan_date)'), 'desc')
@@ -311,8 +311,8 @@ class AttendanceController extends Controller
                 's.time_start as start_time',
                 's.time_end as end_time',
                 'o.nama_outlet',
-                DB::raw('MIN(CASE WHEN a.inoutmode = 0 THEN a.scan_date END) as check_in_time'),
-                DB::raw('MAX(CASE WHEN a.inoutmode = 1 THEN a.scan_date END) as check_out_time'),
+                DB::raw('MIN(CASE WHEN a.inoutmode = 1 THEN a.scan_date END) as check_in_time'),
+                DB::raw('MAX(CASE WHEN a.inoutmode = 2 THEN a.scan_date END) as check_out_time'),
                 DB::raw('CASE 
                     WHEN MIN(CASE WHEN a.inoutmode = 0 THEN a.scan_date END) IS NOT NULL 
                          AND MAX(CASE WHEN a.inoutmode = 1 THEN a.scan_date END) IS NOT NULL 
