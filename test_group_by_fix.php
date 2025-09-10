@@ -9,15 +9,15 @@ use Carbon\Carbon;
 $app = require_once 'bootstrap/app.php';
 $app->make('Illuminate\Contracts\Console\Kernel')->bootstrap();
 
-echo "=== Testing Extra Off Detect Command ===\n\n";
+echo "=== Testing GROUP BY Fix ===\n\n";
 
 try {
     // Test date (yesterday)
     $testDate = Carbon::yesterday()->format('Y-m-d');
     echo "Testing date: {$testDate}\n\n";
 
-    // Test the query directly
-    echo "1. Testing the corrected query:\n";
+    // Test the corrected query
+    echo "1. Testing corrected query with proper GROUP BY/ORDER BY:\n";
     $query = "
         SELECT 
             u.id as user_id,
@@ -57,7 +57,7 @@ try {
     if (count($results) > 0) {
         echo "   Sample results:\n";
         foreach (array_slice($results, 0, 3) as $result) {
-            echo "   - User ID: {$result->user_id}, Name: {$result->nama_lengkap}, Date: {$result->work_date}\n";
+            echo "   - User ID: {$result->user_id}, Name: {$result->nama_lengkap}, Date: {$result->work_date}, Count: {$result->attendance_count}\n";
         }
     }
 
@@ -82,20 +82,25 @@ try {
         echo "   ✗ Command execution failed: " . $e->getMessage() . "\n";
     }
 
-    // Check if tables exist
-    echo "\n3. Checking required tables:\n";
-    $tables = ['att_log', 'users', 'user_shifts', 'extra_off_transactions', 'extra_off_balance', 'tbl_kalender_perusahaan'];
-    foreach ($tables as $table) {
-        try {
-            $count = DB::table($table)->count();
-            echo "   ✓ Table '{$table}' exists - {$count} records\n";
-        } catch (Exception $e) {
-            echo "   ✗ Table '{$table}' error: " . $e->getMessage() . "\n";
-        }
+    // Test with different date
+    echo "\n3. Testing with different date (today):\n";
+    $todayDate = Carbon::today()->format('Y-m-d');
+    try {
+        $exitCode = \Artisan::call('extra-off:detect', [
+            '--date' => $todayDate
+        ]);
+        
+        $output = \Artisan::output();
+        echo "   Exit code: {$exitCode}\n";
+        echo "   Output:\n{$output}\n";
+        
+    } catch (Exception $e) {
+        echo "   ✗ Command execution failed: " . $e->getMessage() . "\n";
     }
 
     echo "\n=== Summary ===\n";
-    echo "Extra off detect command testing completed.\n";
+    echo "GROUP BY fix testing completed.\n";
+    echo "The query should now work with sql_mode=only_full_group_by.\n";
 
 } catch (Exception $e) {
     echo "Error: " . $e->getMessage() . "\n";

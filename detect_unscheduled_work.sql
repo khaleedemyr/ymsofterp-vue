@@ -11,10 +11,10 @@ SELECT
     'Hari libur tanpa shift' as reason,
     CONCAT('Karyawan kerja di hari libur (', DATE(a.scan_date), ') tanpa ada jadwal shift') as description
 FROM `att_log` a
-INNER JOIN `users` u ON a.userid = u.id
+INNER JOIN `user_pins` up ON a.pin = up.pin
+INNER JOIN `users` u ON up.user_id = u.id
 LEFT JOIN `user_shifts` us ON u.id = us.user_id 
-    AND DATE(a.scan_date) = DATE(us.shift_date)
-    AND us.status = 'active'
+    AND DATE(a.scan_date) = DATE(us.tanggal)
 WHERE 
     -- Cek apakah ada attendance (check-in)
     a.inoutmode = 1
@@ -40,7 +40,7 @@ WHERE
     -- Cek apakah tanggal tidak di masa depan
     AND DATE(a.scan_date) <= CURDATE()
 GROUP BY u.id, DATE(a.scan_date)
-ORDER BY a.scan_date DESC;
+ORDER BY DATE(a.scan_date) DESC, u.id;
 
 -- 2. Query untuk insert transaksi extra off yang dideteksi
 -- (Ini contoh query untuk insert, sesuaikan dengan hasil query di atas)
@@ -67,10 +67,10 @@ SELECT
     NOW() as created_at,
     NOW() as updated_at
 FROM `att_log` a
-INNER JOIN `users` u ON a.userid = u.id
+INNER JOIN `user_pins` up ON a.pin = up.pin
+INNER JOIN `users` u ON up.user_id = u.id
 LEFT JOIN `user_shifts` us ON u.id = us.user_id 
-    AND DATE(a.scan_date) = DATE(us.shift_date)
-    AND us.status = 'active'
+    AND DATE(a.scan_date) = DATE(us.tanggal)
 WHERE 
     a.inoutmode = 1
     AND us.id IS NULL

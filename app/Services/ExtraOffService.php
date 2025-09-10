@@ -65,10 +65,10 @@ class ExtraOffService
                     DATE(a.scan_date) as work_date,
                     COUNT(*) as attendance_count
                 FROM att_log a
-                INNER JOIN users u ON a.userid = u.id
+                INNER JOIN user_pins up ON a.pin = up.pin
+                INNER JOIN users u ON up.user_id = u.id
                 LEFT JOIN user_shifts us ON u.id = us.user_id 
-                    AND DATE(a.scan_date) = DATE(us.shift_date)
-                    AND us.status = 'active'
+                    AND DATE(a.scan_date) = DATE(us.tanggal)
                 WHERE 
                     a.inoutmode = 1
                     AND DATE(a.scan_date) = ?
@@ -86,7 +86,7 @@ class ExtraOffService
                         WHERE kp.tgl_libur = DATE(a.scan_date)
                     )
                 GROUP BY u.id, DATE(a.scan_date)
-                ORDER BY a.scan_date DESC
+                ORDER BY DATE(a.scan_date) DESC, u.id
             ", [$date]);
 
             $results['detected'] = count($unscheduledWorkers);
