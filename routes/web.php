@@ -1156,6 +1156,20 @@ Route::get('/test/users-dropdown', function() {
     return app('App\Http\Controllers\UserController')->getDropdownData();
 })->name('test.users-dropdown');
 
+// Test route for user data
+Route::get('/test/user-data', function () {
+    $user = auth()->user();
+    if (!$user) {
+        return response()->json(['error' => 'Not authenticated'], 401);
+    }
+    
+    return response()->json([
+        'success' => true,
+        'user' => $user->toArray(),
+        'user_fields' => array_keys($user->getAttributes()),
+    ]);
+})->middleware('auth');
+
 Route::middleware(['auth'])->group(function () {
     // Admin routes for managing user pins (must be before the user-specific routes)
     Route::get('admin/users/{userId}/pins', [UserPinController::class, 'getUserPins'])->name('users.pins.admin.index');
@@ -1180,6 +1194,11 @@ Route::middleware(['auth'])->group(function () {
 Route::middleware(['auth'])->group(function () {
     Route::get('user-shifts/calendar', [UserShiftController::class, 'calendarView'])->name('user-shifts.calendar');
     Route::resource('user-shifts', UserShiftController::class)->only(['index', 'store']);
+    
+    // Organization Chart Routes
+    Route::get('organization-chart', [App\Http\Controllers\OrganizationChartController::class, 'index'])->name('organization-chart.index');
+    Route::get('api/organization-chart', [App\Http\Controllers\OrganizationChartController::class, 'getOrganizationData'])->name('organization-chart.data');
+    Route::get('api/organization-chart/debug', [App\Http\Controllers\OrganizationChartController::class, 'debugData'])->name('organization-chart.debug');
     
     // Schedule/Attendance Correction Routes
     Route::get('schedule-attendance-correction', [ScheduleAttendanceCorrectionController::class, 'index'])->name('schedule-attendance-correction.index');

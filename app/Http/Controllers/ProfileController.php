@@ -35,26 +35,48 @@ class ProfileController extends Controller
         $user = $request->user();
         $data = $request->validated();
 
-        // Handle avatar upload
+        // Update all fields that are provided (excluding readonly work fields)
+        $allowedFields = [
+            'nama_lengkap', 'nama_panggilan', 'email', 'no_hp', 'jenis_kelamin',
+            'tempat_lahir', 'tanggal_lahir', 'suku', 'agama', 'status_pernikahan',
+            'golongan_darah', 'alamat', 'alamat_ktp', 'pin_pos', 'nama_rekening', 'no_rekening',
+            'npwp_number', 'bpjs_health_number', 'bpjs_employment_number',
+            'last_education', 'name_school_college', 'school_college_major',
+            'nama_kontak_darurat', 'no_hp_kontak_darurat', 'hubungan_kontak_darurat',
+            'no_ktp', 'nomor_kk', 'imei'
+        ];
+
+        foreach ($allowedFields as $field) {
+            if (isset($data[$field])) {
+                $user->$field = $data[$field];
+            }
+        }
+
+        // Handle file uploads
         if ($request->hasFile('avatar')) {
             // Delete old avatar if exists
             if ($user->avatar) {
                 Storage::disk('public')->delete($user->avatar);
             }
-            
-            // Store new avatar
-            $data['avatar'] = $request->file('avatar')->store('avatars', 'public');
+            $user->avatar = $request->file('avatar')->store('users/avatars', 'public');
         }
-
-        // Set nama_lengkap saja, tanpa name
-        $user->nama_lengkap = $data['nama_lengkap'];
-        $user->email = $data['email'];
-        if (isset($data['avatar'])) {
-            $user->avatar = $data['avatar'];
+        if ($request->hasFile('foto_ktp')) {
+            if ($user->foto_ktp) {
+                Storage::disk('public')->delete($user->foto_ktp);
+            }
+            $user->foto_ktp = $request->file('foto_ktp')->store('users/foto_ktp', 'public');
         }
-
-        if ($user->isDirty('email')) {
-            $user->email_verified_at = null;
+        if ($request->hasFile('foto_kk')) {
+            if ($user->foto_kk) {
+                Storage::disk('public')->delete($user->foto_kk);
+            }
+            $user->foto_kk = $request->file('foto_kk')->store('users/foto_kk', 'public');
+        }
+        if ($request->hasFile('upload_latest_color_photo')) {
+            if ($user->upload_latest_color_photo) {
+                Storage::disk('public')->delete($user->upload_latest_color_photo);
+            }
+            $user->upload_latest_color_photo = $request->file('upload_latest_color_photo')->store('users/photos', 'public');
         }
 
         $user->save();

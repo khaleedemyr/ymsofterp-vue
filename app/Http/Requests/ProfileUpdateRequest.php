@@ -16,16 +16,60 @@ class ProfileUpdateRequest extends FormRequest
     public function rules(): array
     {
         return [
+            // Personal Info
             'nama_lengkap' => ['required', 'string', 'max:255'],
+            'nama_panggilan' => ['nullable', 'string', 'max:255'],
             'email' => [
-                'required',
+                'nullable',
                 'string',
                 'lowercase',
                 'email',
                 'max:255',
                 Rule::unique(User::class)->ignore($this->user()->id),
             ],
-            'avatar' => ['nullable', 'image', 'max:10240'], // Max 10MB
+            'no_hp' => ['nullable', 'string', 'max:15'],
+            'jenis_kelamin' => ['nullable', 'string', 'max:1'],
+            'tempat_lahir' => ['nullable', 'string', 'max:255'],
+            'tanggal_lahir' => ['nullable', 'date'],
+            'suku' => ['nullable', 'string', 'max:50'],
+            'agama' => ['nullable', 'string', 'max:50'],
+            'status_pernikahan' => ['nullable', 'string', 'max:50'],
+            'golongan_darah' => ['nullable', 'string', 'max:5'],
+            
+            // Address
+            'alamat' => ['nullable', 'string'],
+            'alamat_ktp' => ['nullable', 'string'],
+            
+            // Work Info (readonly fields removed - not allowed to be updated by user)
+            'pin_pos' => ['nullable', 'string', 'max:10'],
+            
+            // Financial
+            'nama_rekening' => ['nullable', 'string', 'max:255'],
+            'no_rekening' => ['nullable', 'string', 'max:50'],
+            'npwp_number' => ['nullable', 'string', 'max:100'],
+            'bpjs_health_number' => ['nullable', 'string', 'max:100'],
+            'bpjs_employment_number' => ['nullable', 'string', 'max:100'],
+            
+            // Education
+            'last_education' => ['nullable', 'string', 'max:100'],
+            'name_school_college' => ['nullable', 'string', 'max:255'],
+            'school_college_major' => ['nullable', 'string', 'max:255'],
+            
+            // Emergency Contact
+            'nama_kontak_darurat' => ['nullable', 'string', 'max:255'],
+            'no_hp_kontak_darurat' => ['nullable', 'string', 'max:15'],
+            'hubungan_kontak_darurat' => ['nullable', 'string', 'max:50'],
+            
+            // Documents
+            'no_ktp' => ['nullable', 'string', 'max:50'],
+            'nomor_kk' => ['nullable', 'string', 'max:50'],
+            'imei' => ['nullable', 'string', 'max:50'],
+            
+            // Files
+            'avatar' => ['nullable', 'image', 'max:2048'], // Max 2MB
+            'foto_ktp' => ['nullable', 'file', 'mimes:jpeg,png,jpg', 'max:2048'],
+            'foto_kk' => ['nullable', 'file', 'mimes:jpeg,png,jpg', 'max:2048'],
+            'upload_latest_color_photo' => ['nullable', 'file', 'mimes:jpeg,png,jpg', 'max:2048'],
         ];
     }
 }

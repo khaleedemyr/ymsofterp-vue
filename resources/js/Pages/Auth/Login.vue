@@ -5,6 +5,7 @@ import InputError from '@/Components/InputError.vue';
 import InputLabel from '@/Components/InputLabel.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
 import TextInput from '@/Components/TextInput.vue';
+import RegisterModal from '@/Components/RegisterModal.vue';
 import { Head, Link } from '@inertiajs/vue3';
 import { ref } from 'vue';
 import axios from 'axios';
@@ -23,6 +24,7 @@ const password = ref('');
 const remember = ref(false);
 const errorMsg = ref('');
 const processing = ref(false);
+const showRegisterModal = ref(false);
 
 const submit = async () => {
     errorMsg.value = '';
@@ -39,6 +41,19 @@ const submit = async () => {
     } finally {
         processing.value = false;
     }
+};
+
+const openRegisterModal = () => {
+    showRegisterModal.value = true;
+};
+
+const closeRegisterModal = () => {
+    showRegisterModal.value = false;
+};
+
+const onRegisterSuccess = () => {
+    showRegisterModal.value = false;
+    // Optionally show success message or redirect
 };
 </script>
 
@@ -95,6 +110,24 @@ const submit = async () => {
                 </PrimaryButton>
                 <div v-if="errorMsg" class="text-red-600 text-sm mt-2 text-center">{{ errorMsg }}</div>
             </form>
+            
+            <!-- Register Button -->
+            <div class="mt-6 text-center">
+                <p class="text-sm text-gray-600 mb-3">Belum punya akun?</p>
+                <button
+                    @click="openRegisterModal"
+                    class="w-full px-4 py-2 text-sm font-medium text-blue-600 bg-white border border-blue-600 rounded-md hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
+                >
+                    Daftar Akun Baru
+                </button>
+            </div>
         </div>
+        
+        <!-- Register Modal -->
+        <RegisterModal 
+            :show="showRegisterModal" 
+            @close="closeRegisterModal"
+            @success="onRegisterSuccess"
+        />
     </GuestLayout>
 </template>

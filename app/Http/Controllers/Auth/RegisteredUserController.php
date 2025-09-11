@@ -31,21 +31,119 @@ class RegisteredUserController extends Controller
     public function store(Request $request): RedirectResponse
     {
         $request->validate([
-            'name' => 'required|string|max:255',
+            // Personal Info
+            'nama_lengkap' => 'required|string|max:255',
+            'nama_panggilan' => 'nullable|string|max:255',
             'email' => 'required|string|lowercase|email|max:255|unique:'.User::class,
             'password' => ['required', 'confirmed', Rules\Password::defaults()],
+            'no_hp' => 'nullable|string|max:15',
+            'jenis_kelamin' => 'nullable|string|max:1',
+            'tempat_lahir' => 'nullable|string|max:255',
+            'tanggal_lahir' => 'nullable|date',
+            'suku' => 'nullable|string|max:50',
+            'agama' => 'nullable|string|max:50',
+            'status_pernikahan' => 'nullable|string|max:50',
+            'golongan_darah' => 'nullable|string|max:5',
+            
+            // Address
+            'alamat' => 'nullable|string',
+            'alamat_ktp' => 'nullable|string',
+            
+            // Work Info (without jabatan, outlet, divisi)
+            
+            // Financial
+            'nama_rekening' => 'nullable|string|max:255',
+            'no_rekening' => 'nullable|string|max:50',
+            'npwp_number' => 'nullable|string|max:100',
+            'bpjs_health_number' => 'nullable|string|max:100',
+            'bpjs_employment_number' => 'nullable|string|max:100',
+            
+            // Education
+            'last_education' => 'nullable|string|max:100',
+            'name_school_college' => 'nullable|string|max:255',
+            'school_college_major' => 'nullable|string|max:255',
+            
+            // Emergency Contact
+            'nama_kontak_darurat' => 'nullable|string|max:255',
+            'no_hp_kontak_darurat' => 'nullable|string|max:15',
+            'hubungan_kontak_darurat' => 'nullable|string|max:50',
+            
+            // Documents
+            'no_ktp' => 'nullable|string|max:50',
+            'nomor_kk' => 'nullable|string|max:50',
+            
+            // Files
+            'avatar' => 'nullable|image|max:2048',
+            'foto_ktp' => 'nullable|file|mimes:jpeg,png,jpg|max:2048',
+            'foto_kk' => 'nullable|file|mimes:jpeg,png,jpg|max:2048',
+            'upload_latest_color_photo' => 'nullable|file|mimes:jpeg,png,jpg|max:2048',
         ]);
 
-        $user = User::create([
-            'name' => $request->name,
+        // Generate NIK
+        $nik = $this->generateNIK();
+
+        // Prepare user data
+        $userData = [
+            'nik' => $nik,
+            'nama_lengkap' => $request->nama_lengkap,
+            'nama_panggilan' => $request->nama_panggilan,
             'email' => $request->email,
             'password' => Hash::make($request->password),
-        ]);
+            'no_hp' => $request->no_hp,
+            'jenis_kelamin' => $request->jenis_kelamin,
+            'tempat_lahir' => $request->tempat_lahir,
+            'tanggal_lahir' => $request->tanggal_lahir,
+            'suku' => $request->suku,
+            'agama' => $request->agama,
+            'status_pernikahan' => $request->status_pernikahan,
+            'golongan_darah' => $request->golongan_darah,
+            'alamat' => $request->alamat,
+            'alamat_ktp' => $request->alamat_ktp,
+            'nama_rekening' => $request->nama_rekening,
+            'no_rekening' => $request->no_rekening,
+            'npwp_number' => $request->npwp_number,
+            'bpjs_health_number' => $request->bpjs_health_number,
+            'bpjs_employment_number' => $request->bpjs_employment_number,
+            'last_education' => $request->last_education,
+            'name_school_college' => $request->name_school_college,
+            'school_college_major' => $request->school_college_major,
+            'nama_kontak_darurat' => $request->nama_kontak_darurat,
+            'no_hp_kontak_darurat' => $request->no_hp_kontak_darurat,
+            'hubungan_kontak_darurat' => $request->hubungan_kontak_darurat,
+            'no_ktp' => $request->no_ktp,
+            'nomor_kk' => $request->nomor_kk,
+            'status' => 'B', // New user status
+        ];
+
+        // Handle file uploads
+        if ($request->hasFile('avatar')) {
+            $userData['avatar'] = $request->file('avatar')->store('users/avatars', 'public');
+        }
+        if ($request->hasFile('foto_ktp')) {
+            $userData['foto_ktp'] = $request->file('foto_ktp')->store('users/foto_ktp', 'public');
+        }
+        if ($request->hasFile('foto_kk')) {
+            $userData['foto_kk'] = $request->file('foto_kk')->store('users/foto_kk', 'public');
+        }
+        if ($request->hasFile('upload_latest_color_photo')) {
+            $userData['upload_latest_color_photo'] = $request->file('upload_latest_color_photo')->store('users/photos', 'public');
+        }
+
+        $user = User::create($userData);
 
         event(new Registered($user));
 
-        Auth::login($user);
+        // Don't auto-login, let user login manually
+        // Auth::login($user);
 
-        return redirect(route('dashboard', absolute: false));
+        return redirect()->route('login')->with('status', 'Pendaftaran berhasil! Silakan login dengan email dan password Anda.');
+    }
+
+    private function generateNIK()
+    {
+        // Generate NIK with format: YYYYMMDD + 4 random digits
+        $date = now()->format('Ymd');
+        $random = str_pad(rand(0, 9999), 4, '0', STR_PAD_LEFT);
+        return $date . $random;
     }
 }

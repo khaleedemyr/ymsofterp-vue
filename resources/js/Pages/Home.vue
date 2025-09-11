@@ -1029,6 +1029,78 @@ watch(locale, () => {
                     </div>
                 </div>
 
+                <!-- Quick Actions Section -->
+                <div class="flex-shrink-0 mt-4">
+                    <div class="backdrop-blur-md rounded-2xl shadow-2xl border p-4 transition-all duration-500 hover:shadow-3xl"
+                        :class="isNight ? 'bg-slate-800/90 border-slate-600/50' : 'bg-white/90 border-white/20'">
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center gap-2">
+                                <div class="w-3 h-3 rounded-full bg-blue-500"></div>
+                                <h3 class="text-lg font-bold" :class="isNight ? 'text-white' : 'text-slate-800'">
+                                    Quick Actions
+                                </h3>
+                            </div>
+                        </div>
+                        
+                        <div class="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                            <!-- Placeholder for other quick actions -->
+                            <div class="group p-4 rounded-xl transition-all duration-300 opacity-50"
+                                 :class="isNight ? 'bg-slate-700/30' : 'bg-gray-50'">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-12 h-12 rounded-full flex items-center justify-center"
+                                         :class="isNight ? 'bg-gray-600/20 text-gray-500' : 'bg-gray-300 text-gray-500'">
+                                        <i class="fas fa-plus text-xl"></i>
+                                    </div>
+                                    <div class="flex-1">
+                                        <h4 class="font-semibold text-sm" :class="isNight ? 'text-gray-500' : 'text-gray-400'">
+                                            Coming Soon
+                                        </h4>
+                                        <p class="text-xs" :class="isNight ? 'text-gray-600' : 'text-gray-500'">
+                                            Fitur lainnya
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="group p-4 rounded-xl transition-all duration-300 opacity-50"
+                                 :class="isNight ? 'bg-slate-700/30' : 'bg-gray-50'">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-12 h-12 rounded-full flex items-center justify-center"
+                                         :class="isNight ? 'bg-gray-600/20 text-gray-500' : 'bg-gray-300 text-gray-500'">
+                                        <i class="fas fa-plus text-xl"></i>
+                                    </div>
+                                    <div class="flex-1">
+                                        <h4 class="font-semibold text-sm" :class="isNight ? 'text-gray-500' : 'text-gray-400'">
+                                            Coming Soon
+                                        </h4>
+                                        <p class="text-xs" :class="isNight ? 'text-gray-600' : 'text-gray-500'">
+                                            Fitur lainnya
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="group p-4 rounded-xl transition-all duration-300 opacity-50"
+                                 :class="isNight ? 'bg-slate-700/30' : 'bg-gray-50'">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-12 h-12 rounded-full flex items-center justify-center"
+                                         :class="isNight ? 'bg-gray-600/20 text-gray-500' : 'bg-gray-300 text-gray-500'">
+                                        <i class="fas fa-plus text-xl"></i>
+                                    </div>
+                                    <div class="flex-1">
+                                        <h4 class="font-semibold text-sm" :class="isNight ? 'text-gray-500' : 'text-gray-400'">
+                                            Coming Soon
+                                        </h4>
+                                        <p class="text-xs" :class="isNight ? 'text-gray-600' : 'text-gray-500'">
+                                            Fitur lainnya
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Footer -->
                 <div class="flex-shrink-0 mt-4 text-center text-xs opacity-90" :class="isNight ? 'text-indigo-300' : 'text-indigo-500'">
                     {{ t('home.powered') }} &copy; {{ new Date().getFullYear() }}
