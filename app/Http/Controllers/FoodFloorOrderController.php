@@ -525,6 +525,11 @@ class FoodFloorOrderController extends Controller
         try {
             $user = auth()->user();
             
+            // Pastikan user terautentikasi
+            if (!$user) {
+                return response()->json(['error' => 'User not authenticated'], 401);
+            }
+            
             // Query untuk RO Supplier yang sudah approved dan belum packing
             $query = FoodFloorOrder::with(['items', 'outlet', 'warehouseOutlet'])
                 ->where('fo_mode', 'RO Supplier')
@@ -621,7 +626,8 @@ class FoodFloorOrderController extends Controller
                 ];
             });
 
-            return response()->json($transformedData);
+            // Pastikan mengembalikan array, bukan object
+            return response()->json($transformedData->values()->toArray());
         } catch (\Exception $e) {
             \Log::error('Error fetching RO Supplier available:', [
                 'error' => $e->getMessage(),

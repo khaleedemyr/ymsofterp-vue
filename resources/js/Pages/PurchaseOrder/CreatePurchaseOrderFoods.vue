@@ -60,48 +60,47 @@ const fetchROSupplierList = async () => {
         loading.value = true;
         const response = await axios.get('/api/floor-order/supplier-available');
         
-        // Debug logging untuk melihat data yang diterima
-        console.log('RO Supplier API response:', response.data);
+        // Pastikan response.data adalah array
+        let data = response.data;
         
-        roSupplierList.value = response.data.map(ro => ({
-            ...ro,
-            items: ro.items.map(item => {
-                const itemKey = `ro_${ro.id}_${item.id}`;
-                if (!poForm.items_by_supplier[itemKey]) {
-                    // Default: satu baris, qty penuh
-                    poForm.items_by_supplier[itemKey] = [{
-                        supplier_id: null,
-                        qty: item.qty,
-                        price: '',
-                        last_price: '',
-                        min_price: '',
-                        max_price: '',
+        // Jika response.data adalah object dengan numeric keys, konversi ke array
+        if (!Array.isArray(data) && typeof data === 'object' && data !== null) {
+            data = Object.values(data);
+        }
+        
+        // Pastikan data adalah array
+        if (!Array.isArray(data)) {
+            data = [];
+        }
+        
+        roSupplierList.value = data.map(ro => {
+            return {
+                ...ro,
+                items: (ro.items || []).map(item => {
+                    const itemKey = `ro_${ro.id}_${item.id}`;
+                    if (!poForm.items_by_supplier[itemKey]) {
+                        // Default: satu baris, qty penuh
+                        poForm.items_by_supplier[itemKey] = [{
+                            supplier_id: null,
+                            qty: item.qty,
+                            price: '',
+                            last_price: '',
+                            min_price: '',
+                            max_price: '',
+                            ro_id: ro.id,
+                            ro_number: ro.order_number
+                        }];
+                    }
+                    
+                    return { 
+                        ...item,
+                        itemKey: itemKey,
                         ro_id: ro.id,
                         ro_number: ro.order_number
-                    }];
-                }
-                
-                // Debug logging untuk setiap item
-                console.log('RO item processed:', {
-                    item_id: item.item_id,
-                    item_name: item.item_name,
-                    qty: item.qty,
-                    unit: item.unit,
-                    itemKey: itemKey
-                });
-                
-                return { 
-                    ...item,
-                    itemKey: itemKey,
-                    ro_id: ro.id,
-                    ro_number: ro.order_number
-                };
-            })
-        }));
-        
-        // Debug logging untuk melihat hasil akhir
-        console.log('Final roSupplierList:', roSupplierList.value);
-        console.log('Final poForm.items_by_supplier:', poForm.items_by_supplier);
+                    };
+                })
+            };
+        });
     } catch (error) {
         console.error('Error fetching RO Supplier list:', error);
         Swal.fire('Error', 'Failed to fetch RO Supplier list', 'error');
@@ -132,6 +131,11 @@ const groupedPRs = computed(() => {
 // Group RO Suppliers by outlet
 const groupedROSuppliers = computed(() => {
     const grouped = {};
+    
+    if (!roSupplierList.value || roSupplierList.value.length === 0) {
+        return grouped;
+    }
+    
     roSupplierList.value.forEach(ro => {
         // Gunakan outlet_name dari data RO, bukan dari outlet relasi
         const outletId = ro.id_outlet || 'unknown';
@@ -146,9 +150,6 @@ const groupedROSuppliers = computed(() => {
         }
         grouped[outletId].ros.push(ro);
     });
-    
-    // Debug log untuk melihat grouping
-    console.log('RO Supplier Grouping:', grouped);
     
     return grouped;
 });
@@ -491,24 +492,11 @@ const fetchLastPrices = async () => {
     for (const ro of roSupplierList.value) {
         for (const item of ro.items) {
             try {
-                // Debug logging untuk melihat data item RO Supplier
-                console.log('Fetching last price for RO item:', {
-                    item_id: item.item_id,
-                    item_name: item.item_name,
-                    unit: item.unit,
-                    itemKey: item.itemKey
-                });
-                
                 const res = await axios.get('/api/items/last-price', {
                     params: {
                         item_id: item.item_id,
                         unit: item.unit
                     }
-                });
-                
-                console.log('Last price response for RO item:', {
-                    item_id: item.item_id,
-                    response: res.data
                 });
                 
                 if (poForm.items_by_supplier[item.itemKey]) {
@@ -521,13 +509,6 @@ const fetchLastPrices = async () => {
                         split.price_medium = priceMedium;
                         split.price_large = priceLarge;
                     });
-                    
-                    console.log('Updated split data for RO item:', {
-                        itemKey: item.itemKey,
-                        splits: poForm.items_by_supplier[item.itemKey]
-                    });
-                } else {
-                    console.warn(`ItemKey ${item.itemKey} not found in poForm.items_by_supplier`);
                 }
             } catch (error) {
                 // Handle error gracefully - set default values if item not found
