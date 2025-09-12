@@ -16,8 +16,9 @@ class RetailFoodController extends Controller
         $prefix = 'RF';
         $date = date('Ymd');
         
-        // Cari nomor terakhir hari ini
-        $lastNumber = RetailFood::where('retail_number', 'like', $prefix . $date . '%')
+        // Cari nomor terakhir hari ini (termasuk data yang soft deleted)
+        $lastNumber = RetailFood::withTrashed()
+            ->where('retail_number', 'like', $prefix . $date . '%')
             ->orderBy('retail_number', 'desc')
             ->first();
             

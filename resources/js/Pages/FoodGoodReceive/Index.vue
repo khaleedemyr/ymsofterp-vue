@@ -56,6 +56,10 @@
                   <button @click="openDetail(gr.id)" class="inline-flex items-center btn btn-xs bg-blue-100 text-blue-800 hover:bg-blue-200 rounded px-2 py-1 font-semibold transition">
                     <i class="fa-solid fa-eye mr-1"></i> Detail
                   </button>
+                  <button @click="handleReprint(gr.id)" :disabled="loadingReprintId === gr.id" class="inline-flex items-center btn btn-xs bg-green-100 text-green-800 hover:bg-green-200 rounded px-2 py-1 font-semibold transition disabled:opacity-50">
+                    <i v-if="loadingReprintId === gr.id" class="fa fa-spinner fa-spin mr-1"></i>
+                    <i v-else class="fa fa-print mr-1"></i> Reprint
+                  </button>
                   <button @click="openEdit(gr.id)" class="inline-flex items-center btn btn-xs bg-yellow-100 text-yellow-800 hover:bg-yellow-200 rounded px-2 py-1 font-semibold transition">
                     <i class="fa-solid fa-pen-to-square mr-1"></i> Edit
                   </button>
@@ -105,6 +109,7 @@ import AppLayout from '@/Layouts/AppLayout.vue';
 import FormGoodReceive from './Form.vue';
 import ModalDetailGoodReceive from './ModalDetailGoodReceive.vue';
 import ModalEditGoodReceive from './ModalEditGoodReceive.vue';
+import { generateStrukPDF } from './generateStrukPDF';
 
 const props = defineProps({
   goodReceives: Object,
@@ -119,6 +124,7 @@ const showDetailModal = ref(false);
 const showEditModal = ref(false);
 const detailGR = ref(null);
 const editGR = ref(null);
+const loadingReprintId = ref(null);
 
 const debouncedSearch = debounce(() => {
   router.get('/food-good-receive', { search: search.value, from: from.value, to: to.value }, { preserveState: true, replace: true });
@@ -216,6 +222,25 @@ function handleEditSuccess() {
 function goToPage(url) {
   if (url) {
     router.get(url, { search: search.value, from: from.value, to: to.value }, { preserveState: true, replace: true });
+  }
+}
+
+async function handleReprint(grId) {
+  loadingReprintId.value = grId;
+  try {
+    const { data } = await axios.get(`/api/food-good-receive/${grId}/struk`);
+    await generateStrukPDF({
+      ...data,
+      showReprintLabel: true
+    });
+  } catch (e) {
+    await Swal.fire({
+      icon: 'error',
+      title: 'Gagal',
+      text: 'Gagal mengambil data struk. Coba lagi.'
+    });
+  } finally {
+    loadingReprintId.value = null;
   }
 }
 </script> 

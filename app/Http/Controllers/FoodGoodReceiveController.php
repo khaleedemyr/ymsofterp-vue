@@ -798,4 +798,47 @@ class FoodGoodReceiveController extends Controller
             return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
         }
     }
+
+    // API untuk mengambil data struk Good Receive
+    public function strukData($id)
+    {
+        $gr = DB::table('food_good_receives as gr')
+            ->leftJoin('purchase_order_foods as po', 'gr.po_id', '=', 'po.id')
+            ->leftJoin('suppliers as s', 'gr.supplier_id', '=', 's.id')
+            ->leftJoin('users as u', 'gr.received_by', '=', 'u.id')
+            ->select(
+                'gr.gr_number as grNumber',
+                'gr.receive_date as date',
+                's.name as supplier',
+                'u.nama_lengkap as receivedByName',
+                'po.number as poNumber'
+            )
+            ->where('gr.id', $id)
+            ->first();
+            
+        if (!$gr) return response()->json(['message' => 'Data tidak ditemukan'], 404);
+        
+        $items = DB::table('food_good_receive_items as gri')
+            ->leftJoin('items as i', 'gri.item_id', '=', 'i.id')
+            ->leftJoin('units as u', 'gri.unit_id', '=', 'u.id')
+            ->select(
+                'gri.id',
+                'i.name',
+                'gri.qty_received',
+                'gri.unit_id',
+                'u.name as unit',
+                'u.code as unit_code'
+            )
+            ->where('gri.good_receive_id', $id)
+            ->get();
+            
+        return response()->json([
+            'grNumber' => $gr->grNumber,
+            'date' => $gr->date,
+            'supplier' => $gr->supplier,
+            'receivedByName' => $gr->receivedByName,
+            'poNumber' => $gr->poNumber,
+            'items' => $items
+        ]);
+    }
 } 

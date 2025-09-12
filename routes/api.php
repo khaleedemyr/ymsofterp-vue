@@ -305,6 +305,7 @@ Route::get('/outlet-inventory/stock', function (Request $request) {
 Route::get('/items', [ItemController::class, 'apiIndex']);
 
 Route::get('/delivery-order/{id}/struk', [\App\Http\Controllers\DeliveryOrderController::class, 'strukData']);
+Route::get('/food-good-receive/{id}/struk', [\App\Http\Controllers\FoodGoodReceiveController::class, 'strukData']);
 
 Route::middleware(['auth:sanctum'])->group(function () {
     Route::get('/investors', [InvestorController::class, 'index']);
