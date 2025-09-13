@@ -1,11 +1,12 @@
 <script setup>
-import { ref, reactive, onMounted } from 'vue';
+import { ref, reactive, onMounted, computed, watch } from 'vue';
 import { router } from '@inertiajs/vue3';
 import { useForm } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import axios from 'axios';
 import Multiselect from 'vue-multiselect';
 import 'vue-multiselect/dist/vue-multiselect.min.css';
+import Swal from 'sweetalert2';
 
 const form = useForm({
   employee_id: '',
@@ -43,7 +44,6 @@ const form = useForm({
   unit_property_change: false,
   unit_property_from: '',
   unit_property_to: '',
-  adjustment_effective_date: '',
   comments: '',
   kpi_attachment: null,
   psikotest_attachment: null,
@@ -54,6 +54,23 @@ const form = useForm({
   gm_hr_approver_id: '',
   bod_approver_id: '',
   status: 'draft',
+});
+
+// Computed property untuk validasi salary fields
+const isSalaryAllowed = computed(() => {
+  return form.employment_type && 
+         form.employment_type !== 'extend_contract_without_adjustment' &&
+         form.employment_type !== 'termination';
+});
+
+// Watch employment_type untuk reset salary fields jika tidak diizinkan
+watch(() => form.employment_type, (newType) => {
+  if (newType === 'extend_contract_without_adjustment' || newType === 'termination') {
+    form.salary_change = false;
+    form.gaji_pokok_to = '';
+    form.tunjangan_to = '';
+    form.salary_to = '';
+  }
 });
 
 const searchQuery = ref('');
@@ -205,6 +222,10 @@ const submit = () => {
   const levelToValue = form.level_to?.id || '';
   const divisionToValue = form.division_to?.id || '';
   const unitPropertyToValue = form.unit_property_to?.id || '';
+  const hodApproverValue = form.hod_approver_id?.id || '';
+  const gmApproverValue = form.gm_approver_id?.id || '';
+  const gmHrApproverValue = form.gm_hr_approver_id?.id || '';
+  const bodApproverValue = form.bod_approver_id?.id || '';
 
   // Create summary for confirmation
   const summary = {
@@ -221,7 +242,6 @@ const submit = () => {
     division_to: form.division_to?.name || '-',
     unit_property_change: form.unit_property_change ? 'Yes' : 'No',
     unit_property_to: form.unit_property_to?.name || '-',
-    adjustment_effective_date: form.adjustment_effective_date,
     comments: form.comments || '-'
   };
 
@@ -230,6 +250,10 @@ const submit = () => {
   form.level_to = levelToValue;
   form.division_to = divisionToValue;
   form.unit_property_to = unitPropertyToValue;
+  form.hod_approver_id = hodApproverValue;
+  form.gm_approver_id = gmApproverValue;
+  form.gm_hr_approver_id = gmHrApproverValue;
+  form.bod_approver_id = bodApproverValue;
 
   // Show confirmation dialog with summary
   Swal.fire({
@@ -690,9 +714,15 @@ const goBack = () => {
                       <input
                         v-model="form.salary_change"
                         type="checkbox"
-                        class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                        :disabled="!isSalaryAllowed"
+                        class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded disabled:opacity-50 disabled:cursor-not-allowed"
                       />
-                      <label class="ml-2 text-sm text-gray-700">Salary</label>
+                      <label class="ml-2 text-sm text-gray-700" :class="{ 'text-gray-400': !isSalaryAllowed }">
+                        Salary
+                        <span v-if="!isSalaryAllowed" class="text-xs text-gray-500 block">
+                          (Not available for {{ form.employment_type?.replace(/_/g, ' ') || 'selected type' }})
+                        </span>
+                      </label>
                     </div>
                     <div>
                       <label class="block text-xs text-gray-600 mb-1">From</label>
@@ -713,7 +743,8 @@ const goBack = () => {
                             @input="form.gaji_pokok_to = formatCurrency($event.target.value)"
                             type="text"
                             placeholder="0"
-                            class="w-full px-3 py-2 border border-gray-300 rounded-md"
+                            :disabled="!isSalaryAllowed || !form.salary_change"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-md disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-gray-100"
                           />
                         </div>
                         <div>
@@ -723,7 +754,8 @@ const goBack = () => {
                             @input="form.tunjangan_to = formatCurrency($event.target.value)"
                             type="text"
                             placeholder="0"
-                            class="w-full px-3 py-2 border border-gray-300 rounded-md"
+                            :disabled="!isSalaryAllowed || !form.salary_change"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-md disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-gray-100"
                           />
                         </div>
                       </div>
@@ -803,15 +835,6 @@ const goBack = () => {
                       />
                     </div>
                   </div>
-                </div>
-                
-                <div class="mt-6">
-                  <label class="block text-sm font-medium text-gray-700">Effective Date</label>
-                  <input
-                    v-model="form.adjustment_effective_date"
-                    type="date"
-                    class="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md"
-                  />
                 </div>
               </div>
             </div>

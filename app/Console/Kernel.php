@@ -45,6 +45,13 @@ class Kernel extends ConsoleKernel
             ->withoutOverlapping()
             ->runInBackground()
             ->appendOutputTo(storage_path('logs/extra-off-detection.log'));
+
+        // Execute approved employee movements on their effective date at 8:00 AM
+        $schedule->command('employee-movements:execute')
+            ->dailyAt('08:00')
+            ->withoutOverlapping()
+            ->runInBackground()
+            ->appendOutputTo(storage_path('logs/employee-movements-execution.log'));
     }
 
     /**

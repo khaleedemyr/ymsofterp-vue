@@ -30,9 +30,20 @@ class ScheduleAttendanceCorrectionController extends Controller
         $userId = $request->input('user_id');
         $correctionType = $request->input('correction_type', 'schedule'); // schedule or attendance
         
-        // Dropdown data
-        $outlets = DB::table('tbl_data_outlet')
-            ->where('status', 'A')
+        // Dropdown data - Filter outlets based on user's outlet
+        $outletsQuery = DB::table('tbl_data_outlet')
+            ->where('status', 'A');
+            
+        // If user is not from Head Office (id_outlet != 1), only show their outlet
+        if ($user->id_outlet != 1) {
+            $outletsQuery->where('id_outlet', $user->id_outlet);
+            // Auto-set outlet_id to user's outlet if not provided
+            if (!$outletId) {
+                $outletId = $user->id_outlet;
+            }
+        }
+        
+        $outlets = $outletsQuery
             ->select('id_outlet', 'nama_outlet')
             ->orderBy('nama_outlet')
             ->get()

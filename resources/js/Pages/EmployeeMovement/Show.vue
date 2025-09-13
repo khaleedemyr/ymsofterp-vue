@@ -1,9 +1,75 @@
 <script setup>
-import { router } from '@inertiajs/vue3';
+import { ref, computed } from 'vue';
+import { router, useForm } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
+import axios from 'axios';
+import Swal from 'sweetalert2';
 
 const props = defineProps({
   movement: Object,
+  user: Object,
+});
+
+const isEditingSalary = ref(false);
+const salaryForm = useForm({
+  gaji_pokok_to: props.movement.gaji_pokok_to || '',
+  tunjangan_to: props.movement.tunjangan_to || '',
+});
+
+// Check if user can edit salary (division_id = 6)
+const canEditSalary = computed(() => {
+  return props.user?.division_id === 6;
+});
+
+// Check if user can execute movement (HR or superadmin)
+const canExecuteMovement = computed(() => {
+  return props.user?.division_id === 6 || props.user?.id_role === '5af56935b011a';
+});
+
+// Check if user can approve and what level
+const canApprove = computed(() => {
+  const userId = props.user?.id;
+  if (!userId) return { canApprove: false, level: null };
+  
+  // Check HOD approval
+  if (props.movement.hod_approver_id == userId && !props.movement.hod_approval) {
+    return { canApprove: true, level: 'hod' };
+  }
+  
+  // Check GM approval (only if HOD is approved)
+  if (props.movement.gm_approver_id == userId && 
+      props.movement.hod_approval === 'approved' && 
+      !props.movement.gm_approval) {
+    return { canApprove: true, level: 'gm' };
+  }
+  
+  // Check GM HR approval (only if GM is approved)
+  if (props.movement.gm_hr_approver_id == userId && 
+      props.movement.gm_approval === 'approved' && 
+      !props.movement.gm_hr_approval) {
+    return { canApprove: true, level: 'gm_hr' };
+  }
+  
+  // Check BOD approval (only if GM HR is approved)
+  if (props.movement.bod_approver_id == userId && 
+      props.movement.gm_hr_approval === 'approved' && 
+      !props.movement.bod_approval) {
+    return { canApprove: true, level: 'bod' };
+  }
+  
+  return { canApprove: false, level: null };
+});
+
+// Check if movement is pending approval
+const isPendingApproval = computed(() => {
+  return props.movement.status === 'pending' || props.movement.status === 'draft';
+});
+
+// Check if salary change is allowed for this employment type
+const isSalaryChangeAllowed = computed(() => {
+  return props.movement.employment_type && 
+         props.movement.employment_type !== 'extend_contract_without_adjustment' &&
+         props.movement.employment_type !== 'termination';
 });
 
 function goBack() {
@@ -24,6 +90,10 @@ function getStatusBadgeClass(status) {
       return 'bg-green-100 text-green-800';
     case 'rejected':
       return 'bg-red-100 text-red-800';
+    case 'executed':
+      return 'bg-blue-100 text-blue-800';
+    case 'error':
+      return 'bg-red-100 text-red-800';
     default:
       return 'bg-gray-100 text-gray-800';
   }
@@ -39,6 +109,10 @@ function getStatusText(status) {
       return 'Approved';
     case 'rejected':
       return 'Rejected';
+    case 'executed':
+      return 'Executed';
+    case 'error':
+      return 'Error';
     default:
       return status;
   }
@@ -85,6 +159,114 @@ function downloadFile(path) {
   if (!path) return;
   window.open(`/storage/${path}`, '_blank');
 }
+
+function startEditSalary() {
+  isEditingSalary.value = true;
+  salaryForm.gaji_pokok_to = props.movement.gaji_pokok_to || '';
+  salaryForm.tunjangan_to = props.movement.tunjangan_to || '';
+}
+
+function cancelEditSalary() {
+  isEditingSalary.value = false;
+  salaryForm.reset();
+}
+
+function saveSalary() {
+  salaryForm.put(`/employee-movements/${props.movement.id}/salary`, {
+    onSuccess: () => {
+      isEditingSalary.value = false;
+      // Refresh the page to get updated data
+      router.reload();
+    },
+    onError: (errors) => {
+      console.error('Error updating salary:', errors);
+    }
+  });
+}
+
+function formatCurrencyInput(value) {
+  if (!value) return '';
+  return new Intl.NumberFormat('id-ID').format(value);
+}
+
+function unformatCurrency(value) {
+  if (!value) return '';
+  return value.replace(/[^\d]/g, '');
+}
+
+function executeMovement() {
+  if (confirm('Apakah Anda yakin ingin mengeksekusi perubahan employee movement ini?')) {
+    axios.post(`/employee-movements/${props.movement.id}/execute`)
+      .then(response => {
+        if (response.data.success) {
+          alert('Employee movement berhasil dieksekusi!');
+          router.reload();
+        } else {
+          alert('Error: ' + response.data.message);
+        }
+      })
+      .catch(error => {
+        console.error('Error executing movement:', error);
+        alert('Terjadi kesalahan saat mengeksekusi movement');
+      });
+  }
+}
+
+function approveMovement(status) {
+  const approvalLevel = canApprove.value.level;
+  const action = status === 'approved' ? 'approve' : 'reject';
+  const actionText = status === 'approved' ? 'menyetujui' : 'menolak';
+  
+  Swal.fire({
+    title: `Confirm ${action === 'approve' ? 'Approval' : 'Rejection'}`,
+    html: `
+      <div class="text-left">
+        <p>Apakah Anda yakin ingin <strong>${actionText}</strong> employee movement ini?</p>
+        <div class="mt-4">
+          <label class="block text-sm font-medium text-gray-700 mb-2">Notes (optional):</label>
+          <textarea id="approval-notes" rows="3" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Enter notes here..."></textarea>
+        </div>
+      </div>
+    `,
+    icon: action === 'approve' ? 'question' : 'warning',
+    showCancelButton: true,
+    confirmButtonColor: action === 'approve' ? '#10b981' : '#ef4444',
+    cancelButtonColor: '#6b7280',
+    confirmButtonText: action === 'approve' ? 'Yes, Approve' : 'Yes, Reject',
+    cancelButtonText: 'Cancel',
+    showLoaderOnConfirm: true,
+    preConfirm: () => {
+      const notes = document.getElementById('approval-notes').value;
+      
+      return axios.post(`/employee-movements/${props.movement.id}/approve`, {
+        approval_level: approvalLevel,
+        status: status,
+        notes: notes
+      }).then(response => {
+        if (response.data.success) {
+          return response.data;
+        } else {
+          throw new Error(response.data.message || 'Approval failed');
+        }
+      }).catch(error => {
+        Swal.showValidationMessage(`Request failed: ${error.response?.data?.message || error.message}`);
+        return false;
+      });
+    },
+    allowOutsideClick: () => !Swal.isLoading()
+  }).then((result) => {
+    if (result.isConfirmed) {
+      Swal.fire({
+        title: 'Success!',
+        text: `Employee movement ${action === 'approve' ? 'approved' : 'rejected'} successfully.`,
+        icon: 'success',
+        confirmButtonText: 'OK'
+      }).then(() => {
+        router.reload();
+      });
+    }
+  });
+}
 </script>
 
 <template>
@@ -109,6 +291,33 @@ function downloadFile(path) {
                 >
                   Back
                 </button>
+                
+                <!-- Approval Buttons -->
+                <template v-if="canApprove.canApprove && isPendingApproval">
+                  <button
+                    @click="approveMovement('approved')"
+                    class="px-4 py-2 bg-green-600 text-white rounded-md text-sm font-medium hover:bg-green-700"
+                  >
+                    Approve {{ canApprove.level.toUpperCase() }}
+                  </button>
+                  <button
+                    @click="approveMovement('rejected')"
+                    class="px-4 py-2 bg-red-600 text-white rounded-md text-sm font-medium hover:bg-red-700"
+                  >
+                    Reject {{ canApprove.level.toUpperCase() }}
+                  </button>
+                </template>
+                
+                <!-- Execute Movement Button -->
+                <button
+                  v-if="canExecuteMovement && movement.status === 'approved'"
+                  @click="executeMovement"
+                  class="px-4 py-2 bg-green-600 text-white rounded-md text-sm font-medium hover:bg-green-700"
+                >
+                  Execute Movement
+                </button>
+                
+                <!-- Edit Button -->
                 <button
                   @click="openEdit"
                   class="px-4 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700"
@@ -324,7 +533,55 @@ function downloadFile(path) {
                       <label class="ml-2 text-sm text-gray-700">Salary</label>
                     </div>
                     <div class="p-2 bg-white rounded-md">{{ formatCurrency(movement.salary_from) }}</div>
-                    <div class="p-2 bg-white rounded-md">{{ formatCurrency(movement.salary_to) }}</div>
+                    <div class="p-2 bg-white rounded-md">
+                      <div v-if="!isEditingSalary">
+                        {{ formatCurrency(movement.salary_to) }}
+                        <button 
+                          v-if="canEditSalary && isSalaryChangeAllowed && movement.salary_change"
+                          @click="startEditSalary"
+                          class="ml-2 text-blue-600 hover:text-blue-800 text-xs"
+                        >
+                          Edit
+                        </button>
+                      </div>
+                      <div v-else class="space-y-2">
+                        <div class="grid grid-cols-2 gap-2">
+                          <div>
+                            <label class="block text-xs text-gray-500 mb-1">Gaji Pokok</label>
+                            <input
+                              v-model="salaryForm.gaji_pokok_to"
+                              @input="salaryForm.gaji_pokok_to = formatCurrencyInput($event.target.value)"
+                              type="text"
+                              class="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                            />
+                          </div>
+                          <div>
+                            <label class="block text-xs text-gray-500 mb-1">Tunjangan</label>
+                            <input
+                              v-model="salaryForm.tunjangan_to"
+                              @input="salaryForm.tunjangan_to = formatCurrencyInput($event.target.value)"
+                              type="text"
+                              class="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                            />
+                          </div>
+                        </div>
+                        <div class="flex space-x-2">
+                          <button
+                            @click="saveSalary"
+                            :disabled="salaryForm.processing"
+                            class="px-3 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700 disabled:opacity-50"
+                          >
+                            {{ salaryForm.processing ? 'Saving...' : 'Save' }}
+                          </button>
+                          <button
+                            @click="cancelEditSalary"
+                            class="px-3 py-1 bg-gray-600 text-white text-xs rounded hover:bg-gray-700"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    </div>
                     <div></div>
                     <div></div>
                   </div>
@@ -448,11 +705,33 @@ function downloadFile(path) {
             <div class="mb-8">
               <h3 class="text-lg font-medium text-gray-900 mb-4 bg-gray-100 p-3 rounded-md">Approval Status</h3>
               <div class="bg-gray-50 p-4 rounded-md">
+                <!-- Current Approval Status Info -->
+                <div v-if="canApprove.canApprove && isPendingApproval" class="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
+                  <div class="flex items-center">
+                    <div class="flex-shrink-0">
+                      <svg class="h-5 w-5 text-blue-400" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd" />
+                      </svg>
+                    </div>
+                    <div class="ml-3">
+                      <p class="text-sm text-blue-700">
+                        <strong>Action Required:</strong> This movement is waiting for your {{ canApprove.level.toUpperCase() }} approval.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                
                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                   <div>
                     <label class="block text-sm font-medium text-gray-700 mb-2">HOD Approval</label>
                     <div class="p-2 bg-white rounded-md min-h-[60px] flex items-center justify-center">
-                      {{ movement.hod_approval || 'Not signed' }}
+                      <span :class="{
+                        'text-green-600 font-semibold': movement.hod_approval === 'approved',
+                        'text-red-600 font-semibold': movement.hod_approval === 'rejected',
+                        'text-gray-500': !movement.hod_approval
+                      }">
+                        {{ movement.hod_approval || 'Not signed' }}
+                      </span>
                     </div>
                     <div class="text-xs text-gray-500 mt-1">
                       {{ formatDate(movement.hod_approval_date) }}
@@ -461,7 +740,13 @@ function downloadFile(path) {
                   <div>
                     <label class="block text-sm font-medium text-gray-700 mb-2">GM Approval</label>
                     <div class="p-2 bg-white rounded-md min-h-[60px] flex items-center justify-center">
-                      {{ movement.gm_approval || 'Not signed' }}
+                      <span :class="{
+                        'text-green-600 font-semibold': movement.gm_approval === 'approved',
+                        'text-red-600 font-semibold': movement.gm_approval === 'rejected',
+                        'text-gray-500': !movement.gm_approval
+                      }">
+                        {{ movement.gm_approval || 'Not signed' }}
+                      </span>
                     </div>
                     <div class="text-xs text-gray-500 mt-1">
                       {{ formatDate(movement.gm_approval_date) }}
@@ -470,7 +755,13 @@ function downloadFile(path) {
                   <div>
                     <label class="block text-sm font-medium text-gray-700 mb-2">GM HR Approval</label>
                     <div class="p-2 bg-white rounded-md min-h-[60px] flex items-center justify-center">
-                      {{ movement.gm_hr_approval || 'Not signed' }}
+                      <span :class="{
+                        'text-green-600 font-semibold': movement.gm_hr_approval === 'approved',
+                        'text-red-600 font-semibold': movement.gm_hr_approval === 'rejected',
+                        'text-gray-500': !movement.gm_hr_approval
+                      }">
+                        {{ movement.gm_hr_approval || 'Not signed' }}
+                      </span>
                     </div>
                     <div class="text-xs text-gray-500 mt-1">
                       {{ formatDate(movement.gm_hr_approval_date) }}
@@ -479,7 +770,13 @@ function downloadFile(path) {
                   <div>
                     <label class="block text-sm font-medium text-gray-700 mb-2">BOD Approval</label>
                     <div class="p-2 bg-white rounded-md min-h-[60px] flex items-center justify-center">
-                      {{ movement.bod_approval || 'Not signed' }}
+                      <span :class="{
+                        'text-green-600 font-semibold': movement.bod_approval === 'approved',
+                        'text-red-600 font-semibold': movement.bod_approval === 'rejected',
+                        'text-gray-500': !movement.bod_approval
+                      }">
+                        {{ movement.bod_approval || 'Not signed' }}
+                      </span>
                     </div>
                     <div class="text-xs text-gray-500 mt-1">
                       {{ formatDate(movement.bod_approval_date) }}

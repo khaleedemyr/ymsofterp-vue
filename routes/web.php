@@ -1073,6 +1073,9 @@ Route::get('employee-movements/search/employee', [\App\Http\Controllers\Employee
 Route::get('employee-movements/employee/{id}', [\App\Http\Controllers\EmployeeMovementController::class, 'getEmployeeDetails'])->name('employee-movements.employee-details');
 Route::get('employee-movements/dropdown-data', [\App\Http\Controllers\EmployeeMovementController::class, 'getDropdownData'])->name('employee-movements.dropdown-data');
 Route::get('employee-movements/approvers', [\App\Http\Controllers\EmployeeMovementController::class, 'getApprovers'])->name('employee-movements.approvers');
+Route::post('employee-movements/{id}/approve', [\App\Http\Controllers\EmployeeMovementController::class, 'approve'])->name('employee-movements.approve');
+Route::put('employee-movements/{id}/salary', [\App\Http\Controllers\EmployeeMovementController::class, 'updateSalary'])->name('employee-movements.update-salary');
+Route::post('employee-movements/{id}/execute', [\App\Http\Controllers\EmployeeMovementController::class, 'executeMovement'])->name('employee-movements.execute');
 Route::resource('employee-movements', \App\Http\Controllers\EmployeeMovementController::class);
 
 // Roulette download template (no auth required)

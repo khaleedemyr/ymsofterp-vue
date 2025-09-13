@@ -47,7 +47,6 @@ class EmployeeMovement extends Model
         'unit_property_change',
                  'unit_property_from',
          'unit_property_to',
-         'adjustment_effective_date',
          'comments',
          'kpi_attachment',
          'psikotest_attachment',
@@ -74,7 +73,6 @@ class EmployeeMovement extends Model
                    'kpi_date' => 'date',
                    'psikotest_date' => 'date',
                    'training_attendance_date' => 'date',
-                   'adjustment_effective_date' => 'date',
                    'hod_approval_date' => 'datetime',
                    'gm_approval_date' => 'datetime',
                    'gm_hr_approval_date' => 'datetime',
@@ -135,5 +133,15 @@ class EmployeeMovement extends Model
     public function scopeRejected($query)
     {
         return $query->where('status', 'rejected');
+    }
+
+    public function scopeExecuted($query)
+    {
+        return $query->where('status', 'executed');
+    }
+
+    public function scopeError($query)
+    {
+        return $query->where('status', 'error');
     }
 }

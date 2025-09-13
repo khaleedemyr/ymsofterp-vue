@@ -20,6 +20,9 @@ const props = defineProps({
 const page = usePage();
 const userOutletId = page.props.auth?.user?.id_outlet || '';
 
+// Check if user can select outlet (only Head Office users with id_outlet = 1)
+const canSelectOutlet = computed(() => userOutletId == 1);
+
 // Form data
 const outletId = ref(props.filters?.outlet_id || '');
 const divisionId = ref(props.filters?.division_id || '');
@@ -332,11 +335,10 @@ if (userOutletId && userOutletId != 1) {
           <h3 class="text-lg font-semibold text-gray-800 mb-4">Filter Data</h3>
           <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <!-- Outlet -->
-            <div>
+            <div v-if="canSelectOutlet">
               <label class="block text-sm font-medium text-gray-700 mb-2">Outlet</label>
               <select 
                 v-model="outletId" 
-                :disabled="userOutletId && userOutletId != 1"
                 class="w-full form-input rounded-lg border-gray-300 focus:border-blue-500 focus:ring-blue-500"
               >
                 <option value="">-- Pilih Outlet --</option>
@@ -344,6 +346,14 @@ if (userOutletId && userOutletId != 1) {
                   {{ outlet.name }}
                 </option>
               </select>
+            </div>
+            
+            <!-- Show current outlet for non-Head Office users -->
+            <div v-else>
+              <label class="block text-sm font-medium text-gray-700 mb-2">Outlet</label>
+              <div class="w-full px-3 py-2 bg-gray-100 border border-gray-300 rounded-lg text-gray-700">
+                {{ outlets.find(o => o.id == userOutletId)?.name || 'Outlet tidak ditemukan' }}
+              </div>
             </div>
 
             <!-- Division -->
