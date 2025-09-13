@@ -446,117 +446,60 @@ class OutletFoodGoodReceiveController extends Controller
         ]);
     }
 
-    public function destroy(OutletFoodGoodReceive $outletFoodGoodReceive)
+    public function destroy($id)
     {
+        \Log::info('DEBUG DESTROY START', [
+            'requested_id' => $id
+        ]);
+        
+        // Find the model manually to avoid route model binding issues
+        $outletFoodGoodReceive = OutletFoodGoodReceive::withTrashed()->find($id);
+        
+        if (!$outletFoodGoodReceive) {
+            \Log::error('DEBUG DESTROY - MODEL NOT FOUND', [
+                'requested_id' => $id
+            ]);
+            return response()->json(['success' => false, 'message' => 'Good Receive tidak ditemukan'], 404);
+        }
+        
+        \Log::info('DEBUG DESTROY MODEL FOUND', [
+            'gr_id' => $outletFoodGoodReceive->id,
+            'gr_number' => $outletFoodGoodReceive->number,
+            'deleted_at' => $outletFoodGoodReceive->deleted_at,
+            'has_payment' => $outletFoodGoodReceive->outletPayment ? true : false,
+            'payment_status' => $outletFoodGoodReceive->outletPayment ? $outletFoodGoodReceive->outletPayment->status : null
+        ]);
+        
+        // Check if already deleted
+        if ($outletFoodGoodReceive->trashed()) {
+            \Log::info('DEBUG DESTROY - ALREADY DELETED', [
+                'gr_id' => $outletFoodGoodReceive->id,
+                'deleted_at' => $outletFoodGoodReceive->deleted_at
+            ]);
+            return response()->json(['success' => false, 'message' => 'Good Receive sudah dihapus'], 400);
+        }
+        
         // Check if GR has payment
         if ($outletFoodGoodReceive->outletPayment && $outletFoodGoodReceive->outletPayment->status !== 'cancelled') {
+            \Log::info('DEBUG DESTROY BLOCKED - HAS PAYMENT', [
+                'gr_id' => $outletFoodGoodReceive->id,
+                'payment_status' => $outletFoodGoodReceive->outletPayment->status
+            ]);
             return response()->json(['success' => false, 'message' => 'Tidak dapat menghapus GR yang sudah memiliki payment aktif'], 400);
         }
-
-        DB::beginTransaction();
+        
+        // Test simple delete first
         try {
-            // Get all items from this good receive
-            $items = DB::table('outlet_food_good_receive_items')
-                ->where('outlet_food_good_receive_id', $outletFoodGoodReceive->id)
-                ->get();
-
-            foreach ($items as $item) {
-                // Get inventory item
-                $inventoryItem = DB::table('outlet_food_inventory_items')
-                    ->where('item_id', $item->item_id)
-                    ->first();
-
-                if ($inventoryItem) {
-                    // Get current stock
-                    $stock = DB::table('outlet_food_inventory_stocks')
-                        ->where('inventory_item_id', $inventoryItem->id)
-                        ->where('id_outlet', $outletFoodGoodReceive->outlet_id)
-                        ->where('warehouse_outlet_id', $outletFoodGoodReceive->warehouse_outlet_id)
-                        ->first();
-
-                    if ($stock) {
-                        // Calculate quantities to rollback
-                        $itemMaster = DB::table('items')->where('id', $item->item_id)->first();
-                        $smallConv = $itemMaster->small_conversion_qty ?: 1;
-                        $mediumConv = $itemMaster->medium_conversion_qty ?: 1;
-                        $qty_small = 0; $qty_medium = 0; $qty_large = 0;
-
-                        if ($item->unit_id == $itemMaster->small_unit_id) {
-                            $qty_small = $item->received_qty;
-                            $qty_medium = $smallConv > 0 ? $qty_small / $smallConv : 0;
-                            $qty_large = ($smallConv > 0 && $mediumConv > 0) ? $qty_small / ($smallConv * $mediumConv) : 0;
-                        } elseif ($item->unit_id == $itemMaster->medium_unit_id) {
-                            $qty_medium = $item->received_qty;
-                            $qty_small = $qty_medium * $smallConv;
-                            $qty_large = $mediumConv > 0 ? $qty_medium / $mediumConv : 0;
-                        } elseif ($item->unit_id == $itemMaster->large_unit_id) {
-                            $qty_large = $item->received_qty;
-                            $qty_medium = $qty_large * $mediumConv;
-                            $qty_small = $qty_medium * $smallConv;
-                        }
-
-                        // Get cost from floor order item
-                        $do = DB::table('delivery_orders')->where('id', $outletFoodGoodReceive->delivery_order_id)->first();
-                        $ffoi = DB::table('food_floor_order_items')
-                            ->where('floor_order_id', $do->floor_order_id)
-                            ->where('item_id', $item->item_id)
-                            ->first();
-                        $cost = $ffoi ? $ffoi->price : 0;
-
-                        // Calculate cost per unit
-                        $cost_small = $cost;
-                        if ($item->unit_id == $itemMaster->large_unit_id) {
-                            $cost_small = $cost / (($itemMaster->small_conversion_qty ?: 1) * ($itemMaster->medium_conversion_qty ?: 1));
-                        } elseif ($item->unit_id == $itemMaster->medium_unit_id) {
-                            $cost_small = $cost / ($itemMaster->small_conversion_qty ?: 1);
-                        }
-                        $cost_medium = $cost_small * ($itemMaster->small_conversion_qty ?: 1);
-                        $cost_large = $cost_medium * ($itemMaster->medium_conversion_qty ?: 1);
-
-                        // Calculate value to rollback
-                        $value_to_rollback = $qty_small * $cost_small;
-
-                        // Update stock
-                        DB::table('outlet_food_inventory_stocks')
-                            ->where('id', $stock->id)
-                            ->update([
-                                'qty_small' => $stock->qty_small - $qty_small,
-                                'qty_medium' => $stock->qty_medium - $qty_medium,
-                                'qty_large' => $stock->qty_large - $qty_large,
-                                'value' => $stock->value - $value_to_rollback,
-                                'updated_at' => now(),
-                            ]);
-                    }
-
-                    // Delete inventory cards
-                    DB::table('outlet_food_inventory_cards')
-                        ->where('reference_type', 'good_receive_outlet')
-                        ->where('reference_id', $outletFoodGoodReceive->id)
-                        ->where('inventory_item_id', $inventoryItem->id)
-                        ->delete();
-
-                    // Delete cost histories
-                    DB::table('outlet_food_inventory_cost_histories')
-                        ->where('reference_type', 'good_receive_outlet')
-                        ->where('reference_id', $outletFoodGoodReceive->id)
-                        ->where('inventory_item_id', $inventoryItem->id)
-                        ->delete();
-                }
-            }
-
-            // Delete good receive items
-            DB::table('outlet_food_good_receive_items')
-                ->where('outlet_food_good_receive_id', $outletFoodGoodReceive->id)
-                ->delete();
-
-            // Use model delete to respect soft deletes
             $outletFoodGoodReceive->delete();
-
-            DB::commit();
+            \Log::info('DEBUG DESTROY SIMPLE DELETE SUCCESS', [
+                'gr_id' => $outletFoodGoodReceive->id
+            ]);
             return response()->json(['success' => true, 'message' => 'Good Receive berhasil dihapus']);
         } catch (\Exception $e) {
-            DB::rollBack();
-            \Log::error('Error deleting outlet good receive: ' . $e->getMessage());
+            \Log::error('DEBUG DESTROY SIMPLE DELETE FAILED', [
+                'gr_id' => $outletFoodGoodReceive->id,
+                'error' => $e->getMessage()
+            ]);
             return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
         }
     }
