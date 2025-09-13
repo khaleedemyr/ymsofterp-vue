@@ -60,7 +60,22 @@ class OutletPayment extends Model
                 'auth_id' => auth()->id(),
                 'data' => $model->toArray()
             ]);
-            $model->payment_number = 'OPY-' . date('Ymd') . '-' . str_pad(static::whereDate('created_at', today())->count() + 1, 4, '0', STR_PAD_LEFT);
+            $today = date('Ymd');
+            $prefix = 'OPY-' . $today . '-';
+            
+            // Cari nomor terakhir hari ini (termasuk data yang soft deleted)
+            $lastNumber = static::withTrashed()
+                ->where('payment_number', 'like', $prefix . '%')
+                ->orderBy('payment_number', 'desc')
+                ->first();
+                
+            if ($lastNumber) {
+                $sequence = (int) substr($lastNumber->payment_number, -4) + 1;
+            } else {
+                $sequence = 1;
+            }
+            
+            $model->payment_number = $prefix . str_pad($sequence, 4, '0', STR_PAD_LEFT);
             $model->created_by = auth()->id();
             $model->updated_by = auth()->id();
         });

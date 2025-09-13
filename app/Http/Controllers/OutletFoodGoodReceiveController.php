@@ -17,6 +17,7 @@ class OutletFoodGoodReceiveController extends Controller
             ->leftJoin('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
             ->leftJoin('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
             ->leftJoin('warehouse_outlets as wo', 'gr.warehouse_outlet_id', '=', 'wo.id')
+            ->whereNull('gr.deleted_at') // Exclude soft deleted records
             ->select(
                 'gr.id',
                 'gr.number',
@@ -116,8 +117,21 @@ class OutletFoodGoodReceiveController extends Controller
                 }
             }
             $today = date('Ymd');
-            $countToday = DB::table('outlet_food_good_receives')->whereDate('created_at', now())->count();
-            $number = 'OGR-' . $today . '-' . str_pad($countToday + 1, 4, '0', STR_PAD_LEFT);
+            $prefix = 'OGR-' . $today . '-';
+            
+            // Cari nomor terakhir hari ini (termasuk data yang soft deleted)
+            $lastNumber = DB::table('outlet_food_good_receives')
+                ->where('number', 'like', $prefix . '%')
+                ->orderBy('number', 'desc')
+                ->first();
+                
+            if ($lastNumber) {
+                $sequence = (int) substr($lastNumber->number, -4) + 1;
+            } else {
+                $sequence = 1;
+            }
+            
+            $number = $prefix . str_pad($sequence, 4, '0', STR_PAD_LEFT);
             \Log::info('DEBUG INSERT HEADER', compact('number', 'outletId', 'warehouseOutletId'));
             $grId = DB::table('outlet_food_good_receives')->insertGetId([
                 'number' => $number,
@@ -434,6 +448,11 @@ class OutletFoodGoodReceiveController extends Controller
 
     public function destroy(OutletFoodGoodReceive $outletFoodGoodReceive)
     {
+        // Check if GR has payment
+        if ($outletFoodGoodReceive->outletPayment && $outletFoodGoodReceive->outletPayment->status !== 'cancelled') {
+            return response()->json(['success' => false, 'message' => 'Tidak dapat menghapus GR yang sudah memiliki payment aktif'], 400);
+        }
+
         DB::beginTransaction();
         try {
             // Get all items from this good receive
@@ -457,23 +476,23 @@ class OutletFoodGoodReceiveController extends Controller
 
                     if ($stock) {
                         // Calculate quantities to rollback
-                $itemMaster = DB::table('items')->where('id', $item->item_id)->first();
-                $smallConv = $itemMaster->small_conversion_qty ?: 1;
-                $mediumConv = $itemMaster->medium_conversion_qty ?: 1;
+                        $itemMaster = DB::table('items')->where('id', $item->item_id)->first();
+                        $smallConv = $itemMaster->small_conversion_qty ?: 1;
+                        $mediumConv = $itemMaster->medium_conversion_qty ?: 1;
                         $qty_small = 0; $qty_medium = 0; $qty_large = 0;
 
                         if ($item->unit_id == $itemMaster->small_unit_id) {
                             $qty_small = $item->received_qty;
-                    $qty_medium = $smallConv > 0 ? $qty_small / $smallConv : 0;
-                    $qty_large = ($smallConv > 0 && $mediumConv > 0) ? $qty_small / ($smallConv * $mediumConv) : 0;
+                            $qty_medium = $smallConv > 0 ? $qty_small / $smallConv : 0;
+                            $qty_large = ($smallConv > 0 && $mediumConv > 0) ? $qty_small / ($smallConv * $mediumConv) : 0;
                         } elseif ($item->unit_id == $itemMaster->medium_unit_id) {
                             $qty_medium = $item->received_qty;
-                    $qty_small = $qty_medium * $smallConv;
-                    $qty_large = $mediumConv > 0 ? $qty_medium / $mediumConv : 0;
+                            $qty_small = $qty_medium * $smallConv;
+                            $qty_large = $mediumConv > 0 ? $qty_medium / $mediumConv : 0;
                         } elseif ($item->unit_id == $itemMaster->large_unit_id) {
                             $qty_large = $item->received_qty;
-                    $qty_medium = $qty_large * $mediumConv;
-                    $qty_small = $qty_medium * $smallConv;
+                            $qty_medium = $qty_large * $mediumConv;
+                            $qty_small = $qty_medium * $smallConv;
                         }
 
                         // Get cost from floor order item
@@ -481,7 +500,7 @@ class OutletFoodGoodReceiveController extends Controller
                         $ffoi = DB::table('food_floor_order_items')
                             ->where('floor_order_id', $do->floor_order_id)
                             ->where('item_id', $item->item_id)
-                    ->first();
+                            ->first();
                         $cost = $ffoi ? $ffoi->price : 0;
 
                         // Calculate cost per unit
@@ -498,31 +517,31 @@ class OutletFoodGoodReceiveController extends Controller
                         $value_to_rollback = $qty_small * $cost_small;
 
                         // Update stock
-                    DB::table('outlet_food_inventory_stocks')
-                        ->where('id', $stock->id)
-                        ->update([
+                        DB::table('outlet_food_inventory_stocks')
+                            ->where('id', $stock->id)
+                            ->update([
                                 'qty_small' => $stock->qty_small - $qty_small,
                                 'qty_medium' => $stock->qty_medium - $qty_medium,
                                 'qty_large' => $stock->qty_large - $qty_large,
                                 'value' => $stock->value - $value_to_rollback,
-                            'updated_at' => now(),
-                        ]);
-                }
+                                'updated_at' => now(),
+                            ]);
+                    }
 
                     // Delete inventory cards
-                DB::table('outlet_food_inventory_cards')
-                    ->where('reference_type', 'good_receive_outlet')
+                    DB::table('outlet_food_inventory_cards')
+                        ->where('reference_type', 'good_receive_outlet')
                         ->where('reference_id', $outletFoodGoodReceive->id)
                         ->where('inventory_item_id', $inventoryItem->id)
-                    ->delete();
+                        ->delete();
 
                     // Delete cost histories
-                DB::table('outlet_food_inventory_cost_histories')
-                    ->where('reference_type', 'good_receive_outlet')
+                    DB::table('outlet_food_inventory_cost_histories')
+                        ->where('reference_type', 'good_receive_outlet')
                         ->where('reference_id', $outletFoodGoodReceive->id)
                         ->where('inventory_item_id', $inventoryItem->id)
-                    ->delete();
-            }
+                        ->delete();
+                }
             }
 
             // Delete good receive items
@@ -530,10 +549,8 @@ class OutletFoodGoodReceiveController extends Controller
                 ->where('outlet_food_good_receive_id', $outletFoodGoodReceive->id)
                 ->delete();
 
-            // Delete good receive using DB facade instead of model
-            DB::table('outlet_food_good_receives')
-                ->where('id', $outletFoodGoodReceive->id)
-                ->delete();
+            // Use model delete to respect soft deletes
+            $outletFoodGoodReceive->delete();
 
             DB::commit();
             return response()->json(['success' => true, 'message' => 'Good Receive berhasil dihapus']);
