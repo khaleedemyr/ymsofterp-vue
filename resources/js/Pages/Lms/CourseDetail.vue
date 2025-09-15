@@ -33,28 +33,6 @@
                   {{ course.description }}
                 </p>
                 
-                                 <div class="flex items-center space-x-6 text-white/80">
-                   <div class="flex items-center space-x-2">
-                     <!-- Trainer Avatar in Header -->
-                     <div v-if="course.external_trainer_name" class="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center">
-                       <i class="fas fa-user text-white"></i>
-                     </div>
-                     <div v-else-if="course.instructor && course.instructor.avatar" class="w-10 h-10 rounded-full overflow-hidden border border-white/30">
-                       <img 
-                         :src="`/storage/${course.instructor.avatar}`" 
-                         :alt="course.instructor.nama_lengkap || course.instructor_name"
-                         class="w-full h-full object-cover"
-                         @error="handleHeaderAvatarError"
-                         loading="lazy"
-                       />
-                     </div>
-                     <div v-else class="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center">
-                       <i class="fas fa-user text-white"></i>
-                     </div>
-                     <span class="font-semibold">
-                       {{ course.external_trainer_name || course.instructor?.nama_lengkap || course.instructor_name }}
-                     </span>
-                   </div>
                   <div class="flex items-center space-x-2">
                     <i class="fas fa-clock"></i>
                     <span>{{ course.duration_formatted }}</span>
@@ -98,9 +76,9 @@
           </div>
         </div>
 
-        <div class="flex flex-col lg:flex-row gap-8">
+        <div class="grid grid-cols-1 xl:grid-cols-3 gap-8">
           <!-- Course Content -->
-          <div class="flex-1 space-y-8">
+          <div class="xl:col-span-2 space-y-8">
             <!-- Course Sessions -->
             <div class="backdrop-blur-xl bg-gradient-to-br from-white/10 via-purple-500/5 to-blue-500/5 border border-white/20 rounded-3xl shadow-2xl overflow-hidden">
               <div class="p-8 border-b border-white/20 bg-gradient-to-r from-blue-600/20 via-purple-600/20 to-pink-600/20">
@@ -309,9 +287,9 @@
                                     <!-- Multiple Files Display -->
                                     <div v-if="item.material_data.files && item.material_data.files.length > 0" class="space-y-4">
                                       <!-- Files Grid -->
-                                      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                                      <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-2 gap-4">
                                         <div v-for="(file, fileIndex) in item.material_data.files" :key="file.id" 
-                                             class="group/file relative backdrop-blur-sm bg-gradient-to-br from-white/5 to-white/10 border border-white/20 rounded-lg p-4 hover:bg-gradient-to-br hover:from-white/10 hover:via-blue-500/10 hover:to-white/10 transition-all duration-300 transform hover:scale-105 hover:shadow-lg">
+                                             class="group/file relative backdrop-blur-sm bg-gradient-to-br from-white/5 to-white/10 border border-white/20 rounded-xl p-5 hover:bg-gradient-to-br hover:from-white/10 hover:via-blue-500/10 hover:to-white/10 transition-all duration-300 transform hover:scale-[1.02] hover:shadow-xl">
                                           
                                           <!-- File Header -->
                                           <div class="flex items-center justify-between mb-3">
@@ -325,39 +303,39 @@
                                           </div>
                                           
                                           <!-- File Thumbnail/Icon -->
-                                          <div class="flex justify-center mb-3">
+                                          <div class="flex justify-center mb-4">
                                             <div v-if="file.file_type === 'image'" 
                                                  @click="openImageLightbox(file)"
                                                  class="cursor-pointer group relative">
                                               <img :src="`/storage/${file.file_path}`" 
                                                    :alt="file.file_name"
-                                                   class="w-20 h-20 object-cover rounded-lg border border-white/20 shadow-lg group-hover:scale-105 transition-transform duration-300">
-                                              <div class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity duration-300 rounded-lg flex items-center justify-center">
-                                                <i class="fas fa-expand text-white text-sm"></i>
+                                                   class="w-24 h-24 object-cover rounded-xl border border-white/20 shadow-lg group-hover:scale-105 transition-transform duration-300">
+                                              <div class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity duration-300 rounded-xl flex items-center justify-center">
+                                                <i class="fas fa-expand text-white text-lg"></i>
                                               </div>
                                             </div>
                                             
                                             <div v-else-if="file.file_type === 'video'" 
                                                  @click="openVideoPlayer(file)"
                                                  class="cursor-pointer group relative">
-                                              <div class="w-20 h-20 bg-gradient-to-br from-purple-500 to-pink-600 rounded-lg border border-white/20 shadow-lg group-hover:scale-105 transition-transform duration-300 flex items-center justify-center">
-                                                <i class="fas fa-play-circle text-white text-2xl"></i>
+                                              <div class="w-24 h-24 bg-gradient-to-br from-purple-500 to-pink-600 rounded-xl border border-white/20 shadow-lg group-hover:scale-105 transition-transform duration-300 flex items-center justify-center">
+                                                <i class="fas fa-play-circle text-white text-3xl"></i>
                                               </div>
                                             </div>
                                             
                                             <div v-else-if="file.file_type === 'pdf'" 
                                                  @click="openPdfViewer(file)"
                                                  class="cursor-pointer group relative">
-                                              <div class="w-20 h-20 bg-gradient-to-br from-red-500 to-orange-600 rounded-lg border border-white/20 shadow-lg group-hover:scale-105 transition-transform duration-300 flex items-center justify-center">
-                                                <i class="fas fa-file-pdf text-white text-2xl"></i>
+                                              <div class="w-24 h-24 bg-gradient-to-br from-red-500 to-orange-600 rounded-xl border border-white/20 shadow-lg group-hover:scale-105 transition-transform duration-300 flex items-center justify-center">
+                                                <i class="fas fa-file-pdf text-white text-3xl"></i>
                                               </div>
-                                              <div class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity duration-300 rounded-lg flex items-center justify-center">
-                                                <i class="fas fa-eye text-white text-sm"></i>
+                                              <div class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity duration-300 rounded-xl flex items-center justify-center">
+                                                <i class="fas fa-eye text-white text-lg"></i>
                                               </div>
                                             </div>
                                             
-                                            <div v-else class="w-20 h-20 bg-gradient-to-br from-gray-500 to-gray-600 rounded-lg border border-white/20 shadow-lg flex items-center justify-center">
-                                              <i class="fas fa-file text-white text-2xl"></i>
+                                            <div v-else class="w-24 h-24 bg-gradient-to-br from-gray-500 to-gray-600 rounded-xl border border-white/20 shadow-lg flex items-center justify-center">
+                                              <i class="fas fa-file text-white text-3xl"></i>
                                             </div>
                                           </div>
                                           
@@ -366,46 +344,46 @@
                                             <div class="text-sm font-medium text-white truncate" :title="file.file_name">
                                               {{ file.file_name }}
                                             </div>
-                                            <div class="text-xs text-white/60 space-y-1">
-                                              <div class="flex items-center justify-center space-x-2">
-                                                <span class="px-2 py-1 bg-white/10 border border-white/20 rounded-full text-white/70 text-xs">
+                                            <div class="text-xs text-white/60 space-y-2">
+                                              <div class="flex items-center justify-center">
+                                                <span class="px-3 py-1 bg-white/10 border border-white/20 rounded-full text-white/70 text-xs font-medium">
                                                   {{ file.file_type?.toUpperCase() || 'FILE' }}
                                                 </span>
                                               </div>
-                                              <div v-if="file.file_size" class="text-white/50">
+                                              <div v-if="file.file_size" class="text-white/50 text-center">
                                                 {{ formatFileSize(file.file_size) }}
                                               </div>
                                             </div>
                                           </div>
                                           
                                           <!-- File Actions -->
-                                          <div class="mt-3 flex justify-center space-x-2">
+                                          <div class="mt-4 flex justify-center">
                                             <!-- Preview Button -->
                                             <button v-if="file.file_type === 'image'" 
                                                     @click="openImageLightbox(file)"
-                                                    class="px-3 py-1.5 bg-gradient-to-r from-blue-500 to-cyan-600 text-white rounded-lg font-medium hover:from-blue-600 hover:to-cyan-700 transform hover:scale-105 transition-all duration-300 shadow-lg text-xs">
-                                              <i class="fas fa-expand mr-1"></i>
+                                                    class="px-4 py-2 bg-gradient-to-r from-blue-500 to-cyan-600 text-white rounded-xl font-medium hover:from-blue-600 hover:to-cyan-700 transform hover:scale-105 transition-all duration-300 shadow-lg text-sm">
+                                              <i class="fas fa-expand mr-2"></i>
                                               Lihat
                                             </button>
                                             
                                             <button v-else-if="file.file_type === 'video'" 
                                                     @click="openVideoPlayer(file)"
-                                                    class="px-3 py-1.5 bg-gradient-to-r from-purple-500 to-pink-600 text-white rounded-lg font-medium hover:from-purple-600 hover:to-pink-700 transform hover:scale-105 transition-all duration-300 shadow-lg text-xs">
-                                              <i class="fas fa-play mr-1"></i>
-                                              Play
+                                                    class="px-4 py-2 bg-gradient-to-r from-purple-500 to-pink-600 text-white rounded-xl font-medium hover:from-purple-600 hover:to-pink-700 transform hover:scale-105 transition-all duration-300 shadow-lg text-sm">
+                                              <i class="fas fa-play mr-2"></i>
+                                              Putar
                                             </button>
                                             
                                             <button v-else-if="file.file_type === 'pdf'" 
                                                     @click="openPdfViewer(file)"
-                                                    class="px-3 py-1.5 bg-gradient-to-r from-red-500 to-orange-600 text-white rounded-lg font-medium hover:from-red-600 hover:to-orange-700 transform hover:scale-105 transition-all duration-300 shadow-lg text-xs">
-                                              <i class="fas fa-eye mr-1"></i>
+                                                    class="px-4 py-2 bg-gradient-to-r from-red-500 to-orange-600 text-white rounded-xl font-medium hover:from-red-600 hover:to-orange-700 transform hover:scale-105 transition-all duration-300 shadow-lg text-sm">
+                                              <i class="fas fa-eye mr-2"></i>
                                               Lihat
                                             </button>
                                             
                                             <button v-else 
                                                     @click="downloadFile(file)"
-                                                    class="px-3 py-1.5 bg-gradient-to-r from-gray-500 to-gray-600 text-white rounded-lg font-medium hover:from-gray-600 hover:to-gray-700 transform hover:scale-105 transition-all duration-300 shadow-lg text-xs">
-                                              <i class="fas fa-download mr-1"></i>
+                                                    class="px-4 py-2 bg-gradient-to-r from-gray-500 to-gray-600 text-white rounded-xl font-medium hover:from-gray-600 hover:to-gray-700 transform hover:scale-105 transition-all duration-300 shadow-lg text-sm">
+                                              <i class="fas fa-download mr-2"></i>
                                               Download
                                             </button>
                                           </div>
@@ -490,7 +468,7 @@
           </div>
 
           <!-- Sidebar -->
-          <div class="w-full lg:w-96 space-y-6 flex-shrink-0">
+          <div class="xl:col-span-1 space-y-6">
             <!-- Course Info Card -->
             <div class="backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl shadow-2xl p-6 w-full">
               <h4 class="text-xl font-bold text-white drop-shadow-lg mb-6">Informasi Training</h4>
@@ -655,79 +633,9 @@
               </div>
             </div>
 
-                         <!-- Instructor Card -->
-             <div class="backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl shadow-2xl p-6 w-full">
-               <h4 class="text-xl font-bold text-white drop-shadow-lg mb-6">Tentang Trainer</h4>
-               <div class="text-center space-y-5">
-                 <!-- Avatar Section -->
-                 <div v-if="course.external_trainer_name" class="w-20 h-20 mx-auto bg-gradient-to-br from-purple-500 to-pink-500 rounded-full flex items-center justify-center">
-                   <i class="fas fa-user text-2xl text-white"></i>
-                 </div>
-                 <div v-else-if="course.instructor && course.instructor.avatar" class="w-20 h-20 mx-auto rounded-full overflow-hidden border-2 border-white/20 shadow-lg">
-                   <img 
-                     :src="`/storage/${course.instructor.avatar}`" 
-                     :alt="course.instructor.nama_lengkap || course.instructor_name"
-                     class="w-full h-full object-cover"
-                     @error="handleAvatarError"
-                     loading="lazy"
-                   />
-                 </div>
-                 <div v-else class="w-20 h-20 mx-auto bg-gradient-to-br from-purple-500 to-pink-500 rounded-full flex items-center justify-center text-white text-2xl font-bold border-2 border-white/20 shadow-lg">
-                   {{ getInitials(course.instructor?.nama_lengkap || course.instructor_name) }}
-                 </div>
-                 
-                 <div>
-                   <h5 class="text-lg font-bold text-white">
-                     {{ course.external_trainer_name || course.instructor?.nama_lengkap || course.instructor_name }}
-                   </h5>
-                   <p class="text-white/70 text-sm">
-                     {{ course.external_trainer_name ? 'Trainer External' : 'Trainer Internal' }}
-                   </p>
-                   <p v-if="!course.external_trainer_name && course.instructor?.jabatan?.nama_jabatan" class="text-white/60 text-xs mt-1">
-                     {{ course.instructor.jabatan.nama_jabatan }}
-                   </p>
-                   <p v-else-if="!course.external_trainer_name && course.instructor?.id_jabatan" class="text-white/60 text-xs mt-1">
-                     Jabatan ID: {{ course.instructor.id_jabatan }}
-                   </p>
-                 </div>
-                 
-                 
-                 
-                 <!-- Job Position Information for Internal Trainers -->
-                <div v-if="!course.external_trainer_name && course.instructor" class="space-y-3">
-                  <!-- Divisi Information -->
-                  <div v-if="course.instructor.divisi?.nama_divisi" class="px-4 py-2 bg-blue-500/10 border border-blue-500/20 rounded-lg">
-                    <div class="flex items-center space-x-2">
-                      <i class="fas fa-building text-blue-400 text-sm"></i>
-                      <span class="text-white/80 text-sm font-medium">Divisi: {{ course.instructor.divisi.nama_divisi }}</span>
-                    </div>
-                  </div>
-                  
-                  <!-- Jabatan Information -->
-                  <div v-if="course.instructor.jabatan?.nama_jabatan" class="px-4 py-2 bg-green-500/10 border border-green-500/20 rounded-lg">
-                    <div class="flex items-center space-x-2">
-                      <i class="fas fa-user-tie text-green-400 text-sm"></i>
-                      <span class="text-white/80 text-sm font-medium">Jabatan: {{ course.instructor.jabatan.nama_jabatan }}</span>
-                    </div>
-                  </div>
-                  
-                  <!-- Level Information -->
-                  <div v-if="course.instructor.level?.nama_level" class="px-4 py-2 bg-purple-500/10 border border-purple-500/20 rounded-lg">
-                    <div class="flex items-center space-x-2">
-                      <i class="fas fa-layer-group text-purple-400 text-sm"></i>
-                      <span class="text-white/80 text-sm font-medium">Level: {{ course.instructor.level.nama_level }}</span>
-                    </div>
-                  </div>
-                </div>
-                
-                <button v-if="!course.external_trainer_name && course.instructor" class="w-full px-4 py-2 bg-white/20 backdrop-blur-sm border border-white/30 rounded-xl text-white font-semibold hover:bg-white/30 transition-all duration-300">
-                  Lihat Profil
-                </button>
-               </div>
-             </div>
            </div>
          </div>
-       </div>
+       
     
 
     <!-- Add Quiz Modal -->

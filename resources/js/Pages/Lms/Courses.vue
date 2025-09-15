@@ -135,49 +135,6 @@
                 <i class="fas fa-graduation-cap text-6xl text-white/50 group-hover:scale-110 transition-transform duration-300"></i>
               </div>
               
-              <!-- Difficulty Badge -->
-              <div class="absolute bottom-4 left-4">
-                <span :class="{
-                  'px-3 py-1 text-xs rounded-full font-semibold backdrop-blur-sm': true,
-                  'bg-blue-500/20 text-blue-200 border border-blue-500/30': course.difficulty_level === 'beginner',
-                  'bg-yellow-500/20 text-yellow-200 border border-yellow-500/30': course.difficulty_level === 'intermediate',
-                  'bg-red-500/20 text-red-200 border border-red-500/30': course.difficulty_level === 'advanced'
-                }">
-                  {{ course.difficulty_text }}
-                </span>
-              </div>
-
-              <!-- Type Badge -->
-              <div class="absolute bottom-4 right-4">
-                <span :class="{
-                  'px-3 py-1 text-xs rounded-full font-semibold backdrop-blur-sm': true,
-                  'bg-blue-500/20 text-blue-200 border border-blue-500/30': course.type === 'online',
-                  'bg-green-500/20 text-green-200 border border-green-500/30': course.type === 'offline'
-                }">
-                  <i :class="{
-                    'fas fa-video mr-1': course.type === 'online',
-                    'fas fa-users mr-1': course.type === 'offline'
-                  }"></i>
-                  {{ course.type === 'online' ? 'Online' : 'Offline' }}
-                </span>
-              </div>
-
-              <!-- Status Badge -->
-              <div class="absolute bottom-12 right-4">
-                <span :class="{
-                  'px-3 py-1 text-xs rounded-full font-semibold backdrop-blur-sm': true,
-                  'bg-green-500/20 text-green-200 border border-green-500/30': course.status === 'published',
-                  'bg-yellow-500/20 text-yellow-200 border border-yellow-500/30': course.status === 'draft',
-                  'bg-red-500/20 text-red-200 border border-red-500/30': course.status === 'archived'
-                }">
-                  <i :class="{
-                    'fas fa-check-circle mr-1': course.status === 'published',
-                    'fas fa-edit mr-1': course.status === 'draft',
-                    'fas fa-archive mr-1': course.status === 'archived'
-                  }"></i>
-                  {{ course.status === 'published' ? 'Published' : course.status === 'draft' ? 'Draft' : 'Archived' }}
-                </span>
-              </div>
               
               <!-- Action Buttons (Edit & Archive) -->
               <div v-if="canManageCourse" class="absolute top-4 right-4 flex space-x-2">
@@ -200,6 +157,60 @@
 
             <!-- Course Content -->
             <div class="p-6">
+              <!-- Badges Section -->
+              <div class="flex flex-wrap gap-2 mb-4">
+                <!-- Course Type Badge (Mandatory/Optional) -->
+                <span :class="{
+                  'px-3 py-1 text-xs rounded-full font-bold shadow-lg backdrop-blur-md': true,
+                  'bg-red-600 text-white border-2 border-red-700': course.course_type === 'mandatory',
+                  'bg-blue-600 text-white border-2 border-blue-700': course.course_type === 'optional'
+                }">
+                  <i :class="{
+                    'fas fa-exclamation-triangle mr-1': course.course_type === 'mandatory',
+                    'fas fa-hand-paper mr-1': course.course_type === 'optional'
+                  }"></i>
+                  {{ course.course_type === 'mandatory' ? 'Mandatory' : 'Optional' }}
+                </span>
+
+                <!-- Status Badge -->
+                <span :class="{
+                  'px-3 py-1 text-xs rounded-full font-bold shadow-lg backdrop-blur-md': true,
+                  'bg-green-600 text-white border-2 border-green-700': course.status === 'published',
+                  'bg-yellow-600 text-white border-2 border-yellow-700': course.status === 'draft',
+                  'bg-gray-600 text-white border-2 border-gray-700': course.status === 'archived'
+                }">
+                  <i :class="{
+                    'fas fa-check-circle mr-1': course.status === 'published',
+                    'fas fa-edit mr-1': course.status === 'draft',
+                    'fas fa-archive mr-1': course.status === 'archived'
+                  }"></i>
+                  {{ course.status === 'published' ? 'Published' : course.status === 'draft' ? 'Draft' : 'Archived' }}
+                </span>
+
+                <!-- Type Badge -->
+                <span :class="{
+                  'px-3 py-1 text-xs rounded-full font-bold shadow-lg backdrop-blur-md': true,
+                  'bg-blue-600 text-white border-2 border-blue-700': course.type === 'online',
+                  'bg-green-600 text-white border-2 border-green-700': course.type === 'offline'
+                }">
+                  <i :class="{
+                    'fas fa-video mr-1': course.type === 'online',
+                    'fas fa-users mr-1': course.type === 'offline'
+                  }"></i>
+                  {{ course.type === 'online' ? 'Online' : 'Offline' }}
+                </span>
+
+                <!-- Difficulty Badge -->
+                <span :class="{
+                  'px-3 py-1 text-xs rounded-full font-semibold backdrop-blur-sm': true,
+                  'bg-blue-500/20 text-blue-200 border border-blue-500/30': course.difficulty_level === 'beginner',
+                  'bg-yellow-500/20 text-yellow-200 border border-yellow-500/30': course.difficulty_level === 'intermediate',
+                  'bg-red-500/20 text-red-200 border border-red-500/30': course.difficulty_level === 'advanced'
+                }">
+                  {{ course.difficulty_text }}
+                </span>
+              </div>
+
               <div class="flex items-center justify-between mb-3">
                 <span class="text-sm text-white/60">{{ course.category?.name }}</span>
                 <div class="flex items-center space-x-1">
@@ -278,13 +289,7 @@
                 </div>
               </div>
 
-              <div class="flex items-center justify-between">
-                <div class="flex items-center space-x-2">
-                  <div class="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center">
-                    <i class="fas fa-user text-white text-sm"></i>
-                  </div>
-                  <span class="text-sm text-white/80">{{ course.instructor_name }}</span>
-                </div>
+              <div class="flex items-center justify-end">
                 <div class="flex space-x-2">
                   <Link :href="route('lms.courses.show', course.id)" 
                         class="px-4 py-2 bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-xl font-semibold hover:from-blue-600 hover:to-purple-700 transform hover:scale-105 transition-all duration-300 shadow-lg">
@@ -904,89 +909,17 @@
               </div>
             </div>
 
-                         <!-- Trainer Information Section -->
+             <!-- Note: Trainer information is now managed at the training schedule level -->
              <div class="mb-6">
-               <h4 class="text-lg font-semibold text-white mb-4 flex items-center">
-                 <i class="fas fa-user-tie mr-2 text-purple-400"></i>
-                 Informasi Trainer
-               </h4>
-               <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                 <div>
-                   <label class="block text-sm font-medium text-gray-300 mb-2">Tipe Trainer <span class="text-red-400">*</span></label>
-                   <select
-                     v-model="form.trainer_type"
-                     required
-                     class="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                     :disabled="loading"
-                   >
-                     <option value="">Pilih tipe trainer</option>
-                     <option value="internal">Trainer Internal</option>
-                     <option value="external">Trainer External</option>
-                   </select>
-                 </div>
-                 
-                 <div v-if="form.trainer_type === 'internal'">
-                   <label class="block text-sm font-medium text-gray-300 mb-2">Pilih Trainer Internal <span class="text-red-400">*</span></label>
-                   <Multiselect
-                     v-model="form.instructor_id"
-                     :options="internalTrainers"
-                     :searchable="true"
-                     :close-on-select="true"
-                     :clear-on-select="false"
-                     :preserve-search="true"
-                     placeholder="Pilih atau cari trainer internal..."
-                     track-by="id"
-                     label="nama_lengkap"
-                     :preselect-first="false"
-                     :disabled="loading"
-                     class="w-full"
-                     :custom-label="trainerLabel"
-                   >
-                     <template #option="{ option }">
-                       <div class="flex items-center">
-                         <div class="flex-shrink-0 w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center text-white text-sm font-semibold">
-                           {{ option.nama_lengkap.charAt(0).toUpperCase() }}
-                         </div>
-                         <div class="ml-3">
-                           <div class="text-sm font-medium text-gray-900">{{ option.nama_lengkap }}</div>
-                           <div class="text-sm text-gray-500">{{ option.jabatan?.nama_jabatan || 'Jabatan tidak ditentukan' }}</div>
-                         </div>
-                       </div>
-                     </template>
-                     <template #singleLabel="{ option }">
-                       <div class="flex items-center">
-                         <div class="flex-shrink-0 w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center text-white text-xs font-semibold">
-                           {{ option.nama_lengkap.charAt(0).toUpperCase() }}
-                         </div>
-                         <div class="ml-2">
-                           <div class="text-sm font-medium">{{ option.nama_lengkap }}</div>
-                           <div class="text-xs text-gray-500">{{ option.jabatan?.nama_jabatan || 'Jabatan tidak ditentukan' }}</div>
-                         </div>
-                       </div>
-                     </template>
-                   </Multiselect>
-                 </div>
-                 
-                 <div v-if="form.trainer_type === 'external'" class="md:col-span-2">
-                   <label class="block text-sm font-medium text-gray-300 mb-2">Nama Trainer External <span class="text-red-400">*</span></label>
-                   <input
-                     v-model="form.external_trainer_name"
-                     type="text"
-                     class="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                     placeholder="Masukkan nama trainer external"
-                     :disabled="loading"
-                   />
-                 </div>
-                 
-                 <div v-if="form.trainer_type === 'external'" class="md:col-span-2">
-                   <label class="block text-sm font-medium text-gray-300 mb-2">Deskripsi Trainer External</label>
-                   <textarea
-                     v-model="form.external_trainer_description"
-                     rows="3"
-                     class="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                     placeholder="Deskripsi pengalaman dan keahlian trainer external"
-                     :disabled="loading"
-                   ></textarea>
+               <div class="backdrop-blur-sm bg-blue-500/10 border border-blue-500/20 rounded-xl p-4">
+                 <div class="flex items-center">
+                   <i class="fas fa-info-circle text-blue-400 mr-3"></i>
+                   <div>
+                     <h4 class="text-sm font-semibold text-blue-200">Informasi Trainer</h4>
+                     <p class="text-xs text-blue-300 mt-1">
+                       Trainer akan diatur langsung di jadwal training. Course ini tidak memerlukan trainer default.
+                     </p>
+                   </div>
                  </div>
                </div>
              </div>
@@ -1300,10 +1233,6 @@ const form = ref({
       ]
     }
   ], // Default with 1 empty session
-  trainer_type: '', // 'internal' or 'external'
-  instructor_id: '', // For internal trainer
-  external_trainer_name: '', // For external trainer
-  external_trainer_description: '', // For external trainer description
   thumbnail: null, // For thumbnail upload
   certificate_template_id: '' // For certificate template selection
 })

@@ -5,6 +5,7 @@ import AppLayout from '@/Layouts/AppLayout.vue';
 import CrmStats from './Components/CrmStats.vue';
 import CrmGrowthChart from './Components/CrmGrowthChart.vue';
 import CrmDemographicsChart from './Components/CrmDemographicsChart.vue';
+import CrmPurchasingPowerChart from './Components/CrmPurchasingPowerChart.vue';
 
 import CrmLatestMembers from './Components/CrmLatestMembers.vue';
 import CrmActivityList from './Components/CrmActivityList.vue';
@@ -15,6 +16,7 @@ const props = defineProps({
   stats: Object,
   memberGrowth: Array,
   memberDemographics: Object,
+  purchasingPowerByAge: Array,
   memberDemographicsByRegion: Array,
 
   latestMembers: Array,
@@ -142,6 +144,11 @@ function closeRedeemModal() {
           </h3>
           <CrmDemographicsChart :data="memberDemographics" />
         </div>
+      </div>
+
+      <!-- Purchasing Power Chart -->
+      <div class="mb-8">
+        <CrmPurchasingPowerChart :data="purchasingPowerByAge" :filters="filters" />
       </div>
 
       <!-- Member Demographics by Region -->

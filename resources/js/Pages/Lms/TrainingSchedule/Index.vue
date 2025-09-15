@@ -307,6 +307,7 @@
           @close="selectedTraining = null"
           @edit="editTraining"
           @invite="openInviteModal"
+          @invite-trainer="openTrainerInviteModal"
           @qr-code="showQRCode"
         />
 
@@ -314,12 +315,23 @@
        <InvitationModal 
          v-if="showInviteModal"
          :training="selectedTraining"
-         :participants="availableParticipants"
          :divisions="divisions"
          :jabatans="jabatans"
          :levels="levels"
          :invited-participants="selectedTraining?.invitations || []"
          @close="showInviteModal = false"
+         @invited="refreshCalendar"
+       />
+
+       <!-- Trainer Invitation Modal -->
+       <TrainerInvitationModal 
+         v-if="showTrainerInviteModal"
+         :training="selectedTraining"
+         :available-trainers="availableTrainers"
+         :divisions="divisions"
+         :jabatans="jabatans"
+         :invited-trainers="selectedTraining?.scheduleTrainers || []"
+         @close="showTrainerInviteModal = false"
          @invited="refreshCalendar"
        />
 
@@ -350,6 +362,7 @@ import AppLayout from '@/Layouts/AppLayout.vue'
 import TrainingDetailModal from './TrainingDetailModal.vue'
 import QuickScheduleModal from './QuickScheduleModal.vue'
 import InvitationModal from './InvitationModal.vue'
+import TrainerInvitationModal from './TrainerInvitationModal.vue'
 import QRCodeModal from './QRCodeModal.vue'
 
 const props = defineProps({
@@ -358,6 +371,7 @@ const props = defineProps({
   currentMonth: Number,
   currentYear: Number,
   availableParticipants: Array,
+  availableTrainers: Array,
   divisions: Array,
   jabatans: Array,
   levels: Array,
@@ -371,6 +385,7 @@ const currentDate = ref(new Date(props.currentYear, props.currentMonth - 1, 1))
 const selectedTraining = ref(null)
 const showQuickSchedule = ref(false)
 const showInviteModal = ref(false)
+const showTrainerInviteModal = ref(false)
 const showQRCodeModal = ref(false)
 const selectedQRTraining = ref(null)
 const selectedDateForSchedule = ref('')
@@ -601,13 +616,20 @@ const openInviteModal = (training) => {
   showInviteModal.value = true
 }
 
+const openTrainerInviteModal = (training) => {
+  showTrainerInviteModal.value = true
+}
+
 const showQRCode = (training) => {
   selectedQRTraining.value = training
   showQRCodeModal.value = true
 }
 
 const refreshCalendar = () => {
-  window.location.reload()
+  // Add small delay to ensure modal is closed first
+  setTimeout(() => {
+    window.location.reload()
+  }, 100)
 }
 </script>
 

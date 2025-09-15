@@ -24,6 +24,7 @@ class CrmDashboardController extends Controller
         $stats = $this->getStats();
         $memberGrowth = $this->getMemberGrowth();
         $memberDemographics = $this->getMemberDemographics();
+        $purchasingPowerByAge = $this->getPurchasingPowerByAge($startDate, $endDate);
         $latestMembers = $this->getLatestMembers();
         $memberActivity = $this->getMemberActivity();
         $pointStats = $this->getPointStats($startDate, $endDate);
@@ -34,6 +35,7 @@ class CrmDashboardController extends Controller
             'stats' => $stats,
             'memberGrowth' => $memberGrowth,
             'memberDemographics' => $memberDemographics,
+            'purchasingPowerByAge' => $purchasingPowerByAge,
             'memberDemographicsByRegion' => $stats['memberDemographics'],
             'latestMembers' => $latestMembers,
             'memberActivity' => $memberActivity,
@@ -148,15 +150,16 @@ class CrmDashboardController extends Controller
                 return [$label => $item->count];
             });
 
-        // Age distribution
+        // Age distribution with new demographic categories
         $ageDistribution = Customer::selectRaw('
             CASE 
-                WHEN TIMESTAMPDIFF(YEAR, tanggal_lahir, CURDATE()) < 18 THEN "Under 18"
-                WHEN TIMESTAMPDIFF(YEAR, tanggal_lahir, CURDATE()) BETWEEN 18 AND 25 THEN "18-25"
-                WHEN TIMESTAMPDIFF(YEAR, tanggal_lahir, CURDATE()) BETWEEN 26 AND 35 THEN "26-35"
-                WHEN TIMESTAMPDIFF(YEAR, tanggal_lahir, CURDATE()) BETWEEN 36 AND 50 THEN "36-50"
-                WHEN TIMESTAMPDIFF(YEAR, tanggal_lahir, CURDATE()) > 50 THEN "Over 50"
-                ELSE "Unknown"
+                WHEN TIMESTAMPDIFF(YEAR, tanggal_lahir, CURDATE()) BETWEEN 13 AND 18 THEN "Remaja"
+                WHEN TIMESTAMPDIFF(YEAR, tanggal_lahir, CURDATE()) BETWEEN 19 AND 30 THEN "Dewasa Muda"
+                WHEN TIMESTAMPDIFF(YEAR, tanggal_lahir, CURDATE()) BETWEEN 31 AND 45 THEN "Dewasa Produktif"
+                WHEN TIMESTAMPDIFF(YEAR, tanggal_lahir, CURDATE()) BETWEEN 46 AND 59 THEN "Dewasa Matang"
+                WHEN TIMESTAMPDIFF(YEAR, tanggal_lahir, CURDATE()) >= 60 THEN "Usia Tua"
+                WHEN TIMESTAMPDIFF(YEAR, tanggal_lahir, CURDATE()) < 13 THEN "Anak-anak"
+                ELSE "Tidak Diketahui"
             END as age_group,
             COUNT(*) as count
         ')
@@ -171,6 +174,67 @@ class CrmDashboardController extends Controller
             'gender' => $genderDistribution,
             'age' => $ageDistribution,
         ];
+    }
+
+    /**
+     * Get purchasing power by age group
+     */
+    private function getPurchasingPowerByAge($startDate = null, $endDate = null)
+    {
+        // Build the query
+        $query = Customer::selectRaw('
+            CASE 
+                WHEN TIMESTAMPDIFF(YEAR, tanggal_lahir, CURDATE()) BETWEEN 13 AND 18 THEN "Remaja"
+                WHEN TIMESTAMPDIFF(YEAR, tanggal_lahir, CURDATE()) BETWEEN 19 AND 30 THEN "Dewasa Muda"
+                WHEN TIMESTAMPDIFF(YEAR, tanggal_lahir, CURDATE()) BETWEEN 31 AND 45 THEN "Dewasa Produktif"
+                WHEN TIMESTAMPDIFF(YEAR, tanggal_lahir, CURDATE()) BETWEEN 46 AND 59 THEN "Dewasa Matang"
+                WHEN TIMESTAMPDIFF(YEAR, tanggal_lahir, CURDATE()) >= 60 THEN "Usia Tua"
+                WHEN TIMESTAMPDIFF(YEAR, tanggal_lahir, CURDATE()) < 13 THEN "Anak-anak"
+                ELSE "Tidak Diketahui"
+            END as age_group,
+            COUNT(DISTINCT c.id) as total_customers,
+            COALESCE(SUM(p.jml_trans), 0) as total_spending,
+            COALESCE(AVG(p.jml_trans), 0) as avg_transaction_value,
+            COALESCE(COUNT(p.id), 0) as total_transactions
+        ')
+        ->from('costumers as c')
+        ->leftJoin('point as p', 'c.id', '=', 'p.costumer_id')
+        ->whereNotNull('c.tanggal_lahir')
+        ->where('c.status_aktif', '1');
+
+        // Apply date filter if provided
+        if ($startDate && $endDate) {
+            $query->whereBetween('p.created_at', [$startDate, $endDate]);
+        }
+
+        $purchasingPower = $query->groupBy('age_group')
+        ->orderByRaw('
+            CASE age_group
+                WHEN "Anak-anak" THEN 1
+                WHEN "Remaja" THEN 2
+                WHEN "Dewasa Muda" THEN 3
+                WHEN "Dewasa Produktif" THEN 4
+                WHEN "Dewasa Matang" THEN 5
+                WHEN "Usia Tua" THEN 6
+                ELSE 7
+            END
+        ')
+        ->get()
+        ->map(function ($item) {
+            return [
+                'age_group' => $item->age_group,
+                'total_customers' => (int) $item->total_customers,
+                'total_spending' => (float) $item->total_spending,
+                'total_spending_formatted' => 'Rp ' . number_format($item->total_spending, 0, ',', '.'),
+                'avg_transaction_value' => (float) $item->avg_transaction_value,
+                'avg_transaction_value_formatted' => 'Rp ' . number_format($item->avg_transaction_value, 0, ',', '.'),
+                'total_transactions' => (int) $item->total_transactions,
+                'avg_spending_per_customer' => $item->total_customers > 0 ? (float) ($item->total_spending / $item->total_customers) : 0,
+                'avg_spending_per_customer_formatted' => $item->total_customers > 0 ? 'Rp ' . number_format($item->total_spending / $item->total_customers, 0, ',', '.') : 'Rp 0',
+            ];
+        });
+
+        return $purchasingPower;
     }
 
 
@@ -531,6 +595,10 @@ class CrmDashboardController extends Controller
                 return response()->json($this->getMemberGrowth());
             case 'demographics':
                 return response()->json($this->getMemberDemographics());
+            case 'purchasingPower':
+                $startDate = $request->get('start_date');
+                $endDate = $request->get('end_date');
+                return response()->json($this->getPurchasingPowerByAge($startDate, $endDate));
             case 'status':
                 return response()->json([]);
             case 'point':

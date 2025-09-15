@@ -24,7 +24,7 @@ class User extends Authenticatable
         'no_hp_kontak_darurat', 'hubungan_kontak_darurat', 'nomor_kk', 'nama_rekening', 'no_rekening',
         'npwp_number', 'bpjs_health_number', 'bpjs_employment_number', 'last_education', 'name_school_college',
         'school_college_major', 'foto_ktp', 'foto_kk', 'upload_latest_color_photo', 'avatar', 'imei',
-        'status', 'pin_pos', 'tanggal_masuk',
+        'status', 'pin_pos', 'tanggal_masuk', 'total_training_hours', 'total_teaching_hours',
         // field lama
         'id_jabatan', 'id_outlet', 'division_id',
     ];
@@ -47,6 +47,8 @@ class User extends Authenticatable
     protected $casts = [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'total_training_hours' => 'decimal:2',
+            'total_teaching_hours' => 'decimal:2',
         ];
 
     public function scopeActive($query)
@@ -139,4 +141,110 @@ class User extends Authenticatable
     {
         return $this->hasMany(ApprovalRequest::class, 'hrd_approver_id')->where('status', 'approved')->where('hrd_status', 'pending');
     }
+
+    // Training relationships - TEMPORARILY COMMENTED OUT
+    // public function trainingHours()
+    // {
+    //     return $this->hasMany(UserTrainingHours::class, 'user_id');
+    // }
+
+    // public function teachingHours()
+    // {
+    //     return $this->hasMany(TrainerTeachingHours::class, 'trainer_id');
+    // }
+
+    // public function courseTrainers()
+    // {
+    //     return $this->hasMany(CourseTrainer::class, 'user_id');
+    // }
+
+    // public function requiredTrainings()
+    // {
+    //     return $this->hasManyThrough(
+    //         JabatanRequiredTraining::class,
+    //         Jabatan::class,
+    //         'id_jabatan', // Foreign key on jabatan table
+    //         'jabatan_id', // Foreign key on jabatan_required_trainings table
+    //         'id_jabatan', // Local key on users table
+    //         'id_jabatan'  // Local key on jabatan table
+    //     );
+    // }
+
+    // Training methods - TEMPORARILY COMMENTED OUT
+    // public function getMandatoryTrainings()
+    // {
+    //     return JabatanRequiredTraining::with(['course.category', 'course.trainers'])
+    //         ->where('jabatan_id', $this->id_jabatan)
+    //         ->where('is_mandatory', true)
+    //         ->get();
+    // }
+
+    // public function getOptionalTrainings()
+    // {
+    //     return JabatanRequiredTraining::with(['course.category', 'course.trainers'])
+    //         ->where('jabatan_id', $this->id_jabatan)
+    //         ->where('is_mandatory', false)
+    //         ->get();
+    // }
+
+    // public function getCompletedTrainings()
+    // {
+    //     return $this->trainingHours()
+    //         ->with(['course.category', 'course.trainers'])
+    //         ->where('status', 'completed')
+    //         ->get();
+    // }
+
+    // public function getInProgressTrainings()
+    // {
+    //     return $this->trainingHours()
+    //         ->with(['course.category', 'course.trainers'])
+    //         ->where('status', 'in_progress')
+    //         ->get();
+    // }
+
+    // public function getTrainingComplianceStatus()
+    // {
+    //     $mandatoryTrainings = $this->getMandatoryTrainings();
+    //     $completedTrainings = $this->getCompletedTrainings();
+        
+    //     $mandatoryCourseIds = $mandatoryTrainings->pluck('course_id')->toArray();
+    //     $completedCourseIds = $completedTrainings->pluck('course_id')->toArray();
+        
+    //     $completedMandatory = array_intersect($mandatoryCourseIds, $completedCourseIds);
+        
+    //     return [
+    //         'total_mandatory' => count($mandatoryCourseIds),
+    //         'completed_mandatory' => count($completedMandatory),
+    //         'compliance_percentage' => count($mandatoryCourseIds) > 0 
+    //             ? round((count($completedMandatory) / count($mandatoryCourseIds)) * 100, 2) 
+    //             : 100,
+    //         'missing_trainings' => array_diff($mandatoryCourseIds, $completedCourseIds)
+    //     ];
+    // }
+
+    // public function getTotalTrainingHours()
+    // {
+    //     return $this->trainingHours()
+    //         ->where('status', 'completed')
+    //         ->sum('hours_completed');
+    // }
+
+    // public function getTotalTeachingHours()
+    // {
+    //     return $this->teachingHours()->sum('hours_taught');
+    // }
+
+    // public function isTrainer()
+    // {
+    //     return $this->courseTrainers()->exists();
+    // }
+
+    // public function getTrainerCourses()
+    // {
+    //     return $this->courseTrainers()
+    //         ->with(['course.category'])
+    //         ->get()
+    //         ->pluck('course');
+    // }
 }

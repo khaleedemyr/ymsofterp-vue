@@ -2,7 +2,7 @@
   <div class="fixed inset-0 z-50 flex items-center justify-center">
     <div class="absolute inset-0 bg-black/50 backdrop-blur-sm"></div>
     
-    <div class="backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl p-6 max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+    <div class="backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl p-4 md:p-6 max-w-7xl w-full mx-2 md:mx-4 max-h-[90vh] overflow-y-auto">
       <!-- Header -->
       <div class="flex items-center justify-between mb-6">
         <div>
@@ -32,181 +32,123 @@
         </div>
       </div>
       
-             <!-- Search & Filters -->
-       <div class="backdrop-blur-sm bg-white/5 border border-white/10 rounded-xl p-4 mb-6">
-         <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
-           <div>
-             <label class="block text-white/70 text-sm mb-2">Cari Peserta</label>
-             <input v-model="searchQuery" 
-                    type="text" 
-                    placeholder="Nama, email, atau NIK..."
-                    class="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500">
-           </div>
-           
-           <!-- Divisi Filter -->
-           <div>
-             <label class="block text-white/70 text-sm mb-2">Filter Divisi</label>
-             <div class="space-y-2">
-               <div class="relative">
-                 <input
-                   v-model="divisionSearch"
-                   type="text"
-                   placeholder="Cari divisi..."
-                   class="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                 >
-                 <i class="fas fa-search absolute right-3 top-1/2 transform -translate-y-1/2 text-white/50 text-sm"></i>
-               </div>
-               
-               <div class="max-h-24 overflow-y-auto bg-white/5 rounded-lg p-2 border border-white/10">
-                 <div v-for="division in filteredDivisions" :key="division.id" class="flex items-center mb-1">
-                   <input
-                     type="checkbox"
-                     :id="'filter-division-' + division.id"
-                     :value="division.id"
-                     v-model="selectedDivisions"
-                     class="w-3 h-3 text-blue-600 bg-white/10 border-white/20 rounded focus:ring-blue-500 focus:ring-1"
-                   >
-                   <label :for="'filter-division-' + division.id" class="ml-2 text-xs text-white/80 cursor-pointer">
-                     {{ division.nama_divisi }}
-                   </label>
-                 </div>
-                 <div v-if="filteredDivisions.length === 0" class="text-center py-1">
-                   <p class="text-xs text-white/50">Tidak ada divisi ditemukan</p>
-                 </div>
-               </div>
-             </div>
-           </div>
-           
-           <!-- Jabatan Filter -->
-           <div>
-             <label class="block text-white/70 text-sm mb-2">Filter Jabatan</label>
-             <div class="space-y-2">
-               <div class="relative">
-                 <input
-                   v-model="jabatanSearch"
-                   type="text"
-                   placeholder="Cari jabatan..."
-                   class="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
-                 >
-                 <i class="fas fa-search absolute right-3 top-1/2 transform -translate-y-1/2 text-white/50 text-sm"></i>
-               </div>
-               
-               <div class="max-h-24 overflow-y-auto bg-white/5 rounded-lg p-2 border border-white/10">
-                 <div v-for="jabatan in filteredJabatans" :key="jabatan.id_jabatan" class="flex items-center mb-1">
-                   <input
-                     type="checkbox"
-                     :id="'filter-jabatan-' + jabatan.id_jabatan"
-                     :value="jabatan.id_jabatan"
-                     v-model="selectedJabatans"
-                     class="w-3 h-3 text-green-600 bg-white/10 border-white/20 rounded focus:ring-green-500 focus:ring-1"
-                   >
-                   <label :for="'filter-jabatan-' + jabatan.id_jabatan" class="ml-2 text-xs text-white/80 cursor-pointer">
-                     {{ jabatan.nama_jabatan }}
-                     <span v-if="jabatan.divisi" class="text-xs text-white/60">({{ jabatan.divisi.nama_divisi }})</span>
-                   </label>
-                 </div>
-                 <div v-if="filteredJabatans.length === 0" class="text-center py-1">
-                   <p class="text-xs text-white/50">Tidak ada jabatan ditemukan</p>
-                 </div>
-               </div>
-             </div>
-           </div>
-           
-           <!-- Level Filter -->
-           <div>
-             <label class="block text-white/70 text-sm mb-2">Filter Level</label>
-             <div class="space-y-2">
-               <div class="relative">
-                 <input
-                   v-model="levelSearch"
-                   type="text"
-                   placeholder="Cari level..."
-                   class="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm"
-                 >
-                 <i class="fas fa-search absolute right-3 top-1/2 transform -translate-y-1/2 text-white/50 text-sm"></i>
-               </div>
-               
-               <div class="max-h-24 overflow-y-auto bg-white/5 rounded-lg p-2 border border-white/10">
-                 <div v-for="level in filteredLevels" :key="level.id" class="flex items-center mb-1">
-                   <input
-                     type="checkbox"
-                     :id="'filter-level-' + level.id"
-                     :value="level.id"
-                     v-model="selectedLevels"
-                     class="w-3 h-3 text-purple-600 bg-white/10 border-white/20 rounded focus:ring-purple-500 focus:ring-1"
-                   >
-                   <label :for="'filter-level-' + level.id" class="ml-2 text-xs text-white/80 cursor-pointer">
-                     {{ level.nama_level }}
-                   </label>
-                 </div>
-                 <div v-if="filteredLevels.length === 0" class="text-center py-1">
-                   <p class="text-xs text-white/50">Tidak ada level ditemukan</p>
-                 </div>
-               </div>
-             </div>
-           </div>
-         </div>
-       </div>
+      <!-- Search -->
+      <div class="backdrop-blur-sm bg-white/5 border border-white/10 rounded-xl p-4 mb-6">
+        <div class="flex flex-col lg:flex-row items-start lg:items-center space-y-4 lg:space-y-0 lg:space-x-4">
+          <div class="flex-1 w-full">
+            <label class="block text-white/70 text-sm mb-2">Cari Peserta</label>
+            <div class="relative">
+              <input v-model="searchQuery" 
+                     type="text" 
+                     placeholder="Nama, email, atau NIK..."
+                     class="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 pl-10">
+              <i class="fas fa-search absolute left-3 top-1/2 transform -translate-y-1/2 text-white/50"></i>
+            </div>
+          </div>
+          <div class="flex items-center space-x-2 text-white/70 text-sm">
+            <i class="fas fa-info-circle"></i>
+            <span class="hidden sm:inline">Peserta sudah difilter sesuai target training</span>
+            <span class="sm:hidden">Sudah difilter</span>
+          </div>
+        </div>
+      </div>
       
       <!-- Participants List -->
       <div class="backdrop-blur-sm bg-white/5 border border-white/10 rounded-xl p-4 mb-6">
-        <div class="flex items-center justify-between mb-4">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between mb-4 space-y-2 sm:space-y-0">
           <h4 class="text-lg font-semibold text-white">Daftar Peserta</h4>
-          <div class="flex items-center space-x-4">
-            <span class="text-white/70 text-sm">{{ selectedParticipants.length }} dipilih</span>
-            <button @click="selectAll" 
-                    class="px-3 py-1 bg-blue-500/20 border border-blue-500/30 rounded-lg text-blue-200 hover:bg-blue-500/30 transition-all text-sm">
-              Pilih Semua
-            </button>
-            <button @click="clearSelection" 
-                    class="px-3 py-1 bg-gray-500/20 border border-gray-500/30 rounded-lg text-gray-200 hover:bg-gray-500/30 transition-all text-sm">
-              Hapus Pilihan
-            </button>
+          <div class="flex flex-col sm:flex-row items-start sm:items-center space-y-2 sm:space-y-0 sm:space-x-4">
+            <span v-if="loadingParticipants" class="text-white/70 text-sm">
+              <i class="fas fa-spinner fa-spin mr-1"></i>Memuat peserta...
+            </span>
+            <span v-else class="text-white/70 text-sm">{{ selectedParticipants.length }} dipilih</span>
+            <div class="flex space-x-2">
+              <button v-if="!loadingParticipants"
+                      @click="selectAll" 
+                      class="px-3 py-1 bg-blue-500/20 border border-blue-500/30 rounded-lg text-blue-200 hover:bg-blue-500/30 transition-all text-sm whitespace-nowrap">
+                Pilih Semua
+              </button>
+              <button v-if="!loadingParticipants"
+                      @click="clearSelection" 
+                      class="px-3 py-1 bg-gray-500/20 border border-gray-500/30 rounded-lg text-gray-200 hover:bg-gray-500/30 transition-all text-sm whitespace-nowrap">
+                Hapus Pilihan
+              </button>
+            </div>
           </div>
         </div>
         
         <div class="overflow-x-auto">
-          <table class="w-full text-white">
+          <table class="w-full text-white min-w-[1400px]">
             <thead>
               <tr class="border-b border-white/20">
-                <th class="text-left py-2">
+                <th class="text-left py-4 px-3 w-16">
                   <input type="checkbox" 
                          :checked="isAllSelected" 
                          @change="toggleSelectAll"
                          class="rounded border-white/30 bg-white/10 text-blue-500 focus:ring-blue-500">
                 </th>
-                <th class="text-left py-2">Nama</th>
-                                 <th class="text-left py-2">NIK</th>
-                <th class="text-left py-2">Email</th>
-                <th class="text-left py-2">Divisi</th>
-                <th class="text-left py-2">Jabatan</th>
-                <th class="text-left py-2">Level</th>
-                <th class="text-left py-2">Status</th>
+                <th class="text-left py-4 px-4 w-56">Nama</th>
+                <th class="text-left py-4 px-3 w-32">NIK</th>
+                <th class="text-left py-4 px-4 w-64">Email</th>
+                <th class="text-left py-4 px-4 w-56">Divisi</th>
+                <th class="text-left py-4 px-4 w-56">Jabatan</th>
+                <th class="text-left py-4 px-4 w-64">Outlet</th>
+                <th class="text-left py-4 px-3 w-40">Level</th>
+                <th class="text-left py-4 px-3 w-40">Status</th>
               </tr>
             </thead>
-                         <tbody>
-               <tr v-for="participant in paginatedParticipants" :key="participant.id" 
-                   class="border-b border-white/10 hover:bg-white/5">
-                <td class="py-2">
+            <tbody>
+              <tr v-for="participant in paginatedParticipants" :key="participant.id" 
+                  class="border-b border-white/10 hover:bg-white/5">
+                <td class="py-4 px-3">
                   <input type="checkbox" 
                          :value="participant.id"
                          v-model="selectedParticipants"
                          :disabled="isAlreadyInvited(participant.id)"
                          class="rounded border-white/30 bg-white/10 text-blue-500 focus:ring-blue-500">
                 </td>
-                <td class="py-2">{{ participant.nama_lengkap }}</td>
-                                 <td class="py-2">{{ participant.nik || '-' }}</td>
-                <td class="py-2">{{ participant.email }}</td>
-                <td class="py-2">{{ participant.divisi?.nama_divisi || '-' }}</td>
-                <td class="py-2">{{ participant.jabatan?.nama_jabatan || '-' }}</td>
-                <td class="py-2">{{ participant.jabatan?.level?.nama_level || '-' }}</td>
-                <td class="py-2">
+                <td class="py-4 px-4">
+                  <div class="font-medium truncate" :title="participant.nama_lengkap">
+                    {{ participant.nama_lengkap }}
+                  </div>
+                </td>
+                <td class="py-4 px-3">
+                  <div class="text-sm truncate" :title="participant.nik || '-'">
+                    {{ participant.nik || '-' }}
+                  </div>
+                </td>
+                <td class="py-4 px-4">
+                  <div class="text-sm truncate" :title="participant.email">
+                    {{ participant.email }}
+                  </div>
+                </td>
+                <td class="py-4 px-4">
+                  <div class="text-sm truncate" :title="participant.divisi?.nama_divisi || '-'">
+                    {{ participant.divisi?.nama_divisi || '-' }}
+                  </div>
+                </td>
+                <td class="py-4 px-4">
+                  <div class="text-sm truncate" :title="participant.jabatan?.nama_jabatan || '-'">
+                    {{ participant.jabatan?.nama_jabatan || '-' }}
+                  </div>
+                </td>
+                <td class="py-4 px-4">
+                  <div class="text-sm truncate" :title="participant.outlet?.nama_outlet || '-'">
+                    {{ participant.outlet?.nama_outlet || '-' }}
+                  </div>
+                </td>
+                <td class="py-4 px-3">
+                  <div class="text-sm truncate" :title="participant.jabatan?.level?.nama_level || '-'">
+                    {{ participant.jabatan?.level?.nama_level || '-' }}
+                  </div>
+                </td>
+                <td class="py-4 px-3">
                   <span v-if="isAlreadyInvited(participant.id)" 
-                        class="px-2 py-1 bg-green-500/20 border border-green-500/30 rounded text-xs text-green-200">
+                        class="inline-block px-3 py-1 bg-green-500/20 border border-green-500/30 rounded text-xs text-green-200 whitespace-nowrap">
                     Sudah Diundang
                   </span>
                   <span v-else 
-                        class="px-2 py-1 bg-gray-500/20 border border-gray-500/30 rounded text-xs text-gray-200">
+                        class="inline-block px-3 py-1 bg-gray-500/20 border border-gray-500/30 rounded text-xs text-gray-200 whitespace-nowrap">
                     Belum Diundang
                   </span>
                 </td>
@@ -261,7 +203,6 @@ import Swal from 'sweetalert2'
 
 const props = defineProps({
   training: Object,
-  participants: Array,
   divisions: Array,
   jabatans: Array,
   levels: Array,
@@ -272,70 +213,24 @@ const emit = defineEmits(['close', 'invited'])
 
 const loading = ref(false)
 const searchQuery = ref('')
-const divisionSearch = ref('')
-const jabatanSearch = ref('')
-const levelSearch = ref('')
-const selectedDivisions = ref([])
-const selectedJabatans = ref([])
-const selectedLevels = ref([])
 const selectedParticipants = ref([])
 const currentPage = ref(1)
 const perPage = 20
+const relevantParticipants = ref([])
+const loadingParticipants = ref(false)
 
-// Filtered data for target selection
-const filteredDivisions = computed(() => {
-  if (!divisionSearch.value) return props.divisions
-  return props.divisions.filter(division => 
-    division.nama_divisi.toLowerCase().includes(divisionSearch.value.toLowerCase())
-  )
-})
-
-const filteredJabatans = computed(() => {
-  if (!jabatanSearch.value) return props.jabatans
-  return props.jabatans.filter(jabatan => 
-    jabatan.nama_jabatan.toLowerCase().includes(jabatanSearch.value.toLowerCase()) ||
-    (jabatan.divisi && jabatan.divisi.nama_divisi.toLowerCase().includes(jabatanSearch.value.toLowerCase()))
-  )
-})
-
-const filteredLevels = computed(() => {
-  if (!levelSearch.value) return props.levels
-  return props.levels.filter(level => 
-    level.nama_level.toLowerCase().includes(levelSearch.value.toLowerCase())
-  )
-})
 
 const filteredParticipants = computed(() => {
-  let filtered = props.participants
+  // Use relevant participants loaded dynamically (already filtered by target training)
+  let filtered = relevantParticipants.value
 
-  // Search filter
+  // Only apply search filter
   if (searchQuery.value) {
     const query = searchQuery.value.toLowerCase()
     filtered = filtered.filter(participant => 
       participant.nama_lengkap?.toLowerCase().includes(query) ||
       participant.email?.toLowerCase().includes(query) ||
       participant.nik?.toLowerCase().includes(query)
-    )
-  }
-
-  // Division filter (multiple selection)
-  if (selectedDivisions.value.length > 0) {
-    filtered = filtered.filter(participant => 
-      participant.divisi && selectedDivisions.value.includes(participant.divisi.id)
-    )
-  }
-
-  // Jabatan filter (multiple selection)
-  if (selectedJabatans.value.length > 0) {
-    filtered = filtered.filter(participant => 
-      participant.jabatan && selectedJabatans.value.includes(participant.jabatan.id_jabatan)
-    )
-  }
-
-  // Level filter (multiple selection)
-  if (selectedLevels.value.length > 0) {
-    filtered = filtered.filter(participant => 
-      participant.jabatan?.level && selectedLevels.value.includes(participant.jabatan.level.id)
     )
   }
 
@@ -368,6 +263,40 @@ const formatDate = (date) => {
     month: 'long',
     day: 'numeric'
   })
+}
+
+const loadRelevantParticipants = async () => {
+  if (!props.training?.id) {
+    console.error('No training ID provided')
+    return
+  }
+  
+  loadingParticipants.value = true
+  try {
+    console.log('Loading participants for training ID:', props.training.id)
+    const response = await fetch(route('lms.schedules.relevant-participants', props.training.id))
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`)
+    }
+    
+    const data = await response.json()
+    console.log('API Response:', data)
+    
+    if (data.success) {
+      relevantParticipants.value = data.participants
+      console.log('Loaded relevant participants:', data.participants.length)
+      console.log('Filter applied:', data.filter_applied)
+    } else {
+      console.error('API returned error:', data.message)
+      relevantParticipants.value = []
+    }
+  } catch (error) {
+    console.error('Error loading relevant participants:', error)
+    relevantParticipants.value = []
+  } finally {
+    loadingParticipants.value = false
+  }
 }
 
 const selectAll = () => {
@@ -446,8 +375,13 @@ const sendInvitations = async () => {
   }
 }
 
-// Reset page when filters change
-watch([searchQuery, selectedDivisions, selectedJabatans, selectedLevels], () => {
+// Reset page when search changes
+watch([searchQuery], () => {
   currentPage.value = 1
+})
+
+// Load relevant participants when modal opens
+onMounted(() => {
+  loadRelevantParticipants()
 })
 </script>

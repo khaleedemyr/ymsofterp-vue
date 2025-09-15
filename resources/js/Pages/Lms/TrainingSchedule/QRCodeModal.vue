@@ -88,11 +88,20 @@ const formatDate = (date) => {
 const generateQRCode = async () => {
   try {
     if (props.training) {
+      // Format scheduled_date to Y-m-d format
+      const scheduledDate = new Date(props.training.scheduled_date).toISOString().split('T')[0]
+      
+      // Generate hash using the same method as backend
+      const hashInput = props.training.id + props.training.course_id + scheduledDate
+      const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(hashInput))
+      const hashArray = Array.from(new Uint8Array(hash))
+      const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('')
+      
       const data = {
         schedule_id: props.training.id,
         course_id: props.training.course_id,
-        scheduled_date: props.training.scheduled_date,
-        hash: btoa(props.training.id + props.training.course_id + props.training.scheduled_date)
+        scheduled_date: scheduledDate,
+        hash: hashHex
       }
       
       const qrData = JSON.stringify(data)
@@ -104,6 +113,9 @@ const generateQRCode = async () => {
           light: '#FFFFFF'
         }
       })
+      
+      console.log('QR Code generated successfully:', qrCodeDataUrl.value)
+      console.log('QR Code data:', data)
     }
   } catch (error) {
     console.error('Error generating QR code:', error)

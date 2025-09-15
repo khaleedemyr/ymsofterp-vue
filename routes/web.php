@@ -105,6 +105,8 @@ use App\Http\Controllers\SharedDocumentController;
 use App\Http\Controllers\FoodGoodReceiveReportController;
 use App\Http\Controllers\TrainingScheduleController;
 use App\Http\Controllers\LmsCurriculumController;
+use App\Http\Controllers\JabatanTrainingController;
+use App\Http\Controllers\TrainingComplianceController;
 
 
 Route::get('/', function () {
@@ -138,6 +140,26 @@ Route::middleware('auth')->group(function () {
     Route::put('/api/user-pins/{id}', [\App\Http\Controllers\UserPinController::class, 'update'])->name('api.user-pins.update');
     Route::delete('/api/user-pins/{id}', [\App\Http\Controllers\UserPinController::class, 'destroy'])->name('api.user-pins.destroy');
     Route::get('/api/outlets', [\App\Http\Controllers\UserPinController::class, 'getOutlets'])->name('api.outlets');
+    
+    // Quiz API routes
+    Route::post('/api/quiz/start-attempt', [\App\Http\Controllers\QuizController::class, 'startAttempt'])->name('api.quiz.start-attempt');
+    Route::post('/api/quiz/submit-attempt', [\App\Http\Controllers\QuizController::class, 'submitAttempt'])->name('api.quiz.submit-attempt');
+    Route::get('/api/quiz/results/{attemptId}', [\App\Http\Controllers\QuizController::class, 'getResults'])->name('api.quiz.results');
+    
+    // Questionnaire API routes
+    Route::post('/api/questionnaire/start-response', [\App\Http\Controllers\QuestionnaireController::class, 'startResponse'])->name('api.questionnaire.start-response');
+    Route::post('/api/questionnaire/submit-response', [\App\Http\Controllers\QuestionnaireController::class, 'submitResponse'])->name('api.questionnaire.submit-response');
+    Route::get('/api/questionnaire/results/{responseId}', [\App\Http\Controllers\QuestionnaireController::class, 'getResults'])->name('api.questionnaire.results');
+    
+    // Training Feedback API routes
+    Route::post('/api/training/feedback', [\App\Http\Controllers\FeedbackController::class, 'submitFeedback'])->name('api.training.feedback');
+    Route::get('/api/training/feedback/{scheduleId}', [\App\Http\Controllers\FeedbackController::class, 'getFeedback'])->name('api.training.feedback.get');
+    Route::get('/api/training/feedback/{scheduleId}/stats', [\App\Http\Controllers\FeedbackController::class, 'getFeedbackStats'])->name('api.training.feedback.stats');
+    
+    // Training History API routes
+    Route::post('/api/training/checkout', [\App\Http\Controllers\TrainingScheduleController::class, 'checkoutTraining'])->name('api.training.checkout');
+    Route::get('/api/training/history', [\App\Http\Controllers\TrainingScheduleController::class, 'getUserTrainingHistory'])->name('api.training.history');
+    Route::get('/api/training/history/{historyId}', [\App\Http\Controllers\TrainingScheduleController::class, 'getTrainingHistoryDetails'])->name('api.training.history.details');
     
     // Tambahkan route untuk Maintenance Order
     Route::get('/maintenance-order', function () {
@@ -1369,6 +1391,20 @@ Route::put('/schedules/{schedule}/participants/{invitation}/mark-attended', [Tra
     
     // Export attendance
     Route::get('/schedules/{schedule}/export-attendance', [TrainingScheduleController::class, 'exportAttendance'])->name('schedules.export-attendance');
+    
+        // Flexible trainer management
+        Route::post('/schedules/{schedule}/assign-trainer', [TrainingScheduleController::class, 'assignTrainer'])->name('schedules.assign-trainer');
+        Route::delete('/schedules/{schedule}/trainers/{trainer}', [TrainingScheduleController::class, 'removeTrainer'])->name('schedules.remove-trainer');
+        Route::put('/schedules/{schedule}/trainers/{trainer}/hours', [TrainingScheduleController::class, 'updateTrainerHours'])->name('schedules.update-trainer-hours');
+        Route::get('/schedules/{schedule}/trainers', [TrainingScheduleController::class, 'getScheduleTrainers'])->name('schedules.trainers');
+        Route::get('/schedules/{schedule}/relevant-participants', [TrainingScheduleController::class, 'getRelevantParticipants'])->name('schedules.relevant-participants');
+        
+        // Trainer invitation management
+        Route::post('/schedules/{schedule}/invite-trainers', [TrainingScheduleController::class, 'inviteTrainers'])->name('schedules.invite-trainers');
+        Route::put('/schedules/{schedule}/set-primary-trainer/{trainer}', [TrainingScheduleController::class, 'setPrimaryTrainer'])->name('schedules.set-primary-trainer');
+        
+        // Training notifications
+        Route::get('/training-notifications', [TrainingScheduleController::class, 'getTrainingNotifications'])->name('training-notifications');
 });
 
 // LMS Curriculum Routes
@@ -1392,6 +1428,44 @@ Route::middleware(['auth', 'verified'])->get('/lms/courses/{course}/curriculum-p
     $courseData = \App\Models\LmsCourse::findOrFail($course);
     return Inertia::render('Lms/Courses/Curriculum/Index', ['course' => $courseData]);
 })->name('lms.courses.curriculum');
+
+// Training Compliance Routes
+Route::middleware(['auth', 'verified'])->prefix('training')->name('training.')->group(function () {
+    // Compliance Dashboard
+    Route::get('/compliance/dashboard', [TrainingComplianceController::class, 'dashboard'])->name('compliance.dashboard');
+    
+    // Compliance Reports
+    Route::get('/compliance/report', [TrainingComplianceController::class, 'complianceReport'])->name('compliance.report');
+    Route::get('/compliance/user/{user}', [TrainingComplianceController::class, 'userCompliance'])->name('compliance.user');
+    
+    // Trainer Reports
+    Route::get('/compliance/trainer-report', [TrainingComplianceController::class, 'trainerReport'])->name('compliance.trainer-report');
+    Route::get('/compliance/trainer/{trainer}', [TrainingComplianceController::class, 'trainerDetail'])->name('compliance.trainer');
+    
+    // Course Reports
+    Route::get('/compliance/course-report', [TrainingComplianceController::class, 'courseReport'])->name('compliance.course-report');
+    
+    // Export
+    Route::get('/compliance/export', [TrainingComplianceController::class, 'exportComplianceReport'])->name('compliance.export');
+});
+
+// Jabatan Training Management Routes
+Route::middleware(['auth', 'verified'])->prefix('jabatan-training')->name('jabatan-training.')->group(function () {
+    Route::get('/', [JabatanTrainingController::class, 'index'])->name('index');
+    Route::get('/create', [JabatanTrainingController::class, 'create'])->name('create');
+    Route::post('/', [JabatanTrainingController::class, 'store'])->name('store');
+    Route::get('/{jabatanTraining}', [JabatanTrainingController::class, 'show'])->name('show');
+    Route::get('/{jabatanTraining}/edit', [JabatanTrainingController::class, 'edit'])->name('edit');
+    Route::put('/{jabatanTraining}', [JabatanTrainingController::class, 'update'])->name('update');
+    Route::delete('/{jabatanTraining}', [JabatanTrainingController::class, 'destroy'])->name('destroy');
+    
+    // Bulk operations
+    Route::post('/bulk-assign', [JabatanTrainingController::class, 'bulkAssign'])->name('bulk-assign');
+    
+    // API endpoints
+    Route::get('/api/jabatan/{jabatan}/trainings', [JabatanTrainingController::class, 'getTrainingsForJabatan'])->name('api.jabatan.trainings');
+    Route::get('/api/jabatan/{jabatan}/users', [JabatanTrainingController::class, 'getUsersForJabatan'])->name('api.jabatan.users');
+});
 
   // Attendance Routes
   Route::middleware(['auth', 'verified'])->group(function () {

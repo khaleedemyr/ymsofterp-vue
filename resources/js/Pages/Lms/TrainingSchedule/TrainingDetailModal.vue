@@ -128,9 +128,92 @@
                  <i class="fas fa-user-plus mr-2"></i>
                  Undang Peserta
                </button>
-
+               <button v-if="canInvite" @click="$emit('invite-trainer')"
+                       class="px-4 py-2 bg-purple-500/20 border border-purple-500/30 rounded-lg text-purple-200 hover:bg-purple-500/30 transition-all">
+                 <i class="fas fa-chalkboard-teacher mr-2"></i>
+                 Undang Trainer
+               </button>
              </div>
            </div>
+        </div>
+      </div>
+      
+      <!-- Trainers List -->
+      <div class="backdrop-blur-sm bg-white/5 border border-white/10 rounded-xl p-4 mb-6">
+        <h4 class="text-lg font-semibold text-white mb-3">Daftar Trainer</h4>
+        <div class="overflow-x-auto">
+          <table class="w-full text-white">
+            <thead>
+              <tr class="border-b border-white/20">
+                <th class="text-left py-2 px-2 min-w-[120px]">Nama</th>
+                <th class="text-left py-2 px-2 min-w-[150px]">Jabatan</th>
+                <th class="text-left py-2 px-2 min-w-[180px]">Divisi</th>
+                <th class="text-left py-2 px-2 min-w-[100px]">Status</th>
+                <th class="text-left py-2 px-2 min-w-[100px]">Jam Mengajar</th>
+                <th class="text-left py-2 px-2 min-w-[120px]">Aksi</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="scheduleTrainer in training.scheduleTrainers" :key="scheduleTrainer.id" 
+                  class="border-b border-white/10">
+                <td class="py-2 px-2">
+                  <div class="flex items-center space-x-2">
+                    <div class="w-8 h-8 rounded-full overflow-hidden bg-white/10 flex items-center justify-center">
+                      <img 
+                        v-if="scheduleTrainer.trainer_type === 'internal' && scheduleTrainer.trainer?.avatar" 
+                        :src="'/storage/' + scheduleTrainer.trainer.avatar" 
+                        :alt="scheduleTrainer.trainer_name"
+                        class="w-full h-full object-cover"
+                      />
+                      <i v-else class="fas fa-user text-white/50 text-xs"></i>
+                    </div>
+                    <div class="flex flex-col">
+                      <span>{{ scheduleTrainer.trainer_name || scheduleTrainer.trainer?.nama_lengkap || 'Trainer tidak ditemukan' }}</span>
+                      <div class="flex items-center space-x-2">
+                        <span :class="getTrainerTypeColor(scheduleTrainer.trainer_type)" 
+                              class="px-2 py-1 text-xs rounded-full">
+                          {{ scheduleTrainer.trainer_type === 'external' ? 'External' : 'Internal' }}
+                        </span>
+                        <span v-if="scheduleTrainer.is_primary_trainer" 
+                              class="px-2 py-1 bg-yellow-500/20 text-yellow-200 text-xs rounded-full">
+                          Primary
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </td>
+                <td class="py-2 px-2">{{ scheduleTrainer.trainer?.jabatan?.nama_jabatan || '-' }}</td>
+                <td class="py-2 px-2">{{ scheduleTrainer.trainer?.divisi?.nama_divisi || '-' }}</td>
+                <td class="py-2 px-2">
+                  <span :class="getTrainerStatusColor(scheduleTrainer.status)" 
+                        class="px-2 py-1 rounded-full text-xs">
+                    {{ scheduleTrainer.status_text || 'Invited' }}
+                  </span>
+                </td>
+                <td class="py-2 px-2">{{ scheduleTrainer.hours_taught || '0' }} jam</td>
+                <td class="py-2 px-2">
+                  <div class="flex items-center space-x-2">
+                    <button v-if="canInvite && !scheduleTrainer.is_primary_trainer" 
+                            @click="setPrimaryTrainer(scheduleTrainer.id)"
+                            class="px-2 py-1 bg-yellow-500/20 border border-yellow-500/30 rounded text-xs text-yellow-200 hover:bg-yellow-500/30 transition-colors">
+                      Set Primary
+                    </button>
+                    <button v-if="canInvite" 
+                            @click="removeTrainer(scheduleTrainer.id)"
+                            class="px-2 py-1 bg-red-500/20 border border-red-500/30 rounded text-xs text-red-200 hover:bg-red-500/30 transition-colors">
+                      Hapus
+                    </button>
+                  </div>
+                </td>
+              </tr>
+              <tr v-if="!training.scheduleTrainers || training.scheduleTrainers.length === 0">
+                <td colspan="6" class="py-8 text-center text-white/50">
+                  <i class="fas fa-chalkboard-teacher text-4xl mb-2"></i>
+                  <p>Belum ada trainer yang diundang</p>
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
       
@@ -273,7 +356,7 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['close', 'edit', 'invite', 'qr-code', 'refresh'])
+const emit = defineEmits(['close', 'edit', 'invite', 'invite-trainer', 'qr-code', 'refresh'])
 
 const qrCodeError = ref(false)
 const qrCodeDataUrl = ref('')
@@ -298,6 +381,24 @@ const getParticipantStatusColor = (status) => {
     'absent': 'bg-red-500/20 text-red-200 border-red-500/30'
   }
   return colors[status] || colors['invited']
+}
+
+const getTrainerStatusColor = (status) => {
+  const colors = {
+    'invited': 'bg-blue-500/20 text-blue-200 border-blue-500/30',
+    'confirmed': 'bg-yellow-500/20 text-yellow-200 border-yellow-500/30',
+    'attended': 'bg-green-500/20 text-green-200 border-green-500/30',
+    'absent': 'bg-red-500/20 text-red-200 border-red-500/30'
+  }
+  return colors[status] || colors['invited']
+}
+
+const getTrainerTypeColor = (type) => {
+  const colors = {
+    'internal': 'bg-blue-500/20 text-blue-200 border-blue-500/30',
+    'external': 'bg-purple-500/20 text-purple-200 border-purple-500/30'
+  }
+  return colors[type] || colors['internal']
 }
 
 const formatDate = (date) => {
@@ -532,6 +633,99 @@ const removeParticipant = async (participantId) => {
   }
 }
 
+// Trainer management methods
+const setPrimaryTrainer = async (scheduleTrainerId) => {
+  try {
+    const result = await Swal.fire({
+      title: 'Set Primary Trainer',
+      text: 'Apakah Anda yakin ingin menjadikan trainer ini sebagai primary trainer?',
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonColor: '#F59E0B',
+      cancelButtonColor: '#6B7280',
+      confirmButtonText: 'Ya, Set Primary',
+      cancelButtonText: 'Batal'
+    })
+
+    if (result.isConfirmed) {
+      await router.put(route('lms.schedules.set-primary-trainer', {
+        schedule: props.training.id,
+        trainer: scheduleTrainerId
+      }), {}, {
+        onSuccess: () => {
+          Swal.fire({
+            icon: 'success',
+            title: 'Berhasil!',
+            text: 'Primary trainer berhasil diupdate',
+            timer: 2000,
+            showConfirmButton: false
+          })
+          emit('refresh')
+        },
+        onError: (errors) => {
+          Swal.fire({
+            icon: 'error',
+            title: 'Gagal!',
+            text: 'Gagal mengupdate primary trainer: ' + Object.values(errors)[0]
+          })
+        }
+      })
+    }
+  } catch (error) {
+    Swal.fire({
+      icon: 'error',
+      title: 'Error!',
+      text: 'Terjadi kesalahan saat mengupdate primary trainer'
+    })
+  }
+}
+
+const removeTrainer = async (scheduleTrainerId) => {
+  try {
+    const result = await Swal.fire({
+      title: 'Konfirmasi Hapus',
+      text: 'Apakah Anda yakin ingin menghapus trainer ini dari training?',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#EF4444',
+      cancelButtonColor: '#6B7280',
+      confirmButtonText: 'Ya, Hapus',
+      cancelButtonText: 'Batal'
+    })
+
+    if (result.isConfirmed) {
+      await router.delete(route('lms.schedules.remove-trainer', {
+        schedule: props.training.id,
+        trainer: scheduleTrainerId
+      }), {
+        onSuccess: () => {
+          Swal.fire({
+            icon: 'success',
+            title: 'Berhasil!',
+            text: 'Trainer berhasil dihapus dari training',
+            timer: 2000,
+            showConfirmButton: false
+          })
+          emit('refresh')
+        },
+        onError: (errors) => {
+          Swal.fire({
+            icon: 'error',
+            title: 'Gagal!',
+            text: 'Gagal menghapus trainer: ' + Object.values(errors)[0]
+          })
+        }
+      })
+    }
+  } catch (error) {
+    Swal.fire({
+      icon: 'error',
+      title: 'Error!',
+      text: 'Terjadi kesalahan saat menghapus trainer'
+    })
+  }
+}
+
 
 
 const handleQRCodeError = (event) => {
@@ -548,11 +742,20 @@ const handleQRCodeLoad = (event) => {
 const generateQRCode = async () => {
   try {
     if (props.training) {
+      // Format scheduled_date to Y-m-d format
+      const scheduledDate = new Date(props.training.scheduled_date).toISOString().split('T')[0]
+      
+      // Generate hash using the same method as backend
+      const hashInput = props.training.id + props.training.course_id + scheduledDate
+      const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(hashInput))
+      const hashArray = Array.from(new Uint8Array(hash))
+      const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('')
+      
       const data = {
         schedule_id: props.training.id,
         course_id: props.training.course_id,
-        scheduled_date: props.training.scheduled_date,
-        hash: btoa(props.training.id + props.training.course_id + props.training.scheduled_date)
+        scheduled_date: scheduledDate,
+        hash: hashHex
       }
       
       const qrData = JSON.stringify(data)
@@ -566,6 +769,7 @@ const generateQRCode = async () => {
       })
       
       console.log('QR Code generated successfully:', qrCodeDataUrl.value)
+      console.log('QR Code data:', data)
     }
   } catch (error) {
     console.error('Error generating QR code:', error)
@@ -575,12 +779,5 @@ const generateQRCode = async () => {
 
 onMounted(() => {
   generateQRCode()
-  
-  // Debug: Log training data
-  console.log('Training data:', props.training)
-  console.log('Invitations:', props.training?.invitations)
-  console.log('Participant count:', props.training?.invitations?.length)
-  console.log('Attended count:', props.training?.invitations?.filter(inv => inv.status === 'attended').length)
-  console.log('Absent count:', props.training?.invitations?.filter(inv => inv.status === 'absent').length)
 })
 </script>

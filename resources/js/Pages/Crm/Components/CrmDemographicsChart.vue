@@ -6,6 +6,45 @@ const props = defineProps({
 function formatNumber(number) {
   return number.toLocaleString('id-ID');
 }
+
+// Age group descriptions
+const ageGroupDescriptions = {
+  'Remaja': {
+    range: '13 – 18 tahun',
+    description: 'Suka makanan kekinian, sering datang berkelompok, tertarik dengan tempat yang Instagramable',
+    color: 'bg-red-500'
+  },
+  'Dewasa Muda': {
+    range: '19 – 30 tahun',
+    description: 'Aktif kulineran, trend-aware, suka nongkrong, daya beli menengah, sangat terpengaruh review dan media sosial',
+    color: 'bg-orange-500'
+  },
+  'Dewasa Produktif': {
+    range: '31 – 45 tahun',
+    description: 'Daya beli stabil, mencari kualitas & kenyamanan, sering makan bersama keluarga atau rekan kerja',
+    color: 'bg-yellow-500'
+  },
+  'Dewasa Matang': {
+    range: '46 – 59 tahun',
+    description: 'Lebih memilih makanan sehat, tempat nyaman, kadang loyal pada brand tertentu',
+    color: 'bg-green-500'
+  },
+  'Usia Tua': {
+    range: '60 tahun ke atas',
+    description: 'Lebih selektif (terutama kesehatan), jarang mencoba hal baru, cenderung makan bersama keluarga',
+    color: 'bg-blue-500'
+  },
+  'Anak-anak': {
+    range: 'Di bawah 13 tahun',
+    description: 'Biasanya datang bersama keluarga, suka makanan manis dan menarik',
+    color: 'bg-purple-500'
+  },
+  'Tidak Diketahui': {
+    range: 'Tidak diketahui',
+    description: 'Data tanggal lahir tidak tersedia',
+    color: 'bg-gray-500'
+  }
+};
 </script>
 
 <template>
@@ -35,27 +74,28 @@ function formatNumber(number) {
     <!-- Age Distribution -->
     <div>
       <h4 class="text-sm font-semibold text-gray-700 mb-3">Distribusi Usia</h4>
-      <div class="space-y-3">
-        <div v-for="(count, ageGroup) in data.age" :key="ageGroup" class="flex items-center justify-between">
-          <div class="flex items-center gap-3">
-            <div 
-              class="w-4 h-4 rounded-full"
-              :class="{
-                'bg-red-500': ageGroup === 'Under 18',
-                'bg-orange-500': ageGroup === '18-25',
-                'bg-yellow-500': ageGroup === '26-35',
-                'bg-green-500': ageGroup === '36-50',
-                'bg-blue-500': ageGroup === 'Over 50',
-                'bg-gray-500': ageGroup === 'Unknown'
-              }"
-            ></div>
-            <span class="text-sm text-gray-700">{{ ageGroup }}</span>
+      <div class="space-y-4">
+        <div v-for="(count, ageGroup) in data.age" :key="ageGroup" class="bg-gray-50 rounded-lg p-4">
+          <div class="flex items-center justify-between mb-2">
+            <div class="flex items-center gap-3">
+              <div 
+                class="w-4 h-4 rounded-full"
+                :class="ageGroupDescriptions[ageGroup]?.color || 'bg-gray-500'"
+              ></div>
+              <div>
+                <span class="text-sm font-semibold text-gray-900">{{ ageGroup }}</span>
+                <span class="text-xs text-gray-500 ml-2">{{ ageGroupDescriptions[ageGroup]?.range || '' }}</span>
+              </div>
+            </div>
+            <div class="text-right">
+              <span class="text-sm font-semibold text-gray-900">{{ formatNumber(count) }}</span>
+              <span class="text-xs text-gray-500 ml-1">
+                ({{ Math.round((count / Object.values(data.age).reduce((a, b) => a + b, 0)) * 100) }}%)
+              </span>
+            </div>
           </div>
-          <div class="text-right">
-            <span class="text-sm font-semibold text-gray-900">{{ formatNumber(count) }}</span>
-            <span class="text-xs text-gray-500 ml-1">
-              ({{ Math.round((count / Object.values(data.age).reduce((a, b) => a + b, 0)) * 100) }}%)
-            </span>
+          <div class="text-xs text-gray-600 leading-relaxed">
+            {{ ageGroupDescriptions[ageGroup]?.description || 'Deskripsi tidak tersedia' }}
           </div>
         </div>
       </div>

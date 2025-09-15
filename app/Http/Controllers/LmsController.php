@@ -98,8 +98,24 @@ class LmsController extends Controller
             $canSeeAllCourses = true;
         }
 
+        // DEBUG: Log user data for troubleshooting
+        \Log::info('User data for course filtering:', [
+            'user_id' => $user->id,
+            'user_name' => $user->nama_lengkap,
+            'division_id' => $user->division_id,
+            'id_jabatan' => $user->id_jabatan,
+            'id_outlet' => $user->id_outlet,
+            'canSeeAllCourses' => $canSeeAllCourses,
+            'id_role' => $user->id_role,
+            'status' => $user->status
+        ]);
+
         $query = LmsCourse::with(['category', 'instructor.jabatan.divisi', 'instructor.jabatan.level', 'instructor.divisi', 'targetDivisions'])
             ->where('status', 'published');
+
+        // DEBUG: Log total courses before filtering
+        $totalCoursesBeforeFilter = LmsCourse::where('status', 'published')->count();
+        \Log::info('Total published courses before filtering:', ['count' => $totalCoursesBeforeFilter]);
 
         // If user is not admin/manager, filter courses based on user's data
         if (!$canSeeAllCourses) {
@@ -132,6 +148,10 @@ class LmsController extends Controller
                 });
             });
         }
+
+        // DEBUG: Log total courses after filtering
+        $totalCoursesAfterFilter = $query->count();
+        \Log::info('Total courses after filtering:', ['count' => $totalCoursesAfterFilter]);
 
         $query->when($request->search, function ($query, $search) {
                 $query->where(function ($q) use ($search) {
@@ -470,7 +490,7 @@ class LmsController extends Controller
                 'short_description' => 'nullable|string',
                 'description' => 'required|string',
                 'category_id' => 'required|exists:lms_categories,id',
-                'target_type' => 'required|in:single,multiple,all',
+                'target_type' => 'nullable|in:single,multiple,all',
                 'target_division_id' => 'nullable|exists:tbl_data_divisi,id',
                 'target_divisions' => 'nullable|array',
                 'target_divisions.*' => 'exists:tbl_data_divisi,id',
@@ -478,10 +498,6 @@ class LmsController extends Controller
                 'target_jabatan_ids.*' => 'exists:tbl_data_jabatan,id_jabatan',
                 'target_outlet_ids' => 'nullable|array',
                 'target_outlet_ids.*' => 'exists:tbl_data_outlet,id_outlet',
-                'trainer_type' => 'required|in:internal,external',
-                'instructor_id' => 'nullable|required_if:trainer_type,internal|exists:users,id',
-                'external_trainer_name' => 'nullable|required_if:trainer_type,external|string|max:255',
-                'external_trainer_description' => 'nullable|string',
                 'duration_minutes' => 'required|integer|min:1',
                 'type' => 'required|in:online,offline',
                 'course_type' => 'required|in:mandatory,optional',
@@ -537,17 +553,6 @@ class LmsController extends Controller
         
         \Log::info('Validated data after setting defaults:', $validated);
 
-        // Handle trainer assignment
-        \Log::info('=== HANDLING TRAINER ASSIGNMENT ===');
-        \Log::info('Trainer type:', ['trainer_type' => $validated['trainer_type']]);
-        
-        if ($validated['trainer_type'] === 'internal') {
-            $validated['instructor_id'] = $validated['instructor_id'];
-            \Log::info('Internal trainer assigned:', ['instructor_id' => $validated['instructor_id']]);
-        } else {
-            $validated['instructor_id'] = auth()->id(); // Current user as instructor for external trainer
-            \Log::info('External trainer - current user assigned as instructor:', ['instructor_id' => $validated['instructor_id']]);
-        }
 
         // Create slug from title
         \Log::info('=== GENERATING SLUG ===');
@@ -599,9 +604,9 @@ class LmsController extends Controller
         }
         
         \Log::info('Target divisions after processing:', [
-            'target_division_id' => $validated['target_division_id'],
-            'target_divisions' => $validated['target_divisions'],
-            'target_type' => $validated['target_type']
+            'target_division_id' => $validated['target_division_id'] ?? null,
+            'target_divisions' => $validated['target_divisions'] ?? null,
+            'target_type' => $validated['target_type'] ?? null
         ]);
 
         // Filter out empty learning objectives and requirements
@@ -670,7 +675,6 @@ class LmsController extends Controller
             'title' => $validated['title'] ?? 'NOT SET',
             'category_id' => $validated['category_id'] ?? 'NOT SET',
             'target_type' => $validated['target_type'] ?? 'NOT SET',
-            'trainer_type' => $validated['trainer_type'] ?? 'NOT SET',
             'has_thumbnail' => !empty($validated['thumbnail']),
             'learning_objectives_count' => count($validated['learning_objectives'] ?? []),
             'requirements_count' => count($validated['requirements'] ?? []),
@@ -683,6 +687,19 @@ class LmsController extends Controller
         
         \Log::info('=== FINAL DATA TO SAVE ===');
         \Log::info('Final validated data:', $validated);
+        
+        // Custom validation: At least one target must be selected
+        $hasDivision = !empty($validated['target_division_id']) || 
+                      !empty($validated['target_divisions'] ?? []) || 
+                      ($validated['target_type'] ?? '') === 'all';
+        $hasJabatan = !empty($validated['target_jabatan_ids'] ?? []);
+        $hasOutlet = !empty($validated['target_outlet_ids'] ?? []);
+        
+        if (!$hasDivision && !$hasJabatan && !$hasOutlet) {
+            return back()->withErrors([
+                'target' => 'Minimal harus memilih satu target: divisi, jabatan, atau outlet.'
+            ])->withInput();
+        }
         
         try {
             DB::beginTransaction();
@@ -703,10 +720,6 @@ class LmsController extends Controller
                 'target_divisions' => isset($validated['target_divisions']) && !empty($validated['target_divisions']) ? json_encode($validated['target_divisions']) : null,
                 'target_jabatan_ids' => isset($validated['target_jabatan_ids']) && !empty($validated['target_jabatan_ids']) ? json_encode($validated['target_jabatan_ids']) : null,
                 'target_outlet_ids' => isset($validated['target_outlet_ids']) && !empty($validated['target_outlet_ids']) ? json_encode($validated['target_outlet_ids']) : null,
-                'trainer_type' => $validated['trainer_type'],
-                'instructor_id' => $validated['instructor_id'],
-                'external_trainer_name' => $validated['external_trainer_name'] ?? null,
-                'external_trainer_description' => $validated['external_trainer_description'] ?? null,
                 'duration_minutes' => $validated['duration_minutes'],
                 'type' => $validated['type'],
                 'course_type' => $validated['course_type'],
@@ -1024,17 +1037,6 @@ class LmsController extends Controller
                 \Log::info('No sessions to create');
             }
 
-            // Store external trainer info if applicable
-            if ($validated['trainer_type'] === 'external') {
-                $course->externalTrainer()->updateOrCreate(
-                    ['course_id' => $course->id],
-                    [
-                        'name' => $validated['external_trainer_name'],
-                        'company' => $validated['external_trainer_description'] ?? null,
-                        'updated_by' => auth()->id()
-                    ]
-                );
-            }
 
             DB::commit();
 
@@ -1430,7 +1432,7 @@ class LmsController extends Controller
             'short_description' => 'nullable|string',
             'description' => 'required|string',
             'category_id' => 'required|exists:lms_categories,id',
-            'target_type' => 'required|in:single,multiple,all',
+            'target_type' => 'nullable|in:single,multiple,all',
             'target_division_id' => 'nullable|exists:tbl_data_divisi,id',
             'target_divisions' => 'nullable|array',
             'target_divisions.*' => 'exists:tbl_data_divisi,id',
@@ -1443,13 +1445,22 @@ class LmsController extends Controller
             'course_type' => 'required|in:mandatory,optional',
             // 'requirements' => 'nullable|array', // REMOVED - requirements field removed
             // 'requirements.*' => 'string|max:500', // REMOVED - requirements field removed
-            'trainer_type' => 'required|in:internal,external',
-            'instructor_id' => 'nullable|exists:users,id',
-            'external_trainer_name' => 'nullable|string|max:255',
-            'external_trainer_description' => 'nullable|string',
             'certificate_template_id' => 'nullable|exists:certificate_templates,id',
             'thumbnail' => 'nullable|image|mimes:jpeg,png,jpg|max:2048'
         ]);
+
+        // Custom validation: At least one target must be selected
+        $hasDivision = !empty($validated['target_division_id']) || 
+                      !empty($validated['target_divisions'] ?? []) || 
+                      ($validated['target_type'] ?? '') === 'all';
+        $hasJabatan = !empty($validated['target_jabatan_ids'] ?? []);
+        $hasOutlet = !empty($validated['target_outlet_ids'] ?? []);
+        
+        if (!$hasDivision && !$hasJabatan && !$hasOutlet) {
+            return back()->withErrors([
+                'target' => 'Minimal harus memilih satu target: divisi, jabatan, atau outlet.'
+            ])->withInput();
+        }
 
         try {
             DB::beginTransaction();
@@ -1460,32 +1471,26 @@ class LmsController extends Controller
                 $validated['thumbnail'] = $thumbnailPath;
             }
 
-            // Handle instructor assignment
-            if ($validated['trainer_type'] === 'internal') {
-                $validated['instructor_id'] = $validated['instructor_id'];
-            } else {
-                $validated['instructor_id'] = auth()->id(); // Current user as instructor for external trainer
-            }
 
             // Update course
             $course->update($validated);
 
             // Handle target divisions
-            if ($validated['target_type'] === 'multiple' && !empty($validated['target_divisions'])) {
+            if (($validated['target_type'] ?? '') === 'multiple' && !empty($validated['target_divisions'] ?? [])) {
                 $course->targetDivisions()->sync($validated['target_divisions']);
             } else {
                 $course->targetDivisions()->detach();
             }
 
             // Handle target jabatans
-            if (!empty($validated['target_jabatan_ids'])) {
+            if (!empty($validated['target_jabatan_ids'] ?? [])) {
                 $course->targetJabatans()->sync($validated['target_jabatan_ids']);
             } else {
                 $course->targetJabatans()->detach();
             }
 
             // Handle target outlets
-            if (!empty($validated['target_outlet_ids'])) {
+            if (!empty($validated['target_outlet_ids'] ?? [])) {
                 $course->targetOutlets()->sync($validated['target_outlet_ids']);
             } else {
                 $course->targetOutlets()->detach();

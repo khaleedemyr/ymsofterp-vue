@@ -104,7 +104,20 @@
               </h4>
               <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 <div>
-                  <label class="block text-sm font-medium text-gray-300 mb-2">Target Divisi</label>
+                  <label class="block text-sm font-medium text-gray-300 mb-2">Tipe Course <span class="text-red-400">*</span></label>
+                  <select
+                    v-model="form.course_type"
+                    required
+                    class="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    :disabled="loading"
+                  >
+                    <option value="">Pilih Tipe Course</option>
+                    <option value="mandatory">Mandatory (Wajib)</option>
+                    <option value="optional">Optional (Opsional)</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-gray-300 mb-2">Target Divisi <span class="text-gray-400 text-xs">(Opsional)</span></label>
                   <select
                     v-model="form.target_type"
                     class="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent mb-3"
@@ -158,7 +171,7 @@
                 </div>
                 
                 <div>
-                  <label class="block text-sm font-medium text-gray-300 mb-2">Target Jabatan</label>
+                  <label class="block text-sm font-medium text-gray-300 mb-2">Target Jabatan <span class="text-gray-400 text-xs">(Opsional)</span></label>
                   <div class="space-y-2">
                     <div class="max-h-32 overflow-y-auto bg-white/5 rounded-lg p-3 border border-white/10">
                                              <div v-for="jabatan in jabatans" :key="jabatan.id_jabatan" class="flex items-center mb-2">
@@ -180,7 +193,7 @@
                 </div>
                 
                 <div>
-                  <label class="block text-sm font-medium text-gray-300 mb-2">Target Outlet</label>
+                  <label class="block text-sm font-medium text-gray-300 mb-2">Target Outlet <span class="text-gray-400 text-xs">(Opsional)</span></label>
                   <div class="space-y-2">
                     <div class="max-h-32 overflow-y-auto bg-white/5 rounded-lg p-3 border border-white/10">
                       <div v-for="outlet in outlets" :key="outlet.id_outlet" class="flex items-center mb-2">
@@ -360,92 +373,6 @@
               </div>
             </div>
 
-            <!-- Trainer Information Section -->
-            <div class="mb-6">
-              <h4 class="text-lg font-semibold text-white mb-4 flex items-center">
-                <i class="fas fa-user-tie mr-2 text-purple-400"></i>
-                Informasi Trainer
-              </h4>
-              <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <label class="block text-sm font-medium text-gray-300 mb-2">Tipe Trainer <span class="text-red-400">*</span></label>
-                  <select
-                    v-model="form.trainer_type"
-                    required
-                    class="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    :disabled="loading"
-                  >
-                    <option value="">Pilih tipe trainer</option>
-                    <option value="internal">Trainer Internal</option>
-                    <option value="external">Trainer External</option>
-                  </select>
-                </div>
-                
-                <div v-if="form.trainer_type === 'internal'">
-                  <label class="block text-sm font-medium text-gray-300 mb-2">Pilih Trainer Internal <span class="text-red-400">*</span></label>
-                  <Multiselect
-                    v-model="form.instructor_id"
-                    :options="internalTrainers"
-                    :searchable="true"
-                    :close-on-select="true"
-                    :clear-on-select="false"
-                    :preserve-search="true"
-                    placeholder="Pilih atau cari trainer internal..."
-                    track-by="id"
-                    label="nama_lengkap"
-                    :preselect-first="false"
-                    :disabled="loading"
-                    class="w-full"
-                    :custom-label="trainerLabel"
-                  >
-                    <template #option="{ option }">
-                      <div class="flex items-center">
-                        <div class="flex-shrink-0 w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center text-white text-sm font-semibold">
-                          {{ option.nama_lengkap.charAt(0).toUpperCase() }}
-                        </div>
-                        <div class="ml-3">
-                          <div class="text-sm font-medium text-gray-900">{{ option.nama_lengkap }}</div>
-                          <div class="text-sm text-gray-500">{{ option.jabatan?.nama_jabatan || 'Jabatan tidak ditentukan' }}</div>
-                        </div>
-                      </div>
-                    </template>
-                    <template #singleLabel="{ option }">
-                      <div class="flex items-center">
-                        <div class="flex-shrink-0 w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center text-white text-xs font-semibold">
-                          {{ option.nama_lengkap.charAt(0).toUpperCase() }}
-                        </div>
-                        <div class="ml-2">
-                          <div class="text-sm font-medium">{{ option.nama_lengkap }}</div>
-                          <div class="text-xs text-gray-500">{{ option.jabatan?.nama_jabatan || 'Jabatan tidak ditentukan' }}</div>
-                        </div>
-                      </div>
-                    </template>
-                  </Multiselect>
-                </div>
-                
-                <div v-if="form.trainer_type === 'external'" class="md:col-span-2">
-                  <label class="block text-sm font-medium text-gray-300 mb-2">Nama Trainer External <span class="text-red-400">*</span></label>
-                  <input
-                    v-model="form.external_trainer_name"
-                    type="text"
-                    class="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="Masukkan nama trainer external"
-                    :disabled="loading"
-                  />
-                </div>
-                
-                <div v-if="form.trainer_type === 'external'" class="md:col-span-2">
-                  <label class="block text-sm font-medium text-gray-300 mb-2">Deskripsi Trainer External</label>
-                  <textarea
-                    v-model="form.external_trainer_description"
-                    rows="3"
-                    class="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="Deskripsi pengalaman dan keahlian trainer external"
-                    :disabled="loading"
-                  ></textarea>
-                </div>
-              </div>
-            </div>
 
             <!-- Certificate Template Section -->
             <div class="mb-6">
@@ -578,7 +505,7 @@
               </Link>
               <button
                 type="submit"
-                :disabled="loading"
+                :disabled="loading || isSubmitting"
                 class="flex-1 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white px-4 py-3 rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed relative overflow-hidden"
               >
                 <span v-if="loading" class="flex items-center justify-center">
@@ -695,12 +622,12 @@ const props = defineProps({
   divisions: Array,
   jabatans: Array,
   outlets: Array,
-  internalTrainers: Array,
   certificateTemplates: Array,
 })
 
 const loading = ref(false)
 const fileInput = ref(null)
+const isSubmitting = ref(false)
 
 // Form data
 const form = ref({
@@ -727,10 +654,6 @@ const form = ref({
       duration_minutes: ''
     }
   ], // Default with 1 empty lesson
-  trainer_type: '', // 'internal' or 'external'
-  instructor_id: '', // For internal trainer
-  external_trainer_name: '', // For external trainer
-  external_trainer_description: '', // For external trainer description
   certificate_template_id: '', // Default certificate template
   thumbnail: null // For thumbnail upload
 })
@@ -844,11 +767,8 @@ onMounted(() => {
           description: '',
           duration_minutes: ''
         }], // Default with 1 empty lesson
-    trainer_type: props.course.instructor_id ? 'internal' : 'external',
-    instructor_id: props.course.instructor_id || '',
-    external_trainer_name: props.course.external_trainer_name || '',
-    external_trainer_description: props.course.external_trainer_description || '',
     certificate_template_id: props.course.certificate_template_id ? parseInt(props.course.certificate_template_id) : '',
+    course_type: props.course.course_type || '',
     thumbnail: null
   }
 
@@ -864,10 +784,6 @@ onMounted(() => {
   console.log('Outlets data:', props.outlets)
 })
 
-// Custom label function for trainer multiselect
-const trainerLabel = (trainer) => {
-  return `${trainer.nama_lengkap} - ${trainer.jabatan?.nama_jabatan || 'Jabatan tidak ditentukan'}`
-}
 
 // Methods for dynamic fields
 
@@ -944,12 +860,34 @@ const removeThumbnail = () => {
 }
 
 const updateCourse = async () => {
+  // Prevent double click
+  if (isSubmitting.value || loading.value) {
+    return
+  }
+
   // Validation
   if (!form.value.title.trim() || !form.value.category_id || !form.value.difficulty_level || !form.value.duration_minutes) {
     Swal.fire({
       icon: 'error',
       title: 'Error!',
       text: 'Mohon lengkapi semua field yang wajib diisi!',
+      confirmButtonColor: '#EF4444'
+    })
+    return
+  }
+
+  // Custom validation: At least one target must be selected
+  const hasDivision = form.value.target_division_id || 
+                     (form.value.target_divisions && form.value.target_divisions.length > 0) || 
+                     form.value.target_type === 'all';
+  const hasJabatan = form.value.target_jabatan_ids && form.value.target_jabatan_ids.length > 0;
+  const hasOutlet = form.value.target_outlet_ids && form.value.target_outlet_ids.length > 0;
+  
+  if (!hasDivision && !hasJabatan && !hasOutlet) {
+    Swal.fire({
+      icon: 'error',
+      title: 'Error!',
+      text: 'Minimal harus memilih satu target: divisi, jabatan, atau outlet.',
       confirmButtonColor: '#EF4444'
     })
     return
@@ -989,36 +927,6 @@ const updateCourse = async () => {
     return
   }
 
-  // Trainer validation
-  if (!form.value.trainer_type) {
-    Swal.fire({
-      icon: 'error',
-      title: 'Error!',
-      text: 'Mohon pilih tipe trainer!',
-      confirmButtonColor: '#EF4444'
-    })
-    return
-  }
-
-  if (form.value.trainer_type === 'internal' && !form.value.instructor_id) {
-    Swal.fire({
-      icon: 'error',
-      title: 'Error!',
-      text: 'Mohon pilih trainer internal!',
-      confirmButtonColor: '#EF4444'
-    })
-    return
-  }
-
-  if (form.value.trainer_type === 'external' && !form.value.external_trainer_name.trim()) {
-    Swal.fire({
-      icon: 'error',
-      title: 'Error!',
-      text: 'Mohon masukkan nama trainer external!',
-      confirmButtonColor: '#EF4444'
-    })
-    return
-  }
 
   // Curriculum validation - at least one lesson with required fields
   if (form.value.curriculum.length === 0 || form.value.curriculum.every(lesson => !lesson.title.trim() || !lesson.order_number || !lesson.duration_minutes)) {
@@ -1026,6 +934,17 @@ const updateCourse = async () => {
       icon: 'error',
       title: 'Error!',
       text: 'Mohon tambahkan minimal satu sesi training dengan judul, urutan, dan durasi!',
+      confirmButtonColor: '#EF4444'
+    })
+    return
+  }
+
+  // Course type validation
+  if (!form.value.course_type) {
+    Swal.fire({
+      icon: 'error',
+      title: 'Error!',
+      text: 'Mohon pilih tipe course (mandatory/optional)!',
       confirmButtonColor: '#EF4444'
     })
     return
@@ -1049,20 +968,22 @@ const updateCourse = async () => {
   }
 
   // Show loading state
+  console.log('Setting loading state to true')
   loading.value = true
+  isSubmitting.value = true
+  console.log('Loading state:', loading.value, 'isSubmitting:', isSubmitting.value)
   
-  // Show loading animation
+  // Show simple loading notification
   Swal.fire({
     title: 'Memperbarui Course...',
-    html: `
-      <div class="flex flex-col items-center space-y-4">
-        <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
-        <p class="text-gray-600">Mohon tunggu sebentar...</p>
-      </div>
-    `,
+    text: 'Mohon tunggu sebentar...',
+    icon: 'info',
     showConfirmButton: false,
     allowOutsideClick: false,
-    allowEscapeKey: false
+    allowEscapeKey: false,
+    didOpen: () => {
+      Swal.showLoading()
+    }
   })
   
   try {
@@ -1078,6 +999,7 @@ const updateCourse = async () => {
     formData.append('difficulty_level', form.value.difficulty_level)
     formData.append('duration_minutes', form.value.duration_minutes)
     formData.append('status', form.value.status)
+    formData.append('course_type', form.value.course_type)
 
     // Target fields
     formData.append('target_type', form.value.target_type)
@@ -1110,14 +1032,6 @@ const updateCourse = async () => {
       formData.append(`curriculum[${index}][duration_minutes]`, lesson.duration_minutes)
     })
 
-    // Trainer fields
-    formData.append('trainer_type', form.value.trainer_type)
-    if (form.value.trainer_type === 'internal') {
-      formData.append('instructor_id', form.value.instructor_id)
-    } else {
-      formData.append('external_trainer_name', form.value.external_trainer_name)
-      formData.append('external_trainer_description', form.value.external_trainer_description || '')
-    }
 
     // Thumbnail
     if (form.value.thumbnail && form.value.thumbnail.file) {
@@ -1169,7 +1083,10 @@ const updateCourse = async () => {
       color: '#DC2626'
     })
   } finally {
+    console.log('Resetting loading state to false')
     loading.value = false
+    isSubmitting.value = false
+    console.log('Loading state:', loading.value, 'isSubmitting:', isSubmitting.value)
   }
 }
 </script>

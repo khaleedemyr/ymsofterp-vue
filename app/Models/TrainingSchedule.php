@@ -34,6 +34,9 @@ class TrainingSchedule extends Model
         'end_time' => 'string',
     ];
 
+    // Ensure scheduleTrainers is available in camelCase for frontend
+    protected $appends = ['scheduleTrainers'];
+
     // Relationships
     public function course(): BelongsTo
     {
@@ -58,6 +61,22 @@ class TrainingSchedule extends Model
     public function invitations(): HasMany
     {
         return $this->hasMany(TrainingInvitation::class, 'schedule_id');
+    }
+
+    // New training system relationships
+    public function scheduleTrainers()
+    {
+        return $this->hasMany(TrainingScheduleTrainer::class, 'schedule_id');
+    }
+
+    public function primaryScheduleTrainer()
+    {
+        return $this->hasOne(TrainingScheduleTrainer::class, 'schedule_id')->where('is_primary_trainer', true);
+    }
+
+    public function secondaryScheduleTrainers()
+    {
+        return $this->hasMany(TrainingScheduleTrainer::class, 'schedule_id')->where('is_primary_trainer', false);
     }
 
     // Scopes
@@ -149,7 +168,12 @@ class TrainingSchedule extends Model
             return $this->external_trainer_name;
         }
         
-        // Get trainer from course instructor
+        // Get trainer from schedule trainer relationship
+        if ($this->trainer) {
+            return $this->trainer->nama_lengkap;
+        }
+        
+        // Get trainer from course instructor as fallback
         if ($this->course && $this->course->instructor) {
             return $this->course->instructor->nama_lengkap;
         }
@@ -159,7 +183,7 @@ class TrainingSchedule extends Model
 
     public function getIsTodayAttribute()
     {
-        return $this->scheduled_date === now()->format('Y-m-d');
+        return $this->scheduled_date->format('Y-m-d') === now()->format('Y-m-d');
     }
 
     public function getQrCodeUrlAttribute()
@@ -168,8 +192,8 @@ class TrainingSchedule extends Model
         $data = [
             'schedule_id' => $this->id,
             'course_id' => $this->course_id,
-            'scheduled_date' => $this->scheduled_date,
-            'hash' => hash('sha256', $this->id . $this->course_id . $this->scheduled_date)
+            'scheduled_date' => $this->scheduled_date->format('Y-m-d'),
+            'hash' => hash('sha256', $this->id . $this->course_id . $this->scheduled_date->format('Y-m-d'))
         ];
         
         $qrData = base64_encode(json_encode($data));
@@ -261,4 +285,11 @@ class TrainingSchedule extends Model
             ->where('status', 'invited')
             ->update(['status' => 'absent']);
     }
+
+    // Accessor to ensure scheduleTrainers is available in camelCase
+    public function getScheduleTrainersAttribute()
+    {
+        return $this->scheduleTrainers()->with(['trainer.jabatan', 'trainer.divisi'])->get();
+    }
+
 }

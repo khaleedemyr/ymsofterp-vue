@@ -167,6 +167,37 @@ class LmsCourse extends Model
         return $this->belongsTo(User::class, 'updated_by');
     }
 
+    // New training system relationships
+    public function trainers()
+    {
+        return $this->hasMany(CourseTrainer::class, 'course_id');
+    }
+
+    public function primaryTrainer()
+    {
+        return $this->hasOne(CourseTrainer::class, 'course_id')->where('is_primary', true);
+    }
+
+    public function secondaryTrainers()
+    {
+        return $this->hasMany(CourseTrainer::class, 'course_id')->where('is_primary', false);
+    }
+
+    // public function userTrainingHours()
+    // {
+    //     return $this->hasMany(UserTrainingHours::class, 'course_id');
+    // }
+
+    // public function trainerTeachingHours()
+    // {
+    //     return $this->hasMany(TrainerTeachingHours::class, 'course_id');
+    // }
+
+    // public function jabatanRequiredTrainings()
+    // {
+    //     return $this->hasMany(JabatanRequiredTraining::class, 'course_id');
+    // }
+
     // Scopes
     public function scopePublished($query)
     {
@@ -436,6 +467,128 @@ class LmsCourse extends Model
             $this->targetDivisions()->detach();
         }
     }
+
+    // New training system methods - TEMPORARILY COMMENTED OUT
+    // public function getTrainersList()
+    // {
+    //     return $this->trainers()
+    //         ->with(['trainer.jabatan', 'trainer.divisi'])
+    //         ->orderBy('is_primary', 'desc')
+    //         ->orderBy('trainer.nama_lengkap')
+    //         ->get();
+    // }
+
+    // public function getPrimaryTrainer()
+    // {
+    //     return $this->primaryTrainer()
+    //         ->with(['trainer.jabatan', 'trainer.divisi'])
+    //         ->first();
+    // }
+
+    // public function getSecondaryTrainers()
+    // {
+    //     return $this->secondaryTrainers()
+    //         ->with(['trainer.jabatan', 'trainer.divisi'])
+    //         ->orderBy('trainer.nama_lengkap')
+    //         ->get();
+    // }
+
+    // public function addTrainer($userId, $isPrimary = false, $notes = null)
+    // {
+    //     // If setting as primary, remove primary from others
+    //     if ($isPrimary) {
+    //         $this->trainers()->update(['is_primary' => false]);
+    //     }
+
+    //     return $this->trainers()->create([
+    //         'user_id' => $userId,
+    //         'is_primary' => $isPrimary,
+    //         'notes' => $notes,
+    //         'created_by' => auth()->id(),
+    //         'updated_by' => auth()->id(),
+    //     ]);
+    // }
+
+    // public function removeTrainer($userId)
+    // {
+    //     return $this->trainers()->where('user_id', $userId)->delete();
+    // }
+
+    // public function setPrimaryTrainer($userId)
+    // {
+    //     // Remove primary from all trainers
+    //     $this->trainers()->update(['is_primary' => false]);
+        
+    //     // Set new primary
+    //     return $this->trainers()->where('user_id', $userId)->update(['is_primary' => true]);
+    // }
+
+    // public function getUsersWithTrainingHours()
+    // {
+    //     return $this->userTrainingHours()
+    //         ->with(['user.jabatan', 'user.divisi'])
+    //         ->orderBy('hours_completed', 'desc')
+    //         ->get();
+    // }
+
+    // public function getTotalUsersCompleted()
+    // {
+    //     return $this->userTrainingHours()
+    //         ->where('status', 'completed')
+    //         ->count();
+    // }
+
+    // public function getTotalUsersInProgress()
+    // {
+    //     return $this->userTrainingHours()
+    //         ->where('status', 'in_progress')
+    //         ->count();
+    // }
+
+    // public function getAverageCompletionHours()
+    // {
+    //     return $this->userTrainingHours()
+    //         ->where('status', 'completed')
+    //         ->avg('hours_completed');
+    // }
+
+    // public function getRequiredJabatans()
+    // {
+    //     return $this->jabatanRequiredTrainings()
+    //         ->with(['jabatan.divisi'])
+    //         ->get();
+    // }
+
+    // public function getMandatoryJabatans()
+    // {
+    //     return $this->jabatanRequiredTrainings()
+    //         ->with(['jabatan.divisi'])
+    //         ->where('is_mandatory', true)
+    //         ->get();
+    // }
+
+    // public function getOptionalJabatans()
+    // {
+    //     return $this->jabatanRequiredTrainings()
+    //         ->with(['jabatan.divisi'])
+    //         ->where('is_mandatory', false)
+    //         ->get();
+    // }
+
+    // public function isRequiredForJabatan($jabatanId)
+    // {
+    //     return $this->jabatanRequiredTrainings()
+    //         ->where('jabatan_id', $jabatanId)
+    //         ->exists();
+    // }
+
+    // public function isMandatoryForJabatan($jabatanId)
+    // {
+    //     return $this->jabatanRequiredTrainings()
+    //         ->where('jabatan_id', $jabatanId)
+    //         ->where('is_mandatory', true)
+    //         ->exists();
+    // }
 
     // Boot method
     protected static function boot()

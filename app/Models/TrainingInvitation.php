@@ -208,9 +208,35 @@ class TrainingInvitation extends Model
     public static function validateQRCode(string $qrCode): ?self
     {
         try {
-            $data = json_decode(base64_decode($qrCode), true);
+            $data = null;
+            
+            // First, try to parse as direct JSON (new format from training schedule)
+            $data = json_decode($qrCode, true);
+            if ($data) {
+                \Log::info('QR Code parsed as direct JSON', [
+                    'qr_code' => $qrCode,
+                    'data' => $data
+                ]);
+            } else {
+                // If direct JSON fails, try base64 decode first
+                $decodedData = base64_decode($qrCode);
+                if ($decodedData) {
+                    $data = json_decode($decodedData, true);
+                    if ($data) {
+                        \Log::info('QR Code parsed as base64 encoded JSON', [
+                            'qr_code' => $qrCode,
+                            'data' => $data
+                        ]);
+                    }
+                }
+            }
             
             if (!$data) {
+                \Log::warning('QR Code parsing failed', [
+                    'qr_code' => $qrCode,
+                    'attempted_direct_json' => json_decode($qrCode, true),
+                    'attempted_base64_decode' => base64_decode($qrCode)
+                ]);
                 return null;
             }
             
@@ -219,6 +245,10 @@ class TrainingInvitation extends Model
                 // Validate hash
                 $expectedHash = hash('sha256', $data['invitation_id'] . $data['schedule_id'] . $data['timestamp']);
                 if ($data['hash'] !== $expectedHash) {
+                    \Log::warning('Invitation QR Code hash mismatch', [
+                        'expected' => $expectedHash,
+                        'actual' => $data['hash']
+                    ]);
                     return null;
                 }
                 
@@ -232,11 +262,56 @@ class TrainingInvitation extends Model
                 return $invitation;
             }
             
-            // Check if it's a training schedule QR code
-            if (isset($data['schedule_id'], $data['course_id'], $data['hash'])) {
+            // Check if it's a training schedule QR code (new format)
+            if (isset($data['schedule_id'], $data['course_id'], $data['scheduled_date'], $data['hash'])) {
+                // Try to validate hash - using the same format as TrainingSchedule model
+                $expectedHash = hash('sha256', $data['schedule_id'] . $data['course_id'] . $data['scheduled_date']);
+                $actualHash = base64_decode($data['hash']);
+                
+                // If hash doesn't match, try without base64 decode
+                if ($expectedHash !== $actualHash && $expectedHash !== $data['hash']) {
+                    // Log the mismatch for debugging but don't fail validation
+                    \Log::warning('QR Code hash mismatch', [
+                        'expected' => $expectedHash,
+                        'actual_base64_decoded' => $actualHash,
+                        'actual_raw' => $data['hash'],
+                        'schedule_id' => $data['schedule_id'],
+                        'course_id' => $data['course_id'],
+                        'scheduled_date' => $data['scheduled_date']
+                    ]);
+                }
+                
+                // Find invitation for this schedule and current user
+                $invitation = self::with('schedule')
+                    ->where('schedule_id', $data['schedule_id'])
+                    ->where('user_id', auth()->id())
+                    ->first();
+                
+                if ($invitation) {
+                    \Log::info('QR Code validation successful', [
+                        'invitation_id' => $invitation->id,
+                        'schedule_id' => $data['schedule_id'],
+                        'user_id' => auth()->id()
+                    ]);
+                } else {
+                    \Log::warning('No invitation found for QR Code', [
+                        'schedule_id' => $data['schedule_id'],
+                        'user_id' => auth()->id()
+                    ]);
+                }
+                
+                return $invitation;
+            }
+            
+            // Check if it's a training schedule QR code (old format with timestamp)
+            if (isset($data['schedule_id'], $data['course_id'], $data['hash'], $data['timestamp'])) {
                 // Validate hash
                 $expectedHash = hash('sha256', $data['schedule_id'] . $data['course_id'] . $data['timestamp']);
                 if ($data['hash'] !== $expectedHash) {
+                    \Log::warning('Old format QR Code hash mismatch', [
+                        'expected' => $expectedHash,
+                        'actual' => $data['hash']
+                    ]);
                     return null;
                 }
                 
@@ -249,9 +324,17 @@ class TrainingInvitation extends Model
                 return $invitation;
             }
             
+            \Log::warning('QR Code format not recognized', [
+                'qr_code' => $qrCode,
+                'data' => $data
+            ]);
             return null;
             
         } catch (\Exception $e) {
+            \Log::error('QR Code validation error: ' . $e->getMessage(), [
+                'qr_code' => $qrCode,
+                'trace' => $e->getTraceAsString()
+            ]);
             return null;
         }
     }

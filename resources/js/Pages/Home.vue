@@ -40,6 +40,7 @@ const loadingHrdApprovals = ref(false);
 const pendingCorrectionApprovals = ref([]);
 const loadingCorrectionApprovals = ref(false);
 
+
 // Announcements modal
 const showAnnouncementsModal = ref(false);
 const announcements = ref([]);
@@ -197,6 +198,7 @@ async function loadPendingCorrectionApprovals() {
         loadingCorrectionApprovals.value = false;
     }
 }
+
 
 async function showApprovalDetails(approvalId) {
     try {
@@ -745,6 +747,7 @@ function viewAnnouncement(id) {
     window.open(`/announcement/${id}`, '_blank');
 }
 
+
 onMounted(() => {
     updateGreeting();
     setInterval(updateTime, 1000);
@@ -850,6 +853,7 @@ watch(locale, () => {
                         </div>
                     </div>
                 </div>
+
 
                 <!-- Notifications Section -->
                 <div v-if="totalNotificationsCount > 0" class="flex-shrink-0 mb-4">
@@ -1519,6 +1523,8 @@ watch(locale, () => {
         :index="lightboxIndex"
         @hide="lightboxVisible = false"
     />
+
+
 </template>
 
 <style scoped>
