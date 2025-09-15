@@ -32,11 +32,27 @@ const selectedOutlet = ref(null);
 // Holiday data
 const holidaysData = ref([]);
 
+// Bank Promo Discount data
+const bankPromoTransactions = ref([]);
+const bankPromoPagination = ref(null);
+const bankPromoLoading = ref(false);
+const bankPromoSearch = ref('');
+const bankPromoPerPage = ref(10);
+const bankPromoCurrentPage = ref(1);
+const bankPromoGrandTotal = ref({ total_grand_total: 0, total_discount_amount: 0 });
+const bankPromoOutletFilter = ref('');
+const bankPromoRegionFilter = ref('');
+const bankPromoOutlets = ref([]);
+const bankPromoRegions = ref([]);
+
 // Filter states
 const filters = ref({
     date_from: props.filters.date_from || new Date().toISOString().split('T')[0],
     date_to: props.filters.date_to || new Date().toISOString().split('T')[0]
 });
+
+// Computed property for dashboard data
+const dashboardData = computed(() => props.dashboardData);
 
 // ApexCharts data
 const salesTrendSeries = computed(() => {
@@ -1448,7 +1464,15 @@ watch(filters, () => {
 // Initialize holidays data on mount
 onMounted(() => {
     fetchHolidays();
+    fetchBankPromoTransactions();
+    fetchBankPromoOutlets();
+    fetchBankPromoRegions();
 });
+
+// Watch for dashboard data changes to fetch bank promo transactions
+watch(dashboardData, () => {
+    fetchBankPromoTransactions();
+}, { deep: true });
 
 // Menu region analysis functions
 async function openMenuModal(menuItem) {
@@ -1516,6 +1540,170 @@ async function fetchHolidays() {
     } catch (error) {
         console.error('Error fetching holidays:', error);
         holidaysData.value = [];
+    }
+}
+
+// Bank Promo Discount functions
+async function fetchBankPromoTransactions() {
+    if (!dashboardData.value?.bankPromoDiscount?.orders_with_bank_promo) return;
+    
+    bankPromoLoading.value = true;
+    try {
+        const response = await axios.get('/sales-outlet-dashboard/bank-promo-discount-transactions', {
+            params: {
+                date_from: filters.value.date_from,
+                date_to: filters.value.date_to,
+                search: bankPromoSearch.value,
+                outlet: bankPromoOutletFilter.value,
+                region: bankPromoRegionFilter.value,
+                page: bankPromoCurrentPage.value,
+                per_page: bankPromoPerPage.value
+            }
+        });
+        
+        bankPromoTransactions.value = response.data.transactions || [];
+        bankPromoPagination.value = response.data.pagination || null;
+        bankPromoGrandTotal.value = response.data.grand_total || { total_grand_total: 0, total_discount_amount: 0 };
+    } catch (error) {
+        console.error('Error fetching bank promo transactions:', error);
+        bankPromoTransactions.value = [];
+        bankPromoPagination.value = null;
+    } finally {
+        bankPromoLoading.value = false;
+    }
+}
+
+// Fetch outlets for bank promo filter
+async function fetchBankPromoOutlets() {
+    try {
+        const response = await axios.get('/api/outlets/report');
+        bankPromoOutlets.value = response.data.outlets || [];
+    } catch (error) {
+        console.error('Error fetching outlets:', error);
+        bankPromoOutlets.value = [];
+    }
+}
+
+// Fetch regions for bank promo filter
+async function fetchBankPromoRegions() {
+    try {
+        const response = await axios.get('/api/regions');
+        bankPromoRegions.value = response.data.regions || [];
+    } catch (error) {
+        console.error('Error fetching regions:', error);
+        bankPromoRegions.value = [];
+    }
+}
+
+function searchBankPromoTransactions() {
+    // Debounce search
+    clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(() => {
+        bankPromoCurrentPage.value = 1;
+        fetchBankPromoTransactions();
+    }, 500);
+}
+
+// Handle outlet filter change
+function onBankPromoOutletChange() {
+    bankPromoCurrentPage.value = 1;
+    fetchBankPromoTransactions();
+}
+
+// Handle region filter change
+function onBankPromoRegionChange() {
+    bankPromoOutletFilter.value = ''; // Reset outlet filter when region changes
+    bankPromoCurrentPage.value = 1;
+    fetchBankPromoTransactions();
+}
+
+function goToBankPromoPage(page) {
+    if (page < 1 || page > bankPromoPagination.value.total_pages) return;
+    bankPromoCurrentPage.value = page;
+    fetchBankPromoTransactions();
+}
+
+function getBankPromoPageNumbers() {
+    if (!bankPromoPagination.value) return [];
+    
+    const current = bankPromoPagination.value.current_page;
+    const total = bankPromoPagination.value.total_pages;
+    const pages = [];
+    
+    // Show max 5 page numbers
+    let start = Math.max(1, current - 2);
+    let end = Math.min(total, start + 4);
+    
+    // Adjust start if we're near the end
+    if (end - start < 4) {
+        start = Math.max(1, end - 4);
+    }
+    
+    for (let i = start; i <= end; i++) {
+        pages.push(i);
+    }
+    
+    return pages;
+}
+
+let searchTimeout = null;
+
+// Export function
+async function exportBankPromoTransactions() {
+    if (!filters.value.date_from || !filters.value.date_to) {
+        alert('Silakan pilih rentang tanggal terlebih dahulu');
+        return;
+    }
+    
+    if (!bankPromoTransactions.value.length) {
+        alert('Tidak ada data untuk di-export');
+        return;
+    }
+    
+    try {
+        // Show loading state
+        const button = event.target;
+        const originalText = button.innerHTML;
+        button.innerHTML = '<span class="mr-2"><i class="fas fa-spinner fa-spin"></i></span>Exporting...';
+        button.disabled = true;
+        
+        // Use axios to download the file (same as Report Rekap FJ)
+        const response = await axios.get('/sales-outlet-dashboard/export-bank-promo-discount-transactions', {
+            params: { 
+                date_from: filters.value.date_from, 
+                date_to: filters.value.date_to,
+                search: bankPromoSearch.value,
+                outlet: bankPromoOutletFilter.value,
+                region: bankPromoRegionFilter.value
+            },
+            responseType: 'blob'
+        });
+        
+        // Create blob and download
+        const blob = new Blob([response.data], { 
+            type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+        });
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `Bank_Promo_Discount_Transactions_${filters.value.date_from}_to_${filters.value.date_to}.xlsx`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(url);
+        
+        // Reset button
+        button.innerHTML = originalText;
+        button.disabled = false;
+        
+    } catch (error) {
+        console.error('Export error:', error);
+        alert('Terjadi kesalahan saat export. Silakan coba lagi.');
+        
+        // Reset button
+        const button = event.target;
+        button.innerHTML = '<i class="fa-solid fa-file-excel mr-2"></i>Export Excel';
+        button.disabled = false;
     }
 }
 
@@ -1820,7 +2008,7 @@ const menuRegionChartOptions = computed(() => ({
                     </div>
 
                     <!-- Additional Metrics -->
-                    <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 gap-4 mb-6">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 xl:grid-cols-5 gap-4 mb-6">
                         <!-- Total Discount -->
                         <div class="bg-white rounded-lg shadow-sm border p-6">
                             <div class="flex items-center justify-between">
@@ -1870,6 +2058,20 @@ const menuRegionChartOptions = computed(() => ({
                                 </div>
                                 <div class="p-3 bg-pink-100 rounded-full">
                                     <i class="fa-solid fa-tags text-pink-600 text-lg"></i>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Bank Promo Discount -->
+                        <div class="bg-white rounded-lg shadow-sm border p-6">
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <p class="text-sm font-medium text-gray-600">Bank Promo Discount</p>
+                                    <p class="text-xl font-bold text-gray-900">{{ dashboardData?.bankPromoDiscount?.orders_with_bank_promo || 0 }}</p>
+                                    <p class="text-sm text-gray-500 mt-1">{{ formatCurrency(dashboardData?.bankPromoDiscount?.total_bank_discount_amount || 0) }}</p>
+                                </div>
+                                <div class="p-3 bg-green-100 rounded-full">
+                                    <i class="fa-solid fa-credit-card text-green-600 text-lg"></i>
                                 </div>
                             </div>
                         </div>
@@ -2322,6 +2524,192 @@ const menuRegionChartOptions = computed(() => ({
                                     </tr>
                                 </tbody>
                             </table>
+                        </div>
+                    </div>
+
+                    <!-- Bank Promo Discount Transactions -->
+                    <div v-if="dashboardData?.bankPromoDiscount?.orders_with_bank_promo > 0" class="bg-white rounded-lg shadow-sm border p-6">
+                        <div class="flex justify-between items-center mb-4">
+                            <h3 class="text-lg font-semibold text-gray-900">Bank Promo Discount Transactions</h3>
+                            <div class="flex items-center gap-4">
+                                <!-- Region Filter -->
+                                <select v-model="bankPromoRegionFilter" @change="onBankPromoRegionChange" class="border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                    <option value="">All Regions</option>
+                                    <option v-for="region in bankPromoRegions" :key="region.id" :value="region.id">
+                                        {{ region.name }}
+                                    </option>
+                                </select>
+                                
+                                <!-- Outlet Filter -->
+                                <select v-model="bankPromoOutletFilter" @change="onBankPromoOutletChange" class="border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                    <option value="">All Outlets</option>
+                                    <option v-for="outlet in bankPromoOutlets" :key="outlet.id" :value="outlet.qr_code">
+                                        {{ outlet.name }}
+                                    </option>
+                                </select>
+                                
+                                <!-- Search Input -->
+                                <div class="relative">
+                                    <input 
+                                        type="text" 
+                                        v-model="bankPromoSearch" 
+                                        @input="searchBankPromoTransactions"
+                                        placeholder="Search discount reason..."
+                                        class="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                    >
+                                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                        <i class="fa-solid fa-search text-gray-400"></i>
+                                    </div>
+                                </div>
+                                <!-- Per Page Selector -->
+                                <select v-model="bankPromoPerPage" @change="fetchBankPromoTransactions" class="border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                    <option value="10">10 per page</option>
+                                    <option value="25">25 per page</option>
+                                    <option value="50">50 per page</option>
+                                    <option value="100">100 per page</option>
+                                    <option value="200">200 per page</option>
+                                    <option value="300">300 per page</option>
+                                    <option value="400">400 per page</option>
+                                    <option value="500">500 per page</option>
+                                    <option value="1000">1000 per page</option>
+                                </select>
+                                
+                                <!-- Export Button -->
+                                <button 
+                                    @click="exportBankPromoTransactions"
+                                    :disabled="bankPromoLoading || !bankPromoTransactions.length"
+                                    class="inline-flex items-center px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    <i class="fa-solid fa-file-excel mr-2"></i>
+                                    Export Excel
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Loading State -->
+                        <div v-if="bankPromoLoading" class="text-center py-8">
+                            <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                            <p class="mt-2 text-gray-500">Loading transactions...</p>
+                        </div>
+
+                        <!-- Table -->
+                        <div v-else class="overflow-x-auto">
+                            <table class="min-w-full divide-y divide-gray-200">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID Order</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Paid Number</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Outlet</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Region</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Kasir</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Payment Method</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Grand Total</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Discount Amount</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Discount Reason</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="bg-white divide-y divide-gray-200">
+                                    <tr v-for="order in bankPromoTransactions" :key="order.id">
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ order.id }}</td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ order.paid_number || '-' }}</td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ order.outlet_name || order.kode_outlet || '-' }}</td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ order.region_name || 'N/A' }}</td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ order.kasir || '-' }}</td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                            <span v-if="order.payment_code && order.payment_type" class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                                {{ order.payment_code }} - {{ order.payment_type }}
+                                                <span v-if="order.payment_type === 'credit' && order.card_first4 && order.card_last4" class="ml-1 text-blue-600">
+                                                    (****{{ order.card_first4 }}****{{ order.card_last4 }})
+                                                </span>
+                                                <span v-if="order.payment_type === 'credit' && order.approval_code" class="ml-1 text-blue-600">
+                                                    [{{ order.approval_code }}]
+                                                </span>
+                                            </span>
+                                            <span v-else-if="order.payment_code" class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                                                {{ order.payment_code }}
+                                                <span v-if="order.payment_type === 'credit' && order.card_first4 && order.card_last4" class="ml-1 text-gray-600">
+                                                    (****{{ order.card_first4 }}****{{ order.card_last4 }})
+                                                </span>
+                                                <span v-if="order.payment_type === 'credit' && order.approval_code" class="ml-1 text-gray-600">
+                                                    [{{ order.approval_code }}]
+                                                </span>
+                                            </span>
+                                            <span v-else-if="order.payment_type" class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                                                {{ order.payment_type }}
+                                                <span v-if="order.payment_type === 'credit' && order.card_first4 && order.card_last4" class="ml-1 text-gray-600">
+                                                    (****{{ order.card_first4 }}****{{ order.card_last4 }})
+                                                </span>
+                                                <span v-if="order.payment_type === 'credit' && order.approval_code" class="ml-1 text-gray-600">
+                                                    [{{ order.approval_code }}]
+                                                </span>
+                                            </span>
+                                            <span v-else class="text-gray-400">-</span>
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ formatCurrency(order.grand_total) }}</td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-red-600 font-semibold">{{ formatCurrency(order.manual_discount_amount) }}</td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ order.manual_discount_reason || '-' }}</td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ formatDateTime(order.created_at) }}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- Pagination -->
+                        <div v-if="bankPromoPagination && bankPromoPagination.total_pages > 1" class="mt-6 flex items-center justify-between">
+                            <div class="text-sm text-gray-700">
+                                Showing {{ ((bankPromoPagination.current_page - 1) * bankPromoPagination.per_page) + 1 }} to 
+                                {{ Math.min(bankPromoPagination.current_page * bankPromoPagination.per_page, bankPromoPagination.total) }} of 
+                                {{ bankPromoPagination.total }} results
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <button 
+                                    @click="goToBankPromoPage(bankPromoPagination.current_page - 1)"
+                                    :disabled="!bankPromoPagination.has_prev_page"
+                                    class="px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    Previous
+                                </button>
+                                
+                                <div class="flex items-center gap-1">
+                                    <button 
+                                        v-for="page in getBankPromoPageNumbers()" 
+                                        :key="page"
+                                        @click="goToBankPromoPage(page)"
+                                        :class="[
+                                            'px-3 py-2 text-sm font-medium rounded-md',
+                                            page === bankPromoPagination.current_page 
+                                                ? 'bg-blue-600 text-white' 
+                                                : 'text-gray-500 bg-white border border-gray-300 hover:bg-gray-50'
+                                        ]"
+                                    >
+                                        {{ page }}
+                                    </button>
+                                </div>
+                                
+                                <button 
+                                    @click="goToBankPromoPage(bankPromoPagination.current_page + 1)"
+                                    :disabled="!bankPromoPagination.has_next_page"
+                                    class="px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    Next
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Grand Total Summary -->
+                        <div v-if="bankPromoGrandTotal.total_grand_total > 0" class="mt-6 bg-gradient-to-r from-green-50 to-green-100 rounded-lg p-6 border border-green-200">
+                            <div class="flex items-center justify-between">
+                                <h4 class="text-lg font-bold text-green-800">Grand Total Summary</h4>
+                                <div class="text-right">
+                                    <div class="text-2xl font-bold text-green-800">{{ formatCurrency(bankPromoGrandTotal.total_grand_total) }}</div>
+                                    <div class="text-sm text-green-600">Total Grand Total</div>
+                                </div>
+                            </div>
+                            <div class="mt-4 flex items-center justify-between">
+                                <div class="text-sm text-green-700">Total Discount Amount:</div>
+                                <div class="text-lg font-semibold text-red-600">{{ formatCurrency(bankPromoGrandTotal.total_discount_amount) }}</div>
+                            </div>
                         </div>
                     </div>
                 </div>

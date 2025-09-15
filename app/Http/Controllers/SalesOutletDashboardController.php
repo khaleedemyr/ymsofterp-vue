@@ -49,6 +49,9 @@ class SalesOutletDashboardController extends Controller
         // 7. Promo Usage
         $promoUsage = $this->getPromoUsage($dateFrom, $dateTo);
         
+        // 7.1. Bank Promo Discount
+        $bankPromoDiscount = $this->getBankPromoDiscount($dateFrom, $dateTo);
+        
         // 8. Average Order Value
         $avgOrderValue = $this->getAverageOrderValue($dateFrom, $dateTo);
         
@@ -75,6 +78,7 @@ class SalesOutletDashboardController extends Controller
             'hourlySales' => $hourlySales,
             'recentOrders' => $recentOrders,
             'promoUsage' => $promoUsage,
+            'bankPromoDiscount' => $bankPromoDiscount,
             'avgOrderValue' => $avgOrderValue,
             'peakHours' => $peakHours,
             'lunchDinnerOrders' => $lunchDinnerOrders,
@@ -312,6 +316,293 @@ class SalesOutletDashboardController extends Controller
             'total_promo_usage' => (int) $result->total_promo_usage,
             'promo_usage_percentage' => $totalOrders > 0 ? (($result->orders_with_promo / $totalOrders) * 100) : 0
         ];
+    }
+
+    private function getBankPromoDiscount($dateFrom, $dateTo)
+    {
+        // Get orders with bank promo discount
+        $query = "
+            SELECT 
+                COUNT(*) as orders_with_bank_promo,
+                SUM(manual_discount_amount) as total_bank_discount_amount,
+                AVG(manual_discount_amount) as avg_bank_discount_amount
+            FROM orders 
+            WHERE DATE(created_at) BETWEEN '{$dateFrom}' AND '{$dateTo}' 
+            AND manual_discount_reason LIKE '%BANK%'
+        ";
+
+        $result = DB::select($query)[0];
+
+        // Get total orders for percentage calculation
+        $totalOrdersQuery = "
+            SELECT COUNT(*) as total_orders
+            FROM orders 
+            WHERE DATE(created_at) BETWEEN '{$dateFrom}' AND '{$dateTo}' 
+        ";
+
+        $totalOrders = DB::select($totalOrdersQuery)[0]->total_orders;
+
+        return [
+            'orders_with_bank_promo' => (int) $result->orders_with_bank_promo,
+            'total_bank_discount_amount' => (float) $result->total_bank_discount_amount,
+            'avg_bank_discount_amount' => (float) $result->avg_bank_discount_amount,
+            'bank_promo_percentage' => $totalOrders > 0 ? (($result->orders_with_bank_promo / $totalOrders) * 100) : 0
+        ];
+    }
+
+    public function getBankPromoDiscountTransactions(Request $request)
+    {
+        $dateFrom = $request->get('date_from');
+        $dateTo = $request->get('date_to');
+        $search = $request->get('search', '');
+        $outlet = $request->get('outlet', '');
+        $region = $request->get('region', '');
+        $page = $request->get('page', 1);
+        $perPage = $request->get('per_page', 10);
+
+        if (!$dateFrom || !$dateTo) {
+            return response()->json(['error' => 'Date range is required'], 400);
+        }
+
+        // Build base query with payment information, outlet name, and region
+        $query = "
+            SELECT 
+                o.id,
+                o.paid_number,
+                o.kode_outlet,
+                COALESCE(outlet.nama_outlet, o.kode_outlet) as outlet_name,
+                COALESCE(region.name, 'N/A') as region_name,
+                o.grand_total,
+                o.manual_discount_amount,
+                o.manual_discount_reason,
+                o.created_at,
+                op.payment_code,
+                op.payment_type,
+                op.kasir,
+                op.card_first4,
+                op.card_last4,
+                op.approval_code
+            FROM orders o
+            LEFT JOIN order_payment op ON o.id = op.order_id
+            LEFT JOIN tbl_data_outlet outlet ON o.kode_outlet = outlet.qr_code
+            LEFT JOIN regions region ON outlet.region_id = region.id
+            WHERE DATE(o.created_at) BETWEEN '{$dateFrom}' AND '{$dateTo}' 
+            AND o.manual_discount_reason LIKE '%BANK%'
+        ";
+
+        // Add search filter
+        if (!empty($search)) {
+            $searchEscaped = DB::getPdo()->quote('%' . $search . '%');
+            $query .= " AND o.manual_discount_reason LIKE {$searchEscaped}";
+        }
+
+        // Add outlet filter
+        if (!empty($outlet)) {
+            $outletEscaped = DB::getPdo()->quote($outlet);
+            $query .= " AND o.kode_outlet = {$outletEscaped}";
+        }
+
+        // Add region filter
+        if (!empty($region)) {
+            $regionEscaped = DB::getPdo()->quote($region);
+            $query .= " AND outlet.region_id = {$regionEscaped}";
+        }
+
+        // Get total count for pagination
+        $countQuery = "
+            SELECT COUNT(DISTINCT o.id) as total
+            FROM orders o
+            LEFT JOIN order_payment op ON o.id = op.order_id
+            LEFT JOIN tbl_data_outlet outlet ON o.kode_outlet = outlet.qr_code
+            LEFT JOIN regions region ON outlet.region_id = region.id
+            WHERE DATE(o.created_at) BETWEEN '{$dateFrom}' AND '{$dateTo}' 
+            AND o.manual_discount_reason LIKE '%BANK%'
+        ";
+
+        if (!empty($search)) {
+            $searchEscaped = DB::getPdo()->quote('%' . $search . '%');
+            $countQuery .= " AND o.manual_discount_reason LIKE {$searchEscaped}";
+        }
+
+        if (!empty($outlet)) {
+            $outletEscaped = DB::getPdo()->quote($outlet);
+            $countQuery .= " AND o.kode_outlet = {$outletEscaped}";
+        }
+
+        if (!empty($region)) {
+            $regionEscaped = DB::getPdo()->quote($region);
+            $countQuery .= " AND outlet.region_id = {$regionEscaped}";
+        }
+
+        $totalCount = DB::select($countQuery)[0]->total;
+
+        // Add pagination
+        $offset = ($page - 1) * $perPage;
+        $query .= " ORDER BY created_at DESC LIMIT {$perPage} OFFSET {$offset}";
+
+        $transactions = DB::select($query);
+
+        // Calculate grand total for all matching transactions (not just current page)
+        $grandTotalQuery = "
+            SELECT 
+                SUM(o.grand_total) as total_grand_total,
+                SUM(o.manual_discount_amount) as total_discount_amount
+            FROM orders o
+            LEFT JOIN order_payment op ON o.id = op.order_id
+            LEFT JOIN tbl_data_outlet outlet ON o.kode_outlet = outlet.qr_code
+            LEFT JOIN regions region ON outlet.region_id = region.id
+            WHERE DATE(o.created_at) BETWEEN '{$dateFrom}' AND '{$dateTo}' 
+            AND o.manual_discount_reason LIKE '%BANK%'
+        ";
+
+        if (!empty($search)) {
+            $searchEscaped = DB::getPdo()->quote('%' . $search . '%');
+            $grandTotalQuery .= " AND o.manual_discount_reason LIKE {$searchEscaped}";
+        }
+
+        if (!empty($outlet)) {
+            $outletEscaped = DB::getPdo()->quote($outlet);
+            $grandTotalQuery .= " AND o.kode_outlet = {$outletEscaped}";
+        }
+
+        if (!empty($region)) {
+            $regionEscaped = DB::getPdo()->quote($region);
+            $grandTotalQuery .= " AND outlet.region_id = {$regionEscaped}";
+        }
+
+        $grandTotalResult = DB::select($grandTotalQuery)[0];
+
+        // Calculate pagination info
+        $totalPages = ceil($totalCount / $perPage);
+        $hasNextPage = $page < $totalPages;
+        $hasPrevPage = $page > 1;
+
+        return response()->json([
+            'transactions' => $transactions,
+            'pagination' => [
+                'current_page' => (int) $page,
+                'per_page' => (int) $perPage,
+                'total' => (int) $totalCount,
+                'total_pages' => (int) $totalPages,
+                'has_next_page' => $hasNextPage,
+                'has_prev_page' => $hasPrevPage
+            ],
+            'grand_total' => [
+                'total_grand_total' => (float) ($grandTotalResult->total_grand_total ?? 0),
+                'total_discount_amount' => (float) ($grandTotalResult->total_discount_amount ?? 0)
+            ]
+        ]);
+    }
+
+    public function exportBankPromoDiscountTransactions(Request $request)
+    {
+        try {
+            $dateFrom = $request->get('date_from');
+            $dateTo = $request->get('date_to');
+            $search = $request->get('search', '');
+            $outlet = $request->get('outlet', '');
+            $region = $request->get('region', '');
+
+            if (!$dateFrom || !$dateTo) {
+                return response()->json(['error' => 'Date range is required'], 400);
+            }
+
+            // Build query for export (get all data, no pagination)
+            $query = "
+                SELECT 
+                    o.id,
+                    o.paid_number,
+                    COALESCE(outlet.nama_outlet, o.kode_outlet) as outlet_name,
+                    COALESCE(region.name, 'N/A') as region_name,
+                    op.kasir,
+                    CONCAT(
+                        op.payment_code, 
+                        CASE WHEN op.payment_type THEN CONCAT(' - ', op.payment_type) ELSE '' END,
+                        CASE WHEN op.payment_type = 'credit' AND op.card_first4 AND op.card_last4 
+                             THEN CONCAT(' (****', op.card_first4, '****', op.card_last4, ')') 
+                             ELSE '' END,
+                        CASE WHEN op.payment_type = 'credit' AND op.approval_code 
+                             THEN CONCAT(' [', op.approval_code, ']') 
+                             ELSE '' END
+                    ) as payment_method,
+                    o.grand_total,
+                    o.manual_discount_amount,
+                    o.manual_discount_reason,
+                    o.created_at
+                FROM orders o
+                LEFT JOIN order_payment op ON o.id = op.order_id
+                LEFT JOIN tbl_data_outlet outlet ON o.kode_outlet = outlet.qr_code
+                LEFT JOIN regions region ON outlet.region_id = region.id
+                WHERE DATE(o.created_at) BETWEEN '{$dateFrom}' AND '{$dateTo}' 
+                AND o.manual_discount_reason LIKE '%BANK%'
+            ";
+
+            // Add search filter
+            if (!empty($search)) {
+                $searchEscaped = DB::getPdo()->quote('%' . $search . '%');
+                $query .= " AND o.manual_discount_reason LIKE {$searchEscaped}";
+            }
+
+            // Add outlet filter
+            if (!empty($outlet)) {
+                $outletEscaped = DB::getPdo()->quote($outlet);
+                $query .= " AND o.kode_outlet = {$outletEscaped}";
+            }
+
+            // Add region filter
+            if (!empty($region)) {
+                $regionEscaped = DB::getPdo()->quote($region);
+                $query .= " AND outlet.region_id = {$regionEscaped}";
+            }
+
+            $query .= " ORDER BY o.created_at DESC";
+
+            $transactions = DB::select($query);
+
+            // Calculate grand total
+            $grandTotalQuery = "
+                SELECT 
+                    SUM(o.grand_total) as total_grand_total,
+                    SUM(o.manual_discount_amount) as total_discount_amount,
+                    COUNT(*) as total_transactions
+                FROM orders o
+                LEFT JOIN order_payment op ON o.id = op.order_id
+                LEFT JOIN tbl_data_outlet outlet ON o.kode_outlet = outlet.qr_code
+                LEFT JOIN regions region ON outlet.region_id = region.id
+                WHERE DATE(o.created_at) BETWEEN '{$dateFrom}' AND '{$dateTo}' 
+                AND o.manual_discount_reason LIKE '%BANK%'
+            ";
+
+            if (!empty($search)) {
+                $searchEscaped = DB::getPdo()->quote('%' . $search . '%');
+                $grandTotalQuery .= " AND o.manual_discount_reason LIKE {$searchEscaped}";
+            }
+
+            if (!empty($outlet)) {
+                $outletEscaped = DB::getPdo()->quote($outlet);
+                $grandTotalQuery .= " AND o.kode_outlet = {$outletEscaped}";
+            }
+
+            if (!empty($region)) {
+                $regionEscaped = DB::getPdo()->quote($region);
+                $grandTotalQuery .= " AND outlet.region_id = {$regionEscaped}";
+            }
+
+            $grandTotalResult = DB::select($grandTotalQuery)[0];
+
+            // Create filename
+            $filename = 'Bank_Promo_Discount_Transactions_' . $dateFrom . '_to_' . $dateTo . '.xlsx';
+            
+            // Use Maatwebsite Excel like Report Rekap FJ
+            return \Maatwebsite\Excel\Facades\Excel::download(
+                new \App\Exports\BankPromoDiscountExport($transactions, $grandTotalResult, $dateFrom, $dateTo, $search),
+                $filename
+            );
+            
+        } catch (\Exception $e) {
+            \Log::error('Export Bank Promo Discount error: ' . $e->getMessage());
+            return response()->json(['error' => 'Terjadi kesalahan saat export: ' . $e->getMessage()], 500);
+        }
     }
 
     private function getAverageOrderValue($dateFrom, $dateTo)
