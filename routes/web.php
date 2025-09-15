@@ -1530,4 +1530,20 @@ Route::middleware(['auth', 'verified'])->group(function () {
     });
 });
 
+// Calendar API routes
+Route::middleware(['auth'])->group(function () {
+    Route::get('/api/holidays', [App\Http\Controllers\CalendarController::class, 'getHolidays']);
+    Route::get('/api/reminders', [App\Http\Controllers\CalendarController::class, 'getReminders']);
+    Route::post('/api/reminders', [App\Http\Controllers\CalendarController::class, 'storeReminder']);
+    Route::delete('/api/reminders/{id}', [App\Http\Controllers\CalendarController::class, 'deleteReminder']);
+    Route::get('/api/users/data', [App\Http\Controllers\CalendarController::class, 'getUsersData']);
+});
+
+// Notes API routes
+Route::middleware(['auth'])->group(function () {
+    Route::get('/api/notes', [App\Http\Controllers\NotesController::class, 'index']);
+    Route::post('/api/notes', [App\Http\Controllers\NotesController::class, 'store']);
+    Route::delete('/api/notes/{id}', [App\Http\Controllers\NotesController::class, 'destroy']);
+});
+
 require __DIR__.'/auth.php';

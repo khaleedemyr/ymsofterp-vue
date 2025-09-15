@@ -2,6 +2,8 @@
 import { ref, computed, onMounted, watch } from 'vue';
 import { Head, usePage } from '@inertiajs/vue3';
 import AnalogClock from '@/Components/AnalogClock.vue';
+import CalendarWidget from '@/Components/CalendarWidget.vue';
+import NotesWidget from '@/Components/NotesWidget.vue';
 import WeatherIcon from '@/Components/WeatherIcon.vue';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import AnnouncementList from '@/Components/AnnouncementList.vue';
@@ -787,9 +789,9 @@ watch(locale, () => {
             </div>
             
             <!-- Main Content Grid -->
-            <div class="relative z-10 w-full max-w-7xl mx-auto p-4 md:p-6 h-screen flex flex-col">
+            <div class="relative z-10 w-full h-screen flex flex-col">
                 <!-- Top Section: Welcome Card -->
-                <div class="flex-shrink-0 mb-4">
+                <div class="flex-shrink-0 mb-4 px-4 md:px-6">
                     <div class="backdrop-blur-md rounded-2xl shadow-2xl border p-4 md:p-6 transition-all duration-500 animate-fade-in hover:shadow-3xl"
                         :class="isNight ? 'bg-slate-800/90 border-slate-600/50' : 'bg-white/90 border-white/20'">
                         <!-- Avatar user -->
@@ -999,12 +1001,12 @@ watch(locale, () => {
                     </div>
                 </div>
 
-                <!-- Bottom Section: Clock, Weather, and Announcements -->
-                <div class="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-4 min-h-0">
+                <!-- Bottom Section: Clock, Weather, Calendar, Notes, and Announcements -->
+                <div class="flex-1 grid grid-cols-1 lg:grid-cols-5 gap-4 min-h-0 mb-6 items-stretch px-4 md:px-6">
                     <!-- Left: Clock and Weather -->
                     <div class="lg:col-span-1 flex flex-col gap-4">
                         <!-- Clock Card -->
-                        <div class="backdrop-blur-md rounded-2xl shadow-2xl border p-4 transition-all duration-500 hover:shadow-3xl"
+                        <div class="backdrop-blur-md rounded-2xl shadow-2xl border p-4 transition-all duration-500 hover:shadow-3xl flex-shrink-0"
                             :class="isNight ? 'bg-slate-800/90 border-slate-600/50' : 'bg-white/90 border-white/20'">
                             <div class="flex justify-center">
                                 <AnalogClock :date="time" class="scale-100 md:scale-110 animate-slide-in" />
@@ -1012,7 +1014,7 @@ watch(locale, () => {
                         </div>
                         
                         <!-- Weather Card -->
-                        <div v-if="weather.city && weather.code" class="backdrop-blur-md rounded-2xl shadow-2xl border p-4 transition-all duration-500 animate-fade-in hover:shadow-3xl"
+                        <div v-if="weather.city && weather.code" class="backdrop-blur-md rounded-2xl shadow-2xl border p-4 transition-all duration-500 animate-fade-in hover:shadow-3xl flex-1 flex items-center justify-center"
                             :class="isNight ? 'bg-slate-800/90 border-slate-600/50' : 'bg-white/90 border-white/20'">
                             <div class="flex flex-col items-center gap-2">
                                 <div class="flex items-center gap-2">
@@ -1024,91 +1026,33 @@ watch(locale, () => {
                         </div>
                     </div>
 
+                    <!-- Calendar Widget -->
+                    <div class="lg:col-span-1 flex">
+                        <div class="transition-all duration-500 hover:shadow-3xl w-full">
+                            <CalendarWidget />
+                        </div>
+                    </div>
+
+                    <!-- Notes Widget -->
+                    <div class="lg:col-span-1 flex">
+                        <div class="w-full">
+                            <NotesWidget />
+                        </div>
+                    </div>
+
                     <!-- Right: Announcements -->
-                    <div class="lg:col-span-2">
-                        <div class="backdrop-blur-md rounded-2xl shadow-2xl border p-4 h-full transition-all duration-500 hover:shadow-3xl"
+                    <div class="lg:col-span-2 flex">
+                        <div class="backdrop-blur-md rounded-2xl shadow-2xl border p-4 w-full overflow-y-auto transition-all duration-500 hover:shadow-3xl"
                             :class="isNight ? 'bg-slate-800/90 border-slate-600/50' : 'bg-white/90 border-white/20'">
                             <AnnouncementList :is-night="isNight" @show-all="showAllAnnouncements" />
                         </div>
                     </div>
                 </div>
+            </div>
 
-                <!-- Quick Actions Section -->
-                <div class="flex-shrink-0 mt-4">
-                    <div class="backdrop-blur-md rounded-2xl shadow-2xl border p-4 transition-all duration-500 hover:shadow-3xl"
-                        :class="isNight ? 'bg-slate-800/90 border-slate-600/50' : 'bg-white/90 border-white/20'">
-                        <div class="flex items-center justify-between">
-                            <div class="flex items-center gap-2">
-                                <div class="w-3 h-3 rounded-full bg-blue-500"></div>
-                                <h3 class="text-lg font-bold" :class="isNight ? 'text-white' : 'text-slate-800'">
-                                    Quick Actions
-                                </h3>
-                            </div>
-                        </div>
-                        
-                        <div class="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                            <!-- Placeholder for other quick actions -->
-                            <div class="group p-4 rounded-xl transition-all duration-300 opacity-50"
-                                 :class="isNight ? 'bg-slate-700/30' : 'bg-gray-50'">
-                                <div class="flex items-center gap-3">
-                                    <div class="w-12 h-12 rounded-full flex items-center justify-center"
-                                         :class="isNight ? 'bg-gray-600/20 text-gray-500' : 'bg-gray-300 text-gray-500'">
-                                        <i class="fas fa-plus text-xl"></i>
-                                    </div>
-                                    <div class="flex-1">
-                                        <h4 class="font-semibold text-sm" :class="isNight ? 'text-gray-500' : 'text-gray-400'">
-                                            Coming Soon
-                                        </h4>
-                                        <p class="text-xs" :class="isNight ? 'text-gray-600' : 'text-gray-500'">
-                                            Fitur lainnya
-                                        </p>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div class="group p-4 rounded-xl transition-all duration-300 opacity-50"
-                                 :class="isNight ? 'bg-slate-700/30' : 'bg-gray-50'">
-                                <div class="flex items-center gap-3">
-                                    <div class="w-12 h-12 rounded-full flex items-center justify-center"
-                                         :class="isNight ? 'bg-gray-600/20 text-gray-500' : 'bg-gray-300 text-gray-500'">
-                                        <i class="fas fa-plus text-xl"></i>
-                                    </div>
-                                    <div class="flex-1">
-                                        <h4 class="font-semibold text-sm" :class="isNight ? 'text-gray-500' : 'text-gray-400'">
-                                            Coming Soon
-                                        </h4>
-                                        <p class="text-xs" :class="isNight ? 'text-gray-600' : 'text-gray-500'">
-                                            Fitur lainnya
-                                        </p>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div class="group p-4 rounded-xl transition-all duration-300 opacity-50"
-                                 :class="isNight ? 'bg-slate-700/30' : 'bg-gray-50'">
-                                <div class="flex items-center gap-3">
-                                    <div class="w-12 h-12 rounded-full flex items-center justify-center"
-                                         :class="isNight ? 'bg-gray-600/20 text-gray-500' : 'bg-gray-300 text-gray-500'">
-                                        <i class="fas fa-plus text-xl"></i>
-                                    </div>
-                                    <div class="flex-1">
-                                        <h4 class="font-semibold text-sm" :class="isNight ? 'text-gray-500' : 'text-gray-400'">
-                                            Coming Soon
-                                        </h4>
-                                        <p class="text-xs" :class="isNight ? 'text-gray-600' : 'text-gray-500'">
-                                            Fitur lainnya
-                                        </p>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Footer -->
-                <div class="flex-shrink-0 mt-4 text-center text-xs opacity-90" :class="isNight ? 'text-indigo-300' : 'text-indigo-500'">
-                    {{ t('home.powered') }} &copy; {{ new Date().getFullYear() }}
-                </div>
+            <!-- Footer -->
+            <div class="flex-shrink-0 text-center text-xs opacity-90 py-4 mt-6 px-4 md:px-6" :class="isNight ? 'text-indigo-300' : 'text-indigo-500'">
+                {{ t('home.powered') }} &copy; {{ new Date().getFullYear() }}
             </div>
         </div>
 

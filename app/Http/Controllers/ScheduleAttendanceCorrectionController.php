@@ -457,20 +457,118 @@ class ScheduleAttendanceCorrectionController extends Controller
                 $oldData = json_decode($approval->old_value, true);
                 $newData = json_decode($approval->new_value, true);
                 
-                // Update the attendance record in att_log
-                $updated = DB::table('att_log')
-                    ->where('sn', $oldData['sn'])
+                // Log the data for debugging
+                \Log::info('Attendance correction data:', [
+                    'approval_id' => $id,
+                    'old_data' => $oldData,
+                    'new_data' => $newData
+                ]);
+                
+                // First, check if the record exists
+                $existingRecord = DB::table('att_log')
                     ->where('pin', $oldData['pin'])
                     ->where('scan_date', $oldData['scan_date'])
                     ->where('inoutmode', $oldData['inoutmode'])
-                    ->update([
-                        'scan_date' => $newData['scan_date'],
-                        'verifymode' => $newData['verifymode'],
-                        'device_ip' => $newData['device_ip']
+                    ->where('sn', $oldData['sn'])
+                    ->select('*') // Make sure to select all fields including id
+                    ->first();
+                
+                \Log::info('Existing record check:', [
+                    'found' => $existingRecord ? true : false,
+                    'record_data' => $existingRecord
+                ]);
+                
+                if (!$existingRecord) {
+                    // Try to find similar records with different conditions
+                    $similarRecords = DB::table('att_log')
+                        ->where('pin', $oldData['pin'])
+                        ->where('inoutmode', $oldData['inoutmode'])
+                        ->where('sn', $oldData['sn'])
+                        ->whereDate('scan_date', date('Y-m-d', strtotime($oldData['scan_date'])))
+                        ->select('*') // Make sure to select all fields including id
+                        ->get();
+                    
+                    \Log::info('Similar records found:', [
+                        'count' => $similarRecords->count(),
+                        'records' => $similarRecords->toArray()
                     ]);
+                    
+                    if ($similarRecords->count() > 0) {
+                        // Use the first similar record
+                        $existingRecord = $similarRecords->first();
+                        \Log::info('Using similar record:', ['record' => $existingRecord]);
+                    }
+                }
+                
+                if ($existingRecord && isset($existingRecord->id)) {
+                    // Update the found record
+                    $updated = DB::table('att_log')
+                        ->where('id', $existingRecord->id)
+                        ->update([
+                            'scan_date' => $newData['scan_date'],
+                            'verifymode' => $newData['verifymode'] ?? $oldData['verifymode'],
+                            'device_ip' => $newData['device_ip'] ?? $oldData['device_ip']
+                        ]);
+                    
+                    \Log::info('Attendance update result:', [
+                        'updated_rows' => $updated,
+                        'record_id' => $existingRecord->id
+                    ]);
+                } else {
+                    \Log::warning('Existing record found but no ID available:', [
+                        'existing_record' => $existingRecord,
+                        'has_id' => isset($existingRecord->id)
+                    ]);
+                    
+                    // Try alternative approach - find by record_id if available
+                    if (isset($approval->record_id) && $approval->record_id > 0) {
+                        $updated = DB::table('att_log')
+                            ->where('id', $approval->record_id)
+                            ->update([
+                                'scan_date' => $newData['scan_date'],
+                                'verifymode' => $newData['verifymode'] ?? $oldData['verifymode'],
+                                'device_ip' => $newData['device_ip'] ?? $oldData['device_ip']
+                            ]);
+                        
+                        \Log::info('Updated by record_id:', [
+                            'updated_rows' => $updated,
+                            'record_id' => $approval->record_id
+                        ]);
+                    } else {
+                        $updated = 0;
+                    }
+                }
                 
                 if ($updated === 0) {
-                    throw new \Exception('Gagal mengupdate data attendance');
+                    // Last resort: create a new record if the original doesn't exist
+                    \Log::info('Attempting to create new attendance record');
+                    
+                    $newRecordId = DB::table('att_log')->insertGetId([
+                        'sn' => $newData['sn'],
+                        'pin' => $newData['pin'],
+                        'scan_date' => $newData['scan_date'],
+                        'inoutmode' => $newData['inoutmode'],
+                        'verifymode' => $newData['verifymode'] ?? $oldData['verifymode'],
+                        'device_ip' => $newData['device_ip'] ?? $oldData['device_ip'],
+                        'created_at' => now(),
+                        'updated_at' => now()
+                    ]);
+                    
+                    if ($newRecordId) {
+                        \Log::info('Created new attendance record:', [
+                            'new_record_id' => $newRecordId,
+                            'data' => $newData
+                        ]);
+                        $updated = 1; // Mark as successful
+                    } else {
+                        \Log::error('Failed to create new attendance record', [
+                            'approval_id' => $id,
+                            'old_data' => $oldData,
+                            'new_data' => $newData,
+                            'approval_record_id' => $approval->record_id ?? 'not_provided'
+                        ]);
+                        throw new \Exception('Gagal mengupdate data attendance: Record tidak ditemukan dan tidak dapat dibuat baru');
+                    }
                 }
                 
                 // Log the correction for audit trail
@@ -507,6 +605,13 @@ class ScheduleAttendanceCorrectionController extends Controller
             
         } catch (\Exception $e) {
             DB::rollBack();
+            
+            \Log::error('Error approving correction:', [
+                'approval_id' => $id,
+                'user_id' => $user->id,
+                'error_message' => $e->getMessage(),
+                'error_trace' => $e->getTraceAsString()
+            ]);
             
             return response()->json([
                 'success' => false,
