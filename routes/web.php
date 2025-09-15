@@ -352,6 +352,7 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/outlets', [OutletController::class, 'index'])->name('outlets.index');
     Route::get('/api/outlets', [\App\Http\Controllers\OutletController::class, 'apiList'])->name('outlets.list');
     Route::get('/api/outlets/report', [App\Http\Controllers\ReportController::class, 'apiOutlets'])->middleware(['auth']);
+Route::get('/api/regions', [App\Http\Controllers\ReportController::class, 'apiRegions'])->middleware(['auth']);
     Route::get('/api/outlets/investor', [\App\Http\Controllers\InvestorController::class, 'outlets'])->middleware(['auth:sanctum']);
     Route::get('/api/outlets/{id}', [\App\Http\Controllers\OutletController::class, 'apiShow'])->name('outlets.show');
     Route::post('/outlets', [OutletController::class, 'store'])->name('outlets.store');

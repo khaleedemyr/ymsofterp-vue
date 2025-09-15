@@ -1,6 +1,7 @@
 <script setup>
-import { ref, watch } from 'vue'
+import { ref, watch, computed } from 'vue'
 import axios from 'axios'
+import VueApexCharts from 'vue3-apexcharts'
 
 const props = defineProps({
   isOpen: Boolean,
@@ -102,6 +103,134 @@ function formatCurrency(value) {
     maximumFractionDigits: 0
   }).format(value)
 }
+
+// Computed properties for revenue chart
+const revenueChartSeries = computed(() => {
+  if (!outletData.value?.outlets) return []
+  
+  // Get all unique outlet names (sorted by revenue descending)
+  const allOutlets = [...outletData.value.outlets].sort((a, b) => b.revenue - a.revenue)
+  const allOutletNames = allOutlets.map(outlet => outlet.outlet_name)
+  
+  // Group outlets by region
+  const regionGroups = {}
+  outletData.value.outlets.forEach(outlet => {
+    if (!regionGroups[outlet.region_name]) {
+      regionGroups[outlet.region_name] = {}
+    }
+    regionGroups[outlet.region_name][outlet.outlet_name] = outlet.revenue
+  })
+  
+  // Create series for each region with data for all outlets
+  const series = []
+  const colors = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#06B6D4']
+  let colorIndex = 0
+  
+  Object.keys(regionGroups).forEach(regionName => {
+    const regionData = regionGroups[regionName]
+    const data = allOutletNames.map(outletName => {
+      return regionData[outletName] || 0 // 0 for outlets not in this region
+    })
+    
+    series.push({
+      name: regionName,
+      data: data
+    })
+    colorIndex++
+  })
+  
+  return series
+})
+
+const revenueChartOptions = computed(() => {
+  if (!outletData.value?.outlets) return {}
+  
+  // Get all outlet names for x-axis (sorted by revenue descending)
+  const allOutlets = [...outletData.value.outlets].sort((a, b) => b.revenue - a.revenue)
+  const outletNames = allOutlets.map(outlet => outlet.outlet_name)
+  
+  return {
+    chart: {
+      type: 'bar',
+      height: 300,
+      toolbar: { show: true },
+      dropShadow: {
+        enabled: true,
+        top: 4,
+        left: 2,
+        blur: 8,
+        opacity: 0.18
+      }
+    },
+    plotOptions: {
+      bar: {
+        borderRadius: 4,
+        columnWidth: '60%',
+        dataLabels: {
+          enabled: false
+        },
+        horizontal: false
+      }
+    },
+    xaxis: {
+      categories: outletNames,
+      labels: {
+        rotate: -45,
+        style: {
+          fontSize: '12px'
+        }
+      }
+    },
+    yaxis: {
+      title: {
+        text: 'Revenue (Rp)'
+      },
+      labels: {
+        formatter: function(value) {
+          return new Intl.NumberFormat('id-ID', {
+            style: 'currency',
+            currency: 'IDR',
+            minimumFractionDigits: 0,
+            maximumFractionDigits: 0
+          }).format(value)
+        }
+      }
+    },
+    colors: ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#06B6D4'],
+    legend: {
+      position: 'top'
+    },
+    grid: {
+      borderColor: '#e5e7eb'
+    },
+    tooltip: {
+      shared: true,
+      intersect: false,
+      y: {
+        formatter: function(value) {
+          if (value === 0) return 'N/A'
+          return new Intl.NumberFormat('id-ID', {
+            style: 'currency',
+            currency: 'IDR',
+            minimumFractionDigits: 0,
+            maximumFractionDigits: 0
+          }).format(value)
+        }
+      }
+    },
+    dataLabels: {
+      enabled: false
+    }
+  }
+})
+</script>
+
+<script>
+export default {
+  components: {
+    apexchart: VueApexCharts
+  }
+}
 </script>
 
 <template>
@@ -151,6 +280,19 @@ function formatCurrency(value) {
 
           <!-- Data Content -->
           <div v-else-if="outletData">
+            <!-- Revenue Chart -->
+            <div class="bg-white border border-gray-200 rounded-lg p-6 mb-6">
+              <h4 class="text-lg font-semibold text-gray-900 mb-4">Revenue per Outlet by Region</h4>
+              <div class="h-80">
+                <apexchart
+                  type="bar"
+                  height="100%"
+                  :options="revenueChartOptions"
+                  :series="revenueChartSeries"
+                ></apexchart>
+              </div>
+            </div>
+
             <!-- Summary Cards -->
             <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
               <div class="bg-blue-50 rounded-lg p-4">

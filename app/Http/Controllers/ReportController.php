@@ -1572,7 +1572,7 @@ class ReportController extends Controller
                 $query->where('id_outlet', $user->id_outlet);
             }
             
-            $outlets = $query->get(['id_outlet as id', 'nama_outlet as name', 'qr_code']);
+            $outlets = $query->get(['id_outlet as id', 'nama_outlet as name', 'qr_code', 'region_id']);
             
             \Log::info('apiOutlets called', [
                 'user_id' => $user->id,
@@ -1584,6 +1584,29 @@ class ReportController extends Controller
             return response()->json(['outlets' => $outlets]);
         } catch (\Exception $e) {
             \Log::error('Error in apiOutlets', [
+                'error' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine()
+            ]);
+            
+            return response()->json(['error' => 'Terjadi kesalahan: ' . $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * API: Get all regions
+     */
+    public function apiRegions()
+    {
+        try {
+            $regions = \DB::table('regions')
+                ->select('id', 'name', 'code')
+                ->orderBy('name')
+                ->get();
+            
+            return response()->json(['regions' => $regions]);
+        } catch (\Exception $e) {
+            \Log::error('Error in apiRegions', [
                 'error' => $e->getMessage(),
                 'file' => $e->getFile(),
                 'line' => $e->getLine()
@@ -1609,6 +1632,7 @@ class ReportController extends Controller
     public function reportItemEngineering(Request $request)
     {
         $outlet = $request->input('outlet');
+        $region = $request->input('region');
         $dateFrom = $request->input('date_from');
         $dateTo = $request->input('date_to');
 
@@ -1624,8 +1648,16 @@ class ReportController extends Controller
                 \DB::raw('MAX(order_items.price) as harga_jual'),
                 \DB::raw('SUM(order_items.qty * order_items.price) as subtotal'),
             ]);
+        
+        // Filter by outlet or region
         if ($outlet) {
             $query->where('orders.kode_outlet', $outlet);
+        } elseif ($region) {
+            // If region is selected, get all outlets in that region
+            $outletCodes = \DB::table('tbl_data_outlet')
+                ->where('region_id', $region)
+                ->pluck('qr_code');
+            $query->whereIn('orders.kode_outlet', $outletCodes);
         }
         if ($dateFrom) {
             $query->whereDate('orders.created_at', '>=', $dateFrom);
@@ -1655,6 +1687,13 @@ class ReportController extends Controller
             ->select(['order_items.modifiers', 'order_items.qty'])
             ->when($outlet, function($q) use ($outlet) {
                 $q->where('orders.kode_outlet', $outlet);
+            })
+            ->when($region && !$outlet, function($q) use ($region) {
+                // If region is selected and no specific outlet, get all outlets in that region
+                $outletCodes = \DB::table('tbl_data_outlet')
+                    ->where('region_id', $region)
+                    ->pluck('qr_code');
+                $q->whereIn('orders.kode_outlet', $outletCodes);
             })
             ->when($dateFrom, function($q) use ($dateFrom) {
                 $q->whereDate('orders.created_at', '>=', $dateFrom);
@@ -1981,6 +2020,7 @@ class ReportController extends Controller
     public function exportItemEngineering(Request $request)
     {
         $outlet = $request->input('outlet');
+        $region = $request->input('region');
         $dateFrom = $request->input('date_from');
         $dateTo = $request->input('date_to');
         $outletName = null;
@@ -2000,8 +2040,15 @@ class ReportController extends Controller
                 \DB::raw('MAX(order_items.price) as harga_jual'),
                 \DB::raw('SUM(order_items.qty * order_items.price) as subtotal'),
             ]);
+        // Filter by outlet or region
         if ($outlet) {
             $query->where('orders.kode_outlet', $outlet);
+        } elseif ($region) {
+            // If region is selected, get all outlets in that region
+            $outletCodes = \DB::table('tbl_data_outlet')
+                ->where('region_id', $region)
+                ->pluck('qr_code');
+            $query->whereIn('orders.kode_outlet', $outletCodes);
         }
         if ($dateFrom) {
             $query->whereDate('orders.created_at', '>=', $dateFrom);
@@ -2020,6 +2067,13 @@ class ReportController extends Controller
             ->select(['order_items.modifiers', 'order_items.qty'])
             ->when($outlet, function($q) use ($outlet) {
                 $q->where('orders.kode_outlet', $outlet);
+            })
+            ->when($region && !$outlet, function($q) use ($region) {
+                // If region is selected and no specific outlet, get all outlets in that region
+                $outletCodes = \DB::table('tbl_data_outlet')
+                    ->where('region_id', $region)
+                    ->pluck('qr_code');
+                $q->whereIn('orders.kode_outlet', $outletCodes);
             })
             ->when($dateFrom, function($q) use ($dateFrom) {
                 $q->whereDate('orders.created_at', '>=', $dateFrom);

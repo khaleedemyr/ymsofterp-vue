@@ -4,12 +4,19 @@
       <h1 class="text-2xl font-bold mb-6 text-blue-800 flex items-center gap-2">
         <i class="fa-solid fa-cogs"></i> Item Engineering
       </h1>
-      <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8 items-end">
+      <div class="grid grid-cols-1 md:grid-cols-5 gap-6 mb-8 items-end">
+        <div>
+          <label class="block text-sm font-medium mb-1">Region</label>
+          <select v-model="filters.region" @change="onRegionChange" class="block w-full rounded-lg border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500 px-3 py-2">
+            <option value="">Pilih Region</option>
+            <option v-for="region in regions" :key="region.id" :value="region.id">{{ region.name }}</option>
+          </select>
+        </div>
         <div>
           <label class="block text-sm font-medium mb-1">Outlet</label>
           <select v-model="filters.outlet" :disabled="!outletDropdownEnabled" class="block w-full rounded-lg border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500 px-3 py-2">
             <option value="">Pilih Outlet</option>
-            <option v-for="outlet in outlets" :key="outlet.id" :value="outlet.qr_code">{{ outlet.name }}</option>
+            <option v-for="outlet in filteredOutlets" :key="outlet.id" :value="outlet.qr_code">{{ outlet.name }}</option>
           </select>
         </div>
         <div>
@@ -136,11 +143,14 @@ import { usePage } from '@inertiajs/vue3';
 import * as XLSX from 'xlsx';
 
 const filters = reactive({
+  region: '',
   outlet: '',
   date_from: '',
   date_to: '',
 });
+const regions = ref([]);
 const outlets = ref([]);
+const filteredOutlets = ref([]);
 const items = ref([]);
 const itemsByCategory = ref({});
 const modifiers = ref([]);
@@ -163,9 +173,27 @@ function toggleCategory(categoryName) {
   expandedCategories.value[categoryName] = !expandedCategories.value[categoryName];
 }
 
+const fetchRegions = async () => {
+  const res = await axios.get('/api/regions');
+  regions.value = res.data.regions || [];
+};
+
 const fetchOutlets = async () => {
   const res = await axios.get('/api/outlets/report');
   outlets.value = res.data.outlets || [];
+  filteredOutlets.value = outlets.value; // Initialize with all outlets
+};
+
+const onRegionChange = () => {
+  if (filters.region) {
+    // Filter outlets by selected region
+    filteredOutlets.value = outlets.value.filter(outlet => outlet.region_id == filters.region);
+  } else {
+    // Show all outlets if no region selected
+    filteredOutlets.value = outlets.value;
+  }
+  // Reset outlet selection when region changes
+  filters.outlet = '';
 };
 
 const fetchMyOutletQr = async () => {
@@ -205,6 +233,9 @@ const exportExcel = () => {
 };
 
 onMounted(async () => {
+  // Always fetch regions
+  await fetchRegions();
+  
   if (user.id_outlet == 1) {
     outletDropdownEnabled.value = true;
     await fetchOutlets();
