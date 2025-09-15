@@ -5,6 +5,8 @@ import AppLayout from '@/Layouts/AppLayout.vue';
 import VueApexCharts from 'vue3-apexcharts';
 import axios from 'axios';
 import Swal from 'sweetalert2';
+import OutletDetailsModal from './Components/OutletDetailsModal.vue';
+import OutletDailyRevenueModal from './Components/OutletDailyRevenueModal.vue';
 
 const props = defineProps({
     dashboardData: Object,
@@ -19,6 +21,17 @@ const selectedMenu = ref(null);
 const menuRegionData = ref(null);
 const menuRegionLoading = ref(false);
 
+// Modal state for outlet details
+const showOutletModal = ref(false);
+const selectedDate = ref(null);
+
+// Modal state for outlet daily revenue
+const showDailyRevenueModal = ref(false);
+const selectedOutlet = ref(null);
+
+// Holiday data
+const holidaysData = ref([]);
+
 // Filter states
 const filters = ref({
     date_from: props.filters.date_from || new Date().toISOString().split('T')[0],
@@ -29,19 +42,85 @@ const filters = ref({
 const salesTrendSeries = computed(() => {
     if (!props.dashboardData?.salesTrend) return [];
     
-    return [
+    console.log('Sales Trend Data:', props.dashboardData.salesTrend);
+    console.log('Holidays Data:', holidaysData.value);
+    
+    // Create separate series for weekday, weekend, and holiday orders
+    const weekdayOrders = [];
+    const weekendOrders = [];
+    const holidayOrders = [];
+    
+    props.dashboardData.salesTrend.forEach((item, index) => {
+        const date = new Date(item.period);
+        const dayOfWeek = date.getDay(); // 0 = Sunday, 6 = Saturday
+        const dateString = item.period;
+        
+        console.log(`Date ${index}: ${dateString}, Day: ${dayOfWeek}, Orders: ${item.orders}`);
+        
+        // Check if this date is a holiday
+        const isHoliday = holidaysData.value.some(holiday => holiday.date === dateString);
+        
+        // Ensure we always have a value for orders, even if 0
+        const ordersValue = item.orders || 0;
+        
+        // Push to appropriate series, others get null to avoid rendering issues
+        if (isHoliday) {
+            weekdayOrders.push(null);
+            weekendOrders.push(null);
+            holidayOrders.push(ordersValue);
+            console.log(`Holiday: ${dateString} - Orders: ${ordersValue} (pushed to holidayOrders)`);
+        } else if (dayOfWeek === 0 || dayOfWeek === 6) {
+            weekdayOrders.push(null);
+            weekendOrders.push(ordersValue);
+            holidayOrders.push(null);
+            console.log(`Weekend: ${dateString} - Orders: ${ordersValue} (pushed to weekendOrders)`);
+        } else {
+            weekdayOrders.push(ordersValue);
+            weekendOrders.push(null);
+            holidayOrders.push(null);
+            console.log(`Weekday: ${dateString} - Orders: ${ordersValue} (pushed to weekdayOrders)`);
+        }
+    });
+    
+    console.log('Weekday Orders:', weekdayOrders);
+    console.log('Weekend Orders:', weekendOrders);
+    console.log('Holiday Orders:', holidayOrders);
+    console.log('First 3 weekday orders:', weekdayOrders.slice(0, 3));
+    console.log('First 3 weekend orders:', weekendOrders.slice(0, 3));
+    console.log('First 3 holiday orders:', holidayOrders.slice(0, 3));
+    
+    const series = [
         {
             name: 'Revenue',
             type: 'line',
-            data: props.dashboardData.salesTrend.map(item => item.revenue)
+            data: props.dashboardData.salesTrend.map(item => item.revenue),
+            zIndex: 1
         },
         {
-            name: 'Orders',
+            name: 'Orders (Weekday)',
             type: 'column',
-            data: props.dashboardData.salesTrend.map(item => item.orders)
+            data: weekdayOrders,
+            zIndex: 2
+        },
+        {
+            name: 'Orders (Weekend)',
+            type: 'column',
+            data: weekendOrders,
+            zIndex: 2
+        },
+        {
+            name: 'Orders (Holiday)',
+            type: 'column',
+            data: holidayOrders,
+            zIndex: 2
         }
     ];
+    
+    console.log('Final Series:', series);
+    return series;
 });
+
+
 
 const salesTrendOptions = computed(() => ({
     chart: {
@@ -54,23 +133,57 @@ const salesTrendOptions = computed(() => ({
             left: 2,
             blur: 8,
             opacity: 0.18
-        }
-    },
-    stroke: { 
-        width: 4, 
-        curve: 'smooth' 
+        },
+        events: {
+            dataPointSelection: function(event, chartContext, config) {
+                // Handle clicks on Orders series (index 1, 2, 3)
+                if (config.seriesIndex === 1 || config.seriesIndex === 2 || config.seriesIndex === 3) {
+                    const dateIndex = config.dataPointIndex;
+                    const salesTrendData = props.dashboardData?.salesTrend;
+                    if (salesTrendData && salesTrendData[dateIndex]) {
+                        const selectedDateValue = salesTrendData[dateIndex].period;
+                        openOutletDetailsModal(selectedDateValue);
+                    }
+                }
+            }
+        },
+        animations: {
+            enabled: true,
+            easing: 'easeinout',
+            speed: 800,
+            animateGradually: {
+                enabled: true,
+                delay: 150
+            },
+            dynamicAnimation: {
+                enabled: true,
+                speed: 350
+            }
+        },
+        stacked: false,
+        group: 'orders'
     },
     markers: { 
-        size: 5, 
+        size: 0, 
         colors: ['#fff'], 
         strokeColors: ['#3B82F6'], 
-        strokeWidth: 3, 
-        hover: { size: 8 } 
+        strokeWidth: 0, 
+        hover: { size: 0 } 
     },
     xaxis: {
         categories: props.dashboardData?.salesTrend?.map(item => {
             return new Date(item.period).toLocaleDateString('id-ID');
-        }) || []
+        }) || [],
+        offsetX: 0,
+        offsetY: 0,
+        labels: {
+            offsetX: 0,
+            offsetY: 0,
+            rotate: -45,
+            style: {
+                fontSize: '12px'
+            }
+        }
     },
     yaxis: [
         {
@@ -90,23 +203,111 @@ const salesTrendOptions = computed(() => ({
             title: { text: 'Orders' }
         }
     ],
-    colors: ['#3B82F6', '#10B981'],
+    colors: ['#3B82F6', '#10B981', '#F59E0B', '#EF4444'], // Blue, Green, Orange, Red
     legend: { position: 'top' },
     grid: { borderColor: '#e5e7eb' },
     tooltip: {
-        y: {
-            formatter: function(value, { seriesIndex }) {
-                if (seriesIndex === 0) {
-                    return new Intl.NumberFormat('id-ID', {
-                        style: 'currency',
-                        currency: 'IDR',
-                        minimumFractionDigits: 0
-                    }).format(value);
-                }
-                return value;
+        shared: true,
+        intersect: false,
+        custom: function({ series, seriesIndex, dataPointIndex, w }) {
+            const date = w.globals.labels[dataPointIndex];
+            const salesTrendData = props.dashboardData?.salesTrend;
+            const dayData = salesTrendData[dataPointIndex];
+            
+            if (!dayData) return '';
+            
+            const revenue = dayData.revenue || 0;
+            const orders = dayData.orders || 0;
+            const pax = dayData.customers || 0; // Backend uses 'customers' field for pax
+            const avgPerOrder = orders > 0 ? revenue / orders : 0;
+            const avgPerPax = pax > 0 ? revenue / pax : 0;
+            
+            // Format revenue with proper Indonesian Rupiah format
+            const formatCurrency = (value) => {
+                return new Intl.NumberFormat('id-ID', {
+                    style: 'currency',
+                    currency: 'IDR',
+                    minimumFractionDigits: 0,
+                    maximumFractionDigits: 0
+                }).format(value);
+            };
+            
+            return `
+                <div class="px-3 py-2 bg-white border border-gray-200 rounded-lg shadow-lg">
+                    <div class="text-sm font-semibold text-gray-900 mb-2">${date}</div>
+                    <div class="text-sm space-y-1">
+                        <div><span class="font-medium">Revenue:</span> ${formatCurrency(revenue)}</div>
+                        <div><span class="font-medium">Pax:</span> ${pax.toLocaleString('id-ID')}</div>
+                        <div><span class="font-medium">Orders:</span> ${orders.toLocaleString('id-ID')}</div>
+                        <div><span class="font-medium">Avg per Order:</span> ${formatCurrency(avgPerOrder)}</div>
+                        <div><span class="font-medium">Avg per Pax:</span> ${formatCurrency(avgPerPax)}</div>
+                    </div>
+                </div>
+            `;
+        }
+    },
+    plotOptions: {
+        bar: {
+            borderRadius: 4,
+            columnWidth: '60%',
+            dataLabels: {
+                enabled: false
+            },
+            horizontal: false,
+            hideZeroBarsWhenGrouped: false,
+            barHeight: '100%',
+            rangeBarOverlap: false,
+            rangeBarGroupRows: false,
+            startingShape: 'flat',
+            endingShape: 'flat'
+        }
+    },
+    dataLabels: {
+        enabled: false
+    },
+    stroke: {
+        width: [4, 0, 0, 0], // Line for Revenue, 0 for columns
+        curve: 'smooth'
+    },
+    fill: {
+        type: ['gradient', 'solid', 'solid', 'solid'], // Gradient for line, solid for columns
+        opacity: [0.8, 0.8, 0.8, 0.8]
+    },
+    noData: {
+        text: 'No data available',
+        align: 'center',
+        verticalAlign: 'middle',
+        style: {
+            color: '#999',
+            fontSize: '14px'
+        }
+    },
+    states: {
+        hover: {
+            filter: {
+                type: 'lighten',
+                value: 0.15
+            }
+        },
+        active: {
+            allowMultipleDataPointsSelection: false,
+            filter: {
+                type: 'darken',
+                value: 0.35
             }
         }
-    }
+    },
+    responsive: [{
+        breakpoint: 480,
+        options: {
+            chart: {
+                height: 300
+            },
+            legend: {
+                position: 'bottom'
+            }
+        }
+    }]
 }));
 
 const hourlySalesSeries = computed(() => {
@@ -665,7 +866,17 @@ const revenuePerOutletOptions = computed(() => ({
         height: 400,
         stacked: true,
         toolbar: { show: true },
-        animations: { enabled: true, easing: 'easeinout', speed: 800 }
+        animations: { enabled: true, easing: 'easeinout', speed: 800 },
+        events: {
+            dataPointSelection: function(event, chartContext, config) {
+                console.log('Chart clicked:', config);
+                handleChartClick(config);
+            },
+            click: function(event, chartContext, config) {
+                console.log('Chart click event:', config);
+                handleChartClick(config);
+            }
+        }
     },
     xaxis: {
         categories: revenuePerOutletSeries.value.length > 0 ? 
@@ -1231,7 +1442,13 @@ function resetFilters() {
 // Watch for filter changes
 watch(filters, () => {
     applyFilters();
+    fetchHolidays();
 }, { deep: true });
+
+// Initialize holidays data on mount
+onMounted(() => {
+    fetchHolidays();
+});
 
 // Menu region analysis functions
 async function openMenuModal(menuItem) {
@@ -1265,6 +1482,93 @@ function closeMenuModal() {
     showMenuModal.value = false;
     selectedMenu.value = null;
     menuRegionData.value = null;
+}
+
+function openOutletDetailsModal(date) {
+    selectedDate.value = date;
+    showOutletModal.value = true;
+}
+
+function closeOutletModal() {
+    showOutletModal.value = false;
+    selectedDate.value = null;
+}
+
+function openDailyRevenueModal(outlet) {
+    selectedOutlet.value = outlet;
+    showDailyRevenueModal.value = true;
+}
+
+function closeDailyRevenueModal() {
+    showDailyRevenueModal.value = false;
+    selectedOutlet.value = null;
+}
+
+async function fetchHolidays() {
+    try {
+        const response = await axios.get('/sales-outlet-dashboard/holidays', {
+            params: {
+                date_from: filters.value.date_from,
+                date_to: filters.value.date_to
+            }
+        });
+        holidaysData.value = response.data;
+    } catch (error) {
+        console.error('Error fetching holidays:', error);
+        holidaysData.value = [];
+    }
+}
+
+function handleChartClick(config) {
+    if (!config || config.dataPointIndex === undefined || config.seriesIndex === undefined) {
+        console.log('Invalid click config:', config);
+        return;
+    }
+    
+    const outletIndex = config.dataPointIndex;
+    const regionIndex = config.seriesIndex;
+    
+    const data = props.dashboardData?.revenuePerOutlet;
+    if (!data) {
+        console.log('No revenue data available');
+        return;
+    }
+    
+    const regions = Object.keys(data);
+    const regionName = regions[regionIndex];
+    
+    console.log('Click - Outlet index:', outletIndex, 'Region index:', regionIndex, 'Region name:', regionName);
+    console.log('Available regions:', regions);
+    console.log('Region data:', data[regionName]);
+    
+    if (!data[regionName] || !data[regionName].outlets) {
+        console.log('No outlets found for region:', regionName);
+        return;
+    }
+    
+    // Get all unique outlets across all regions to find the correct outlet
+    const allOutlets = new Set();
+    regions.forEach(region => {
+        data[region].outlets.forEach(outlet => {
+            allOutlets.add(outlet.outlet_name);
+        });
+    });
+    
+    const allOutletsArray = Array.from(allOutlets);
+    const clickedOutletName = allOutletsArray[outletIndex];
+    
+    console.log('All outlets:', allOutletsArray);
+    console.log('Clicked outlet name:', clickedOutletName);
+    
+    // Find the outlet in the clicked region
+    const outlet = data[regionName].outlets.find(outlet => outlet.outlet_name === clickedOutletName);
+    
+    if (outlet) {
+        console.log('Found outlet:', outlet);
+        openDailyRevenueModal(outlet);
+    } else {
+        console.log('Outlet not found in region:', regionName, 'for outlet name:', clickedOutletName);
+    }
 }
 
 // Computed properties for menu region chart
@@ -1575,7 +1879,13 @@ const menuRegionChartOptions = computed(() => ({
                     <div class="grid grid-cols-1 xl:grid-cols-2 gap-4 mb-6">
                         <!-- Sales Trend -->
                         <div class="bg-white rounded-lg shadow-sm border p-6">
-                            <h3 class="text-lg font-semibold text-gray-900 mb-4">Sales Trend</h3>
+                            <div class="flex justify-between items-center mb-4">
+                                <h3 class="text-lg font-semibold text-gray-900">Sales Trend</h3>
+                                <div class="text-xs text-gray-500 bg-blue-50 px-2 py-1 rounded">
+                                    <i class="fa-solid fa-info-circle mr-1"></i>
+                                    Klik batang untuk detail outlet • Hijau: Weekday • Orange: Weekend • Merah: Libur
+                                </div>
+                            </div>
                             <apexchart 
                                 v-if="salesTrendSeries.length > 0" 
                                 type="line" 
@@ -1822,7 +2132,13 @@ const menuRegionChartOptions = computed(() => ({
                     <div class="mb-6">
                         <!-- Revenue per Outlet by Region -->
                         <div class="bg-white rounded-lg shadow-sm border p-6">
-                            <h3 class="text-lg font-semibold text-gray-900 mb-4">Revenue per Outlet by Region</h3>
+                            <div class="flex justify-between items-center mb-4">
+                                <h3 class="text-lg font-semibold text-gray-900">Revenue per Outlet by Region</h3>
+                                <div class="text-xs text-gray-500 bg-blue-50 px-2 py-1 rounded">
+                                    <i class="fa-solid fa-info-circle mr-1"></i>
+                                    Klik batang untuk detail revenue harian
+                                </div>
+                            </div>
                             <apexchart 
                                 v-if="revenuePerOutletSeries.length > 0" 
                                 type="bar" 
@@ -2107,13 +2423,31 @@ const menuRegionChartOptions = computed(() => ({
                 </div>
             </div>
         </div>
+
+        <!-- Outlet Details Modal -->
+        <OutletDetailsModal
+            :is-open="showOutletModal"
+            :selected-date="selectedDate"
+            @close="closeOutletModal"
+        />
+
+        <!-- Outlet Daily Revenue Modal -->
+        <OutletDailyRevenueModal
+            :is-open="showDailyRevenueModal"
+            :selected-outlet="selectedOutlet"
+            :date-from="filters.date_from"
+            :date-to="filters.date_to"
+            @close="closeDailyRevenueModal"
+        />
     </AppLayout>
 </template>
 
 <script>
 export default {
     components: {
-        apexchart: VueApexCharts
+        apexchart: VueApexCharts,
+        OutletDetailsModal,
+        OutletDailyRevenueModal
     }
 }
 </script>

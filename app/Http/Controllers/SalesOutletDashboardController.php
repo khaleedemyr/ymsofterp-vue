@@ -728,4 +728,295 @@ class SalesOutletDashboardController extends Controller
 
         return response()->json($data);
     }
+
+    public function getOutletDetailsByDate(Request $request)
+    {
+        $date = $request->get('date');
+        
+        if (!$date) {
+            return response()->json(['error' => 'Date is required'], 400);
+        }
+
+        $query = "
+            SELECT 
+                o.kode_outlet,
+                COALESCE(outlet.nama_outlet, o.kode_outlet) as outlet_name,
+                COALESCE(region.name, 'Unknown Region') as region_name,
+                COALESCE(region.code, 'UNK') as region_code,
+                COUNT(*) as orders,
+                SUM(o.grand_total) as revenue,
+                SUM(o.pax) as customers,
+                AVG(o.grand_total) as avg_order_value,
+                CASE 
+                    WHEN SUM(o.pax) > 0 THEN SUM(o.grand_total) / SUM(o.pax)
+                    ELSE 0
+                END as cover
+            FROM orders o
+            LEFT JOIN tbl_data_outlet outlet ON o.kode_outlet = outlet.qr_code
+            LEFT JOIN regions region ON outlet.region_id = region.id
+            WHERE DATE(o.created_at) = '{$date}'
+            GROUP BY o.kode_outlet, outlet.nama_outlet, region.name, region.code
+            ORDER BY revenue DESC
+        ";
+
+        $results = DB::select($query);
+
+        // Process data
+        $data = [];
+        $totalRevenue = 0;
+        $totalOrders = 0;
+        $totalCustomers = 0;
+
+        foreach ($results as $result) {
+            $data[] = [
+                'outlet_code' => $result->kode_outlet,
+                'outlet_name' => $result->outlet_name,
+                'region_name' => $result->region_name,
+                'region_code' => $result->region_code,
+                'orders' => (int) $result->orders,
+                'revenue' => (float) $result->revenue,
+                'revenue_formatted' => 'Rp ' . number_format($result->revenue, 0, ',', '.'),
+                'customers' => (int) $result->customers,
+                'avg_order_value' => (float) $result->avg_order_value,
+                'avg_order_value_formatted' => 'Rp ' . number_format($result->avg_order_value, 0, ',', '.'),
+                'cover' => (float) $result->cover,
+                'cover_formatted' => 'Rp ' . number_format($result->cover, 0, ',', '.')
+            ];
+
+            $totalRevenue += (float) $result->revenue;
+            $totalOrders += (int) $result->orders;
+            $totalCustomers += (int) $result->customers;
+        }
+
+        return response()->json([
+            'date' => $date,
+            'date_formatted' => Carbon::parse($date)->format('d F Y'),
+            'outlets' => $data,
+            'summary' => [
+                'total_outlets' => count($data),
+                'total_revenue' => $totalRevenue,
+                'total_revenue_formatted' => 'Rp ' . number_format($totalRevenue, 0, ',', '.'),
+                'total_orders' => $totalOrders,
+                'total_customers' => $totalCustomers,
+                'avg_revenue_per_outlet' => count($data) > 0 ? $totalRevenue / count($data) : 0,
+                'avg_revenue_per_outlet_formatted' => count($data) > 0 ? 'Rp ' . number_format($totalRevenue / count($data), 0, ',', '.') : 'Rp 0'
+            ]
+        ]);
+    }
+
+    public function getOutletDailyRevenue(Request $request)
+    {
+        $outletCode = $request->get('outlet_code');
+        $dateFrom = $request->get('date_from');
+        $dateTo = $request->get('date_to');
+        
+        if (!$outletCode) {
+            return response()->json(['error' => 'Outlet code is required'], 400);
+        }
+
+        if (!$dateFrom || !$dateTo) {
+            return response()->json(['error' => 'Date range is required'], 400);
+        }
+
+        $query = "
+            SELECT 
+                DATE(o.created_at) as date,
+                COUNT(*) as orders,
+                SUM(o.grand_total) as revenue,
+                SUM(o.pax) as customers,
+                AVG(o.grand_total) as avg_order_value,
+                CASE 
+                    WHEN SUM(o.pax) > 0 THEN SUM(o.grand_total) / SUM(o.pax)
+                    ELSE 0
+                END as cover
+            FROM orders o
+            WHERE o.kode_outlet = '{$outletCode}'
+            AND DATE(o.created_at) BETWEEN '{$dateFrom}' AND '{$dateTo}'
+            GROUP BY DATE(o.created_at)
+            ORDER BY date ASC
+        ";
+
+        $results = DB::select($query);
+
+        // Get outlet info
+        $outletInfo = DB::select("
+            SELECT 
+                o.kode_outlet,
+                COALESCE(outlet.nama_outlet, o.kode_outlet) as outlet_name,
+                COALESCE(region.name, 'Unknown Region') as region_name,
+                COALESCE(region.code, 'UNK') as region_code
+            FROM orders o
+            LEFT JOIN tbl_data_outlet outlet ON o.kode_outlet = outlet.qr_code
+            LEFT JOIN regions region ON outlet.region_id = region.id
+            WHERE o.kode_outlet = '{$outletCode}'
+            LIMIT 1
+        ");
+
+        $outlet = $outletInfo[0] ?? null;
+
+        // Process data
+        $data = [];
+        $totalRevenue = 0;
+        $totalOrders = 0;
+        $totalCustomers = 0;
+
+        foreach ($results as $result) {
+            $data[] = [
+                'date' => $result->date,
+                'date_formatted' => Carbon::parse($result->date)->format('d F Y'),
+                'orders' => (int) $result->orders,
+                'revenue' => (float) $result->revenue,
+                'revenue_formatted' => 'Rp ' . number_format($result->revenue, 0, ',', '.'),
+                'customers' => (int) $result->customers,
+                'avg_order_value' => (float) $result->avg_order_value,
+                'avg_order_value_formatted' => 'Rp ' . number_format($result->avg_order_value, 0, ',', '.'),
+                'cover' => (float) $result->cover,
+                'cover_formatted' => 'Rp ' . number_format($result->cover, 0, ',', '.')
+            ];
+
+            $totalRevenue += (float) $result->revenue;
+            $totalOrders += (int) $result->orders;
+            $totalCustomers += (int) $result->customers;
+        }
+
+        return response()->json([
+            'outlet' => $outlet ? [
+                'outlet_code' => $outlet->kode_outlet,
+                'outlet_name' => $outlet->outlet_name,
+                'region_name' => $outlet->region_name,
+                'region_code' => $outlet->region_code
+            ] : null,
+            'date_range' => [
+                'from' => $dateFrom,
+                'to' => $dateTo,
+                'from_formatted' => Carbon::parse($dateFrom)->format('d F Y'),
+                'to_formatted' => Carbon::parse($dateTo)->format('d F Y')
+            ],
+            'daily_data' => $data,
+            'summary' => [
+                'total_days' => count($data),
+                'total_revenue' => $totalRevenue,
+                'total_revenue_formatted' => 'Rp ' . number_format($totalRevenue, 0, ',', '.'),
+                'total_orders' => $totalOrders,
+                'total_customers' => $totalCustomers,
+                'avg_daily_revenue' => count($data) > 0 ? $totalRevenue / count($data) : 0,
+                'avg_daily_revenue_formatted' => count($data) > 0 ? 'Rp ' . number_format($totalRevenue / count($data), 0, ',', '.') : 'Rp 0',
+                'avg_daily_orders' => count($data) > 0 ? $totalOrders / count($data) : 0,
+                'avg_daily_customers' => count($data) > 0 ? $totalCustomers / count($data) : 0
+            ]
+        ]);
+    }
+
+    public function getHolidays(Request $request)
+    {
+        $dateFrom = $request->get('date_from');
+        $dateTo = $request->get('date_to');
+        
+        if (!$dateFrom || !$dateTo) {
+            return response()->json(['error' => 'Date range is required'], 400);
+        }
+
+        $holidays = DB::table('tbl_kalender_perusahaan')
+            ->whereBetween('tgl_libur', [$dateFrom, $dateTo])
+            ->orderBy('tgl_libur')
+            ->get()
+            ->map(function ($holiday) {
+                return [
+                    'date' => $holiday->tgl_libur,
+                    'description' => $holiday->keterangan
+                ];
+            });
+
+        return response()->json($holidays);
+    }
+
+    public function getOutletOrders(Request $request)
+    {
+        $outletCode = $request->get('outlet_code');
+        $date = $request->get('date');
+        
+        if (!$outletCode || !$date) {
+            return response()->json(['error' => 'Outlet code and date are required'], 400);
+        }
+
+        // First, let's check what fields are available in the orders table
+        $sampleOrder = DB::table('orders')
+            ->where('kode_outlet', $outletCode)
+            ->whereDate('created_at', $date)
+            ->first();
+            
+        if (!$sampleOrder) {
+            return response()->json([
+                'orders' => [],
+                'total_orders' => 0,
+                'total_revenue' => 0,
+                'total_pax' => 0
+            ]);
+        }
+        
+        // Log available fields for debugging
+        \Log::info('Available order fields:', array_keys((array) $sampleOrder));
+
+        $orders = DB::table('orders')
+            ->leftJoin('order_payment', 'orders.id', '=', 'order_payment.order_id')
+            ->where('orders.kode_outlet', $outletCode)
+            ->whereDate('orders.created_at', $date)
+            ->select(
+                'orders.id',
+                'orders.paid_number',
+                'orders.table',
+                'orders.total',
+                'orders.pb1',
+                'orders.service',
+                'orders.grand_total',
+                'orders.pax',
+                'orders.commfee',
+                'orders.waiters',
+                'orders.member_name as customer',
+                'orders.created_at',
+                'order_payment.kasir',
+                'order_payment.payment_code',
+                'order_payment.payment_type'
+            )
+            ->orderBy('orders.created_at', 'desc')
+            ->get()
+            ->map(function ($order) {
+                // Format payment method
+                $paymentMethod = 'Unknown';
+                if ($order->payment_code && $order->payment_type) {
+                    $paymentMethod = $order->payment_code . ' - ' . $order->payment_type;
+                } elseif ($order->payment_code) {
+                    $paymentMethod = $order->payment_code;
+                } elseif ($order->payment_type) {
+                    $paymentMethod = $order->payment_type;
+                }
+                
+                return [
+                    'id' => $order->id,
+                    'order_id' => $order->id,
+                    'paid_number' => $order->paid_number ?? '-',
+                    'table' => $order->table ?? '-',
+                    'total' => (float) ($order->total ?? 0),
+                    'pb1' => (float) ($order->pb1 ?? 0),
+                    'service' => (float) ($order->service ?? 0),
+                    'grand_total' => (float) ($order->grand_total ?? 0),
+                    'pax' => (int) ($order->pax ?? 0),
+                    'commfee' => (float) ($order->commfee ?? 0),
+                    'waiters' => $order->waiters ?? '-',
+                    'kasir' => $order->kasir ?? '-',
+                    'customer' => $order->customer ?? '-',
+                    'payment_method' => $paymentMethod,
+                    'created_at' => $order->created_at,
+                    'created_at_formatted' => Carbon::parse($order->created_at)->format('d/m/Y H:i')
+                ];
+            });
+
+        return response()->json([
+            'orders' => $orders,
+            'total_orders' => $orders->count(),
+            'total_revenue' => $orders->sum('grand_total'),
+            'total_pax' => $orders->sum('pax')
+        ]);
+    }
+
 }
