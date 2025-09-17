@@ -5,19 +5,23 @@
         <i class="fa-solid fa-cogs"></i> Item Engineering
       </h1>
       <div class="grid grid-cols-1 md:grid-cols-5 gap-6 mb-8 items-end">
-        <div>
+        <div v-if="user.id_outlet == 1">
           <label class="block text-sm font-medium mb-1">Region</label>
           <select v-model="filters.region" @change="onRegionChange" class="block w-full rounded-lg border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500 px-3 py-2">
             <option value="">Pilih Region</option>
             <option v-for="region in regions" :key="region.id" :value="region.id">{{ region.name }}</option>
           </select>
         </div>
-        <div>
+        <div v-if="user.id_outlet == 1">
           <label class="block text-sm font-medium mb-1">Outlet</label>
-          <select v-model="filters.outlet" :disabled="!outletDropdownEnabled" class="block w-full rounded-lg border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500 px-3 py-2">
+          <select v-model="filters.outlet" class="block w-full rounded-lg border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500 px-3 py-2">
             <option value="">Pilih Outlet</option>
             <option v-for="outlet in filteredOutlets" :key="outlet.id" :value="outlet.qr_code">{{ outlet.name }}</option>
           </select>
+        </div>
+        <div v-else>
+          <label class="block text-sm font-medium mb-1">Outlet</label>
+          <input type="text" :value="userOutletName" class="block w-full rounded-lg border-gray-300 shadow-sm bg-gray-100 cursor-not-allowed px-3 py-2" readonly />
         </div>
         <div>
           <label class="block text-sm font-medium mb-1">Tanggal From</label>
@@ -155,8 +159,8 @@ const items = ref([]);
 const itemsByCategory = ref({});
 const modifiers = ref([]);
 const loading = ref(false);
-const outletDropdownEnabled = ref(false);
 const user = usePage().props.auth?.user || {};
+const userOutletName = ref('');
 const grand_total = ref(0);
 const grandTotal = computed(() => grand_total.value);
 const expandedCategories = ref({});
@@ -201,6 +205,9 @@ const fetchMyOutletQr = async () => {
   if (res.data.qr_code) {
     filters.outlet = res.data.qr_code;
   }
+  if (res.data.outlet_name) {
+    userOutletName.value = res.data.outlet_name;
+  }
 };
 
 const fetchReport = async () => {
@@ -233,14 +240,12 @@ const exportExcel = () => {
 };
 
 onMounted(async () => {
-  // Always fetch regions
-  await fetchRegions();
-  
   if (user.id_outlet == 1) {
-    outletDropdownEnabled.value = true;
+    // User dengan id_outlet=1 bisa pilih region dan outlet
+    await fetchRegions();
     await fetchOutlets();
   } else {
-    outletDropdownEnabled.value = false;
+    // User lain langsung muncul outlet mereka
     await fetchMyOutletQr();
   }
 });

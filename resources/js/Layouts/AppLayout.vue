@@ -334,6 +334,8 @@ const menuGroups = [
             { name: () => 'Sertifikat', icon: 'fa-solid fa-certificate', route: '/lms/certificates', code: 'lms-certificates' },
             { name: () => 'Template Sertifikat', icon: 'fa-solid fa-file-certificate', route: '/lms/certificate-templates', code: 'lms-certificate-templates' },          
             { name: () => 'Jadwal Training', icon: 'fa-solid fa-calendar-alt', route: '/lms/schedules', code: 'lms-schedules' },
+            { name: () => 'Trainer Report', icon: 'fa-solid fa-chart-line', route: '/lms/trainer-report-page', code: 'lms-trainer-report' },
+            { name: () => 'Laporan Training Karyawan', icon: 'fa-solid fa-users', route: '/lms/employee-training-report-page', code: 'lms-employee-training-report' },
         ],
     },
 ];

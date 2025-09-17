@@ -135,6 +135,43 @@
                </button>
              </div>
            </div>
+           
+           <!-- Status Management -->
+           <div class="backdrop-blur-sm bg-white/5 border border-white/10 rounded-xl p-4">
+             <h4 class="text-lg font-semibold text-white mb-3">Kelola Status Training</h4>
+             <div class="grid grid-cols-2 gap-3">
+               <button v-if="training.status === 'scheduled'" @click="updateTrainingStatus('ongoing')"
+                       class="px-4 py-2 bg-orange-500/20 border border-orange-500/30 rounded-lg text-orange-200 hover:bg-orange-500/30 transition-all">
+                 <i class="fas fa-play mr-2"></i>
+                 Mulai Training
+               </button>
+               <button v-if="training.status === 'ongoing'" @click="updateTrainingStatus('completed')"
+                       class="px-4 py-2 bg-green-500/20 border border-green-500/30 rounded-lg text-green-200 hover:bg-green-500/30 transition-all">
+                 <i class="fas fa-check mr-2"></i>
+                 Selesaikan Training
+               </button>
+               <button v-if="['scheduled', 'ongoing'].includes(training.status)" @click="updateTrainingStatus('cancelled')"
+                       class="px-4 py-2 bg-red-500/20 border border-red-500/30 rounded-lg text-red-200 hover:bg-red-500/30 transition-all">
+                 <i class="fas fa-times mr-2"></i>
+                 Batalkan Training
+               </button>
+               <button v-if="training.status === 'completed'" @click="updateTrainingStatus('scheduled')"
+                       class="px-4 py-2 bg-blue-500/20 border border-blue-500/30 rounded-lg text-blue-200 hover:bg-blue-500/30 transition-all">
+                 <i class="fas fa-undo mr-2"></i>
+                 Reset ke Terjadwal
+               </button>
+               <button v-if="training.status === 'completed'" @click="showReviewList"
+                       class="px-4 py-2 bg-purple-500/20 border border-purple-500/30 rounded-lg text-purple-200 hover:bg-purple-500/30 transition-all">
+                 <i class="fas fa-star mr-2"></i>
+                 List Review
+               </button>
+               <button v-if="training.status === 'completed'" @click="showTrainerRatings"
+                       class="px-4 py-2 bg-indigo-500/20 border border-indigo-500/30 rounded-lg text-indigo-200 hover:bg-indigo-500/30 transition-all">
+                 <i class="fas fa-chalkboard-teacher mr-2"></i>
+                 List Rating Trainer
+               </button>
+             </div>
+           </div>
         </div>
       </div>
       
@@ -270,6 +307,282 @@
              </div>
      </div>
      
+     <!-- Review List Modal -->
+     <div v-if="showReviewListModal" class="fixed inset-0 z-[60] flex items-center justify-center">
+       <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" @click="closeReviewListModal"></div>
+       
+       <div class="backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl p-6 max-w-6xl w-full mx-4 max-h-[90vh] overflow-y-auto relative">
+         <!-- Close Button -->
+         <button @click="closeReviewListModal" 
+                 class="absolute top-4 right-4 text-white/70 hover:text-white transition-colors">
+           <i class="fas fa-times text-xl"></i>
+         </button>
+         
+         <!-- Modal Header -->
+         <div class="mb-6">
+           <h4 class="text-2xl font-bold text-white mb-2">Review Training</h4>
+           <div v-if="reviewData.training" class="text-white/70">
+             <p class="text-lg font-semibold">{{ reviewData.training.course_title }}</p>
+             <p class="text-sm">
+               {{ new Date(reviewData.training.scheduled_date).toLocaleDateString('id-ID') }} • 
+               {{ reviewData.training.start_time }} - {{ reviewData.training.end_time }} • 
+               {{ reviewData.training.outlet_name }}
+             </p>
+           </div>
+         </div>
+
+         <!-- Statistics -->
+         <div v-if="reviewData.statistics" class="grid grid-cols-4 gap-4 mb-6">
+           <div class="backdrop-blur-sm bg-white/5 border border-white/10 rounded-xl p-4 text-center">
+             <div class="text-2xl font-bold text-blue-300">{{ reviewData.statistics.total_reviews }}</div>
+             <div class="text-xs text-white/70">Total Review</div>
+           </div>
+           <div class="backdrop-blur-sm bg-white/5 border border-white/10 rounded-xl p-4 text-center">
+             <div class="text-2xl font-bold text-yellow-300">{{ reviewData.statistics.average_training_rating }}/5</div>
+             <div class="text-xs text-white/70">Rating Training</div>
+           </div>
+           <div class="backdrop-blur-sm bg-white/5 border border-white/10 rounded-xl p-4 text-center">
+             <div class="text-2xl font-bold text-orange-300">{{ reviewData.statistics.average_trainer_rating }}/5</div>
+             <div class="text-xs text-white/70">Rating Trainer</div>
+           </div>
+           <div class="backdrop-blur-sm bg-white/5 border border-white/10 rounded-xl p-4 text-center">
+             <div class="text-2xl font-bold text-red-300">{{ reviewData.statistics.average_satisfaction }}/5</div>
+             <div class="text-xs text-white/70">Kepuasan Rata-rata</div>
+           </div>
+         </div>
+
+         <!-- Loading State -->
+         <div v-if="loadingReviews" class="text-center py-8">
+           <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
+           <p class="text-sm mt-2 text-white/70">Memuat review...</p>
+         </div>
+
+         <!-- Empty State -->
+         <div v-else-if="!reviewData.reviews || reviewData.reviews.length === 0" class="text-center py-8">
+           <div class="mb-4 text-white/50">
+             <i class="fas fa-star text-6xl"></i>
+           </div>
+           <h4 class="text-lg font-semibold text-white/70 mb-2">Belum Ada Review</h4>
+           <p class="text-white/50">Belum ada peserta yang memberikan review untuk training ini.</p>
+         </div>
+
+         <!-- Reviews List -->
+         <div v-else class="space-y-4">
+           <div v-for="review in reviewData.reviews" :key="review.review_id" 
+                class="backdrop-blur-sm bg-white/5 border border-white/10 rounded-xl p-4">
+             <div class="flex items-start justify-between mb-3">
+               <div class="flex items-center space-x-3">
+                 <div class="w-10 h-10 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full flex items-center justify-center text-white text-sm font-semibold">
+                   {{ review.user_name.charAt(0).toUpperCase() }}
+                 </div>
+                 <div>
+                   <h5 class="text-white font-semibold">{{ review.user_name }}</h5>
+                   <p class="text-white/70 text-sm">{{ review.nama_jabatan }} • {{ review.nama_divisi }}</p>
+                 </div>
+               </div>
+               <div class="text-right">
+                 <div class="text-white/70 text-sm">{{ new Date(review.review_date).toLocaleDateString('id-ID') }}</div>
+                 <div class="text-white/50 text-xs">{{ new Date(review.review_date).toLocaleTimeString('id-ID') }}</div>
+               </div>
+             </div>
+             
+             <div class="grid grid-cols-3 gap-4 mb-3">
+               <div>
+                 <div class="text-white/70 text-sm mb-1">Rating Training</div>
+                 <div class="flex items-center space-x-1">
+                   <div class="flex space-x-1">
+                     <i v-for="star in 5" :key="star" 
+                        class="fas fa-star text-sm"
+                        :class="star <= review.training_rating ? 'text-yellow-400' : 'text-gray-300'">
+                     </i>
+                   </div>
+                   <span class="text-white text-sm font-medium ml-2">{{ review.training_rating }}/5</span>
+                 </div>
+               </div>
+               <div>
+                 <div class="text-white/70 text-sm mb-1">Rating Trainer</div>
+                 <div class="flex items-center space-x-1">
+                   <div class="flex space-x-1">
+                     <i v-for="star in 5" :key="star" 
+                        class="fas fa-star text-sm"
+                        :class="star <= review.trainer_rating ? 'text-yellow-400' : 'text-gray-300'">
+                     </i>
+                   </div>
+                   <span class="text-white text-sm font-medium ml-2">{{ review.trainer_rating }}/5</span>
+                 </div>
+               </div>
+               <div>
+                 <div class="text-white/70 text-sm mb-1">Kepuasan Keseluruhan</div>
+                 <div class="flex items-center space-x-1">
+                   <div class="flex space-x-1">
+                     <i v-for="heart in 5" :key="heart" 
+                        class="fas fa-heart text-sm"
+                        :class="heart <= review.overall_satisfaction ? 'text-red-400' : 'text-gray-300'">
+                     </i>
+                   </div>
+                   <span class="text-white text-sm font-medium ml-2">{{ review.overall_satisfaction }}/5</span>
+                 </div>
+               </div>
+             </div>
+             
+             <div v-if="review.training_feedback" class="mt-3">
+               <div class="text-white/70 text-sm mb-1">Feedback Training</div>
+               <div class="text-white bg-white/5 rounded-lg p-3 text-sm">
+                 {{ review.training_feedback }}
+               </div>
+             </div>
+             
+             <div v-if="review.trainer_feedback" class="mt-3">
+               <div class="text-white/70 text-sm mb-1">Feedback Trainer</div>
+               <div class="text-white bg-white/5 rounded-lg p-3 text-sm">
+                 {{ review.trainer_feedback }}
+               </div>
+             </div>
+             
+             <div v-if="review.improvement_suggestions" class="mt-3">
+               <div class="text-white/70 text-sm mb-1">Saran Perbaikan</div>
+               <div class="text-white bg-white/5 rounded-lg p-3 text-sm">
+                 {{ review.improvement_suggestions }}
+               </div>
+             </div>
+             
+             <div class="mt-3 pt-3 border-t border-white/10">
+               <div class="text-white/50 text-xs">
+                 <i class="fas fa-chalkboard-teacher mr-1"></i>
+                 Trainer: {{ review.trainer_name_final }}
+               </div>
+             </div>
+           </div>
+         </div>
+       </div>
+     </div>
+
+     <!-- Trainer Ratings Modal -->
+     <div v-if="showTrainerRatingsModal" class="fixed inset-0 z-[60] flex items-center justify-center">
+       <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" @click="closeTrainerRatingsModal"></div>
+       
+       <div class="backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl p-6 max-w-6xl w-full mx-4 max-h-[90vh] overflow-y-auto relative">
+         <!-- Close Button -->
+         <button @click="closeTrainerRatingsModal" 
+                 class="absolute top-4 right-4 text-white/70 hover:text-white transition-colors">
+           <i class="fas fa-times text-xl"></i>
+         </button>
+         
+         <!-- Modal Header -->
+         <div class="mb-6">
+           <h4 class="text-2xl font-bold text-white mb-2">Rating Trainer</h4>
+           <div v-if="trainerRatingsData.training" class="text-white/70">
+             <p class="text-lg font-semibold">{{ trainerRatingsData.training.course_title }}</p>
+             <p class="text-sm">
+               {{ new Date(trainerRatingsData.training.scheduled_date).toLocaleDateString('id-ID') }} • 
+               {{ trainerRatingsData.training.start_time }} - {{ trainerRatingsData.training.end_time }} • 
+               {{ trainerRatingsData.training.outlet_name }}
+             </p>
+           </div>
+         </div>
+
+         <!-- Statistics -->
+         <div v-if="trainerRatingsData.statistics" class="grid grid-cols-2 gap-4 mb-6">
+           <div class="backdrop-blur-sm bg-white/5 border border-white/10 rounded-xl p-4 text-center">
+             <div class="text-2xl font-bold text-blue-300">{{ trainerRatingsData.statistics.total_ratings }}</div>
+             <div class="text-xs text-white/70">Total Rating</div>
+           </div>
+           <div class="backdrop-blur-sm bg-white/5 border border-white/10 rounded-xl p-4 text-center">
+             <div class="text-2xl font-bold text-yellow-300">{{ trainerRatingsData.statistics.average_trainer_rating }}/5</div>
+             <div class="text-xs text-white/70">Rating Rata-rata</div>
+           </div>
+         </div>
+
+         <!-- Rating Distribution -->
+         <div v-if="trainerRatingsData.statistics && trainerRatingsData.statistics.rating_distribution" class="mb-6">
+           <h5 class="text-lg font-semibold text-white mb-3">Distribusi Rating</h5>
+           <div class="space-y-2">
+             <div v-for="dist in trainerRatingsData.statistics.rating_distribution" :key="dist.rating" 
+                  class="flex items-center space-x-3">
+               <div class="w-8 text-center text-white/70">{{ dist.rating }}</div>
+               <div class="flex-1 bg-white/10 rounded-full h-2">
+                 <div class="bg-yellow-400 h-2 rounded-full transition-all duration-500" 
+                      :style="{ width: dist.percentage + '%' }"></div>
+               </div>
+               <div class="w-16 text-right text-white/70 text-sm">{{ dist.count }} ({{ dist.percentage }}%)</div>
+             </div>
+           </div>
+         </div>
+
+         <!-- Loading State -->
+         <div v-if="loadingTrainerRatings" class="text-center py-8">
+           <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
+           <p class="text-sm mt-2 text-white/70">Memuat rating trainer...</p>
+         </div>
+
+         <!-- Empty State -->
+         <div v-else-if="!trainerRatingsData.trainer_ratings || trainerRatingsData.trainer_ratings.length === 0" 
+              class="text-center py-8">
+           <i class="fas fa-chalkboard-teacher text-6xl text-white/30 mb-4"></i>
+           <p class="text-white/70">Belum ada rating trainer untuk training ini</p>
+         </div>
+
+         <!-- Trainer Ratings List -->
+         <div v-else class="space-y-4">
+           <div v-for="rating in trainerRatingsData.trainer_ratings" :key="rating.review_id" 
+                class="backdrop-blur-sm bg-white/5 border border-white/10 rounded-xl p-4">
+             
+             <!-- User Info -->
+             <div class="flex items-center justify-between mb-3">
+               <div class="flex items-center space-x-3">
+                 <div class="w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-500 rounded-full flex items-center justify-center">
+                   <i class="fas fa-user text-white text-sm"></i>
+                 </div>
+                 <div>
+                   <div class="text-white font-medium">{{ rating.user_name }}</div>
+                   <div class="text-white/60 text-sm">{{ rating.nama_jabatan }} • {{ rating.nama_divisi }}</div>
+                 </div>
+               </div>
+               <div class="text-white/50 text-xs">
+                 {{ new Date(rating.review_date).toLocaleDateString('id-ID', { 
+                   day: 'numeric', 
+                   month: 'short', 
+                   year: 'numeric',
+                   hour: '2-digit',
+                   minute: '2-digit'
+                 }) }}
+               </div>
+             </div>
+
+             <!-- Trainer Rating -->
+             <div class="mb-3">
+               <div class="text-white/70 text-sm mb-1">Rating Trainer</div>
+               <div class="flex items-center space-x-1">
+                 <div class="flex space-x-1">
+                   <i v-for="star in 5" :key="star" 
+                      class="fas fa-star text-sm"
+                      :class="star <= rating.trainer_rating ? 'text-yellow-400' : 'text-gray-300'">
+                   </i>
+                 </div>
+                 <span class="text-white text-sm font-medium ml-2">{{ rating.trainer_rating }}/5</span>
+               </div>
+             </div>
+
+             <!-- Trainer Feedback -->
+             <div v-if="rating.trainer_feedback" class="mt-3">
+               <div class="text-white/70 text-sm mb-1">Feedback Trainer</div>
+               <div class="text-white bg-white/5 rounded-lg p-3 text-sm">
+                 {{ rating.trainer_feedback }}
+               </div>
+             </div>
+
+             <!-- Trainer Info -->
+             <div class="mt-3 pt-3 border-t border-white/10">
+               <div class="text-white/50 text-xs">
+                 <i class="fas fa-chalkboard-teacher mr-1"></i>
+                 Trainer: {{ rating.trainer_name_final }}
+               </div>
+             </div>
+           </div>
+         </div>
+       </div>
+     </div>
+
      <!-- QR Code Modal -->
      <div v-if="showQRCodeModal" class="fixed inset-0 z-[60] flex items-center justify-center">
        <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" @click="showQRCodeModal = false"></div>
@@ -361,6 +674,24 @@ const emit = defineEmits(['close', 'edit', 'invite', 'invite-trainer', 'qr-code'
 const qrCodeError = ref(false)
 const qrCodeDataUrl = ref('')
 const showQRCodeModal = ref(false)
+
+// Review list modal state
+const showReviewListModal = ref(false)
+const reviewData = ref({
+  training: null,
+  reviews: [],
+  statistics: null
+})
+const loadingReviews = ref(false)
+
+// Trainer ratings modal state
+const showTrainerRatingsModal = ref(false)
+const trainerRatingsData = ref({
+  training: null,
+  trainer_ratings: [],
+  statistics: null
+})
+const loadingTrainerRatings = ref(false)
 
 const getStatusColor = (status) => {
   const colors = {
@@ -774,6 +1105,139 @@ const generateQRCode = async () => {
   } catch (error) {
     console.error('Error generating QR code:', error)
     qrCodeError.value = true
+  }
+}
+
+// Training status management
+const updateTrainingStatus = async (newStatus) => {
+  try {
+    const statusText = {
+      'scheduled': 'Terjadwal',
+      'ongoing': 'Sedang Berlangsung', 
+      'completed': 'Selesai',
+      'cancelled': 'Dibatalkan'
+    }[newStatus] || 'Tidak Diketahui'
+
+    const result = await Swal.fire({
+      title: 'Konfirmasi Perubahan Status',
+      text: `Apakah Anda yakin ingin mengubah status training menjadi "${statusText}"?`,
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonColor: newStatus === 'cancelled' ? '#EF4444' : '#3B82F6',
+      cancelButtonColor: '#6B7280',
+      confirmButtonText: 'Ya, Ubah Status',
+      cancelButtonText: 'Batal'
+    })
+
+    if (result.isConfirmed) {
+      await router.put(route('lms.schedules.update-status', props.training.id), {
+        status: newStatus
+      }, {
+        onSuccess: () => {
+          Swal.fire({
+            icon: 'success',
+            title: 'Berhasil!',
+            text: `Status training berhasil diubah menjadi "${statusText}"`,
+            timer: 2000,
+            showConfirmButton: false
+          })
+          emit('refresh')
+        },
+        onError: (errors) => {
+          console.error('API Error for update training status:', errors);
+          Swal.fire({
+            icon: 'error',
+            title: 'Gagal!',
+            text: 'Gagal mengubah status training: ' + Object.values(errors)[0]
+          })
+        }
+      })
+    }
+  } catch (error) {
+    console.error('Error updating training status:', error)
+    Swal.fire({
+      icon: 'error',
+      title: 'Error!',
+      text: 'Terjadi kesalahan saat mengubah status training'
+    })
+  }
+}
+
+// Review list management
+const showReviewList = async () => {
+  showReviewListModal.value = true
+  loadingReviews.value = true
+  
+  try {
+    const response = await fetch(route('lms.schedules.reviews', props.training.id))
+    const data = await response.json()
+    
+    if (data.success) {
+      reviewData.value = data
+    } else {
+      Swal.fire({
+        icon: 'error',
+        title: 'Gagal!',
+        text: data.message || 'Gagal memuat review training'
+      })
+    }
+  } catch (error) {
+    console.error('Error fetching training reviews:', error)
+    Swal.fire({
+      icon: 'error',
+      title: 'Error!',
+      text: 'Terjadi kesalahan saat memuat review training'
+    })
+  } finally {
+    loadingReviews.value = false
+  }
+}
+
+const closeReviewListModal = () => {
+  showReviewListModal.value = false
+  reviewData.value = {
+    training: null,
+    reviews: [],
+    statistics: null
+  }
+}
+
+// Trainer ratings management
+const showTrainerRatings = async () => {
+  showTrainerRatingsModal.value = true
+  loadingTrainerRatings.value = true
+  
+  try {
+    const response = await fetch(route('lms.schedules.trainer-ratings', props.training.id))
+    const data = await response.json()
+    
+    if (data.success) {
+      trainerRatingsData.value = data
+    } else {
+      Swal.fire({
+        icon: 'error',
+        title: 'Gagal!',
+        text: data.message || 'Gagal memuat rating trainer'
+      })
+    }
+  } catch (error) {
+    console.error('Error fetching trainer ratings:', error)
+    Swal.fire({
+      icon: 'error',
+      title: 'Error!',
+      text: 'Terjadi kesalahan saat memuat rating trainer'
+    })
+  } finally {
+    loadingTrainerRatings.value = false
+  }
+}
+
+const closeTrainerRatingsModal = () => {
+  showTrainerRatingsModal.value = false
+  trainerRatingsData.value = {
+    training: null,
+    trainer_ratings: [],
+    statistics: null
   }
 }
 

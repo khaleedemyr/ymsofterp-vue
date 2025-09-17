@@ -18,7 +18,8 @@ class LmsQuizAttempt extends Model
         'completed_at',
         'score',
         'is_passed',
-        'attempt_number'
+        'attempt_number',
+        'status'
     ];
 
     protected $casts = [
@@ -111,7 +112,8 @@ class LmsQuizAttempt extends Model
         $this->update([
             'completed_at' => now(),
             'score' => $this->calculateScore(),
-            'is_passed' => $this->score >= $this->quiz->passing_score
+            'is_passed' => $this->score >= $this->quiz->passing_score,
+            'status' => 'completed'
         ]);
     }
 }

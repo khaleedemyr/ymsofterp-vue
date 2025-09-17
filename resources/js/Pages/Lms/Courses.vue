@@ -213,9 +213,17 @@
 
               <div class="flex items-center justify-between mb-3">
                 <span class="text-sm text-white/60">{{ course.category?.name }}</span>
-                <div class="flex items-center space-x-1">
-                  <i class="fas fa-star text-yellow-400 text-sm"></i>
-                  <span class="text-sm text-white/80">4.5</span>
+                <div class="flex items-center space-x-2">
+                  <div class="flex items-center space-x-1">
+                    <i class="fas fa-star text-yellow-400 text-sm"></i>
+                    <span class="text-sm text-white/80">{{ course.average_rating || '0.0' }}</span>
+                    <span class="text-xs text-white/50">({{ course.total_reviews }})</span>
+                  </div>
+                  <button v-if="course.total_reviews > 0" @click="showTrainerRatings(course.id)"
+                          class="px-2 py-1 bg-indigo-500/20 border border-indigo-500/30 rounded-lg text-indigo-200 hover:bg-indigo-500/30 transition-all text-xs"
+                          title="Lihat Rating Trainer">
+                    <i class="fas fa-chalkboard-teacher text-xs"></i>
+                  </button>
                 </div>
               </div>
 
@@ -1051,6 +1059,92 @@
           </form>
         </div>
       </div>
+
+      <!-- Trainer Ratings Modal -->
+      <div v-if="showTrainerRatingsModal" class="fixed inset-0 z-[60] flex items-center justify-center">
+        <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" @click="closeTrainerRatingsModal"></div>
+        
+        <div class="backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl p-6 max-w-6xl w-full mx-4 max-h-[90vh] overflow-y-auto relative">
+          <!-- Close Button -->
+          <button @click="closeTrainerRatingsModal" 
+                  class="absolute top-4 right-4 text-white/70 hover:text-white transition-colors">
+            <i class="fas fa-times text-xl"></i>
+          </button>
+          
+          <!-- Modal Header -->
+          <div class="mb-6">
+            <h4 class="text-2xl font-bold text-white mb-2">Rating Trainer</h4>
+            <div v-if="trainerRatingsData.training" class="text-white/70">
+              <p class="text-lg font-semibold">{{ trainerRatingsData.training.course_title }}</p>
+              <p class="text-sm">
+                {{ new Date(trainerRatingsData.training.scheduled_date).toLocaleDateString('id-ID') }} • 
+                {{ trainerRatingsData.training.start_time }} - {{ trainerRatingsData.training.end_time }} • 
+                {{ trainerRatingsData.training.outlet_name }}
+              </p>
+            </div>
+          </div>
+
+          <!-- Loading State -->
+          <div v-if="loadingTrainerRatings" class="flex items-center justify-center py-12">
+            <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-white"></div>
+            <span class="ml-3 text-white">Memuat data rating...</span>
+          </div>
+
+          <!-- Statistics -->
+          <div v-else-if="trainerRatingsData.statistics" class="mb-8">
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+              <div class="bg-white/5 rounded-lg p-4 border border-white/10">
+                <div class="text-2xl font-bold text-white">{{ trainerRatingsData.statistics.average_rating || '0.0' }}</div>
+                <div class="text-sm text-white/60">Rating Rata-rata</div>
+              </div>
+              <div class="bg-white/5 rounded-lg p-4 border border-white/10">
+                <div class="text-2xl font-bold text-white">{{ trainerRatingsData.statistics.total_ratings || 0 }}</div>
+                <div class="text-sm text-white/60">Total Rating</div>
+              </div>
+              <div class="bg-white/5 rounded-lg p-4 border border-white/10">
+                <div class="text-2xl font-bold text-white">{{ trainerRatingsData.statistics.excellent_count || 0 }}</div>
+                <div class="text-sm text-white/60">Excellent</div>
+              </div>
+              <div class="bg-white/5 rounded-lg p-4 border border-white/10">
+                <div class="text-2xl font-bold text-white">{{ trainerRatingsData.statistics.poor_count || 0 }}</div>
+                <div class="text-sm text-white/60">Poor</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Rating Details -->
+          <div v-if="trainerRatingsData.trainer_ratings && trainerRatingsData.trainer_ratings.length > 0">
+            <h5 class="text-lg font-semibold text-white mb-4">Detail Rating</h5>
+            <div class="space-y-4">
+              <div v-for="rating in trainerRatingsData.trainer_ratings" :key="rating.id" 
+                   class="bg-white/5 rounded-lg p-4 border border-white/10">
+                <div class="flex items-start justify-between mb-3">
+                  <div>
+                    <div class="text-white font-medium">{{ rating.participant_name }}</div>
+                    <div class="text-white/60 text-sm">{{ rating.participant_position }}</div>
+                  </div>
+                  <div class="flex items-center space-x-1">
+                    <span class="text-yellow-400">{{ rating.rating }}</span>
+                    <i class="fas fa-star text-yellow-400"></i>
+                  </div>
+                </div>
+                <div v-if="rating.comment" class="text-white/80 text-sm bg-white/5 rounded p-3">
+                  {{ rating.comment }}
+                </div>
+                <div class="text-white/50 text-xs mt-2">
+                  {{ new Date(rating.created_at).toLocaleDateString('id-ID') }}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- No Data State -->
+          <div v-else-if="!loadingTrainerRatings" class="text-center py-12">
+            <i class="fas fa-star text-white/30 text-4xl mb-4"></i>
+            <p class="text-white/60">Belum ada rating trainer untuk course ini</p>
+          </div>
+        </div>
+      </div>
     </div>
   </AppLayout>
 </template>
@@ -1183,6 +1277,15 @@ const loading = ref(false) // For form submission
 const dataLoading = ref(false) // For initial data loading
 const loadingTimeout = ref(null) // For loading timeout
 const loadingStartTime = ref(null) // For loading start time
+
+// Trainer ratings modal state
+const showTrainerRatingsModal = ref(false)
+const trainerRatingsData = ref({
+  training: null,
+  trainer_ratings: [],
+  statistics: null
+})
+const loadingTrainerRatings = ref(false)
 
 // Search states for target selection
 const divisionSearch = ref('')
@@ -2356,6 +2459,45 @@ const archiveCourse = async (courseId) => {
     } finally {
       loading.value = false
     }
+  }
+}
+
+// Trainer ratings management
+const showTrainerRatings = async (courseId) => {
+  showTrainerRatingsModal.value = true
+  loadingTrainerRatings.value = true
+  
+  try {
+    const response = await fetch(route('lms.courses.trainer-ratings', courseId))
+    const data = await response.json()
+    
+    if (data.success) {
+      trainerRatingsData.value = data
+    } else {
+      Swal.fire({
+        icon: 'error',
+        title: 'Gagal!',
+        text: data.message || 'Gagal memuat rating trainer'
+      })
+    }
+  } catch (error) {
+    console.error('Error fetching trainer ratings:', error)
+    Swal.fire({
+      icon: 'error',
+      title: 'Error!',
+      text: 'Terjadi kesalahan saat memuat rating trainer'
+    })
+  } finally {
+    loadingTrainerRatings.value = false
+  }
+}
+
+const closeTrainerRatingsModal = () => {
+  showTrainerRatingsModal.value = false
+  trainerRatingsData.value = {
+    training: null,
+    trainer_ratings: [],
+    statistics: null
   }
 }
 

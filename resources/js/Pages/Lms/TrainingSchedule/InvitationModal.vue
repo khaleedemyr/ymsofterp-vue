@@ -32,6 +32,109 @@
         </div>
       </div>
       
+      <!-- Training Target Info -->
+      <div class="backdrop-blur-sm bg-white/5 border border-white/10 rounded-xl p-4 mb-6">
+        <h4 class="text-lg font-semibold text-white mb-3 flex items-center">
+          <i class="fas fa-bullseye text-yellow-400 mr-2"></i>
+          Target Training
+        </h4>
+        
+        <div v-if="courseTargets" class="space-y-3">
+          <!-- Target Type -->
+          <div class="flex items-center space-x-2">
+            <i class="fas fa-info-circle text-blue-400"></i>
+            <span class="text-white/80">Tipe Target:</span>
+            <span class="px-2 py-1 bg-blue-500/20 text-blue-200 rounded text-sm">
+              {{ getTargetTypeText(courseTargets.target_type) }}
+            </span>
+          </div>
+          
+          <!-- Target Divisions -->
+          <div v-if="(courseTargets.target_division_id || (courseTargets.target_divisions && courseTargets.target_divisions.length > 0))" class="flex items-start space-x-2">
+            <i class="fas fa-building text-green-400 mt-1"></i>
+            <div class="flex-1">
+              <span class="text-white/80 block mb-1">Target Divisi:</span>
+              <div class="flex flex-wrap gap-2">
+                <!-- Single division target -->
+                <span v-if="courseTargets.target_division_id && courseTargets.target_divisions && courseTargets.target_divisions.length > 0" 
+                      class="px-2 py-1 bg-green-500/20 text-green-200 rounded text-sm">
+                  {{ courseTargets.target_divisions[0]?.nama_divisi || 'Divisi ID: ' + courseTargets.target_division_id }}
+                </span>
+                <!-- Multiple divisions target -->
+                <span v-else-if="courseTargets.target_divisions && courseTargets.target_divisions.length > 0" 
+                      v-for="division in courseTargets.target_divisions" :key="division.id"
+                      class="px-2 py-1 bg-green-500/20 text-green-200 rounded text-sm">
+                  {{ division.nama_divisi }}
+                </span>
+                <!-- Fallback for single division without relationship loaded -->
+                <span v-else-if="courseTargets.target_division_id" 
+                      class="px-2 py-1 bg-green-500/20 text-green-200 rounded text-sm">
+                  Divisi ID: {{ courseTargets.target_division_id }}
+                </span>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Target Jabatans -->
+          <div v-if="(courseTargets.target_jabatan_ids && courseTargets.target_jabatan_ids.length > 0) || (courseTargets.target_jabatans && courseTargets.target_jabatans.length > 0)" class="flex items-start space-x-2">
+            <i class="fas fa-user-tie text-purple-400 mt-1"></i>
+            <div class="flex-1">
+              <span class="text-white/80 block mb-1">Target Jabatan:</span>
+              <div class="flex flex-wrap gap-2">
+                <!-- From relationship -->
+                <span v-if="courseTargets.target_jabatans && courseTargets.target_jabatans.length > 0" 
+                      v-for="jabatan in courseTargets.target_jabatans" :key="jabatan.id_jabatan"
+                      class="px-2 py-1 bg-purple-500/20 text-purple-200 rounded text-sm">
+                  {{ jabatan.nama_jabatan }}
+                </span>
+                <!-- From array IDs -->
+                <span v-else-if="courseTargets.target_jabatan_ids && courseTargets.target_jabatan_ids.length > 0" 
+                      v-for="jabatanId in courseTargets.target_jabatan_ids" :key="jabatanId"
+                      class="px-2 py-1 bg-purple-500/20 text-purple-200 rounded text-sm">
+                  Jabatan ID: {{ jabatanId }}
+                </span>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Target Outlets -->
+          <div v-if="(courseTargets.target_outlet_ids && courseTargets.target_outlet_ids.length > 0) || (courseTargets.target_outlets && courseTargets.target_outlets.length > 0)" class="flex items-start space-x-2">
+            <i class="fas fa-store text-orange-400 mt-1"></i>
+            <div class="flex-1">
+              <span class="text-white/80 block mb-1">Target Outlet:</span>
+              <div class="flex flex-wrap gap-2">
+                <!-- From relationship -->
+                <span v-if="courseTargets.target_outlets && courseTargets.target_outlets.length > 0" 
+                      v-for="outlet in courseTargets.target_outlets" :key="outlet.id_outlet"
+                      class="px-2 py-1 bg-orange-500/20 text-orange-200 rounded text-sm">
+                  {{ outlet.nama_outlet }}
+                </span>
+                <!-- From array IDs -->
+                <span v-else-if="courseTargets.target_outlet_ids && courseTargets.target_outlet_ids.length > 0" 
+                      v-for="outletId in courseTargets.target_outlet_ids" :key="outletId"
+                      class="px-2 py-1 bg-orange-500/20 text-orange-200 rounded text-sm">
+                  Outlet ID: {{ outletId }}
+                </span>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Filter Status -->
+          <div class="flex items-center space-x-2 pt-2 border-t border-white/10">
+            <i class="fas fa-filter text-cyan-400"></i>
+            <span class="text-white/80">Filter yang diterapkan:</span>
+            <span class="px-2 py-1 bg-cyan-500/20 text-cyan-200 rounded text-sm">
+              {{ filterApplied || 'Sedang memuat...' }}
+            </span>
+          </div>
+        </div>
+        
+        <div v-else class="text-white/60 text-center py-4">
+          <i class="fas fa-spinner fa-spin mr-2"></i>
+          Memuat informasi target training...
+        </div>
+      </div>
+      
       <!-- Search -->
       <div class="backdrop-blur-sm bg-white/5 border border-white/10 rounded-xl p-4 mb-6">
         <div class="flex flex-col lg:flex-row items-start lg:items-center space-y-4 lg:space-y-0 lg:space-x-4">
@@ -218,6 +321,8 @@ const currentPage = ref(1)
 const perPage = 20
 const relevantParticipants = ref([])
 const loadingParticipants = ref(false)
+const courseTargets = ref(null)
+const filterApplied = ref('')
 
 
 const filteredParticipants = computed(() => {
@@ -265,6 +370,19 @@ const formatDate = (date) => {
   })
 }
 
+const getTargetTypeText = (targetType) => {
+  switch (targetType) {
+    case 'all':
+      return 'Semua Divisi'
+    case 'single':
+      return 'Satu Divisi'
+    case 'multiple':
+      return 'Multi Divisi'
+    default:
+      return 'Tidak Ditentukan'
+  }
+}
+
 const loadRelevantParticipants = async () => {
   if (!props.training?.id) {
     console.error('No training ID provided')
@@ -285,11 +403,16 @@ const loadRelevantParticipants = async () => {
     
     if (data.success) {
       relevantParticipants.value = data.participants
+      courseTargets.value = data.course
+      filterApplied.value = data.filter_applied
       console.log('Loaded relevant participants:', data.participants.length)
       console.log('Filter applied:', data.filter_applied)
+      console.log('Course targets:', data.course)
     } else {
       console.error('API returned error:', data.message)
       relevantParticipants.value = []
+      courseTargets.value = null
+      filterApplied.value = ''
     }
   } catch (error) {
     console.error('Error loading relevant participants:', error)

@@ -27,7 +27,11 @@ class LmsQuizQuestionController extends Controller
         // Calculate pass rate
         $passRate = 0;
         if ($attemptsCount > 0) {
-            $passedAttempts = $quiz->attempts()->where('score', '>=', $quiz->passing_score)->count();
+            $passedAttempts = $quiz->attempts()
+                ->when($quiz->passing_score !== null, function($query) use ($quiz) {
+                    return $query->where('score', '>=', $quiz->passing_score);
+                })
+                ->count();
             $passRate = round(($passedAttempts / $attemptsCount) * 100, 1);
         }
 

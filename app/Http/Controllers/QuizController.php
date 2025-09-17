@@ -10,6 +10,7 @@ use App\Models\LmsQuizOption;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
+use Inertia\Inertia;
 
 class QuizController extends Controller
 {
@@ -150,7 +151,21 @@ class QuizController extends Controller
                 'status' => 'completed'
             ]);
 
+            \Log::info('Attempt status updated', [
+                'attempt_id' => $attempt->id,
+                'status' => $attempt->status,
+                'completed_at' => $attempt->completed_at
+            ]);
+
             DB::commit();
+
+            \Log::info('Quiz submitted successfully', [
+                'attempt_id' => $attempt->id,
+                'user_id' => Auth::id(),
+                'score' => $score,
+                'correct_answers' => $correctAnswers,
+                'total_questions' => count($answers)
+            ]);
 
             // Get updated quiz data
             $updatedAttempts = LmsQuizAttempt::where('quiz_id', $attempt->quiz_id)
@@ -161,18 +176,25 @@ class QuizController extends Controller
             $latestAttempt = $updatedAttempts->first();
             $canAttempt = $this->canUserAttemptQuiz($attempt->quiz, $updatedAttempts);
 
-            return response()->json([
+            $responseData = [
                 'result' => [
                     'score' => $score,
                     'is_passed' => $score >= $attempt->quiz->passing_score,
                     'correct_answers' => $correctAnswers,
                     'total_questions' => count($answers),
-                    'time_taken' => $attempt->started_at->diffInSeconds($attempt->completed_at)
+                    'time_taken' => $attempt->started_at->diffInSeconds($attempt->completed_at),
+                    'attempt_id' => $attempt->id
                 ],
                 'updated_attempts' => $updatedAttempts,
                 'latest_attempt' => $latestAttempt,
                 'can_attempt' => $canAttempt
+            ];
+
+            \Log::info('Returning submit response', [
+                'response_data' => $responseData
             ]);
+
+            return response()->json($responseData);
 
         } catch (\Exception $e) {
             DB::rollBack();
@@ -198,6 +220,80 @@ class QuizController extends Controller
             'attempt' => $attempt,
             'quiz' => $attempt->quiz,
             'answers' => $attempt->answers
+        ]);
+    }
+
+    /**
+     * Show quiz attempt page
+     */
+    public function showAttempt($quizId, $attemptId)
+    {
+        $attempt = LmsQuizAttempt::where('id', $attemptId)
+            ->where('quiz_id', $quizId)
+            ->where('user_id', Auth::id())
+            ->with(['quiz.questions.options'])
+            ->first();
+
+        if (!$attempt) {
+            abort(404, 'Quiz attempt not found');
+        }
+
+        // Check if attempt is still in progress
+        if ($attempt->status !== 'in_progress') {
+            return redirect()->route('lms.quiz.results', $attemptId);
+        }
+
+        // Randomize questions and options if quiz is randomized
+        $quiz = $attempt->quiz;
+        if ($quiz->is_randomized) {
+            // Randomize questions order
+            $questions = $quiz->questions->shuffle();
+            
+            // Randomize options for each question
+            $questions->each(function ($question) {
+                $question->options = $question->options->shuffle();
+            });
+            
+            $quiz->questions = $questions;
+        }
+
+        return Inertia::render('Lms/Quiz/Attempt', [
+            'attempt' => $attempt,
+            'quiz' => $quiz
+        ]);
+    }
+
+    /**
+     * Show quiz results page
+     */
+    public function showResults($attemptId)
+    {
+        $attempt = LmsQuizAttempt::where('id', $attemptId)
+            ->where('user_id', Auth::id())
+            ->with(['quiz.questions.options', 'answers'])
+            ->first();
+
+        if (!$attempt) {
+            abort(404, 'Quiz attempt not found');
+        }
+
+        // Check if attempt is completed
+        if ($attempt->status !== 'completed') {
+            return redirect()->route('lms.quiz.attempt', [$attempt->quiz_id, $attemptId]);
+        }
+
+        // Get quiz with questions and correct answers
+        $quiz = $attempt->quiz;
+        
+        // Add correct answer information to each question
+        $quiz->questions->each(function ($question) {
+            $question->correct_option = $question->options->where('is_correct', true)->first();
+        });
+
+        return Inertia::render('Lms/Quiz/Results', [
+            'attempt' => $attempt,
+            'quiz' => $quiz,
+            'showResults' => $quiz->show_results
         ]);
     }
 

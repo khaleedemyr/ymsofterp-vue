@@ -63,6 +63,11 @@ class TrainingSchedule extends Model
         return $this->hasMany(TrainingInvitation::class, 'schedule_id');
     }
 
+    public function reviews(): HasMany
+    {
+        return $this->hasMany(TrainingReview::class, 'training_schedule_id');
+    }
+
     // New training system relationships
     public function scheduleTrainers()
     {

@@ -7,6 +7,7 @@ use App\Models\TrainingInvitation;
 use App\Models\Course;
 use App\Models\Outlet;
 use App\Models\User;
+use App\Models\TrainingReview;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Illuminate\Support\Facades\DB;
@@ -626,19 +627,12 @@ class TrainingScheduleController extends Controller
                     'schedule_status' => $invitation->schedule->status ?? 'unknown',
                     'is_today' => $invitation->schedule->is_today ?? false
                 ]);
-                if (request()->ajax() || request()->wantsJson()) {
-                    return response()->json([
-                        'success' => false,
-                        'error' => 'Tidak dapat check-in saat ini. Pastikan training sedang berlangsung dan Anda terdaftar.'
-                    ], 400);
-                }
-                
                 return back()->withErrors(['error' => 'Tidak dapat check-in saat ini. Pastikan training sedang berlangsung dan Anda terdaftar.']);
             }
 
             if ($invitation->checkIn()) {
                 // Get training sessions for the course
-                $trainingSessions = $this->getTrainingSessions($invitation->schedule->course_id, $invitation->user_id);
+                $trainingSessions = $this->getTrainingSessions($invitation->schedule->course_id, $invitation->user_id, $invitation->schedule_id);
                 
                 \Log::info('Check-in successful, returning response', [
                     'invitation_id' => $invitation->id,
@@ -656,24 +650,7 @@ class TrainingScheduleController extends Controller
                     'training_sessions_count' => count($trainingSessions)
                 ]);
 
-                // Return JSON response for AJAX requests
-                if (request()->ajax() || request()->wantsJson()) {
-                    return response()->json([
-                        'success' => true,
-                        'message' => 'Check-in berhasil untuk ' . $invitation->user->nama_lengkap,
-                        'participant' => $invitation->user->nama_lengkap,
-                        'training' => $invitation->schedule->course->title,
-                        'training_info' => [
-                            'course_title' => $invitation->schedule->course->title,
-                            'scheduled_date' => $invitation->schedule->scheduled_date,
-                            'start_time' => $invitation->schedule->start_time,
-                            'end_time' => $invitation->schedule->end_time,
-                            'outlet_name' => $invitation->schedule->outlet->nama_outlet ?? 'N/A'
-                        ],
-                        'training_sessions' => $trainingSessions
-                    ]);
-                }
-
+                // Return Inertia response for all requests
                 return back()->with([
                     'success' => 'Check-in berhasil untuk ' . $invitation->user->nama_lengkap,
                     'participant' => $invitation->user->nama_lengkap,
@@ -706,13 +683,6 @@ class TrainingScheduleController extends Controller
                 'user_id' => auth()->id(),
                 'trace' => $e->getTraceAsString()
             ]);
-            
-            if (request()->ajax() || request()->wantsJson()) {
-                return response()->json([
-                    'success' => false,
-                    'error' => 'Terjadi kesalahan saat memproses QR Code'
-                ], 500);
-            }
             
             return back()->withErrors(['error' => 'Terjadi kesalahan saat memproses QR Code']);
         }
@@ -1141,7 +1111,7 @@ class TrainingScheduleController extends Controller
     public function getRelevantParticipants(TrainingSchedule $schedule)
     {
         // Get training course details with target relationships
-        $course = $schedule->course()->with(['targetDivisions', 'targetJabatans', 'targetOutlets'])->first();
+        $course = $schedule->course()->with(['targetDivisions', 'targetJabatans', 'targetOutlets', 'targetDivision'])->first();
         
         if (!$course) {
             return response()->json([
@@ -1176,9 +1146,14 @@ class TrainingScheduleController extends Controller
                 return true;
             }
             
-            // If no specific targets are set, include all participants
-            if (!$course->targetDivisions && !$course->targetJabatans && !$course->targetOutlets) {
-                return true;
+            // If target_type is 'single' or 'multiple' but no specific targets are set, 
+            // this means the course is not properly configured - return no participants
+            if (($course->target_type === 'single' || $course->target_type === 'multiple') && 
+                !$course->target_division_id && 
+                (!$course->targetDivisions || $course->targetDivisions->count() === 0) && 
+                (!$course->target_jabatan_ids || count($course->target_jabatan_ids) === 0) && 
+                (!$course->target_outlet_ids || count($course->target_outlet_ids) === 0)) {
+                return false; // No participants if targets are not properly set
             }
             
             // Check each target type and collect results
@@ -1187,7 +1162,11 @@ class TrainingScheduleController extends Controller
             $matchesOutlet = false;
             
             // Check if participant matches target divisions
-            if ($course->targetDivisions && $course->targetDivisions->count() > 0) {
+            if ($course->target_type === 'single' && $course->target_division_id) {
+                // Single division target
+                $matchesDivision = $participant->division_id == $course->target_division_id;
+            } elseif ($course->target_type === 'multiple' && $course->targetDivisions && $course->targetDivisions->count() > 0) {
+                // Multiple divisions target
                 $targetDivisionIds = $course->targetDivisions->pluck('id')->toArray();
                 $matchesDivision = in_array($participant->division_id, $targetDivisionIds);
             } else {
@@ -1195,17 +1174,15 @@ class TrainingScheduleController extends Controller
             }
             
             // Check if participant matches target jabatans
-            if ($course->targetJabatans && $course->targetJabatans->count() > 0) {
-                $targetJabatanIds = $course->targetJabatans->pluck('id_jabatan')->toArray();
-                $matchesJabatan = $participant->jabatan && in_array($participant->jabatan->id_jabatan, $targetJabatanIds);
+            if ($course->target_jabatan_ids && is_array($course->target_jabatan_ids) && count($course->target_jabatan_ids) > 0) {
+                $matchesJabatan = $participant->id_jabatan && in_array($participant->id_jabatan, $course->target_jabatan_ids);
             } else {
                 $matchesJabatan = true; // No jabatan filter means all jabatans match
             }
             
             // Check if participant matches target outlets
-            if ($course->targetOutlets && $course->targetOutlets->count() > 0) {
-                $targetOutletIds = $course->targetOutlets->pluck('id_outlet')->toArray();
-                $matchesOutlet = $participant->id_outlet && in_array($participant->id_outlet, $targetOutletIds);
+            if ($course->target_outlet_ids && is_array($course->target_outlet_ids) && count($course->target_outlet_ids) > 0) {
+                $matchesOutlet = $participant->id_outlet && in_array($participant->id_outlet, $course->target_outlet_ids);
             } else {
                 $matchesOutlet = true; // No outlet filter means all outlets match
             }
@@ -1218,19 +1195,32 @@ class TrainingScheduleController extends Controller
         $filterDescription = [];
         if ($course->target_type === 'all') {
             $filterDescription[] = 'All users (target_type = all)';
-        } elseif (!$course->targetDivisions && !$course->targetJabatans && !$course->targetOutlets) {
-            $filterDescription[] = 'All users (no specific targets)';
+        } elseif (($course->target_type === 'single' || $course->target_type === 'multiple') && 
+                 !$course->target_division_id && 
+                 (!$course->targetDivisions || $course->targetDivisions->count() === 0) && 
+                 (!$course->target_jabatan_ids || count($course->target_jabatan_ids) === 0) && 
+                 (!$course->target_outlet_ids || count($course->target_outlet_ids) === 0)) {
+            $filterDescription[] = 'No participants (targets not properly configured)';
         } else {
-            if ($course->targetDivisions && $course->targetDivisions->count() > 0) {
+            // Single division target
+            if ($course->target_type === 'single' && $course->target_division_id && $course->targetDivision) {
+                $filterDescription[] = 'Divisi: ' . $course->targetDivision->nama_divisi;
+            }
+            // Multiple divisions target
+            elseif ($course->target_type === 'multiple' && $course->targetDivisions && $course->targetDivisions->count() > 0) {
                 $divisionNames = $course->targetDivisions->pluck('nama_divisi')->toArray();
                 $filterDescription[] = 'Divisi: ' . implode(', ', $divisionNames);
             }
-            if ($course->targetJabatans && $course->targetJabatans->count() > 0) {
-                $jabatanNames = $course->targetJabatans->pluck('nama_jabatan')->toArray();
+            
+            if ($course->target_jabatan_ids && is_array($course->target_jabatan_ids) && count($course->target_jabatan_ids) > 0) {
+                // Get jabatan names from database
+                $jabatanNames = \App\Models\Jabatan::whereIn('id_jabatan', $course->target_jabatan_ids)->pluck('nama_jabatan')->toArray();
                 $filterDescription[] = 'Jabatan: ' . implode(', ', $jabatanNames);
             }
-            if ($course->targetOutlets && $course->targetOutlets->count() > 0) {
-                $outletNames = $course->targetOutlets->pluck('nama_outlet')->toArray();
+            
+            if ($course->target_outlet_ids && is_array($course->target_outlet_ids) && count($course->target_outlet_ids) > 0) {
+                // Get outlet names from database
+                $outletNames = \App\Models\DataOutlet::whereIn('id_outlet', $course->target_outlet_ids)->pluck('nama_outlet')->toArray();
                 $filterDescription[] = 'Outlet: ' . implode(', ', $outletNames);
             }
         }
@@ -1241,10 +1231,13 @@ class TrainingScheduleController extends Controller
             'course' => [
                 'id' => $course->id,
                 'title' => $course->title,
+                'target_type' => $course->target_type,
+                'target_division_id' => $course->target_division_id,
                 'target_divisions' => $course->targetDivisions,
+                'target_jabatan_ids' => $course->target_jabatan_ids,
+                'target_outlet_ids' => $course->target_outlet_ids,
                 'target_jabatans' => $course->targetJabatans,
-                'target_outlets' => $course->targetOutlets,
-                'target_type' => $course->target_type
+                'target_outlets' => $course->targetOutlets
             ],
             'total' => $relevantParticipants->count(),
             'total_all_participants' => $allParticipants->count(),
@@ -1413,6 +1406,318 @@ class TrainingScheduleController extends Controller
     }
 
     /**
+     * Get training history for current user (completed training with reviews)
+     */
+    public function getTrainingHistory()
+    {
+        try {
+            $userId = auth()->id();
+            
+            // Get training invitations where user has completed and reviewed
+            $completedTrainings = DB::table('training_invitations')
+                ->join('training_schedules', 'training_invitations.schedule_id', '=', 'training_schedules.id')
+                ->join('lms_courses', 'training_schedules.course_id', '=', 'lms_courses.id')
+                ->leftJoin('tbl_data_outlet', 'training_schedules.outlet_id', '=', 'tbl_data_outlet.id_outlet')
+                ->leftJoin('training_schedule_trainers', 'training_schedules.id', '=', 'training_schedule_trainers.schedule_id')
+                ->leftJoin('users', function($join) {
+                    $join->on('training_schedule_trainers.trainer_id', '=', 'users.id')
+                         ->where('training_schedule_trainers.trainer_type', '=', 'internal');
+                })
+                ->join('training_reviews', function($join) use ($userId) {
+                    $join->on('training_reviews.training_schedule_id', '=', 'training_schedules.id')
+                         ->where('training_reviews.user_id', $userId);
+                })
+                ->where('training_invitations.user_id', $userId)
+                ->where('training_invitations.status', 'attended')
+                ->whereNotNull('training_invitations.check_out_time')
+                ->select(
+                    'training_invitations.id as invitation_id',
+                    'training_schedules.id as schedule_id',
+                    'training_schedules.scheduled_date',
+                    'training_schedules.start_time',
+                    'training_schedules.end_time',
+                    'training_schedules.status as training_status',
+                    'lms_courses.title as course_title',
+                    'lms_courses.id as course_id',
+                    'tbl_data_outlet.nama_outlet',
+                    'training_invitations.status',
+                    'training_invitations.check_in_time',
+                    'training_invitations.check_out_time',
+                    'training_invitations.created_at as invited_at',
+                    'training_reviews.training_rating',
+                    'training_reviews.overall_satisfaction',
+                    'training_reviews.created_at as review_date',
+                    'training_schedule_trainers.trainer_type',
+                    'training_schedule_trainers.external_trainer_name',
+                    'users.nama_lengkap as internal_trainer_name'
+                )
+                ->orderBy('training_schedules.scheduled_date', 'desc')
+                ->get();
+
+            // Process trainer data for each training
+            $completedTrainings->each(function ($training) {
+                // Determine trainer name based on type
+                if ($training->trainer_type === 'internal' && $training->internal_trainer_name) {
+                    $training->trainer_name = $training->internal_trainer_name;
+                } elseif ($training->trainer_type === 'external' && $training->external_trainer_name) {
+                    $training->trainer_name = $training->external_trainer_name;
+                } else {
+                    $training->trainer_name = 'Trainer tidak tersedia';
+                }
+            });
+
+            return response()->json([
+                'success' => true,
+                'completed_trainings' => $completedTrainings
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Error fetching training history: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal memuat riwayat training'
+            ], 500);
+        }
+    }
+
+    public function updateTrainingStatus(Request $request, $id)
+    {
+        try {
+            $request->validate([
+                'status' => 'required|in:scheduled,ongoing,completed,cancelled'
+            ]);
+
+            $training = TrainingSchedule::findOrFail($id);
+            
+            // Check if user can manage this training
+            $course = $training->course;
+            if (!$this->canManageTraining($course)) {
+                return back()->withErrors(['error' => 'Anda tidak memiliki izin untuk mengubah status training ini']);
+            }
+
+            $oldStatus = $training->status;
+            $newStatus = $request->status;
+
+            // Update the training status
+            $training->update([
+                'status' => $newStatus,
+                'updated_at' => now()
+            ]);
+
+            // Log the status change
+            \Log::info("Training status updated", [
+                'training_id' => $id,
+                'course_title' => $course->title,
+                'old_status' => $oldStatus,
+                'new_status' => $newStatus,
+                'updated_by' => auth()->user()->nama_lengkap
+            ]);
+
+            $statusText = match($newStatus) {
+                'scheduled' => 'Terjadwal',
+                'ongoing' => 'Sedang Berlangsung',
+                'completed' => 'Selesai',
+                'cancelled' => 'Dibatalkan',
+                default => 'Tidak Diketahui'
+            };
+
+            return back()->with('success', "Status training berhasil diubah menjadi '{$statusText}'");
+
+        } catch (\Exception $e) {
+            \Log::error('Error updating training status: ' . $e->getMessage());
+            return back()->withErrors(['error' => 'Gagal mengubah status training: ' . $e->getMessage()]);
+        }
+    }
+
+    public function getTrainingReviews($id)
+    {
+        try {
+            $training = TrainingSchedule::with(['course', 'outlet'])->findOrFail($id);
+            
+            // Check if user can manage this training
+            $course = $training->course;
+            if (!$this->canManageTraining($course)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Anda tidak memiliki izin untuk melihat review training ini'
+                ], 403);
+            }
+
+            // Get all reviews for this training with user details
+            $reviews = DB::table('training_reviews')
+                ->join('users', 'training_reviews.user_id', '=', 'users.id')
+                ->leftJoin('tbl_data_jabatan', 'users.id_jabatan', '=', 'tbl_data_jabatan.id_jabatan')
+                ->leftJoin('tbl_data_divisi', 'users.division_id', '=', 'tbl_data_divisi.id')
+                ->leftJoin('training_schedule_trainers', function($join) {
+                    $join->on('training_reviews.training_schedule_id', '=', 'training_schedule_trainers.schedule_id')
+                         ->where('training_schedule_trainers.trainer_type', '=', 'internal');
+                })
+                ->leftJoin('users as trainers', 'training_schedule_trainers.trainer_id', '=', 'trainers.id')
+                ->where('training_reviews.training_schedule_id', $id)
+                ->select(
+                    'training_reviews.id as review_id',
+                    'training_reviews.training_rating',
+                    'training_reviews.overall_satisfaction',
+                    'training_reviews.training_feedback',
+                    'training_reviews.trainer_rating',
+                    'training_reviews.trainer_feedback',
+                    'training_reviews.improvement_suggestions',
+                    'training_reviews.created_at as review_date',
+                    'users.id as user_id',
+                    'users.nama_lengkap as user_name',
+                    'users.email as user_email',
+                    'tbl_data_jabatan.nama_jabatan',
+                    'tbl_data_divisi.nama_divisi',
+                    'trainers.nama_lengkap as trainer_name',
+                    'training_schedule_trainers.external_trainer_name'
+                )
+                ->orderBy('training_reviews.created_at', 'desc')
+                ->get();
+
+            // Process trainer data for each review
+            $reviews->each(function ($review) {
+                if ($review->trainer_name) {
+                    $review->trainer_name_final = $review->trainer_name;
+                } elseif ($review->external_trainer_name) {
+                    $review->trainer_name_final = $review->external_trainer_name;
+                } else {
+                    $review->trainer_name_final = 'Trainer tidak tersedia';
+                }
+            });
+
+            // Calculate statistics
+            $totalReviews = $reviews->count();
+            $averageTrainingRating = $totalReviews > 0 ? round($reviews->avg('training_rating'), 2) : 0;
+            $averageTrainerRating = $totalReviews > 0 ? round($reviews->avg('trainer_rating'), 2) : 0;
+            $averageSatisfaction = $totalReviews > 0 ? round($reviews->avg('overall_satisfaction'), 2) : 0;
+
+            return response()->json([
+                'success' => true,
+                'training' => [
+                    'id' => $training->id,
+                    'course_title' => $training->course->title,
+                    'scheduled_date' => $training->scheduled_date,
+                    'start_time' => $training->start_time,
+                    'end_time' => $training->end_time,
+                    'outlet_name' => $training->outlet->nama_outlet ?? 'Venue tidak ditentukan'
+                ],
+                'reviews' => $reviews,
+                'statistics' => [
+                    'total_reviews' => $totalReviews,
+                    'average_training_rating' => $averageTrainingRating,
+                    'average_trainer_rating' => $averageTrainerRating,
+                    'average_satisfaction' => $averageSatisfaction
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error('Error fetching training reviews: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal memuat review training'
+            ], 500);
+        }
+    }
+
+    /**
+     * Get trainer ratings for a specific training
+     */
+    public function getTrainerRatings($id)
+    {
+        try {
+            $training = TrainingSchedule::with(['course', 'outlet'])->findOrFail($id);
+            
+            // Check if user can manage this training
+            $course = $training->course;
+            if (!$this->canManageTraining($course)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Anda tidak memiliki izin untuk melihat rating trainer ini'
+                ], 403);
+            }
+
+            // Get trainer ratings specifically
+            $trainerRatings = DB::table('training_reviews')
+                ->join('users', 'training_reviews.user_id', '=', 'users.id')
+                ->leftJoin('tbl_data_jabatan', 'users.id_jabatan', '=', 'tbl_data_jabatan.id_jabatan')
+                ->leftJoin('tbl_data_divisi', 'users.division_id', '=', 'tbl_data_divisi.id')
+                ->leftJoin('training_schedule_trainers', function($join) {
+                    $join->on('training_reviews.training_schedule_id', '=', 'training_schedule_trainers.schedule_id')
+                         ->where('training_schedule_trainers.trainer_type', '=', 'internal');
+                })
+                ->leftJoin('users as trainers', 'training_schedule_trainers.trainer_id', '=', 'trainers.id')
+                ->where('training_reviews.training_schedule_id', $id)
+                ->whereNotNull('training_reviews.trainer_rating')
+                ->select(
+                    'training_reviews.id as review_id',
+                    'training_reviews.trainer_rating',
+                    'training_reviews.trainer_feedback',
+                    'training_reviews.created_at as review_date',
+                    'users.id as user_id',
+                    'users.nama_lengkap as user_name',
+                    'users.email as user_email',
+                    'tbl_data_jabatan.nama_jabatan',
+                    'tbl_data_divisi.nama_divisi',
+                    'trainers.nama_lengkap as trainer_name',
+                    'training_schedule_trainers.external_trainer_name'
+                )
+                ->orderBy('training_reviews.created_at', 'desc')
+                ->get();
+
+            // Process trainer data for each rating
+            $trainerRatings->each(function ($rating) {
+                if ($rating->trainer_name) {
+                    $rating->trainer_name_final = $rating->trainer_name;
+                } elseif ($rating->external_trainer_name) {
+                    $rating->trainer_name_final = $rating->external_trainer_name;
+                } else {
+                    $rating->trainer_name_final = 'Trainer tidak tersedia';
+                }
+            });
+
+            // Calculate statistics
+            $totalRatings = $trainerRatings->count();
+            $averageTrainerRating = $totalRatings > 0 ? round($trainerRatings->avg('trainer_rating'), 2) : 0;
+
+            // Calculate rating distribution
+            $ratingDistribution = [];
+            for ($i = 1; $i <= 5; $i++) {
+                $count = $trainerRatings->where('trainer_rating', $i)->count();
+                $percentage = $totalRatings > 0 ? round(($count / $totalRatings) * 100, 1) : 0;
+                $ratingDistribution[] = [
+                    'rating' => $i,
+                    'count' => $count,
+                    'percentage' => $percentage
+                ];
+            }
+
+            return response()->json([
+                'success' => true,
+                'training' => [
+                    'id' => $training->id,
+                    'course_title' => $training->course->title,
+                    'scheduled_date' => $training->scheduled_date,
+                    'start_time' => $training->start_time,
+                    'end_time' => $training->end_time,
+                    'outlet_name' => $training->outlet->nama_outlet ?? 'Venue tidak ditentukan'
+                ],
+                'trainer_ratings' => $trainerRatings,
+                'statistics' => [
+                    'total_ratings' => $totalRatings,
+                    'average_trainer_rating' => $averageTrainerRating,
+                    'rating_distribution' => $ratingDistribution
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error('Error fetching trainer ratings: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal memuat rating trainer'
+            ], 500);
+        }
+    }
+
+    /**
      * Get training notifications for current user (as participant or trainer)
      */
     public function getTrainingNotifications()
@@ -1421,23 +1726,32 @@ class TrainingScheduleController extends Controller
             $userId = auth()->id();
             
             // Get training invitations where user is invited as participant
+            // Exclude training that has been reviewed (completed training)
             $participantInvitations = DB::table('training_invitations')
                 ->join('training_schedules', 'training_invitations.schedule_id', '=', 'training_schedules.id')
                 ->join('lms_courses', 'training_schedules.course_id', '=', 'lms_courses.id')
                 ->leftJoin('tbl_data_outlet', 'training_schedules.outlet_id', '=', 'tbl_data_outlet.id_outlet')
+                ->leftJoin('training_reviews', function($join) use ($userId) {
+                    $join->on('training_reviews.training_schedule_id', '=', 'training_schedules.id')
+                         ->where('training_reviews.user_id', $userId);
+                })
                 ->where('training_invitations.user_id', $userId)
-                ->where('training_invitations.status', 'invited')
+                ->whereIn('training_invitations.status', ['invited', 'attended'])
                 ->where('training_schedules.scheduled_date', '>=', now()->toDateString())
+                ->whereNull('training_reviews.id') // Exclude training that has been reviewed
                 ->select(
                     'training_invitations.id as invitation_id',
                     'training_schedules.id as schedule_id',
                     'training_schedules.scheduled_date',
                     'training_schedules.start_time',
                     'training_schedules.end_time',
+                    'training_schedules.status as training_status',
                     'lms_courses.title as course_title',
                     'lms_courses.id as course_id',
                     'tbl_data_outlet.nama_outlet',
                     'training_invitations.status',
+                    'training_invitations.check_in_time',
+                    'training_invitations.check_out_time',
                     'training_invitations.created_at as invited_at'
                 )
                 ->orderBy('training_schedules.scheduled_date')
@@ -1457,6 +1771,7 @@ class TrainingScheduleController extends Controller
                     'training_schedules.scheduled_date',
                     'training_schedules.start_time',
                     'training_schedules.end_time',
+                    'training_schedules.status as training_status',
                     'lms_courses.title as course_title',
                     'lms_courses.id as course_id',
                     'tbl_data_outlet.nama_outlet',
@@ -1466,11 +1781,32 @@ class TrainingScheduleController extends Controller
                 ->orderBy('training_schedules.scheduled_date')
                 ->get();
 
+            \Log::info('Participant invitations query result', [
+                'count' => $participantInvitations->count(),
+                'invitations' => $participantInvitations->map(function($inv) {
+                    return [
+                        'id' => $inv->invitation_id,
+                        'schedule_id' => $inv->schedule_id,
+                        'status' => $inv->status,
+                        'check_in_time' => $inv->check_in_time,
+                        'check_out_time' => $inv->check_out_time
+                    ];
+                })
+            ]);
+
             // Format the data
             $notifications = collect();
 
             // Add participant invitations
             foreach ($participantInvitations as $invitation) {
+                \Log::info('Processing participant invitation', [
+                    'invitation_id' => $invitation->invitation_id,
+                    'schedule_id' => $invitation->schedule_id,
+                    'status' => $invitation->status,
+                    'check_in_time' => $invitation->check_in_time,
+                    'check_out_time' => $invitation->check_out_time,
+                    'is_checked_in' => !is_null($invitation->check_in_time) && is_null($invitation->check_out_time)
+                ]);
                 // Get course sessions with items
                 $sessions = DB::table('lms_sessions')
                     ->where('course_id', $invitation->course_id)
@@ -1482,10 +1818,23 @@ class TrainingScheduleController extends Controller
                 // Get session items for each session with prerequisite logic
                 foreach ($sessions as $sessionIndex => $session) {
                     $sessionItems = DB::table('lms_session_items')
-                        ->where('session_id', $session->id)
-                        ->where('status', 'active')
-                        ->orderBy('order_number')
-                        ->select('id', 'item_type', 'item_id', 'title', 'description', 'estimated_duration_minutes', 'is_required', 'order_number', 'passing_score', 'max_attempts')
+                        ->leftJoin('lms_curriculum_materials', 'lms_session_items.item_id', '=', 'lms_curriculum_materials.id')
+                        ->where('lms_session_items.session_id', $session->id)
+                        ->where('lms_session_items.status', 'active')
+                        ->orderBy('lms_session_items.order_number')
+                        ->select(
+                            'lms_session_items.id', 
+                            'lms_session_items.item_type', 
+                            'lms_session_items.item_id', 
+                            'lms_session_items.title', 
+                            'lms_session_items.description', 
+                            'lms_session_items.estimated_duration_minutes', 
+                            'lms_session_items.is_required', 
+                            'lms_session_items.order_number', 
+                            'lms_session_items.passing_score', 
+                            'lms_session_items.max_attempts',
+                            'lms_curriculum_materials.quiz_id'
+                        )
                         ->get();
                     
                     // Check if session can be accessed (prerequisite logic)
@@ -1499,8 +1848,17 @@ class TrainingScheduleController extends Controller
                         $item->progress = null; // Progress tracking not implemented yet
                         
                         // Fetch quiz data if item is a quiz
-                        if ($item->item_type === 'quiz' && $item->item_id) {
-                            $item->quiz = $this->getQuizData($item->item_id, $userId);
+                        if ($item->item_type === 'quiz' && $item->quiz_id) {
+                            $item->quiz = $this->getQuizData($item->quiz_id, $userId);
+                            
+                            // Add completion status
+                            $item->is_completed = $this->isItemCompleted($userId, $invitation->schedule_id, $item);
+                            $item->completion_status = $this->getQuizCompletionStatus($userId, $item->quiz_id);
+                        }
+                        
+                        // Fetch material data if item is a material
+                        if ($item->item_type === 'material' && $item->item_id) {
+                            $item->material = $this->getMaterialData($item->item_id, $userId);
                         }
                         
                         // Fetch questionnaire data if item is a questionnaire
@@ -1529,12 +1887,16 @@ class TrainingScheduleController extends Controller
                     'end_time' => $invitation->end_time,
                     'outlet_name' => $invitation->nama_outlet ?? 'Head Office',
                     'status' => $invitation->status,
+                    'training_status' => $invitation->training_status,
+                    'check_in_time' => $invitation->check_in_time,
+                    'check_out_time' => $invitation->check_out_time,
+                    'is_checked_in' => !is_null($invitation->check_in_time) && is_null($invitation->check_out_time),
                     'created_at' => $invitation->invited_at,
                     'role' => 'Peserta',
                     'sessions' => $sessions,
                     'all_completed' => $allCompleted,
                     'trainers' => $trainers,
-                    'can_give_feedback' => $allCompleted && $this->canGiveFeedback($userId, $invitation->schedule_id)
+                    'can_give_feedback' => $this->canGiveFeedback($userId, $invitation->schedule_id)
                 ]);
             }
 
@@ -1591,6 +1953,7 @@ class TrainingScheduleController extends Controller
                     'start_time' => $assignment->start_time,
                     'end_time' => $assignment->end_time,
                     'outlet_name' => $assignment->nama_outlet ?? 'Head Office',
+                    'training_status' => $assignment->training_status,
                     'is_primary_trainer' => $assignment->is_primary_trainer,
                     'created_at' => $assignment->assigned_at,
                     'role' => $assignment->is_primary_trainer ? 'Primary Trainer' : 'Trainer',
@@ -1633,17 +1996,28 @@ class TrainingScheduleController extends Controller
             ->whereNull('check_out_time') // Still checked in
             ->first();
 
+        \Log::info('canAccessSession check', [
+            'user_id' => $userId,
+            'schedule_id' => $scheduleId,
+            'session_index' => $sessionIndex,
+            'check_in_found' => $checkIn ? true : false,
+            'check_in_time' => $checkIn->check_in_time ?? null
+        ]);
+
         if (!$checkIn) {
+            \Log::info('Session access denied - no check-in found');
             return false; // Must check in first
         }
 
         // First session is always accessible after check-in
         if ($sessionIndex === 0) {
+            \Log::info('Session access granted - first session after check-in');
             return true;
         }
 
         // For now, all sessions after check-in are accessible
         // TODO: Implement session-level prerequisite logic when progress tracking is available
+        \Log::info('Session access granted - all sessions accessible after check-in');
         return true;
     }
 
@@ -1654,7 +2028,26 @@ class TrainingScheduleController extends Controller
     {
         // If session can't be accessed, item can't be accessed
         if (!$sessionCanAccess) {
+            \Log::info('Item access denied - session not accessible', [
+                'user_id' => $userId,
+                'schedule_id' => $scheduleId,
+                'session_id' => $sessionId,
+                'item_id' => $itemId,
+                'item_index' => $itemIndex
+            ]);
             return false;
+        }
+
+        // First item in first session is always accessible after check-in
+        if ($itemIndex === 0) {
+            \Log::info('Item access granted - first item after check-in', [
+                'user_id' => $userId,
+                'schedule_id' => $scheduleId,
+                'session_id' => $sessionId,
+                'item_id' => $itemId,
+                'item_index' => $itemIndex
+            ]);
+            return true;
         }
 
         // Check if previous items are completed (prerequisite logic)
@@ -1668,10 +2061,25 @@ class TrainingScheduleController extends Controller
             
             // Check if previous item is completed
             if (!$this->isItemCompleted($userId, $scheduleId, $previousItem)) {
+                \Log::info('Item access denied - previous required item not completed', [
+                    'user_id' => $userId,
+                    'schedule_id' => $scheduleId,
+                    'session_id' => $sessionId,
+                    'item_id' => $itemId,
+                    'item_index' => $itemIndex,
+                    'previous_item_id' => $previousItem->id
+                ]);
                 return false;
             }
         }
 
+        \Log::info('Item access granted - all prerequisites met', [
+            'user_id' => $userId,
+            'schedule_id' => $scheduleId,
+            'session_id' => $sessionId,
+            'item_id' => $itemId,
+            'item_index' => $itemIndex
+        ]);
         return true;
     }
 
@@ -1682,7 +2090,9 @@ class TrainingScheduleController extends Controller
     {
         switch ($item->item_type) {
             case 'quiz':
-                return $this->isQuizCompleted($userId, $item->item_id);
+                // Use quiz_id from the join, fallback to item_id if not available
+                $quizId = $item->quiz_id ?? $item->item_id;
+                return $this->isQuizCompleted($userId, $quizId);
             case 'questionnaire':
                 return $this->isQuestionnaireCompleted($userId, $item->item_id);
             case 'material':
@@ -1704,7 +2114,41 @@ class TrainingScheduleController extends Controller
             ->where('is_passed', true)
             ->first();
             
+        \Log::info('Checking quiz completion', [
+            'user_id' => $userId,
+            'quiz_id' => $quizId,
+            'attempt_found' => $attempt ? 'yes' : 'no',
+            'attempt_status' => $attempt ? $attempt->status : 'null',
+            'attempt_passed' => $attempt ? $attempt->is_passed : 'null',
+            'attempt_score' => $attempt ? $attempt->score : 'null'
+        ]);
+            
         return $attempt !== null;
+    }
+
+    /**
+     * Get quiz completion status with details
+     */
+    private function getQuizCompletionStatus($userId, $quizId)
+    {
+        $attempt = DB::table('lms_quiz_attempts')
+            ->where('quiz_id', $quizId)
+            ->where('user_id', $userId)
+            ->where('status', 'completed')
+            ->orderBy('completed_at', 'desc')
+            ->first();
+            
+        if (!$attempt) {
+            return null;
+        }
+        
+        return [
+            'attempt_id' => $attempt->id,
+            'score' => $attempt->score,
+            'is_passed' => $attempt->is_passed,
+            'completed_at' => $attempt->completed_at,
+            'attempt_number' => $attempt->attempt_number
+        ];
     }
 
     /**
@@ -1736,6 +2180,11 @@ class TrainingScheduleController extends Controller
     private function getQuizData($quizId, $userId)
     {
         try {
+            \Log::info('getQuizData called', [
+                'quiz_id' => $quizId,
+                'user_id' => $userId
+            ]);
+
             // Get quiz basic info
             $quiz = DB::table('lms_quizzes')
                 ->where('id', $quizId)
@@ -1743,7 +2192,18 @@ class TrainingScheduleController extends Controller
                 ->select('id', 'title', 'description', 'instructions', 'time_limit_type', 'time_limit_minutes', 'time_per_question_seconds', 'passing_score', 'max_attempts', 'is_randomized', 'show_results')
                 ->first();
 
+            \Log::info('Quiz query result', [
+                'quiz_id' => $quizId,
+                'quiz_found' => $quiz ? 'yes' : 'no',
+                'quiz_title' => $quiz ? $quiz->title : null,
+                'quiz_status' => $quiz ? 'published' : 'not found or not published'
+            ]);
+
             if (!$quiz) {
+                \Log::warning('Quiz not found or not published', [
+                    'quiz_id' => $quizId,
+                    'user_id' => $userId
+                ]);
                 return null;
             }
 
@@ -1808,6 +2268,82 @@ class TrainingScheduleController extends Controller
         // Check if user has reached max attempts
         $completedAttempts = $attempts->where('status', 'completed')->count();
         return $completedAttempts < $quiz->max_attempts;
+    }
+
+    /**
+     * Get material data with files for a specific material
+     */
+    private function getMaterialData($materialId, $userId)
+    {
+        try {
+            \Log::info('getMaterialData called', [
+                'material_id' => $materialId,
+                'user_id' => $userId
+            ]);
+
+            // Get material basic info
+            $material = DB::table('lms_curriculum_materials')
+                ->where('id', $materialId)
+                ->where('status', 'active')
+                ->select('id', 'title', 'description', 'estimated_duration_minutes')
+                ->first();
+
+            if (!$material) {
+                \Log::warning('Material not found or not active', [
+                    'material_id' => $materialId,
+                    'user_id' => $userId
+                ]);
+                return null;
+            }
+
+            // Get material files
+            $files = DB::table('lms_curriculum_material_files')
+                ->where('material_id', $materialId)
+                ->where('status', 'active')
+                ->orderBy('order_number')
+                ->select('id', 'file_path', 'file_name', 'file_size', 'file_mime_type', 'file_type', 'order_number', 'is_primary')
+                ->get();
+
+            // Add file URLs
+            foreach ($files as $file) {
+                $file->file_url = $file->file_path ? asset('storage/' . $file->file_path) : null;
+                $file->viewer_url = route('lms.material.view', ['materialId' => $materialId, 'fileId' => $file->id]);
+                $file->file_size_formatted = $this->formatFileSize($file->file_size);
+            }
+
+            $material->files = $files;
+            $material->primary_file = $files->where('is_primary', true)->first() ?? $files->first();
+
+            \Log::info('Material data fetched successfully', [
+                'material_id' => $materialId,
+                'files_count' => $files->count(),
+                'primary_file_type' => $material->primary_file ? $material->primary_file->file_type : 'none'
+            ]);
+
+            return $material;
+        } catch (\Exception $e) {
+            \Log::error('Error fetching material data: ' . $e->getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Format file size in human readable format
+     */
+    private function formatFileSize($bytes)
+    {
+        if ($bytes === null || $bytes === 0) {
+            return '0 B';
+        }
+
+        $units = ['B', 'KB', 'MB', 'GB', 'TB'];
+        $bytes = max($bytes, 0);
+        $pow = floor(($bytes ? log($bytes) : 0) / log(1024));
+        $pow = min($pow, count($units) - 1);
+
+        $bytes /= pow(1024, $pow);
+
+        return round($bytes, 2) . ' ' . $units[$pow];
     }
 
     /**
@@ -1979,20 +2515,53 @@ class TrainingScheduleController extends Controller
     private function getTrainingTrainers($scheduleId)
     {
         $trainers = DB::table('training_schedule_trainers')
-            ->join('users', 'training_schedule_trainers.trainer_id', '=', 'users.id')
+            ->where('training_schedule_trainers.schedule_id', $scheduleId)
+            ->whereIn('training_schedule_trainers.status', ['invited', 'active', 'confirmed'])
+            ->select(
+                'training_schedule_trainers.id',
+                'training_schedule_trainers.trainer_id',
+                'training_schedule_trainers.trainer_type',
+                'training_schedule_trainers.external_trainer_name',
+                'training_schedule_trainers.external_trainer_email',
+                'training_schedule_trainers.external_trainer_phone',
+                'training_schedule_trainers.external_trainer_company',
+                'training_schedule_trainers.is_primary_trainer',
+                'training_schedule_trainers.hours_taught',
+                'training_schedule_trainers.start_time',
+                'training_schedule_trainers.end_time',
+                'training_schedule_trainers.notes'
+            )
+            ->get();
+
+        // Get internal trainer details
+        foreach ($trainers as $trainer) {
+            if ($trainer->trainer_type === 'internal' && $trainer->trainer_id) {
+                $user = DB::table('users')
             ->leftJoin('tbl_data_jabatan', 'users.id_jabatan', '=', 'tbl_data_jabatan.id_jabatan')
             ->leftJoin('tbl_data_divisi', 'users.division_id', '=', 'tbl_data_divisi.id')
-            ->where('training_schedule_trainers.schedule_id', $scheduleId)
-            ->where('training_schedule_trainers.trainer_type', 'internal')
+                    ->where('users.id', $trainer->trainer_id)
             ->select(
                 'users.id',
                 'users.nama_lengkap',
                 'users.email',
                 'tbl_data_jabatan.nama_jabatan',
-                'tbl_data_divisi.nama_divisi',
-                'training_schedule_trainers.is_primary_trainer'
-            )
-            ->get();
+                        'tbl_data_divisi.nama_divisi'
+                    )
+                    ->first();
+
+                if ($user) {
+                    $trainer->trainer_name = $user->nama_lengkap;
+                    $trainer->trainer_email = $user->email;
+                    $trainer->trainer_jabatan = $user->nama_jabatan;
+                    $trainer->trainer_divisi = $user->nama_divisi;
+                }
+            } else if ($trainer->trainer_type === 'external') {
+                $trainer->trainer_name = $trainer->external_trainer_name;
+                $trainer->trainer_email = $trainer->external_trainer_email;
+                $trainer->trainer_phone = $trainer->external_trainer_phone;
+                $trainer->trainer_company = $trainer->external_trainer_company;
+            }
+        }
 
         return $trainers;
     }
@@ -2000,97 +2569,121 @@ class TrainingScheduleController extends Controller
     /**
      * Get training sessions for a course with user progress
      */
-    private function getTrainingSessions($courseId, $userId)
+    private function getTrainingSessions($courseId, $userId, $scheduleId = null)
     {
-        // For now, return mock data. In a real implementation, this would come from the database
-        return [
-            [
-                'id' => 1,
-                'title' => 'Pengenalan Training',
-                'description' => 'Sesi pembukaan dan pengenalan materi training',
-                'duration' => 30,
-                'is_accessible' => true,
-                'progress' => 0,
-                'items' => [
-                    [
-                        'id' => 1,
-                        'title' => 'Materi Pengenalan Training',
-                        'type' => 'material',
-                        'duration' => 15,
-                        'is_accessible' => true,
-                        'is_completed' => false
-                    ],
-                    [
-                        'id' => 2,
-                        'title' => 'Quiz Pengenalan',
-                        'type' => 'quiz',
-                        'duration' => 10,
-                        'is_accessible' => true,
-                        'is_completed' => false
-                    ]
-                ]
-            ],
-            [
-                'id' => 2,
-                'title' => 'Materi Utama Training',
-                'description' => 'Sesi pembelajaran materi utama training',
-                'duration' => 60,
-                'is_accessible' => false, // Will be unlocked after completing session 1
-                'progress' => 0,
-                'items' => [
-                    [
-                        'id' => 3,
-                        'title' => 'Video Pembelajaran Interaktif',
-                        'type' => 'material',
-                        'duration' => 30,
-                        'is_accessible' => false,
-                        'is_completed' => false
-                    ],
-                    [
-                        'id' => 4,
-                        'title' => 'Latihan Praktik',
-                        'type' => 'activity',
-                        'duration' => 20,
-                        'is_accessible' => false,
-                        'is_completed' => false
-                    ],
-                    [
-                        'id' => 5,
-                        'title' => 'Quiz Materi Utama',
-                        'type' => 'quiz',
-                        'duration' => 15,
-                        'is_accessible' => false,
-                        'is_completed' => false
-                    ]
-                ]
-            ],
-            [
-                'id' => 3,
-                'title' => 'Evaluasi dan Penutup',
-                'description' => 'Sesi evaluasi dan penutupan training',
-                'duration' => 30,
-                'is_accessible' => false, // Will be unlocked after completing session 2
-                'progress' => 0,
-                'items' => [
-                    [
-                        'id' => 6,
-                        'title' => 'Evaluasi Akhir',
-                        'type' => 'quiz',
-                        'duration' => 20,
-                        'is_accessible' => false,
-                        'is_completed' => false
-                    ],
-                    [
-                        'id' => 7,
-                        'title' => 'Feedback Training',
-                        'type' => 'activity',
-                        'duration' => 10,
-                        'is_accessible' => false,
-                        'is_completed' => false
-                    ]
-                ]
-            ]
-        ];
+        // Get course sessions with items
+        $sessions = DB::table('lms_sessions')
+            ->where('course_id', $courseId)
+            ->where('status', 'active')
+            ->orderBy('order_number')
+            ->select('id', 'session_title', 'session_description', 'estimated_duration_minutes', 'is_required', 'order_number')
+            ->get();
+
+        // Get session items for each session with prerequisite logic
+        foreach ($sessions as $sessionIndex => $session) {
+            $sessionItems = DB::table('lms_session_items')
+                ->leftJoin('lms_curriculum_materials', 'lms_session_items.item_id', '=', 'lms_curriculum_materials.id')
+                ->where('lms_session_items.session_id', $session->id)
+                ->where('lms_session_items.status', 'active')
+                ->orderBy('lms_session_items.order_number')
+                ->select(
+                    'lms_session_items.id', 
+                    'lms_session_items.item_type', 
+                    'lms_session_items.item_id', 
+                    'lms_session_items.title', 
+                    'lms_session_items.description', 
+                    'lms_session_items.estimated_duration_minutes', 
+                    'lms_session_items.is_required', 
+                    'lms_session_items.order_number', 
+                    'lms_session_items.passing_score', 
+                    'lms_session_items.max_attempts',
+                    'lms_curriculum_materials.quiz_id'
+                )
+                ->get();
+            
+            // Debug: Log session items after join
+            \Log::info('Session items after join with curriculum materials', [
+                'session_id' => $session->id,
+                'session_title' => $session->session_title,
+                'items_count' => $sessionItems->count(),
+                'items' => $sessionItems->toArray()
+            ]);
+            
+            // Check if session can be accessed (prerequisite logic)
+            if ($scheduleId) {
+                $session->can_access = $this->canAccessSession($userId, $scheduleId, $sessionIndex, $sessions);
+            } else {
+                $session->can_access = true; // Default to accessible if no schedule ID
+            }
+            $session->progress = null; // Progress tracking not implemented yet
+            
+            // Get access control for each item and fetch quiz data if needed
+            foreach ($sessionItems as $itemIndex => $item) {
+                // Check if item can be accessed (prerequisite logic)
+                if ($scheduleId) {
+                    $item->can_access = $this->canAccessItem($userId, $scheduleId, $session->id, $item->id, $sessionItems, $itemIndex, $session->can_access);
+                } else {
+                    $item->can_access = $session->can_access; // Default to session access
+                }
+                $item->progress = null; // Progress tracking not implemented yet
+                
+                // Debug: Log item structure before processing
+                \Log::info('Processing session item', [
+                    'item_id' => $item->id,
+                    'item_type' => $item->item_type,
+                    'item_title' => $item->title,
+                    'curriculum_material_id' => $item->item_id,
+                    'quiz_id_from_join' => $item->quiz_id ?? 'null',
+                    'has_quiz_id' => isset($item->quiz_id) ? 'yes' : 'no'
+                ]);
+                
+                // Fetch quiz data if item is a quiz
+                if ($item->item_type === 'quiz' && $item->quiz_id) {
+                    \Log::info('Fetching quiz data for item in getTrainingSessions', [
+                        'item_id' => $item->id,
+                        'item_type' => $item->item_type,
+                        'curriculum_material_id' => $item->item_id,
+                        'quiz_id' => $item->quiz_id,
+                        'user_id' => $userId,
+                        'schedule_id' => $scheduleId
+                    ]);
+                    $item->quiz = $this->getQuizData($item->quiz_id, $userId);
+                    
+                    // Add completion status
+                    $item->is_completed = $this->isItemCompleted($userId, $scheduleId, $item);
+                    $item->completion_status = $this->getQuizCompletionStatus($userId, $item->quiz_id);
+                    
+                    \Log::info('Quiz data result in getTrainingSessions', [
+                        'item_id' => $item->id,
+                        'quiz_id' => $item->quiz_id,
+                        'quiz_data' => $item->quiz ? 'found' : 'null',
+                        'is_completed' => $item->is_completed,
+                        'completion_status' => $item->completion_status
+                    ]);
+                } else if ($item->item_type === 'quiz' && !$item->quiz_id) {
+                    \Log::warning('Quiz item found but no quiz_id from join', [
+                        'item_id' => $item->id,
+                        'item_type' => $item->item_type,
+                        'curriculum_material_id' => $item->item_id,
+                        'quiz_id' => $item->quiz_id ?? 'null'
+                    ]);
+                }
+                
+                // Fetch material data if item is a material
+                if ($item->item_type === 'material' && $item->item_id) {
+                    $item->material = $this->getMaterialData($item->item_id, $userId);
+                }
+                
+                // Fetch questionnaire data if item is a questionnaire
+                if ($item->item_type === 'questionnaire' && $item->item_id) {
+                    $item->questionnaire = $this->getQuestionnaireData($item->item_id, $userId);
+                }
+            }
+            
+            $session->items = $sessionItems;
+        }
+
+        return $sessions;
     }
 
     /**
@@ -2098,13 +2691,8 @@ class TrainingScheduleController extends Controller
      */
     private function canGiveFeedback($userId, $scheduleId)
     {
-        // Check if user has already given feedback
-        $existingFeedback = DB::table('training_feedback')
-            ->where('schedule_id', $scheduleId)
-            ->where('user_id', $userId)
-            ->first();
-            
-        return !$existingFeedback;
+        // Check if user has already given review
+        return !TrainingReview::hasReviewed($scheduleId, $userId);
     }
 
     /**
@@ -2182,4 +2770,136 @@ class TrainingScheduleController extends Controller
         $historyController = new \App\Http\Controllers\TrainingHistoryController();
         return $historyController->getTrainingHistoryDetails($request, $historyId);
     }
+
+    /**
+     * View material file with proper headers
+     */
+    public function viewMaterialFile(Request $request, $materialId, $fileId)
+    {
+        try {
+            // Get file information
+            $file = DB::table('lms_curriculum_material_files')
+                ->where('id', $fileId)
+                ->where('material_id', $materialId)
+                ->where('status', 'active')
+                ->first();
+
+            if (!$file) {
+                abort(404, 'File not found');
+            }
+
+            // Check if file exists
+            $filePath = storage_path('app/public/' . $file->file_path);
+            if (!file_exists($filePath)) {
+                abort(404, 'File not found on disk');
+            }
+
+            // Set appropriate headers based on file type
+            $headers = [];
+            
+            switch ($file->file_type) {
+                case 'pdf':
+                    $headers = [
+                        'Content-Type' => 'application/pdf',
+                        'Content-Disposition' => 'inline; filename="' . $file->file_name . '"',
+                        'Cache-Control' => 'public, max-age=3600',
+                    ];
+                    break;
+                case 'video':
+                    $headers = [
+                        'Content-Type' => $file->file_mime_type ?: 'video/mp4',
+                        'Content-Disposition' => 'inline; filename="' . $file->file_name . '"',
+                        'Accept-Ranges' => 'bytes',
+                        'Cache-Control' => 'public, max-age=3600',
+                    ];
+                    break;
+                case 'image':
+                    $headers = [
+                        'Content-Type' => $file->file_mime_type ?: 'image/jpeg',
+                        'Content-Disposition' => 'inline; filename="' . $file->file_name . '"',
+                        'Cache-Control' => 'public, max-age=3600',
+                    ];
+                    break;
+                default:
+                    $headers = [
+                        'Content-Type' => $file->file_mime_type ?: 'application/octet-stream',
+                        'Content-Disposition' => 'attachment; filename="' . $file->file_name . '"',
+                    ];
+                    break;
+            }
+
+            return response()->file($filePath, $headers);
+            
+        } catch (\Exception $e) {
+            \Log::error('Error viewing material file: ' . $e->getMessage());
+            abort(500, 'Error loading file');
+        }
+    }
+
+    /**
+     * Submit training review/feedback
+     */
+    public function submitReview(Request $request)
+    {
+        $request->validate([
+            'training_schedule_id' => 'required|exists:training_schedules,id',
+            'trainer_id' => 'nullable|exists:users,id',
+            'training_rating' => 'required|integer|min:1|max:5',
+            'training_feedback' => 'nullable|string|max:1000',
+            'trainer_rating' => 'nullable|integer|min:1|max:5',
+            'trainer_feedback' => 'nullable|string|max:1000',
+            'overall_satisfaction' => 'required|integer|min:1|max:5',
+            'improvement_suggestions' => 'nullable|string|max:1000',
+        ]);
+
+        $userId = auth()->id();
+        $trainingScheduleId = $request->training_schedule_id;
+
+        // Check if user has already reviewed this training
+        if (TrainingReview::hasReviewed($trainingScheduleId, $userId)) {
+            return redirect()->back()->withErrors(['error' => 'Anda sudah memberikan review untuk training ini']);
+        }
+
+        // Check if user has checked out from this training
+        $invitation = TrainingInvitation::where('schedule_id', $trainingScheduleId)
+                                      ->where('user_id', $userId)
+                                      ->where('status', 'attended')
+                                      ->whereNotNull('check_out_time')
+                                      ->first();
+
+        if (!$invitation) {
+            return redirect()->back()->withErrors(['error' => 'Anda harus check-out terlebih dahulu sebelum memberikan review']);
+        }
+
+        try {
+            $review = TrainingReview::create([
+                'training_schedule_id' => $trainingScheduleId,
+                'user_id' => $userId,
+                'trainer_id' => $request->trainer_id,
+                'training_rating' => $request->training_rating,
+                'training_feedback' => $request->training_feedback,
+                'trainer_rating' => $request->trainer_rating,
+                'trainer_feedback' => $request->trainer_feedback,
+                'overall_satisfaction' => $request->overall_satisfaction,
+                'improvement_suggestions' => $request->improvement_suggestions,
+            ]);
+
+            \Log::info('Training review submitted', [
+                'review_id' => $review->id,
+                'training_schedule_id' => $trainingScheduleId,
+                'user_id' => $userId,
+                'trainer_id' => $request->trainer_id,
+                'training_rating' => $request->training_rating,
+                'trainer_rating' => $request->trainer_rating,
+                'overall_satisfaction' => $request->overall_satisfaction,
+            ]);
+
+            return redirect()->back()->with('success', 'Review berhasil disubmit. Terima kasih atas feedback Anda!');
+
+        } catch (\Exception $e) {
+            \Log::error('Error submitting training review: ' . $e->getMessage());
+            return redirect()->back()->withErrors(['error' => 'Terjadi kesalahan saat menyimpan review']);
+        }
+    }
+
 }

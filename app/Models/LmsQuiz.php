@@ -123,7 +123,9 @@ class LmsQuiz extends Model
         }
 
         $passedAttempts = $this->attempts()
-            ->where('score', '>=', $this->passing_score)
+            ->when($this->passing_score !== null, function($query) {
+                return $query->where('score', '>=', $this->passing_score);
+            })
             ->count();
 
         return round(($passedAttempts / $totalAttempts) * 100, 1);

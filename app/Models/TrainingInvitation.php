@@ -185,9 +185,9 @@ class TrainingInvitation extends Model
 
     public function canCheckIn(): bool
     {
+        // User must be invited and training status must be 'ongoing'
         return $this->status === 'invited' && 
-               $this->schedule->status === 'ongoing' &&
-               $this->schedule->is_today;
+               $this->schedule->status === 'ongoing';
     }
 
     public function canCheckOut(): bool

@@ -146,6 +146,17 @@ Route::middleware('auth')->group(function () {
     Route::post('/api/quiz/submit-attempt', [\App\Http\Controllers\QuizController::class, 'submitAttempt'])->name('api.quiz.submit-attempt');
     Route::get('/api/quiz/results/{attemptId}', [\App\Http\Controllers\QuizController::class, 'getResults'])->name('api.quiz.results');
     
+    // Quiz attempt view routes
+    Route::get('/lms/quiz/{quizId}/attempt/{attemptId}', [\App\Http\Controllers\QuizController::class, 'showAttempt'])->name('lms.quiz.attempt');
+    Route::get('/lms/quiz/results/{attemptId}', [\App\Http\Controllers\QuizController::class, 'showResults'])->name('lms.quiz.results');
+    
+    // Material file viewer routes
+    Route::get('/lms/material/{materialId}/view/{fileId}', [\App\Http\Controllers\TrainingScheduleController::class, 'viewMaterialFile'])->name('lms.material.view');
+    
+    // Training review routes
+    Route::post('/lms/training/review', [\App\Http\Controllers\TrainingScheduleController::class, 'submitReview'])->name('lms.training.review');
+    Route::get('/lms/training/{trainingScheduleId}/reviews', [\App\Http\Controllers\TrainingScheduleController::class, 'getTrainingReviews'])->name('lms.training.reviews');
+    
     // Questionnaire API routes
     Route::post('/api/questionnaire/start-response', [\App\Http\Controllers\QuestionnaireController::class, 'startResponse'])->name('api.questionnaire.start-response');
     Route::post('/api/questionnaire/submit-response', [\App\Http\Controllers\QuestionnaireController::class, 'submitResponse'])->name('api.questionnaire.submit-response');
@@ -1316,6 +1327,17 @@ Route::middleware(['auth'])->prefix('lms')->name('lms.')->group(function () {
     Route::put('/courses/{course}/archive', [App\Http\Controllers\LmsController::class, 'archiveCourse'])->name('courses.archive');
     Route::put('/courses/{course}/publish', [App\Http\Controllers\LmsController::class, 'publishCourse'])->name('courses.publish');
     Route::post('/courses/{course}/enroll', [App\Http\Controllers\LmsController::class, 'enroll'])->name('courses.enroll');
+    Route::get('/courses/{course}/trainer-ratings', [App\Http\Controllers\LmsController::class, 'getCourseTrainerRatings'])->name('courses.trainer-ratings');
+Route::get('/trainer-report', [App\Http\Controllers\LmsController::class, 'getTrainerReport'])->name('trainer-report');
+Route::get('/trainer-report-page', function () {
+    return Inertia::render('Lms/TrainerReport');
+})->name('trainer-report-page');
+
+// Available trainings API
+Route::get('/available-trainings', [App\Http\Controllers\LmsController::class, 'getAvailableTrainings'])->name('available-trainings');
+Route::get('/employee-training-report', [App\Http\Controllers\LmsController::class, 'getEmployeeTrainingReport'])->name('employee-training-report');
+Route::get('/employee-training-report-page', [App\Http\Controllers\LmsController::class, 'employeeTrainingReportPage'])->name('employee-training-report-page');
+
     
     // My Courses
     Route::get('/my-courses', [App\Http\Controllers\LmsController::class, 'myCourses'])->name('my-courses');
@@ -1412,6 +1434,10 @@ Route::put('/schedules/{schedule}/participants/{invitation}/mark-attended', [Tra
         
         // Training notifications
         Route::get('/training-notifications', [TrainingScheduleController::class, 'getTrainingNotifications'])->name('training-notifications');
+        Route::get('/training-history', [TrainingScheduleController::class, 'getTrainingHistory'])->name('training-history');
+        Route::put('/schedules/{id}/status', [TrainingScheduleController::class, 'updateTrainingStatus'])->name('schedules.update-status');
+        Route::get('/schedules/{id}/reviews', [TrainingScheduleController::class, 'getTrainingReviews'])->name('schedules.reviews');
+        Route::get('/schedules/{id}/trainer-ratings', [TrainingScheduleController::class, 'getTrainerRatings'])->name('schedules.trainer-ratings');
 });
 
 // LMS Curriculum Routes

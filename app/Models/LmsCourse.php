@@ -74,6 +74,8 @@ class LmsCourse extends Model
         'enrollments_count',
         'type_text',
         'course_type_text',
+        'average_rating',
+        'total_reviews',
     ];
 
     // Relationships
@@ -150,6 +152,24 @@ class LmsCourse extends Model
     public function certificates()
     {
         return $this->hasMany(LmsCertificate::class, 'course_id');
+    }
+
+    // Training system relationships
+    public function trainingSchedules()
+    {
+        return $this->hasMany(TrainingSchedule::class, 'course_id');
+    }
+
+    public function trainingReviews()
+    {
+        return $this->hasManyThrough(
+            TrainingReview::class,
+            TrainingSchedule::class,
+            'course_id', // Foreign key on training_schedules table
+            'training_schedule_id', // Foreign key on training_reviews table
+            'id', // Local key on lms_courses table
+            'id' // Local key on training_schedules table
+        );
     }
 
     public function certificateTemplate()
@@ -385,6 +405,17 @@ class LmsCourse extends Model
             $value = \Str::slug($this->title);
         }
         return $value;
+    }
+
+    public function getAverageRatingAttribute()
+    {
+        $averageRating = $this->trainingReviews()->avg('training_rating');
+        return $averageRating ? round($averageRating, 1) : 0;
+    }
+
+    public function getTotalReviewsAttribute()
+    {
+        return $this->trainingReviews()->count();
     }
 
     // Mutators

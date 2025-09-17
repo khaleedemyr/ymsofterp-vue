@@ -1617,16 +1617,26 @@ class ReportController extends Controller
     }
 
     /**
-     * API: Get qr_code for current user's outlet
+     * API: Get qr_code and outlet name for current user's outlet
      */
     public function myOutletQr()
     {
         $user = auth()->user();
         $qr_code = null;
+        $outlet_name = null;
+        
         if ($user && $user->id_outlet && $user->id_outlet != 1) {
-            $qr_code = \DB::table('tbl_data_outlet')->where('id_outlet', $user->id_outlet)->value('qr_code');
+            $outlet = \DB::table('tbl_data_outlet')->where('id_outlet', $user->id_outlet)->first();
+            if ($outlet) {
+                $qr_code = $outlet->qr_code;
+                $outlet_name = $outlet->nama_outlet;
+            }
         }
-        return response()->json(['qr_code' => $qr_code]);
+        
+        return response()->json([
+            'qr_code' => $qr_code,
+            'outlet_name' => $outlet_name
+        ]);
     }
 
     public function reportItemEngineering(Request $request)

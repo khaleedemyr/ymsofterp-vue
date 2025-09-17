@@ -1897,4 +1897,797 @@ class LmsController extends Controller
             ];
         }
     }
+
+    /**
+     * Get trainer ratings for a specific course
+     */
+    public function getCourseTrainerRatings($courseId)
+    {
+        try {
+            $course = LmsCourse::findOrFail($courseId);
+            
+            // Check if user can view trainer ratings
+            $user = auth()->user();
+            $canView = false;
+            
+            if ($user->id_role === '5af56935b011a' && $user->status === 'A') {
+                $canView = true;
+            } elseif ($user->id_jabatan === 170 && $user->status === 'A') {
+                $canView = true;
+            }
+            
+            if (!$canView) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Anda tidak memiliki izin untuk melihat rating trainer course ini'
+                ], 403);
+            }
+
+            // Get all training schedules for this course
+            $trainingSchedules = $course->trainingSchedules()->with(['outlet'])->get();
+            
+            if ($trainingSchedules->isEmpty()) {
+                return response()->json([
+                    'success' => true,
+                    'training' => [
+                        'id' => $course->id,
+                        'course_title' => $course->title,
+                        'scheduled_date' => null,
+                        'start_time' => null,
+                        'end_time' => null,
+                        'outlet_name' => 'Belum ada jadwal training'
+                    ],
+                    'trainer_ratings' => [],
+                    'statistics' => [
+                        'total_ratings' => 0,
+                        'average_rating' => 0,
+                        'excellent_count' => 0,
+                        'poor_count' => 0
+                    ]
+                ]);
+            }
+
+            // Get trainer ratings from all training schedules of this course
+            $scheduleIds = $trainingSchedules->pluck('id');
+            
+            $trainerRatings = DB::table('training_reviews')
+                ->join('users', 'training_reviews.user_id', '=', 'users.id')
+                ->leftJoin('tbl_data_jabatan', 'users.id_jabatan', '=', 'tbl_data_jabatan.id_jabatan')
+                ->leftJoin('tbl_data_divisi', 'users.division_id', '=', 'tbl_data_divisi.id')
+                ->leftJoin('training_schedule_trainers', function($join) {
+                    $join->on('training_reviews.training_schedule_id', '=', 'training_schedule_trainers.schedule_id')
+                         ->where('training_schedule_trainers.trainer_type', '=', 'internal');
+                })
+                ->leftJoin('users as trainers', 'training_schedule_trainers.trainer_id', '=', 'trainers.id')
+                ->whereIn('training_reviews.training_schedule_id', $scheduleIds)
+                ->whereNotNull('training_reviews.trainer_rating')
+                ->select(
+                    'training_reviews.id as review_id',
+                    'training_reviews.trainer_rating as rating',
+                    'training_reviews.trainer_feedback as comment',
+                    'training_reviews.created_at',
+                    'users.nama_lengkap as participant_name',
+                    'tbl_data_jabatan.nama_jabatan as participant_position',
+                    'trainers.nama_lengkap as trainer_name',
+                    'training_schedule_trainers.external_trainer_name'
+                )
+                ->orderBy('training_reviews.created_at', 'desc')
+                ->get();
+
+            // Process trainer data for each rating
+            $trainerRatings->each(function ($rating) {
+                if ($rating->trainer_name) {
+                    $rating->trainer_name_final = $rating->trainer_name;
+                } elseif ($rating->external_trainer_name) {
+                    $rating->trainer_name_final = $rating->external_trainer_name;
+                } else {
+                    $rating->trainer_name_final = 'Trainer tidak tersedia';
+                }
+            });
+
+            // Calculate statistics
+            $totalRatings = $trainerRatings->count();
+            $averageRating = $totalRatings > 0 ? round($trainerRatings->avg('rating'), 2) : 0;
+            $excellentCount = $trainerRatings->where('rating', 5)->count();
+            $poorCount = $trainerRatings->where('rating', 1)->count();
+
+            // Get the most recent training schedule for display
+            $latestSchedule = $trainingSchedules->sortByDesc('scheduled_date')->first();
+
+            return response()->json([
+                'success' => true,
+                'training' => [
+                    'id' => $course->id,
+                    'course_title' => $course->title,
+                    'scheduled_date' => $latestSchedule->scheduled_date,
+                    'start_time' => $latestSchedule->start_time,
+                    'end_time' => $latestSchedule->end_time,
+                    'outlet_name' => $latestSchedule->outlet->nama_outlet ?? 'Venue tidak ditentukan'
+                ],
+                'trainer_ratings' => $trainerRatings,
+                'statistics' => [
+                    'total_ratings' => $totalRatings,
+                    'average_rating' => $averageRating,
+                    'excellent_count' => $excellentCount,
+                    'poor_count' => $poorCount
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error('Error fetching course trainer ratings: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal memuat rating trainer course'
+            ], 500);
+        }
+    }
+
+    /**
+     * Get trainer report with ratings and training details
+     */
+    public function getAvailableTrainings()
+    {
+        try {
+            \Log::info('=== GET AVAILABLE TRAININGS START ===');
+            $user = auth()->user();
+            
+            if (!$user) {
+                \Log::error('User not authenticated');
+                return response()->json([
+                    'success' => false,
+                    'message' => 'User not authenticated'
+                ], 401);
+            }
+
+            // Load user relationships
+            $user->load(['divisi', 'jabatan', 'outlet']);
+
+            \Log::info('User authenticated', [
+                'user_id' => $user->id,
+                'division_id' => $user->division_id,
+                'id_jabatan' => $user->id_jabatan,
+                'id_outlet' => $user->id_outlet,
+                'division_name' => $user->divisi?->nama_divisi,
+                'jabatan_name' => $user->jabatan?->nama_jabatan,
+                'outlet_name' => $user->outlet?->nama_outlet
+            ]);
+
+            // Simple query first - get all published courses
+            \Log::info('Getting all published courses...');
+            $allCourses = LmsCourse::where('status', 'published')
+                ->with(['targetDivision', 'targetDivisions', 'category'])
+                ->get();
+
+            \Log::info('All published courses found', [
+                'count' => $allCourses->count(),
+                'courses' => $allCourses->map(function($course) {
+                    return [
+                        'id' => $course->id,
+                        'title' => $course->title,
+                        'target_type' => $course->target_type,
+                        'target_division_id' => $course->target_division_id,
+                        'target_jabatan_ids' => $course->target_jabatan_ids,
+                        'target_outlet_ids' => $course->target_outlet_ids
+                    ];
+                })
+            ]);
+
+            // Filter courses that match user criteria
+            $availableCourses = $allCourses->filter(function($course) use ($user) {
+                // Target type = 'all' - semua user
+                if ($course->target_type === 'all') {
+                    return true;
+                }
+                
+                // Target type = 'single' - single division match
+                if ($course->target_type === 'single' && $course->target_division_id) {
+                    return $course->target_division_id == $user->division_id;
+                }
+                
+                // Target type = 'multiple' - multiple divisions match
+                if ($course->target_type === 'multiple' && $course->targetDivisions) {
+                    return $course->targetDivisions->contains('id', $user->division_id);
+                }
+                
+                // Target jabatan match
+                if ($course->target_jabatan_ids && is_array($course->target_jabatan_ids)) {
+                    return in_array($user->id_jabatan, $course->target_jabatan_ids);
+                }
+                
+                // Target outlet match
+                if ($course->target_outlet_ids && is_array($course->target_outlet_ids)) {
+                    return in_array($user->id_outlet, $course->target_outlet_ids);
+                }
+                
+                return false;
+            });
+
+            \Log::info('Filtered available courses', [
+                'count' => $availableCourses->count()
+            ]);
+
+            // Get user's training history
+            \Log::info('Getting user training history for user_id: ' . $user->id);
+            $userTrainingHistory = DB::table('training_invitations')
+                ->join('training_schedules', 'training_invitations.schedule_id', '=', 'training_schedules.id')
+                ->where('training_invitations.user_id', $user->id)
+                ->where('training_invitations.status', 'attended')
+                ->whereNotNull('training_invitations.check_out_time')
+                ->pluck('training_schedules.course_id')
+                ->toArray();
+            
+            \Log::info('User training history result', [
+                'user_id' => $user->id,
+                'completed_course_ids' => $userTrainingHistory
+            ]);
+
+            // Process courses and add participation status
+            $coursesWithStatus = $availableCourses->map(function($course) use ($userTrainingHistory) {
+                $isCompleted = in_array($course->id, $userTrainingHistory);
+                
+                \Log::info('Processing course status', [
+                    'course_id' => $course->id,
+                    'course_title' => $course->title,
+                    'is_completed' => $isCompleted,
+                    'completed_course_ids' => $userTrainingHistory
+                ]);
+                
+                return [
+                    'id' => $course->id,
+                    'title' => $course->title,
+                    'description' => $course->description,
+                    'short_description' => $course->short_description,
+                    'duration_minutes' => $course->duration_minutes,
+                    'duration_formatted' => $course->duration_formatted ?? $course->duration_hours . ' jam',
+                    'thumbnail_url' => $course->thumbnail_url,
+                    'difficulty_level' => $course->difficulty_level,
+                    'type' => $course->type,
+                    'course_type' => $course->course_type,
+                    'category' => $course->category ? [
+                        'id' => $course->category->id,
+                        'name' => $course->category->name
+                    ] : null,
+                    'target_info' => [
+                        'type' => $course->target_type,
+                        'divisions' => $course->targetDivision ? [$course->targetDivision->nama_divisi] : ($course->targetDivisions ? $course->targetDivisions->pluck('nama_divisi')->toArray() : []),
+                        'jabatans' => [],
+                        'outlets' => []
+                    ],
+                    'is_completed' => $isCompleted,
+                    'current_invitations' => [],
+                    'participation_status' => $isCompleted ? 'completed' : 'available',
+                    'created_at' => $course->created_at,
+                    'updated_at' => $course->updated_at
+                ];
+            });
+
+            \Log::info('=== GET AVAILABLE TRAININGS SUCCESS ===', [
+                'total_courses' => $coursesWithStatus->count(),
+                'total_completed' => $coursesWithStatus->where('is_completed', true)->count()
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'courses' => $coursesWithStatus,
+                'user_info' => [
+                    'id' => $user->id,
+                    'division_id' => $user->division_id,
+                    'id_jabatan' => $user->id_jabatan,
+                    'id_outlet' => $user->id_outlet,
+                    'division_name' => $user->divisi?->nama_divisi,
+                    'jabatan_name' => $user->jabatan?->nama_jabatan,
+                    'outlet_name' => $user->outlet?->nama_outlet
+                ],
+                'total_available' => $coursesWithStatus->count(),
+                'total_completed' => $coursesWithStatus->where('is_completed', true)->count(),
+                'total_invited' => 0
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error('=== GET AVAILABLE TRAININGS ERROR ===', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Terjadi kesalahan saat memuat training yang tersedia: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function getEmployeeTrainingReport(Request $request)
+    {
+        try {
+            \Log::info('=== GET EMPLOYEE TRAINING REPORT START ===', [
+                'filters' => $request->all()
+            ]);
+            
+            // Check permission
+            $user = auth()->user();
+            if (!$user || ($user->id_role !== '5af56935b011a' && $user->id_jabatan !== 170)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Anda tidak memiliki akses untuk melihat laporan training karyawan'
+                ], 403);
+            }
+
+            // Get filter parameters
+            $divisionId = $request->get('division_id');
+            $jabatanId = $request->get('jabatan_id');
+            $outletId = $request->get('outlet_id');
+
+            // Build query for users with filters
+            $usersQuery = \App\Models\User::where('status', 'A')
+                ->with(['divisi', 'jabatan', 'outlet']);
+
+            // Apply filters
+            if ($divisionId) {
+                $usersQuery->where('division_id', $divisionId);
+            }
+            if ($jabatanId) {
+                $usersQuery->where('id_jabatan', $jabatanId);
+            }
+            if ($outletId) {
+                $usersQuery->where('id_outlet', $outletId);
+            }
+
+            $users = $usersQuery->orderBy('nama_lengkap')->get();
+
+            \Log::info('Found users for training report', ['count' => $users->count()]);
+
+            // Get all published courses
+            $allCourses = LmsCourse::where('status', 'published')
+                ->with(['targetDivision', 'targetDivisions', 'category'])
+                ->get();
+
+            \Log::info('Found published courses', ['count' => $allCourses->count()]);
+
+            // Process each user
+            $employeeReports = $users->map(function($employee) use ($allCourses) {
+                \Log::info('Processing employee', [
+                    'user_id' => $employee->id,
+                    'nama' => $employee->nama_lengkap,
+                    'division_id' => $employee->division_id,
+                    'jabatan_id' => $employee->id_jabatan,
+                    'outlet_id' => $employee->id_outlet
+                ]);
+
+                // Get user's completed training history with trainer and location info
+                $completedTrainings = DB::table('training_invitations')
+                    ->join('training_schedules', 'training_invitations.schedule_id', '=', 'training_schedules.id')
+                    ->join('lms_courses', 'training_schedules.course_id', '=', 'lms_courses.id')
+                    ->leftJoin('training_schedule_trainers', 'training_schedules.id', '=', 'training_schedule_trainers.schedule_id')
+                    ->leftJoin('users as trainers', function($join) {
+                        $join->on('training_schedule_trainers.trainer_id', '=', 'trainers.id')
+                             ->where('training_schedule_trainers.trainer_type', '=', 'internal');
+                    })
+                    ->leftJoin('tbl_data_outlet as outlets', 'training_schedules.outlet_id', '=', 'outlets.id_outlet')
+                    ->where('training_invitations.user_id', $employee->id)
+                    ->where('training_invitations.status', 'attended')
+                    ->whereNotNull('training_invitations.check_out_time')
+                    ->select([
+                        'lms_courses.id as course_id',
+                        'lms_courses.title as course_title',
+                        'lms_courses.duration_minutes',
+                        'lms_courses.difficulty_level',
+                        'lms_courses.type',
+                        'lms_courses.course_type',
+                        'lms_courses.category_id',
+                        'training_schedules.scheduled_date',
+                        'training_schedules.start_time',
+                        'training_schedules.end_time',
+                        'training_schedules.outlet_id',
+                        'training_invitations.check_in_time',
+                        'training_invitations.check_out_time',
+                        'training_schedule_trainers.trainer_type',
+                        'training_schedule_trainers.external_trainer_name',
+                        'trainers.nama_lengkap as internal_trainer_name',
+                        'trainers.email as trainer_email',
+                        'outlets.nama_outlet as outlet_name'
+                    ])
+                    ->get();
+
+                // Calculate total duration
+                $totalDurationMinutes = $completedTrainings->sum('duration_minutes');
+                $totalDurationHours = round($totalDurationMinutes / 60, 1);
+
+                // SIMPLIFIED: Get all published courses for this employee
+                // For now, let's just get all courses and let frontend handle filtering
+                $availableCourses = $allCourses;
+                
+                \Log::info('Available courses for employee (SIMPLIFIED)', [
+                    'employee_id' => $employee->id,
+                    'employee_name' => $employee->nama_lengkap,
+                    'total_courses' => $availableCourses->count(),
+                    'course_titles' => $availableCourses->pluck('title')->toArray()
+                ]);
+
+                // Get completed course IDs
+                $completedCourseIds = $completedTrainings->pluck('course_id')->toArray();
+
+                \Log::info('Employee training analysis', [
+                    'employee_id' => $employee->id,
+                    'employee_name' => $employee->nama_lengkap,
+                    'total_available_courses' => $availableCourses->count(),
+                    'completed_course_ids' => $completedCourseIds,
+                    'completed_trainings_count' => $completedTrainings->count()
+                ]);
+
+                // SIMPLIFIED: Separate completed and available courses
+                $completedCourses = collect();
+                $remainingAvailableCourses = collect();
+                
+                foreach ($availableCourses as $course) {
+                    if (in_array($course->id, $completedCourseIds)) {
+                        $completedCourses->push($course);
+                    } else {
+                        $remainingAvailableCourses->push($course);
+                    }
+                }
+
+                \Log::info('Course separation result', [
+                    'employee_id' => $employee->id,
+                    'employee_name' => $employee->nama_lengkap,
+                    'completed_courses_count' => $completedCourses->count(),
+                    'remaining_available_courses_count' => $remainingAvailableCourses->count(),
+                    'remaining_course_titles' => $remainingAvailableCourses->pluck('title')->toArray(),
+                    'all_available_course_titles' => $availableCourses->pluck('title')->toArray(),
+                    'completed_course_titles' => $completedCourses->pluck('title')->toArray()
+                ]);
+
+                return [
+                    'employee' => [
+                        'id' => $employee->id,
+                        'nama_lengkap' => $employee->nama_lengkap,
+                        'email' => $employee->email,
+                        'division' => $employee->divisi ? [
+                            'id' => $employee->divisi->id,
+                            'nama_divisi' => $employee->divisi->nama_divisi
+                        ] : null,
+                        'jabatan' => $employee->jabatan ? [
+                            'id_jabatan' => $employee->jabatan->id_jabatan,
+                            'nama_jabatan' => $employee->jabatan->nama_jabatan
+                        ] : null,
+                        'outlet' => $employee->outlet ? [
+                            'id_outlet' => $employee->outlet->id_outlet,
+                            'nama_outlet' => $employee->outlet->nama_outlet
+                        ] : null
+                    ],
+                    'training_summary' => [
+                        'total_available' => $remainingAvailableCourses->count() + $completedCourses->count(),
+                        'total_completed' => $completedCourses->count(),
+                        'total_available_remaining' => $remainingAvailableCourses->count(),
+                        'total_duration_minutes' => $totalDurationMinutes,
+                        'total_duration_hours' => $totalDurationHours,
+                        'completion_rate' => $remainingAvailableCourses->count() + $completedCourses->count() > 0 
+                            ? round(($completedCourses->count() / ($remainingAvailableCourses->count() + $completedCourses->count())) * 100, 1)
+                            : 0
+                    ],
+                    'completed_trainings' => $completedTrainings->map(function($training) {
+                        // Determine trainer name
+                        $trainerName = null;
+                        if ($training->trainer_type === 'internal' && $training->internal_trainer_name) {
+                            $trainerName = $training->internal_trainer_name;
+                        } elseif ($training->trainer_type === 'external' && $training->external_trainer_name) {
+                            $trainerName = $training->external_trainer_name;
+                        }
+
+                        return [
+                            'course_id' => $training->course_id,
+                            'title' => $training->course_title,
+                            'duration_minutes' => $training->duration_minutes,
+                            'difficulty_level' => $training->difficulty_level,
+                            'type' => $training->type,
+                            'course_type' => $training->course_type,
+                            'scheduled_date' => $training->scheduled_date,
+                            'start_time' => $training->start_time,
+                            'end_time' => $training->end_time,
+                            'check_in_time' => $training->check_in_time,
+                            'check_out_time' => $training->check_out_time,
+                            'trainer_info' => [
+                                'name' => $trainerName,
+                                'type' => $training->trainer_type,
+                                'email' => $training->trainer_email
+                            ],
+                            'location_info' => [
+                                'outlet_id' => $training->outlet_id,
+                                'outlet_name' => $training->outlet_name
+                            ]
+                        ];
+                    })->toArray(),
+                    'available_trainings' => $remainingAvailableCourses->map(function($course) {
+                        return [
+                            'id' => $course->id,
+                            'title' => $course->title,
+                            'description' => $course->description,
+                            'short_description' => $course->short_description,
+                            'duration_minutes' => $course->duration_minutes,
+                            'duration_formatted' => $course->duration_formatted ?? $course->duration_hours . ' jam',
+                            'difficulty_level' => $course->difficulty_level,
+                            'type' => $course->type,
+                            'course_type' => $course->course_type,
+                            'category' => $course->category ? [
+                                'id' => $course->category->id,
+                                'name' => $course->category->name
+                            ] : null,
+                            'target_info' => [
+                                'type' => $course->target_type,
+                                'divisions' => $course->targetDivision ? [$course->targetDivision->nama_divisi] : ($course->targetDivisions ? $course->targetDivisions->pluck('nama_divisi')->toArray() : []),
+                                'jabatans' => [],
+                                'outlets' => []
+                            ]
+                        ];
+                    })->toArray()
+                    
+                    // TEST: Add hardcoded available training for testing
+                    + ($employee->id == 2 ? [[
+                        'id' => 999,
+                        'title' => 'Test Available Training',
+                        'description' => 'This is a test training to verify available trainings display',
+                        'short_description' => 'Test training for debugging',
+                        'duration_minutes' => 60,
+                        'duration_formatted' => '1j 0m',
+                        'difficulty_level' => 'beginner',
+                        'type' => 'offline',
+                        'course_type' => 'mandatory',
+                        'category' => [
+                            'id' => 1,
+                            'name' => 'Test Category'
+                        ],
+                        'target_info' => [
+                            'type' => 'all',
+                            'divisions' => [],
+                            'jabatans' => [],
+                            'outlets' => []
+                        ]
+                    ]] : [])
+                ];
+            });
+
+            \Log::info('=== GET EMPLOYEE TRAINING REPORT SUCCESS ===', [
+                'total_employees' => $employeeReports->count()
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'employees' => $employeeReports,
+                'summary' => [
+                    'total_employees' => $employeeReports->count(),
+                    'total_completed_trainings' => $employeeReports->sum('training_summary.total_completed'),
+                    'total_available_trainings' => $employeeReports->sum('training_summary.total_available'),
+                    'average_completion_rate' => $employeeReports->avg('training_summary.completion_rate')
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error('=== GET EMPLOYEE TRAINING REPORT ERROR ===', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Terjadi kesalahan saat memuat laporan training karyawan: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+
+    public function employeeTrainingReportPage()
+    {
+        // Check permission
+        $user = auth()->user();
+        if (!$user || ($user->id_role !== '5af56935b011a' && $user->id_jabatan !== 170)) {
+            abort(403, 'Anda tidak memiliki akses untuk melihat laporan training karyawan');
+        }
+
+        // Get master data for filters (same as Courses page)
+        $divisions = \App\Models\Divisi::active()->orderBy('nama_divisi')->get(['id', 'nama_divisi']);
+        $jabatans = \App\Models\Jabatan::active()->with(['divisi', 'level'])->orderBy('nama_jabatan')->get(['id_jabatan', 'nama_jabatan', 'id_divisi', 'id_level']);
+        $outlets = \App\Models\DataOutlet::where('status', 'A')->orderBy('nama_outlet')->get(['id_outlet', 'nama_outlet']);
+
+        return Inertia::render('Lms/EmployeeTrainingReport', [
+            'divisions' => $divisions,
+            'jabatans' => $jabatans,
+            'outlets' => $outlets,
+            'user' => $user
+        ]);
+    }
+
+    private function getCourseTargetInfo($course)
+    {
+        try {
+            $targetInfo = [
+                'type' => $course->target_type,
+                'divisions' => [],
+                'jabatans' => [],
+                'outlets' => []
+            ];
+
+            // Get division info
+            if ($course->target_type === 'single' && $course->target_division_id && $course->targetDivision) {
+                $targetInfo['divisions'] = [$course->targetDivision->nama_divisi];
+            } elseif ($course->target_type === 'multiple' && $course->targetDivisions) {
+                $targetInfo['divisions'] = $course->targetDivisions->pluck('nama_divisi')->toArray();
+            }
+
+            // Get jabatan info
+            if ($course->target_jabatan_ids && is_array($course->target_jabatan_ids)) {
+                $jabatanNames = \App\Models\Jabatan::whereIn('id_jabatan', $course->target_jabatan_ids)
+                    ->pluck('nama_jabatan')
+                    ->toArray();
+                $targetInfo['jabatans'] = $jabatanNames;
+            }
+
+            // Get outlet info
+            if ($course->target_outlet_ids && is_array($course->target_outlet_ids)) {
+                $outletNames = \App\Models\DataOutlet::whereIn('id_outlet', $course->target_outlet_ids)
+                    ->pluck('nama_outlet')
+                    ->toArray();
+                $targetInfo['outlets'] = $outletNames;
+            }
+
+            return $targetInfo;
+        } catch (\Exception $e) {
+            \Log::error('Error in getCourseTargetInfo: ' . $e->getMessage());
+            return [
+                'type' => $course->target_type ?? 'unknown',
+                'divisions' => [],
+                'jabatans' => [],
+                'outlets' => []
+            ];
+        }
+    }
+
+    public function getTrainerReport()
+    {
+        try {
+            // Check if user can view trainer reports
+            $user = auth()->user();
+            $canView = false;
+            
+            if ($user->id_role === '5af56935b011a' && $user->status === 'A') {
+                $canView = true;
+            } elseif ($user->id_jabatan === 170 && $user->status === 'A') {
+                $canView = true;
+            }
+            
+            if (!$canView) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Anda tidak memiliki izin untuk melihat report trainer'
+                ], 403);
+            }
+
+            // Get all trainers with their training data
+            $trainers = DB::table('training_schedule_trainers')
+                ->leftJoin('users', function($join) {
+                    $join->on('training_schedule_trainers.trainer_id', '=', 'users.id')
+                         ->where('training_schedule_trainers.trainer_type', '=', 'internal');
+                })
+                ->leftJoin('training_schedules', 'training_schedule_trainers.schedule_id', '=', 'training_schedules.id')
+                ->leftJoin('lms_courses', 'training_schedules.course_id', '=', 'lms_courses.id')
+                ->leftJoin('tbl_data_jabatan', 'users.id_jabatan', '=', 'tbl_data_jabatan.id_jabatan')
+                ->leftJoin('tbl_data_divisi', 'users.division_id', '=', 'tbl_data_divisi.id')
+                ->leftJoin('tbl_data_outlet', 'training_schedules.outlet_id', '=', 'tbl_data_outlet.id_outlet')
+                ->select(
+                    'training_schedule_trainers.trainer_id',
+                    'training_schedule_trainers.external_trainer_name',
+                    'training_schedule_trainers.trainer_type',
+                    'users.nama_lengkap as internal_trainer_name',
+                    'users.email as trainer_email',
+                    'tbl_data_jabatan.nama_jabatan as trainer_position',
+                    'tbl_data_divisi.nama_divisi as trainer_division',
+                    'training_schedules.id as schedule_id',
+                    'training_schedules.scheduled_date',
+                    'training_schedules.start_time',
+                    'training_schedules.end_time',
+                    'training_schedules.status as schedule_status',
+                    'lms_courses.id as course_id',
+                    'lms_courses.title as course_title',
+                    'lms_courses.duration_minutes',
+                    'tbl_data_outlet.nama_outlet as outlet_name'
+                )
+                ->whereNotNull('training_schedules.id')
+                ->orderBy('training_schedule_trainers.trainer_id')
+                ->orderBy('training_schedules.scheduled_date', 'desc')
+                ->get();
+
+            // Group by trainer and calculate statistics
+            $trainerStats = [];
+            $trainerDetails = [];
+
+            foreach ($trainers as $training) {
+                $trainerId = $training->trainer_id;
+                $trainerName = $training->trainer_type === 'internal' 
+                    ? $training->internal_trainer_name 
+                    : $training->external_trainer_name;
+
+                // Initialize trainer stats if not exists
+                if (!isset($trainerStats[$trainerId])) {
+                    $trainerStats[$trainerId] = [
+                        'trainer_id' => $trainerId,
+                        'trainer_name' => $trainerName,
+                        'trainer_type' => $training->trainer_type,
+                        'trainer_email' => $training->trainer_email,
+                        'trainer_position' => $training->trainer_position,
+                        'trainer_division' => $training->trainer_division,
+                        'total_trainings' => 0,
+                        'total_duration_minutes' => 0,
+                        'total_duration_hours' => 0,
+                        'average_rating' => 0,
+                        'total_ratings' => 0,
+                        'completed_trainings' => 0,
+                        'cancelled_trainings' => 0
+                    ];
+                    $trainerDetails[$trainerId] = [];
+                }
+
+                // Add training details
+                $trainingDetail = [
+                    'schedule_id' => $training->schedule_id,
+                    'course_id' => $training->course_id,
+                    'course_title' => $training->course_title,
+                    'scheduled_date' => $training->scheduled_date,
+                    'start_time' => $training->start_time,
+                    'end_time' => $training->end_time,
+                    'duration_minutes' => $training->duration_minutes,
+                    'outlet_name' => $training->outlet_name,
+                    'status' => $training->schedule_status
+                ];
+
+                $trainerDetails[$trainerId][] = $trainingDetail;
+
+                // Update statistics
+                $trainerStats[$trainerId]['total_trainings']++;
+                $trainerStats[$trainerId]['total_duration_minutes'] += $training->duration_minutes ?? 0;
+                
+                if ($training->schedule_status === 'completed') {
+                    $trainerStats[$trainerId]['completed_trainings']++;
+                } elseif ($training->schedule_status === 'cancelled') {
+                    $trainerStats[$trainerId]['cancelled_trainings']++;
+                }
+            }
+
+            // Calculate total duration in hours and get ratings
+            foreach ($trainerStats as $trainerId => &$stats) {
+                $stats['total_duration_hours'] = round($stats['total_duration_minutes'] / 60, 2);
+
+                // Get trainer ratings
+                $ratings = DB::table('training_reviews')
+                    ->join('training_schedules', 'training_reviews.training_schedule_id', '=', 'training_schedules.id')
+                    ->join('training_schedule_trainers', function($join) {
+                        $join->on('training_schedules.id', '=', 'training_schedule_trainers.schedule_id')
+                             ->where('training_schedule_trainers.trainer_type', '=', 'internal');
+                    })
+                    ->where('training_schedule_trainers.trainer_id', $trainerId)
+                    ->whereNotNull('training_reviews.trainer_rating')
+                    ->select('training_reviews.trainer_rating')
+                    ->get();
+
+                if ($ratings->count() > 0) {
+                    $stats['total_ratings'] = $ratings->count();
+                    $stats['average_rating'] = round($ratings->avg('trainer_rating'), 2);
+                }
+            }
+
+            // Convert to array and sort by total trainings
+            $trainerReport = array_values($trainerStats);
+            usort($trainerReport, function($a, $b) {
+                return $b['total_trainings'] - $a['total_trainings'];
+            });
+
+            return response()->json([
+                'success' => true,
+                'trainers' => $trainerReport,
+                'trainer_details' => $trainerDetails
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error('Error fetching trainer report: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal memuat report trainer'
+            ], 500);
+        }
+    }
 } 
