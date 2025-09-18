@@ -28,8 +28,9 @@ class MKProductionController extends Controller
         $warehouses = DB::table('warehouses')
             ->where('status', 'active')
             ->get();
-        // Ambil histori produksi (join item, unit, user)
-        $productions = DB::table('mk_productions')
+        
+        // Query untuk histori produksi dengan filter
+        $query = DB::table('mk_productions')
             ->leftJoin('items', 'mk_productions.item_id', '=', 'items.id')
             ->leftJoin('units', 'mk_productions.unit_id', '=', 'units.id')
             ->leftJoin('users', 'mk_productions.created_by', '=', 'users.id')
@@ -38,14 +39,42 @@ class MKProductionController extends Controller
                 'items.name as item_name',
                 'units.name as unit_name',
                 'users.nama_lengkap as created_by_name'
-            )
-            ->orderByDesc('mk_productions.production_date')
+            );
+
+        // Apply filters
+        if ($request->filled('search')) {
+            $search = '%' . $request->search . '%';
+            $query->where(function($q) use ($search) {
+                $q->where('items.name', 'like', $search)
+                  ->orWhere('mk_productions.batch_number', 'like', $search)
+                  ->orWhere('users.nama_lengkap', 'like', $search)
+                  ->orWhere('mk_productions.notes', 'like', $search);
+            });
+        }
+
+        if ($request->filled('item_id')) {
+            $query->where('mk_productions.item_id', $request->item_id);
+        }
+
+        if ($request->filled('from_date')) {
+            $query->whereDate('mk_productions.production_date', '>=', $request->from_date);
+        }
+
+        if ($request->filled('to_date')) {
+            $query->whereDate('mk_productions.production_date', '<=', $request->to_date);
+        }
+
+        // Pagination dengan per page
+        $perPage = $request->get('per_page', 15);
+        $productions = $query->orderByDesc('mk_productions.production_date')
             ->orderByDesc('mk_productions.id')
-            ->paginate(10);
+            ->paginate($perPage);
+
         return inertia('MKProduction/Index', [
             'items' => $items,
             'warehouses' => $warehouses,
             'productions' => $productions,
+            'filters' => $request->only(['search', 'item_id', 'from_date', 'to_date', 'per_page'])
         ]);
     }
 

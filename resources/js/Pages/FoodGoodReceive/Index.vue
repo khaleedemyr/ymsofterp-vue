@@ -22,7 +22,7 @@
           v-model="search"
           @input="onSearchInput"
           type="text"
-          placeholder="Cari Nomor GR, PO, Supplier, atau Petugas..."
+          placeholder="Cari Nomor GR, PO, Supplier, Petugas, atau Keterangan..."
           class="w-64 px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition"
         />
         <input type="date" v-model="from" @change="onDateChange" class="px-2 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition" placeholder="Dari tanggal" />
@@ -38,12 +38,13 @@
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">No. PO</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Supplier</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Petugas</th>
+              <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Keterangan</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider rounded-tr-2xl">Aksi</th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="!goodReceives.data || !goodReceives.data.length">
-              <td colspan="6" class="text-center py-10 text-gray-400">Belum ada data Good Receive.</td>
+              <td colspan="7" class="text-center py-10 text-gray-400">Belum ada data Good Receive.</td>
             </tr>
             <tr v-for="gr in goodReceives.data" :key="gr.id" class="hover:bg-blue-50 transition shadow-sm">
               <td class="px-6 py-3 font-semibold">{{ gr.gr_number }}</td>
@@ -51,6 +52,16 @@
               <td class="px-6 py-3">{{ gr.po_number }}</td>
               <td class="px-6 py-3">{{ gr.supplier_name }}</td>
               <td class="px-6 py-3">{{ gr.received_by_name }}</td>
+              <td class="px-6 py-3">
+                <div v-if="gr.notes" class="max-w-xs">
+                  <div class="text-sm text-gray-700 truncate" :title="gr.notes">
+                    {{ gr.notes }}
+                  </div>
+                </div>
+                <div v-else class="text-gray-400 text-sm italic">
+                  -
+                </div>
+              </td>
               <td class="px-6 py-3">
                 <div class="flex gap-2">
                   <button @click="openDetail(gr.id)" class="inline-flex items-center btn btn-xs bg-blue-100 text-blue-800 hover:bg-blue-200 rounded px-2 py-1 font-semibold transition">
@@ -100,7 +111,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue';
+import { ref, onMounted, watch } from 'vue';
 import { router } from '@inertiajs/vue3';
 import { debounce } from 'lodash';
 import axios from 'axios';
@@ -126,9 +137,39 @@ const detailGR = ref(null);
 const editGR = ref(null);
 const loadingReprintId = ref(null);
 
+// Filter persistence functions
+const saveFilterState = () => {
+  const filterState = {
+    search: search.value,
+    from: from.value,
+    to: to.value
+  };
+  sessionStorage.setItem('foodGoodReceiveFilters', JSON.stringify(filterState));
+};
+
+const restoreFilterState = () => {
+  try {
+    const savedFilters = sessionStorage.getItem('foodGoodReceiveFilters');
+    if (savedFilters) {
+      const filterState = JSON.parse(savedFilters);
+      search.value = filterState.search || '';
+      from.value = filterState.from || '';
+      to.value = filterState.to || '';
+    }
+  } catch (error) {
+    console.error('Error restoring filter state:', error);
+  }
+};
+
 const debouncedSearch = debounce(() => {
+  saveFilterState();
   router.get('/food-good-receive', { search: search.value, from: from.value, to: to.value }, { preserveState: true, replace: true });
 }, 400);
+
+// Watch for filter changes to auto-save
+watch([search, from, to], () => {
+  saveFilterState();
+}, { deep: true });
 
 function onDateChange() {
   debouncedSearch();
@@ -137,6 +178,7 @@ function onSearchInput() {
   debouncedSearch();
 }
 async function openDetail(id) {
+  saveFilterState();
   try {
     const res = await fetch(`/food-good-receive/${id}`);
     if (!res.ok) throw new Error('Gagal fetch detail');
@@ -147,6 +189,7 @@ async function openDetail(id) {
   }
 }
 async function openEdit(id) {
+  saveFilterState();
   try {
     const res = await fetch(`/food-good-receive/${id}`);
     if (!res.ok) throw new Error('Gagal fetch detail');
@@ -221,6 +264,7 @@ function handleEditSuccess() {
 }
 function goToPage(url) {
   if (url) {
+    saveFilterState();
     router.get(url, { search: search.value, from: from.value, to: to.value }, { preserveState: true, replace: true });
   }
 }
@@ -243,4 +287,10 @@ async function handleReprint(grId) {
     loadingReprintId.value = null;
   }
 }
+
+// Initialize filter state on mount
+onMounted(() => {
+  restoreFilterState();
+  saveFilterState(); // Save initial state
+});
 </script> 

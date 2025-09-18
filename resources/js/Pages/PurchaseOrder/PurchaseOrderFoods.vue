@@ -65,6 +65,15 @@ function onPerPageChange() {
   debouncedSearch();
 }
 
+function clearFilters() {
+  search.value = '';
+  selectedStatus.value = '';
+  from.value = '';
+  to.value = '';
+  perPage.value = 10;
+  debouncedSearch();
+}
+
 // Fetch PO yang pending GM Finance approval
 async function fetchPendingGMFINANCEPOs() {
   try {
@@ -133,6 +142,9 @@ function restoreFilterState() {
       from.value = filters.from || '';
       to.value = filters.to || '';
       perPage.value = filters.perPage || 10;
+      
+      // Trigger search dengan filter yang dipulihkan
+      debouncedSearch();
     }
   } catch (error) {
     console.error('Error restoring filter state:', error);
@@ -140,7 +152,19 @@ function restoreFilterState() {
 }
 
 function goToPage(url) {
-  if (url) router.visit(url, { preserveState: true, replace: true });
+  if (url) {
+    // Simpan filter state sebelum navigasi
+    const filterState = {
+      search: search.value,
+      status: selectedStatus.value,
+      from: from.value,
+      to: to.value,
+      perPage: perPage.value
+    };
+    sessionStorage.setItem('po-foods-filters', JSON.stringify(filterState));
+    
+    router.visit(url, { preserveState: true, replace: true });
+  }
 }
 
 function openCreate() {
@@ -445,6 +469,18 @@ watch(() => props.filters, (newFilters) => {
   }
 }, { immediate: true });
 
+// Watch untuk auto-save filter state saat ada perubahan
+watch([search, selectedStatus, from, to, perPage], () => {
+  const filterState = {
+    search: search.value,
+    status: selectedStatus.value,
+    from: from.value,
+    to: to.value,
+    perPage: perPage.value
+  };
+  sessionStorage.setItem('po-foods-filters', JSON.stringify(filterState));
+}, { deep: true });
+
 onMounted(() => {
     fetchPRList();
     fetchSuppliers();
@@ -454,6 +490,16 @@ onMounted(() => {
     if (!props.filters || Object.keys(props.filters).length === 0) {
         restoreFilterState();
     }
+    
+    // Simpan filter state awal
+    const filterState = {
+        search: search.value,
+        status: selectedStatus.value,
+        from: from.value,
+        to: to.value,
+        perPage: perPage.value
+    };
+    sessionStorage.setItem('po-foods-filters', JSON.stringify(filterState));
 });
 </script>
 
@@ -497,6 +543,10 @@ onMounted(() => {
                         <option value="50">50 data</option>
                         <option value="100">100 data</option>
                     </select>
+                    <button @click="clearFilters" class="px-4 py-2 rounded-xl bg-gray-500 text-white hover:bg-gray-600 transition font-semibold">
+                        <i class="fas fa-undo mr-2"></i>
+                        Clear Filter
+                    </button>
                     <!-- Tombol Pending GM Finance -->
                     <button 
                         v-if="canApproveGMFinance()"
@@ -527,6 +577,7 @@ onMounted(() => {
                                             <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Tanggal</th>
                                             <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Source</th>
                                             <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Supplier</th>
+                                            <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">GR Number</th>
                                             <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Tgl Kedatangan</th>
                                             <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Tanggal Print</th>
                                             <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Created By</th>
@@ -538,7 +589,7 @@ onMounted(() => {
                                     </thead>
                                     <tbody>
                                         <tr v-if="!purchaseOrders?.data || purchaseOrders.data.length === 0">
-                                            <td colspan="11" class="text-center py-10 text-gray-400">Tidak ada data PO Foods.</td>
+                                            <td colspan="12" class="text-center py-10 text-gray-400">Tidak ada data PO Foods.</td>
                                         </tr>
                                         <tr v-for="po in purchaseOrders?.data || []" :key="po.id" class="hover:bg-blue-50 transition shadow-sm">
                                             <td class="px-6 py-3 font-mono font-semibold text-blue-700">{{ po.number }}</td>
@@ -582,6 +633,13 @@ onMounted(() => {
                                                 </div>
                                             </td>
                                             <td class="px-6 py-3">{{ po.supplier?.name }}</td>
+                                            <td class="px-6 py-3">
+                                                <span v-if="po.gr_number" class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                                    <i class="fas fa-check-circle mr-1"></i>
+                                                    {{ po.gr_number }}
+                                                </span>
+                                                <span v-else class="text-gray-400 text-sm">-</span>
+                                            </td>
                                             <td class="px-6 py-3">{{ po.arrival_date ? new Date(po.arrival_date).toLocaleDateString('id-ID') : '-' }}</td>
                                             <td class="px-6 py-3">{{ po.printed_at ? new Date(po.printed_at).toLocaleDateString('id-ID') + ' ' + new Date(po.printed_at).toLocaleTimeString('id-ID') : '-' }}</td>
                                             <td class="px-6 py-3">{{ po.creator?.nama_lengkap }}</td>

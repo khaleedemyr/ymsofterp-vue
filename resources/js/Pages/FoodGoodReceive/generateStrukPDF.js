@@ -1,6 +1,6 @@
 import jsPDF from 'jspdf';
 
-export async function generateStrukPDF({ grNumber, date, supplier, items, receivedByName, poNumber, showReprintLabel = false }) {
+export async function generateStrukPDF({ grNumber, date, supplier, items, receivedByName, poNumber, notes, showReprintLabel = false }) {
   // Hitung tinggi yang dibutuhkan
   let totalHeight = 0;
   totalHeight += 15; // Header (judul + company) - dikurangi
@@ -17,6 +17,13 @@ export async function generateStrukPDF({ grNumber, date, supplier, items, receiv
     });
   } else {
     totalHeight += 8; // "TIDAK ADA ITEM" - dikurangi
+  }
+  
+  // Hitung tinggi untuk notes jika ada
+  if (notes && notes.trim()) {
+    totalHeight += 4; // Spacing sebelum notes
+    const notesLines = pdf.splitTextToSize(notes, 76).length;
+    totalHeight += (notesLines * 3.5) + 4; // 3.5mm per line + 4mm spacing
   }
   
   totalHeight += 12; // Garis + footer - dikurangi
@@ -73,6 +80,20 @@ export async function generateStrukPDF({ grNumber, date, supplier, items, receiv
     });
   } else {
     pdf.text('TIDAK ADA ITEM', 2, y); y += 3.5; // dikurangi dari 4.5
+  }
+  
+  // Notes jika ada
+  if (notes && notes.trim()) {
+    y += 2; // Spacing sebelum notes
+    pdf.setFontSize(8);
+    pdf.setFont(undefined, 'bold');
+    pdf.text('Catatan:', 2, y); y += 3.5;
+    pdf.setFont(undefined, 'normal');
+    const notesLines = pdf.splitTextToSize(notes, 76);
+    notesLines.forEach(line => {
+      pdf.text(line, 2, y);
+      y += 3.5;
+    });
   }
   
   // Garis full width sebelum footer

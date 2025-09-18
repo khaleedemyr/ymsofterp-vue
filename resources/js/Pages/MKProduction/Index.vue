@@ -9,6 +9,88 @@
           + Create New
         </button>
       </div>
+
+      <!-- Search dan Filter -->
+      <div class="bg-white rounded-xl shadow-lg p-6 mb-6">
+        <h3 class="text-lg font-semibold text-gray-800 mb-4">Filter & Pencarian</h3>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 items-end">
+          <!-- Search -->
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">Cari</label>
+            <input
+              v-model="search"
+              @input="onSearchInput"
+              type="text"
+              placeholder="Cari item, batch, user, catatan..."
+              class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            />
+          </div>
+          
+          <!-- Item Filter -->
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">Item</label>
+            <select
+              v-model="selectedItem"
+              @change="onSearchInput"
+              class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="">Semua Item</option>
+              <option v-for="item in items" :key="item.id" :value="item.id">
+                {{ item.name }}
+              </option>
+            </select>
+          </div>
+          
+          <!-- Filter Tanggal Dari -->
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">Dari Tanggal</label>
+            <input
+              v-model="fromDate"
+              @change="onDateChange"
+              type="date"
+              class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            />
+          </div>
+          
+          <!-- Filter Tanggal Sampai -->
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">Sampai Tanggal</label>
+            <input
+              v-model="toDate"
+              @change="onDateChange"
+              type="date"
+              class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            />
+          </div>
+          
+          <!-- Per Page -->
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">Per Halaman</label>
+            <select
+              v-model="perPage"
+              @change="onPerPageChange"
+              class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="10">10</option>
+              <option value="15">15</option>
+              <option value="25">25</option>
+              <option value="50">50</option>
+              <option value="100">100</option>
+            </select>
+          </div>
+          
+          <!-- Tombol Clear -->
+          <div>
+            <button
+              @click="clearFilters"
+              class="w-full px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors"
+            >
+              Clear Filter
+            </button>
+          </div>
+        </div>
+      </div>
+
       <div class="bg-white rounded-2xl shadow-2xl overflow-x-auto transition-all">
         <table class="w-full min-w-full divide-y divide-gray-200">
           <thead class="bg-gradient-to-r from-blue-50 to-blue-100">
@@ -49,19 +131,63 @@
           </tbody>
         </table>
       </div>
-      <div class="flex justify-end mt-4 gap-2">
-        <button
-          v-for="link in productions.links"
-          :key="link.label"
-          :disabled="!link.url"
-          @click="() => link.url && router.visit(link.url, { preserveState: true, replace: true })"
-          v-html="link.label"
-          class="px-3 py-1 rounded-lg border text-sm font-semibold"
-          :class="[
-            link.active ? 'bg-blue-600 text-white shadow-lg' : 'bg-white text-blue-700 hover:bg-blue-50',
-            !link.url ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
-          ]"
-        />
+      <!-- Pagination -->
+      <div v-if="productions.last_page > 1" class="bg-white rounded-xl shadow-lg p-4 mt-6">
+        <div class="flex flex-col sm:flex-row justify-between items-center gap-4">
+          <!-- Info Pagination -->
+          <div class="text-sm text-gray-700">
+            Menampilkan {{ productions.from || 0 }} sampai {{ productions.to || 0 }} dari {{ productions.total }} data
+          </div>
+          
+          <!-- Pagination Controls -->
+          <div class="flex items-center gap-2">
+            <!-- Previous Button -->
+            <button
+              @click="() => productions.prev_page_url && router.visit(productions.prev_page_url, { preserveState: true, replace: true })"
+              :disabled="!productions.prev_page_url"
+              :class="[
+                'px-3 py-2 rounded-lg text-sm font-medium transition-colors',
+                productions.prev_page_url 
+                  ? 'bg-blue-500 text-white hover:bg-blue-600' 
+                  : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+              ]"
+            >
+              <i class="fa-solid fa-chevron-left mr-1"></i>
+              Sebelumnya
+            </button>
+            
+            <!-- Page Numbers -->
+            <div class="flex items-center gap-1">
+              <button
+                v-for="link in productions.links"
+                :key="link.label"
+                :disabled="!link.url"
+                @click="() => link.url && router.visit(link.url, { preserveState: true, replace: true })"
+                v-html="link.label"
+                class="px-3 py-2 rounded-lg text-sm font-medium transition-colors"
+                :class="[
+                  link.active ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200',
+                  !link.url ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
+                ]"
+              />
+            </div>
+            
+            <!-- Next Button -->
+            <button
+              @click="() => productions.next_page_url && router.visit(productions.next_page_url, { preserveState: true, replace: true })"
+              :disabled="!productions.next_page_url"
+              :class="[
+                'px-3 py-2 rounded-lg text-sm font-medium transition-colors',
+                productions.next_page_url 
+                  ? 'bg-blue-500 text-white hover:bg-blue-600' 
+                  : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+              ]"
+            >
+              Selanjutnya
+              <i class="fa-solid fa-chevron-right ml-1"></i>
+            </button>
+          </div>
+        </div>
       </div>
       <div v-if="showForm">
         <!-- Form produksi, bisa pakai komponen terpisah atau modal -->
@@ -79,7 +205,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue';
+import { ref, watch } from 'vue';
 import { router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import MKProductionForm from './Form.vue';
@@ -88,9 +214,64 @@ import axios from 'axios';
 
 const props = defineProps({
   productions: Object,
-  items: Array
+  items: Array,
+  filters: Object
 });
+
+// Debug log
+console.log('MK Production Props:', props);
+
 const showForm = ref(false);
+const search = ref(props.filters?.search || '');
+const selectedItem = ref(props.filters?.item_id || '');
+const fromDate = ref(props.filters?.from_date || '');
+const toDate = ref(props.filters?.to_date || '');
+const perPage = ref(props.filters?.per_page || 15);
+
+// Watch untuk auto search
+watch(
+  () => props.filters,
+  (filters) => {
+    search.value = filters?.search || '';
+    selectedItem.value = filters?.item_id || '';
+    fromDate.value = filters?.from_date || '';
+    toDate.value = filters?.to_date || '';
+    perPage.value = filters?.per_page || 15;
+  },
+  { immediate: true }
+);
+
+function debouncedSearch() {
+  router.get('/mk-production', { 
+    search: search.value, 
+    item_id: selectedItem.value,
+    from_date: fromDate.value,
+    to_date: toDate.value,
+    per_page: perPage.value
+  }, { preserveState: true, replace: true });
+}
+
+function onSearchInput() {
+  debouncedSearch();
+}
+
+function onDateChange() {
+  debouncedSearch();
+}
+
+function onPerPageChange() {
+  debouncedSearch();
+}
+
+function clearFilters() {
+  search.value = '';
+  selectedItem.value = '';
+  fromDate.value = '';
+  toDate.value = '';
+  perPage.value = 15;
+  debouncedSearch();
+}
+
 function formatDate(date) {
   return new Date(date).toLocaleDateString('id-ID');
 }

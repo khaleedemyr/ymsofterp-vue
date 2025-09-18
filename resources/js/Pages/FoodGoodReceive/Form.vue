@@ -35,6 +35,23 @@
           <div class="text-sm text-gray-600 mb-2">Supplier: {{ po.supplier_id }} | Tanggal: {{ po.date }}</div>
         </div>
         <form @submit.prevent="submit">
+          <!-- Input Keterangan -->
+          <div class="mb-6">
+            <label class="block text-sm font-medium text-gray-700 mb-2">
+              <i class="fa-solid fa-comment mr-2"></i>
+              Keterangan (Opsional)
+            </label>
+            <textarea 
+              v-model="notes" 
+              rows="3" 
+              placeholder="Masukkan keterangan tambahan untuk Good Receive ini..."
+              class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
+            ></textarea>
+            <div class="text-xs text-gray-500 mt-1">
+              Keterangan ini akan disimpan bersama dengan data Good Receive
+            </div>
+          </div>
+          
           <div v-for="(divisionGroup, divisionName) in groupedItems" :key="divisionName" class="mb-6">
             <div class="bg-blue-50 border-l-4 border-blue-400 p-3 mb-3">
               <h3 class="text-sm font-semibold text-blue-800">
@@ -154,6 +171,7 @@ const loading = ref(false);
 const spsModal = ref(false);
 const spsItem = ref({});
 const spsLoading = ref(false);
+const notes = ref('');
 let html5QrCode = null;
 
 // Computed property untuk grouping items berdasarkan warehouse division
@@ -180,6 +198,8 @@ const fetchPO = async () => {
       qty_received: parseFloat(item.quantity) || 0
     }));
     poFetched.value = true;
+    // Reset notes when fetching new PO
+    notes.value = '';
   } catch (e) {
     error.value = e.response?.data?.message || 'PO tidak ditemukan';
   }
@@ -246,7 +266,7 @@ const submit = async () => {
         qty_received: parseFloat(item.qty_received) || 0,
         unit_id: item.unit_id || 1,
       })),
-      notes: '',
+      notes: notes.value || '',
     });
     loading.value = false;
     await Swal.fire({

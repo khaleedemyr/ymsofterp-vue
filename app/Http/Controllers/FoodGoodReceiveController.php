@@ -21,6 +21,7 @@ class FoodGoodReceiveController extends Controller
                 'gr.id',
                 'gr.gr_number',
                 'gr.receive_date',
+                'gr.notes',
                 'po.number as po_number',
                 's.name as supplier_name',
                 'u.nama_lengkap as received_by_name'
@@ -32,6 +33,7 @@ class FoodGoodReceiveController extends Controller
                   ->orWhere('po.number', 'like', "%$search%")
                   ->orWhere('s.name', 'like', "%$search%")
                   ->orWhere('u.nama_lengkap', 'like', "%$search%")
+                  ->orWhere('gr.notes', 'like', "%$search%")
                 ;
             });
         }
@@ -108,6 +110,7 @@ class FoodGoodReceiveController extends Controller
             'items.*.qty_ordered' => 'required|numeric',
             'items.*.qty_received' => 'required|numeric',
             'items.*.unit_id' => 'required|integer',
+            'notes' => 'nullable|string|max:1000',
         ]);
         DB::beginTransaction();
         try {
@@ -809,6 +812,7 @@ class FoodGoodReceiveController extends Controller
             ->select(
                 'gr.gr_number as grNumber',
                 'gr.receive_date as date',
+                'gr.notes',
                 's.name as supplier',
                 'u.nama_lengkap as receivedByName',
                 'po.number as poNumber'
@@ -838,6 +842,7 @@ class FoodGoodReceiveController extends Controller
             'supplier' => $gr->supplier,
             'receivedByName' => $gr->receivedByName,
             'poNumber' => $gr->poNumber,
+            'notes' => $gr->notes,
             'items' => $items
         ]);
     }
