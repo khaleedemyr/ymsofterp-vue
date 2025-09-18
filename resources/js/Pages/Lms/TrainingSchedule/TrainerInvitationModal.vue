@@ -385,6 +385,30 @@ const inviteTrainers = async () => {
   
   loading.value = true
   
+  // Show prominent loading modal
+  console.log('=== SHOWING LOADING MODAL ===')
+  console.log('Swal object:', Swal)
+  console.log('Swal.fire method:', typeof Swal.fire)
+  
+  try {
+    // Show loading modal with simple approach
+    Swal.fire({
+      title: 'Sabar Bu Ghea....',
+      text: 'Antosan sakedap Bu Ghea, Nuju loding',
+      icon: 'info',
+      showConfirmButton: false,
+      allowOutsideClick: false,
+      allowEscapeKey: false,
+      backdrop: true,
+      didOpen: () => {
+        Swal.showLoading()
+      }
+    })
+    console.log('Loading modal should be visible now')
+  } catch (error) {
+    console.error('Error showing loading modal:', error)
+  }
+  
   try {
     // Format waktu ke format H:i
     const formatTime = (time) => {
@@ -438,6 +462,9 @@ const inviteTrainers = async () => {
       trainers: trainerData
     }, {
       onSuccess: () => {
+        // Close loading modal first
+        Swal.close()
+        
         Swal.fire({
           icon: 'success',
           title: 'Berhasil',
@@ -447,6 +474,9 @@ const inviteTrainers = async () => {
         emit('invited') // Then trigger refresh
       },
       onError: (errors) => {
+        // Close loading modal first
+        Swal.close()
+        
         Swal.fire({
           icon: 'error',
           title: 'Error',
@@ -455,6 +485,9 @@ const inviteTrainers = async () => {
       }
     })
   } catch (error) {
+    // Close loading modal first
+    Swal.close()
+    
     Swal.fire({
       icon: 'error',
       title: 'Error',

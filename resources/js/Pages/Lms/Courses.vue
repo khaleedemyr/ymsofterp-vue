@@ -1717,7 +1717,8 @@ const createCourse = async () => {
   
   // Set loading state with timeout protection
   loading.value = true
-  dataLoading.value = true
+  // Don't set dataLoading to true to avoid overlay conflict
+  // dataLoading.value = true
   loadingStartTime.value = Date.now()
   
   // Set timeout to prevent infinite loading
@@ -1725,58 +1726,122 @@ const createCourse = async () => {
     handleLoadingTimeout()
   }, 30000) // 30 seconds timeout
   
-  // TEMPORARY: Skip validation for testing
-  console.log('Skipping validation for testing...')
+  // Show prominent loading modal
+  console.log('=== SHOWING LOADING MODAL ===')
+  console.log('Swal object:', Swal)
+  console.log('Swal.fire method:', typeof Swal.fire)
   
-  // Validation
-  if (!form.value.title.trim() || !form.value.category_id || !form.value.difficulty_level || !form.value.duration_minutes || !form.value.type) {
-    console.log('Basic validation failed, but continuing...')
-    // TEMPORARY: Skip validation for testing
-    // Swal.fire({
-    //   icon: 'error',
-    //   title: 'Error!',
-    //   text: 'Mohon lengkapi semua field yang wajib diisi!',
-    //   confirmButtonColor: '#EF4444'
-    // })
-    // return
+  try {
+    // Show loading modal with simple approach
+    Swal.fire({
+      title: 'Sabar Bu Ghea....',
+      text: 'Antosan sakedap Bu Ghea, Nuju loding',
+      icon: 'info',
+      showConfirmButton: false,
+      allowOutsideClick: false,
+      allowEscapeKey: false,
+      backdrop: true,
+      didOpen: () => {
+        Swal.showLoading()
+      }
+    })
+    console.log('Loading modal should be visible now')
+  } catch (error) {
+    console.error('Error showing loading modal:', error)
+  }
+  
+  // Validation - Check required fields
+  console.log('Starting validation...')
+  
+  const missingFields = []
+  
+  // Basic required fields
+  if (!form.value.title.trim()) missingFields.push('Judul Course')
+  if (!form.value.category_id) missingFields.push('Kategori')
+  if (!form.value.difficulty_level) missingFields.push('Level Kesulitan')
+  if (!form.value.duration_minutes) missingFields.push('Durasi (menit)')
+  if (!form.value.type) missingFields.push('Tipe Course')
+  
+  if (missingFields.length > 0) {
+    console.log('Basic validation failed:', missingFields)
+    Swal.close()
+    Swal.fire({
+      icon: 'error',
+      title: 'Field Wajib Belum Diisi!',
+      html: `
+        <div class="text-left">
+          <p class="mb-3">Mohon lengkapi field berikut:</p>
+          <ul class="list-disc list-inside space-y-1">
+            ${missingFields.map(field => `<li class="text-red-600">${field}</li>`).join('')}
+          </ul>
+        </div>
+      `,
+      confirmButtonColor: '#EF4444',
+      confirmButtonText: 'OK'
+    })
+    return
   }
 
   // Target type validation
   if (!form.value.target_type) {
-    console.log('Target type validation failed, but continuing...')
-    // TEMPORARY: Skip validation for testing
-    // Swal.fire({
-    //   icon: 'error',
-    //   title: 'Error!',
-    //   text: 'Mohon pilih tipe target divisi!',
-    //   confirmButtonColor: '#EF4444'
-    // })
-    // return
+    console.log('Target type validation failed')
+    Swal.close()
+    Swal.fire({
+      icon: 'error',
+      title: 'Field Wajib Belum Diisi!',
+      html: `
+        <div class="text-left">
+          <p class="mb-3">Mohon lengkapi field berikut:</p>
+          <ul class="list-disc list-inside space-y-1">
+            <li class="text-red-600">Tipe Target Divisi</li>
+          </ul>
+        </div>
+      `,
+      confirmButtonColor: '#EF4444',
+      confirmButtonText: 'OK'
+    })
+    return
   }
 
   // Additional validation for target divisions (if target_type is selected)
   if (form.value.target_type === 'single' && !form.value.target_division_id) {
-    console.log('Single target division validation failed, but continuing...')
-    // TEMPORARY: Skip validation for testing
-    // Swal.fire({
-    //   icon: 'error',
-    //   title: 'Error!',
-    //   text: 'Mohon pilih divisi target!',
-    //   confirmButtonColor: '#EF4444'
-    // })
-    // return
+    console.log('Single target division validation failed')
+    Swal.close()
+    Swal.fire({
+      icon: 'error',
+      title: 'Field Wajib Belum Diisi!',
+      html: `
+        <div class="text-left">
+          <p class="mb-3">Mohon lengkapi field berikut:</p>
+          <ul class="list-disc list-inside space-y-1">
+            <li class="text-red-600">Divisi Target (Single)</li>
+          </ul>
+        </div>
+      `,
+      confirmButtonColor: '#EF4444',
+      confirmButtonText: 'OK'
+    })
+    return
   }
 
   if (form.value.target_type === 'multiple' && (!form.value.target_divisions || form.value.target_divisions.length === 0)) {
-    console.log('Multiple target divisions validation failed, but continuing...')
-    // TEMPORARY: Skip validation for testing
-    // Swal.fire({
-    //   icon: 'error',
-    //   title: 'Error!',
-    //   text: 'Mohon pilih minimal satu divisi target!',
-    //   confirmButtonColor: '#EF4444'
-    // })
-    // return
+    console.log('Multiple target divisions validation failed')
+    Swal.close()
+    Swal.fire({
+      icon: 'error',
+      title: 'Field Wajib Belum Diisi!',
+      html: `
+        <div class="text-left">
+          <p class="mb-3">Mohon lengkapi field berikut:</p>
+          <ul class="list-disc list-inside space-y-1">
+            <li class="text-red-600">Divisi Target (Multiple) - Minimal pilih 1 divisi</li>
+          </ul>
+        </div>
+      `,
+      confirmButtonColor: '#EF4444',
+      confirmButtonText: 'OK'
+    })
+    return
   }
 
 
@@ -1796,122 +1861,193 @@ const createCourse = async () => {
 
   // Trainer validation
   if (!form.value.trainer_type) {
-    console.log('Trainer type validation failed, but continuing...')
-    // TEMPORARY: Skip validation for testing
-    // Swal.fire({
-    //   icon: 'error',
-    //   title: 'Error!',
-    //   text: 'Mohon pilih tipe trainer!',
-    //   confirmButtonColor: '#EF4444'
-    // })
-    // return
+    console.log('Trainer type validation failed')
+    Swal.close()
+    Swal.fire({
+      icon: 'error',
+      title: 'Field Wajib Belum Diisi!',
+      html: `
+        <div class="text-left">
+          <p class="mb-3">Mohon lengkapi field berikut:</p>
+          <ul class="list-disc list-inside space-y-1">
+            <li class="text-red-600">Tipe Trainer</li>
+          </ul>
+        </div>
+      `,
+      confirmButtonColor: '#EF4444',
+      confirmButtonText: 'OK'
+    })
+    return
   }
 
   if (form.value.trainer_type === 'internal' && !form.value.instructor_id) {
-    console.log('Internal trainer validation failed, but continuing...')
-    // TEMPORARY: Skip validation for testing
-    // Swal.fire({
-    //   icon: 'error',
-    //   title: 'Error!',
-    //   text: 'Mohon pilih trainer internal!',
-    //   confirmButtonColor: '#EF4444'
-    // })
-    // return
+    console.log('Internal trainer validation failed')
+    Swal.close()
+    Swal.fire({
+      icon: 'error',
+      title: 'Field Wajib Belum Diisi!',
+      html: `
+        <div class="text-left">
+          <p class="mb-3">Mohon lengkapi field berikut:</p>
+          <ul class="list-disc list-inside space-y-1">
+            <li class="text-red-600">Trainer Internal</li>
+          </ul>
+        </div>
+      `,
+      confirmButtonColor: '#EF4444',
+      confirmButtonText: 'OK'
+    })
+    return
   }
 
   if (form.value.trainer_type === 'external' && !form.value.external_trainer_name.trim()) {
-    console.log('External trainer validation failed, but continuing...')
-    // TEMPORARY: Skip validation for testing
-    // Swal.fire({
-    //   icon: 'error',
-    //   title: 'Error!',
-    //   text: 'Mohon masukkan nama trainer external!',
-    //   confirmButtonColor: '#EF4444'
-    // })
-    // return
+    console.log('External trainer validation failed')
+    Swal.close()
+    Swal.fire({
+      icon: 'error',
+      title: 'Field Wajib Belum Diisi!',
+      html: `
+        <div class="text-left">
+          <p class="mb-3">Mohon lengkapi field berikut:</p>
+          <ul class="list-disc list-inside space-y-1">
+            <li class="text-red-600">Nama Trainer External</li>
+          </ul>
+        </div>
+      `,
+      confirmButtonColor: '#EF4444',
+      confirmButtonText: 'OK'
+    })
+    return
   }
 
   // Sessions validation - at least one session with required fields
   if (form.value.sessions.length === 0 || form.value.sessions.every(session => !session.session_title.trim() || !session.order_number || !session.estimated_duration_minutes)) {
-    console.log('Sessions validation failed, but continuing...')
-    // TEMPORARY: Skip validation for testing
-    // Swal.fire({
-    //   icon: 'error',
-    //   title: 'Error!',
-    //   text: 'Mohon tambahkan minimal satu sesi training dengan judul, urutan, dan durasi!',
-    //   confirmButtonColor: '#EF4444'
-    // })
-    // return
+    console.log('Sessions validation failed')
+    Swal.close()
+    Swal.fire({
+      icon: 'error',
+      title: 'Field Wajib Belum Diisi!',
+      html: `
+        <div class="text-left">
+          <p class="mb-3">Mohon lengkapi field berikut:</p>
+          <ul class="list-disc list-inside space-y-1">
+            <li class="text-red-600">Sesi Training - Minimal 1 sesi dengan judul, urutan, dan durasi</li>
+          </ul>
+        </div>
+      `,
+      confirmButtonColor: '#EF4444',
+      confirmButtonText: 'OK'
+    })
+    return
   }
 
-  // TEMPORARY: Skip session items validation for testing
-  console.log('Skipping session items validation for testing...')
-  
   // Validate session items
+  console.log('Validating session items...')
+  
   for (let sessionIndex = 0; sessionIndex < form.value.sessions.length; sessionIndex++) {
     const session = form.value.sessions[sessionIndex]
     if (session.items.length === 0) {
-      console.log(`Session ${sessionIndex + 1} has no items, but continuing...`)
-      // TEMPORARY: Skip validation for testing
-      // Swal.fire({
-      //   icon: 'error',
-      //   title: 'Error!',
-      //   text: `Sesi ${sessionIndex + 1} harus memiliki minimal satu item!`,
-      //   confirmButtonColor: '#EF4444'
-      // })
-      // return
+      console.log(`Session ${sessionIndex + 1} has no items`)
+      Swal.close()
+      Swal.fire({
+        icon: 'error',
+        title: 'Field Wajib Belum Diisi!',
+        html: `
+          <div class="text-left">
+            <p class="mb-3">Mohon lengkapi field berikut:</p>
+            <ul class="list-disc list-inside space-y-1">
+              <li class="text-red-600">Sesi ${sessionIndex + 1} - Minimal 1 item training</li>
+            </ul>
+          </div>
+        `,
+        confirmButtonColor: '#EF4444',
+        confirmButtonText: 'OK'
+      })
+      return
     }
     
     for (let itemIndex = 0; itemIndex < session.items.length; itemIndex++) {
       const item = session.items[itemIndex]
       if (!item.item_type || !item.order_number) {
-        console.log(`Item ${itemIndex + 1} on session ${sessionIndex + 1} missing type or order, but continuing...`)
-        // TEMPORARY: Skip validation for testing
-        // Swal.fire({
-        //   icon: 'error',
-        //   title: 'Error!',
-        //   text: `Item ${itemIndex + 1} pada sesi ${sessionIndex + 1} harus memiliki tipe dan urutan!`,
-        //   confirmButtonColor: '#EF4444'
-        // })
-        // return
+        console.log(`Item ${itemIndex + 1} on session ${sessionIndex + 1} missing type or order`)
+        Swal.close()
+        Swal.fire({
+          icon: 'error',
+          title: 'Field Wajib Belum Diisi!',
+          html: `
+            <div class="text-left">
+              <p class="mb-3">Mohon lengkapi field berikut:</p>
+              <ul class="list-disc list-inside space-y-1">
+                <li class="text-red-600">Sesi ${sessionIndex + 1}, Item ${itemIndex + 1} - Tipe dan Urutan</li>
+              </ul>
+            </div>
+          `,
+          confirmButtonColor: '#EF4444',
+          confirmButtonText: 'OK'
+        })
+        return
       }
       
       // Validate item-specific requirements
       if (item.item_type === 'quiz') {
         if (!item.item_id) {
-          console.log(`Quiz item ${itemIndex + 1} on session ${sessionIndex + 1} missing quiz selection, but continuing...`)
-          // TEMPORARY: Skip validation for testing
-          // Swal.fire({
-          //   icon: 'error',
-          //   title: 'Error!',
-          //   text: `Item ${itemIndex + 1} pada sesi ${sessionIndex + 1} (Quiz) harus memilih quiz!`,
-          //   confirmButtonColor: '#EF4444'
-          // })
-          // return
+          console.log(`Quiz item ${itemIndex + 1} on session ${sessionIndex + 1} missing quiz selection`)
+          Swal.close()
+          Swal.fire({
+            icon: 'error',
+            title: 'Field Wajib Belum Diisi!',
+            html: `
+              <div class="text-left">
+                <p class="mb-3">Mohon lengkapi field berikut:</p>
+                <ul class="list-disc list-inside space-y-1">
+                  <li class="text-red-600">Sesi ${sessionIndex + 1}, Item ${itemIndex + 1} (Quiz) - Pilih Quiz</li>
+                </ul>
+              </div>
+            `,
+            confirmButtonColor: '#EF4444',
+            confirmButtonText: 'OK'
+          })
+          return
         }
       } else if (item.item_type === 'questionnaire') {
         if (!item.item_id) {
-          console.log(`Questionnaire item ${itemIndex + 1} on session ${sessionIndex + 1} missing questionnaire selection, but continuing...`)
-          // TEMPORARY: Skip validation for testing
-          // Swal.fire({
-          //   icon: 'error',
-          //   title: 'Error!',
-          //   text: `Item ${itemIndex + 1} pada sesi ${sessionIndex + 1} (Kuesioner) harus memilih kuesioner!`,
-          //   confirmButtonColor: '#EF4444'
-          // })
-          // return
+          console.log(`Questionnaire item ${itemIndex + 1} on session ${sessionIndex + 1} missing questionnaire selection`)
+          Swal.close()
+          Swal.fire({
+            icon: 'error',
+            title: 'Field Wajib Belum Diisi!',
+            html: `
+              <div class="text-left">
+                <p class="mb-3">Mohon lengkapi field berikut:</p>
+                <ul class="list-disc list-inside space-y-1">
+                  <li class="text-red-600">Sesi ${sessionIndex + 1}, Item ${itemIndex + 1} (Kuesioner) - Pilih Kuesioner</li>
+                </ul>
+              </div>
+            `,
+            confirmButtonColor: '#EF4444',
+            confirmButtonText: 'OK'
+          })
+          return
         }
       } else if (item.item_type === 'material') {
         if (!item.material_files || item.material_files.length === 0) {
-          console.log(`Material item ${itemIndex + 1} on session ${sessionIndex + 1} missing files, but continuing...`)
-          // TEMPORARY: Skip validation for testing
-          // Swal.fire({
-          //   icon: 'error',
-          //   title: 'Error!',
-          //   text: `Item ${itemIndex + 1} pada sesi ${sessionIndex + 1} (Materi) harus upload minimal satu file!`,
-          //   confirmButtonColor: '#EF4444'
-          // })
-          // return
+          console.log(`Material item ${itemIndex + 1} on session ${sessionIndex + 1} missing files`)
+          Swal.close()
+          Swal.fire({
+            icon: 'error',
+            title: 'Field Wajib Belum Diisi!',
+            html: `
+              <div class="text-left">
+                <p class="mb-3">Mohon lengkapi field berikut:</p>
+                <ul class="list-disc list-inside space-y-1">
+                  <li class="text-red-600">Sesi ${sessionIndex + 1}, Item ${itemIndex + 1} (Materi) - Upload Minimal 1 File</li>
+                </ul>
+              </div>
+            `,
+            confirmButtonColor: '#EF4444',
+            confirmButtonText: 'OK'
+          })
+          return
         }
       }
     }
@@ -1959,6 +2095,7 @@ const createCourse = async () => {
   
      try {
      console.log('=== STARTING FORM SUBMISSION ===')
+     console.log('Loading modal should still be visible at this point')
      
      // Create FormData for file upload
      const formData = new FormData()
@@ -2054,16 +2191,37 @@ const createCourse = async () => {
      }
 
      console.log('=== SENDING REQUEST TO /lms/courses ===')
+     console.log('Loading modal should still be visible before request')
+     
+     // Add timeout to prevent infinite loading
+     const requestTimeout = setTimeout(() => {
+       console.log('=== REQUEST TIMEOUT ===')
+       Swal.close()
+       Swal.fire({
+         icon: 'error',
+         title: 'Timeout!',
+         text: 'Request timeout. Silakan coba lagi.',
+         confirmButtonColor: '#EF4444'
+       })
+     }, 60000) // 60 seconds timeout
+     
      await router.post('/lms/courses', formData, {
        headers: {
          'Content-Type': 'multipart/form-data'
        },
        onStart: () => {
          console.log('=== REQUEST STARTED ===')
+         console.log('Loading modal should still be visible during request')
        },
                 onSuccess: () => {
            console.log('=== REQUEST SUCCESS ===')
            console.log('Course created successfully!')
+           
+           // Clear timeout
+           clearTimeout(requestTimeout)
+           
+           // Close loading modal first
+           Swal.close()
            
            // Show success message
            Swal.fire({
@@ -2094,33 +2252,55 @@ const createCourse = async () => {
            console.error('Backend validation errors:', errors)
            const errorMessage = Object.values(errors).flat().join(', ')
            console.log('Error message:', errorMessage)
-           // TEMPORARY: Skip error dialog for testing
-           // Swal.fire({
-           //   icon: 'error',
-           //   title: 'Error!',
-           //   text: errorMessage || 'Terjadi kesalahan saat membuat course',
-           //   confirmButtonColor: '#EF4444',
-           //   background: '#FEF2F2',
-           //   color: '#DC2626'
-           // })
+           
+           // Clear timeout
+           clearTimeout(requestTimeout)
+           
+           // Close loading modal first
+           Swal.close()
+           
+           // Show error message
+           Swal.fire({
+             icon: 'error',
+             title: 'Error!',
+             text: errorMessage || 'Terjadi kesalahan saat membuat course',
+             confirmButtonColor: '#EF4444',
+             background: '#FEF2F2',
+             color: '#DC2626'
+           })
          }
      })
         } catch (error) {
        console.log('=== CATCH BLOCK ERROR ===')
        console.error('Error creating course:', error)
-       // TEMPORARY: Skip error dialog for testing
-       // Swal.fire({
-       //   icon: 'error',
-       //   title: 'Error!',
-       //   text: 'Terjadi kesalahan saat membuat course',
-       //   confirmButtonColor: '#EF4444',
-       //   background: '#FEF2F2',
-       //   color: '#DC2626'
-       // })
+       
+       // Clear timeout
+       clearTimeout(requestTimeout)
+       
+       // Close loading modal first
+       Swal.close()
+       
+       // Show error message
+       Swal.fire({
+         icon: 'error',
+         title: 'Error!',
+         text: 'Terjadi kesalahan saat membuat course',
+         confirmButtonColor: '#EF4444',
+         background: '#FEF2F2',
+         color: '#DC2626'
+       })
      } finally {
        console.log('=== FINALLY BLOCK ===')
+       
+       // Clear request timeout
+       clearTimeout(requestTimeout)
+       
+       // Ensure loading modal is closed
+       Swal.close()
+       
        loading.value = false
-       dataLoading.value = false
+       // Don't set dataLoading to false since we didn't set it to true
+       // dataLoading.value = false
        
        // Cleanup loading state
        if (loadingTimeout.value) {
@@ -2755,6 +2935,7 @@ watch(filters, () => {
 .line-clamp-2 {
   display: -webkit-box;
   -webkit-line-clamp: 2;
+  line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
@@ -2880,5 +3061,47 @@ select:-moz-focusring {
 /* IE specific styling */
 select::-ms-expand {
   display: none !important;
+}
+
+/* Custom SweetAlert Loading Modal Styles */
+.swal2-popup-custom {
+  border-radius: 16px !important;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25) !important;
+  border: 1px solid rgba(34, 197, 94, 0.2) !important;
+  z-index: 9999 !important;
+}
+
+.swal2-title-custom {
+  color: #059669 !important;
+  font-weight: 600 !important;
+  font-size: 1.25rem !important;
+}
+
+/* Loading spinner animation */
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-spin {
+  animation: spin 1s linear infinite;
+}
+
+/* Progress bar animation */
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.animate-pulse {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 </style> 

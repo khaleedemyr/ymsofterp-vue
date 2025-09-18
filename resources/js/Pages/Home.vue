@@ -874,6 +874,42 @@ function closeTrainingCheckInModal() {
     }
 }
 
+// Function to open first session item after successful check-in
+function openFirstSessionItem() {
+    if (!selectedTrainingDetail.value || !selectedTrainingDetail.value.sessions) {
+        console.log('No training detail or sessions available');
+        return;
+    }
+
+    // Find the first session with items
+    const firstSession = selectedTrainingDetail.value.sessions.find(session => 
+        session.items && session.items.length > 0
+    );
+
+    if (!firstSession) {
+        console.log('No sessions with items found');
+        return;
+    }
+
+    // Find the first accessible item in the first session
+    const firstItem = firstSession.items.find(item => item.can_access);
+
+    if (!firstItem) {
+        console.log('No accessible items found in first session');
+        return;
+    }
+
+    console.log('Opening first session item:', firstItem, 'from session:', firstSession);
+
+    // Open the training detail modal first
+    showTrainingDetailModal.value = true;
+
+    // Wait a bit for modal to open, then trigger the first item
+    setTimeout(() => {
+        handleSessionItemClick(firstItem, firstSession);
+    }, 500);
+}
+
 // Training Check-out Functions
 function openTrainingCheckOutModal() {
     showTrainingCheckOutModal.value = true;
@@ -1191,9 +1227,10 @@ async function processTrainingCheckIn() {
                         }
                     });
 
-                    // Close modal after success
+                    // Close modal and open first session item after success
                     setTimeout(() => {
                         closeTrainingCheckInModal();
+                        openFirstSessionItem();
                     }, 2000);
                 } else {
                     checkInStatusMessage.value = 'Check-in berhasil tapi tidak ada data training';

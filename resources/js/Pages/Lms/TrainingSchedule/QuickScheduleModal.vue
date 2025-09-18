@@ -248,12 +248,40 @@ const createSchedule = async () => {
   
   loading.value = true
   
+  // Show prominent loading modal
+  console.log('=== SHOWING LOADING MODAL ===')
+  console.log('Swal object:', Swal)
+  console.log('Swal.fire method:', typeof Swal.fire)
+  
+  try {
+    // Show loading modal with simple approach
+    Swal.fire({
+      title: 'Sabar Bu Ghea....',
+      text: 'Antosan sakedap Bu Ghea, Nuju loding',
+      icon: 'info',
+      showConfirmButton: false,
+      allowOutsideClick: false,
+      allowEscapeKey: false,
+      backdrop: true,
+      didOpen: () => {
+        Swal.showLoading()
+      }
+    })
+    console.log('Loading modal should be visible now')
+  } catch (error) {
+    console.error('Error showing loading modal:', error)
+  }
+  
   try {
     console.log('Submitting data:', submitData)
     
     await router.post(route('lms.schedules.store'), submitData, {
       onSuccess: (page) => {
         console.log('Success response:', page)
+        
+        // Close loading modal first
+        Swal.close()
+        
         Swal.fire({
           icon: 'success',
           title: 'Berhasil',
@@ -264,6 +292,10 @@ const createSchedule = async () => {
       },
       onError: (errors) => {
         console.error('Error response:', errors)
+        
+        // Close loading modal first
+        Swal.close()
+        
         let errorMessage = 'Terjadi kesalahan'
         
         if (errors && typeof errors === 'object') {
@@ -285,6 +317,10 @@ const createSchedule = async () => {
     })
   } catch (error) {
     console.error('Exception caught:', error)
+    
+    // Close loading modal first
+    Swal.close()
+    
     Swal.fire({
       icon: 'error',
       title: 'Error',

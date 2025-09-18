@@ -16,7 +16,14 @@
         <!-- Left Column -->
         <div class="space-y-4">
           <div class="backdrop-blur-sm bg-white/5 border border-white/10 rounded-xl p-4">
-            <h4 class="text-lg font-semibold text-white mb-3">Informasi Training</h4>
+            <div class="flex items-center justify-between mb-3">
+              <h4 class="text-lg font-semibold text-white">Informasi Training</h4>
+              <span :class="getStatusColor(training.status)" 
+                    class="px-3 py-1 rounded-full text-sm font-medium flex items-center gap-2">
+                <i :class="getStatusIcon(training.status)" class="text-xs"></i>
+                {{ getStatusText(training.status) }}
+              </span>
+            </div>
             <div class="space-y-3">
               <div class="flex items-center space-x-3">
                 <i class="fas fa-calendar text-blue-400 w-5"></i>
@@ -54,8 +61,9 @@
              <div class="flex items-center justify-between mb-3">
                <h4 class="text-lg font-semibold text-white">Status Training</h4>
                <span :class="getStatusColor(training.status)" 
-                     class="px-3 py-1 rounded-full text-sm font-medium">
-                 {{ training.status_text }}
+                     class="px-3 py-1 rounded-full text-sm font-medium flex items-center gap-2">
+                 <i :class="getStatusIcon(training.status)" class="text-xs"></i>
+                 {{ getStatusText(training.status) }}
                </span>
              </div>
              
@@ -213,8 +221,9 @@
                 <td class="py-2 px-2">{{ scheduleTrainer.trainer?.divisi?.nama_divisi || '-' }}</td>
                 <td class="py-2 px-2">
                   <span :class="getTrainerStatusColor(scheduleTrainer.status)" 
-                        class="px-2 py-1 rounded-full text-xs">
-                    {{ scheduleTrainer.status_text || 'Invited' }}
+                        class="px-2 py-1 rounded-full text-xs flex items-center gap-1">
+                    <i :class="getTrainerStatusIcon(scheduleTrainer.status)" class="text-xs"></i>
+                    {{ getTrainerStatusText(scheduleTrainer.status) }}
                   </span>
                 </td>
                 <td class="py-2 px-2">{{ scheduleTrainer.hours_taught || '0' }} jam</td>
@@ -267,17 +276,14 @@
                   <td class="py-2 px-2">{{ participant.user?.divisi?.nama_divisi || '-' }}</td>
                   <td class="py-2 px-2">
                     <span :class="getParticipantStatusColor(participant.status)" 
-                          class="px-2 py-1 rounded-full text-xs">
-                      {{ participant.status_text }}
+                          class="px-2 py-1 rounded-full text-xs flex items-center gap-1">
+                      <i :class="getParticipantStatusIcon(participant.status)" class="text-xs"></i>
+                      {{ getParticipantStatusText(participant.status) }}
                     </span>
                   </td>
                   <td class="py-2 px-2">{{ participant.check_in_time_formatted || '-' }}</td>
                   <td class="py-2 px-2">
                     <div class="flex items-center space-x-2">
-                      <button @click="issueCertificates"
-                              class="px-2 py-1 bg-blue-500/20 border border-blue-500/30 rounded text-xs text-blue-200 hover:bg-blue-500/30 transition-colors">
-                        Terbitkan Sertifikat
-                      </button>
                       <button v-if="participant.status === 'invited' && canInvite" 
                               @click="markAttended(participant.id)"
                               class="px-2 py-1 bg-green-500/20 border border-green-500/30 rounded text-xs text-green-200 hover:bg-green-500/30 transition-colors">
@@ -687,11 +693,33 @@ const getStatusColor = (status) => {
   const colors = {
     'draft': 'bg-gray-500/20 text-gray-200 border-gray-500/30',
     'published': 'bg-blue-500/20 text-blue-200 border-blue-500/30',
-    'ongoing': 'bg-green-500/20 text-green-200 border-green-500/30',
-    'completed': 'bg-purple-500/20 text-purple-200 border-purple-500/30',
+    'ongoing': 'bg-orange-500/20 text-orange-200 border-orange-500/30',
+    'completed': 'bg-green-500/20 text-green-200 border-green-500/30',
     'cancelled': 'bg-red-500/20 text-red-200 border-red-500/30'
   }
   return colors[status] || colors['draft']
+}
+
+const getStatusIcon = (status) => {
+  const icons = {
+    'draft': 'fas fa-edit',
+    'published': 'fas fa-bullhorn',
+    'ongoing': 'fas fa-play-circle',
+    'completed': 'fas fa-check-circle',
+    'cancelled': 'fas fa-times-circle'
+  }
+  return icons[status] || icons['draft']
+}
+
+const getStatusText = (status) => {
+  const texts = {
+    'draft': 'Draft',
+    'published': 'Dipublikasi',
+    'ongoing': 'Sedang Berlangsung',
+    'completed': 'Selesai',
+    'cancelled': 'Dibatalkan'
+  }
+  return texts[status] || texts['draft']
 }
 
 const getParticipantStatusColor = (status) => {
@@ -704,6 +732,26 @@ const getParticipantStatusColor = (status) => {
   return colors[status] || colors['invited']
 }
 
+const getParticipantStatusIcon = (status) => {
+  const icons = {
+    'invited': 'fas fa-envelope',
+    'confirmed': 'fas fa-check',
+    'attended': 'fas fa-user-check',
+    'absent': 'fas fa-user-times'
+  }
+  return icons[status] || icons['invited']
+}
+
+const getParticipantStatusText = (status) => {
+  const texts = {
+    'invited': 'Diundang',
+    'confirmed': 'Konfirmasi',
+    'attended': 'Hadir',
+    'absent': 'Tidak Hadir'
+  }
+  return texts[status] || texts['invited']
+}
+
 const getTrainerStatusColor = (status) => {
   const colors = {
     'invited': 'bg-blue-500/20 text-blue-200 border-blue-500/30',
@@ -712,6 +760,26 @@ const getTrainerStatusColor = (status) => {
     'absent': 'bg-red-500/20 text-red-200 border-red-500/30'
   }
   return colors[status] || colors['invited']
+}
+
+const getTrainerStatusIcon = (status) => {
+  const icons = {
+    'invited': 'fas fa-envelope',
+    'confirmed': 'fas fa-check',
+    'attended': 'fas fa-chalkboard-teacher',
+    'absent': 'fas fa-user-times'
+  }
+  return icons[status] || icons['invited']
+}
+
+const getTrainerStatusText = (status) => {
+  const texts = {
+    'invited': 'Diundang',
+    'confirmed': 'Konfirmasi',
+    'attended': 'Hadir',
+    'absent': 'Tidak Hadir'
+  }
+  return texts[status] || texts['invited']
 }
 
 const getTrainerTypeColor = (type) => {
@@ -855,12 +923,30 @@ const markAttended = async (participantId) => {
 
     if (result.isConfirmed) {
       console.log('User confirmed, calling API...');
+      
+      // Show loading modal
+      Swal.fire({
+        title: 'Sabar Bu Ghea....',
+        text: 'Antosan sakedap Bu Ghea, Nuju loding',
+        icon: 'info',
+        showConfirmButton: false,
+        allowOutsideClick: false,
+        allowEscapeKey: false,
+        backdrop: true,
+        didOpen: () => {
+          Swal.showLoading()
+        }
+      })
+      
       // Call backend API to mark as attended
       await router.put(route('lms.schedules.mark-attended', {
         schedule: props.training.id,
         invitation: participantId
       }), {}, {
         onSuccess: () => {
+          // Close loading modal first
+          Swal.close()
+          
           Swal.fire({
             icon: 'success',
             title: 'Berhasil!',
@@ -873,6 +959,10 @@ const markAttended = async (participantId) => {
         },
         onError: (errors) => {
           console.error('API Error for mark attended:', errors);
+          
+          // Close loading modal first
+          Swal.close()
+          
           Swal.fire({
             icon: 'error',
             title: 'Gagal!',
@@ -888,6 +978,10 @@ const markAttended = async (participantId) => {
       stack: error.stack,
       name: error.name
     })
+    
+    // Close loading modal first
+    Swal.close()
+    
     Swal.fire({
       icon: 'error',
       title: 'Error!',
@@ -914,11 +1008,29 @@ const removeParticipant = async (participantId) => {
 
     if (result.isConfirmed) {
       console.log('User confirmed, calling API...');
+      
+      // Show loading modal
+      Swal.fire({
+        title: 'Sabar Bu Ghea....',
+        text: 'Antosan sakedap Bu Ghea, Nuju loding',
+        icon: 'info',
+        showConfirmButton: false,
+        allowOutsideClick: false,
+        allowEscapeKey: false,
+        backdrop: true,
+        didOpen: () => {
+          Swal.showLoading()
+        }
+      })
+      
       await router.delete(route('lms.schedules.remove-participant', {
         schedule: props.training.id,
         invitation: participantId
       }), {
         onSuccess: () => {
+          // Close loading modal first
+          Swal.close()
+          
           Swal.fire({
             icon: 'success',
             title: 'Berhasil!',
@@ -931,6 +1043,10 @@ const removeParticipant = async (participantId) => {
         },
         onError: (errors) => {
           console.error('API Error for remove participant:', errors);
+          
+          // Close loading modal first
+          Swal.close()
+          
           Swal.fire({
             icon: 'error',
             title: 'Gagal!',
@@ -946,6 +1062,10 @@ const removeParticipant = async (participantId) => {
       stack: error.stack,
       name: error.name
     })
+    
+    // Close loading modal first
+    Swal.close()
+    
     Swal.fire({
       icon: 'error',
       title: 'Error!',
@@ -969,11 +1089,28 @@ const setPrimaryTrainer = async (scheduleTrainerId) => {
     })
 
     if (result.isConfirmed) {
+      // Show loading modal
+      Swal.fire({
+        title: 'Sabar Bu Ghea....',
+        text: 'Antosan sakedap Bu Ghea, Nuju loding',
+        icon: 'info',
+        showConfirmButton: false,
+        allowOutsideClick: false,
+        allowEscapeKey: false,
+        backdrop: true,
+        didOpen: () => {
+          Swal.showLoading()
+        }
+      })
+
       await router.put(route('lms.schedules.set-primary-trainer', {
         schedule: props.training.id,
         trainer: scheduleTrainerId
       }), {}, {
         onSuccess: () => {
+          // Close loading modal first
+          Swal.close()
+          
           Swal.fire({
             icon: 'success',
             title: 'Berhasil!',
@@ -984,6 +1121,9 @@ const setPrimaryTrainer = async (scheduleTrainerId) => {
           emit('refresh')
         },
         onError: (errors) => {
+          // Close loading modal first
+          Swal.close()
+          
           Swal.fire({
             icon: 'error',
             title: 'Gagal!',
@@ -993,6 +1133,9 @@ const setPrimaryTrainer = async (scheduleTrainerId) => {
       })
     }
   } catch (error) {
+    // Close loading modal first
+    Swal.close()
+    
     Swal.fire({
       icon: 'error',
       title: 'Error!',
@@ -1015,11 +1158,28 @@ const removeTrainer = async (scheduleTrainerId) => {
     })
 
     if (result.isConfirmed) {
+      // Show loading modal
+      Swal.fire({
+        title: 'Sabar Bu Ghea....',
+        text: 'Antosan sakedap Bu Ghea, Nuju loding',
+        icon: 'info',
+        showConfirmButton: false,
+        allowOutsideClick: false,
+        allowEscapeKey: false,
+        backdrop: true,
+        didOpen: () => {
+          Swal.showLoading()
+        }
+      })
+
       await router.delete(route('lms.schedules.remove-trainer', {
         schedule: props.training.id,
         trainer: scheduleTrainerId
       }), {
         onSuccess: () => {
+          // Close loading modal first
+          Swal.close()
+          
           Swal.fire({
             icon: 'success',
             title: 'Berhasil!',
@@ -1030,6 +1190,9 @@ const removeTrainer = async (scheduleTrainerId) => {
           emit('refresh')
         },
         onError: (errors) => {
+          // Close loading modal first
+          Swal.close()
+          
           Swal.fire({
             icon: 'error',
             title: 'Gagal!',
@@ -1039,6 +1202,9 @@ const removeTrainer = async (scheduleTrainerId) => {
       })
     }
   } catch (error) {
+    // Close loading modal first
+    Swal.close()
+    
     Swal.fire({
       icon: 'error',
       title: 'Error!',
@@ -1127,10 +1293,37 @@ const updateTrainingStatus = async (newStatus) => {
         route: route('lms.schedules.update-status', props.training.id)
       });
       
+      // Show prominent loading modal
+      console.log('=== SHOWING LOADING MODAL ===')
+      console.log('Swal object:', Swal)
+      console.log('Swal.fire method:', typeof Swal.fire)
+      
+      try {
+        // Show loading modal with simple approach
+        Swal.fire({
+          title: 'Sabar Bu Ghea....',
+          text: 'Antosan sakedap Bu Ghea, Nuju loding',
+          icon: 'info',
+          showConfirmButton: false,
+          allowOutsideClick: false,
+          allowEscapeKey: false,
+          backdrop: true,
+          didOpen: () => {
+            Swal.showLoading()
+          }
+        })
+        console.log('Loading modal should be visible now')
+      } catch (error) {
+        console.error('Error showing loading modal:', error)
+      }
+      
       await router.put(route('lms.schedules.update-status', props.training.id), {
         status: newStatus
       }, {
         onSuccess: () => {
+          // Close loading modal first
+          Swal.close()
+          
           Swal.fire({
             icon: 'success',
             title: 'Berhasil!',
@@ -1142,6 +1335,10 @@ const updateTrainingStatus = async (newStatus) => {
         },
         onError: (errors) => {
           console.error('API Error for update training status:', errors);
+          
+          // Close loading modal first
+          Swal.close()
+          
           Swal.fire({
             icon: 'error',
             title: 'Gagal!',
@@ -1152,6 +1349,10 @@ const updateTrainingStatus = async (newStatus) => {
     }
   } catch (error) {
     console.error('Error updating training status:', error)
+    
+    // Close loading modal first
+    Swal.close()
+    
     Swal.fire({
       icon: 'error',
       title: 'Error!',
