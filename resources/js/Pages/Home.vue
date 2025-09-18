@@ -640,6 +640,12 @@ async function handleMaterialItemClick(item, session) {
             openImageViewer(primaryFile, item.material);
             break;
         case 'document':
+        case 'docx':
+        case 'doc':
+        case 'xlsx':
+        case 'xls':
+        case 'pptx':
+        case 'ppt':
             openDocumentViewer(primaryFile, item.material);
             break;
         case 'link':
@@ -837,7 +843,10 @@ function openDocumentViewer(file, material) {
         cancelButtonColor: '#6B7280'
     }).then((result) => {
         if (result.isConfirmed) {
-            window.open(file.file_url, '_blank');
+            // Use viewer_url for proper routing through controller
+            const url = file.viewer_url || file.file_url;
+            console.log('Opening document URL:', url);
+            window.open(url, '_blank');
         }
     });
 }

@@ -3146,6 +3146,30 @@ class TrainingScheduleController extends Controller
                         'Cache-Control' => 'public, max-age=3600',
                     ];
                     break;
+                case 'docx':
+                case 'doc':
+                    $headers = [
+                        'Content-Type' => $file->file_mime_type ?: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                        'Content-Disposition' => 'inline; filename="' . $file->file_name . '"',
+                        'Cache-Control' => 'public, max-age=3600',
+                    ];
+                    break;
+                case 'xlsx':
+                case 'xls':
+                    $headers = [
+                        'Content-Type' => $file->file_mime_type ?: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                        'Content-Disposition' => 'inline; filename="' . $file->file_name . '"',
+                        'Cache-Control' => 'public, max-age=3600',
+                    ];
+                    break;
+                case 'pptx':
+                case 'ppt':
+                    $headers = [
+                        'Content-Type' => $file->file_mime_type ?: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+                        'Content-Disposition' => 'inline; filename="' . $file->file_name . '"',
+                        'Cache-Control' => 'public, max-age=3600',
+                    ];
+                    break;
                 default:
                     $headers = [
                         'Content-Type' => $file->file_mime_type ?: 'application/octet-stream',
