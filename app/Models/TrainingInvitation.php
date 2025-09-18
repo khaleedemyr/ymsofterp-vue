@@ -143,13 +143,38 @@ class TrainingInvitation extends Model
 
     public function checkIn(): bool
     {
+        // If already checked in, return true (allow re-checkin)
+        if ($this->status === 'attended' && $this->is_checked_in) {
+            \Log::info('User already checked in, allowing re-checkin', [
+                'invitation_id' => $this->id,
+                'user_id' => $this->user_id,
+                'status' => $this->status,
+                'check_in_time' => $this->check_in_time
+            ]);
+            return true;
+        }
+        
+        // If not checked in yet, proceed with check-in
         if ($this->status === 'invited' && !$this->is_checked_in) {
             $this->update([
                 'status' => 'attended',
                 'check_in_time' => now()
             ]);
+            \Log::info('User checked in successfully', [
+                'invitation_id' => $this->id,
+                'user_id' => $this->user_id,
+                'check_in_time' => $this->check_in_time
+            ]);
             return true;
         }
+        
+        \Log::warning('Check-in failed - invalid status or already checked out', [
+            'invitation_id' => $this->id,
+            'user_id' => $this->user_id,
+            'status' => $this->status,
+            'is_checked_in' => $this->is_checked_in,
+            'is_checked_out' => $this->is_checked_out
+        ]);
         
         return false;
     }

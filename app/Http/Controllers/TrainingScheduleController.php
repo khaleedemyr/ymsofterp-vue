@@ -677,9 +677,14 @@ class TrainingScheduleController extends Controller
                     'training_sessions_count' => count($trainingSessions)
                 ]);
 
+                // Determine success message based on check-in status
+                $successMessage = $invitation->status === 'attended' && $invitation->check_in_time 
+                    ? 'Selamat datang kembali! Anda sudah terdaftar untuk training ini.'
+                    : 'Check-in berhasil untuk ' . $invitation->user->nama_lengkap;
+
                 // Return Inertia response for all requests
                 return back()->with([
-                    'success' => 'Check-in berhasil untuk ' . $invitation->user->nama_lengkap,
+                    'success' => $successMessage,
                     'participant' => $invitation->user->nama_lengkap,
                     'training' => $invitation->schedule->course->title,
                     'training_info' => [
