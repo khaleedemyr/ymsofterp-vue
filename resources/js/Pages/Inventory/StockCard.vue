@@ -49,10 +49,11 @@
       <div v-if="props.error" class="bg-red-50 border-l-4 border-red-400 text-red-800 p-4 rounded my-8 text-center font-semibold">
         {{ props.error }}
       </div>
-      <div v-else-if="!selectedItem" class="bg-yellow-50 border-l-4 border-yellow-400 text-yellow-800 p-4 rounded my-8 text-center font-semibold">
-        Silakan pilih barang terlebih dahulu untuk melihat kartu stok.
+      <div v-else-if="!selectedItem" class="bg-blue-50 border-l-4 border-blue-400 text-blue-800 p-4 rounded my-8 text-center font-semibold">
+        <i class="fas fa-info-circle mr-2"></i>
+        Silakan pilih warehouse, barang, dan periode tanggal, kemudian klik tombol "Load Data" untuk melihat kartu stok.
       </div>
-      <template v-else>
+      <template v-else-if="selectedItem && cards.length > 0">
         <div class="bg-white rounded-xl shadow-lg overflow-hidden">
           <div class="overflow-x-auto">
             <table class="min-w-full divide-y divide-gray-200">
@@ -102,6 +103,10 @@
           </div>
         </div>
       </template>
+      <div v-else-if="selectedItem && cards.length === 0" class="bg-yellow-50 border-l-4 border-yellow-400 text-yellow-800 p-4 rounded my-8 text-center font-semibold">
+        <i class="fas fa-exclamation-triangle mr-2"></i>
+        Tidak ada data kartu stok untuk item yang dipilih. Coba ubah filter warehouse atau periode tanggal.
+      </div>
     </div>
   </AppLayout>
 </template>
@@ -110,26 +115,8 @@
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { ref, computed, watch } from 'vue';
 import { router } from '@inertiajs/vue3';
-import { Ziggy } from '@/ziggy.js';
 import Multiselect from 'vue-multiselect';
 import 'vue-multiselect/dist/vue-multiselect.min.css';
-
-// Route helper function
-function route(name, params = {}) {
-  const routeData = Ziggy.routes[name];
-  if (!routeData) {
-    throw new Error(`Route [${name}] not found.`);
-  }
-  
-  let url = routeData.uri;
-  
-  // Replace route parameters
-  Object.keys(params).forEach(key => {
-    url = url.replace(`{${key}}`, params[key]);
-  });
-  
-  return url;
-}
 const props = defineProps({
   cards: Array,
   warehouses: Array,
@@ -372,6 +359,12 @@ const summary = computed(() => {
 });
 
 function reloadData() {
+  // Validasi: harus ada item yang dipilih
+  if (!selectedItem.value) {
+    alert('Silakan pilih barang terlebih dahulu!');
+    return;
+  }
+  
   loadingReload.value = true
   
   // Prepare parameters
@@ -390,7 +383,7 @@ function reloadData() {
   })
   
   // Make request to server
-  router.get(route('inventory.stock-card'), params, {
+  router.get('/inventory/stock-card', params, {
     preserveState: true,
     preserveScroll: true,
     onSuccess: () => {

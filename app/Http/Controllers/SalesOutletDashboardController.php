@@ -67,6 +67,12 @@ class SalesOutletDashboardController extends Controller
         // 12. Revenue per Outlet by Region
         $revenuePerOutlet = $this->getRevenuePerOutlet($dateFrom, $dateTo);
         
+        // 12.1. Revenue per Outlet by Region (Lunch/Dinner)
+        $revenuePerOutletLunchDinner = $this->getRevenuePerOutletLunchDinner($dateFrom, $dateTo);
+        
+        // 12.2. Revenue per Outlet by Region (Weekend/Weekday)
+        $revenuePerOutletWeekendWeekday = $this->getRevenuePerOutletWeekendWeekday($dateFrom, $dateTo);
+        
         // 13. Revenue per Region
         $revenuePerRegion = $this->getRevenuePerRegion($dateFrom, $dateTo);
 
@@ -84,6 +90,8 @@ class SalesOutletDashboardController extends Controller
             'lunchDinnerOrders' => $lunchDinnerOrders,
             'weekdayWeekendRevenue' => $weekdayWeekendRevenue,
             'revenuePerOutlet' => $revenuePerOutlet,
+            'revenuePerOutletLunchDinner' => $revenuePerOutletLunchDinner,
+            'revenuePerOutletWeekendWeekday' => $revenuePerOutletWeekendWeekday,
             'revenuePerRegion' => $revenuePerRegion
         ];
     }
@@ -809,6 +817,250 @@ class SalesOutletDashboardController extends Controller
         return $data;
     }
 
+    private function getRevenuePerOutletLunchDinner($dateFrom, $dateTo)
+    {
+        $query = "
+            SELECT 
+                o.kode_outlet,
+                COALESCE(outlet.nama_outlet, o.kode_outlet) as outlet_name,
+                COALESCE(region.name, 'Unknown Region') as region_name,
+                COALESCE(region.code, 'UNK') as region_code,
+                CASE 
+                    WHEN HOUR(o.created_at) BETWEEN 11 AND 15 THEN 'Lunch'
+                    WHEN HOUR(o.created_at) BETWEEN 17 AND 22 THEN 'Dinner'
+                    ELSE 'Other'
+                END as meal_period,
+                COUNT(*) as order_count,
+                SUM(o.grand_total) as total_revenue,
+                SUM(o.pax) as total_pax,
+                AVG(o.grand_total) as avg_order_value
+            FROM orders o
+            LEFT JOIN tbl_data_outlet outlet ON o.kode_outlet = outlet.qr_code
+            LEFT JOIN regions region ON outlet.region_id = region.id
+            WHERE DATE(o.created_at) BETWEEN '{$dateFrom}' AND '{$dateTo}'
+            AND HOUR(o.created_at) BETWEEN 11 AND 22
+            GROUP BY o.kode_outlet, outlet.nama_outlet, region.name, region.code, meal_period
+            ORDER BY total_revenue DESC
+        ";
+
+        $results = DB::select($query);
+
+        // Group by region and meal period
+        $data = [];
+        foreach ($results as $result) {
+            $regionName = $result->region_name;
+            $regionCode = $result->region_code;
+            $mealPeriod = $result->meal_period;
+            
+            if (!isset($data[$regionName])) {
+                $data[$regionName] = [
+                    'region_code' => $regionCode,
+                    'outlets' => [],
+                    'lunch' => [
+                        'total_revenue' => 0,
+                        'total_orders' => 0,
+                        'total_pax' => 0
+                    ],
+                    'dinner' => [
+                        'total_revenue' => 0,
+                        'total_orders' => 0,
+                        'total_pax' => 0
+                    ],
+                    'total_revenue' => 0,
+                    'total_orders' => 0,
+                    'total_pax' => 0
+                ];
+            }
+            
+            // Initialize outlet if not exists
+            $outletKey = $result->outlet_name;
+            if (!isset($data[$regionName]['outlets'][$outletKey])) {
+                $data[$regionName]['outlets'][$outletKey] = [
+                    'outlet_code' => $result->kode_outlet,
+                    'outlet_name' => $result->outlet_name,
+                    'lunch' => [
+                        'order_count' => 0,
+                        'total_revenue' => 0,
+                        'total_pax' => 0,
+                        'avg_order_value' => 0
+                    ],
+                    'dinner' => [
+                        'order_count' => 0,
+                        'total_revenue' => 0,
+                        'total_pax' => 0,
+                        'avg_order_value' => 0
+                    ],
+                    'total_revenue' => 0,
+                    'total_orders' => 0,
+                    'total_pax' => 0
+                ];
+            }
+            
+            // Add data to appropriate meal period
+            if ($mealPeriod === 'Lunch') {
+                $data[$regionName]['outlets'][$outletKey]['lunch'] = [
+                    'order_count' => (int) $result->order_count,
+                    'total_revenue' => (float) $result->total_revenue,
+                    'total_pax' => (int) $result->total_pax,
+                    'avg_order_value' => (float) $result->avg_order_value
+                ];
+                
+                $data[$regionName]['lunch']['total_revenue'] += (float) $result->total_revenue;
+                $data[$regionName]['lunch']['total_orders'] += (int) $result->order_count;
+                $data[$regionName]['lunch']['total_pax'] += (int) $result->total_pax;
+            } elseif ($mealPeriod === 'Dinner') {
+                $data[$regionName]['outlets'][$outletKey]['dinner'] = [
+                    'order_count' => (int) $result->order_count,
+                    'total_revenue' => (float) $result->total_revenue,
+                    'total_pax' => (int) $result->total_pax,
+                    'avg_order_value' => (float) $result->avg_order_value
+                ];
+                
+                $data[$regionName]['dinner']['total_revenue'] += (float) $result->total_revenue;
+                $data[$regionName]['dinner']['total_orders'] += (int) $result->order_count;
+                $data[$regionName]['dinner']['total_pax'] += (int) $result->total_pax;
+            }
+            
+            // Update outlet totals
+            $data[$regionName]['outlets'][$outletKey]['total_revenue'] += (float) $result->total_revenue;
+            $data[$regionName]['outlets'][$outletKey]['total_orders'] += (int) $result->order_count;
+            $data[$regionName]['outlets'][$outletKey]['total_pax'] += (int) $result->total_pax;
+            
+            // Update region totals
+            $data[$regionName]['total_revenue'] += (float) $result->total_revenue;
+            $data[$regionName]['total_orders'] += (int) $result->order_count;
+            $data[$regionName]['total_pax'] += (int) $result->total_pax;
+        }
+
+        // Convert outlets from associative array to indexed array
+        foreach ($data as $regionName => $regionData) {
+            $data[$regionName]['outlets'] = array_values($regionData['outlets']);
+        }
+
+        return $data;
+    }
+
+    private function getRevenuePerOutletWeekendWeekday($dateFrom, $dateTo)
+    {
+        $query = "
+            SELECT 
+                o.kode_outlet,
+                COALESCE(outlet.nama_outlet, o.kode_outlet) as outlet_name,
+                COALESCE(region.name, 'Unknown Region') as region_name,
+                COALESCE(region.code, 'UNK') as region_code,
+                CASE 
+                    WHEN DAYOFWEEK(o.created_at) IN (1, 7) THEN 'Weekend'
+                    ELSE 'Weekday'
+                END as day_type,
+                COUNT(*) as order_count,
+                SUM(o.grand_total) as total_revenue,
+                SUM(o.pax) as total_pax,
+                AVG(o.grand_total) as avg_order_value
+            FROM orders o
+            LEFT JOIN tbl_data_outlet outlet ON o.kode_outlet = outlet.qr_code
+            LEFT JOIN regions region ON outlet.region_id = region.id
+            WHERE DATE(o.created_at) BETWEEN '{$dateFrom}' AND '{$dateTo}'
+            GROUP BY o.kode_outlet, outlet.nama_outlet, region.name, region.code, day_type
+            ORDER BY total_revenue DESC
+        ";
+
+        $results = DB::select($query);
+
+        // Group by region and day type
+        $data = [];
+        foreach ($results as $result) {
+            $regionName = $result->region_name;
+            $regionCode = $result->region_code;
+            $dayType = $result->day_type;
+            
+            if (!isset($data[$regionName])) {
+                $data[$regionName] = [
+                    'region_code' => $regionCode,
+                    'outlets' => [],
+                    'weekend' => [
+                        'total_revenue' => 0,
+                        'total_orders' => 0,
+                        'total_pax' => 0
+                    ],
+                    'weekday' => [
+                        'total_revenue' => 0,
+                        'total_orders' => 0,
+                        'total_pax' => 0
+                    ],
+                    'total_revenue' => 0,
+                    'total_orders' => 0,
+                    'total_pax' => 0
+                ];
+            }
+            
+            // Initialize outlet if not exists
+            $outletKey = $result->outlet_name;
+            if (!isset($data[$regionName]['outlets'][$outletKey])) {
+                $data[$regionName]['outlets'][$outletKey] = [
+                    'outlet_code' => $result->kode_outlet,
+                    'outlet_name' => $result->outlet_name,
+                    'weekend' => [
+                        'order_count' => 0,
+                        'total_revenue' => 0,
+                        'total_pax' => 0,
+                        'avg_order_value' => 0
+                    ],
+                    'weekday' => [
+                        'order_count' => 0,
+                        'total_revenue' => 0,
+                        'total_pax' => 0,
+                        'avg_order_value' => 0
+                    ],
+                    'total_revenue' => 0,
+                    'total_orders' => 0,
+                    'total_pax' => 0
+                ];
+            }
+            
+            // Add data to appropriate day type
+            if ($dayType === 'Weekend') {
+                $data[$regionName]['outlets'][$outletKey]['weekend'] = [
+                    'order_count' => (int) $result->order_count,
+                    'total_revenue' => (float) $result->total_revenue,
+                    'total_pax' => (int) $result->total_pax,
+                    'avg_order_value' => (float) $result->avg_order_value
+                ];
+                
+                $data[$regionName]['weekend']['total_revenue'] += (float) $result->total_revenue;
+                $data[$regionName]['weekend']['total_orders'] += (int) $result->order_count;
+                $data[$regionName]['weekend']['total_pax'] += (int) $result->total_pax;
+            } elseif ($dayType === 'Weekday') {
+                $data[$regionName]['outlets'][$outletKey]['weekday'] = [
+                    'order_count' => (int) $result->order_count,
+                    'total_revenue' => (float) $result->total_revenue,
+                    'total_pax' => (int) $result->total_pax,
+                    'avg_order_value' => (float) $result->avg_order_value
+                ];
+                
+                $data[$regionName]['weekday']['total_revenue'] += (float) $result->total_revenue;
+                $data[$regionName]['weekday']['total_orders'] += (int) $result->order_count;
+                $data[$regionName]['weekday']['total_pax'] += (int) $result->total_pax;
+            }
+            
+            // Update outlet totals
+            $data[$regionName]['outlets'][$outletKey]['total_revenue'] += (float) $result->total_revenue;
+            $data[$regionName]['outlets'][$outletKey]['total_orders'] += (int) $result->order_count;
+            $data[$regionName]['outlets'][$outletKey]['total_pax'] += (int) $result->total_pax;
+            
+            // Update region totals
+            $data[$regionName]['total_revenue'] += (float) $result->total_revenue;
+            $data[$regionName]['total_orders'] += (int) $result->order_count;
+            $data[$regionName]['total_pax'] += (int) $result->total_pax;
+        }
+
+        // Convert outlets from associative array to indexed array
+        foreach ($data as $regionName => $regionData) {
+            $data[$regionName]['outlets'] = array_values($regionData['outlets']);
+        }
+
+        return $data;
+    }
+
     private function getRevenuePerRegion($dateFrom, $dateTo)
     {
         // 1. Total Revenue per Region
@@ -1307,6 +1559,256 @@ class SalesOutletDashboardController extends Controller
             'total_orders' => $orders->count(),
             'total_revenue' => $orders->sum('grand_total'),
             'total_pax' => $orders->sum('pax')
+        ]);
+    }
+
+    public function getOutletLunchDinnerDetail(Request $request)
+    {
+        $outletCode = $request->get('outlet_code');
+        $mealPeriod = $request->get('meal_period');
+        $dateFrom = $request->get('date_from');
+        $dateTo = $request->get('date_to');
+        
+        if (!$outletCode) {
+            return response()->json(['error' => 'Outlet code is required'], 400);
+        }
+
+        if (!$mealPeriod) {
+            return response()->json(['error' => 'Meal period is required'], 400);
+        }
+
+        if (!$dateFrom || !$dateTo) {
+            return response()->json(['error' => 'Date range is required'], 400);
+        }
+
+        // Determine hour range based on meal period
+        $hourCondition = '';
+        if ($mealPeriod === 'Lunch') {
+            $hourCondition = 'AND HOUR(o.created_at) BETWEEN 11 AND 15';
+        } elseif ($mealPeriod === 'Dinner') {
+            $hourCondition = 'AND HOUR(o.created_at) BETWEEN 17 AND 22';
+        } else {
+            return response()->json(['error' => 'Invalid meal period'], 400);
+        }
+
+        $query = "
+            SELECT 
+                DATE(o.created_at) as date,
+                COUNT(*) as orders,
+                SUM(o.grand_total) as revenue,
+                SUM(o.pax) as customers,
+                AVG(o.grand_total) as avg_order_value,
+                CASE 
+                    WHEN SUM(o.pax) > 0 THEN SUM(o.grand_total) / SUM(o.pax)
+                    ELSE 0
+                END as avg_check
+            FROM orders o
+            WHERE o.kode_outlet = '{$outletCode}'
+            AND DATE(o.created_at) BETWEEN '{$dateFrom}' AND '{$dateTo}'
+            {$hourCondition}
+            GROUP BY DATE(o.created_at)
+            ORDER BY date ASC
+        ";
+
+        $results = DB::select($query);
+
+        // Get outlet info
+        $outletInfo = DB::select("
+            SELECT 
+                o.kode_outlet,
+                COALESCE(outlet.nama_outlet, o.kode_outlet) as outlet_name,
+                COALESCE(region.name, 'Unknown Region') as region_name,
+                COALESCE(region.code, 'UNK') as region_code
+            FROM orders o
+            LEFT JOIN tbl_data_outlet outlet ON o.kode_outlet = outlet.qr_code
+            LEFT JOIN regions region ON outlet.region_id = region.id
+            WHERE o.kode_outlet = '{$outletCode}'
+            LIMIT 1
+        ");
+
+        $outlet = $outletInfo[0] ?? null;
+
+        // Process data
+        $data = [];
+        $totalRevenue = 0;
+        $totalOrders = 0;
+        $totalCustomers = 0;
+
+        foreach ($results as $result) {
+            $data[] = [
+                'date' => $result->date,
+                'date_formatted' => Carbon::parse($result->date)->format('d F Y'),
+                'orders' => (int) $result->orders,
+                'revenue' => (float) $result->revenue,
+                'revenue_formatted' => 'Rp ' . number_format($result->revenue, 0, ',', '.'),
+                'pax' => (int) $result->customers,
+                'customers' => (int) $result->customers,
+                'avg_order_value' => (float) $result->avg_order_value,
+                'avg_order_value_formatted' => 'Rp ' . number_format($result->avg_order_value, 0, ',', '.'),
+                'avg_check' => (float) $result->avg_check,
+                'avg_check_formatted' => 'Rp ' . number_format($result->avg_check, 0, ',', '.')
+            ];
+
+            $totalRevenue += (float) $result->revenue;
+            $totalOrders += (int) $result->orders;
+            $totalCustomers += (int) $result->customers;
+        }
+
+        return response()->json([
+            'outlet' => $outlet ? [
+                'outlet_code' => $outlet->kode_outlet,
+                'outlet_name' => $outlet->outlet_name,
+                'region_name' => $outlet->region_name,
+                'region_code' => $outlet->region_code
+            ] : null,
+            'meal_period' => $mealPeriod,
+            'date_range' => [
+                'from' => $dateFrom,
+                'to' => $dateTo,
+                'from_formatted' => Carbon::parse($dateFrom)->format('d F Y'),
+                'to_formatted' => Carbon::parse($dateTo)->format('d F Y')
+            ],
+            'daily_data' => $data,
+            'summary' => [
+                'total_days' => count($data),
+                'total_revenue' => $totalRevenue,
+                'total_revenue_formatted' => 'Rp ' . number_format($totalRevenue, 0, ',', '.'),
+                'total_orders' => $totalOrders,
+                'total_pax' => $totalCustomers,
+                'total_customers' => $totalCustomers,
+                'avg_daily_revenue' => count($data) > 0 ? $totalRevenue / count($data) : 0,
+                'avg_daily_revenue_formatted' => count($data) > 0 ? 'Rp ' . number_format($totalRevenue / count($data), 0, ',', '.') : 'Rp 0',
+                'avg_daily_orders' => count($data) > 0 ? $totalOrders / count($data) : 0,
+                'avg_daily_pax' => count($data) > 0 ? $totalCustomers / count($data) : 0,
+                'avg_daily_customers' => count($data) > 0 ? $totalCustomers / count($data) : 0,
+                'avg_check' => $totalCustomers > 0 ? $totalRevenue / $totalCustomers : 0,
+                'avg_check_formatted' => $totalCustomers > 0 ? 'Rp ' . number_format($totalRevenue / $totalCustomers, 0, ',', '.') : 'Rp 0'
+            ]
+        ]);
+    }
+
+    public function getOutletWeekendWeekdayDetail(Request $request)
+    {
+        $outletCode = $request->get('outlet_code');
+        $dayType = $request->get('day_type');
+        $dateFrom = $request->get('date_from');
+        $dateTo = $request->get('date_to');
+        
+        if (!$outletCode) {
+            return response()->json(['error' => 'Outlet code is required'], 400);
+        }
+
+        if (!$dayType) {
+            return response()->json(['error' => 'Day type is required'], 400);
+        }
+
+        if (!$dateFrom || !$dateTo) {
+            return response()->json(['error' => 'Date range is required'], 400);
+        }
+
+        // Determine day condition based on day type
+        $dayCondition = '';
+        if ($dayType === 'Weekend') {
+            $dayCondition = 'AND DAYOFWEEK(o.created_at) IN (1, 7)';
+        } elseif ($dayType === 'Weekday') {
+            $dayCondition = 'AND DAYOFWEEK(o.created_at) NOT IN (1, 7)';
+        } else {
+            return response()->json(['error' => 'Invalid day type'], 400);
+        }
+
+        $query = "
+            SELECT 
+                DATE(o.created_at) as date,
+                COUNT(*) as orders,
+                SUM(o.grand_total) as revenue,
+                SUM(o.pax) as customers,
+                AVG(o.grand_total) as avg_order_value,
+                CASE 
+                    WHEN SUM(o.pax) > 0 THEN SUM(o.grand_total) / SUM(o.pax)
+                    ELSE 0
+                END as avg_check
+            FROM orders o
+            WHERE o.kode_outlet = '{$outletCode}'
+            AND DATE(o.created_at) BETWEEN '{$dateFrom}' AND '{$dateTo}'
+            {$dayCondition}
+            GROUP BY DATE(o.created_at)
+            ORDER BY date ASC
+        ";
+
+        $results = DB::select($query);
+
+        // Get outlet info
+        $outletInfo = DB::select("
+            SELECT 
+                o.kode_outlet,
+                COALESCE(outlet.nama_outlet, o.kode_outlet) as outlet_name,
+                COALESCE(region.name, 'Unknown Region') as region_name,
+                COALESCE(region.code, 'UNK') as region_code
+            FROM orders o
+            LEFT JOIN tbl_data_outlet outlet ON o.kode_outlet = outlet.qr_code
+            LEFT JOIN regions region ON outlet.region_id = region.id
+            WHERE o.kode_outlet = '{$outletCode}'
+            LIMIT 1
+        ");
+
+        $outlet = $outletInfo[0] ?? null;
+
+        // Process data
+        $data = [];
+        $totalRevenue = 0;
+        $totalOrders = 0;
+        $totalCustomers = 0;
+
+        foreach ($results as $result) {
+            $data[] = [
+                'date' => $result->date,
+                'date_formatted' => Carbon::parse($result->date)->format('d F Y'),
+                'orders' => (int) $result->orders,
+                'revenue' => (float) $result->revenue,
+                'revenue_formatted' => 'Rp ' . number_format($result->revenue, 0, ',', '.'),
+                'pax' => (int) $result->customers,
+                'customers' => (int) $result->customers,
+                'avg_order_value' => (float) $result->avg_order_value,
+                'avg_order_value_formatted' => 'Rp ' . number_format($result->avg_order_value, 0, ',', '.'),
+                'avg_check' => (float) $result->avg_check,
+                'avg_check_formatted' => 'Rp ' . number_format($result->avg_check, 0, ',', '.')
+            ];
+
+            $totalRevenue += (float) $result->revenue;
+            $totalOrders += (int) $result->orders;
+            $totalCustomers += (int) $result->customers;
+        }
+
+        return response()->json([
+            'outlet' => $outlet ? [
+                'outlet_code' => $outlet->kode_outlet,
+                'outlet_name' => $outlet->outlet_name,
+                'region_name' => $outlet->region_name,
+                'region_code' => $outlet->region_code
+            ] : null,
+            'day_type' => $dayType,
+            'date_range' => [
+                'from' => $dateFrom,
+                'to' => $dateTo,
+                'from_formatted' => Carbon::parse($dateFrom)->format('d F Y'),
+                'to_formatted' => Carbon::parse($dateTo)->format('d F Y')
+            ],
+            'daily_data' => $data,
+            'summary' => [
+                'total_days' => count($data),
+                'total_revenue' => $totalRevenue,
+                'total_revenue_formatted' => 'Rp ' . number_format($totalRevenue, 0, ',', '.'),
+                'total_orders' => $totalOrders,
+                'total_pax' => $totalCustomers,
+                'total_customers' => $totalCustomers,
+                'avg_daily_revenue' => count($data) > 0 ? $totalRevenue / count($data) : 0,
+                'avg_daily_revenue_formatted' => count($data) > 0 ? 'Rp ' . number_format($totalRevenue / count($data), 0, ',', '.') : 'Rp 0',
+                'avg_daily_orders' => count($data) > 0 ? $totalOrders / count($data) : 0,
+                'avg_daily_pax' => count($data) > 0 ? $totalCustomers / count($data) : 0,
+                'avg_daily_customers' => count($data) > 0 ? $totalCustomers / count($data) : 0,
+                'avg_check' => $totalCustomers > 0 ? $totalRevenue / $totalCustomers : 0,
+                'avg_check_formatted' => $totalCustomers > 0 ? 'Rp ' . number_format($totalRevenue / $totalCustomers, 0, ',', '.') : 'Rp 0'
+            ]
         ]);
     }
 

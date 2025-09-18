@@ -7,6 +7,8 @@ import axios from 'axios';
 import Swal from 'sweetalert2';
 import OutletDetailsModal from './Components/OutletDetailsModal.vue';
 import OutletDailyRevenueModal from './Components/OutletDailyRevenueModal.vue';
+import OutletLunchDinnerModal from './Components/OutletLunchDinnerModal.vue';
+import OutletWeekendWeekdayModal from './Components/OutletWeekendWeekdayModal.vue';
 
 const props = defineProps({
     dashboardData: Object,
@@ -28,6 +30,18 @@ const selectedDate = ref(null);
 // Modal state for outlet daily revenue
 const showDailyRevenueModal = ref(false);
 const selectedOutlet = ref(null);
+
+// Modal state for lunch/dinner detail
+const showLunchDinnerModal = ref(false);
+const selectedLunchDinnerOutlet = ref(null);
+const selectedMealPeriod = ref(null);
+const selectedRegion = ref(null);
+
+// Modal state for weekend/weekday detail
+const showWeekendWeekdayModal = ref(false);
+const selectedWeekendWeekdayOutlet = ref(null);
+const selectedDayType = ref(null);
+const selectedWeekendWeekdayRegion = ref(null);
 
 // Holiday data
 const holidaysData = ref([]);
@@ -833,6 +847,416 @@ const weekdayWeekendOptions = computed(() => ({
     }]
 }));
 
+// Revenue per Outlet by Region (Lunch/Dinner)
+const revenuePerOutletLunchDinnerSeries = computed(() => {
+    if (!props.dashboardData?.revenuePerOutletLunchDinner) return [];
+
+    const data = props.dashboardData.revenuePerOutletLunchDinner;
+    const regions = Object.keys(data);
+    
+    if (regions.length === 0) return [];
+
+    // Create series for each region and meal period
+    const series = [];
+    const categories = [];
+    
+    // Get all unique outlets across all regions
+    const allOutlets = new Set();
+    regions.forEach(region => {
+        data[region].outlets.forEach(outlet => {
+            allOutlets.add(outlet.outlet_name);
+        });
+    });
+    
+    categories.push(...Array.from(allOutlets));
+    
+    // Create series for each region and meal period
+    regions.forEach(region => {
+        // Lunch series
+        const lunchData = new Array(categories.length).fill(0);
+        data[region].outlets.forEach(outlet => {
+            const index = categories.indexOf(outlet.outlet_name);
+            if (index !== -1) {
+                lunchData[index] = outlet.lunch?.total_revenue || 0;
+            }
+        });
+        
+        series.push({
+            name: `${region} - Lunch`,
+            data: lunchData
+        });
+        
+        // Dinner series
+        const dinnerData = new Array(categories.length).fill(0);
+        data[region].outlets.forEach(outlet => {
+            const index = categories.indexOf(outlet.outlet_name);
+            if (index !== -1) {
+                dinnerData[index] = outlet.dinner?.total_revenue || 0;
+            }
+        });
+        
+        series.push({
+            name: `${region} - Dinner`,
+            data: dinnerData
+        });
+    });
+
+    return series;
+});
+
+const revenuePerOutletLunchDinnerOptions = computed(() => ({
+    chart: {
+        type: 'bar',
+        height: 400,
+        stacked: true,
+        toolbar: { show: true },
+        animations: { enabled: true, easing: 'easeinout', speed: 800 },
+        events: {
+            dataPointSelection: function(event, chartContext, config) {
+                console.log('Lunch/Dinner Chart clicked:', config);
+                handleLunchDinnerChartClick(config);
+            },
+            click: function(event, chartContext, config) {
+                console.log('Lunch/Dinner Chart click event:', config);
+                handleLunchDinnerChartClick(config);
+            }
+        }
+    },
+    xaxis: {
+        categories: revenuePerOutletLunchDinnerSeries.value.length > 0 ? 
+            (() => {
+                const data = props.dashboardData?.revenuePerOutletLunchDinner;
+                if (!data) return [];
+                
+                const allOutlets = new Set();
+                Object.keys(data).forEach(region => {
+                    data[region].outlets.forEach(outlet => {
+                        allOutlets.add(outlet.outlet_name);
+                    });
+                });
+                
+                return Array.from(allOutlets);
+            })() : [],
+        title: { text: 'Outlets' },
+        labels: { 
+            style: { fontWeight: 600 },
+            rotate: -45,
+            maxHeight: 120
+        }
+    },
+    yaxis: {
+        title: { text: 'Revenue (Rp)' },
+        min: 0,
+        labels: {
+            style: { fontWeight: 600 },
+            formatter: (value) => formatNumber(value)
+        }
+    },
+    colors: ['#3b82f6', '#1d4ed8', '#10b981', '#059669', '#f59e0b', '#d97706', '#ef4444', '#dc2626', '#8b5cf6', '#7c3aed', '#06b6d4', '#0891b2'],
+    plotOptions: {
+        bar: {
+            borderRadius: 4,
+            columnWidth: '60%'
+        }
+    },
+    dataLabels: {
+        enabled: false
+    },
+    legend: {
+        position: 'top',
+        fontSize: '14px',
+        fontWeight: 600,
+        formatter: function(seriesName, opts) {
+            const data = props.dashboardData?.revenuePerOutletLunchDinner;
+            if (!data) return seriesName;
+            
+            // Parse series name to get region and meal period
+            const parts = seriesName.split(' - ');
+            if (parts.length !== 2) return seriesName;
+            
+            const regionName = parts[0];
+            const mealPeriod = parts[1];
+            
+            if (!data[regionName]) return seriesName;
+            
+            const regionData = data[regionName];
+            const mealData = mealPeriod === 'Lunch' ? regionData.lunch : regionData.dinner;
+            
+            return `${seriesName}: ${formatCurrency(mealData.total_revenue)} (${mealData.total_orders} orders)`;
+        }
+    },
+    grid: {
+        borderColor: '#e5e7eb',
+        strokeDashArray: 4
+    },
+    tooltip: {
+        shared: false,
+        intersect: true,
+        custom: function({series, seriesIndex, dataPointIndex, w}) {
+            const data = props.dashboardData?.revenuePerOutletLunchDinner;
+            if (!data) return '';
+            
+            const regions = Object.keys(data);
+            const seriesName = w.globals.seriesNames[seriesIndex];
+            const parts = seriesName.split(' - ');
+            
+            if (parts.length !== 2) return '';
+            
+            const regionName = parts[0];
+            const mealPeriod = parts[1];
+            const regionData = data[regionName];
+            
+            if (!regionData) return '';
+            
+            // Find the outlet that corresponds to this data point
+            const outletName = w.globals.labels[dataPointIndex];
+            const outlet = regionData.outlets.find(o => o.outlet_name === outletName);
+            
+            if (!outlet) return '';
+            
+            const mealData = mealPeriod === 'Lunch' ? outlet.lunch : outlet.dinner;
+            const avgCheck = mealData.total_pax > 0 ? mealData.total_revenue / mealData.total_pax : 0;
+            
+            return `
+                <div class="px-3 py-2 rounded-lg bg-white shadow-lg border">
+                    <div class="font-semibold text-gray-900">${outlet.outlet_name}</div>
+                    <div class="text-sm text-gray-600 mt-1">
+                        <div class="flex justify-between">
+                            <span>Region:</span>
+                            <span class="font-medium">${regionName}</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span>Meal Period:</span>
+                            <span class="font-medium">${mealPeriod}</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span>Revenue:</span>
+                            <span class="font-medium text-green-600">${formatCurrency(mealData.total_revenue)}</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span>Orders:</span>
+                            <span class="font-medium">${formatNumber(mealData.order_count)}</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span>Pax:</span>
+                            <span class="font-medium">${formatNumber(mealData.total_pax)}</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span>Avg Check:</span>
+                            <span class="font-medium">${formatCurrency(avgCheck)}</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+    }
+}));
+
+// Revenue per Outlet by Region (Weekend/Weekday)
+const revenuePerOutletWeekendWeekdaySeries = computed(() => {
+    if (!props.dashboardData?.revenuePerOutletWeekendWeekday) return [];
+
+    const data = props.dashboardData.revenuePerOutletWeekendWeekday;
+    const regions = Object.keys(data);
+    
+    if (regions.length === 0) return [];
+
+    // Create series for each region and day type
+    const series = [];
+    const categories = [];
+    
+    // Get all unique outlets across all regions
+    const allOutlets = new Set();
+    regions.forEach(region => {
+        data[region].outlets.forEach(outlet => {
+            allOutlets.add(outlet.outlet_name);
+        });
+    });
+    
+    categories.push(...Array.from(allOutlets));
+    
+    // Create series for each region and day type
+    regions.forEach(region => {
+        // Weekend series
+        const weekendData = new Array(categories.length).fill(0);
+        data[region].outlets.forEach(outlet => {
+            const index = categories.indexOf(outlet.outlet_name);
+            if (index !== -1) {
+                weekendData[index] = outlet.weekend?.total_revenue || 0;
+            }
+        });
+        
+        series.push({
+            name: `${region} - Weekend`,
+            data: weekendData
+        });
+        
+        // Weekday series
+        const weekdayData = new Array(categories.length).fill(0);
+        data[region].outlets.forEach(outlet => {
+            const index = categories.indexOf(outlet.outlet_name);
+            if (index !== -1) {
+                weekdayData[index] = outlet.weekday?.total_revenue || 0;
+            }
+        });
+        
+        series.push({
+            name: `${region} - Weekday`,
+            data: weekdayData
+        });
+    });
+
+    return series;
+});
+
+const revenuePerOutletWeekendWeekdayOptions = computed(() => ({
+    chart: {
+        type: 'bar',
+        height: 400,
+        stacked: true,
+        toolbar: { show: true },
+        animations: { enabled: true, easing: 'easeinout', speed: 800 },
+        events: {
+            dataPointSelection: function(event, chartContext, config) {
+                console.log('Weekend/Weekday Chart clicked:', config);
+                handleWeekendWeekdayChartClick(config);
+            },
+            click: function(event, chartContext, config) {
+                console.log('Weekend/Weekday Chart click event:', config);
+                handleWeekendWeekdayChartClick(config);
+            }
+        }
+    },
+    xaxis: {
+        categories: revenuePerOutletWeekendWeekdaySeries.value.length > 0 ? 
+            (() => {
+                const data = props.dashboardData?.revenuePerOutletWeekendWeekday;
+                if (!data) return [];
+                
+                const allOutlets = new Set();
+                Object.keys(data).forEach(region => {
+                    data[region].outlets.forEach(outlet => {
+                        allOutlets.add(outlet.outlet_name);
+                    });
+                });
+                
+                return Array.from(allOutlets);
+            })() : [],
+        title: { text: 'Outlets' },
+        labels: { 
+            style: { fontWeight: 600 },
+            rotate: -45,
+            maxHeight: 120
+        }
+    },
+    yaxis: {
+        title: { text: 'Revenue (Rp)' },
+        min: 0,
+        labels: {
+            style: { fontWeight: 600 },
+            formatter: (value) => formatNumber(value)
+        }
+    },
+    colors: ['#8b5cf6', '#7c3aed', '#06b6d4', '#0891b2', '#84cc16', '#65a30d', '#f97316', '#ea580c', '#ef4444', '#dc2626', '#ec4899', '#db2777'],
+    plotOptions: {
+        bar: {
+            borderRadius: 4,
+            columnWidth: '60%'
+        }
+    },
+    dataLabels: {
+        enabled: false
+    },
+    legend: {
+        position: 'top',
+        fontSize: '14px',
+        fontWeight: 600,
+        formatter: function(seriesName, opts) {
+            const data = props.dashboardData?.revenuePerOutletWeekendWeekday;
+            if (!data) return seriesName;
+            
+            // Parse series name to get region and day type
+            const parts = seriesName.split(' - ');
+            if (parts.length !== 2) return seriesName;
+            
+            const regionName = parts[0];
+            const dayType = parts[1];
+            
+            if (!data[regionName]) return seriesName;
+            
+            const regionData = data[regionName];
+            const dayData = dayType === 'Weekend' ? regionData.weekend : regionData.weekday;
+            
+            return `${seriesName}: ${formatCurrency(dayData.total_revenue)} (${dayData.total_orders} orders)`;
+        }
+    },
+    grid: {
+        borderColor: '#e5e7eb',
+        strokeDashArray: 4
+    },
+    tooltip: {
+        shared: false,
+        intersect: true,
+        custom: function({series, seriesIndex, dataPointIndex, w}) {
+            const data = props.dashboardData?.revenuePerOutletWeekendWeekday;
+            if (!data) return '';
+            
+            const regions = Object.keys(data);
+            const seriesName = w.globals.seriesNames[seriesIndex];
+            const parts = seriesName.split(' - ');
+            
+            if (parts.length !== 2) return '';
+            
+            const regionName = parts[0];
+            const dayType = parts[1];
+            const regionData = data[regionName];
+            
+            if (!regionData) return '';
+            
+            // Find the outlet that corresponds to this data point
+            const outletName = w.globals.labels[dataPointIndex];
+            const outlet = regionData.outlets.find(o => o.outlet_name === outletName);
+            
+            if (!outlet) return '';
+            
+            const dayData = dayType === 'Weekend' ? outlet.weekend : outlet.weekday;
+            const avgCheck = dayData.total_pax > 0 ? dayData.total_revenue / dayData.total_pax : 0;
+            
+            return `
+                <div class="px-3 py-2 rounded-lg bg-white shadow-lg border">
+                    <div class="font-semibold text-gray-900">${outlet.outlet_name}</div>
+                    <div class="text-sm text-gray-600 mt-1">
+                        <div class="flex justify-between">
+                            <span>Region:</span>
+                            <span class="font-medium">${regionName}</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span>Day Type:</span>
+                            <span class="font-medium">${dayType}</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span>Revenue:</span>
+                            <span class="font-medium text-green-600">${formatCurrency(dayData.total_revenue)}</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span>Orders:</span>
+                            <span class="font-medium">${formatNumber(dayData.order_count)}</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span>Pax:</span>
+                            <span class="font-medium">${formatNumber(dayData.total_pax)}</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span>Avg Check:</span>
+                            <span class="font-medium">${formatCurrency(avgCheck)}</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+    }
+}));
+
 // Revenue per Outlet by Region
 const revenuePerOutletSeries = computed(() => {
     if (!props.dashboardData?.revenuePerOutlet) return [];
@@ -1528,6 +1952,34 @@ function closeDailyRevenueModal() {
     selectedOutlet.value = null;
 }
 
+function openLunchDinnerModal(outlet, region, mealPeriod) {
+    selectedLunchDinnerOutlet.value = outlet;
+    selectedRegion.value = region;
+    selectedMealPeriod.value = mealPeriod;
+    showLunchDinnerModal.value = true;
+}
+
+function closeLunchDinnerModal() {
+    showLunchDinnerModal.value = false;
+    selectedLunchDinnerOutlet.value = null;
+    selectedRegion.value = null;
+    selectedMealPeriod.value = null;
+}
+
+function openWeekendWeekdayModal(outlet, region, dayType) {
+    selectedWeekendWeekdayOutlet.value = outlet;
+    selectedWeekendWeekdayRegion.value = region;
+    selectedDayType.value = dayType;
+    showWeekendWeekdayModal.value = true;
+}
+
+function closeWeekendWeekdayModal() {
+    showWeekendWeekdayModal.value = false;
+    selectedWeekendWeekdayOutlet.value = null;
+    selectedWeekendWeekdayRegion.value = null;
+    selectedDayType.value = null;
+}
+
 async function fetchHolidays() {
     try {
         const response = await axios.get('/sales-outlet-dashboard/holidays', {
@@ -1756,6 +2208,116 @@ function handleChartClick(config) {
         openDailyRevenueModal(outlet);
     } else {
         console.log('Outlet not found in region:', regionName, 'for outlet name:', clickedOutletName);
+    }
+}
+
+function handleLunchDinnerChartClick(config) {
+    if (!config || config.dataPointIndex === undefined || config.seriesIndex === undefined) {
+        console.log('Invalid lunch/dinner click config:', config);
+        return;
+    }
+    
+    const outletIndex = config.dataPointIndex;
+    const seriesIndex = config.seriesIndex;
+    
+    const data = props.dashboardData?.revenuePerOutletLunchDinner;
+    if (!data) {
+        console.log('No lunch/dinner revenue data available');
+        return;
+    }
+    
+    const regions = Object.keys(data);
+    
+    // Get all unique outlets across all regions to find the correct outlet
+    const allOutlets = new Set();
+    regions.forEach(region => {
+        data[region].outlets.forEach(outlet => {
+            allOutlets.add(outlet.outlet_name);
+        });
+    });
+    
+    const allOutletsArray = Array.from(allOutlets);
+    const clickedOutletName = allOutletsArray[outletIndex];
+    
+    // Determine meal period from series index
+    // Each region has 2 series: Lunch and Dinner
+    // So seriesIndex 0,2,4... = Lunch, seriesIndex 1,3,5... = Dinner
+    const mealPeriod = seriesIndex % 2 === 0 ? 'Lunch' : 'Dinner';
+    const regionIndex = Math.floor(seriesIndex / 2);
+    const regionName = regions[regionIndex];
+    
+    console.log('Lunch/Dinner Click - Outlet index:', outletIndex, 'Series index:', seriesIndex, 'Outlet name:', clickedOutletName);
+    console.log('Meal Period:', mealPeriod, 'Region:', regionName);
+    
+    // Find the outlet in the specific region
+    const regionData = data[regionName];
+    if (!regionData) {
+        console.log('Region not found:', regionName);
+        return;
+    }
+    
+    const outlet = regionData.outlets.find(outlet => outlet.outlet_name === clickedOutletName);
+    
+    if (outlet) {
+        console.log('Found outlet for lunch/dinner:', outlet, 'in region:', regionName, 'meal period:', mealPeriod);
+        openLunchDinnerModal(outlet, regionName, mealPeriod);
+    } else {
+        console.log('Outlet not found for lunch/dinner:', clickedOutletName);
+    }
+}
+
+function handleWeekendWeekdayChartClick(config) {
+    if (!config || config.dataPointIndex === undefined || config.seriesIndex === undefined) {
+        console.log('Invalid weekend/weekday click config:', config);
+        return;
+    }
+    
+    const outletIndex = config.dataPointIndex;
+    const seriesIndex = config.seriesIndex;
+    
+    const data = props.dashboardData?.revenuePerOutletWeekendWeekday;
+    if (!data) {
+        console.log('No weekend/weekday revenue data available');
+        return;
+    }
+    
+    const regions = Object.keys(data);
+    
+    // Get all unique outlets across all regions to find the correct outlet
+    const allOutlets = new Set();
+    regions.forEach(region => {
+        data[region].outlets.forEach(outlet => {
+            allOutlets.add(outlet.outlet_name);
+        });
+    });
+    
+    const allOutletsArray = Array.from(allOutlets);
+    const clickedOutletName = allOutletsArray[outletIndex];
+    
+    // Determine day type from series index
+    // Each region has 2 series: Weekend and Weekday
+    // So seriesIndex 0,2,4... = Weekend, seriesIndex 1,3,5... = Weekday
+    const dayType = seriesIndex % 2 === 0 ? 'Weekend' : 'Weekday';
+    const regionIndex = Math.floor(seriesIndex / 2);
+    const regionName = regions[regionIndex];
+    
+    console.log('Weekend/Weekday Click - Outlet index:', outletIndex, 'Series index:', seriesIndex, 'Outlet name:', clickedOutletName);
+    console.log('Day Type:', dayType, 'Region:', regionName);
+    
+    // Find the outlet in the specific region
+    const regionData = data[regionName];
+    if (!regionData) {
+        console.log('Region not found:', regionName);
+        return;
+    }
+    
+    const outlet = regionData.outlets.find(outlet => outlet.outlet_name === clickedOutletName);
+    
+    if (outlet) {
+        console.log('Found outlet for weekend/weekday:', outlet, 'in region:', regionName, 'day type:', dayType);
+        openWeekendWeekdayModal(outlet, regionName, dayType);
+    } else {
+        console.log('Outlet not found for weekend/weekday:', clickedOutletName);
     }
 }
 
@@ -2399,6 +2961,204 @@ const menuRegionChartOptions = computed(() => ({
                         </div>
                     </div>
 
+                    <!-- Charts Row 4.1 - Revenue per Outlet by Region (Lunch/Dinner) (Full Width) -->
+                    <div class="mb-6">
+                        <!-- Revenue per Outlet by Region (Lunch/Dinner) -->
+                        <div class="bg-white rounded-lg shadow-sm border p-6">
+                            <div class="flex justify-between items-center mb-4">
+                                <h3 class="text-lg font-semibold text-gray-900">Revenue per Outlet by Region (Lunch/Dinner)</h3>
+                                <div class="text-xs text-gray-500 bg-green-50 px-2 py-1 rounded">
+                                    <i class="fa-solid fa-utensils mr-1"></i>
+                                    Breakdown berdasarkan waktu makan
+                                </div>
+                            </div>
+                            <apexchart 
+                                v-if="revenuePerOutletLunchDinnerSeries.length > 0" 
+                                type="bar" 
+                                height="400" 
+                                :options="revenuePerOutletLunchDinnerOptions" 
+                                :series="revenuePerOutletLunchDinnerSeries" 
+                            />
+                            <div v-else class="text-center py-8 text-gray-500">
+                                <i class="fa-solid fa-utensils text-4xl mb-2"></i>
+                                <p>No lunch/dinner revenue data available</p>
+                            </div>
+                            
+                            <!-- Region Summary (Lunch/Dinner) -->
+                            <div v-if="dashboardData?.revenuePerOutletLunchDinner && Object.keys(dashboardData.revenuePerOutletLunchDinner).length > 0" class="mt-6">
+                                <h4 class="text-md font-semibold text-gray-800 mb-3">Region Summary (Lunch/Dinner)</h4>
+                                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                                    <div v-for="(regionData, regionName) in dashboardData.revenuePerOutletLunchDinner" :key="regionName" class="border rounded-lg p-4">
+                                        <div class="flex items-center justify-between mb-2">
+                                            <h5 class="font-semibold text-gray-900">{{ regionName }}</h5>
+                                            <span class="text-sm font-medium text-blue-600">
+                                                {{ formatCurrency(regionData.total_revenue) }}
+                                            </span>
+                                        </div>
+                                        
+                                        <!-- Lunch Summary -->
+                                        <div class="mb-3 p-2 bg-blue-50 rounded">
+                                            <div class="flex items-center justify-between mb-1">
+                                                <span class="text-sm font-medium text-blue-800">🍽️ Lunch</span>
+                                                <span class="text-sm font-semibold text-blue-600">
+                                                    {{ formatCurrency(regionData.lunch.total_revenue) }}
+                                                </span>
+                                            </div>
+                                            <div class="flex justify-between text-xs text-blue-700">
+                                                <span>{{ regionData.lunch.total_orders }} orders</span>
+                                                <span>{{ regionData.lunch.total_pax }} pax</span>
+                                            </div>
+                                        </div>
+                                        
+                                        <!-- Dinner Summary -->
+                                        <div class="mb-3 p-2 bg-orange-50 rounded">
+                                            <div class="flex items-center justify-between mb-1">
+                                                <span class="text-sm font-medium text-orange-800">🍽️ Dinner</span>
+                                                <span class="text-sm font-semibold text-orange-600">
+                                                    {{ formatCurrency(regionData.dinner.total_revenue) }}
+                                                </span>
+                                            </div>
+                                            <div class="flex justify-between text-xs text-orange-700">
+                                                <span>{{ regionData.dinner.total_orders }} orders</span>
+                                                <span>{{ regionData.dinner.total_pax }} pax</span>
+                                            </div>
+                                        </div>
+                                        
+                                        <!-- Total Summary -->
+                                        <div class="space-y-1 text-sm border-t pt-2">
+                                            <div class="flex justify-between">
+                                                <span class="text-gray-600">Total Outlets:</span>
+                                                <span class="font-medium text-gray-900">{{ regionData.outlets.length }}</span>
+                                            </div>
+                                            <div class="flex justify-between">
+                                                <span class="text-gray-600">Total Orders:</span>
+                                                <span class="font-medium text-gray-900">{{ formatNumber(regionData.total_orders) }}</span>
+                                            </div>
+                                            <div class="flex justify-between">
+                                                <span class="text-gray-600">Total Pax:</span>
+                                                <span class="font-medium text-gray-900">{{ formatNumber(regionData.total_pax) }}</span>
+                                            </div>
+                                            <div class="flex justify-between">
+                                                <span class="text-gray-600">Avg Check:</span>
+                                                <span class="font-medium text-gray-900">{{ formatCurrency(regionData.total_pax > 0 ? regionData.total_revenue / regionData.total_pax : 0) }}</span>
+                                            </div>
+                                        </div>
+                                        
+                                        <!-- Top Outlets in Region -->
+                                        <div class="mt-3 pt-3 border-t">
+                                            <h6 class="text-xs font-semibold text-gray-700 mb-2">Top Outlets:</h6>
+                                            <div class="space-y-1">
+                                                <div v-for="outlet in regionData.outlets.slice(0, 3)" :key="outlet.outlet_code" class="flex justify-between text-xs">
+                                                    <span class="text-gray-600 truncate">{{ outlet.outlet_name }}</span>
+                                                    <span class="font-medium text-gray-900">{{ formatCurrency(outlet.total_revenue) }}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Charts Row 4.2 - Revenue per Outlet by Region (Weekend/Weekday) (Full Width) -->
+                    <div class="mb-6">
+                        <!-- Revenue per Outlet by Region (Weekend/Weekday) -->
+                        <div class="bg-white rounded-lg shadow-sm border p-6">
+                            <div class="flex justify-between items-center mb-4">
+                                <h3 class="text-lg font-semibold text-gray-900">Revenue per Outlet by Region (Weekend/Weekday)</h3>
+                                <div class="text-xs text-gray-500 bg-purple-50 px-2 py-1 rounded">
+                                    <i class="fa-solid fa-calendar-week mr-1"></i>
+                                    Breakdown berdasarkan hari kerja
+                                </div>
+                            </div>
+                            <apexchart 
+                                v-if="revenuePerOutletWeekendWeekdaySeries.length > 0" 
+                                type="bar" 
+                                height="400" 
+                                :options="revenuePerOutletWeekendWeekdayOptions" 
+                                :series="revenuePerOutletWeekendWeekdaySeries" 
+                            />
+                            <div v-else class="text-center py-8 text-gray-500">
+                                <i class="fa-solid fa-calendar-week text-4xl mb-2"></i>
+                                <p>No weekend/weekday revenue data available</p>
+                            </div>
+                            
+                            <!-- Region Summary (Weekend/Weekday) -->
+                            <div v-if="dashboardData?.revenuePerOutletWeekendWeekday && Object.keys(dashboardData.revenuePerOutletWeekendWeekday).length > 0" class="mt-6">
+                                <h4 class="text-md font-semibold text-gray-800 mb-3">Region Summary (Weekend/Weekday)</h4>
+                                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                                    <div v-for="(regionData, regionName) in dashboardData.revenuePerOutletWeekendWeekday" :key="regionName" class="border rounded-lg p-4">
+                                        <div class="flex items-center justify-between mb-2">
+                                            <h5 class="font-semibold text-gray-900">{{ regionName }}</h5>
+                                            <span class="text-sm font-medium text-blue-600">
+                                                {{ formatCurrency(regionData.total_revenue) }}
+                                            </span>
+                                        </div>
+                                        
+                                        <!-- Weekend Summary -->
+                                        <div class="mb-3 p-2 bg-purple-50 rounded">
+                                            <div class="flex items-center justify-between mb-1">
+                                                <span class="text-sm font-medium text-purple-800">📅 Weekend</span>
+                                                <span class="text-sm font-semibold text-purple-600">
+                                                    {{ formatCurrency(regionData.weekend.total_revenue) }}
+                                                </span>
+                                            </div>
+                                            <div class="flex justify-between text-xs text-purple-700">
+                                                <span>{{ regionData.weekend.total_orders }} orders</span>
+                                                <span>{{ regionData.weekend.total_pax }} pax</span>
+                                            </div>
+                                        </div>
+                                        
+                                        <!-- Weekday Summary -->
+                                        <div class="mb-3 p-2 bg-blue-50 rounded">
+                                            <div class="flex items-center justify-between mb-1">
+                                                <span class="text-sm font-medium text-blue-800">📅 Weekday</span>
+                                                <span class="text-sm font-semibold text-blue-600">
+                                                    {{ formatCurrency(regionData.weekday.total_revenue) }}
+                                                </span>
+                                            </div>
+                                            <div class="flex justify-between text-xs text-blue-700">
+                                                <span>{{ regionData.weekday.total_orders }} orders</span>
+                                                <span>{{ regionData.weekday.total_pax }} pax</span>
+                                            </div>
+                                        </div>
+                                        
+                                        <!-- Total Summary -->
+                                        <div class="space-y-1 text-sm border-t pt-2">
+                                            <div class="flex justify-between">
+                                                <span class="text-gray-600">Total Outlets:</span>
+                                                <span class="font-medium text-gray-900">{{ regionData.outlets.length }}</span>
+                                            </div>
+                                            <div class="flex justify-between">
+                                                <span class="text-gray-600">Total Orders:</span>
+                                                <span class="font-medium text-gray-900">{{ formatNumber(regionData.total_orders) }}</span>
+                                            </div>
+                                            <div class="flex justify-between">
+                                                <span class="text-gray-600">Total Pax:</span>
+                                                <span class="font-medium text-gray-900">{{ formatNumber(regionData.total_pax) }}</span>
+                                            </div>
+                                            <div class="flex justify-between">
+                                                <span class="text-gray-600">Avg Check:</span>
+                                                <span class="font-medium text-gray-900">{{ formatCurrency(regionData.total_pax > 0 ? regionData.total_revenue / regionData.total_pax : 0) }}</span>
+                                            </div>
+                                        </div>
+                                        
+                                        <!-- Top Outlets in Region -->
+                                        <div class="mt-3 pt-3 border-t">
+                                            <h6 class="text-xs font-semibold text-gray-700 mb-2">Top Outlets:</h6>
+                                            <div class="space-y-1">
+                                                <div v-for="outlet in regionData.outlets.slice(0, 3)" :key="outlet.outlet_code" class="flex justify-between text-xs">
+                                                    <span class="text-gray-600 truncate">{{ outlet.outlet_name }}</span>
+                                                    <span class="font-medium text-gray-900">{{ formatCurrency(outlet.total_revenue) }}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- Charts Row 5 - Revenue per Region (3 columns) -->
                     <div class="grid grid-cols-1 xl:grid-cols-3 gap-4 mb-6">
                         <!-- Total Revenue per Region -->
@@ -2827,6 +3587,28 @@ const menuRegionChartOptions = computed(() => ({
             :date-to="filters.date_to"
             @close="closeDailyRevenueModal"
         />
+
+        <!-- Outlet Lunch/Dinner Modal -->
+        <OutletLunchDinnerModal
+            :is-open="showLunchDinnerModal"
+            :selected-outlet="selectedLunchDinnerOutlet"
+            :selected-region="selectedRegion"
+            :selected-meal-period="selectedMealPeriod"
+            :date-from="filters.date_from"
+            :date-to="filters.date_to"
+            @close="closeLunchDinnerModal"
+        />
+
+        <!-- Outlet Weekend/Weekday Modal -->
+        <OutletWeekendWeekdayModal
+            :is-open="showWeekendWeekdayModal"
+            :selected-outlet="selectedWeekendWeekdayOutlet"
+            :selected-region="selectedWeekendWeekdayRegion"
+            :selected-day-type="selectedDayType"
+            :date-from="filters.date_from"
+            :date-to="filters.date_to"
+            @close="closeWeekendWeekdayModal"
+        />
     </AppLayout>
 </template>
 
@@ -2835,7 +3617,9 @@ export default {
     components: {
         apexchart: VueApexCharts,
         OutletDetailsModal,
-        OutletDailyRevenueModal
+        OutletDailyRevenueModal,
+        OutletLunchDinnerModal,
+        OutletWeekendWeekdayModal
     }
 }
 </script>

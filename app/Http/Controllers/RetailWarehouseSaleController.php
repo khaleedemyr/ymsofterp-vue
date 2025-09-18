@@ -50,11 +50,11 @@ class RetailWarehouseSaleController extends Controller
             $query->whereDate('rws.created_at', '<=', $request->to);
         }
 
-        $sales = $query->orderByDesc('rws.created_at')->get();
+        $sales = $query->orderByDesc('rws.created_at')->paginate($request->get('per_page', 15));
 
         return Inertia::render('RetailWarehouseSale/Index', [
             'sales' => $sales,
-            'filters' => $request->only(['search', 'from', 'to'])
+            'filters' => $request->only(['search', 'from', 'to', 'per_page'])
         ]);
     }
 
@@ -505,6 +505,70 @@ class RetailWarehouseSaleController extends Controller
         $item->price = $price ? (float)$price : 0;
 
         return response()->json(['success' => true, 'item' => $item]);
+    }
+
+    public function searchItemsByName(Request $request)
+    {
+        $search = $request->search;
+        $warehouseId = $request->warehouse_id;
+
+        if (empty($search) || strlen($search) < 2) {
+            return response()->json(['success' => false, 'message' => 'Minimal 2 karakter untuk pencarian']);
+        }
+
+        $items = DB::table('items as i')
+            ->leftJoin('food_inventory_items as fii', 'i.id', '=', 'fii.item_id')
+            ->leftJoin('food_inventory_stocks as fis', function($join) use ($warehouseId) {
+                $join->on('fii.id', '=', 'fis.inventory_item_id')
+                     ->where('fis.warehouse_id', $warehouseId);
+            })
+            ->select(
+                'i.id as item_id',
+                'i.name as item_name',
+                'i.small_unit_id',
+                'i.medium_unit_id',
+                'i.large_unit_id',
+                'i.small_conversion_qty',
+                'i.medium_conversion_qty',
+                'fis.qty_small',
+                'fis.qty_medium',
+                'fis.qty_large'
+            )
+            ->where('i.name', 'like', '%' . $search . '%')
+            ->whereNotNull('fis.id') // Hanya item yang ada stoknya di warehouse
+            ->limit(10)
+            ->get();
+
+        if ($items->isEmpty()) {
+            return response()->json(['success' => false, 'message' => 'Item tidak ditemukan']);
+        }
+
+        // Get unit names for each item
+        $items->transform(function($item) {
+            $unitSmall = DB::table('units')->where('id', $item->small_unit_id)->value('name');
+            $unitMedium = DB::table('units')->where('id', $item->medium_unit_id)->value('name');
+            $unitLarge = DB::table('units')->where('id', $item->large_unit_id)->value('name');
+
+            $item->unit_small = $unitSmall;
+            $item->unit_medium = $unitMedium;
+            $item->unit_large = $unitLarge;
+
+            // Get price from item_prices with priority for region_id=1 or availability_price_type='all'
+            $price = DB::table('item_prices')
+                ->where('item_id', $item->item_id)
+                ->where(function($q) {
+                    $q->where('region_id', 1)
+                      ->orWhere('availability_price_type', 'all');
+                })
+                ->orderByRaw("CASE WHEN region_id = 1 THEN 0 WHEN availability_price_type = 'all' THEN 1 ELSE 2 END")
+                ->value('price');
+
+            $item->price = $price ? (float)$price : 0;
+
+            return $item;
+        });
+
+        return response()->json(['success' => true, 'items' => $items]);
     }
 
     public function searchCustomers(Request $request)

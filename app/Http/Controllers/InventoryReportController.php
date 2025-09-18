@@ -79,8 +79,8 @@ class InventoryReportController extends Controller
                 'all_params' => $request->all()
             ]);
             
-            // Validasi input yang diperlukan - hanya jika ada request data
-            if (!$itemId && ($from || $to || $warehouseId)) {
+            // Validasi input yang diperlukan - harus ada item_id untuk load data
+            if (!$itemId) {
                 return inertia('Inventory/StockCard', [
                     'cards' => collect([]),
                     'warehouses' => DB::table('warehouses')->select('id', 'name')->orderBy('name')->get(),
@@ -91,7 +91,7 @@ class InventoryReportController extends Controller
                         ->orderBy('items.name')
                         ->get(),
                     'saldo_awal' => null,
-                    'error' => 'Silakan pilih item terlebih dahulu'
+                    'error' => null
                 ]);
             }
             

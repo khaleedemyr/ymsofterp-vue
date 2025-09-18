@@ -4,13 +4,14 @@ import { router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 
 const props = defineProps({
-  sales: Array,
+  sales: Object, // Changed from Array to Object for pagination
   filters: Object,
 });
 
 const search = ref(props.filters?.search || '');
 const from = ref(props.filters?.from || '');
 const to = ref(props.filters?.to || '');
+const perPage = ref(props.filters?.per_page || 15);
 
 function goToCreate() {
   router.visit(route('retail-warehouse-sale.create'));
@@ -38,6 +39,7 @@ watch(
     search.value = filters?.search || '';
     from.value = filters?.from || '';
     to.value = filters?.to || '';
+    perPage.value = filters?.per_page || 15;
   },
   { immediate: true }
 );
@@ -46,7 +48,8 @@ function debouncedSearch() {
   router.get('/retail-warehouse-sale', { 
     search: search.value, 
     from: from.value, 
-    to: to.value 
+    to: to.value,
+    per_page: perPage.value
   }, { preserveState: true, replace: true });
 }
 
@@ -62,7 +65,63 @@ function clearFilters() {
   search.value = '';
   from.value = '';
   to.value = '';
+  perPage.value = 15;
   debouncedSearch();
+}
+
+function onPerPageChange() {
+  debouncedSearch();
+}
+
+function goToPage(page) {
+  router.get('/retail-warehouse-sale', { 
+    search: search.value, 
+    from: from.value, 
+    to: to.value,
+    per_page: perPage.value,
+    page: page
+  }, { preserveState: true, replace: true });
+}
+
+function getVisiblePages() {
+  const current = props.sales.current_page;
+  const last = props.sales.last_page;
+  const pages = [];
+  
+  if (last <= 7) {
+    // Show all pages if total pages <= 7
+    for (let i = 1; i <= last; i++) {
+      pages.push(i);
+    }
+  } else {
+    // Show first page
+    pages.push(1);
+    
+    if (current > 4) {
+      pages.push('...');
+    }
+    
+    // Show pages around current page
+    const start = Math.max(2, current - 1);
+    const end = Math.min(last - 1, current + 1);
+    
+    for (let i = start; i <= end; i++) {
+      if (i !== 1 && i !== last) {
+        pages.push(i);
+      }
+    }
+    
+    if (current < last - 3) {
+      pages.push('...');
+    }
+    
+    // Show last page
+    if (last > 1) {
+      pages.push(last);
+    }
+  }
+  
+  return pages;
 }
 </script>
 
@@ -81,7 +140,7 @@ function clearFilters() {
 
       <!-- Search dan Filter -->
       <div class="bg-white rounded-xl shadow-lg p-6 mb-6">
-        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+        <div class="grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
           <!-- Search -->
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-2">Cari</label>
@@ -116,6 +175,22 @@ function clearFilters() {
             />
           </div>
           
+          <!-- Per Page -->
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">Per Halaman</label>
+            <select
+              v-model="perPage"
+              @change="onPerPageChange"
+              class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="10">10</option>
+              <option value="15">15</option>
+              <option value="25">25</option>
+              <option value="50">50</option>
+              <option value="100">100</option>
+            </select>
+          </div>
+          
           <!-- Tombol Clear -->
           <div>
             <button
@@ -142,10 +217,10 @@ function clearFilters() {
             </tr>
           </thead>
           <tbody>
-            <tr v-if="sales.length === 0">
+            <tr v-if="sales.data.length === 0">
               <td colspan="7" class="text-center py-10 text-gray-400">Tidak ada data penjualan.</td>
             </tr>
-            <tr v-for="sale in sales" :key="sale.id" class="hover:bg-blue-50 transition shadow-sm">
+            <tr v-for="sale in sales.data" :key="sale.id" class="hover:bg-blue-50 transition shadow-sm">
               <td class="px-6 py-3 font-semibold">{{ sale.number }}</td>
               <td class="px-6 py-3">
                 <div>
@@ -182,6 +257,68 @@ function clearFilters() {
             </tr>
           </tbody>
         </table>
+      </div>
+
+      <!-- Pagination -->
+      <div v-if="sales.last_page > 1" class="bg-white rounded-xl shadow-lg p-4 mt-6">
+        <div class="flex flex-col sm:flex-row justify-between items-center gap-4">
+          <!-- Info Pagination -->
+          <div class="text-sm text-gray-700">
+            Menampilkan {{ sales.from || 0 }} sampai {{ sales.to || 0 }} dari {{ sales.total }} data
+          </div>
+          
+          <!-- Pagination Controls -->
+          <div class="flex items-center gap-2">
+            <!-- Previous Button -->
+            <button
+              @click="goToPage(sales.current_page - 1)"
+              :disabled="!sales.prev_page_url"
+              :class="[
+                'px-3 py-2 rounded-lg text-sm font-medium transition-colors',
+                sales.prev_page_url 
+                  ? 'bg-blue-500 text-white hover:bg-blue-600' 
+                  : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+              ]"
+            >
+              <i class="fa-solid fa-chevron-left mr-1"></i>
+              Sebelumnya
+            </button>
+            
+            <!-- Page Numbers -->
+            <div class="flex items-center gap-1">
+              <template v-for="page in getVisiblePages()" :key="page">
+                <button
+                  v-if="page !== '...'"
+                  @click="goToPage(page)"
+                  :class="[
+                    'px-3 py-2 rounded-lg text-sm font-medium transition-colors',
+                    page === sales.current_page
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  ]"
+                >
+                  {{ page }}
+                </button>
+                <span v-else class="px-2 text-gray-400">...</span>
+              </template>
+            </div>
+            
+            <!-- Next Button -->
+            <button
+              @click="goToPage(sales.current_page + 1)"
+              :disabled="!sales.next_page_url"
+              :class="[
+                'px-3 py-2 rounded-lg text-sm font-medium transition-colors',
+                sales.next_page_url 
+                  ? 'bg-blue-500 text-white hover:bg-blue-600' 
+                  : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+              ]"
+            >
+              Selanjutnya
+              <i class="fa-solid fa-chevron-right ml-1"></i>
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   </AppLayout>

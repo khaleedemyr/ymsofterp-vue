@@ -1020,12 +1020,15 @@ Route::get('/sales-outlet-dashboard', [App\Http\Controllers\SalesOutletDashboard
 Route::get('/sales-outlet-dashboard/menu-region', [App\Http\Controllers\SalesOutletDashboardController::class, 'getMenuRegionData'])->name('sales-outlet-dashboard.menu-region');
 Route::get('/sales-outlet-dashboard/outlet-details', [App\Http\Controllers\SalesOutletDashboardController::class, 'getOutletDetailsByDate'])->name('sales-outlet-dashboard.outlet-details');
 Route::get('/sales-outlet-dashboard/outlet-daily-revenue', [App\Http\Controllers\SalesOutletDashboardController::class, 'getOutletDailyRevenue'])->name('sales-outlet-dashboard.outlet-daily-revenue');
+Route::get('/sales-outlet-dashboard/outlet-lunch-dinner-detail', [App\Http\Controllers\SalesOutletDashboardController::class, 'getOutletLunchDinnerDetail'])->name('sales-outlet-dashboard.outlet-lunch-dinner-detail');
+Route::get('/sales-outlet-dashboard/outlet-weekend-weekday-detail', [App\Http\Controllers\SalesOutletDashboardController::class, 'getOutletWeekendWeekdayDetail'])->name('sales-outlet-dashboard.outlet-weekend-weekday-detail');
 Route::get('/sales-outlet-dashboard/holidays', [App\Http\Controllers\SalesOutletDashboardController::class, 'getHolidays'])->name('sales-outlet-dashboard.holidays');
 Route::get('/sales-outlet-dashboard/outlet-orders', [App\Http\Controllers\SalesOutletDashboardController::class, 'getOutletOrders'])->name('sales-outlet-dashboard.outlet-orders');
 Route::get('/sales-outlet-dashboard/bank-promo-discount-transactions', [App\Http\Controllers\SalesOutletDashboardController::class, 'getBankPromoDiscountTransactions'])->name('sales-outlet-dashboard.bank-promo-discount-transactions');
 Route::get('/sales-outlet-dashboard/export-bank-promo-discount-transactions', [App\Http\Controllers\SalesOutletDashboardController::class, 'exportBankPromoDiscountTransactions'])->name('sales-outlet-dashboard.export-bank-promo-discount-transactions');
 Route::delete('/retail-warehouse-sale/{id}', [App\Http\Controllers\RetailWarehouseSaleController::class, 'destroy'])->name('retail-warehouse-sale.destroy');
 Route::post('/retail-warehouse-sale/search-items', [App\Http\Controllers\RetailWarehouseSaleController::class, 'searchItems'])->name('retail-warehouse-sale.search-items');
+Route::post('/retail-warehouse-sale/search-items-by-name', [App\Http\Controllers\RetailWarehouseSaleController::class, 'searchItemsByName'])->name('retail-warehouse-sale.search-items-by-name');
 Route::post('/retail-warehouse-sale/search-customers', [App\Http\Controllers\RetailWarehouseSaleController::class, 'searchCustomers'])->name('retail-warehouse-sale.search-customers');
 Route::post('/retail-warehouse-sale/store-customer', [App\Http\Controllers\RetailWarehouseSaleController::class, 'storeCustomer'])->name('retail-warehouse-sale.store-customer');
 Route::get('/api/retail-warehouse-sale/item-price', [App\Http\Controllers\RetailWarehouseSaleController::class, 'getItemPrice']);
