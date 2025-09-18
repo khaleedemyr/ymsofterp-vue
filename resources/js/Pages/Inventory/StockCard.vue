@@ -46,7 +46,10 @@
           Load Data
         </button>
       </div>
-      <div v-if="!selectedItem" class="bg-yellow-50 border-l-4 border-yellow-400 text-yellow-800 p-4 rounded my-8 text-center font-semibold">
+      <div v-if="props.error" class="bg-red-50 border-l-4 border-red-400 text-red-800 p-4 rounded my-8 text-center font-semibold">
+        {{ props.error }}
+      </div>
+      <div v-else-if="!selectedItem" class="bg-yellow-50 border-l-4 border-yellow-400 text-yellow-800 p-4 rounded my-8 text-center font-semibold">
         Silakan pilih barang terlebih dahulu untuk melihat kartu stok.
       </div>
       <template v-else>
@@ -106,12 +109,33 @@
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { ref, computed, watch } from 'vue';
+import { router } from '@inertiajs/vue3';
+import { Ziggy } from '@/ziggy.js';
 import Multiselect from 'vue-multiselect';
 import 'vue-multiselect/dist/vue-multiselect.min.css';
+
+// Route helper function
+function route(name, params = {}) {
+  const routeData = Ziggy.routes[name];
+  if (!routeData) {
+    throw new Error(`Route [${name}] not found.`);
+  }
+  
+  let url = routeData.uri;
+  
+  // Replace route parameters
+  Object.keys(params).forEach(key => {
+    url = url.replace(`{${key}}`, params[key]);
+  });
+  
+  return url;
+}
 const props = defineProps({
   cards: Array,
   warehouses: Array,
-  items: Array
+  items: Array,
+  saldo_awal: Object,
+  error: String
 });
 const search = ref('');
 const perPage = ref(25);
@@ -296,6 +320,9 @@ const runningBalances = computed(() => {
 
 // Tambahkan summary saldo
 const saldoAwal = computed(() => {
+  if (props.saldo_awal) {
+    return props.saldo_awal;
+  }
   if (!selectedItem.value) return '-';
   let data = props.cards.filter(row => row.item_name === selectedItem.value.name);
   if (selectedWarehouse.value) {
@@ -346,7 +373,34 @@ const summary = computed(() => {
 
 function reloadData() {
   loadingReload.value = true
-  window.location.reload()
+  
+  // Prepare parameters
+  const params = {
+    item_id: selectedItem.value?.id || '',
+    warehouse_id: selectedWarehouse.value || '',
+    from: fromDate.value || '',
+    to: toDate.value || ''
+  }
+  
+  // Remove empty parameters
+  Object.keys(params).forEach(key => {
+    if (!params[key]) {
+      delete params[key]
+    }
+  })
+  
+  // Make request to server
+  router.get(route('inventory.stock-card'), params, {
+    preserveState: true,
+    preserveScroll: true,
+    onSuccess: () => {
+      loadingReload.value = false
+    },
+    onError: (errors) => {
+      loadingReload.value = false
+      console.error('Error loading data:', errors)
+    }
+  })
 }
 </script>
 
