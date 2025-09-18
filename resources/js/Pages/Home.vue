@@ -54,6 +54,7 @@ const showAvailableTrainingsModal = ref(false);
 // Training detail modal
 const showTrainingDetailModal = ref(false);
 const selectedTrainingDetail = ref(null);
+const refreshingTrainingDetail = ref(false);
 
 // Training check-in QR scanner
 const showTrainingCheckInModal = ref(false);
@@ -453,6 +454,46 @@ function handleTrainingInvitationClick(invitation) {
 function closeTrainingDetailModal() {
     showTrainingDetailModal.value = false;
     selectedTrainingDetail.value = null;
+}
+
+// Function to refresh training detail data
+async function refreshTrainingDetail() {
+    if (!selectedTrainingDetail.value) return;
+    
+    refreshingTrainingDetail.value = true;
+    
+    try {
+        // Reload training invitations to get fresh data
+        await loadTrainingInvitations();
+        
+        // Find the updated invitation data
+        const updatedInvitation = trainingInvitations.value.find(
+            inv => inv.schedule_id === selectedTrainingDetail.value.schedule_id
+        );
+        
+        if (updatedInvitation) {
+            // Update selected training detail with fresh data
+            selectedTrainingDetail.value = updatedInvitation;
+            
+            // Show success message
+            Swal.fire({
+                icon: 'success',
+                title: 'Data Diperbarui!',
+                text: 'Data training berhasil diperbarui',
+                timer: 2000,
+                showConfirmButton: false
+            });
+        }
+    } catch (error) {
+        console.error('Error refreshing training detail:', error);
+        Swal.fire({
+            icon: 'error',
+            title: 'Error!',
+            text: 'Gagal memperbarui data training'
+        });
+    } finally {
+        refreshingTrainingDetail.value = false;
+    }
 }
 
 // Handle session item click
@@ -901,10 +942,12 @@ function openFirstSessionItem() {
 
     console.log('Opening first session item:', firstItem, 'from session:', firstSession);
 
-    // Open the training detail modal first
-    showTrainingDetailModal.value = true;
+    // Make sure training detail modal is open
+    if (!showTrainingDetailModal.value) {
+        showTrainingDetailModal.value = true;
+    }
 
-    // Wait a bit for modal to open, then trigger the first item
+    // Wait a bit for modal to be ready, then trigger the first item
     setTimeout(() => {
         handleSessionItemClick(firstItem, firstSession);
     }, 500);
@@ -1196,6 +1239,10 @@ async function processTrainingCheckIn() {
                 if (page.props.flash?.success) {
                     checkInStatusMessage.value = page.props.flash.success;
                     
+                    // Close modal immediately
+                    closeTrainingCheckInModal();
+                    
+                    // Show success SweetAlert
                     Swal.fire({
                         icon: 'success',
                         title: 'Check-in Berhasil!',
@@ -1227,11 +1274,10 @@ async function processTrainingCheckIn() {
                         }
                     });
 
-                    // Close modal and open first session item after success
+                    // Open first session item after success
                     setTimeout(() => {
-                        closeTrainingCheckInModal();
                         openFirstSessionItem();
-                    }, 2000);
+                    }, 1000);
                 } else {
                     checkInStatusMessage.value = 'Check-in berhasil tapi tidak ada data training';
                 }
@@ -2878,11 +2924,21 @@ watch(locale, () => {
             <div class="bg-white rounded-lg p-6 w-full max-w-4xl mx-4 max-h-[90vh] overflow-y-auto" @click.stop>
                 <div class="flex items-center justify-between mb-4">
                     <h3 class="text-lg font-semibold text-slate-800">Detail Training</h3>
-                    <button @click="closeTrainingDetailModal" class="text-slate-500 hover:text-slate-700">
-                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-                        </svg>
-                    </button>
+                    <div class="flex items-center space-x-2">
+                        <button @click="refreshTrainingDetail" :disabled="refreshingTrainingDetail" class="text-slate-500 hover:text-slate-700 disabled:opacity-50 disabled:cursor-not-allowed" title="Refresh Data">
+                            <svg v-if="!refreshingTrainingDetail" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                            </svg>
+                            <svg v-else class="w-5 h-5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                            </svg>
+                        </button>
+                        <button @click="closeTrainingDetailModal" class="text-slate-500 hover:text-slate-700">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                            </svg>
+                        </button>
+                    </div>
                 </div>
 
                 <div class="space-y-4">
