@@ -76,6 +76,9 @@ class LmsCourse extends Model
         'course_type_text',
         'average_rating',
         'total_reviews',
+        'competency_names',
+        'competency_names_string',
+        'competencies_with_levels',
     ];
 
     // Relationships
@@ -147,6 +150,13 @@ class LmsCourse extends Model
     public function discussions()
     {
         return $this->hasMany(LmsDiscussion::class, 'course_id');
+    }
+
+    public function competencies()
+    {
+        return $this->belongsToMany(Competency::class, 'course_competencies', 'course_id', 'competency_id')
+                    ->withPivot('proficiency_level', 'notes')
+                    ->withTimestamps();
     }
 
     public function certificates()
@@ -620,6 +630,31 @@ class LmsCourse extends Model
     //         ->where('is_mandatory', true)
     //         ->exists();
     // }
+
+    // Competency accessors
+    public function getCompetencyNamesAttribute()
+    {
+        return $this->competencies->pluck('name')->toArray();
+    }
+
+    public function getCompetencyNamesStringAttribute()
+    {
+        return $this->competencies->pluck('name')->join(', ');
+    }
+
+    public function getCompetenciesWithLevelsAttribute()
+    {
+        return $this->competencies->map(function ($competency) {
+            return [
+                'id' => $competency->id,
+                'name' => $competency->name,
+                'category' => $competency->category,
+                'level' => $competency->level,
+                'proficiency_level' => $competency->pivot->proficiency_level,
+                'notes' => $competency->pivot->notes,
+            ];
+        });
+    }
 
     // Boot method
     protected static function boot()

@@ -172,6 +172,9 @@ Route::middleware('auth')->group(function () {
     Route::get('/api/training/history', [\App\Http\Controllers\TrainingScheduleController::class, 'getUserTrainingHistory'])->name('api.training.history');
     Route::get('/api/training/history/{historyId}', [\App\Http\Controllers\TrainingScheduleController::class, 'getTrainingHistoryDetails'])->name('api.training.history.details');
     
+    // Training Material Completion API routes
+    Route::post('/api/training/material/complete', [\App\Http\Controllers\TrainingScheduleController::class, 'markMaterialCompleted'])->name('api.training.material.complete');
+    
     // Tambahkan route untuk Maintenance Order
     Route::get('/maintenance-order', function () {
         return Inertia::render('MaintenanceOrder/index');
@@ -1387,6 +1390,10 @@ Route::get('/employee-training-report-page', [App\Http\Controllers\LmsController
     Route::get('/certificates/{certificate}/download', [App\Http\Controllers\LmsCertificateController::class, 'download'])
         ->name('certificates.download');
     
+    // Certificate Preview
+    Route::get('/certificates/{certificate}/preview', [App\Http\Controllers\LmsCertificateController::class, 'preview'])
+        ->name('certificates.preview');
+    
     // Issue certificates for a training schedule (attended participants)
     Route::post('/schedules/{schedule}/issue-certificates', [TrainingScheduleController::class, 'issueCertificates'])
         ->name('schedules.issue-certificates');
@@ -1436,6 +1443,7 @@ Route::put('/schedules/{schedule}/participants/{invitation}/mark-attended', [Tra
         Route::get('/training-notifications', [TrainingScheduleController::class, 'getTrainingNotifications'])->name('training-notifications');
         Route::get('/training-history', [TrainingScheduleController::class, 'getTrainingHistory'])->name('training-history');
         Route::put('/schedules/{id}/status', [TrainingScheduleController::class, 'updateTrainingStatus'])->name('schedules.update-status');
+        Route::post('/schedules/{id}/generate-certificates', [TrainingScheduleController::class, 'generateCertificatesForCompletedTraining'])->name('schedules.generate-certificates');
         Route::get('/schedules/{id}/reviews', [TrainingScheduleController::class, 'getTrainingReviews'])->name('schedules.reviews');
         Route::get('/schedules/{id}/trainer-ratings', [TrainingScheduleController::class, 'getTrainerRatings'])->name('schedules.trainer-ratings');
 });

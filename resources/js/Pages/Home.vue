@@ -121,6 +121,12 @@ const userOutlet = computed(() => user.outlet?.nama_outlet || 'N/A');
 const userDivisi = computed(() => user.divisi?.nama_divisi || 'N/A');
 const userLevel = computed(() => user.jabatan?.level?.nama_level || 'N/A');
 const userJabatan = computed(() => user.jabatan?.nama_jabatan || 'N/A');
+
+// Check if user is a trainer
+const isTrainer = computed(() => {
+    const jabatan = userJabatan.value.toLowerCase();
+    return jabatan.includes('trainer') || jabatan.includes('instruktur') || jabatan.includes('pengajar');
+});
 const totalNotificationsCount = computed(() => {
     const approvalCount = pendingApprovals.value.length;
     const hrdApprovalCount = pendingHrdApprovals.value.length;
@@ -417,16 +423,32 @@ function closeTrainingHistoryModal() {
     trainingHistory.value = [];
 }
 
+// Certificate functions
+const showCertificateModal = ref(false);
+const selectedCertificate = ref(null);
+
+function previewCertificate(certificate) {
+    selectedCertificate.value = certificate;
+    showCertificateModal.value = true;
+}
+
+function downloadCertificate(certificate) {
+    // Download certificate PDF
+    const downloadUrl = route('lms.certificates.download', certificate.id);
+    window.open(downloadUrl, '_blank');
+}
+
+function closeCertificateModal() {
+    showCertificateModal.value = false;
+    selectedCertificate.value = null;
+}
+
 function handleTrainingInvitationClick(invitation) {
     // Set selected training detail and show modal
     selectedTrainingDetail.value = invitation;
     showTrainingDetailModal.value = true;
 }
 
-function showAllTrainingInvitations() {
-    // Redirect to training schedules page
-    window.open('/lms/schedules', '_blank');
-}
 
 function closeTrainingDetailModal() {
     showTrainingDetailModal.value = false;
@@ -536,7 +558,7 @@ async function handleQuizItemClick(item, session) {
 }
 
 // Handle material item click
-function handleMaterialItemClick(item, session) {
+async function handleMaterialItemClick(item, session) {
     console.log('Material item clicked:', item);
     
     if (!item.material || !item.material.files || item.material.files.length === 0) {
@@ -562,6 +584,9 @@ function handleMaterialItemClick(item, session) {
     
     console.log('Primary file:', primaryFile);
     
+    // Mark material as completed when user clicks on it
+    await markMaterialAsCompleted(item, session);
+    
     // Handle different file types
     switch (primaryFile.file_type) {
         case 'pdf':
@@ -583,6 +608,55 @@ function handleMaterialItemClick(item, session) {
             // Fallback: open in new tab
             window.open(primaryFile.file_url, '_blank');
             break;
+    }
+}
+
+// Mark material as completed
+async function markMaterialAsCompleted(item, session) {
+    try {
+        console.log('Marking material as completed:', {
+            item_id: item.id,
+            material_id: item.material.id,
+            schedule_id: selectedTrainingDetail.value?.schedule_id,
+            session_id: session.id
+        });
+
+        const response = await axios.post('/api/training/material/complete', {
+            material_id: item.material.id,
+            schedule_id: selectedTrainingDetail.value?.schedule_id,
+            session_id: session.id,
+            session_item_id: item.id,
+            completion_data: {
+                file_type: item.material.primary_file?.file_type || 'unknown',
+                file_name: item.material.primary_file?.file_name || 'unknown',
+                accessed_at: new Date().toISOString()
+            }
+        });
+
+        if (response.data.success) {
+            console.log('Material marked as completed successfully:', response.data);
+            
+            // Update the item's completion status in the UI
+            item.is_completed = true;
+            item.completion_status = {
+                completed_at: response.data.data.completed_at,
+                time_spent_seconds: response.data.data.time_spent_seconds
+            };
+            
+            // Show success message (optional)
+            // Swal.fire({
+            //     icon: 'success',
+            //     title: 'Material Selesai',
+            //     text: 'Material berhasil ditandai sebagai selesai',
+            //     timer: 2000,
+            //     showConfirmButton: false
+            // });
+        } else {
+            console.error('Failed to mark material as completed:', response.data);
+        }
+    } catch (error) {
+        console.error('Error marking material as completed:', error);
+        // Don't show error to user as it's not critical for the material viewing experience
     }
 }
 
@@ -2162,13 +2236,6 @@ watch(locale, () => {
                                     </div>
                                 </div>
                             </div>
-                            
-                                <!-- Tombol untuk melihat semua training -->
-                                <div v-if="trainingInvitations.length > 3" class="text-center pt-2">
-                                    <button class="text-sm text-indigo-500 hover:text-indigo-700 font-medium">
-                                        Lihat {{ trainingInvitations.length - 3 }} training lainnya...
-                                    </button>
-                                </div>
                             </div>
                             
                             <!-- Empty State jika tidak ada training invitations -->
@@ -2180,18 +2247,12 @@ watch(locale, () => {
                                 <p class="text-gray-500">Anda belum mendapat undangan training apapun.</p>
                             </div>
                             
-                            <!-- Tombol untuk melihat semua training dan history -->
-                            <div class="text-center pt-2 space-y-2">
-                                <button v-if="trainingInvitations.length > 0" @click="showAllTrainingInvitations" class="text-sm bg-indigo-500 text-white px-3 py-1 rounded hover:bg-indigo-600 transition-colors">
-                                    <i class="fa-solid fa-graduation-cap mr-1"></i>
-                                    Lihat Semua Training ({{ trainingInvitations.length }})
+                            <!-- Tombol untuk training history -->
+                            <div class="text-center pt-2">
+                                <button @click="openTrainingHistoryModal" class="text-sm bg-gray-500 text-white px-3 py-1 rounded hover:bg-gray-600 transition-colors">
+                                    <i class="fa-solid fa-history mr-1"></i>
+                                    Training History
                                 </button>
-                                <div>
-                                    <button @click="openTrainingHistoryModal" class="text-sm bg-gray-500 text-white px-3 py-1 rounded hover:bg-gray-600 transition-colors">
-                                        <i class="fa-solid fa-history mr-1"></i>
-                                        Training History
-                                    </button>
-                                </div>
                             </div>
                         </div>
                     </div>
@@ -2345,14 +2406,14 @@ watch(locale, () => {
                     <!-- Calendar Widget -->
                     <div class="lg:col-span-1 flex">
                         <div class="transition-all duration-500 hover:shadow-3xl w-full">
-                            <CalendarWidget />
+                            <CalendarWidget :is-night="isNight" />
                         </div>
                     </div>
 
                     <!-- Notes Widget -->
                     <div class="lg:col-span-1 flex">
                         <div class="w-full">
-                            <NotesWidget />
+                            <NotesWidget :is-night="isNight" />
                         </div>
                     </div>
 
@@ -2860,13 +2921,57 @@ watch(locale, () => {
 
                                 <!-- Session Items -->
                                 <div v-if="session.items && session.items.length > 0" class="ml-6 space-y-2">
-                                    <div v-for="(item, itemIndex) in session.items" :key="item.id" 
-                                         class="flex items-center justify-between p-2 bg-white rounded border border-slate-200"
-                                         :class="{
-                                             'cursor-pointer hover:bg-slate-50': item.can_access,
-                                             'cursor-not-allowed opacity-60': !item.can_access
-                                         }"
-                                         @click="handleSessionItemClick(item, session)">
+                                    <!-- For trainers: only show materials, no interaction required -->
+                                    <div v-if="isTrainer" class="space-y-2">
+                                        <div v-for="(item, itemIndex) in session.items.filter(item => item.item_type === 'material')" :key="item.id" 
+                                             class="flex items-center justify-between p-2 bg-white rounded border border-slate-200"
+                                             :class="{
+                                                 'cursor-pointer hover:bg-slate-50': item.can_access,
+                                                 'cursor-not-allowed opacity-60': !item.can_access
+                                             }"
+                                             @click="item.can_access ? handleMaterialItemClick(item, session) : null">
+                                            <div class="flex items-center space-x-3">
+                                                <div class="w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-semibold bg-blue-500">
+                                                    <i class="fa-solid fa-file text-xs"></i>
+                                                </div>
+                                                <div>
+                                                    <div class="text-sm font-medium text-slate-800">{{ item.title }}</div>
+                                                    <div class="text-xs text-slate-600">
+                                                        Material • {{ item.estimated_duration_minutes }} menit
+                                                        <span v-if="item.is_required" class="ml-2 text-red-600">*</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div v-if="item.can_access" class="flex items-center space-x-2">
+                                                <span class="text-xs text-blue-600 font-medium">
+                                                    <i class="fa-solid fa-eye mr-1"></i>
+                                                    Lihat Materi
+                                                </span>
+                                            </div>
+                                        </div>
+                                        
+                                        <!-- Trainer notice -->
+                                        <div v-if="session.items.filter(item => item.item_type === 'material').length > 0" 
+                                             class="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                                            <div class="flex items-center gap-2">
+                                                <i class="fa-solid fa-info-circle text-blue-500"></i>
+                                                <span class="text-sm text-blue-700 font-medium">Sebagai Trainer</span>
+                                            </div>
+                                            <p class="text-xs text-blue-600 mt-1">
+                                                Anda dapat melihat materi training di atas. Tidak perlu mengikuti sesi item lainnya.
+                                            </p>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- For regular participants: show all items with full interaction -->
+                                    <div v-else>
+                                        <div v-for="(item, itemIndex) in session.items" :key="item.id" 
+                                             class="flex items-center justify-between p-2 bg-white rounded border border-slate-200"
+                                             :class="{
+                                                 'cursor-pointer hover:bg-slate-50': item.can_access,
+                                                 'cursor-not-allowed opacity-60': !item.can_access
+                                             }"
+                                             @click="handleSessionItemClick(item, session)">
                                         <div class="flex items-center space-x-3">
                                             <div class="w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-semibold"
                                                  :class="{
@@ -2890,10 +2995,21 @@ watch(locale, () => {
                                                 <i class="fa-solid fa-trophy mr-1"></i>
                                                 Selesai ({{ item.completion_status.score }}%)
                                             </span>
+                                            <!-- Material completed status -->
+                                            <span v-else-if="item.item_type === 'material' && item.is_completed && item.completion_status" 
+                                                  class="px-2 py-1 bg-green-100 text-green-800 text-xs rounded-full">
+                                                <i class="fa-solid fa-check-circle mr-1"></i>
+                                                Selesai
+                                            </span>
                                             <!-- Quiz accessible but not completed -->
                                             <span v-else-if="item.item_type === 'quiz' && item.can_access && !item.is_completed" 
                                                   class="px-2 py-1 bg-green-100 text-green-800 text-xs rounded-full">
                                                 <i class="fa-solid fa-play mr-1"></i>Mulai Quiz
+                                            </span>
+                                            <!-- Material accessible but not completed -->
+                                            <span v-else-if="item.item_type === 'material' && item.can_access && !item.is_completed" 
+                                                  class="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full">
+                                                <i class="fa-solid fa-file mr-1"></i>Buka Material
                                             </span>
                                             <!-- Other items accessible -->
                                             <span v-else-if="item.can_access" class="px-2 py-1 bg-green-100 text-green-800 text-xs rounded-full">
@@ -2904,6 +3020,7 @@ watch(locale, () => {
                                                 <i class="fa-solid fa-lock mr-1"></i>Terkunci
                                             </span>
                                         </div>
+                                    </div>
                                     </div>
                                 </div>
                             </div>
@@ -3459,6 +3576,125 @@ watch(locale, () => {
                                             <i class="fa-solid fa-star mr-2"></i>
                                             Review: {{ new Date(training.review_date).toLocaleString('id-ID') }}
                                         </div>
+                                        
+                                        <!-- Certificate Section -->
+                                        <div v-if="training.certificate" class="text-sm text-slate-600">
+                                            <i class="fa-solid fa-certificate mr-2 text-yellow-500"></i>
+                                            Sertifikat: {{ training.certificate.certificate_number }}
+                                            <div class="flex items-center gap-2 mt-1">
+                                                <button @click="previewCertificate(training.certificate)" 
+                                                        class="text-xs bg-blue-500 text-white px-2 py-1 rounded hover:bg-blue-600 transition-colors">
+                                                    <i class="fa-solid fa-eye mr-1"></i>
+                                                    Preview
+                                                </button>
+                                                <button @click="downloadCertificate(training.certificate)" 
+                                                        class="text-xs bg-green-500 text-white px-2 py-1 rounded hover:bg-green-600 transition-colors">
+                                                    <i class="fa-solid fa-download mr-1"></i>
+                                                    Download
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Training Materials Section -->
+                                    <div v-if="training.sessions && training.sessions.length > 0" class="mt-4 ml-13">
+                                        <div class="flex items-center gap-2 mb-3">
+                                            <i class="fa-solid fa-book text-blue-500"></i>
+                                            <h5 class="text-sm font-semibold text-slate-700">Materi Training</h5>
+                                        </div>
+                                        
+                                        <div class="space-y-3">
+                                            <div v-for="session in training.sessions" :key="session.id" 
+                                                 class="bg-white rounded-lg border border-slate-200 p-3">
+                                                <div class="flex items-center gap-2 mb-2">
+                                                    <div class="w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center text-white text-xs font-semibold">
+                                                        {{ session.session_number }}
+                                                    </div>
+                                                    <h6 class="text-sm font-medium text-slate-800">{{ session.session_title }}</h6>
+                                                </div>
+                                                
+                                                <!-- Session Items -->
+                                                <div v-if="session.items && session.items.length > 0" class="ml-8 space-y-2">
+                                                    <!-- For trainers: only show materials -->
+                                                    <div v-if="isTrainer">
+                                                        <div v-for="item in session.items.filter(item => item.item_type === 'material')" :key="item.id" 
+                                                             class="flex items-center justify-between p-2 bg-slate-50 rounded border border-slate-100"
+                                                             :class="{
+                                                                 'cursor-pointer hover:bg-slate-100': item.can_access,
+                                                                 'cursor-not-allowed opacity-60': !item.can_access
+                                                             }"
+                                                             @click="item.can_access ? handleMaterialItemClick(item, session) : null">
+                                                            <div class="flex items-center space-x-3">
+                                                                <div class="w-5 h-5 rounded-full flex items-center justify-center text-white text-xs font-semibold bg-blue-500">
+                                                                    <i class="fa-solid fa-file text-xs"></i>
+                                                                </div>
+                                                                <div>
+                                                                    <div class="text-sm font-medium text-slate-800">{{ item.title }}</div>
+                                                                    <div class="text-xs text-slate-600">
+                                                                        Material • {{ item.estimated_duration_minutes }} menit
+                                                                        <span v-if="item.is_required" class="ml-2 text-red-600">*</span>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                            
+                                                            <div v-if="item.can_access" class="flex items-center space-x-2">
+                                                                <span class="text-xs text-green-600 font-medium">
+                                                                    <i class="fa-solid fa-eye mr-1"></i>
+                                                                    Lihat Materi
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    
+                                                    <!-- For regular participants: show all items -->
+                                                    <div v-else>
+                                                        <div v-for="item in session.items" :key="item.id" 
+                                                             class="flex items-center justify-between p-2 bg-slate-50 rounded border border-slate-100"
+                                                             :class="{
+                                                                 'cursor-pointer hover:bg-slate-100': item.can_access && item.item_type === 'material',
+                                                                 'cursor-not-allowed opacity-60': !item.can_access
+                                                             }"
+                                                             @click="item.can_access && item.item_type === 'material' ? handleMaterialItemClick(item, session) : null">
+                                                        <div class="flex items-center space-x-3">
+                                                            <div class="w-5 h-5 rounded-full flex items-center justify-center text-white text-xs font-semibold"
+                                                                 :class="{
+                                                                     'bg-green-500': item.can_access && item.item_type === 'material',
+                                                                     'bg-blue-500': item.item_type === 'quiz',
+                                                                     'bg-purple-500': item.item_type === 'questionnaire',
+                                                                     'bg-gray-400': !item.can_access
+                                                                 }">
+                                                                <i v-if="item.item_type === 'material'" class="fa-solid fa-file text-xs"></i>
+                                                                <i v-else-if="item.item_type === 'quiz'" class="fa-solid fa-question text-xs"></i>
+                                                                <i v-else-if="item.item_type === 'questionnaire'" class="fa-solid fa-clipboard-list text-xs"></i>
+                                                                <i v-else class="fa-solid fa-circle text-xs"></i>
+                                                            </div>
+                                                            <div>
+                                                                <div class="text-sm font-medium text-slate-800">{{ item.title }}</div>
+                                                                <div class="text-xs text-slate-600">
+                                                                    {{ item.item_type }} • {{ item.estimated_duration_minutes }} menit
+                                                                    <span v-if="item.is_required" class="ml-2 text-red-600">*</span>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                        
+                                                        <div v-if="item.can_access && item.item_type === 'material'" class="flex items-center space-x-2">
+                                                            <!-- Material completed status -->
+                                                            <span v-if="item.is_completed && item.completion_status" 
+                                                                  class="px-2 py-1 bg-green-100 text-green-800 text-xs rounded-full">
+                                                                <i class="fa-solid fa-check-circle mr-1"></i>
+                                                                Selesai
+                                                            </span>
+                                                            <!-- Material not completed -->
+                                                            <span v-else class="text-xs text-green-600 font-medium">
+                                                                <i class="fa-solid fa-download mr-1"></i>
+                                                                Buka Materi
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                                 
@@ -3702,6 +3938,98 @@ watch(locale, () => {
         @hide="lightboxVisible = false"
     />
 
+    <!-- Certificate Preview Modal -->
+    <div v-if="showCertificateModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click="closeCertificateModal">
+        <div class="bg-white rounded-lg p-6 w-full max-w-5xl mx-4 max-h-[90vh] overflow-y-auto" @click.stop>
+            <div class="flex items-center justify-between mb-6">
+                <h3 class="text-xl font-semibold text-slate-800">
+                    <i class="fas fa-certificate mr-2 text-yellow-500"></i>
+                    Preview Sertifikat
+                </h3>
+                <button @click="closeCertificateModal" class="text-slate-500 hover:text-slate-700">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Certificate Preview -->
+            <div class="max-w-4xl mx-auto">
+                <div class="relative bg-white border-2 border-gray-300 shadow-lg overflow-hidden" 
+                     style="aspect-ratio: 4/3; width: 100%;">
+                    <!-- Background Image -->
+                    <img v-if="selectedCertificate?.template?.background_image" 
+                         :src="`/storage/${selectedCertificate.template.background_image}`"
+                         alt="Certificate Background"
+                         class="absolute inset-0 w-full h-full object-cover object-center">
+                    
+                    <!-- Certificate Content - Hardcoded Styling -->
+                    <div class="relative z-10 h-full flex flex-col justify-center items-center p-8">
+                        <!-- Title -->
+                        <div class="text-center mb-8">
+                            <h1 class="text-4xl font-bold text-gray-800 mb-2">
+                                SERTIFIKAT
+                            </h1>
+                            <div class="w-24 h-1 bg-blue-600 mx-auto"></div>
+                        </div>
+
+                        <!-- Certificate Text -->
+                        <div class="text-center space-y-6">
+                            <!-- Participant Name -->
+                            <div class="text-3xl font-bold text-gray-900">
+                                {{ selectedCertificate?.user?.nama_lengkap || 'John Doe' }}
+                            </div>
+
+                            <!-- Course Title -->
+                            <div class="text-xl text-gray-700">
+                                {{ selectedCertificate?.course?.title || 'Sample Training Course' }}
+                            </div>
+
+                            <!-- Completion Date -->
+                            <div class="text-lg text-gray-600">
+                                {{ selectedCertificate?.issued_at ? new Date(selectedCertificate.issued_at).toLocaleDateString('id-ID', { 
+                                    day: 'numeric', 
+                                    month: 'long', 
+                                    year: 'numeric' 
+                                }) : '18 September 2025' }}
+                            </div>
+
+                            <!-- Training Location -->
+                            <div class="text-base text-gray-600">
+                                {{ selectedCertificate?.training_location || 'Lokasi Training' }}
+                            </div>
+                        </div>
+
+                        <!-- Bottom Section -->
+                        <div class="absolute bottom-8 left-0 right-0 flex justify-between items-end px-8">
+                            <!-- Certificate Number -->
+                            <div class="text-sm text-gray-500">
+                                {{ selectedCertificate?.certificate_number || 'CERT-SAMPLE-001' }}
+                            </div>
+
+                            <!-- Instructor Name -->
+                            <div class="text-base text-gray-700">
+                                {{ selectedCertificate?.instructor_name || 'Jane Smith' }}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="flex justify-end gap-3 mt-6">
+                <button @click="downloadCertificate(selectedCertificate)" 
+                        class="inline-flex items-center px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500">
+                    <i class="fas fa-download mr-2"></i>
+                    Download PDF
+                </button>
+                <button @click="closeCertificateModal" 
+                        class="inline-flex items-center px-4 py-2 bg-gray-300 text-gray-700 text-sm font-medium rounded-md hover:bg-gray-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500">
+                    Tutup
+                </button>
+            </div>
+        </div>
+    </div>
 
 </template>
 

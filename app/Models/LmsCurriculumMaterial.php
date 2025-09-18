@@ -40,7 +40,7 @@ class LmsCurriculumMaterial extends Model
     // Relationships
     public function sessionItems()
     {
-        return $this->hasMany(LmsSessionItem::class, 'item_id')->where('item_type', 'material');
+        return $this->hasMany(LmsSessionItem::class, 'item_id');
     }
 
     public function files()

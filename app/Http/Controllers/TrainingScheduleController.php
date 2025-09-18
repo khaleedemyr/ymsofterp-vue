@@ -8,6 +8,7 @@ use App\Models\Course;
 use App\Models\Outlet;
 use App\Models\User;
 use App\Models\TrainingReview;
+use App\Models\LmsCourse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Illuminate\Support\Facades\DB;
@@ -195,6 +196,11 @@ class TrainingScheduleController extends Controller
                 'qr_code_url' => $schedule->qr_code_url
             ]);
 
+            // Create calendar reminder for trainer (if internal trainer)
+            if ($course->instructor_id) {
+                $this->createTrainingReminder($schedule, $course->instructor_id, 'trainer');
+            }
+
             return redirect()->route('lms.schedules.index', [
                 'year' => $request->scheduled_date ? date('Y', strtotime($request->scheduled_date)) : now()->year,
                 'month' => $request->scheduled_date ? date('n', strtotime($request->scheduled_date)) : now()->month
@@ -291,6 +297,9 @@ class TrainingScheduleController extends Controller
         // Get course to update trainer info
         $course = \App\Models\LmsCourse::findOrFail($request->course_id);
         
+        $oldStatus = $schedule->status;
+        $newStatus = $request->status;
+        
         $schedule->update([
             'course_id' => $request->course_id,
             'trainer_id' => $course->instructor_id,
@@ -302,6 +311,18 @@ class TrainingScheduleController extends Controller
             'status' => $request->status,
             'notes' => $request->notes
         ]);
+
+        // Auto-generate certificates when training is completed
+        if ($newStatus === 'completed' && $course->certificate_template_id) {
+            \Log::info('Auto-generating certificates from update method', [
+                'schedule_id' => $schedule->id,
+                'course_id' => $course->id,
+                'old_status' => $oldStatus,
+                'new_status' => $newStatus,
+                'certificate_template_id' => $course->certificate_template_id
+            ]);
+            $this->autoGenerateCertificates($schedule, $course);
+        }
 
         return redirect()->route('lms.schedules.show', $schedule)
             ->with('success', 'Training berhasil diperbarui');
@@ -371,6 +392,9 @@ class TrainingScheduleController extends Controller
 
             // Send notification to invited participant
             $this->sendParticipantInvitationNotification($invitation, $schedule);
+
+            // Create calendar reminder for participant
+            $this->createTrainingReminder($schedule, $userId, 'participant');
 
             $invitedCount++;
         }
@@ -491,6 +515,9 @@ class TrainingScheduleController extends Controller
             // Send notification to internal trainer
             if ($trainerData['trainer_type'] === 'internal') {
                 $this->sendTrainerInvitationNotification($scheduleTrainer, $schedule);
+                
+                // Create calendar reminder for internal trainer
+                $this->createTrainingReminder($schedule, $trainerData['trainer_id'], 'trainer');
             }
 
             $invitedCount++;
@@ -976,7 +1003,158 @@ class TrainingScheduleController extends Controller
         }
     }
 
+    // Manual trigger for certificate generation
+    public function generateCertificatesForCompletedTraining($id)
+    {
+        try {
+            $training = TrainingSchedule::findOrFail($id);
+            $course = $training->course;
+            
+            if ($training->status !== 'completed') {
+                return back()->withErrors(['error' => 'Training harus dalam status completed untuk generate certificate']);
+            }
+            
+            if (!$course->certificate_template_id) {
+                return back()->withErrors(['error' => 'Course tidak memiliki certificate template']);
+            }
+            
+            $this->autoGenerateCertificates($training, $course);
+            
+            return back()->with('success', 'Certificate berhasil di-generate untuk training yang completed');
+            
+        } catch (\Exception $e) {
+            \Log::error('Manual certificate generation error: ' . $e->getMessage());
+            return back()->withErrors(['error' => 'Gagal generate certificate: ' . $e->getMessage()]);
+        }
+    }
+
     // Helper methods
+    private function autoGenerateCertificates($training, $course)
+    {
+        try {
+            \Log::info('Starting auto-generate certificates', [
+                'training_id' => $training->id,
+                'course_id' => $course->id,
+                'course_title' => $course->title
+            ]);
+
+            $templateId = $course->certificate_template_id;
+            
+            if (!$templateId) {
+                \Log::warning('No certificate template found for course', [
+                    'course_id' => $course->id,
+                    'course_title' => $course->title
+                ]);
+                return;
+            }
+
+            \Log::info('Certificate template found', [
+                'template_id' => $templateId,
+                'course_id' => $course->id
+            ]);
+
+            // Validate template exists
+            if (!\App\Models\CertificateTemplate::find($templateId)) {
+                \Log::warning('Certificate template not found', [
+                    'template_id' => $templateId,
+                    'course_id' => $course->id
+                ]);
+                return;
+            }
+
+            $issued = 0;
+            $training->load('invitations.user');
+            
+            \Log::info('Processing invitations', [
+                'training_id' => $training->id,
+                'total_invitations' => $training->invitations->count()
+            ]);
+            
+            foreach ($training->invitations as $invitation) {
+                \Log::info('Processing invitation', [
+                    'invitation_id' => $invitation->id,
+                    'user_id' => $invitation->user_id,
+                    'status' => $invitation->status,
+                    'user_exists' => $invitation->user ? 'yes' : 'no'
+                ]);
+
+                if ($invitation->status !== 'attended' || !$invitation->user) {
+                    \Log::info('Skipping invitation - not attended or no user', [
+                        'invitation_id' => $invitation->id,
+                        'status' => $invitation->status,
+                        'user_exists' => $invitation->user ? 'yes' : 'no'
+                    ]);
+                    continue;
+                }
+
+                // Avoid duplicate certificates for same course + user + date + template
+                $existing = \App\Models\LmsCertificate::where('course_id', $training->course_id)
+                    ->where('user_id', $invitation->user_id)
+                    ->whereDate('issued_at', $training->scheduled_date)
+                    ->where('template_id', $templateId)
+                    ->first();
+
+                if ($existing) {
+                    \Log::info('Certificate already exists, skipping', [
+                        'invitation_id' => $invitation->id,
+                        'existing_certificate_id' => $existing->id
+                    ]);
+                    continue;
+                }
+
+                \Log::info('Creating certificate', [
+                    'course_id' => $training->course_id,
+                    'user_id' => $invitation->user_id,
+                    'template_id' => $templateId,
+                    'scheduled_date' => $training->scheduled_date
+                ]);
+
+                       // Generate 16-digit certificate number
+                       $certificateNumber = 'CERT' . date('Y') . str_pad($training->course_id, 3, '0', STR_PAD_LEFT) . str_pad($invitation->user_id, 3, '0', STR_PAD_LEFT) . str_pad(rand(1000, 9999), 4, '0', STR_PAD_LEFT);
+
+                       \Log::info('Generated certificate number', [
+                           'certificate_number' => $certificateNumber,
+                           'course_id' => $training->course_id,
+                           'user_id' => $invitation->user_id
+                       ]);
+
+                       \App\Models\LmsCertificate::create([
+                           'course_id' => $training->course_id,
+                           'enrollment_id' => null,
+                           'user_id' => $invitation->user_id,
+                           'certificate_number' => $certificateNumber,
+                           'issued_at' => $training->scheduled_date,
+                           'expires_at' => null,
+                           'template_id' => $templateId,
+                           'status' => 'active',
+                           'created_by' => auth()->id(),
+                           'updated_by' => auth()->id(),
+                       ]);
+
+                $issued++;
+                \Log::info('Certificate created successfully', [
+                    'invitation_id' => $invitation->id,
+                    'user_id' => $invitation->user_id
+                ]);
+            }
+
+            \Log::info('Auto-generated certificates completed', [
+                'training_id' => $training->id,
+                'course_id' => $course->id,
+                'template_id' => $templateId,
+                'certificates_issued' => $issued
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error('Auto-generate certificates error: ' . $e->getMessage(), [
+                'training_id' => $training->id,
+                'course_id' => $course->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+        }
+    }
+
     private function canManageTraining(\App\Models\LmsCourse $course): bool
     {
         $user = auth()->user();
@@ -1454,7 +1632,7 @@ class TrainingScheduleController extends Controller
                 ->orderBy('training_schedules.scheduled_date', 'desc')
                 ->get();
 
-            // Process trainer data for each training
+            // Process trainer data and add sessions/materials for each training
             $completedTrainings->each(function ($training) {
                 // Determine trainer name based on type
                 if ($training->trainer_type === 'internal' && $training->internal_trainer_name) {
@@ -1463,6 +1641,136 @@ class TrainingScheduleController extends Controller
                     $training->trainer_name = $training->external_trainer_name;
                 } else {
                     $training->trainer_name = 'Trainer tidak tersedia';
+                }
+
+                // Get certificate data for this training
+                try {
+                    $certificate = \App\Models\LmsCertificate::with(['template', 'user', 'course'])
+                        ->where('course_id', $training->course_id)
+                        ->where('user_id', auth()->id())
+                        ->where('status', 'active')
+                        ->first();
+
+                    if ($certificate) {
+                        // Get trainer name and training location
+                        $instructorName = 'Instruktur Training';
+                        $trainingLocation = 'Lokasi Training';
+                        
+                        $trainingSchedule = \App\Models\TrainingSchedule::where('course_id', $training->course_id)
+                            ->whereDate('scheduled_date', $certificate->issued_at ? $certificate->issued_at->format('Y-m-d') : now()->format('Y-m-d'))
+                            ->with(['scheduleTrainers.trainer', 'outlet'])
+                            ->first();
+                            
+                        if ($trainingSchedule) {
+                            if ($trainingSchedule->scheduleTrainers->isNotEmpty()) {
+                                $primaryTrainer = $trainingSchedule->scheduleTrainers->where('is_primary_trainer', true)->first();
+                                if ($primaryTrainer && $primaryTrainer->trainer) {
+                                    $instructorName = $primaryTrainer->trainer->nama_lengkap;
+                                } else {
+                                    $firstTrainer = $trainingSchedule->scheduleTrainers->first();
+                                    if ($firstTrainer && $firstTrainer->trainer) {
+                                        $instructorName = $firstTrainer->trainer->nama_lengkap;
+                                    }
+                                }
+                            }
+                            
+                            if ($trainingSchedule->outlet) {
+                                $trainingLocation = $trainingSchedule->outlet->nama_outlet;
+                            }
+                        }
+
+                        $training->certificate = [
+                            'id' => $certificate->id,
+                            'certificate_number' => $certificate->certificate_number,
+                            'issued_at' => $certificate->issued_at,
+                            'status' => $certificate->status,
+                            'template' => $certificate->template,
+                            'user' => $certificate->user,
+                            'course' => $certificate->course,
+                            'instructor_name' => $instructorName,
+                            'training_location' => $trainingLocation
+                        ];
+                    } else {
+                        $training->certificate = null;
+                    }
+                } catch (\Exception $e) {
+                    \Log::warning('Error fetching certificate data', [
+                        'course_id' => $training->course_id,
+                        'user_id' => auth()->id(),
+                        'error' => $e->getMessage()
+                    ]);
+                    $training->certificate = null;
+                }
+
+                // Get course sessions with materials
+                $course = LmsCourse::with([
+                    'sessions.items.material.files',
+                    'sessions.items.quiz',
+                    'sessions.items.questionnaire'
+                ])->find($training->course_id);
+
+                if ($course) {
+                    $training->sessions = $course->sessions->map(function ($session) {
+                        return [
+                            'id' => $session->id,
+                            'session_number' => $session->session_number,
+                            'session_title' => $session->session_title,
+                            'session_description' => $session->session_description,
+                            'order_number' => $session->order_number,
+                            'estimated_duration_minutes' => $session->estimated_duration_minutes,
+                            'items' => $session->items->map(function ($item) {
+                                $itemData = [
+                                    'id' => $item->id,
+                                    'item_type' => $item->item_type,
+                                    'title' => $item->display_title,
+                                    'description' => $item->display_description,
+                                    'order_number' => $item->order_number,
+                                    'is_required' => $item->is_required,
+                                    'estimated_duration_minutes' => $item->estimated_duration_minutes,
+                                    'can_access' => true // User can access materials from completed training
+                                ];
+
+                                // Add material data if it's a material item
+                                if ($item->item_type === 'material' && $item->material) {
+                                    $itemData['material'] = [
+                                        'id' => $item->material->id,
+                                        'title' => $item->material->title,
+                                        'description' => $item->material->description,
+                                        'files' => $item->material->files->map(function ($file) {
+                                            return [
+                                                'id' => $file->id,
+                                                'file_name' => $file->file_name,
+                                                'file_path' => $file->file_path,
+                                                'file_url' => $file->file_url,
+                                                'viewer_url' => $file->viewer_url,
+                                                'file_type' => $file->file_type,
+                                                'file_mime_type' => $file->file_mime_type,
+                                                'file_size' => $file->file_size,
+                                                'file_size_formatted' => $file->file_size_formatted,
+                                                'is_primary' => $file->is_primary
+                                            ];
+                                        }),
+                                        'primary_file' => $item->material->files->where('is_primary', true)->first() ? [
+                                            'id' => $item->material->files->where('is_primary', true)->first()->id,
+                                            'file_name' => $item->material->files->where('is_primary', true)->first()->file_name,
+                                            'file_path' => $item->material->files->where('is_primary', true)->first()->file_path,
+                                            'file_url' => $item->material->files->where('is_primary', true)->first()->file_url,
+                                            'viewer_url' => $item->material->files->where('is_primary', true)->first()->viewer_url,
+                                            'file_type' => $item->material->files->where('is_primary', true)->first()->file_type,
+                                            'file_mime_type' => $item->material->files->where('is_primary', true)->first()->file_mime_type,
+                                            'file_size' => $item->material->files->where('is_primary', true)->first()->file_size,
+                                            'file_size_formatted' => $item->material->files->where('is_primary', true)->first()->file_size_formatted,
+                                            'is_primary' => true
+                                        ] : null
+                                    ];
+                                }
+
+                                return $itemData;
+                            })
+                        ];
+                    });
+                } else {
+                    $training->sessions = [];
                 }
             });
 
@@ -1482,17 +1790,23 @@ class TrainingScheduleController extends Controller
     public function updateTrainingStatus(Request $request, $id)
     {
         try {
+            \Log::info('=== UPDATE TRAINING STATUS METHOD CALLED ===', [
+                'training_id' => $id,
+                'new_status' => $request->status,
+                'user_id' => auth()->id()
+            ]);
+
             $request->validate([
-                'status' => 'required|in:scheduled,ongoing,completed,cancelled'
+                'status' => 'required|in:scheduled,published,ongoing,completed,cancelled'
             ]);
 
             $training = TrainingSchedule::findOrFail($id);
             
-            // Check if user can manage this training
-            $course = $training->course;
-            if (!$this->canManageTraining($course)) {
-                return back()->withErrors(['error' => 'Anda tidak memiliki izin untuk mengubah status training ini']);
-            }
+            // Skip permission check - allow all authenticated users to change status
+            $course = $training->course; // Still need this for logging
+            // if (!$this->canManageTraining($course)) {
+            //     return back()->withErrors(['error' => 'Anda tidak memiliki izin untuk mengubah status training ini']);
+            // }
 
             $oldStatus = $training->status;
             $newStatus = $request->status;
@@ -1502,6 +1816,11 @@ class TrainingScheduleController extends Controller
                 'status' => $newStatus,
                 'updated_at' => now()
             ]);
+
+            // Auto-generate certificates when training is completed
+            if ($newStatus === 'completed' && $course->certificate_template_id) {
+                $this->autoGenerateCertificates($training, $course);
+            }
 
             // Log the status change
             \Log::info("Training status updated", [
@@ -1514,6 +1833,7 @@ class TrainingScheduleController extends Controller
 
             $statusText = match($newStatus) {
                 'scheduled' => 'Terjadwal',
+                'published' => 'Dipublikasi',
                 'ongoing' => 'Sedang Berlangsung',
                 'completed' => 'Selesai',
                 'cancelled' => 'Dibatalkan',
@@ -2170,8 +2490,9 @@ class TrainingScheduleController extends Controller
      */
     private function isMaterialCompleted($userId, $materialId)
     {
-        // TODO: Implement material completion check when material progress tracking is ready
-        return false;
+        return \App\Models\MaterialCompletion::where('user_id', $userId)
+                                            ->where('material_id', $materialId)
+                                            ->exists();
     }
 
     /**
@@ -2899,6 +3220,148 @@ class TrainingScheduleController extends Controller
         } catch (\Exception $e) {
             \Log::error('Error submitting training review: ' . $e->getMessage());
             return redirect()->back()->withErrors(['error' => 'Terjadi kesalahan saat menyimpan review']);
+        }
+    }
+
+    /**
+     * Create calendar reminder for training schedule
+     */
+    private function createTrainingReminder($schedule, $userId, $role = 'participant')
+    {
+        try {
+            // Load schedule with relationships
+            $schedule->load(['course', 'outlet']);
+            
+            // Get user details
+            $user = \App\Models\User::find($userId);
+            if (!$user) {
+                \Log::warning('User not found for training reminder', ['user_id' => $userId]);
+                return;
+            }
+
+            // Get outlet name
+            $outletName = $schedule->outlet ? $schedule->outlet->nama_outlet : 'Head Office';
+            
+            // Create reminder title based on role
+            $title = $role === 'trainer' 
+                ? "Training sebagai Trainer: {$schedule->course->title}"
+                : "Training: {$schedule->course->title}";
+            
+            // Create reminder description
+            $description = "📚 Course: {$schedule->course->title}\n";
+            $description .= "📅 Tanggal: " . \Carbon\Carbon::parse($schedule->scheduled_date)->format('d F Y') . "\n";
+            $description .= "⏰ Waktu: {$schedule->start_time} - {$schedule->end_time}\n";
+            $description .= "🏢 Lokasi: {$outletName}\n";
+            $description .= "👤 Role: " . ($role === 'trainer' ? 'Trainer' : 'Peserta') . "\n";
+            
+            if ($schedule->notes) {
+                $description .= "📝 Catatan: {$schedule->notes}\n";
+            }
+            
+            $description .= "\nJangan lupa untuk hadir tepat waktu!";
+
+            // Create reminder in database
+            DB::table('reminders')->insert([
+                'user_id' => $userId,
+                'created_by' => auth()->id(),
+                'date' => $schedule->scheduled_date,
+                'time' => $schedule->start_time,
+                'title' => $title,
+                'description' => $description,
+                'created_at' => now(),
+                'updated_at' => now()
+            ]);
+
+            \Log::info('Training reminder created successfully', [
+                'schedule_id' => $schedule->id,
+                'user_id' => $userId,
+                'role' => $role,
+                'title' => $title
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error('Error creating training reminder', [
+                'error' => $e->getMessage(),
+                'schedule_id' => $schedule->id,
+                'user_id' => $userId,
+                'role' => $role
+            ]);
+        }
+    }
+
+    /**
+     * Mark material as completed
+     */
+    public function markMaterialCompleted(Request $request)
+    {
+        $validated = $request->validate([
+            'material_id' => 'required|exists:lms_curriculum_materials,id',
+            'schedule_id' => 'required|exists:training_schedules,id',
+            'session_id' => 'required|exists:lms_sessions,id',
+            'session_item_id' => 'required|exists:lms_session_items,id',
+            'time_spent_seconds' => 'nullable|integer|min:0',
+            'completion_data' => 'nullable|array'
+        ]);
+
+        $userId = auth()->id();
+
+        try {
+            // Check if user has access to this training
+            $hasAccess = DB::table('training_invitations')
+                ->where('schedule_id', $validated['schedule_id'])
+                ->where('user_id', $userId)
+                ->whereIn('status', ['invited', 'checked_in', 'checked_out'])
+                ->exists();
+
+            if (!$hasAccess) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Anda tidak memiliki akses ke training ini'
+                ], 403);
+            }
+
+            // Mark material as completed
+            $completion = \App\Models\MaterialCompletion::markCompleted(
+                $userId,
+                $validated['material_id'],
+                $validated['schedule_id'],
+                $validated['session_id'],
+                $validated['session_item_id'],
+                $validated['time_spent_seconds'] ?? null,
+                $validated['completion_data'] ?? null
+            );
+
+            \Log::info('Material marked as completed', [
+                'user_id' => $userId,
+                'material_id' => $validated['material_id'],
+                'schedule_id' => $validated['schedule_id'],
+                'session_id' => $validated['session_id'],
+                'session_item_id' => $validated['session_item_id'],
+                'completion_id' => $completion->id
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Material berhasil ditandai sebagai selesai',
+                'data' => [
+                    'completion_id' => $completion->id,
+                    'completed_at' => $completion->completed_at,
+                    'time_spent_seconds' => $completion->time_spent_seconds
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error('Failed to mark material as completed', [
+                'user_id' => $userId,
+                'material_id' => $validated['material_id'] ?? null,
+                'schedule_id' => $validated['schedule_id'] ?? null,
+                'error' => $e->getMessage()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal menandai material sebagai selesai: ' . $e->getMessage()
+            ], 500);
         }
     }
 

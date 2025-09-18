@@ -76,9 +76,9 @@
           </div>
         </div>
 
-        <div class="grid grid-cols-1 xl:grid-cols-3 gap-8">
+        <div class="space-y-8">
           <!-- Course Content -->
-          <div class="xl:col-span-2 space-y-8">
+          <div class="space-y-8">
             <!-- Course Sessions -->
             <div class="backdrop-blur-xl bg-gradient-to-br from-white/10 via-purple-500/5 to-blue-500/5 border border-white/20 rounded-3xl shadow-2xl overflow-hidden">
               <div class="p-8 border-b border-white/20 bg-gradient-to-r from-blue-600/20 via-purple-600/20 to-pink-600/20">
@@ -465,12 +465,8 @@
               </div>
             </div>
 
-          </div>
-
-          <!-- Sidebar -->
-          <div class="xl:col-span-1 space-y-6">
-            <!-- Course Info Card -->
-            <div class="backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl shadow-2xl p-6 w-full">
+            <!-- Course Info Section -->
+            <div class="backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl shadow-2xl p-6">
               <h4 class="text-xl font-bold text-white drop-shadow-lg mb-6">Informasi Training</h4>
               <div class="space-y-5">
                 <div class="flex items-center justify-between py-2">
@@ -630,11 +626,31 @@
                     <span class="text-white/90 text-sm font-medium">{{ course.target_outlet_names }}</span>
                   </div>
                 </div>
+
+                <!-- Competencies Section -->
+                <div v-if="course.competencies && course.competencies.length > 0" class="border-t border-white/20 pt-5">
+                  <div class="flex items-center justify-between mb-4">
+                    <div class="flex items-center space-x-2">
+                      <i class="fas fa-star text-yellow-400"></i>
+                      <span class="text-white/70 font-semibold">Kompetensi</span>
+                    </div>
+                    <span class="text-xs px-3 py-1.5 rounded-full bg-yellow-500/20 text-yellow-200 border border-yellow-500/30 font-medium">
+                      {{ course.competencies.length }} Kompetensi
+                    </span>
+                  </div>
+                  <div class="space-y-3">
+                    <div v-for="competency in course.competencies" :key="competency.id" 
+                         class="flex items-center space-x-3 px-4 py-3 bg-yellow-500/10 border border-yellow-500/20 rounded-lg hover:bg-yellow-500/15 transition-all duration-300 hover:scale-[1.02]">
+                      <div class="w-2.5 h-2.5 bg-yellow-400 rounded-full"></div>
+                      <span class="text-white/90 text-sm font-medium">{{ competency.name }}</span>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
 
-           </div>
-         </div>
+          </div>
+        </div>
        
     
 

@@ -1,19 +1,20 @@
 <template>
-    <div class="bg-white/95 backdrop-blur-sm rounded-lg shadow-lg border border-slate-200 p-4">
+    <div class="backdrop-blur-sm rounded-lg shadow-lg border p-4" 
+         :class="isNight ? 'bg-slate-800/95 border-slate-600/50' : 'bg-white/95 border-slate-200'">
         <!-- Calendar Header -->
         <div class="flex items-center justify-between mb-4">
-            <h3 class="text-lg font-semibold text-slate-700">Kalender</h3>
+            <h3 class="text-lg font-semibold" :class="isNight ? 'text-white' : 'text-slate-700'">Kalender</h3>
             <div class="flex items-center gap-2">
-                <button @click="previousMonth" class="p-1 hover:bg-slate-100 rounded">
-                    <svg class="w-4 h-4 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <button @click="previousMonth" class="p-1 rounded" :class="isNight ? 'hover:bg-slate-700' : 'hover:bg-slate-100'">
+                    <svg class="w-4 h-4" :class="isNight ? 'text-slate-300' : 'text-slate-600'" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
                     </svg>
                 </button>
-                <span class="text-sm font-medium text-slate-700 min-w-[120px] text-center">
+                <span class="text-sm font-medium min-w-[120px] text-center" :class="isNight ? 'text-slate-200' : 'text-slate-700'">
                     {{ currentMonthName }} {{ currentYear }}
                 </span>
-                <button @click="nextMonth" class="p-1 hover:bg-slate-100 rounded">
-                    <svg class="w-4 h-4 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <button @click="nextMonth" class="p-1 rounded" :class="isNight ? 'hover:bg-slate-700' : 'hover:bg-slate-100'">
+                    <svg class="w-4 h-4" :class="isNight ? 'text-slate-300' : 'text-slate-600'" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
                     </svg>
                 </button>
@@ -22,7 +23,7 @@
 
         <!-- Calendar Grid -->
         <div class="grid grid-cols-7 gap-1 mb-2">
-            <div v-for="day in weekDays" :key="day" class="text-center text-xs font-medium text-slate-500 py-1">
+            <div v-for="day in weekDays" :key="day" class="text-center text-xs font-medium py-1" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
                 {{ day }}
             </div>
         </div>
@@ -32,12 +33,12 @@
                  @click="selectDate(day)"
                  :class="[
                      'relative p-2 text-center text-sm cursor-pointer rounded transition-colors',
-                     day.isCurrentMonth ? 'text-slate-700' : 'text-slate-400',
-                     day.isToday ? 'bg-blue-100 text-blue-700 font-semibold' : '',
+                     day.isCurrentMonth ? (isNight ? 'text-slate-200' : 'text-slate-700') : (isNight ? 'text-slate-500' : 'text-slate-400'),
+                     day.isToday ? (isNight ? 'bg-blue-600 text-white font-semibold' : 'bg-blue-100 text-blue-700 font-semibold') : '',
                      day.isSelected ? 'bg-blue-500 text-white' : '',
-                     day.isHoliday ? 'bg-red-100 text-red-700' : '',
-                     day.hasReminder && !day.isToday && !day.isSelected && !day.isHoliday ? 'bg-green-50 border-2 border-green-300 text-green-700 font-medium' : '',
-                     day.isCurrentMonth && !day.isToday && !day.isSelected && !day.isHoliday && !day.hasReminder ? 'hover:bg-slate-100' : ''
+                     day.isHoliday ? (isNight ? 'bg-red-600 text-white' : 'bg-red-100 text-red-700') : '',
+                     day.hasReminder && !day.isToday && !day.isSelected && !day.isHoliday ? (isNight ? 'bg-green-600 border-2 border-green-400 text-white font-medium' : 'bg-green-50 border-2 border-green-300 text-green-700 font-medium') : '',
+                     day.isCurrentMonth && !day.isToday && !day.isSelected && !day.isHoliday && !day.hasReminder ? (isNight ? 'hover:bg-slate-700' : 'hover:bg-slate-100') : ''
                  ]">
                 {{ day.date }}
                 
@@ -50,9 +51,9 @@
         </div>
 
         <!-- Selected Date Info -->
-        <div v-if="selectedDate" class="mt-4 p-3 bg-slate-50 rounded-lg">
+        <div v-if="selectedDate" class="mt-4 p-3 rounded-lg" :class="isNight ? 'bg-slate-700/50' : 'bg-slate-50'">
             <div class="flex items-center justify-between mb-2">
-                <h4 class="font-medium text-slate-700">
+                <h4 class="font-medium" :class="isNight ? 'text-slate-200' : 'text-slate-700'">
                     {{ formatSelectedDate(selectedDate) }}
                 </h4>
                 <button @click="showReminderModal = true" class="text-xs bg-blue-500 text-white px-2 py-1 rounded hover:bg-blue-600">
@@ -61,7 +62,7 @@
             </div>
             
             <!-- Holiday Info -->
-            <div v-if="selectedDateHoliday" class="mb-2 p-2 bg-red-100 rounded text-sm text-red-700">
+            <div v-if="selectedDateHoliday" class="mb-2 p-2 rounded text-sm" :class="isNight ? 'bg-red-600/20 text-red-300' : 'bg-red-100 text-red-700'">
                 <strong>Hari Libur:</strong> {{ selectedDateHoliday.keterangan }}
             </div>
             
@@ -69,11 +70,12 @@
             <div v-if="selectedDateReminders.length > 0" class="space-y-1">
                 <div v-for="reminder in selectedDateReminders" :key="reminder.id" 
                      @click="openReminderDetail(reminder)"
-                     class="flex items-center justify-between p-2 bg-blue-50 rounded text-sm cursor-pointer hover:bg-blue-100 transition-colors">
+                     class="flex items-center justify-between p-2 rounded text-sm cursor-pointer transition-colors"
+                     :class="isNight ? 'bg-blue-600/20 hover:bg-blue-600/30' : 'bg-blue-50 hover:bg-blue-100'">
                     <div class="flex flex-col">
-                        <span class="text-blue-700 font-medium">{{ reminder.title }}</span>
-                        <span v-if="reminder.time" class="text-blue-600 text-xs">{{ formatDisplayTime(reminder.time) }}</span>
-                        <span v-if="reminder.created_by_name" class="text-blue-500 text-xs">
+                        <span class="font-medium" :class="isNight ? 'text-blue-300' : 'text-blue-700'">{{ reminder.title }}</span>
+                        <span v-if="reminder.time" class="text-xs" :class="isNight ? 'text-blue-400' : 'text-blue-600'">{{ formatDisplayTime(reminder.time) }}</span>
+                        <span v-if="reminder.created_by_name" class="text-xs" :class="isNight ? 'text-blue-500' : 'text-blue-500'">
                             Oleh: {{ reminder.created_by_name }}
                         </span>
                     </div>
@@ -335,6 +337,14 @@
 import { ref, computed, onMounted, watch, onUnmounted } from 'vue';
 import axios from 'axios';
 import Multiselect from '@vueform/multiselect';
+
+// Props
+const props = defineProps({
+    isNight: {
+        type: Boolean,
+        default: false
+    }
+});
 
 const currentDate = ref(new Date());
 const selectedDate = ref(null);

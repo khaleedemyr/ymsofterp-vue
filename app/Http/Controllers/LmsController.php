@@ -110,7 +110,7 @@ class LmsController extends Controller
             'status' => $user->status
         ]);
 
-        $query = LmsCourse::with(['category', 'instructor.jabatan.divisi', 'instructor.jabatan.level', 'instructor.divisi', 'targetDivisions'])
+        $query = LmsCourse::with(['category', 'instructor.jabatan.divisi', 'instructor.jabatan.level', 'instructor.divisi', 'targetDivisions', 'competencies'])
             ->where('status', 'published');
 
         // DEBUG: Log total courses before filtering
@@ -293,6 +293,12 @@ class LmsController extends Controller
             'questionnaires_count' => $availableQuestionnaires->count()
         ]);
 
+        // Get all competencies for the form
+        $competencies = \App\Models\Competency::active()->orderBy('category')->orderBy('name')->get();
+
+        // Get certificate templates for the form
+        $certificateTemplates = \App\Models\CertificateTemplate::where('status', 'active')->orderBy('name')->get(['id', 'name']);
+
         return Inertia::render('Lms/Courses', [
             'courses' => $courses,
             'categories' => $categories,
@@ -303,6 +309,8 @@ class LmsController extends Controller
             'user' => auth()->user(),
             'availableQuizzes' => $availableQuizzes,
             'availableQuestionnaires' => $availableQuestionnaires,
+            'competencies' => $competencies,
+            'certificateTemplates' => $certificateTemplates,
         ]);
     }
 
@@ -520,7 +528,11 @@ class LmsController extends Controller
                 // 'requirements' => 'nullable|array', // REMOVED - requirements field removed
                 // 'requirements.*' => 'string|max:500', // REMOVED - requirements field removed
                 'certificate_template_id' => 'nullable|exists:certificate_templates,id',
-                'thumbnail' => 'nullable|image|mimes:jpeg,png,jpg|max:2048'
+                'thumbnail' => 'nullable|image|mimes:jpeg,png,jpg|max:2048',
+                'competencies' => 'nullable|array',
+                'competencies.*.competency_id' => 'required|exists:competencies,id',
+                'new_competencies' => 'nullable|array',
+                'new_competencies.*.name' => 'required|string|max:255'
             ]);
             
             \Log::info('=== VALIDATION COMPLETED SUCCESSFULLY ===');
@@ -765,6 +777,46 @@ class LmsController extends Controller
             if (isset($validated['target_outlet_ids']) && !empty($validated['target_outlet_ids'])) {
                 \Log::info('Syncing target outlets:', $validated['target_outlet_ids']);
                 $course->targetOutlets()->sync($validated['target_outlet_ids']);
+            }
+
+            // Handle new competencies first
+            $newCompetencyIds = [];
+            if (isset($validated['new_competencies']) && !empty($validated['new_competencies'])) {
+                \Log::info('Creating new competencies:', $validated['new_competencies']);
+                foreach ($validated['new_competencies'] as $newCompetency) {
+                    $competency = \App\Models\Competency::create([
+                        'name' => $newCompetency['name'],
+                        'description' => null,
+                        'category' => null,
+                        'level' => 'beginner',
+                        'is_active' => true,
+                    ]);
+                    $newCompetencyIds[] = $competency->id;
+                }
+            }
+
+            // Sync competencies for many-to-many relationship
+            $competencyData = [];
+            
+            // Add existing competencies
+            if (isset($validated['competencies']) && !empty($validated['competencies'])) {
+                \Log::info('Syncing existing competencies:', $validated['competencies']);
+                foreach ($validated['competencies'] as $competency) {
+                    $competencyData[$competency['competency_id']] = [];
+                }
+            }
+            
+            // Add new competencies
+            if (!empty($validated['new_competencies'])) {
+                foreach ($validated['new_competencies'] as $index => $newCompetency) {
+                    if (isset($newCompetencyIds[$index])) {
+                        $competencyData[$newCompetencyIds[$index]] = [];
+                    }
+                }
+            }
+            
+            if (!empty($competencyData)) {
+                $course->competencies()->sync($competencyData);
             }
 
             // Create sessions with items (new flexible structure)
@@ -1101,7 +1153,7 @@ class LmsController extends Controller
             $query->orderBy('order_number')->with(['items' => function ($q) {
                 $q->orderBy('order_number');
             }]);
-        }, 'targetJabatans', 'quizzes', 'questionnaires']);
+        }, 'targetJabatans', 'quizzes', 'questionnaires', 'competencies']);
         
         // Load material files for material type items using new files relationship
         foreach ($course->sessions as $session) {
@@ -1446,7 +1498,11 @@ class LmsController extends Controller
             // 'requirements' => 'nullable|array', // REMOVED - requirements field removed
             // 'requirements.*' => 'string|max:500', // REMOVED - requirements field removed
             'certificate_template_id' => 'nullable|exists:certificate_templates,id',
-            'thumbnail' => 'nullable|image|mimes:jpeg,png,jpg|max:2048'
+            'thumbnail' => 'nullable|image|mimes:jpeg,png,jpg|max:2048',
+            'competencies' => 'nullable|array',
+            'competencies.*.competency_id' => 'required|exists:competencies,id',
+            'new_competencies' => 'nullable|array',
+            'new_competencies.*.name' => 'required|string|max:255'
         ]);
 
         // Custom validation: At least one target must be selected
@@ -1494,6 +1550,46 @@ class LmsController extends Controller
                 $course->targetOutlets()->sync($validated['target_outlet_ids']);
             } else {
                 $course->targetOutlets()->detach();
+            }
+
+            // Handle new competencies first
+            $newCompetencyIds = [];
+            if (isset($validated['new_competencies']) && !empty($validated['new_competencies'])) {
+                foreach ($validated['new_competencies'] as $newCompetency) {
+                    $competency = \App\Models\Competency::create([
+                        'name' => $newCompetency['name'],
+                        'description' => null,
+                        'category' => null,
+                        'level' => 'beginner',
+                        'is_active' => true,
+                    ]);
+                    $newCompetencyIds[] = $competency->id;
+                }
+            }
+
+            // Sync competencies for many-to-many relationship
+            $competencyData = [];
+            
+            // Add existing competencies
+            if (isset($validated['competencies']) && !empty($validated['competencies'])) {
+                foreach ($validated['competencies'] as $competency) {
+                    $competencyData[$competency['competency_id']] = [];
+                }
+            }
+            
+            // Add new competencies
+            if (!empty($validated['new_competencies'])) {
+                foreach ($validated['new_competencies'] as $index => $newCompetency) {
+                    if (isset($newCompetencyIds[$index])) {
+                        $competencyData[$newCompetencyIds[$index]] = [];
+                    }
+                }
+            }
+            
+            if (!empty($competencyData)) {
+                $course->competencies()->sync($competencyData);
+            } else {
+                $course->competencies()->detach();
             }
 
             // Handle curriculum (lessons) - REMOVED - using sessions instead
@@ -2237,7 +2333,7 @@ class LmsController extends Controller
 
             // Get all published courses
             $allCourses = LmsCourse::where('status', 'published')
-                ->with(['targetDivision', 'targetDivisions', 'category'])
+                ->with(['targetDivision', 'targetDivisions', 'category', 'competencies'])
                 ->get();
 
             \Log::info('Found published courses', ['count' => $allCourses->count()]);
@@ -2363,7 +2459,10 @@ class LmsController extends Controller
                             ? round(($completedCourses->count() / ($remainingAvailableCourses->count() + $completedCourses->count())) * 100, 1)
                             : 0
                     ],
-                    'completed_trainings' => $completedTrainings->map(function($training) {
+                    'completed_trainings' => $completedTrainings->map(function($training) use ($allCourses) {
+                        // Find the course to get competencies
+                        $course = $allCourses->firstWhere('id', $training->course_id);
+                        
                         // Determine trainer name
                         $trainerName = null;
                         if ($training->trainer_type === 'internal' && $training->internal_trainer_name) {
@@ -2384,6 +2483,12 @@ class LmsController extends Controller
                             'end_time' => $training->end_time,
                             'check_in_time' => $training->check_in_time,
                             'check_out_time' => $training->check_out_time,
+                            'competencies' => $course ? $course->competencies->map(function($competency) {
+                                return [
+                                    'id' => $competency->id,
+                                    'name' => $competency->name
+                                ];
+                            })->toArray() : [],
                             'trainer_info' => [
                                 'name' => $trainerName,
                                 'type' => $training->trainer_type,
@@ -2406,6 +2511,12 @@ class LmsController extends Controller
                             'difficulty_level' => $course->difficulty_level,
                             'type' => $course->type,
                             'course_type' => $course->course_type,
+                            'competencies' => $course->competencies->map(function($competency) {
+                                return [
+                                    'id' => $competency->id,
+                                    'name' => $competency->name
+                                ];
+                            })->toArray(),
                             'category' => $course->category ? [
                                 'id' => $course->category->id,
                                 'name' => $course->category->name

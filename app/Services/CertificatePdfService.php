@@ -57,54 +57,98 @@ class CertificatePdfService
 
     private function getCertificateData(LmsCertificate $certificate)
     {
+        // Get trainer name from training schedule
+        $instructorName = 'Instruktur Training'; // Default value
+        
+        // Try to get trainer and location from training schedule
+        $trainingSchedule = \App\Models\TrainingSchedule::where('course_id', $certificate->course_id)
+            ->whereDate('scheduled_date', $certificate->issued_at ? $certificate->issued_at->format('Y-m-d') : now()->format('Y-m-d'))
+            ->with(['scheduleTrainers.trainer', 'outlet'])
+            ->first();
+            
+        if ($trainingSchedule && $trainingSchedule->scheduleTrainers->isNotEmpty()) {
+            $primaryTrainer = $trainingSchedule->scheduleTrainers->where('is_primary_trainer', true)->first();
+            if ($primaryTrainer && $primaryTrainer->trainer) {
+                $instructorName = $primaryTrainer->trainer->nama_lengkap;
+            } else {
+                // If no primary trainer, get the first trainer
+                $firstTrainer = $trainingSchedule->scheduleTrainers->first();
+                if ($firstTrainer && $firstTrainer->trainer) {
+                    $instructorName = $firstTrainer->trainer->nama_lengkap;
+                }
+            }
+        }
+        
+        // Get training location from outlet
+        $trainingLocation = 'Lokasi Training'; // Default value
+        if ($trainingSchedule && $trainingSchedule->outlet) {
+            $trainingLocation = $trainingSchedule->outlet->nama_outlet;
+        }
+
         return [
             'participant_name' => $certificate->user->nama_lengkap ?? 'Unknown',
             'course_title' => $certificate->course->title ?? 'Unknown Course',
             'completion_date' => $certificate->issued_at ? $certificate->issued_at->format('d F Y') : date('d F Y'),
             'certificate_number' => $certificate->certificate_number,
-            'instructor_name' => $certificate->course->instructor->nama_lengkap ?? 'Unknown Instructor'
+            'instructor_name' => $instructorName,
+            'training_location' => $trainingLocation
         ];
     }
 
     private function addTextOverlays(TCPDF $pdf, CertificateTemplate $template, array $data)
     {
-        $positions = $template->text_positions ?? [];
-        $style = $template->style_settings ?? [
-            'font_family' => 'helvetica',
-            'text_color' => '#000000',
-            'text_align' => 'C'
-        ];
-
-        // Convert hex color to RGB
-        $textColor = $this->hexToRgb($style['text_color'] ?? '#000000');
-        $pdf->SetTextColor($textColor['r'], $textColor['g'], $textColor['b']);
-
-        foreach ($positions as $field => $pos) {
-            if (isset($data[$field])) {
-                // Set font - prioritize field-specific font over global
-                $fontFamily = $this->mapFontFamily($pos['font_family'] ?? $style['font_family'] ?? 'Arial');
-                $fontSize = $pos['font_size'] ?? 12;
-                $fontStyle = ($pos['font_weight'] ?? 'normal') === 'bold' ? 'B' : '';
-                
-                $pdf->SetFont($fontFamily, $fontStyle, $fontSize);
-                
-                // Calculate position (convert from pixels to mm approximately)
-                $x = ($pos['x'] ?? 0) * 0.264583; // pixel to mm conversion
-                $y = ($pos['y'] ?? 0) * 0.264583;
-                
-                // Determine alignment
-                $align = $style['text_align'] ?? 'C';
-                $width = 0; // Auto width
-                
-                if ($align === 'C') {
-                    // For center alignment, we need to specify width
-                    $width = $pdf->getPageWidth() - $x;
-                }
-                
-                // Add text
-                $pdf->SetXY($x, $y);
-                $pdf->Cell($width, 10, $data[$field], 0, 1, $align);
-            }
+        // A4 Landscape dimensions: 297mm x 210mm
+        $pageWidth = 297; // mm
+        $pageHeight = 210; // mm
+        
+        // Set text color to black
+        $pdf->SetTextColor(0, 0, 0);
+        
+        // Title: SERTIFIKAT (centered, top)
+        $pdf->SetFont('helvetica', 'B', 28);
+        $pdf->SetXY(0, 25);
+        $pdf->Cell($pageWidth, 15, 'SERTIFIKAT', 0, 1, 'C');
+        
+        // Participant Name (centered, below title)
+        if (isset($data['participant_name'])) {
+            $pdf->SetFont('helvetica', 'B', 24);
+            $pdf->SetXY(0, 50);
+            $pdf->Cell($pageWidth, 15, $data['participant_name'], 0, 1, 'C');
+        }
+        
+        // Course Title (centered)
+        if (isset($data['course_title'])) {
+            $pdf->SetFont('helvetica', '', 16);
+            $pdf->SetXY(0, 75);
+            $pdf->Cell($pageWidth, 15, $data['course_title'], 0, 1, 'C');
+        }
+        
+        // Completion Date (centered)
+        if (isset($data['completion_date'])) {
+            $pdf->SetFont('helvetica', '', 14);
+            $pdf->SetXY(0, 95);
+            $pdf->Cell($pageWidth, 15, $data['completion_date'], 0, 1, 'C');
+        }
+        
+        // Training Location (centered)
+        if (isset($data['training_location'])) {
+            $pdf->SetFont('helvetica', '', 12);
+            $pdf->SetXY(0, 115);
+            $pdf->Cell($pageWidth, 15, $data['training_location'], 0, 1, 'C');
+        }
+        
+        // Certificate Number (bottom left)
+        if (isset($data['certificate_number'])) {
+            $pdf->SetFont('courier', '', 10);
+            $pdf->SetXY(20, $pageHeight - 25);
+            $pdf->Cell(0, 10, $data['certificate_number'], 0, 1, 'L');
+        }
+        
+        // Instructor Name (bottom right)
+        if (isset($data['instructor_name'])) {
+            $pdf->SetFont('helvetica', '', 12);
+            $pdf->SetXY(0, $pageHeight - 25);
+            $pdf->Cell($pageWidth - 20, 10, $data['instructor_name'], 0, 1, 'R');
         }
     }
 

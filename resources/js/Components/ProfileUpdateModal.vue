@@ -1,5 +1,4 @@
 <script setup>
-import Modal from '@/Components/Modal.vue';
 import InputError from '@/Components/InputError.vue';
 import InputLabel from '@/Components/InputLabel.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
@@ -396,11 +395,23 @@ const submitPassword = () => {
 </script>
 
 <template>
-    <Modal :show="show" @close="emit('close')">
-        <div class="p-6 min-w-[600px] max-w-4xl max-h-[90vh] overflow-y-auto">
-            <h2 class="text-lg font-medium text-gray-900 mb-4">
-                Update Profile
-            </h2>
+    <div v-if="show" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 transition-all">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-4xl mx-4 max-h-[90vh] overflow-hidden animate-fade-in">
+            <!-- Header -->
+            <div class="bg-gradient-to-r from-blue-500 to-blue-700 px-6 py-4 text-white">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-3">
+                        <i class="fa-solid fa-user text-2xl"></i>
+                        <h3 class="text-xl font-bold">Update Profile</h3>
+                    </div>
+                    <button @click="emit('close')" class="text-white hover:text-gray-200 transition-colors">
+                        <i class="fa fa-times text-xl"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Content -->
+            <div class="p-6 min-w-[600px] max-h-[calc(90vh-140px)] overflow-y-auto">
             <div class="flex border-b mb-4 overflow-x-auto">
                 <button :class="['px-4 py-2 -mb-px font-semibold whitespace-nowrap', activeTab === 'personal' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-500']" @click="activeTab = 'personal'">Personal</button>
                 <button :class="['px-4 py-2 -mb-px font-semibold whitespace-nowrap', activeTab === 'work' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-500']" @click="activeTab = 'work'">Work</button>
@@ -955,6 +966,33 @@ const submitPassword = () => {
                     </div>
                 </form>
             </div>
+            </div>
+
+            <!-- Footer -->
+            <div class="bg-gray-50 px-6 py-4 border-t">
+                <div class="flex justify-end">
+                    <button @click="emit('close')"
+                            class="px-6 py-2 bg-gray-200 text-gray-700 rounded-xl hover:bg-gray-300 transition-all font-medium">
+                        <i class="fa fa-times mr-2"></i>Tutup
+                    </button>
+                </div>
+            </div>
         </div>
-    </Modal>
-</template> 
+    </div>
+</template>
+
+<style scoped>
+@keyframes fade-in {
+  from { 
+    opacity: 0; 
+    transform: translateY(20px) scale(0.95);
+  }
+  to { 
+    opacity: 1; 
+    transform: translateY(0) scale(1);
+  }
+}
+.animate-fade-in {
+  animation: fade-in 0.3s cubic-bezier(.4,0,.2,1);
+}
+</style> 

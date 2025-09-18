@@ -40,17 +40,17 @@ class LmsSessionItem extends Model
 
     public function quiz()
     {
-        return $this->belongsTo(LmsQuiz::class, 'item_id')->where('item_type', 'quiz');
+        return $this->belongsTo(LmsQuiz::class, 'item_id');
     }
 
     public function material()
     {
-        return $this->belongsTo(LmsCurriculumMaterial::class, 'item_id')->where('item_type', 'material');
+        return $this->belongsTo(LmsCurriculumMaterial::class, 'item_id');
     }
 
     public function questionnaire()
     {
-        return $this->belongsTo(LmsQuestionnaire::class, 'item_id')->where('item_type', 'questionnaire');
+        return $this->belongsTo(LmsQuestionnaire::class, 'item_id');
     }
 
     public function creator()

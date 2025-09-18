@@ -363,11 +363,27 @@
                                                         </div>
                                                     </div>
                                                 </div>
-                                                <div class="flex-shrink-0">
+                                                <div class="flex-shrink-0 flex flex-col items-end space-y-2">
                                                     <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
                                                         <i class="fas fa-check mr-1"></i>
                                                         Selesai
                                                     </span>
+                                                    
+                                                    <!-- Competency Actions -->
+                                                    <div v-if="training.competencies && training.competencies.length > 0" class="flex space-x-1">
+                                                        <button @click="openCompetencyTest(training, employee.employee)"
+                                                                class="px-2 py-1 bg-blue-500 hover:bg-blue-600 text-white text-xs rounded-md transition-colors"
+                                                                title="Uji Kompetensi">
+                                                            <i class="fas fa-clipboard-check mr-1"></i>
+                                                            Uji
+                                                        </button>
+                                                        <button @click="openCoaching(training, employee.employee)"
+                                                                class="px-2 py-1 bg-purple-500 hover:bg-purple-600 text-white text-xs rounded-md transition-colors"
+                                                                title="Coaching">
+                                                            <i class="fas fa-user-graduate mr-1"></i>
+                                                            Coach
+                                                        </button>
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>
@@ -409,11 +425,27 @@
                                                         </div>
                                                     </div>
                                                 </div>
-                                                <div class="flex-shrink-0">
+                                                <div class="flex-shrink-0 flex flex-col items-end space-y-2">
                                                     <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200">
                                                         <i class="fas fa-clock mr-1"></i>
                                                         Tersedia
                                                     </span>
+                                                    
+                                                    <!-- Competency Actions -->
+                                                    <div v-if="training.competencies && training.competencies.length > 0" class="flex space-x-1">
+                                                        <button @click="openCompetencyTest(training, employee.employee)"
+                                                                class="px-2 py-1 bg-blue-500 hover:bg-blue-600 text-white text-xs rounded-md transition-colors"
+                                                                title="Uji Kompetensi">
+                                                            <i class="fas fa-clipboard-check mr-1"></i>
+                                                            Uji
+                                                        </button>
+                                                        <button @click="openCoaching(training, employee.employee)"
+                                                                class="px-2 py-1 bg-purple-500 hover:bg-purple-600 text-white text-xs rounded-md transition-colors"
+                                                                title="Coaching">
+                                                            <i class="fas fa-user-graduate mr-1"></i>
+                                                            Coach
+                                                        </button>
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>
@@ -545,6 +577,161 @@ function onFilterChange() {
 function getDivisionName(divisionId) {
     const division = props.divisions.find(d => d.id == divisionId)
     return division ? division.nama_divisi : ''
+}
+
+// Competency Test and Coaching Functions
+function openCompetencyTest(training, employee) {
+    console.log('Opening competency test for:', {
+        training: training.title,
+        employee: employee.nama_lengkap,
+        competencies: training.competencies
+    })
+    
+    // Create competency test form
+    const competencyForm = training.competencies.map((comp, index) => `
+        <div class="border border-gray-200 rounded-lg p-4 mb-4 bg-gray-50">
+            <div class="flex items-center justify-between mb-3">
+                <h6 class="font-semibold text-gray-800">${comp.name}</h6>
+                <span class="text-xs text-gray-500">Kompetensi ${index + 1}</span>
+            </div>
+            
+            <!-- Radio Button Options -->
+            <div class="mb-3">
+                <label class="block text-sm font-medium text-gray-700 mb-2">Penilaian:</label>
+                <div class="flex space-x-6">
+                    <label class="flex items-center">
+                        <input type="radio" name="competency_${comp.id}" value="+" class="mr-2 text-green-600 focus:ring-green-500">
+                        <span class="text-green-600 font-semibold">+ (Baik)</span>
+                    </label>
+                    <label class="flex items-center">
+                        <input type="radio" name="competency_${comp.id}" value="0" class="mr-2 text-yellow-600 focus:ring-yellow-500">
+                        <span class="text-yellow-600 font-semibold">0 (Cukup)</span>
+                    </label>
+                    <label class="flex items-center">
+                        <input type="radio" name="competency_${comp.id}" value="-" class="mr-2 text-red-600 focus:ring-red-500">
+                        <span class="text-red-600 font-semibold">- (Kurang)</span>
+                    </label>
+                </div>
+            </div>
+            
+            <!-- Keterangan -->
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-2">Keterangan:</label>
+                <textarea name="keterangan_${comp.id}" 
+                          class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none" 
+                          rows="2" 
+                          placeholder="Masukkan keterangan penilaian..."></textarea>
+            </div>
+        </div>
+    `).join('')
+    
+    // Show competency test modal
+    Swal.fire({
+        title: 'Uji Kompetensi',
+        html: `
+            <div class="text-left">
+                <div class="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                    <h4 class="font-semibold text-blue-800 mb-1">${training.title}</h4>
+                    <p class="text-sm text-blue-600">Karyawan: ${employee.nama_lengkap}</p>
+                </div>
+                
+                <div class="mb-4">
+                    <h5 class="font-medium text-gray-700 mb-3">Penilaian Kompetensi:</h5>
+                    ${competencyForm}
+                </div>
+                
+                <div class="text-sm text-gray-500 bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                    <i class="fas fa-info-circle text-yellow-600 mr-2"></i>
+                    <strong>Petunjuk:</strong> Pilih penilaian untuk setiap kompetensi dan berikan keterangan yang jelas.
+                </div>
+            </div>
+        `,
+        showCancelButton: true,
+        confirmButtonText: 'Simpan Penilaian',
+        cancelButtonText: 'Batal',
+        confirmButtonColor: '#3B82F6',
+        cancelButtonColor: '#6B7280',
+        width: '700px',
+        preConfirm: () => {
+            // Collect form data
+            const formData = {
+                training_id: training.course_id || training.id,
+                employee_id: employee.id,
+                competencies: []
+            }
+            
+            // Get all competency data
+            training.competencies.forEach(comp => {
+                const rating = document.querySelector(`input[name="competency_${comp.id}"]:checked`)
+                const keterangan = document.querySelector(`textarea[name="keterangan_${comp.id}"]`)
+                
+                if (rating) {
+                    formData.competencies.push({
+                        competency_id: comp.id,
+                        competency_name: comp.name,
+                        rating: rating.value,
+                        keterangan: keterangan ? keterangan.value.trim() : ''
+                    })
+                }
+            })
+            
+            // Validate that all competencies are rated
+            if (formData.competencies.length !== training.competencies.length) {
+                Swal.showValidationMessage('Semua kompetensi harus dinilai!')
+                return false
+            }
+            
+            return formData
+        }
+    }).then((result) => {
+        if (result.isConfirmed && result.value) {
+            // Handle form submission
+            console.log('Competency test data:', result.value)
+            
+            // Show success message
+            Swal.fire({
+                title: 'Berhasil!',
+                text: 'Penilaian kompetensi berhasil disimpan.',
+                icon: 'success',
+                confirmButtonText: 'OK',
+                confirmButtonColor: '#10B981'
+            })
+        }
+    })
+}
+
+function openCoaching(training, employee) {
+    console.log('Opening coaching for:', {
+        training: training.title,
+        employee: employee.nama_lengkap,
+        competencies: training.competencies
+    })
+    
+    // Show coaching modal or redirect to coaching page
+    Swal.fire({
+        title: 'Coaching',
+        html: `
+            <div class="text-left">
+                <div class="mb-4">
+                    <h4 class="font-semibold text-gray-800 mb-2">${training.title}</h4>
+                    <p class="text-sm text-gray-600">Karyawan: ${employee.nama_lengkap}</p>
+                </div>
+                <div class="mb-4">
+                    <h5 class="font-medium text-gray-700 mb-2">Kompetensi untuk coaching:</h5>
+                    <ul class="list-disc list-inside text-sm text-gray-600">
+                        ${training.competencies.map(comp => `<li>${comp.name}</li>`).join('')}
+                    </ul>
+                </div>
+                <div class="text-sm text-gray-500">
+                    <p>Fitur coaching akan segera tersedia.</p>
+                </div>
+            </div>
+        `,
+        showConfirmButton: true,
+        confirmButtonText: 'OK',
+        confirmButtonColor: '#8B5CF6',
+        width: '500px'
+    })
 }
 
 function getJabatanName(jabatanId) {

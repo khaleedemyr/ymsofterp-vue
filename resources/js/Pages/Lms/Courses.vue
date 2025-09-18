@@ -297,6 +297,7 @@
                 </div>
               </div>
 
+
               <div class="flex items-center justify-end">
                 <div class="flex space-x-2">
                   <Link :href="route('lms.courses.show', course.id)" 
@@ -634,7 +635,102 @@
               </div>
             </div>
 
+            <!-- Competencies Section -->
+            <div class="mb-6">
+              <h4 class="text-lg font-semibold text-white mb-4 flex items-center">
+                <i class="fas fa-star mr-2 text-yellow-400"></i>
+                Kompetensi yang Dikembangkan
+              </h4>
+              <div class="space-y-4">
+                <!-- Add New Competency -->
+                <div class="bg-white/5 rounded-lg p-4 border border-white/10">
+                  <div class="flex items-center justify-between mb-3">
+                    <h5 class="text-md font-medium text-white">Tambah Kompetensi Baru</h5>
+                    <button
+                      type="button"
+                      @click="showAddCompetencyForm = !showAddCompetencyForm"
+                      class="px-3 py-2 bg-yellow-500/20 border border-yellow-500/30 text-yellow-300 hover:bg-yellow-500/30 rounded-lg transition-colors text-sm"
+                      :disabled="loading"
+                    >
+                      <i class="fas fa-plus mr-1"></i>
+                      {{ showAddCompetencyForm ? 'Batal' : 'Tambah' }}
+                    </button>
+                  </div>
+                  
+                  <!-- Add Competency Form -->
+                  <div v-if="showAddCompetencyForm" class="space-y-3">
+                    <div>
+                      <label class="block text-xs text-gray-300 mb-1">Nama Kompetensi</label>
+                      <input
+                        v-model="newCompetency.name"
+                        type="text"
+                        class="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:border-transparent"
+                        placeholder="Masukkan nama kompetensi"
+                        :disabled="loading"
+                      />
+                    </div>
+                    <div class="flex justify-end space-x-2">
+                      <button
+                        type="button"
+                        @click="addNewCompetency"
+                        class="px-4 py-2 bg-yellow-500/20 border border-yellow-500/30 text-yellow-300 hover:bg-yellow-500/30 rounded-lg transition-colors text-sm"
+                        :disabled="loading || !newCompetency.name"
+                      >
+                        <i class="fas fa-plus mr-1"></i>
+                        Tambah ke Training
+                      </button>
+                    </div>
+                  </div>
+                </div>
 
+
+                <!-- Selected Competencies Display -->
+                <div v-if="selectedCompetencyIds.length > 0" class="mt-4">
+                  <div class="flex items-center justify-between mb-3">
+                    <label class="block text-sm font-medium text-gray-300">Kompetensi yang Dipilih</label>
+                    <span class="text-xs text-white/60">{{ selectedCompetencyIds.length }} kompetensi dipilih</span>
+                  </div>
+                  
+                  <!-- Quick display of selected competencies -->
+                  <div class="flex flex-wrap gap-2 mb-4">
+                    <span v-for="competencyId in selectedCompetencyIds" :key="competencyId" 
+                          class="px-3 py-1 text-sm rounded-full border"
+                          :class="{
+                            'bg-green-500/20 text-green-200 border-green-500/30': competencyId < 0,
+                            'bg-yellow-500/20 text-yellow-200 border-yellow-500/30': competencyId > 0
+                          }">
+                      {{ getCompetencyById(competencyId)?.name }}
+                      <span v-if="competencyId < 0" class="ml-1 text-xs opacity-75">(Baru)</span>
+                    </span>
+                  </div>
+                </div>
+
+                <!-- Selected Competencies with Proficiency Levels -->
+                <div v-if="selectedCompetencyIds.length > 0">
+                  <label class="block text-sm font-medium text-gray-300 mb-2">Level Kemahiran</label>
+                  <div class="space-y-3">
+                    <div v-for="competencyId in selectedCompetencyIds" :key="competencyId" class="bg-white/5 rounded-lg p-3 border border-white/10">
+                      <div class="flex items-center justify-between mb-2">
+                        <span class="text-sm font-medium text-white">
+                          {{ getCompetencyById(competencyId)?.name }}
+                          <span v-if="competencyId < 0" class="ml-2 px-2 py-1 text-xs bg-green-500/20 text-green-200 border border-green-500/30 rounded-full">
+                            Baru
+                          </span>
+                        </span>
+                        <button
+                          type="button"
+                          @click="removeCompetency(competencyId)"
+                          class="text-red-400 hover:text-red-300 text-sm"
+                          :disabled="loading"
+                        >
+                          <i class="fas fa-times"></i>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
 
             <!-- Requirements Section - REMOVED - requirements field removed -->
             <!-- <div class="mb-6">
@@ -1257,6 +1353,10 @@ const props = defineProps({
   certificateTemplates: {
     type: Array,
     default: () => []
+  },
+  competencies: {
+    type: Array,
+    default: () => []
   }
 })
 
@@ -1291,6 +1391,13 @@ const loadingTrainerRatings = ref(false)
 const divisionSearch = ref('')
 const jabatanSearch = ref('')
 const outletSearch = ref('')
+
+// Competency selection state
+const selectedCompetencyIds = ref([])
+const showAddCompetencyForm = ref(false)
+const newCompetency = ref({
+  name: ''
+})
 
 // Form data
 const form = ref({
@@ -1337,7 +1444,8 @@ const form = ref({
     }
   ], // Default with 1 empty session
   thumbnail: null, // For thumbnail upload
-  certificate_template_id: '' // For certificate template selection
+  certificate_template_id: '', // For certificate template selection
+  competencies: {} // For competency selection with proficiency levels
 })
 
 // Computed properties
@@ -1437,6 +1545,7 @@ const filteredOutlets = computed(() => {
     outlet.nama_outlet.toLowerCase().includes(outletSearch.value.toLowerCase())
   )
 })
+
 
 // Form validation
 const isFormValid = computed(() => {
@@ -1570,13 +1679,20 @@ const closeModal = () => {
     instructor_id: '', // For internal trainer
     external_trainer_name: '', // For external trainer
     external_trainer_description: '', // For external trainer description
-    thumbnail: null // For thumbnail upload
+    thumbnail: null, // For thumbnail upload
+    certificate_template_id: '', // For certificate template selection
+    competencies: {} // For competency selection
   }
   
   // Reset search fields
   divisionSearch.value = ''
   jabatanSearch.value = ''
   outletSearch.value = ''
+  selectedCompetencyIds.value = []
+  showAddCompetencyForm.value = false
+  newCompetency.value = {
+    name: ''
+  }
 }
 
 // Loading timeout handler
@@ -1856,6 +1972,20 @@ const createCourse = async () => {
          if (Array.isArray(form.value[key])) {
            form.value[key].forEach(item => {
              formData.append(key + '[]', item)
+           })
+         }
+       } else if (key === 'competencies') {
+         // Handle competencies object
+         if (form.value[key] && typeof form.value[key] === 'object') {
+           Object.values(form.value[key]).forEach((competency, index) => {
+             // Check if it's a new competency
+             if (competency.new_competency) {
+               // Add new competency data
+               formData.append(`new_competencies[${index}][name]`, competency.new_competency.name)
+             } else {
+               // Add existing competency data
+               formData.append(`competencies[${index}][competency_id]`, competency.competency_id)
+             }
            })
          }
        } else if (key === 'curriculum') {
@@ -2500,6 +2630,93 @@ const closeTrainerRatingsModal = () => {
     statistics: null
   }
 }
+
+// Competency methods
+const getCompetencyById = (competencyId) => {
+  // Check if it's a new competency (negative ID)
+  if (competencyId < 0) {
+    const competencyData = form.value.competencies[competencyId]
+    if (competencyData && competencyData.new_competency) {
+      return {
+        id: competencyId,
+        name: competencyData.new_competency.name
+      }
+    }
+  }
+  
+  // Return existing competency
+  return props.competencies.find(competency => competency.id === competencyId)
+}
+
+const removeCompetency = (competencyId) => {
+  // Remove from selected list
+  const index = selectedCompetencyIds.value.indexOf(competencyId)
+  if (index > -1) {
+    selectedCompetencyIds.value.splice(index, 1)
+  }
+  
+  // Remove from form competencies
+  if (form.value.competencies[competencyId]) {
+    delete form.value.competencies[competencyId]
+  }
+}
+
+const addNewCompetency = () => {
+  if (!newCompetency.value.name.trim()) {
+    return
+  }
+  
+  // Create a temporary ID for new competency (negative number to avoid conflict)
+  const tempId = -(Date.now())
+  
+  // Add to form competencies
+  form.value.competencies[tempId] = {
+    competency_id: tempId,
+    // Store the new competency data for backend processing
+    new_competency: {
+      name: newCompetency.value.name
+    }
+  }
+  
+  // Add to selected list (otomatis terpilih)
+  selectedCompetencyIds.value.push(tempId)
+  
+  // Reset form
+  newCompetency.value = {
+    name: ''
+  }
+  
+  // Hide form
+  showAddCompetencyForm.value = false
+  
+  // Show success message
+  console.log('Kompetensi baru berhasil ditambahkan dan otomatis terpilih!')
+  
+  // Optional: Show toast notification
+  // You can add a toast library like vue-toastification if needed
+}
+
+// Watch for competency selection changes
+watch(selectedCompetencyIds, (newIds, oldIds) => {
+  // Add new competencies to form (only for existing competencies, not new ones)
+  newIds.forEach(id => {
+    if (!form.value.competencies[id] && id > 0) {
+      // Only add for existing competencies (positive ID)
+      form.value.competencies[id] = {
+        competency_id: id
+      }
+    }
+  })
+  
+  // Remove old competencies from form
+  if (oldIds) {
+    oldIds.forEach(id => {
+      if (!newIds.includes(id) && form.value.competencies[id]) {
+        delete form.value.competencies[id]
+      }
+    })
+  }
+}, { deep: true })
 
 // Watch for filter changes to reset pagination
 watch(filters, () => {

@@ -168,19 +168,23 @@ const switchTab = (tab) => {
 </script>
 
 <template>
-    <div v-if="show" class="fixed inset-0 z-50 overflow-y-auto">
-        <div class="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
-            <!-- Background overlay -->
-            <div class="fixed inset-0 transition-opacity" @click="closeModal">
-                <div class="absolute inset-0 bg-gray-500 opacity-75"></div>
+    <div v-if="show" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 transition-all">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-hidden animate-fade-in">
+            <!-- Header -->
+            <div class="bg-gradient-to-r from-blue-500 to-blue-700 px-6 py-4 text-white">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-3">
+                        <i class="fa-solid fa-signature text-2xl"></i>
+                        <h3 class="text-xl font-bold">E-Signature</h3>
+                    </div>
+                    <button @click="closeModal" class="text-white hover:text-gray-200 transition-colors">
+                        <i class="fa fa-times text-xl"></i>
+                    </button>
+                </div>
             </div>
 
-            <!-- Modal panel -->
-            <div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
-                <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
-                    <div class="sm:flex sm:items-start">
-                        <div class="w-full">
-                            <h3 class="text-lg leading-6 font-medium text-gray-900 mb-4">E-Signature</h3>
+            <!-- Content -->
+            <div class="p-6 max-h-[calc(90vh-140px)] overflow-y-auto">
                             
                             <!-- Existing signature preview -->
                             <div v-if="existingSignature" class="mb-4 p-4 border rounded-lg bg-gray-50">
@@ -247,29 +251,45 @@ const switchTab = (tab) => {
                                     </div>
                                 </div>
                             </div>
-                        </div>
-                    </div>
-                </div>
+            </div>
 
-                <div class="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+            <!-- Footer -->
+            <div class="bg-gray-50 px-6 py-4 border-t">
+                <div class="flex justify-end gap-3">
+                    <button 
+                        @click="closeModal"
+                        class="px-6 py-2 bg-gray-200 text-gray-700 rounded-xl hover:bg-gray-300 transition-all font-medium"
+                    >
+                        <i class="fa fa-times mr-2"></i>Cancel
+                    </button>
                     <button 
                         @click="saveSignature"
                         :disabled="form.processing || isLoading"
-                        class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-600 text-base font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:ml-3 sm:w-auto sm:text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                        class="px-6 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         <span v-if="isLoading" class="mr-2">
                             <i class="fas fa-spinner fa-spin"></i>
                         </span>
-                        Save Signature
-                    </button>
-                    <button 
-                        @click="closeModal"
-                        class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm"
-                    >
-                        Cancel
+                        <i class="fa fa-save mr-2"></i>Save Signature
                     </button>
                 </div>
             </div>
         </div>
     </div>
-</template> 
+</template>
+
+<style scoped>
+@keyframes fade-in {
+  from { 
+    opacity: 0; 
+    transform: translateY(20px) scale(0.95);
+  }
+  to { 
+    opacity: 1; 
+    transform: translateY(0) scale(1);
+  }
+}
+.animate-fade-in {
+  animation: fade-in 0.3s cubic-bezier(.4,0,.2,1);
+}
+</style> 

@@ -1,8 +1,9 @@
 <template>
-    <div class="bg-white/95 backdrop-blur-sm rounded-lg shadow-lg border border-slate-200 p-4 h-full flex flex-col">
+    <div class="backdrop-blur-sm rounded-lg shadow-lg border p-4 h-full flex flex-col" 
+         :class="isNight ? 'bg-slate-800/95 border-slate-600/50' : 'bg-white/95 border-slate-200'">
         <!-- Header -->
         <div class="flex items-center justify-between mb-4">
-            <h3 class="text-lg font-semibold text-slate-700">Notes</h3>
+            <h3 class="text-lg font-semibold" :class="isNight ? 'text-white' : 'text-slate-700'">Notes</h3>
             <button @click="showAddNoteModal = true" 
                     class="bg-blue-500 text-white px-3 py-1 rounded-md text-sm hover:bg-blue-600 transition-colors">
                 + Add Note
@@ -13,9 +14,10 @@
         <div class="flex-1 overflow-y-auto space-y-3 max-h-80">
             <div v-for="note in notes" :key="note.id" 
                  @click="openNoteDetail(note)"
-                 class="bg-slate-50 rounded-lg p-3 border border-slate-200 hover:bg-slate-100 transition-colors cursor-pointer">
+                 class="rounded-lg p-3 border transition-colors cursor-pointer"
+                 :class="isNight ? 'bg-slate-700/50 border-slate-600/50 hover:bg-slate-600/50' : 'bg-slate-50 border-slate-200 hover:bg-slate-100'">
                 <div class="flex items-start justify-between mb-2">
-                    <h4 class="font-medium text-slate-800 text-sm">{{ note.title }}</h4>
+                    <h4 class="font-medium text-sm" :class="isNight ? 'text-slate-200' : 'text-slate-800'">{{ note.title }}</h4>
                     <button @click.stop="deleteNote(note.id)" 
                             class="text-red-500 hover:text-red-700 text-xs">
                         <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -24,12 +26,13 @@
                     </button>
                 </div>
                 
-                <p class="text-xs text-slate-600 mb-2 line-clamp-1">{{ note.content }}</p>
+                <p class="text-xs mb-2 line-clamp-1" :class="isNight ? 'text-slate-300' : 'text-slate-600'">{{ note.content }}</p>
                 
                 <!-- Attachments -->
                 <div v-if="note.attachments && note.attachments.length > 0" class="flex flex-wrap gap-1 mb-2">
                     <div v-for="attachment in note.attachments" :key="attachment.id" 
-                         class="flex items-center gap-1 bg-blue-100 text-blue-700 px-2 py-1 rounded text-xs">
+                         class="flex items-center gap-1 px-2 py-1 rounded text-xs"
+                         :class="isNight ? 'bg-blue-600/20 text-blue-300' : 'bg-blue-100 text-blue-700'">
                         <!-- Image thumbnail with lightbox -->
                         <div v-if="attachment.mime_type && attachment.mime_type.startsWith('image/')" 
                              class="flex items-center gap-1">
@@ -47,12 +50,12 @@
                     </div>
                 </div>
                 
-                <div class="text-xs text-slate-500">
+                <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
                     {{ formatDate(note.created_at) }}
                 </div>
             </div>
             
-            <div v-if="notes.length === 0" class="text-center text-slate-500 text-sm py-8">
+            <div v-if="notes.length === 0" class="text-center text-sm py-8" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
                 No notes yet. Click "Add Note" to create your first note.
             </div>
         </div>
@@ -272,6 +275,14 @@
 import { ref, onMounted } from 'vue';
 import axios from 'axios';
 import Swal from 'sweetalert2';
+
+// Props
+const props = defineProps({
+    isNight: {
+        type: Boolean,
+        default: false
+    }
+});
 
 const notes = ref([]);
 const showAddNoteModal = ref(false);

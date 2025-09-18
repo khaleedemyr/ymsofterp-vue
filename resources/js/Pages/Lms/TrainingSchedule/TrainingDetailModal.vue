@@ -140,30 +140,20 @@
            <div class="backdrop-blur-sm bg-white/5 border border-white/10 rounded-xl p-4">
              <h4 class="text-lg font-semibold text-white mb-3">Kelola Status Training</h4>
              <div class="grid grid-cols-2 gap-3">
-               <button v-if="training.status === 'scheduled'" @click="updateTrainingStatus('ongoing')"
+               <button @click="updateTrainingStatus('ongoing')"
                        class="px-4 py-2 bg-orange-500/20 border border-orange-500/30 rounded-lg text-orange-200 hover:bg-orange-500/30 transition-all">
                  <i class="fas fa-play mr-2"></i>
-                 Mulai Training
+                 Set Ongoing
                </button>
-               <button v-if="training.status === 'ongoing'" @click="updateTrainingStatus('completed')"
+               <button @click="updateTrainingStatus('completed')"
                        class="px-4 py-2 bg-green-500/20 border border-green-500/30 rounded-lg text-green-200 hover:bg-green-500/30 transition-all">
                  <i class="fas fa-check mr-2"></i>
-                 Selesaikan Training
+                 Set Completed
                </button>
-               <button v-if="['scheduled', 'ongoing'].includes(training.status)" @click="updateTrainingStatus('cancelled')"
+               <button @click="updateTrainingStatus('cancelled')"
                        class="px-4 py-2 bg-red-500/20 border border-red-500/30 rounded-lg text-red-200 hover:bg-red-500/30 transition-all">
                  <i class="fas fa-times mr-2"></i>
-                 Batalkan Training
-               </button>
-               <button v-if="training.status === 'completed'" @click="updateTrainingStatus('scheduled')"
-                       class="px-4 py-2 bg-blue-500/20 border border-blue-500/30 rounded-lg text-blue-200 hover:bg-blue-500/30 transition-all">
-                 <i class="fas fa-undo mr-2"></i>
-                 Reset ke Terjadwal
-               </button>
-               <button v-if="training.status === 'completed'" @click="showReviewList"
-                       class="px-4 py-2 bg-purple-500/20 border border-purple-500/30 rounded-lg text-purple-200 hover:bg-purple-500/30 transition-all">
-                 <i class="fas fa-star mr-2"></i>
-                 List Review
+                 Set Cancelled
                </button>
                <button v-if="training.status === 'completed'" @click="showTrainerRatings"
                        class="px-4 py-2 bg-indigo-500/20 border border-indigo-500/30 rounded-lg text-indigo-200 hover:bg-indigo-500/30 transition-all">
@@ -1113,6 +1103,7 @@ const updateTrainingStatus = async (newStatus) => {
   try {
     const statusText = {
       'scheduled': 'Terjadwal',
+      'published': 'Dipublikasi',
       'ongoing': 'Sedang Berlangsung', 
       'completed': 'Selesai',
       'cancelled': 'Dibatalkan'
@@ -1130,6 +1121,12 @@ const updateTrainingStatus = async (newStatus) => {
     })
 
     if (result.isConfirmed) {
+      console.log('=== CALLING UPDATE TRAINING STATUS API ===', {
+        training_id: props.training.id,
+        new_status: newStatus,
+        route: route('lms.schedules.update-status', props.training.id)
+      });
+      
       await router.put(route('lms.schedules.update-status', props.training.id), {
         status: newStatus
       }, {

@@ -539,20 +539,40 @@ const questionForm = ref({
 
 // Form validation
 const isQuestionFormValid = computed(() => {
-  if (!questionForm.value.question_text.trim() || !questionForm.value.points) {
+  console.log('Validating form:', {
+    question_text: questionForm.value.question_text,
+    points: questionForm.value.points,
+    question_type: questionForm.value.question_type,
+    options: questionForm.value.options,
+    correct_answer: questionForm.value.correct_answer
+  })
+
+  // Check required fields
+  if (!questionForm.value.question_text || !questionForm.value.question_text.trim()) {
+    console.log('Validation failed: question_text is empty')
+    return false
+  }
+
+  if (!questionForm.value.points || questionForm.value.points <= 0) {
+    console.log('Validation failed: points is invalid', questionForm.value.points)
     return false
   }
 
   if (questionForm.value.question_type === 'multiple_choice') {
-    return questionForm.value.options.length >= 2 && 
-           questionForm.value.options.every(opt => opt.option_text.trim()) &&
+    const hasValidOptions = questionForm.value.options.length >= 2 && 
+           questionForm.value.options.every(opt => opt.option_text && opt.option_text.trim()) &&
            questionForm.value.options.some(opt => opt.is_correct)
+    console.log('Multiple choice validation:', hasValidOptions)
+    return hasValidOptions
   }
 
   if (questionForm.value.question_type === 'true_false') {
-    return questionForm.value.correct_answer !== null
+    const hasCorrectAnswer = questionForm.value.correct_answer !== null && questionForm.value.correct_answer !== undefined
+    console.log('True/false validation:', hasCorrectAnswer)
+    return hasCorrectAnswer
   }
 
+  console.log('Validation passed')
   return true
 })
 
@@ -641,11 +661,13 @@ const handleImageError = (event) => {
 
 
 const editQuestion = (question) => {
+  console.log('Editing question:', question)
+  
   questionForm.value = {
     id: question.id,
-    question_text: question.question_text,
-    question_type: question.question_type,
-    points: question.points,
+    question_text: question.question_text || '',
+    question_type: question.question_type || 'multiple_choice',
+    points: question.points || 1,
     image_path: question.image_path,
     image_preview: null,
     image_alt_text: question.image_alt_text || '',
@@ -659,6 +681,8 @@ const editQuestion = (question) => {
     correct_answer: question.question_type === 'true_false' && question.options ? 
       (question.options.find(o => o.is_correct)?.option_text === 'Benar' ? 'true' : 'false') : null
   }
+  
+  console.log('Form data after edit:', questionForm.value)
   showEditQuestionModal.value = true
 }
 
@@ -688,7 +712,11 @@ const resetQuestionForm = () => {
 // ... existing code ...
 
 const saveQuestion = async () => {
+  console.log('Saving question, form valid:', isQuestionFormValid.value)
+  console.log('Form data:', questionForm.value)
+  
   if (!isQuestionFormValid.value) {
+    console.log('Form validation failed')
     Swal.fire({
       icon: 'error',
       title: 'Validasi Error',
@@ -702,10 +730,19 @@ const saveQuestion = async () => {
 
   try {
     const formData = new FormData()
-    formData.append('question_text', questionForm.value.question_text)
-    formData.append('question_type', questionForm.value.question_type)
-    formData.append('points', questionForm.value.points)
-    formData.append('image_alt_text', questionForm.value.image_alt_text)
+    
+    // Debug: Check form values before appending
+    console.log('Form values before appending:')
+    console.log('question_text:', questionForm.value.question_text)
+    console.log('question_type:', questionForm.value.question_type)
+    console.log('points:', questionForm.value.points)
+    console.log('image_alt_text:', questionForm.value.image_alt_text)
+    
+    // Ensure values are not undefined or null
+    formData.append('question_text', questionForm.value.question_text || '')
+    formData.append('question_type', questionForm.value.question_type || 'multiple_choice')
+    formData.append('points', questionForm.value.points || 1)
+    formData.append('image_alt_text', questionForm.value.image_alt_text || '')
     
          // Handle image upload
      if (questionForm.value.image_preview) {
@@ -762,7 +799,24 @@ const saveQuestion = async () => {
     }
 
     if (showEditQuestionModal.value) {
-      await router.put(route('lms.quizzes.questions.update', [props.quiz.id, questionForm.value.id]), formData, {
+      // Try using JSON data instead of FormData for debugging
+      const jsonData = {
+        question_text: questionForm.value.question_text || '',
+        question_type: questionForm.value.question_type || 'multiple_choice',
+        points: questionForm.value.points || 1,
+        image_alt_text: questionForm.value.image_alt_text || '',
+        options: questionForm.value.question_type === 'multiple_choice' ? 
+          questionForm.value.options.map(opt => ({
+            option_text: opt.option_text || '',
+            is_correct: opt.is_correct || false,
+            image_alt_text: opt.image_alt_text || ''
+          })) : null,
+        correct_answer: questionForm.value.question_type === 'true_false' ? questionForm.value.correct_answer : null
+      }
+      
+      console.log('Sending JSON data:', jsonData)
+      
+      await router.put(route('lms.quizzes.questions.update', [props.quiz.id, questionForm.value.id]), jsonData, {
         onSuccess: (response) => {
           console.log('Update success response:', response)
           Swal.fire({
