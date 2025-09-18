@@ -910,6 +910,7 @@ function closeTrainingCheckInModal() {
     showCamera.value = false;
     qrCodeInput.value = '';
     checkInStatusMessage.value = '';
+    isProcessingCheckIn.value = false; // Reset processing state
     if (html5QrCode) {
         html5QrCode.stop().then(() => html5QrCode.clear()).catch(() => {});
     }
@@ -1236,11 +1237,11 @@ async function processTrainingCheckIn() {
             onSuccess: (page) => {
                 console.log('Check-in success:', page);
                 
+                // Always close modal on success (regardless of data)
+                closeTrainingCheckInModal();
+                
                 if (page.props.flash?.success) {
                     checkInStatusMessage.value = page.props.flash.success;
-                    
-                    // Close modal immediately
-                    closeTrainingCheckInModal();
                     
                     // Show success SweetAlert
                     Swal.fire({
@@ -1279,7 +1280,26 @@ async function processTrainingCheckIn() {
                         openFirstSessionItem();
                     }, 1000);
                 } else {
-                    checkInStatusMessage.value = 'Check-in berhasil tapi tidak ada data training';
+                    // Even if no success message, show generic success
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'Check-in Berhasil!',
+                        text: 'Anda berhasil check-in ke training',
+                        timer: 3000,
+                        showConfirmButton: false
+                    });
+                    
+                    // Still try to refresh data
+                    loadTrainingInvitations().then(() => {
+                        if (selectedTrainingDetail.value) {
+                            const updatedInvitation = trainingInvitations.value.find(
+                                inv => inv.schedule_id === selectedTrainingDetail.value.schedule_id
+                            );
+                            if (updatedInvitation) {
+                                selectedTrainingDetail.value = updatedInvitation;
+                            }
+                        }
+                    });
                 }
             },
             onError: (errors) => {
@@ -1294,7 +1314,8 @@ async function processTrainingCheckIn() {
                 });
             },
             onFinish: () => {
-                isProcessingCheckIn.value = false;
+                // Don't reset processing state here as it's handled in closeTrainingCheckInModal
+                // isProcessingCheckIn.value = false;
             }
         });
 
