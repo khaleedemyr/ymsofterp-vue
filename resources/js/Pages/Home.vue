@@ -2512,20 +2512,20 @@ watch(locale, () => {
                             <!-- Sample Available Trainings -->
                             <div v-if="availableTrainings.length > 0" class="space-y-2">
                                 <div v-for="training in availableTrainings.slice(0, 3)" :key="'available-' + training.id"
-                                     class="p-3 rounded-lg border transition-all duration-200"
+                                     class="p-3 rounded-lg border transition-all duration-200 max-w-sm mx-auto"
                                      :class="[
                                          isNight ? 'bg-slate-700/50 border-slate-600/50' : 'bg-slate-50 border-slate-200',
                                          training.is_completed ? 'opacity-75' : ''
                                      ]">
                                     <!-- Banner -->
-                                    <div class="w-full h-28 rounded-lg overflow-hidden bg-gray-100 shadow-md">
+                                    <div class="w-full h-36 rounded-lg overflow-hidden bg-gray-100 shadow-md">
                                         <img v-if="training.thumbnail_url" 
                                              :src="training.thumbnail_url" 
                                              :alt="training.title"
                                              class="w-full h-full object-contain bg-gray-50"
                                              @error="$event.target.style.display='none'">
                                         <div v-else class="w-full h-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
-                                            <i class="fas fa-graduation-cap text-white text-3xl"></i>
+                                            <i class="fas fa-graduation-cap text-white text-4xl"></i>
                                         </div>
                                     </div>
                                     
