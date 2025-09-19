@@ -2394,15 +2394,9 @@ watch(locale, () => {
         </div>
 
         <!-- Approval Detail Modal -->
-        <div v-if="showApprovalModal && selectedApproval" class="fixed inset-0 z-50 overflow-y-auto">
-            <div class="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
-                <!-- Background overlay -->
-                <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity z-40" @click="showApprovalModal = false"></div>
-
-                <!-- Modal panel -->
-                <div class="inline-block align-bottom bg-white dark:bg-gray-800 rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
-                    <div class="bg-white dark:bg-gray-800 px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
-                        <div class="flex items-center justify-between mb-4">
+        <div v-if="showApprovalModal && selectedApproval" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click="showApprovalModal = false">
+            <div class="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto" @click.stop>
+                <div class="flex items-center justify-between mb-4">
                             <h3 class="text-lg font-medium text-gray-900 dark:text-white">
                                 Detail Permohonan Izin/Cuti
                             </h3>
@@ -2585,11 +2579,11 @@ watch(locale, () => {
                                 Setujui
                             </button>
                         </template>
-                        <button @click="showApprovalModal = false" 
-                                class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:mt-0 sm:w-auto sm:text-sm">
-                            Tutup
-                        </button>
-                    </div>
+                <div class="flex justify-end gap-3 mt-6 pt-4 border-t border-slate-200">
+                    <button @click="showApprovalModal = false" 
+                            class="px-4 py-2 text-slate-600 border border-slate-300 rounded-md hover:bg-slate-50 transition-colors">
+                        Tutup
+                    </button>
                 </div>
             </div>
         </div>
