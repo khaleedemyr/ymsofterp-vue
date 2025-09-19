@@ -140,7 +140,16 @@ class AnnouncementController extends Controller
 
     public function show($id)
     {
-        $a = \DB::table('announcements')->where('id', $id)->first();
+        $a = \DB::table('announcements')
+            ->leftJoin('users as creators', 'announcements.created_by', '=', 'creators.id')
+            ->select(
+                'announcements.*',
+                'creators.nama_lengkap as creator_name',
+                'creators.id as creator_id'
+            )
+            ->where('announcements.id', $id)
+            ->first();
+            
         $a->files = \DB::table('announcement_files')->where('announcement_id', $id)->get();
         $a->targets = \DB::table('announcement_targets')->where('announcement_id', $id)->get();
 
@@ -292,7 +301,13 @@ class AnnouncementController extends Controller
 
         // Build query for announcements that target this user
         $query = DB::table('announcements')
-            ->where('status', 'Publish')
+            ->leftJoin('users as creators', 'announcements.created_by', '=', 'creators.id')
+            ->select(
+                'announcements.*',
+                'creators.nama_lengkap as creator_name',
+                'creators.id as creator_id'
+            )
+            ->where('announcements.status', 'Publish')
             ->whereExists(function ($query) use ($userId, $userJabatan, $userDivisi, $userLevel, $userOutlet) {
                 $query->select(DB::raw(1))
                     ->from('announcement_targets')

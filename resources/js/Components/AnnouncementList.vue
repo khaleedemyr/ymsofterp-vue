@@ -51,9 +51,17 @@
         >
           <!-- Announcement Header -->
           <div class="flex items-start justify-between mb-2">
-            <h4 class="font-medium text-sm line-clamp-1 flex-1 mr-2" :class="isNight ? 'text-white' : 'text-slate-900'">
-              {{ announcement.title }}
-            </h4>
+            <div class="flex-1 mr-2">
+              <h4 class="font-medium text-sm line-clamp-1" :class="isNight ? 'text-white' : 'text-slate-900'">
+                {{ announcement.title }}
+              </h4>
+              <div class="flex items-center gap-1 mt-1">
+                <i class="fas fa-user text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-400'"></i>
+                <span class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
+                  {{ announcement.creator_name || 'Unknown' }}
+                </span>
+              </div>
+            </div>
             <span class="text-xs whitespace-nowrap" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
               {{ announcement.created_at_formatted }}
             </span>

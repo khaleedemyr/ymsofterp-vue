@@ -51,9 +51,18 @@ function getTargetIcon(targetType) {
         <div class="bg-gradient-to-r from-blue-500 to-blue-700 rounded-2xl p-6 text-white">
           <div class="flex items-center gap-3 mb-4">
             <i class="fa-solid fa-bullhorn text-3xl"></i>
-            <div>
+            <div class="flex-1">
               <h1 class="text-2xl font-bold">{{ announcement?.title }}</h1>
-              <p class="text-blue-100">{{ formatDate(announcement?.created_at) }}</p>
+              <div class="flex items-center gap-4 mt-2">
+                <div class="flex items-center gap-2">
+                  <i class="fa fa-user text-blue-200"></i>
+                  <span class="text-blue-100">{{ announcement?.creator_name || 'Unknown' }}</span>
+                </div>
+                <div class="flex items-center gap-2">
+                  <i class="fa fa-calendar text-blue-200"></i>
+                  <span class="text-blue-100">{{ formatDate(announcement?.created_at) }}</span>
+                </div>
+              </div>
             </div>
           </div>
           

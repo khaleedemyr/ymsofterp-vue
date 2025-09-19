@@ -2041,6 +2041,13 @@ function closeAnnouncementsModal() {
         per_page: 10,
         total: 0
     };
+    // Reset filters
+    announcementsFilters.value = {
+        search: '',
+        target: '',
+        date_from: '',
+        date_to: ''
+    };
 }
 
 async function applyFilters() {
@@ -2820,14 +2827,8 @@ watch(locale, () => {
         </div>
 
         <!-- Announcements Modal -->
-        <div v-if="showAnnouncementsModal" class="fixed inset-0 z-50 overflow-y-auto">
-            <div class="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
-                <!-- Background overlay -->
-                <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" @click="closeAnnouncementsModal"></div>
-
-                <!-- Modal panel -->
-                <div class="inline-block align-bottom bg-white dark:bg-gray-800 rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-6xl sm:w-full">
-                    <div class="bg-white dark:bg-gray-800 px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+        <div v-if="showAnnouncementsModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click="closeAnnouncementsModal">
+            <div class="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-6xl mx-4 max-h-[90vh] overflow-y-auto" @click.stop>
                         <div class="flex items-center justify-between mb-4">
                             <h3 class="text-lg font-medium text-gray-900 dark:text-white">
                                 Semua Pengumuman
@@ -2928,9 +2929,17 @@ watch(locale, () => {
                             >
                                 <!-- Header -->
                                 <div class="flex items-start justify-between mb-2">
-                                    <h4 class="font-semibold text-gray-900 dark:text-white flex-1 mr-4">
-                                        {{ announcement.title }}
-                                    </h4>
+                                    <div class="flex-1 mr-4">
+                                        <h4 class="font-semibold text-gray-900 dark:text-white">
+                                            {{ announcement.title }}
+                                        </h4>
+                                        <div class="flex items-center gap-2 mt-1">
+                                            <i class="fas fa-user text-xs text-gray-400"></i>
+                                            <span class="text-xs text-gray-500 dark:text-gray-400">
+                                                {{ announcement.creator_name || 'Unknown' }}
+                                            </span>
+                                        </div>
+                                    </div>
                                     <span class="text-sm text-gray-500 dark:text-gray-400 whitespace-nowrap">
                                         {{ announcement.created_at_formatted }}
                                     </span>
@@ -3016,8 +3025,6 @@ watch(locale, () => {
                                 </button>
                             </div>
                         </div>
-                    </div>
-                </div>
             </div>
         </div>
 
