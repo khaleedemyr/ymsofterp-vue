@@ -1128,8 +1128,19 @@ class DeliveryOrderController extends Controller
 
     public function exportDetail(Request $request)
     {
-        // Get delivery orders with filters
-        $query = DB::table('delivery_orders as do')
+        try {
+            // Increase memory limit and execution time for large exports
+            ini_set('memory_limit', '512M');
+            set_time_limit(300); // 5 minutes
+            
+            \Log::info('DELIVERY_ORDER_EXPORT_DETAIL: Starting export', [
+                'request_params' => $request->all(),
+                'memory_limit' => ini_get('memory_limit'),
+                'max_execution_time' => ini_get('max_execution_time')
+            ]);
+            
+            // Get delivery orders with filters
+            $query = DB::table('delivery_orders as do')
             ->leftJoin('food_packing_lists as pl', 'do.packing_list_id', '=', 'pl.id')
             ->leftJoin('food_floor_orders as fo', 'pl.food_floor_order_id', '=', 'fo.id')
             ->leftJoin('users as u', 'do.created_by', '=', 'u.id')
@@ -1217,10 +1228,52 @@ class DeliveryOrderController extends Controller
             $detailData->whereDate('do.created_at', '<=', $request->dateTo);
         }
 
-        $detailResults = $detailData->get();
+        // Use chunking for large datasets to avoid memory issues
+        $detailResults = collect();
+        $detailData->chunk(1000, function ($chunk) use ($detailResults) {
+            $detailResults = $detailResults->merge($chunk);
+        });
+
+        \Log::info('DELIVERY_ORDER_EXPORT_DETAIL: Data retrieved', [
+            'orders_count' => $orders->count(),
+            'detail_results_count' => $detailResults->count(),
+            'memory_usage' => memory_get_usage(true) / 1024 / 1024 . ' MB'
+        ]);
 
         // Return Excel export using the Responsable interface
         return (new \App\Exports\DeliveryOrderDetailExport($detailResults))->toResponse($request);
+        
+        } catch (\Exception $e) {
+            \Log::error('DELIVERY_ORDER_EXPORT_DETAIL: Error occurred', [
+                'message' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => $e->getTraceAsString(),
+                'memory_usage' => memory_get_usage(true) / 1024 / 1024 . ' MB',
+                'memory_peak' => memory_get_peak_usage(true) / 1024 / 1024 . ' MB',
+                'php_version' => PHP_VERSION,
+                'memory_limit' => ini_get('memory_limit'),
+                'max_execution_time' => ini_get('max_execution_time')
+            ]);
+            
+            // Return more specific error based on exception type
+            if (strpos($e->getMessage(), 'memory') !== false) {
+                return response()->json([
+                    'error' => 'Export failed: Insufficient memory. Please contact administrator.',
+                    'details' => 'Memory limit exceeded during export process.'
+                ], 500);
+            } elseif (strpos($e->getMessage(), 'timeout') !== false || strpos($e->getMessage(), 'time') !== false) {
+                return response()->json([
+                    'error' => 'Export failed: Request timeout. Data might be too large.',
+                    'details' => 'Export process exceeded time limit.'
+                ], 500);
+            } else {
+                return response()->json([
+                    'error' => 'Export failed: ' . $e->getMessage(),
+                    'details' => 'Please contact administrator if this error persists.'
+                ], 500);
+            }
+        }
     }
 
     /**
