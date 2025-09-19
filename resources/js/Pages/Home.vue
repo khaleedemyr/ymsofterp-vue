@@ -2341,250 +2341,6 @@ watch(locale, () => {
                     </div>
                 </div>
 
-                <!-- Training Section (Invitations + History) -->
-                <div class="flex-shrink-0 mb-4">
-                    <div class="backdrop-blur-md rounded-2xl shadow-2xl border p-4 transition-all duration-500 animate-fade-in hover:shadow-3xl"
-                        :class="isNight ? 'bg-slate-800/90 border-slate-600/50' : 'bg-white/90 border-white/20'">
-                        <div class="flex items-center justify-between mb-3">
-                            <div class="flex items-center gap-2">
-                                <div class="w-3 h-3 rounded-full bg-indigo-500 animate-pulse"></div>
-                                <h3 class="text-lg font-bold" :class="isNight ? 'text-white' : 'text-slate-800'">
-                                    Training
-                                </h3>
-                            </div>
-                            <div v-if="trainingInvitations.length > 0" class="bg-indigo-500 text-white text-xs font-bold px-2 py-1 rounded-full">
-                                {{ trainingInvitations.length }}
-                            </div>
-                        </div>
-                        
-                        <div v-if="loadingTrainingInvitations" class="text-center py-4">
-                            <div class="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-indigo-500"></div>
-                            <p class="text-sm mt-2" :class="isNight ? 'text-slate-300' : 'text-slate-600'">Memuat training...</p>
-                        </div>
-                        
-                        <div v-else class="space-y-2">
-                            <!-- Training Invitations -->
-                            <div v-if="trainingInvitations.length > 0">
-                                <div v-for="invitation in trainingInvitations.slice(0, 3)" :key="'training-' + invitation.id"
-                                @click="handleTrainingInvitationClick(invitation)"
-                                class="p-3 rounded-lg cursor-pointer transition-all duration-200 hover:scale-105"
-                                :class="{
-                                    // Checked-out training (orange theme)
-                                    'bg-orange-50 hover:bg-orange-100 border border-orange-200': invitation.check_out_time && !isNight,
-                                    'bg-orange-800/50 hover:bg-orange-700/50 border border-orange-600/50': invitation.check_out_time && isNight,
-                                    // Checked-in training (green theme)
-                                    'bg-green-50 hover:bg-green-100 border border-green-200': invitation.is_checked_in && !invitation.check_out_time && !isNight,
-                                    'bg-green-800/50 hover:bg-green-700/50 border border-green-600/50': invitation.is_checked_in && !invitation.check_out_time && isNight,
-                                    // Invited training (blue theme)
-                                    'bg-indigo-50 hover:bg-indigo-100 border border-indigo-200': !invitation.is_checked_in && !isNight,
-                                    'bg-slate-700/50 hover:bg-slate-600/50 border border-slate-600/50': !invitation.is_checked_in && isNight
-                                }">
-                                <div class="flex items-center justify-between">
-                                    <div class="flex-1">
-                                        <div class="flex items-center gap-2 mb-1">
-                                            <div class="font-semibold text-sm" :class="isNight ? 'text-white' : 'text-slate-800'">
-                                                {{ invitation.course_title }}
-                                            </div>
-                                            <!-- Check-in/Check-out Status Badge -->
-                                            <span v-if="invitation.check_out_time" 
-                                                  class="px-2 py-1 text-xs rounded-full bg-orange-100 text-orange-800 border border-orange-200">
-                                                <i class="fa-solid fa-sign-out-alt mr-1"></i>Checked-out
-                                            </span>
-                                            <span v-else-if="invitation.is_checked_in" 
-                                                  class="px-2 py-1 text-xs rounded-full bg-green-100 text-green-800 border border-green-200">
-                                                <i class="fa-solid fa-check mr-1"></i>Checked-in
-                                            </span>
-                                            <span v-else 
-                                                  class="px-2 py-1 text-xs rounded-full bg-blue-100 text-blue-800 border border-blue-200">
-                                                <i class="fa-solid fa-clock mr-1"></i>Invited
-                                            </span>
-                                        </div>
-                                        <div class="text-xs" :class="isNight ? 'text-slate-300' : 'text-slate-600'">
-                                            {{ invitation.role }} • {{ invitation.outlet_name }}
-                                        </div>
-                                        <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
-                                            {{ new Date(invitation.scheduled_date).toLocaleDateString('id-ID') }} • {{ invitation.start_time }} - {{ invitation.end_time }}
-                                        </div>
-                                        <!-- Check-in/Check-out Time -->
-                                        <div v-if="invitation.check_in_time" 
-                                             class="text-xs font-medium mt-1 space-y-1">
-                                            <div class="text-green-600">
-                                                <i class="fa-solid fa-sign-in-alt mr-1"></i>
-                                                Check-in: {{ new Date(invitation.check_in_time).toLocaleString('id-ID') }}
-                                            </div>
-                                            <div v-if="invitation.check_out_time" class="text-orange-600">
-                                                <i class="fa-solid fa-sign-out-alt mr-1"></i>
-                                                Check-out: {{ new Date(invitation.check_out_time).toLocaleString('id-ID') }}
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div class="text-xs font-medium" 
-                                         :class="{
-                                             'text-orange-500': invitation.check_out_time,
-                                             'text-green-500': invitation.is_checked_in && !invitation.check_out_time,
-                                             'text-indigo-500': !invitation.is_checked_in
-                                         }">
-                                        Klik untuk detail
-                                    </div>
-                                </div>
-                            </div>
-                            </div>
-                            
-                            <!-- Empty State jika tidak ada training invitations -->
-                            <div v-else class="text-center py-8">
-                                <div class="mb-4 text-gray-400">
-                                    <i class="fa-solid fa-graduation-cap text-4xl"></i>
-                                </div>
-                                <h4 class="text-lg font-semibold text-gray-600 mb-2">Belum Ada Training</h4>
-                                <p class="text-gray-500">Anda belum mendapat undangan training apapun.</p>
-                            </div>
-                            
-                            <!-- Tombol untuk training history -->
-                            <div class="text-center pt-2">
-                                <button @click="openTrainingHistoryModal" class="text-sm bg-gray-500 text-white px-3 py-1 rounded hover:bg-gray-600 transition-colors">
-                                    <i class="fa-solid fa-history mr-1"></i>
-                                    Training History
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Available Trainings Section -->
-                <div class="flex-shrink-0 mb-4">
-                    <div class="backdrop-blur-md rounded-2xl shadow-2xl border p-4 transition-all duration-500 animate-fade-in hover:shadow-3xl"
-                        :class="isNight ? 'bg-slate-800/90 border-slate-600/50' : 'bg-white/90 border-white/20'">
-                        <div class="flex items-center justify-between mb-3">
-                            <div class="flex items-center gap-2">
-                                <div class="w-3 h-3 rounded-full bg-emerald-500 animate-pulse"></div>
-                                <h3 class="text-lg font-bold" :class="isNight ? 'text-white' : 'text-slate-800'">
-                                    Training Tersedia
-                                </h3>
-                            </div>
-                            <div class="flex items-center gap-2">
-                                <div class="bg-emerald-500 text-white text-xs font-bold px-2 py-1 rounded-full">
-                                    {{ availableTrainingsStats.total }}
-                                </div>
-                                <button @click="openAvailableTrainingsModal" class="text-sm text-emerald-500 hover:text-emerald-700 font-medium">
-                                    Lihat Semua
-                                </button>
-                            </div>
-                        </div>
-                        
-                        <div v-if="loadingAvailableTrainings" class="text-center py-4">
-                            <div class="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-emerald-500"></div>
-                            <p class="text-sm mt-2" :class="isNight ? 'text-slate-300' : 'text-slate-600'">Memuat training tersedia...</p>
-                        </div>
-                        
-                        <div v-else class="space-y-3">
-                            <!-- Training Stats -->
-                            <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-                                <div class="text-center p-3 rounded-lg" :class="isNight ? 'bg-slate-700/50' : 'bg-emerald-50'">
-                                    <div class="text-lg font-bold text-emerald-600">{{ availableTrainingsStats.total }}</div>
-                                    <div class="text-xs" :class="isNight ? 'text-slate-300' : 'text-slate-600'">Total</div>
-                                </div>
-                                <div class="text-center p-3 rounded-lg" :class="isNight ? 'bg-slate-700/50' : 'bg-green-50'">
-                                    <div class="text-lg font-bold text-green-600">{{ availableTrainingsStats.completed }}</div>
-                                    <div class="text-xs" :class="isNight ? 'text-slate-300' : 'text-slate-600'">Selesai</div>
-                                </div>
-                                <div class="text-center p-3 rounded-lg" :class="isNight ? 'bg-slate-700/50' : 'bg-yellow-50'">
-                                    <div class="text-lg font-bold text-yellow-600">{{ availableTrainingsStats.invited }}</div>
-                                    <div class="text-xs" :class="isNight ? 'text-slate-300' : 'text-slate-600'">Diundang</div>
-                                </div>
-                                <div class="text-center p-3 rounded-lg" :class="isNight ? 'bg-slate-700/50' : 'bg-gray-50'">
-                                    <div class="text-lg font-bold text-gray-600">{{ availableTrainingsStats.available }}</div>
-                                    <div class="text-xs" :class="isNight ? 'text-slate-300' : 'text-slate-600'">Tersedia</div>
-                                </div>
-                            </div>
-                            
-                            <!-- Progress Bar -->
-                            <div class="mb-4">
-                                <div class="flex items-center justify-between mb-1">
-                                    <span class="text-sm font-medium" :class="isNight ? 'text-slate-300' : 'text-slate-600'">Progress Training</span>
-                                    <span class="text-sm font-medium text-emerald-600">{{ availableTrainingsStats.completionRate }}%</span>
-                                </div>
-                                <div class="w-full bg-gray-200 rounded-full h-2" :class="isNight ? 'bg-slate-600' : 'bg-gray-200'">
-                                    <div class="bg-emerald-500 h-2 rounded-full transition-all duration-300" 
-                                         :style="{ width: availableTrainingsStats.completionRate + '%' }"></div>
-                                </div>
-                            </div>
-                            
-                            <!-- Sample Available Trainings -->
-                            <div v-if="availableTrainings.length > 0" class="space-y-2">
-                                <div v-for="training in availableTrainings.slice(0, 3)" :key="'available-' + training.id"
-                                     class="p-3 rounded-lg border transition-all duration-200 max-w-sm mx-auto"
-                                     :class="[
-                                         isNight ? 'bg-slate-700/50 border-slate-600/50' : 'bg-slate-50 border-slate-200',
-                                         training.is_completed ? 'opacity-75' : ''
-                                     ]">
-                                    <!-- Banner -->
-                                    <div class="w-full h-36 rounded-lg overflow-hidden bg-gray-100 shadow-md">
-                                        <img v-if="training.thumbnail_url" 
-                                             :src="training.thumbnail_url" 
-                                             :alt="training.title"
-                                             class="w-full h-full object-contain bg-gray-50"
-                                             @error="$event.target.style.display='none'">
-                                        <div v-else class="w-full h-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
-                                            <i class="fas fa-graduation-cap text-white text-4xl"></i>
-                                        </div>
-                                    </div>
-                                    
-                                    <!-- Training Information Below Banner -->
-                                    <div class="mt-3 space-y-2">
-                                        <!-- Title and Status -->
-                                        <div class="flex items-center justify-between">
-                                            <div class="flex-1 min-w-0">
-                                                <div class="font-semibold text-sm truncate" :class="isNight ? 'text-white' : 'text-slate-800'">
-                                                    {{ training.title }}
-                                                </div>
-                                                <div class="text-xs" :class="isNight ? 'text-slate-300' : 'text-slate-600'">
-                                                    {{ training.duration_formatted }} • {{ training.category?.name || 'Umum' }}
-                                                </div>
-                                            </div>
-                                            <span :class="getTrainingStatusBadge(training).class" 
-                                                  class="px-2 py-1 text-xs rounded-full border flex-shrink-0">
-                                                <i :class="getTrainingStatusBadge(training).icon" class="mr-1"></i>
-                                                {{ getTrainingStatusBadge(training).text }}
-                                            </span>
-                                        </div>
-                                        
-                                        <!-- Training Details -->
-                                        <div class="flex flex-wrap gap-2">
-                                            <span v-if="training.difficulty_level" class="inline-flex items-center px-2 py-1 bg-gray-100 rounded-full text-xs">
-                                                <i class="fas fa-signal mr-1"></i>{{ training.difficulty_level }}
-                                            </span>
-                                            <span v-if="training.type" class="inline-flex items-center px-2 py-1 bg-gray-100 rounded-full text-xs">
-                                                <i class="fas fa-tag mr-1"></i>{{ training.type }}
-                                            </span>
-                                            <span v-if="training.specification" class="inline-flex items-center px-2 py-1 bg-gray-100 rounded-full text-xs">
-                                                <i class="fas fa-cog mr-1"></i>{{ training.specification }}
-                                            </span>
-                                            <span v-if="training.course_type" class="inline-flex items-center px-2 py-1 bg-gray-100 rounded-full text-xs">
-                                                <i class="fas fa-graduation-cap mr-1"></i>{{ training.course_type }}
-                                            </span>
-                                        </div>
-                                    </div>
-                                </div>
-                                
-                                <!-- Show more button -->
-                                <div v-if="availableTrainings.length > 3" class="text-center pt-2">
-                                    <button class="text-sm text-emerald-500 hover:text-emerald-700 font-medium">
-                                        Lihat {{ availableTrainings.length - 3 }} training lainnya...
-                                    </button>
-                                </div>
-                            </div>
-                            
-                            <!-- Empty State -->
-                            <div v-else class="text-center py-8">
-                                <div class="mb-4 text-gray-400">
-                                    <i class="fa-solid fa-graduation-cap text-4xl"></i>
-                                </div>
-                                <h4 class="text-lg font-semibold text-gray-600 mb-2">Tidak Ada Training Tersedia</h4>
-                                <p class="text-gray-500">Tidak ada training yang sesuai dengan divisi, jabatan, atau outlet Anda saat ini.</p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
 
                 <!-- Bottom Section: Clock, Weather, Calendar, Notes, and Announcements -->
                 <div class="flex-1 grid grid-cols-1 lg:grid-cols-5 gap-4 min-h-0 mb-6 items-stretch px-4 md:px-6">
@@ -4421,6 +4177,254 @@ watch(locale, () => {
                         class="inline-flex items-center px-4 py-2 bg-gray-300 text-gray-700 text-sm font-medium rounded-md hover:bg-gray-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500">
                     Tutup
                 </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Training Cards - Moved to Bottom -->
+    <div class="px-4 md:px-6 space-y-4">
+        <!-- Training Section (Invitations + History) -->
+        <div class="flex-shrink-0 mb-4">
+            <div class="backdrop-blur-md rounded-2xl shadow-2xl border p-4 transition-all duration-500 animate-fade-in hover:shadow-3xl"
+                :class="isNight ? 'bg-slate-800/90 border-slate-600/50' : 'bg-white/90 border-white/20'">
+                <div class="flex items-center justify-between mb-3">
+                    <div class="flex items-center gap-2">
+                        <div class="w-3 h-3 rounded-full bg-indigo-500 animate-pulse"></div>
+                        <h3 class="text-lg font-bold" :class="isNight ? 'text-white' : 'text-slate-800'">
+                            Training
+                        </h3>
+                    </div>
+                    <div v-if="trainingInvitations.length > 0" class="bg-indigo-500 text-white text-xs font-bold px-2 py-1 rounded-full">
+                        {{ trainingInvitations.length }}
+                    </div>
+                </div>
+                
+                <div v-if="loadingTrainingInvitations" class="text-center py-4">
+                    <div class="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-indigo-500"></div>
+                    <p class="text-sm mt-2" :class="isNight ? 'text-slate-300' : 'text-slate-600'">Memuat training...</p>
+                </div>
+                
+                <div v-else class="space-y-2">
+                    <!-- Training Invitations -->
+                    <div v-if="trainingInvitations.length > 0">
+                        <div v-for="invitation in trainingInvitations.slice(0, 3)" :key="'training-' + invitation.id"
+                        @click="handleTrainingInvitationClick(invitation)"
+                        class="p-3 rounded-lg cursor-pointer transition-all duration-200 hover:scale-105"
+                        :class="{
+                            // Checked-out training (orange theme)
+                            'bg-orange-50 hover:bg-orange-100 border border-orange-200': invitation.check_out_time && !isNight,
+                            'bg-orange-800/50 hover:bg-orange-700/50 border border-orange-600/50': invitation.check_out_time && isNight,
+                            // Checked-in training (green theme)
+                            'bg-green-50 hover:bg-green-100 border border-green-200': invitation.is_checked_in && !invitation.check_out_time && !isNight,
+                            'bg-green-800/50 hover:bg-green-700/50 border border-green-600/50': invitation.is_checked_in && !invitation.check_out_time && isNight,
+                            // Invited training (blue theme)
+                            'bg-indigo-50 hover:bg-indigo-100 border border-indigo-200': !invitation.is_checked_in && !isNight,
+                            'bg-slate-700/50 hover:bg-slate-600/50 border border-slate-600/50': !invitation.is_checked_in && isNight
+                        }">
+                        <div class="flex items-center justify-between">
+                            <div class="flex-1">
+                                <div class="flex items-center gap-2 mb-1">
+                                    <div class="font-semibold text-sm" :class="isNight ? 'text-white' : 'text-slate-800'">
+                                        {{ invitation.course_title }}
+                                    </div>
+                                    <!-- Check-in/Check-out Status Badge -->
+                                    <span v-if="invitation.check_out_time" 
+                                          class="px-2 py-1 text-xs rounded-full bg-orange-100 text-orange-800 border border-orange-200">
+                                        <i class="fa-solid fa-sign-out-alt mr-1"></i>Checked-out
+                                    </span>
+                                    <span v-else-if="invitation.is_checked_in" 
+                                          class="px-2 py-1 text-xs rounded-full bg-green-100 text-green-800 border border-green-200">
+                                        <i class="fa-solid fa-check mr-1"></i>Checked-in
+                                    </span>
+                                    <span v-else 
+                                          class="px-2 py-1 text-xs rounded-full bg-blue-100 text-blue-800 border border-blue-200">
+                                        <i class="fa-solid fa-clock mr-1"></i>Invited
+                                    </span>
+                                </div>
+                                <div class="text-xs" :class="isNight ? 'text-slate-300' : 'text-slate-600'">
+                                    {{ invitation.role }} • {{ invitation.outlet_name }}
+                                </div>
+                                <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
+                                    {{ new Date(invitation.scheduled_date).toLocaleDateString('id-ID') }} • {{ invitation.start_time }} - {{ invitation.end_time }}
+                                </div>
+                                <!-- Check-in/Check-out Time -->
+                                <div v-if="invitation.check_in_time" 
+                                     class="text-xs font-medium mt-1 space-y-1">
+                                    <div class="text-green-600">
+                                        <i class="fa-solid fa-sign-in-alt mr-1"></i>
+                                        Check-in: {{ new Date(invitation.check_in_time).toLocaleString('id-ID') }}
+                                    </div>
+                                    <div v-if="invitation.check_out_time" class="text-orange-600">
+                                        <i class="fa-solid fa-sign-out-alt mr-1"></i>
+                                        Check-out: {{ new Date(invitation.check_out_time).toLocaleString('id-ID') }}
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="text-xs font-medium" 
+                                 :class="{
+                                     'text-orange-500': invitation.check_out_time,
+                                     'text-green-500': invitation.is_checked_in && !invitation.check_out_time,
+                                     'text-indigo-500': !invitation.is_checked_in
+                                 }">
+                                Klik untuk detail
+                            </div>
+                        </div>
+                    </div>
+                    </div>
+                    
+                    <!-- Empty State jika tidak ada training invitations -->
+                    <div v-else class="text-center py-8">
+                        <div class="mb-4 text-gray-400">
+                            <i class="fa-solid fa-graduation-cap text-4xl"></i>
+                        </div>
+                        <h4 class="text-lg font-semibold text-gray-600 mb-2">Belum Ada Training</h4>
+                        <p class="text-gray-500">Anda belum mendapat undangan training apapun.</p>
+                    </div>
+                    
+                    <!-- Tombol untuk training history -->
+                    <div class="text-center pt-2">
+                        <button @click="openTrainingHistoryModal" class="text-sm bg-gray-500 text-white px-3 py-1 rounded hover:bg-gray-600 transition-colors">
+                            <i class="fa-solid fa-history mr-1"></i>
+                            Training History
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Available Trainings Section -->
+        <div class="flex-shrink-0 mb-4">
+            <div class="backdrop-blur-md rounded-2xl shadow-2xl border p-4 transition-all duration-500 animate-fade-in hover:shadow-3xl"
+                :class="isNight ? 'bg-slate-800/90 border-slate-600/50' : 'bg-white/90 border-white/20'">
+                <div class="flex items-center justify-between mb-3">
+                    <div class="flex items-center gap-2">
+                        <div class="w-3 h-3 rounded-full bg-emerald-500 animate-pulse"></div>
+                        <h3 class="text-lg font-bold" :class="isNight ? 'text-white' : 'text-slate-800'">
+                            Training Tersedia
+                        </h3>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <div class="bg-emerald-500 text-white text-xs font-bold px-2 py-1 rounded-full">
+                            {{ availableTrainingsStats.total }}
+                        </div>
+                        <button @click="openAvailableTrainingsModal" class="text-sm text-emerald-500 hover:text-emerald-700 font-medium">
+                            Lihat Semua
+                        </button>
+                    </div>
+                </div>
+                
+                <div v-if="loadingAvailableTrainings" class="text-center py-4">
+                    <div class="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-emerald-500"></div>
+                    <p class="text-sm mt-2" :class="isNight ? 'text-slate-300' : 'text-slate-600'">Memuat training tersedia...</p>
+                </div>
+                
+                <div v-else class="space-y-3">
+                    <!-- Training Stats -->
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+                        <div class="text-center p-3 rounded-lg" :class="isNight ? 'bg-slate-700/50' : 'bg-emerald-50'">
+                            <div class="text-lg font-bold text-emerald-600">{{ availableTrainingsStats.total }}</div>
+                            <div class="text-xs" :class="isNight ? 'text-slate-300' : 'text-slate-600'">Total</div>
+                        </div>
+                        <div class="text-center p-3 rounded-lg" :class="isNight ? 'bg-slate-700/50' : 'bg-green-50'">
+                            <div class="text-lg font-bold text-green-600">{{ availableTrainingsStats.completed }}</div>
+                            <div class="text-xs" :class="isNight ? 'text-slate-300' : 'text-slate-600'">Selesai</div>
+                        </div>
+                        <div class="text-center p-3 rounded-lg" :class="isNight ? 'bg-slate-700/50' : 'bg-yellow-50'">
+                            <div class="text-lg font-bold text-yellow-600">{{ availableTrainingsStats.invited }}</div>
+                            <div class="text-xs" :class="isNight ? 'text-slate-300' : 'text-slate-600'">Diundang</div>
+                        </div>
+                        <div class="text-center p-3 rounded-lg" :class="isNight ? 'bg-slate-700/50' : 'bg-gray-50'">
+                            <div class="text-lg font-bold text-gray-600">{{ availableTrainingsStats.available }}</div>
+                            <div class="text-xs" :class="isNight ? 'text-slate-300' : 'text-slate-600'">Tersedia</div>
+                        </div>
+                    </div>
+                    
+                    <!-- Progress Bar -->
+                    <div class="mb-4">
+                        <div class="flex items-center justify-between mb-1">
+                            <span class="text-sm font-medium" :class="isNight ? 'text-slate-300' : 'text-slate-600'">Progress Training</span>
+                            <span class="text-sm font-medium text-emerald-600">{{ availableTrainingsStats.completionRate }}%</span>
+                        </div>
+                        <div class="w-full bg-gray-200 rounded-full h-2" :class="isNight ? 'bg-slate-600' : 'bg-gray-200'">
+                            <div class="bg-emerald-500 h-2 rounded-full transition-all duration-300" 
+                                 :style="{ width: availableTrainingsStats.completionRate + '%' }"></div>
+                        </div>
+                    </div>
+                    
+                    <!-- Sample Available Trainings -->
+                    <div v-if="availableTrainings.length > 0" class="space-y-2">
+                        <div v-for="training in availableTrainings.slice(0, 3)" :key="'available-' + training.id"
+                             class="p-3 rounded-lg border transition-all duration-200 max-w-sm mx-auto"
+                             :class="[
+                                 isNight ? 'bg-slate-700/50 border-slate-600/50' : 'bg-slate-50 border-slate-200',
+                                 training.is_completed ? 'opacity-75' : ''
+                             ]">
+                            <!-- Banner -->
+                            <div class="w-full h-36 rounded-lg overflow-hidden bg-gray-100 shadow-md">
+                                <img v-if="training.thumbnail_url" 
+                                     :src="training.thumbnail_url" 
+                                     :alt="training.title"
+                                     class="w-full h-full object-contain bg-gray-50"
+                                     @error="$event.target.style.display='none'">
+                                <div v-else class="w-full h-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
+                                    <i class="fas fa-graduation-cap text-white text-4xl"></i>
+                                </div>
+                            </div>
+                            
+                            <!-- Training Information Below Banner -->
+                            <div class="mt-3 space-y-2">
+                                <!-- Title and Status -->
+                                <div class="flex items-center justify-between">
+                                    <div class="flex-1 min-w-0">
+                                        <div class="font-semibold text-sm truncate" :class="isNight ? 'text-white' : 'text-slate-800'">
+                                            {{ training.title }}
+                                        </div>
+                                        <div class="text-xs" :class="isNight ? 'text-slate-300' : 'text-slate-600'">
+                                            {{ training.duration_formatted }} • {{ training.category?.name || 'Umum' }}
+                                        </div>
+                                    </div>
+                                    <span :class="getTrainingStatusBadge(training).class" 
+                                          class="px-2 py-1 text-xs rounded-full border flex-shrink-0">
+                                        <i :class="getTrainingStatusBadge(training).icon" class="mr-1"></i>
+                                        {{ getTrainingStatusBadge(training).text }}
+                                    </span>
+                                </div>
+                                
+                                <!-- Training Details -->
+                                <div class="flex flex-wrap gap-2">
+                                    <span v-if="training.difficulty_level" class="inline-flex items-center px-2 py-1 bg-gray-100 rounded-full text-xs">
+                                        <i class="fas fa-signal mr-1"></i>{{ training.difficulty_level }}
+                                    </span>
+                                    <span v-if="training.type" class="inline-flex items-center px-2 py-1 bg-gray-100 rounded-full text-xs">
+                                        <i class="fas fa-tag mr-1"></i>{{ training.type }}
+                                    </span>
+                                    <span v-if="training.specification" class="inline-flex items-center px-2 py-1 bg-gray-100 rounded-full text-xs">
+                                        <i class="fas fa-cog mr-1"></i>{{ training.specification }}
+                                    </span>
+                                    <span v-if="training.course_type" class="inline-flex items-center px-2 py-1 bg-gray-100 rounded-full text-xs">
+                                        <i class="fas fa-graduation-cap mr-1"></i>{{ training.course_type }}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Show more button -->
+                        <div v-if="availableTrainings.length > 3" class="text-center pt-2">
+                            <button class="text-sm text-emerald-500 hover:text-emerald-700 font-medium">
+                                Lihat {{ availableTrainings.length - 3 }} training lainnya...
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- Empty State -->
+                    <div v-else class="text-center py-8">
+                        <div class="mb-4 text-gray-400">
+                            <i class="fa-solid fa-graduation-cap text-4xl"></i>
+                        </div>
+                        <h4 class="text-lg font-semibold text-gray-600 mb-2">Tidak Ada Training Tersedia</h4>
+                        <p class="text-gray-500">Tidak ada training yang sesuai dengan divisi, jabatan, atau outlet Anda saat ini.</p>
+                    </div>
+                </div>
             </div>
         </div>
     </div>

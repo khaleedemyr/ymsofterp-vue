@@ -579,6 +579,9 @@ class ReportController extends Controller
         if ($request->filled('to')) {
             $query->whereDate('gr.receive_date', '<=', $request->to);
         }
+        
+        // Filter GR yang belum dihapus
+        $query->whereNull('gr.deleted_at');
 
         $report1 = $query->groupBy('o.nama_outlet', 'o.is_outlet')
             ->orderBy('o.is_outlet', 'desc')
@@ -855,6 +858,9 @@ class ReportController extends Controller
             if ($request->filled('to')) {
                 $query->whereDate('gr.receive_date', '<=', $to);
             }
+            
+            // Filter GR yang belum dihapus
+            $query->whereNull('gr.deleted_at');
 
             $report = $query->groupBy('o.nama_outlet', 'o.is_outlet')
                 ->orderBy('o.is_outlet', 'desc')
@@ -1002,6 +1008,7 @@ class ReportController extends Controller
             ->join('units as u', 'i.unit_id', '=', 'u.id')
             ->join('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
             ->whereDate('gr.receive_date', $tanggal)
+            ->whereNull('gr.deleted_at')
             ->select(
                 'it.id as item_id',
                 'it.name as item_name',
@@ -1084,6 +1091,7 @@ class ReportController extends Controller
             ->join('units as u', 'i.unit_id', '=', 'u.id')
             ->join('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
             ->whereDate('gr.receive_date', $tanggal)
+            ->whereNull('gr.deleted_at')
             ->select(
                 'it.id as item_id',
                 'it.name as item_name',
