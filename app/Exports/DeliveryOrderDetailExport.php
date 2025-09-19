@@ -20,10 +20,22 @@ class DeliveryOrderDetailExport implements FromCollection, WithHeadings, WithMap
     {
         $this->data = $data;
         $this->fileName = 'delivery_order_detail_' . date('Y-m-d_H-i-s') . '.xlsx';
+        
+        // Log data received
+        \Log::info('DELIVERY_ORDER_DETAIL_EXPORT: Constructor called', [
+            'data_type' => get_class($data),
+            'data_count' => is_countable($data) ? count($data) : 'not countable',
+            'first_item' => is_countable($data) && count($data) > 0 ? $data->first() : 'no data'
+        ]);
     }
 
     public function collection()
     {
+        \Log::info('DELIVERY_ORDER_DETAIL_EXPORT: Collection method called', [
+            'data_count' => is_countable($this->data) ? count($this->data) : 'not countable',
+            'data_type' => get_class($this->data)
+        ]);
+        
         return $this->data;
     }
 
@@ -52,6 +64,31 @@ class DeliveryOrderDetailExport implements FromCollection, WithHeadings, WithMap
     {
         static $no = 0;
         $no++;
+        
+        // Log first few rows for debugging
+        if ($no <= 3) {
+            \Log::info('DELIVERY_ORDER_DETAIL_EXPORT: Mapping row', [
+                'row_number' => $no,
+                'row_data' => $row,
+                'mapped_data' => [
+                    $no,
+                    $row->delivery_date ? date('d/m/Y', strtotime($row->delivery_date)) : '-',
+                    $row->do_number ?? '-',
+                    $row->packing_number ?? '-',
+                    $row->floor_order_number ?? '-',
+                    $row->nama_outlet ?? '-',
+                    $row->warehouse_outlet_name ?? '-',
+                    $row->created_by_name ?? '-',
+                    $row->item_name ?? '-',
+                    $row->item_sku ?? '-',
+                    $row->category_name ?? '-',
+                    $row->sub_category_name ?? '-',
+                    number_format($row->qty_packing_list ?? 0, 2),
+                    number_format($row->qty_scan ?? 0, 2),
+                    $row->unit ?? '-'
+                ]
+            ]);
+        }
         
         return [
             $no,

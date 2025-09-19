@@ -1228,20 +1228,56 @@ class DeliveryOrderController extends Controller
             $detailData->whereDate('do.created_at', '<=', $request->dateTo);
         }
 
-        // Use chunking for large datasets to avoid memory issues
-        $detailResults = collect();
-        $detailData->chunk(1000, function ($chunk) use ($detailResults) {
-            $detailResults = $detailResults->merge($chunk);
-        });
+        // Get data with better error handling for server environment
+        try {
+            $detailResults = $detailData->get();
+            
+            // If no data found, log and return empty collection
+            if ($detailResults->isEmpty()) {
+                \Log::warning('DELIVERY_ORDER_EXPORT_DETAIL: No data found', [
+                    'query_sql' => $detailData->toSql(),
+                    'query_bindings' => $detailData->getBindings()
+                ]);
+                $detailResults = collect();
+            }
+        } catch (\Exception $e) {
+            \Log::error('DELIVERY_ORDER_EXPORT_DETAIL: Error getting data', [
+                'message' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine()
+            ]);
+            $detailResults = collect();
+        }
 
         \Log::info('DELIVERY_ORDER_EXPORT_DETAIL: Data retrieved', [
             'orders_count' => $orders->count(),
             'detail_results_count' => $detailResults->count(),
-            'memory_usage' => memory_get_usage(true) / 1024 / 1024 . ' MB'
+            'memory_usage' => memory_get_usage(true) / 1024 / 1024 . ' MB',
+            'first_record' => $detailResults->first(),
+            'sample_data' => $detailResults->take(3)->toArray()
         ]);
 
-        // Return Excel export using the Responsable interface
-        return (new \App\Exports\DeliveryOrderDetailExport($detailResults))->toResponse($request);
+        // Check if we have data before creating export
+        if ($detailResults->isEmpty()) {
+            \Log::warning('DELIVERY_ORDER_EXPORT_DETAIL: No data to export');
+            return response()->json([
+                'error' => 'No data found to export',
+                'message' => 'Tidak ada data yang ditemukan untuk diekspor'
+            ], 404);
+        }
+
+        // For server with limited memory, use streaming export
+        try {
+            return (new \App\Exports\DeliveryOrderDetailExport($detailResults))->toResponse($request);
+        } catch (\Exception $exportError) {
+            \Log::error('DELIVERY_ORDER_EXPORT_DETAIL: Export failed, trying alternative method', [
+                'export_error' => $exportError->getMessage(),
+                'data_count' => $detailResults->count()
+            ]);
+            
+            // Fallback: return CSV instead of Excel for server compatibility
+            return $this->exportAsCsv($detailResults);
+        }
         
         } catch (\Exception $e) {
             \Log::error('DELIVERY_ORDER_EXPORT_DETAIL: Error occurred', [
@@ -1274,6 +1310,72 @@ class DeliveryOrderController extends Controller
                 ], 500);
             }
         }
+    }
+
+    /**
+     * Export data as CSV (fallback for server compatibility)
+     */
+    private function exportAsCsv($data)
+    {
+        $filename = 'delivery_order_detail_' . date('Y-m-d_H-i-s') . '.csv';
+        
+        $headers = [
+            'Content-Type' => 'text/csv',
+            'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+        ];
+
+        $callback = function() use ($data) {
+            $file = fopen('php://output', 'w');
+            
+            // Add BOM for UTF-8
+            fwrite($file, "\xEF\xBB\xBF");
+            
+            // Add headers
+            fputcsv($file, [
+                'No',
+                'Delivery Date',
+                'DO Number',
+                'Packing List',
+                'Floor Order',
+                'Outlet',
+                'Warehouse Outlet',
+                'Created By',
+                'Item Name',
+                'SKU',
+                'Category',
+                'Sub Category',
+                'Qty Packing List',
+                'Qty Scan',
+                'Unit'
+            ]);
+            
+            // Add data
+            $no = 0;
+            foreach ($data as $row) {
+                $no++;
+                fputcsv($file, [
+                    $no,
+                    $row->delivery_date ? date('d/m/Y', strtotime($row->delivery_date)) : '-',
+                    $row->do_number ?? '-',
+                    $row->packing_number ?? '-',
+                    $row->floor_order_number ?? '-',
+                    $row->nama_outlet ?? '-',
+                    $row->warehouse_outlet_name ?? '-',
+                    $row->created_by_name ?? '-',
+                    $row->item_name ?? '-',
+                    $row->item_sku ?? '-',
+                    $row->category_name ?? '-',
+                    $row->sub_category_name ?? '-',
+                    number_format($row->qty_packing_list ?? 0, 2),
+                    number_format($row->qty_scan ?? 0, 2),
+                    $row->unit ?? '-'
+                ]);
+            }
+            
+            fclose($file);
+        };
+
+        return response()->stream($callback, 200, $headers);
     }
 
     /**
