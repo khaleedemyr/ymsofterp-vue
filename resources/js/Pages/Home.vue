@@ -2391,10 +2391,6 @@ watch(locale, () => {
                 </div>
             </div>
 
-            <!-- Footer -->
-            <div class="flex-shrink-0 text-center text-xs opacity-90 py-4 mt-6 px-4 md:px-6" :class="isNight ? 'text-indigo-300' : 'text-indigo-500'">
-                {{ t('home.powered') }} &copy; {{ new Date().getFullYear() }}
-            </div>
         </div>
 
         <!-- Approval Detail Modal -->
@@ -4427,6 +4423,11 @@ watch(locale, () => {
                 </div>
             </div>
         </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="flex-shrink-0 text-center text-xs opacity-90 py-4 mt-6 px-4 md:px-6" :class="isNight ? 'text-indigo-300' : 'text-indigo-500'">
+        {{ t('home.powered') }} &copy; {{ new Date().getFullYear() }}
     </div>
 
 </template>
