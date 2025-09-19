@@ -507,7 +507,8 @@ class LmsController extends Controller
                 'target_outlet_ids' => 'nullable|array',
                 'target_outlet_ids.*' => 'exists:tbl_data_outlet,id_outlet',
                 'duration_minutes' => 'required|integer|min:1',
-                'type' => 'required|in:online,offline',
+                'type' => 'required|in:online,in_class,practice',
+                'specification' => 'required|in:generic,departemental',
                 'course_type' => 'required|in:mandatory,optional',
                 'status' => 'required|in:draft,published,archived',
                 // 'max_students' => 'nullable|integer|min:1', // REMOVED
@@ -734,6 +735,7 @@ class LmsController extends Controller
                 'target_outlet_ids' => isset($validated['target_outlet_ids']) && !empty($validated['target_outlet_ids']) ? json_encode($validated['target_outlet_ids']) : null,
                 'duration_minutes' => $validated['duration_minutes'],
                 'type' => $validated['type'],
+                'specification' => $validated['specification'],
                 'course_type' => $validated['course_type'],
                 'status' => $validated['status'],
                 // 'max_students' => $validated['max_students'] ?? null, // REMOVED
@@ -1493,7 +1495,8 @@ class LmsController extends Controller
             'target_outlet_ids' => 'nullable|array',
             'target_outlet_ids.*' => 'exists:tbl_data_outlet,id_outlet',
             'duration_minutes' => 'required|integer|min:1',
-            'type' => 'required|in:online,offline',
+            'type' => 'required|in:online,in_class,practice',
+            'specification' => 'required|in:generic,departemental',
             'course_type' => 'required|in:mandatory,optional',
             // 'requirements' => 'nullable|array', // REMOVED - requirements field removed
             // 'requirements.*' => 'string|max:500', // REMOVED - requirements field removed
@@ -2265,6 +2268,7 @@ class LmsController extends Controller
                     'thumbnail_url' => $course->thumbnail_url,
                     'difficulty_level' => $course->difficulty_level,
                     'type' => $course->type,
+                    'specification' => $course->specification,
                     'course_type' => $course->course_type,
                     'category' => $course->category ? [
                         'id' => $course->category->id,
@@ -2338,6 +2342,7 @@ class LmsController extends Controller
             $divisionId = $request->get('division_id');
             $jabatanId = $request->get('jabatan_id');
             $outletId = $request->get('outlet_id');
+            $specification = $request->get('specification');
 
             // Build query for users with filters
             $usersQuery = \App\Models\User::where('status', 'A')
@@ -2359,9 +2364,15 @@ class LmsController extends Controller
             \Log::info('Found users for training report', ['count' => $users->count()]);
 
             // Get all published courses
-            $allCourses = LmsCourse::where('status', 'published')
-                ->with(['targetDivision', 'targetDivisions', 'category', 'competencies'])
-                ->get();
+            $allCoursesQuery = LmsCourse::where('status', 'published')
+                ->with(['targetDivision', 'targetDivisions', 'category', 'competencies']);
+            
+            // Apply specification filter if provided
+            if ($specification) {
+                $allCoursesQuery->where('specification', $specification);
+            }
+            
+            $allCourses = $allCoursesQuery->get();
 
             \Log::info('Found published courses', ['count' => $allCourses->count()]);
 
@@ -2394,6 +2405,7 @@ class LmsController extends Controller
                         'lms_courses.duration_minutes',
                         'lms_courses.difficulty_level',
                         'lms_courses.type',
+                        'lms_courses.specification',
                         'lms_courses.course_type',
                         'lms_courses.category_id',
                         'training_schedules.scheduled_date',
@@ -2504,6 +2516,7 @@ class LmsController extends Controller
                             'duration_minutes' => $training->duration_minutes,
                             'difficulty_level' => $training->difficulty_level,
                             'type' => $training->type,
+                            'specification' => $training->specification,
                             'course_type' => $training->course_type,
                             'scheduled_date' => $training->scheduled_date,
                             'start_time' => $training->start_time,
@@ -2537,6 +2550,7 @@ class LmsController extends Controller
                             'duration_formatted' => $course->duration_formatted ?? $course->duration_hours . ' jam',
                             'difficulty_level' => $course->difficulty_level,
                             'type' => $course->type,
+                            'specification' => $course->specification,
                             'course_type' => $course->course_type,
                             'competencies' => $course->competencies->map(function($competency) {
                                 return [
@@ -2861,6 +2875,7 @@ class LmsController extends Controller
                 'jabatan_id' => $request->get('jabatan_id'),
                 'level_id' => $request->get('level_id'),
                 'category_id' => $request->get('category_id'),
+                'specification' => $request->get('specification'),
                 'trainer_type' => $request->get('trainer_type'),
                 'from_date' => $request->get('from_date'),
                 'to_date' => $request->get('to_date'),
@@ -2919,6 +2934,9 @@ class LmsController extends Controller
             }
             if ($filters['category_id']) {
                 $trainingQuery->where('c.category_id', $filters['category_id']);
+            }
+            if ($filters['specification']) {
+                $trainingQuery->where('c.specification', $filters['specification']);
             }
             if ($filters['trainer_type']) {
                 $trainingQuery->where('tst.trainer_type', $filters['trainer_type']);
@@ -2999,7 +3017,7 @@ class LmsController extends Controller
 
     private function getManPowerDetails($request)
     {
-        $filters = $request->only(['division_id', 'outlet_id', 'jabatan_id', 'level_id', 'category_id', 'trainer_type', 'from_date', 'to_date']);
+        $filters = $request->only(['division_id', 'outlet_id', 'jabatan_id', 'level_id', 'category_id', 'specification', 'trainer_type', 'from_date', 'to_date']);
         
         $query = DB::table('users as u')
             ->leftJoin('tbl_data_divisi as d', 'u.division_id', '=', 'd.id')
@@ -3028,7 +3046,7 @@ class LmsController extends Controller
 
     private function getQTYDetails($request)
     {
-        $filters = $request->only(['division_id', 'outlet_id', 'jabatan_id', 'level_id', 'category_id', 'trainer_type', 'from_date', 'to_date']);
+        $filters = $request->only(['division_id', 'outlet_id', 'jabatan_id', 'level_id', 'category_id', 'specification', 'trainer_type', 'from_date', 'to_date']);
         
         $query = DB::table('training_schedules as ts')
             ->leftJoin('lms_courses as c', 'ts.course_id', '=', 'c.id')
@@ -3061,6 +3079,9 @@ class LmsController extends Controller
         if (!empty($filters['category_id'])) {
             $query->where('c.category_id', $filters['category_id']);
         }
+        if (!empty($filters['specification'])) {
+            $query->where('c.specification', $filters['specification']);
+        }
         if (!empty($filters['trainer_type'])) {
             $query->where('tst.trainer_type', $filters['trainer_type']);
         }
@@ -3078,7 +3099,7 @@ class LmsController extends Controller
 
     private function getPaxDetails($request)
     {
-        $filters = $request->only(['division_id', 'outlet_id', 'jabatan_id', 'level_id', 'category_id', 'trainer_type', 'from_date', 'to_date']);
+        $filters = $request->only(['division_id', 'outlet_id', 'jabatan_id', 'level_id', 'category_id', 'specification', 'trainer_type', 'from_date', 'to_date']);
         
         // Get participants with their training count
         $participants = DB::table('training_schedules as ts')
@@ -3176,7 +3197,7 @@ class LmsController extends Controller
 
     private function getHoursDetails($request)
     {
-        $filters = $request->only(['division_id', 'outlet_id', 'jabatan_id', 'level_id', 'category_id', 'trainer_type', 'from_date', 'to_date']);
+        $filters = $request->only(['division_id', 'outlet_id', 'jabatan_id', 'level_id', 'category_id', 'specification', 'trainer_type', 'from_date', 'to_date']);
         
         $query = DB::table('training_schedules as ts')
             ->leftJoin('lms_courses as c', 'ts.course_id', '=', 'c.id')
@@ -3208,6 +3229,9 @@ class LmsController extends Controller
         }
         if (!empty($filters['category_id'])) {
             $query->where('c.category_id', $filters['category_id']);
+        }
+        if (!empty($filters['specification'])) {
+            $query->where('c.specification', $filters['specification']);
         }
         if (!empty($filters['trainer_type'])) {
             $query->where('tst.trainer_type', $filters['trainer_type']);

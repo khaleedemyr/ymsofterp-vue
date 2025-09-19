@@ -2539,6 +2539,9 @@ watch(locale, () => {
                                                 <span v-if="training.type" class="mr-2">
                                                     <i class="fas fa-tag mr-1"></i>{{ training.type }}
                                                 </span>
+                                                <span v-if="training.specification" class="mr-2">
+                                                    <i class="fas fa-cog mr-1"></i>{{ training.specification }}
+                                                </span>
                                                 <span v-if="training.course_type" class="mr-2">
                                                     <i class="fas fa-graduation-cap mr-1"></i>{{ training.course_type }}
                                                 </span>
@@ -3899,6 +3902,21 @@ watch(locale, () => {
                                             Trainer: {{ training.trainer_name }}
                                         </div>
                                         
+                                        <div v-if="training.type" class="text-sm text-slate-600">
+                                            <i class="fa-solid fa-tag mr-2"></i>
+                                            Tipe: {{ training.type }}
+                                        </div>
+                                        
+                                        <div v-if="training.specification" class="text-sm text-slate-600">
+                                            <i class="fa-solid fa-cog mr-2"></i>
+                                            Spesifikasi: {{ training.specification }}
+                                        </div>
+                                        
+                                        <div v-if="training.course_type" class="text-sm text-slate-600">
+                                            <i class="fa-solid fa-graduation-cap mr-2"></i>
+                                            Jenis: {{ training.course_type }}
+                                        </div>
+                                        
                                         <div class="text-sm text-slate-600">
                                             <i class="fa-solid fa-sign-in-alt mr-2"></i>
                                             Check-in: {{ new Date(training.check_in_time).toLocaleString('id-ID') }}
@@ -4205,6 +4223,10 @@ watch(locale, () => {
                                     <div v-if="training.type">
                                         <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Tipe:</span>
                                         <span class="ml-2 text-sm text-gray-900 dark:text-white">{{ training.type }}</span>
+                                    </div>
+                                    <div v-if="training.specification">
+                                        <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Spesifikasi:</span>
+                                        <span class="ml-2 text-sm text-gray-900 dark:text-white">{{ training.specification }}</span>
                                     </div>
                                     <div v-if="training.course_type">
                                         <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Jenis Kursus:</span>

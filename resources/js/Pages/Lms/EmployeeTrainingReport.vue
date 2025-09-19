@@ -84,6 +84,20 @@
                                     </option>
                                 </select>
                             </div>
+
+                            <!-- Spesifikasi Training Filter -->
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                    Spesifikasi Training
+                                </label>
+                                <select v-model="filters.specification" 
+                                        @change="onFilterChange"
+                                        class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                    <option value="">Semua Spesifikasi</option>
+                                    <option value="generic">Generic</option>
+                                    <option value="departemental">Departemental</option>
+                                </select>
+                            </div>
                         </div>
                         
                         <!-- Filter Status & Load Button -->
@@ -100,6 +114,7 @@
                                             <span v-if="filters.division_id">{{ getDivisionName(filters.division_id) }}</span>
                                             <span v-if="filters.jabatan_id">{{ getJabatanName(filters.jabatan_id) }}</span>
                                             <span v-if="filters.outlet_id">{{ getOutletName(filters.outlet_id) }}</span>
+                                            <span v-if="filters.specification">{{ getSpecificationName(filters.specification) }}</span>
                                         </span>
                                     </span>
                                 </div>
@@ -339,6 +354,9 @@
                                                         <div v-if="training.type" class="mb-1">
                                                             <i class="fas fa-tag mr-1"></i>{{ training.type }}
                                                         </div>
+                                                        <div v-if="training.specification" class="mb-1">
+                                                            <i class="fas fa-cog mr-1"></i>{{ training.specification }}
+                                                        </div>
                                                         <div v-if="training.course_type" class="mb-1">
                                                             <i class="fas fa-graduation-cap mr-1"></i>{{ training.course_type }}
                                                         </div>
@@ -414,6 +432,9 @@
                                                         <div v-if="training.type" class="mb-1">
                                                             <i class="fas fa-tag mr-1"></i>{{ training.type }}
                                                         </div>
+                                                        <div v-if="training.specification" class="mb-1">
+                                                            <i class="fas fa-cog mr-1"></i>{{ training.specification }}
+                                                        </div>
                                                         <div v-if="training.course_type" class="mb-1">
                                                             <i class="fas fa-graduation-cap mr-1"></i>{{ training.course_type }}
                                                         </div>
@@ -485,7 +506,8 @@ const isFullscreen = ref(false)
 const filters = ref({
     division_id: '',
     jabatan_id: '',
-    outlet_id: ''
+    outlet_id: '',
+    specification: ''
 })
 
 // Props
@@ -498,7 +520,7 @@ const props = defineProps({
 
 // Computed properties
 const hasFilters = computed(() => {
-    return filters.value.division_id || filters.value.jabatan_id || filters.value.outlet_id
+    return filters.value.division_id || filters.value.jabatan_id || filters.value.outlet_id || filters.value.specification
 })
 
 // Methods
@@ -742,6 +764,14 @@ function getJabatanName(jabatanId) {
 function getOutletName(outletId) {
     const outlet = props.outlets.find(o => o.id_outlet == outletId)
     return outlet ? outlet.nama_outlet : ''
+}
+
+function getSpecificationName(specification) {
+    const specifications = {
+        'generic': 'Generic',
+        'departemental': 'Departemental'
+    }
+    return specifications[specification] || specification
 }
 
 function getInitials(name) {

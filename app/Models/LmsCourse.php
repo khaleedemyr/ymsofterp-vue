@@ -38,6 +38,7 @@ class LmsCourse extends Model
         'external_trainer_description',
         'certificate_template_id',
         'type',
+        'specification',
         'course_type',
         'is_featured',
         'meta_title',
@@ -373,10 +374,21 @@ class LmsCourse extends Model
     {
         $types = [
             'online' => 'Online',
-            'offline' => 'Offline'
+            'in_class' => 'In Class',
+            'practice' => 'Practice'
         ];
         
         return $types[$this->type] ?? $this->type;
+    }
+
+    public function getSpecificationTextAttribute()
+    {
+        $specifications = [
+            'generic' => 'Generic',
+            'departemental' => 'Departemental'
+        ];
+        
+        return $specifications[$this->specification] ?? $this->specification;
     }
 
     public function getCourseTypeTextAttribute()

@@ -614,8 +614,23 @@
                     :disabled="loading"
                   >
                     <option value="">Pilih Tipe</option>
-                    <option value="offline">Offline (Langsung)</option>
-                    <option value="online">Online (Virtual)</option>
+                    <option value="online">Online</option>
+                    <option value="in_class">In Class</option>
+                    <option value="practice">Practice</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label class="block text-sm font-medium text-gray-300 mb-2">Spesifikasi <span class="text-red-400">*</span></label>
+                  <select
+                    v-model="form.specification"
+                    required
+                    class="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    :disabled="loading"
+                  >
+                    <option value="">Pilih Spesifikasi</option>
+                    <option value="generic">Generic</option>
+                    <option value="departemental">Departemental</option>
                   </select>
                 </div>
 
@@ -1578,7 +1593,8 @@ const form = ref({
   target_outlet_ids: [], // For outlet targeting
   difficulty_level: '',
   duration_minutes: '',
-  type: 'offline',
+  type: 'in_class',
+  specification: 'generic',
   course_type: 'optional',
   status: 'published',
   // requirements: ['', ''], // REMOVED - requirements field removed
