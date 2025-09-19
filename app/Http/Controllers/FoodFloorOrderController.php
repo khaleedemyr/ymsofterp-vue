@@ -451,7 +451,7 @@ class FoodFloorOrderController extends Controller
         switch ($warehouseName) {
             case 'Kitchen':
                 // Jabatan yang bisa approve: semua yang menerima notifikasi
-                return in_array($userJabatan, [174, 180, 345, 346, 347, 348, 349]) && $userStatus === 'A';
+                return in_array($userJabatan, [163, 174, 180, 345, 346, 347, 348, 349]) && $userStatus === 'A';
             case 'Bar':
                 // Jabatan yang bisa approve: semua yang menerima notifikasi
                 return in_array($userJabatan, [175, 182, 323]) && $userStatus === 'A';
@@ -478,7 +478,7 @@ class FoodFloorOrderController extends Controller
         // Tentukan jabatan berdasarkan nama warehouse outlet
         switch ($warehouseName) {
             case 'Kitchen':
-                $jabatanIds = [174, 180, 345, 346, 347, 348, 349];
+                $jabatanIds = [163, 174, 180, 345, 346, 347, 348, 349];
                 break;
             case 'Bar':
                 $jabatanIds = [175, 182, 323];
