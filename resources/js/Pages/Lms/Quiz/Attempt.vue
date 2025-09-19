@@ -173,6 +173,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { router } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import axios from 'axios'
+import Swal from 'sweetalert2'
 
 const props = defineProps({
     attempt: Object,
@@ -269,6 +270,18 @@ const previousQuestion = () => {
 const submitQuiz = async () => {
     if (isSubmitting.value) return
     
+    // Show loading modal
+    Swal.fire({
+        title: 'Sabar Bu Ghea....',
+        text: 'Antosan sakedap Bu Ghea, Nuju loding',
+        allowOutsideClick: false,
+        allowEscapeKey: false,
+        showConfirmButton: false,
+        didOpen: () => {
+            Swal.showLoading()
+        }
+    })
+    
     isSubmitting.value = true
     
     try {
@@ -284,16 +297,27 @@ const submitQuiz = async () => {
         
         if (response.data.result) {
             console.log('Quiz submitted successfully, redirecting to results...')
+            Swal.close()
             // Redirect to results page
             router.visit(`/lms/quiz/results/${props.attempt.id}`)
         } else {
             console.error('No result in response:', response.data)
-            alert('Terjadi kesalahan saat mengirim quiz')
+            Swal.close()
+            Swal.fire({
+                icon: 'error',
+                title: 'Error!',
+                text: 'Terjadi kesalahan saat mengirim quiz'
+            })
         }
     } catch (error) {
         console.error('Error submitting quiz:', error)
         console.error('Error response:', error.response?.data)
-        alert('Terjadi kesalahan saat mengirim quiz')
+        Swal.close()
+        Swal.fire({
+            icon: 'error',
+            title: 'Error!',
+            text: 'Terjadi kesalahan saat mengirim quiz'
+        })
     } finally {
         isSubmitting.value = false
     }

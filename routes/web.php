@@ -602,6 +602,7 @@ Route::get('/floor-order/create', function () {
 })->name('floor-order.create');
 
 Route::get('/floor-order/edit/{id}', [FoodFloorOrderController::class, 'edit'])->name('floor-order.edit');
+Route::get('/floor-order/{id}', [\App\Http\Controllers\FoodFloorOrderController::class, 'show'])->name('floor-order.show');
 Route::post('/floor-order', [FoodFloorOrderController::class, 'store'])->name('floor-order.store');
 Route::put('/floor-order/{id}', [FoodFloorOrderController::class, 'update'])->name('floor-order.update');
 Route::delete('/floor-order/{id}', [FoodFloorOrderController::class, 'destroy'])->name('floor-order.destroy');
@@ -609,7 +610,6 @@ Route::post('/floor-order/{id}/submit', [FoodFloorOrderController::class, 'submi
 Route::post('/floor-order/{id}/approve', [FoodFloorOrderController::class, 'approve'])->name('floor-order.approve');
 Route::post('/api/floor-order/check-exists', [\App\Http\Controllers\FoodFloorOrderController::class, 'checkExists']);
 Route::get('/api/floor-order/supplier-available', [\App\Http\Controllers\FoodFloorOrderController::class, 'supplierAvailable']);
-Route::get('/floor-order/{id}', [\App\Http\Controllers\FoodFloorOrderController::class, 'show'])->name('floor-order.show');
 
 Route::resource('packing-list', App\Http\Controllers\PackingListController::class);
 
@@ -846,6 +846,8 @@ Route::post('/outlet-rejections/{outletRejection}/cancel', [\App\Http\Controller
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::resource('retail-food', RetailFoodController::class);
     Route::get('retail-food/get-item-units/{itemId}', [\App\Http\Controllers\RetailFoodController::class, 'getItemUnits']);
+    Route::post('retail-food/get-budget-info', [\App\Http\Controllers\RetailFoodController::class, 'getBudgetInfo']);
+    Route::post('retail-food/debug-budget-query', [\App\Http\Controllers\RetailFoodController::class, 'debugBudgetQuery']);
 
     Route::resource('retail-non-food', \App\Http\Controllers\RetailNonFoodController::class);
     Route::get('retail-non-food/daily-total', [\App\Http\Controllers\RetailNonFoodController::class, 'dailyTotal']);
@@ -1339,6 +1341,13 @@ Route::get('/trainer-report-page', function () {
     return Inertia::render('Lms/TrainerReport');
 })->name('trainer-report-page');
 
+// Training Report
+Route::get('/training-report', [App\Http\Controllers\LmsController::class, 'getTrainingReport'])->name('training-report');
+Route::get('/training-report-page', function () {
+    return Inertia::render('Lms/TrainingReport');
+})->name('training-report-page');
+
+
 // Available trainings API
 Route::get('/available-trainings', [App\Http\Controllers\LmsController::class, 'getAvailableTrainings'])->name('available-trainings');
 Route::get('/employee-training-report', [App\Http\Controllers\LmsController::class, 'getEmployeeTrainingReport'])->name('employee-training-report');
@@ -1403,6 +1412,12 @@ Route::get('/employee-training-report-page', [App\Http\Controllers\LmsController
     
     // Discussions
     Route::resource('discussions', App\Http\Controllers\LmsDiscussionController::class);
+    
+    // Quiz Report
+    Route::get('/quiz-report', [App\Http\Controllers\LmsController::class, 'getQuizReport'])->name('quiz-report');
+    Route::get('/quiz-report-page', function () {
+        return Inertia::render('Lms/QuizReport');
+    })->name('quiz-report-page');
 });
 
 // Training Schedule Routes
@@ -1581,6 +1596,11 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/api/notes', [App\Http\Controllers\NotesController::class, 'index']);
     Route::post('/api/notes', [App\Http\Controllers\NotesController::class, 'store']);
     Route::delete('/api/notes/{id}', [App\Http\Controllers\NotesController::class, 'destroy']);
+});
+
+// Locked Budget Food Categories routes
+Route::middleware(['auth'])->group(function () {
+    Route::resource('locked-budget-food-categories', App\Http\Controllers\LockedBudgetFoodCategoryController::class);
 });
 
 require __DIR__.'/auth.php';

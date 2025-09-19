@@ -725,6 +725,18 @@ const saveQuestion = async () => {
     return
   }
 
+  // Show loading modal
+  Swal.fire({
+    title: 'Sabar Bu Ghea....',
+    text: 'Antosan sakedap Bu Ghea, Nuju loding',
+    allowOutsideClick: false,
+    allowEscapeKey: false,
+    showConfirmButton: false,
+    didOpen: () => {
+      Swal.showLoading()
+    }
+  })
+
   // Set loading state
   loading.value = true
 
@@ -819,6 +831,7 @@ const saveQuestion = async () => {
       await router.put(route('lms.quizzes.questions.update', [props.quiz.id, questionForm.value.id]), jsonData, {
         onSuccess: (response) => {
           console.log('Update success response:', response)
+          Swal.close()
           Swal.fire({
             icon: 'success',
             title: 'Berhasil!',
@@ -828,6 +841,7 @@ const saveQuestion = async () => {
         },
         onError: (errors) => {
           console.error('Update error:', errors)
+          Swal.close()
           Swal.fire({
             icon: 'error',
             title: 'Error!',
@@ -839,6 +853,7 @@ const saveQuestion = async () => {
       await router.post(route('lms.quizzes.questions.store', props.quiz.id), formData, {
         onSuccess: (response) => {
           console.log('Create success response:', response)
+          Swal.close()
           Swal.fire({
             icon: 'success',
             title: 'Berhasil!',
@@ -848,6 +863,7 @@ const saveQuestion = async () => {
         },
         onError: (errors) => {
           console.error('Create error:', errors)
+          Swal.close()
           Swal.fire({
             icon: 'error',
             title: 'Error!',
@@ -858,6 +874,7 @@ const saveQuestion = async () => {
     }
   } catch (error) {
     console.error('Error saving question:', error)
+    Swal.close()
     Swal.fire({
       icon: 'error',
       title: 'Error!',

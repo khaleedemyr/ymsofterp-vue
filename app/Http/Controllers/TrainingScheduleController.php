@@ -2063,7 +2063,7 @@ class TrainingScheduleController extends Controller
                 ->where('training_invitations.user_id', $userId)
                 ->whereIn('training_invitations.status', ['invited', 'attended'])
                 ->where('training_schedules.scheduled_date', '>=', now()->toDateString())
-                ->whereNull('training_reviews.id') // Exclude training that has been reviewed
+                ->whereNull('training_invitations.check_out_time') // Only exclude after checkout
                 ->select(
                     'training_invitations.id as invitation_id',
                     'training_schedules.id as schedule_id',
@@ -2077,7 +2077,9 @@ class TrainingScheduleController extends Controller
                     'training_invitations.status',
                     'training_invitations.check_in_time',
                     'training_invitations.check_out_time',
-                    'training_invitations.created_at as invited_at'
+                    'training_invitations.created_at as invited_at',
+                    'training_reviews.id as review_id',
+                    'training_reviews.created_at as review_created_at'
                 )
                 ->orderBy('training_schedules.scheduled_date')
                 ->get();
@@ -2184,6 +2186,10 @@ class TrainingScheduleController extends Controller
                         // Fetch material data if item is a material
                         if ($item->item_type === 'material' && $item->item_id) {
                             $item->material = $this->getMaterialData($item->item_id, $userId);
+                            
+                            // Add completion status for material
+                            $item->is_completed = $this->isItemCompleted($userId, $invitation->schedule_id, $item);
+                            $item->completion_status = $this->getMaterialCompletionStatus($userId, $item->item_id, $invitation->schedule_id);
                         }
                         
                         // Fetch questionnaire data if item is a questionnaire
@@ -2221,7 +2227,9 @@ class TrainingScheduleController extends Controller
                     'sessions' => $sessions,
                     'all_completed' => $allCompleted,
                     'trainers' => $trainers,
-                    'can_give_feedback' => $this->canGiveFeedback($userId, $invitation->schedule_id)
+                    'can_give_feedback' => $this->canGiveFeedback($userId, $invitation->schedule_id),
+                    'review_id' => $invitation->review_id,
+                    'review_created_at' => $invitation->review_created_at
                 ]);
             }
 
@@ -2998,6 +3006,10 @@ class TrainingScheduleController extends Controller
                 // Fetch material data if item is a material
                 if ($item->item_type === 'material' && $item->item_id) {
                     $item->material = $this->getMaterialData($item->item_id, $userId);
+                    
+                    // Add completion status for material
+                    $item->is_completed = $this->isItemCompleted($userId, $assignment->schedule_id, $item);
+                    $item->completion_status = $this->getMaterialCompletionStatus($userId, $item->item_id, $assignment->schedule_id);
                 }
                 
                 // Fetch questionnaire data if item is a questionnaire
@@ -3010,6 +3022,38 @@ class TrainingScheduleController extends Controller
         }
 
         return $sessions;
+    }
+
+    /**
+     * Get material completion status for a user
+     */
+    private function getMaterialCompletionStatus($userId, $materialId, $scheduleId)
+    {
+        try {
+            $completion = DB::table('material_completions')
+                ->where('user_id', $userId)
+                ->where('material_id', $materialId)
+                ->where('schedule_id', $scheduleId)
+                ->first();
+
+            if ($completion) {
+                return [
+                    'completed_at' => $completion->completed_at,
+                    'time_spent_seconds' => $completion->time_spent_seconds,
+                    'completion_data' => $completion->completion_data ? json_decode($completion->completion_data, true) : null
+                ];
+            }
+
+            return null;
+        } catch (\Exception $e) {
+            \Log::error('Error getting material completion status', [
+                'user_id' => $userId,
+                'material_id' => $materialId,
+                'schedule_id' => $scheduleId,
+                'error' => $e->getMessage()
+            ]);
+            return null;
+        }
     }
 
     /**
@@ -3194,12 +3238,18 @@ class TrainingScheduleController extends Controller
         $request->validate([
             'training_schedule_id' => 'required|exists:training_schedules,id',
             'trainer_id' => 'nullable|exists:users,id',
-            'training_rating' => 'required|integer|min:1|max:5',
-            'training_feedback' => 'nullable|string|max:1000',
-            'trainer_rating' => 'nullable|integer|min:1|max:5',
-            'trainer_feedback' => 'nullable|string|max:1000',
-            'overall_satisfaction' => 'required|integer|min:1|max:5',
-            'improvement_suggestions' => 'nullable|string|max:1000',
+            // Trainer ratings
+            'trainer_mastery' => 'required|integer|min:1|max:5',
+            'trainer_language' => 'required|integer|min:1|max:5',
+            'trainer_intonation' => 'required|integer|min:1|max:5',
+            'trainer_presentation' => 'required|integer|min:1|max:5',
+            'trainer_qna' => 'required|integer|min:1|max:5',
+            // Training material ratings
+            'material_benefit' => 'required|integer|min:1|max:5',
+            'material_clarity' => 'required|integer|min:1|max:5',
+            'material_display' => 'required|integer|min:1|max:5',
+            'material_suggestions' => 'nullable|string|max:1000',
+            'material_needs' => 'nullable|string|max:1000',
         ]);
 
         $userId = auth()->id();
@@ -3210,28 +3260,49 @@ class TrainingScheduleController extends Controller
             return redirect()->back()->withErrors(['error' => 'Anda sudah memberikan review untuk training ini']);
         }
 
-        // Check if user has checked out from this training
+        // Check if user has checked in to this training (attended status)
         $invitation = TrainingInvitation::where('schedule_id', $trainingScheduleId)
                                       ->where('user_id', $userId)
                                       ->where('status', 'attended')
-                                      ->whereNotNull('check_out_time')
+                                      ->whereNotNull('check_in_time')
                                       ->first();
 
         if (!$invitation) {
-            return redirect()->back()->withErrors(['error' => 'Anda harus check-out terlebih dahulu sebelum memberikan review']);
+            return redirect()->back()->withErrors(['error' => 'Anda harus check-in terlebih dahulu sebelum memberikan review']);
         }
 
         try {
+            // Calculate average ratings for legacy fields
+            $trainerAvg = ($request->trainer_mastery + $request->trainer_language + 
+                          $request->trainer_intonation + $request->trainer_presentation + 
+                          $request->trainer_qna) / 5;
+            
+            $materialAvg = ($request->material_benefit + $request->material_clarity + 
+                           $request->material_display) / 3;
+            
+            $overallAvg = ($trainerAvg + $materialAvg) / 2;
+
             $review = TrainingReview::create([
                 'training_schedule_id' => $trainingScheduleId,
                 'user_id' => $userId,
                 'trainer_id' => $request->trainer_id,
-                'training_rating' => $request->training_rating,
-                'training_feedback' => $request->training_feedback,
-                'trainer_rating' => $request->trainer_rating,
-                'trainer_feedback' => $request->trainer_feedback,
-                'overall_satisfaction' => $request->overall_satisfaction,
-                'improvement_suggestions' => $request->improvement_suggestions,
+                // Legacy fields with calculated values
+                'training_rating' => round($overallAvg),
+                'trainer_rating' => round($trainerAvg),
+                'overall_satisfaction' => round($overallAvg),
+                'would_recommend' => $overallAvg >= 4 ? 1 : 0,
+                // Trainer ratings
+                'trainer_mastery' => $request->trainer_mastery,
+                'trainer_language' => $request->trainer_language,
+                'trainer_intonation' => $request->trainer_intonation,
+                'trainer_presentation' => $request->trainer_presentation,
+                'trainer_qna' => $request->trainer_qna,
+                // Training material ratings
+                'material_benefit' => $request->material_benefit,
+                'material_clarity' => $request->material_clarity,
+                'material_display' => $request->material_display,
+                'material_suggestions' => $request->material_suggestions,
+                'material_needs' => $request->material_needs,
             ]);
 
             \Log::info('Training review submitted', [
@@ -3239,9 +3310,14 @@ class TrainingScheduleController extends Controller
                 'training_schedule_id' => $trainingScheduleId,
                 'user_id' => $userId,
                 'trainer_id' => $request->trainer_id,
-                'training_rating' => $request->training_rating,
-                'trainer_rating' => $request->trainer_rating,
-                'overall_satisfaction' => $request->overall_satisfaction,
+                'trainer_mastery' => $request->trainer_mastery,
+                'trainer_language' => $request->trainer_language,
+                'trainer_intonation' => $request->trainer_intonation,
+                'trainer_presentation' => $request->trainer_presentation,
+                'trainer_qna' => $request->trainer_qna,
+                'material_benefit' => $request->material_benefit,
+                'material_clarity' => $request->material_clarity,
+                'material_display' => $request->material_display,
             ]);
 
             return redirect()->back()->with('success', 'Review berhasil disubmit. Terima kasih atas feedback Anda!');
@@ -3336,16 +3412,22 @@ class TrainingScheduleController extends Controller
 
         try {
             // Check if user has access to this training
-            $hasAccess = DB::table('training_invitations')
+            $invitation = DB::table('training_invitations')
                 ->where('schedule_id', $validated['schedule_id'])
                 ->where('user_id', $userId)
-                ->whereIn('status', ['invited', 'checked_in', 'checked_out'])
-                ->exists();
+                ->first();
 
-            if (!$hasAccess) {
+            \Log::info('Material completion access check', [
+                'user_id' => $userId,
+                'schedule_id' => $validated['schedule_id'],
+                'invitation_found' => $invitation ? 'yes' : 'no',
+                'invitation_status' => $invitation ? $invitation->status : 'not_found'
+            ]);
+
+            if (!$invitation || !in_array($invitation->status, ['invited', 'attended', 'checked_in', 'checked_out'])) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Anda tidak memiliki akses ke training ini'
+                    'message' => 'Anda tidak memiliki akses ke training ini. Status: ' . ($invitation ? $invitation->status : 'not_found')
                 ], 403);
             }
 

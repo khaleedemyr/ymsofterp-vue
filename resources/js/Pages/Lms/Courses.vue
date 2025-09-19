@@ -1160,25 +1160,27 @@
       <div v-if="showTrainerRatingsModal" class="fixed inset-0 z-[60] flex items-center justify-center">
         <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" @click="closeTrainerRatingsModal"></div>
         
-        <div class="backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl p-6 max-w-6xl w-full mx-4 max-h-[90vh] overflow-y-auto relative">
-          <!-- Close Button -->
-          <button @click="closeTrainerRatingsModal" 
-                  class="absolute top-4 right-4 text-white/70 hover:text-white transition-colors">
-            <i class="fas fa-times text-xl"></i>
-          </button>
-          
+        <div class="backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl max-w-4xl w-full mx-4 max-h-[80vh] flex flex-col">
           <!-- Modal Header -->
-          <div class="mb-6">
-            <h4 class="text-2xl font-bold text-white mb-2">Rating Trainer</h4>
-            <div v-if="trainerRatingsData.training" class="text-white/70">
-              <p class="text-lg font-semibold">{{ trainerRatingsData.training.course_title }}</p>
-              <p class="text-sm">
-                {{ new Date(trainerRatingsData.training.scheduled_date).toLocaleDateString('id-ID') }} • 
-                {{ trainerRatingsData.training.start_time }} - {{ trainerRatingsData.training.end_time }} • 
-                {{ trainerRatingsData.training.outlet_name }}
-              </p>
+          <div class="p-4 border-b border-white/10 flex-shrink-0">
+            <div class="flex items-center justify-between">
+              <div>
+                <h4 class="text-xl font-bold text-white">Rating Trainer</h4>
+                <div v-if="trainerRatingsData.training" class="text-white/70 text-sm mt-1">
+                  {{ trainerRatingsData.training.course_title }} • 
+                  {{ new Date(trainerRatingsData.training.scheduled_date).toLocaleDateString('id-ID') }}
+                </div>
+              </div>
+              <button @click="closeTrainerRatingsModal" 
+                      class="text-white/70 hover:text-white transition-colors">
+                <i class="fas fa-times text-lg"></i>
+              </button>
             </div>
           </div>
+          
+          <!-- Modal Content -->
+          <div class="flex-1 overflow-hidden flex flex-col">
+            <div class="p-4 overflow-y-auto flex-1">
 
           <!-- Loading State -->
           <div v-if="loadingTrainerRatings" class="flex items-center justify-center py-12">
@@ -1187,49 +1189,202 @@
           </div>
 
           <!-- Statistics -->
-          <div v-else-if="trainerRatingsData.statistics" class="mb-8">
-            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-              <div class="bg-white/5 rounded-lg p-4 border border-white/10">
-                <div class="text-2xl font-bold text-white">{{ trainerRatingsData.statistics.average_rating || '0.0' }}</div>
-                <div class="text-sm text-white/60">Rating Rata-rata</div>
+          <div v-else-if="trainerRatingsData.statistics" class="mb-6">
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+              <div class="bg-white/5 rounded-lg p-3 border border-white/10">
+                <div class="text-lg font-bold text-white">{{ trainerRatingsData.statistics.average_rating || '0.0' }}</div>
+                <div class="text-xs text-white/60">Rating Rata-rata</div>
               </div>
-              <div class="bg-white/5 rounded-lg p-4 border border-white/10">
-                <div class="text-2xl font-bold text-white">{{ trainerRatingsData.statistics.total_ratings || 0 }}</div>
-                <div class="text-sm text-white/60">Total Rating</div>
+              <div class="bg-white/5 rounded-lg p-3 border border-white/10">
+                <div class="text-lg font-bold text-white">{{ totalFilteredRatings }}</div>
+                <div class="text-xs text-white/60">Total Rating</div>
               </div>
-              <div class="bg-white/5 rounded-lg p-4 border border-white/10">
-                <div class="text-2xl font-bold text-white">{{ trainerRatingsData.statistics.excellent_count || 0 }}</div>
-                <div class="text-sm text-white/60">Excellent</div>
+              <div class="bg-white/5 rounded-lg p-3 border border-white/10">
+                <div class="text-lg font-bold text-white">{{ trainerRatingsData.statistics.excellent_count || 0 }}</div>
+                <div class="text-xs text-white/60">Excellent</div>
               </div>
-              <div class="bg-white/5 rounded-lg p-4 border border-white/10">
-                <div class="text-2xl font-bold text-white">{{ trainerRatingsData.statistics.poor_count || 0 }}</div>
-                <div class="text-sm text-white/60">Poor</div>
+              <div class="bg-white/5 rounded-lg p-3 border border-white/10">
+                <div class="text-lg font-bold text-white">{{ trainerRatingsData.statistics.poor_count || 0 }}</div>
+                <div class="text-xs text-white/60">Poor</div>
               </div>
+            </div>
+            
+            <!-- Filters and Controls -->
+            <div class="flex flex-col sm:flex-row gap-3 mb-4">
+              <!-- Search -->
+              <div class="flex-1">
+                <input v-model="searchQuery" 
+                       type="text" 
+                       placeholder="Cari review..." 
+                       class="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+              </div>
+              
+              <!-- Rating Filter -->
+              <select v-model="ratingFilter" 
+                      class="px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <option value="all">Semua Rating</option>
+                <option value="excellent">Excellent (4.5+)</option>
+                <option value="good">Good (3-4.4)</option>
+                <option value="poor">Poor (<3)</option>
+              </select>
+              
+              <!-- Per Page -->
+              <select v-model="ratingPerPage" 
+                      class="px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <option value="3">3 per halaman</option>
+                <option value="5">5 per halaman</option>
+                <option value="10">10 per halaman</option>
+                <option value="20">20 per halaman</option>
+              </select>
+              
+              <!-- Clear Filters -->
+              <button @click="clearRatingFilters" 
+                      class="px-3 py-2 bg-red-500/20 border border-red-500/30 rounded-lg text-red-200 hover:bg-red-500/30 transition-all text-sm">
+                <i class="fas fa-times mr-1"></i>Clear
+              </button>
             </div>
           </div>
 
           <!-- Rating Details -->
           <div v-if="trainerRatingsData.trainer_ratings && trainerRatingsData.trainer_ratings.length > 0">
-            <h5 class="text-lg font-semibold text-white mb-4">Detail Rating</h5>
-            <div class="space-y-4">
-              <div v-for="rating in trainerRatingsData.trainer_ratings" :key="rating.id" 
-                   class="bg-white/5 rounded-lg p-4 border border-white/10">
+            <div class="flex items-center justify-between mb-4">
+              <h5 class="text-lg font-semibold text-white">Detail Rating</h5>
+              <div class="text-sm text-white/60">
+                Menampilkan {{ (ratingCurrentPage - 1) * ratingPerPage + 1 }}-{{ Math.min(ratingCurrentPage * ratingPerPage, totalFilteredRatings) }} dari {{ totalFilteredRatings }} review
+              </div>
+            </div>
+            
+            <div class="space-y-3">
+              <div v-for="rating in paginatedRatings" :key="rating.id" 
+                   class="bg-white/5 rounded-lg p-3 border border-white/10">
                 <div class="flex items-start justify-between mb-3">
-                  <div>
-                    <div class="text-white font-medium">{{ rating.participant_name }}</div>
-                    <div class="text-white/60 text-sm">{{ rating.participant_position }}</div>
+                  <div class="flex-1">
+                    <div class="text-white font-medium">{{ maskParticipantName(rating.participant_name) }}</div>
+                    <div class="text-white/50 text-xs mt-1">
+                      {{ new Date(rating.created_at).toLocaleDateString('id-ID') }} • 
+                      {{ new Date(rating.created_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) }}
+                    </div>
                   </div>
-                  <div class="flex items-center space-x-1">
-                    <span class="text-yellow-400">{{ rating.rating }}</span>
-                    <i class="fas fa-star text-yellow-400"></i>
+                  <div class="flex items-center space-x-2">
+                    <div class="flex items-center space-x-1">
+                      <span class="text-yellow-400">{{ rating.rating }}</span>
+                      <i class="fas fa-star text-yellow-400"></i>
+                    </div>
+                    <button @click="toggleRatingExpand(rating.id)" 
+                            class="text-white/60 hover:text-white transition-colors">
+                      <i :class="expandedRatings.has(rating.id) ? 'fas fa-chevron-up' : 'fas fa-chevron-down'"></i>
+                    </button>
                   </div>
                 </div>
-                <div v-if="rating.comment" class="text-white/80 text-sm bg-white/5 rounded p-3">
-                  {{ rating.comment }}
+                
+                <!-- Expanded Details -->
+                <div v-if="expandedRatings.has(rating.id)" class="mt-4 pt-4 border-t border-white/10">
+                  <div class="space-y-3">
+                    <!-- Trainer Ratings -->
+                    <div v-if="rating.trainer_ratings" class="bg-white/5 rounded p-3">
+                      <h6 class="text-white font-medium mb-2 flex items-center">
+                        <i class="fas fa-chalkboard-teacher mr-2 text-blue-400"></i>
+                        Penilaian Trainer
+                      </h6>
+                      <div class="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
+                        <div class="flex justify-between">
+                          <span class="text-white/70">Penguasaan Materi:</span>
+                          <span class="text-yellow-400">{{ rating.trainer_ratings.mastery || '-' }}</span>
+                        </div>
+                        <div class="flex justify-between">
+                          <span class="text-white/70">Bahasa Mudah Dipahami:</span>
+                          <span class="text-yellow-400">{{ rating.trainer_ratings.language || '-' }}</span>
+                        </div>
+                        <div class="flex justify-between">
+                          <span class="text-white/70">Intonasi & Nada Suara:</span>
+                          <span class="text-yellow-400">{{ rating.trainer_ratings.intonation || '-' }}</span>
+                        </div>
+                        <div class="flex justify-between">
+                          <span class="text-white/70">Gaya Penyampaian:</span>
+                          <span class="text-yellow-400">{{ rating.trainer_ratings.presentation || '-' }}</span>
+                        </div>
+                        <div class="flex justify-between">
+                          <span class="text-white/70">Q&A & Diskusi:</span>
+                          <span class="text-yellow-400">{{ rating.trainer_ratings.qna || '-' }}</span>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <!-- Material Ratings -->
+                    <div v-if="rating.material_ratings" class="bg-white/5 rounded p-3">
+                      <h6 class="text-white font-medium mb-2 flex items-center">
+                        <i class="fas fa-book mr-2 text-green-400"></i>
+                        Penilaian Materi Training
+                      </h6>
+                      <div class="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
+                        <div class="flex justify-between">
+                          <span class="text-white/70">Manfaat Training:</span>
+                          <span class="text-yellow-400">{{ rating.material_ratings.benefit || '-' }}</span>
+                        </div>
+                        <div class="flex justify-between">
+                          <span class="text-white/70">Kejelasan Materi:</span>
+                          <span class="text-yellow-400">{{ rating.material_ratings.clarity || '-' }}</span>
+                        </div>
+                        <div class="flex justify-between">
+                          <span class="text-white/70">Tampilan Materi:</span>
+                          <span class="text-yellow-400">{{ rating.material_ratings.display || '-' }}</span>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <!-- Comments -->
+                    <div v-if="rating.comment" class="bg-white/5 rounded p-3">
+                      <h6 class="text-white font-medium mb-2 flex items-center">
+                        <i class="fas fa-comment mr-2 text-purple-400"></i>
+                        Saran & Perbaikan
+                      </h6>
+                      <p class="text-white/80 text-sm">{{ rating.comment }}</p>
+                    </div>
+                    
+                    <div v-if="rating.material_needs" class="bg-white/5 rounded p-3">
+                      <h6 class="text-white font-medium mb-2 flex items-center">
+                        <i class="fas fa-lightbulb mr-2 text-orange-400"></i>
+                        Materi yang Dibutuhkan
+                      </h6>
+                      <p class="text-white/80 text-sm">{{ rating.material_needs }}</p>
+                    </div>
+                  </div>
                 </div>
-                <div class="text-white/50 text-xs mt-2">
-                  {{ new Date(rating.created_at).toLocaleDateString('id-ID') }}
+              </div>
+            </div>
+            
+            <!-- Pagination Controls -->
+            <div v-if="ratingTotalPages > 1" class="mt-6 flex items-center justify-between">
+              <div class="flex items-center space-x-2">
+                <button @click="goToRatingPage(ratingCurrentPage - 1)" 
+                        :disabled="ratingCurrentPage === 1"
+                        class="px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white text-sm hover:bg-white/20 disabled:opacity-50 disabled:cursor-not-allowed">
+                  <i class="fas fa-chevron-left"></i>
+                </button>
+                
+                <div class="flex items-center space-x-1">
+                  <button v-for="page in Math.min(5, ratingTotalPages)" 
+                          :key="page"
+                          @click="goToRatingPage(page)"
+                          :class="[
+                            'px-3 py-2 rounded-lg text-sm transition-colors',
+                            ratingCurrentPage === page 
+                              ? 'bg-blue-500 text-white' 
+                              : 'bg-white/10 text-white/70 hover:bg-white/20'
+                          ]">
+                    {{ page }}
+                  </button>
                 </div>
+                
+                <button @click="goToRatingPage(ratingCurrentPage + 1)" 
+                        :disabled="ratingCurrentPage === ratingTotalPages"
+                        class="px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white text-sm hover:bg-white/20 disabled:opacity-50 disabled:cursor-not-allowed">
+                  <i class="fas fa-chevron-right"></i>
+                </button>
+              </div>
+              
+              <div class="text-sm text-white/60">
+                Halaman {{ ratingCurrentPage }} dari {{ ratingTotalPages }}
               </div>
             </div>
           </div>
@@ -1238,6 +1393,8 @@
           <div v-else-if="!loadingTrainerRatings" class="text-center py-12">
             <i class="fas fa-star text-white/30 text-4xl mb-4"></i>
             <p class="text-white/60">Belum ada rating trainer untuk course ini</p>
+          </div>
+            </div>
           </div>
         </div>
       </div>
@@ -1386,6 +1543,15 @@ const trainerRatingsData = ref({
   statistics: null
 })
 const loadingTrainerRatings = ref(false)
+const expandedRatings = ref(new Set()) // Track which ratings are expanded
+
+// Pagination and filter state for trainer ratings
+const ratingCurrentPage = ref(1)
+const ratingPerPage = ref(5)
+const ratingTotalPages = ref(1)
+const totalRatings = ref(0)
+const ratingFilter = ref('all') // all, excellent, good, poor
+const searchQuery = ref('')
 
 // Search states for target selection
 const divisionSearch = ref('')
@@ -2809,6 +2975,101 @@ const closeTrainerRatingsModal = () => {
     trainer_ratings: [],
     statistics: null
   }
+  expandedRatings.value.clear() // Clear expanded ratings when modal closes
+  
+  // Reset pagination and filter state
+  ratingCurrentPage.value = 1
+  ratingPerPage.value = 5
+  ratingTotalPages.value = 1
+  totalRatings.value = 0
+  ratingFilter.value = 'all'
+  searchQuery.value = ''
+}
+
+// Toggle expand for rating details
+const toggleRatingExpand = (ratingId) => {
+  if (expandedRatings.value.has(ratingId)) {
+    expandedRatings.value.delete(ratingId)
+  } else {
+    expandedRatings.value.add(ratingId)
+  }
+}
+
+// Function to mask participant name
+const maskParticipantName = (name) => {
+  if (!name) return 'Anonymous'
+  const words = name.split(' ')
+  if (words.length === 1) {
+    return words[0].charAt(0) + '*'.repeat(Math.max(1, words[0].length - 1))
+  }
+  return words[0].charAt(0) + '*'.repeat(Math.max(1, words[0].length - 1)) + ' ' + 
+         words[words.length - 1].charAt(0) + '*'.repeat(Math.max(1, words[words.length - 1].length - 1))
+}
+
+// Computed properties for filtered and paginated data
+const filteredRatings = computed(() => {
+  if (!trainerRatingsData.value.trainer_ratings) return []
+  
+  let filtered = trainerRatingsData.value.trainer_ratings
+  
+  // Filter by rating
+  if (ratingFilter.value !== 'all') {
+    filtered = filtered.filter(rating => {
+      switch (ratingFilter.value) {
+        case 'excellent': return rating.rating >= 4.5
+        case 'good': return rating.rating >= 3 && rating.rating < 4.5
+        case 'poor': return rating.rating < 3
+        default: return true
+      }
+    })
+  }
+  
+  // Filter by search query
+  if (searchQuery.value.trim()) {
+    const query = searchQuery.value.toLowerCase()
+    filtered = filtered.filter(rating => {
+      const maskedName = maskParticipantName(rating.participant_name).toLowerCase()
+      const comment = (rating.comment || '').toLowerCase()
+      const materialNeeds = (rating.material_needs || '').toLowerCase()
+      return maskedName.includes(query) || comment.includes(query) || materialNeeds.includes(query)
+    })
+  }
+  
+  return filtered
+})
+
+const paginatedRatings = computed(() => {
+  const start = (ratingCurrentPage.value - 1) * ratingPerPage.value
+  const end = start + ratingPerPage.value
+  return filteredRatings.value.slice(start, end)
+})
+
+const totalFilteredRatings = computed(() => filteredRatings.value.length)
+
+// Watchers for pagination reset
+watch([ratingFilter, searchQuery, ratingPerPage], () => {
+  ratingCurrentPage.value = 1
+})
+
+// Update total pages when filtered data changes
+watch(totalFilteredRatings, (newTotal) => {
+  ratingTotalPages.value = Math.ceil(newTotal / ratingPerPage.value)
+  if (ratingCurrentPage.value > ratingTotalPages.value) {
+    ratingCurrentPage.value = Math.max(1, ratingTotalPages.value)
+  }
+})
+
+// Pagination functions
+const goToRatingPage = (page) => {
+  if (page >= 1 && page <= ratingTotalPages.value) {
+    ratingCurrentPage.value = page
+  }
+}
+
+const clearRatingFilters = () => {
+  ratingFilter.value = 'all'
+  searchQuery.value = ''
+  ratingCurrentPage.value = 1
 }
 
 // Competency methods

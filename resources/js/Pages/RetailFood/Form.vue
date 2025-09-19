@@ -35,6 +35,71 @@
              </div>
            </div>
          </div>
+
+         <!-- Budget Information Section -->
+         <div v-if="budgetInfo.length > 0" class="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-xl">
+           <h3 class="text-lg font-semibold text-yellow-800 mb-3 flex items-center gap-2">
+             <i class="fa-solid fa-chart-pie text-yellow-600"></i>
+             Informasi Budget Sub Category
+           </h3>
+           <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+             <div v-for="budget in budgetInfo" :key="budget.sub_category_id" 
+                  class="bg-white p-3 rounded-lg border border-yellow-200 shadow-sm">
+               <div class="flex items-center justify-between mb-2">
+                 <h4 class="font-semibold text-gray-800">{{ budget.sub_category_name }}</h4>
+                 <span class="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded-full">
+                   {{ budget.category_name }}
+                 </span>
+               </div>
+               
+               <div class="space-y-1 text-sm">
+                 <div class="flex justify-between">
+                   <span class="text-gray-600">Budget:</span>
+                   <span class="font-semibold text-green-600">{{ formatRupiah(budget.budget_amount) }}</span>
+                 </div>
+                 <div class="flex justify-between">
+                   <span class="text-gray-600">Retail Food:</span>
+                   <span class="text-blue-600">{{ formatRupiah(budget.retail_food_total) }}</span>
+                 </div>
+                 <div class="flex justify-between">
+                   <span class="text-gray-600">Food Floor Order:</span>
+                   <span class="text-purple-600">{{ formatRupiah(budget.food_floor_order_total) }}</span>
+                 </div>
+                 <div class="flex justify-between border-t pt-1">
+                   <span class="text-gray-600">Total Bulanan:</span>
+                   <span class="font-semibold text-gray-800">{{ formatRupiah(budget.monthly_total) }}</span>
+                 </div>
+                 <div class="flex justify-between">
+                   <span class="text-gray-600">Input Baru:</span>
+                   <span class="text-orange-600">{{ formatRupiah(budget.new_items_total) }}</span>
+                 </div>
+                 <div class="flex justify-between border-t pt-1">
+                   <span class="text-gray-600">Total Setelah Input:</span>
+                   <span class="font-semibold text-gray-800">{{ formatRupiah(budget.total_after_new_items) }}</span>
+                 </div>
+                 <div class="flex justify-between">
+                   <span class="text-gray-600">Sisa Budget:</span>
+                   <span :class="budget.remaining_budget > 0 ? 'text-green-600' : 'text-red-600'" class="font-semibold">
+                     {{ formatRupiah(budget.remaining_budget) }}
+                   </span>
+                 </div>
+                 <div class="mt-2">
+                   <div class="flex justify-between text-xs mb-1">
+                     <span>Penggunaan Budget</span>
+                     <span>{{ budget.budget_percentage }}%</span>
+                   </div>
+                   <div class="w-full bg-gray-200 rounded-full h-2">
+                     <div :class="budget.budget_percentage >= 90 ? 'bg-red-500' : budget.budget_percentage >= 70 ? 'bg-yellow-500' : 'bg-green-500'"
+                          class="h-2 rounded-full transition-all duration-300"
+                          :style="{ width: Math.min(budget.budget_percentage, 100) + '%' }">
+                     </div>
+                   </div>
+                 </div>
+               </div>
+             </div>
+           </div>
+         </div>
+
         <form @submit.prevent="submit" class="space-y-7">
                      <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
              <div>
@@ -283,6 +348,7 @@ const form = ref({
 const outletDisabled = computed(() => userOutletId.value != 1)
 const loading = ref(false)
 const dailyTotal = ref(0)
+const budgetInfo = ref([])
 const showLimitAlert = computed(() => {
   // Hanya tampilkan alert jika metode pembayaran adalah cash
   if (form.value.payment_method !== 'cash') return false
@@ -296,6 +362,8 @@ function addItem() {
 function removeItem(idx) {
   if (form.value.items.length === 1) return
   form.value.items.splice(idx, 1)
+  // Refresh budget info after removing item
+  fetchBudgetInfo()
 }
 
 function calculateSubtotal(idx) {
@@ -385,6 +453,9 @@ async function selectItem(idx, item) {
     });
     form.value.items[idx].unit_id = ''
   }
+  
+  // Fetch budget info for this item
+  await fetchBudgetInfo()
 }
 
 function onItemBlur(idx) {
@@ -444,12 +515,48 @@ async function fetchDailyTotal() {
   }
 }
 
+async function fetchBudgetInfo() {
+  if (!form.value.outlet_id) {
+    budgetInfo.value = []
+    return
+  }
+  
+  try {
+    // Get unique items that have item_name
+    const itemsWithNames = form.value.items.filter(item => item.item_name && item.item_name.trim() !== '')
+    if (itemsWithNames.length === 0) {
+      budgetInfo.value = []
+      return
+    }
+    
+    const res = await axios.post('/retail-food/get-budget-info', {
+      items: itemsWithNames.map(item => ({
+        item_name: item.item_name,
+        qty: item.qty || 0,
+        price: item.price || 0
+      })),
+      outlet_id: form.value.outlet_id
+    })
+    
+    budgetInfo.value = res.data.budget_info || []
+  } catch (error) {
+    console.error('Error fetching budget info:', error)
+    budgetInfo.value = []
+  }
+}
+
 watch([
   () => form.value.outlet_id,
   () => form.value.transaction_date,
   () => form.value.payment_method,
   () => form.value.items.map(i => [i.qty, i.price])
 ], fetchDailyTotal, { immediate: true, deep: true })
+
+// Watch untuk fetch budget info ketika outlet atau items berubah
+watch([
+  () => form.value.outlet_id,
+  () => form.value.items.map(i => [i.item_name, i.qty, i.price])
+], fetchBudgetInfo, { immediate: true, deep: true })
 
 // Watch untuk otomatis pilih CASH SUPPLIER jika metode pembayaran cash
 watch(() => form.value.payment_method, async (newValue) => {

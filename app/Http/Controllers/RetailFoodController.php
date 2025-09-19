@@ -133,6 +133,63 @@ class RetailFoodController extends Controller
         ]);
     }
 
+    private function getBudgetInfoForResponse($items, $outletId)
+    {
+        $budgetInfo = [];
+        foreach ($items as $item) {
+            $itemMaster = DB::table('items')->where('name', $item['item_name'])->first();
+            if ($itemMaster && $itemMaster->sub_category_id) {
+                $lockedBudget = DB::table('locked_budget_food_categories')
+                    ->where('sub_category_id', $itemMaster->sub_category_id)
+                    ->where('outlet_id', $outletId)
+                    ->first();
+                
+                if ($lockedBudget) {
+                    $subCategoryInfo = DB::table('sub_categories as sc')
+                        ->join('categories as c', 'sc.category_id', '=', 'c.id')
+                        ->where('sc.id', $itemMaster->sub_category_id)
+                        ->select('sc.name as sub_category_name', 'c.name as category_name')
+                        ->first();
+                    
+                    $currentMonth = date('Y-m');
+                    $retailFoodTotal = DB::table('retail_food_items as rfi')
+                        ->join('retail_food as rf', 'rfi.retail_food_id', '=', 'rf.id')
+                        ->join('items as i', DB::raw('TRIM(i.name)'), '=', DB::raw('TRIM(rfi.item_name)'))
+                        ->where('i.sub_category_id', $itemMaster->sub_category_id)
+                        ->where('rf.outlet_id', $outletId)
+                        ->where('rf.status', 'approved')
+                        ->whereRaw("DATE_FORMAT(rf.transaction_date, '%Y-%m') = ?", [$currentMonth])
+                        ->sum('rfi.subtotal');
+                    
+                    $foodFloorOrderTotal = DB::table('food_floor_order_items as ffoi')
+                        ->join('food_floor_orders as ffo', 'ffoi.floor_order_id', '=', 'ffo.id')
+                        ->join('items as i', 'ffoi.item_id', '=', 'i.id')
+                        ->where('i.sub_category_id', $itemMaster->sub_category_id)
+                        ->where('ffo.id_outlet', $outletId)
+                        ->whereIn('ffo.status', ['approved', 'received'])
+                        ->whereRaw("DATE_FORMAT(ffo.tanggal, '%Y-%m') = ?", [$currentMonth])
+                        ->sum('ffoi.subtotal');
+                    
+                    $monthlyTotal = $retailFoodTotal + $foodFloorOrderTotal;
+                    $remainingBudget = $lockedBudget->budget - $monthlyTotal;
+                    
+                    $budgetInfo[] = [
+                        'item_name' => $item['item_name'],
+                        'category_name' => $subCategoryInfo->category_name ?? 'N/A',
+                        'sub_category_name' => $subCategoryInfo->sub_category_name ?? 'N/A',
+                        'budget_amount' => $lockedBudget->budget,
+                        'retail_food_total' => $retailFoodTotal,
+                        'food_floor_order_total' => $foodFloorOrderTotal,
+                        'monthly_total' => $monthlyTotal,
+                        'remaining_budget' => $remainingBudget,
+                        'budget_percentage' => $monthlyTotal > 0 ? round(($monthlyTotal / $lockedBudget->budget) * 100, 2) : 0
+                    ];
+                }
+            }
+        }
+        return $budgetInfo;
+    }
+
     public function store(Request $request)
     {
         \Log::info('RETAIL_FOOD_STORE: Mulai proses simpan retail food', [
@@ -264,11 +321,146 @@ class RetailFoodController extends Controller
                 \Log::info('RETAIL_FOOD_STORE: Item master ditemukan', [
                     'item_id' => $itemMaster->id,
                     'item_name' => $itemMaster->name,
+                    'sub_category_id' => $itemMaster->sub_category_id,
                     'small_unit_id' => $itemMaster->small_unit_id,
                     'medium_unit_id' => $itemMaster->medium_unit_id,
                     'large_unit_id' => $itemMaster->large_unit_id,
                     'requested_unit_id' => $item['unit_id']
                 ]);
+                
+                // Budget checking untuk sub_category_id yang ada di locked_budget_food_categories
+                if ($itemMaster->sub_category_id) {
+                    \Log::info('RETAIL_FOOD_STORE: Cek budget untuk sub_category_id', [
+                        'sub_category_id' => $itemMaster->sub_category_id,
+                        'outlet_id' => $request->outlet_id
+                    ]);
+                    
+                    // Cek apakah sub_category_id ada di locked_budget_food_categories
+                    $lockedBudget = DB::table('locked_budget_food_categories')
+                        ->where('sub_category_id', $itemMaster->sub_category_id)
+                        ->where('outlet_id', $request->outlet_id)
+                        ->first();
+                    
+                    if ($lockedBudget) {
+                        // Ambil informasi sub category dan category
+                        $subCategoryInfo = DB::table('sub_categories as sc')
+                            ->join('categories as c', 'sc.category_id', '=', 'c.id')
+                            ->where('sc.id', $itemMaster->sub_category_id)
+                            ->select('sc.name as sub_category_name', 'c.name as category_name')
+                            ->first();
+                        
+                        \Log::info('RETAIL_FOOD_STORE: Budget ditemukan', [
+                            'budget_id' => $lockedBudget->id,
+                            'budget_amount' => $lockedBudget->budget,
+                            'category_name' => $subCategoryInfo->category_name ?? 'N/A',
+                            'sub_category_name' => $subCategoryInfo->sub_category_name ?? 'N/A'
+                        ]);
+                        
+                        // Hitung total transaksi bulan berjalan untuk sub_category_id ini
+                        $currentMonth = date('Y-m');
+                        
+                        // 1. Total dari retail_food_items
+                        $retailFoodQuery = DB::table('retail_food_items as rfi')
+                            ->join('retail_food as rf', 'rfi.retail_food_id', '=', 'rf.id')
+                            ->join('items as i', DB::raw('TRIM(i.name)'), '=', DB::raw('TRIM(rfi.item_name)'))
+                            ->where('i.sub_category_id', $itemMaster->sub_category_id)
+                            ->where('rf.outlet_id', $request->outlet_id)
+                            ->where('rf.status', 'approved')
+                            ->whereRaw("DATE_FORMAT(rf.transaction_date, '%Y-%m') = ?", [$currentMonth]);
+                        
+                        \Log::info('RETAIL_FOOD_STORE: Retail Food Query Debug', [
+                            'sql' => $retailFoodQuery->toSql(),
+                            'bindings' => $retailFoodQuery->getBindings(),
+                            'sub_category_id' => $itemMaster->sub_category_id,
+                            'outlet_id' => $request->outlet_id,
+                            'current_month' => $currentMonth
+                        ]);
+                        
+                        $retailFoodTotal = $retailFoodQuery->sum('rfi.subtotal');
+                        
+                        // 2. Total dari food_floor_order_items
+                        $foodFloorOrderQuery = DB::table('food_floor_order_items as ffoi')
+                            ->join('food_floor_orders as ffo', 'ffoi.floor_order_id', '=', 'ffo.id')
+                            ->join('items as i', 'ffoi.item_id', '=', 'i.id')
+                            ->where('i.sub_category_id', $itemMaster->sub_category_id)
+                            ->where('ffo.id_outlet', $request->outlet_id)
+                            ->whereIn('ffo.status', ['approved', 'received'])
+                            ->whereRaw("DATE_FORMAT(ffo.tanggal, '%Y-%m') = ?", [$currentMonth]);
+                        
+                        \Log::info('RETAIL_FOOD_STORE: Food Floor Order Query Debug', [
+                            'sql' => $foodFloorOrderQuery->toSql(),
+                            'bindings' => $foodFloorOrderQuery->getBindings(),
+                            'sub_category_id' => $itemMaster->sub_category_id,
+                            'outlet_id' => $request->outlet_id,
+                            'current_month' => $currentMonth
+                        ]);
+                        
+                        $foodFloorOrderTotal = $foodFloorOrderQuery->sum('ffoi.subtotal');
+                        
+                        // 3. Total gabungan
+                        $monthlyTotal = $retailFoodTotal + $foodFloorOrderTotal;
+                        
+                        \Log::info('RETAIL_FOOD_STORE: Total bulanan saat ini', [
+                            'retail_food_total' => $retailFoodTotal,
+                            'food_floor_order_total' => $foodFloorOrderTotal,
+                            'monthly_total' => $monthlyTotal,
+                            'current_month' => $currentMonth,
+                            'sub_category_id' => $itemMaster->sub_category_id,
+                            'outlet_id' => $request->outlet_id
+                        ]);
+                        
+                        // Hitung subtotal item baru
+                        $newItemSubtotal = $item['qty'] * $item['price'];
+                        
+                        // Total setelah ditambah item baru
+                        $totalAfterNewItem = $monthlyTotal + $newItemSubtotal;
+                        
+                        \Log::info('RETAIL_FOOD_STORE: Perhitungan budget', [
+                            'retail_food_total' => $retailFoodTotal,
+                            'food_floor_order_total' => $foodFloorOrderTotal,
+                            'monthly_total' => $monthlyTotal,
+                            'new_item_subtotal' => $newItemSubtotal,
+                            'total_after_new_item' => $totalAfterNewItem,
+                            'budget_limit' => $lockedBudget->budget
+                        ]);
+                        
+                        // Cek apakah melebihi budget
+                        if ($totalAfterNewItem > $lockedBudget->budget) {
+                            \Log::error('RETAIL_FOOD_STORE: Budget terlampaui', [
+                                'total_after_new_item' => $totalAfterNewItem,
+                                'budget_limit' => $lockedBudget->budget,
+                                'excess_amount' => $totalAfterNewItem - $lockedBudget->budget
+                            ]);
+                            
+                            DB::rollBack();
+                            return response()->json([
+                                'message' => "Transaksi ditolak! Budget untuk sub kategori '{$subCategoryInfo->sub_category_name}' (Kategori: {$subCategoryInfo->category_name}) telah terlampaui.\n\n" .
+                                           "📊 Detail Budget:\n" .
+                                           "• Budget yang ditetapkan: Rp " . number_format($lockedBudget->budget, 0, ',', '.') . "\n" .
+                                           "• Total Retail Food (bulan ini): Rp " . number_format($retailFoodTotal, 0, ',', '.') . "\n" .
+                                           "• Total Food Floor Order (bulan ini): Rp " . number_format($foodFloorOrderTotal, 0, ',', '.') . "\n" .
+                                           "• Total Gabungan: Rp " . number_format($totalAfterNewItem, 0, ',', '.') . "\n" .
+                                           "• Kelebihan: Rp " . number_format($totalAfterNewItem - $lockedBudget->budget, 0, ',', '.')
+                            ], 422);
+                        }
+                        
+                        \Log::info('RETAIL_FOOD_STORE: Budget check passed', [
+                            'category_name' => $subCategoryInfo->category_name ?? 'N/A',
+                            'sub_category_name' => $subCategoryInfo->sub_category_name ?? 'N/A',
+                            'retail_food_total' => $retailFoodTotal,
+                            'food_floor_order_total' => $foodFloorOrderTotal,
+                            'total_after_new_item' => $totalAfterNewItem,
+                            'budget_limit' => $lockedBudget->budget,
+                            'remaining_budget' => $lockedBudget->budget - $totalAfterNewItem
+                        ]);
+                    } else {
+                        \Log::info('RETAIL_FOOD_STORE: Tidak ada budget lock untuk sub_category_id', [
+                            'sub_category_id' => $itemMaster->sub_category_id
+                        ]);
+                    }
+                } else {
+                    \Log::info('RETAIL_FOOD_STORE: Item tidak memiliki sub_category_id');
+                }
                 
                 // Validasi unit_id
                 $validUnits = [$itemMaster->small_unit_id, $itemMaster->medium_unit_id, $itemMaster->large_unit_id];
@@ -571,22 +763,44 @@ class RetailFoodController extends Controller
             ]);
             if ($dailyTotal + $totalAmount >= 500000) {
                 \Log::info('RETAIL_FOOD_STORE: Total hari ini melebihi 500rb', ['daily_total' => $dailyTotal, 'total_amount' => $totalAmount]);
-                return response()->json([
+                
+                // Kumpulkan informasi budget yang di-lock untuk response
+                $budgetInfo = $this->getBudgetInfoForResponse($request->items, $request->outlet_id);
+                
+                $response = [
                     'message' => 'Transaksi berhasil disimpan, namun total pembelian hari ini sudah melebihi Rp 500.000',
                     'data' => $retailFood->load('items')
-                ], 201);
+                ];
+                
+                if (!empty($budgetInfo)) {
+                    $response['budget_info'] = $budgetInfo;
+                }
+                
+                return response()->json($response, 201);
             }
+
+            // Kumpulkan informasi budget yang di-lock untuk response
+            $budgetInfo = $this->getBudgetInfoForResponse($request->items, $request->outlet_id);
 
             \Log::info('RETAIL_FOOD_STORE: Transaksi berhasil disimpan');
             \Log::info('RETAIL_FOOD_STORE: Response success', [
                 'retail_food_id' => $retailFood->id,
                 'retail_number' => $retailNumber,
-                'total_amount' => $totalAmount
+                'total_amount' => $totalAmount,
+                'budget_info_count' => count($budgetInfo)
             ]);
-            return response()->json([
+            
+            $response = [
                 'message' => 'Transaksi berhasil disimpan',
                 'data' => $retailFood->load('items')
-            ], 201);
+            ];
+            
+            // Tambahkan informasi budget jika ada
+            if (!empty($budgetInfo)) {
+                $response['budget_info'] = $budgetInfo;
+            }
+            
+            return response()->json($response, 201);
 
         } catch (\Exception $e) {
             \Log::error('RETAIL_FOOD_STORE: Error terjadi', [
@@ -757,6 +971,113 @@ class RetailFoodController extends Controller
         }
     }
 
+    public function getBudgetInfo(Request $request)
+    {
+        try {
+            $request->validate([
+                'items' => 'required|array',
+                'items.*.item_name' => 'required|string',
+                'items.*.qty' => 'required|numeric|min:0',
+                'items.*.price' => 'required|numeric|min:0',
+                'outlet_id' => 'required|exists:tbl_data_outlet,id_outlet',
+            ]);
+
+            // Group items by sub_category_id
+            $subCategoryGroups = [];
+            foreach ($request->items as $item) {
+                $itemMaster = DB::table('items')->where('name', $item['item_name'])->first();
+                if ($itemMaster && $itemMaster->sub_category_id) {
+                    $subCategoryId = $itemMaster->sub_category_id;
+                    if (!isset($subCategoryGroups[$subCategoryId])) {
+                        $subCategoryGroups[$subCategoryId] = [
+                            'sub_category_id' => $subCategoryId,
+                            'items' => []
+                        ];
+                    }
+                    $subCategoryGroups[$subCategoryId]['items'][] = $item;
+                }
+            }
+
+            $budgetInfo = [];
+            foreach ($subCategoryGroups as $subCategoryId => $group) {
+                $lockedBudget = DB::table('locked_budget_food_categories')
+                    ->where('sub_category_id', $subCategoryId)
+                    ->where('outlet_id', $request->outlet_id)
+                    ->first();
+                
+                if ($lockedBudget) {
+                    $subCategoryInfo = DB::table('sub_categories as sc')
+                        ->join('categories as c', 'sc.category_id', '=', 'c.id')
+                        ->where('sc.id', $subCategoryId)
+                        ->select('sc.name as sub_category_name', 'c.name as category_name')
+                        ->first();
+                    
+                    $currentMonth = date('Y-m');
+                    $retailFoodTotal = DB::table('retail_food_items as rfi')
+                        ->join('retail_food as rf', 'rfi.retail_food_id', '=', 'rf.id')
+                        ->join('items as i', 'rfi.item_name', '=', 'i.name')
+                        ->where('i.sub_category_id', $subCategoryId)
+                        ->where('rf.outlet_id', $request->outlet_id)
+                        ->where('rf.status', 'approved')
+                        ->whereRaw("DATE_FORMAT(rf.transaction_date, '%Y-%m') = ?", [$currentMonth])
+                        ->sum('rfi.subtotal');
+                    
+                    $foodFloorOrderTotal = DB::table('food_floor_order_items as ffoi')
+                        ->join('food_floor_orders as ffo', 'ffoi.floor_order_id', '=', 'ffo.id')
+                        ->join('items as i', 'ffoi.item_id', '=', 'i.id')
+                        ->where('i.sub_category_id', $subCategoryId)
+                        ->where('ffo.id_outlet', $request->outlet_id)
+                        ->where('ffo.status', 'approved')
+                        ->whereRaw("DATE_FORMAT(ffo.tanggal, '%Y-%m') = ?", [$currentMonth])
+                        ->sum('ffoi.subtotal');
+                    
+                    $monthlyTotal = $retailFoodTotal + $foodFloorOrderTotal;
+                    
+                    // Sum all new items for this sub category
+                    $newItemsTotal = 0;
+                    $itemNames = [];
+                    foreach ($group['items'] as $item) {
+                        $newItemsTotal += $item['qty'] * $item['price'];
+                        $itemNames[] = $item['item_name'];
+                    }
+                    
+                    $totalAfterNewItems = $monthlyTotal + $newItemsTotal;
+                    $remainingBudget = $lockedBudget->budget - $totalAfterNewItems;
+                    
+                    $budgetInfo[] = [
+                        'sub_category_id' => $subCategoryId,
+                        'category_name' => $subCategoryInfo->category_name ?? 'N/A',
+                        'sub_category_name' => $subCategoryInfo->sub_category_name ?? 'N/A',
+                        'item_names' => $itemNames,
+                        'budget_amount' => $lockedBudget->budget,
+                        'retail_food_total' => $retailFoodTotal,
+                        'food_floor_order_total' => $foodFloorOrderTotal,
+                        'monthly_total' => $monthlyTotal,
+                        'new_items_total' => $newItemsTotal,
+                        'total_after_new_items' => $totalAfterNewItems,
+                        'remaining_budget' => $remainingBudget,
+                        'budget_percentage' => $totalAfterNewItems > 0 ? round(($totalAfterNewItems / $lockedBudget->budget) * 100, 2) : 0
+                    ];
+                }
+            }
+
+            return response()->json([
+                'budget_info' => $budgetInfo
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error('GET_BUDGET_INFO: Error occurred', [
+                'message' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine()
+            ]);
+            
+            return response()->json([
+                'budget_info' => []
+            ], 500);
+        }
+    }
+
     public function getItemUnits(Request $request, $itemId)
     {
         \Log::info('getItemUnits called', [
@@ -903,5 +1224,63 @@ class RetailFoodController extends Controller
         
         $total = $query->sum('total_amount');
         return response()->json(['total' => $total]);
+    }
+
+    /**
+     * Debug method untuk testing query budget
+     */
+    public function debugBudgetQuery(Request $request)
+    {
+        $request->validate([
+            'sub_category_id' => 'required|integer',
+            'outlet_id' => 'required|integer'
+        ]);
+
+        $subCategoryId = $request->sub_category_id;
+        $outletId = $request->outlet_id;
+        $currentMonth = date('Y-m');
+
+        // Test Retail Food Query
+        $retailFoodQuery = DB::table('retail_food_items as rfi')
+            ->join('retail_food as rf', 'rfi.retail_food_id', '=', 'rf.id')
+            ->join('items as i', DB::raw('TRIM(i.name)'), '=', DB::raw('TRIM(rfi.item_name)'))
+            ->where('i.sub_category_id', $subCategoryId)
+            ->where('rf.outlet_id', $outletId)
+            ->where('rf.status', 'approved')
+            ->whereRaw("DATE_FORMAT(rf.transaction_date, '%Y-%m') = ?", [$currentMonth]);
+
+        $retailFoodTotal = $retailFoodQuery->sum('rfi.subtotal');
+        $retailFoodRecords = $retailFoodQuery->select('rfi.*', 'rf.transaction_date', 'i.name as item_name_master')->get();
+
+        // Test Food Floor Order Query
+        $foodFloorOrderQuery = DB::table('food_floor_order_items as ffoi')
+            ->join('food_floor_orders as ffo', 'ffoi.floor_order_id', '=', 'ffo.id')
+            ->join('items as i', 'ffoi.item_id', '=', 'i.id')
+            ->where('i.sub_category_id', $subCategoryId)
+            ->where('ffo.id_outlet', $outletId)
+            ->whereIn('ffo.status', ['approved', 'received'])
+            ->whereRaw("DATE_FORMAT(ffo.tanggal, '%Y-%m') = ?", [$currentMonth]);
+
+        $foodFloorOrderTotal = $foodFloorOrderQuery->sum('ffoi.subtotal');
+        $foodFloorOrderRecords = $foodFloorOrderQuery->select('ffoi.*', 'ffo.tanggal', 'i.name as item_name_master')->get();
+
+        return response()->json([
+            'debug_info' => [
+                'sub_category_id' => $subCategoryId,
+                'outlet_id' => $outletId,
+                'current_month' => $currentMonth,
+                'retail_food_query_sql' => $retailFoodQuery->toSql(),
+                'retail_food_query_bindings' => $retailFoodQuery->getBindings(),
+                'retail_food_total' => $retailFoodTotal,
+                'retail_food_records_count' => $retailFoodRecords->count(),
+                'retail_food_records' => $retailFoodRecords,
+                'food_floor_order_query_sql' => $foodFloorOrderQuery->toSql(),
+                'food_floor_order_query_bindings' => $foodFloorOrderQuery->getBindings(),
+                'food_floor_order_total' => $foodFloorOrderTotal,
+                'food_floor_order_records_count' => $foodFloorOrderRecords->count(),
+                'food_floor_order_records' => $foodFloorOrderRecords,
+                'total_combined' => $retailFoodTotal + $foodFloorOrderTotal
+            ]
+        ]);
     }
 } 

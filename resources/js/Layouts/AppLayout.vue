@@ -77,6 +77,7 @@ const menuGroups = [
             { name: () => 'Jenis Pembayaran', icon: 'fa-solid fa-money-bill', route: '/payment-types', code: 'payment_types' },
             { name: () => 'Video Tutorial', icon: 'fa-solid fa-video', route: '/video-tutorials', code: 'master-data-video-tutorials' },
             { name: () => 'Group Video Tutorial', icon: 'fa-solid fa-folder', route: '/video-tutorial-groups', code: 'master-data-video-tutorial-groups' },
+            { name: () => 'Locked Budget Food Categories', icon: 'fa-solid fa-lock', route: '/locked-budget-food-categories', code: 'locked_budget_food_categories' },
         ],
     },
     {
@@ -336,6 +337,8 @@ const menuGroups = [
             { name: () => 'Jadwal Training', icon: 'fa-solid fa-calendar-alt', route: '/lms/schedules', code: 'lms-schedules' },
             { name: () => 'Trainer Report', icon: 'fa-solid fa-chart-line', route: '/lms/trainer-report-page', code: 'lms-trainer-report' },
             { name: () => 'Laporan Training Karyawan', icon: 'fa-solid fa-users', route: '/lms/employee-training-report-page', code: 'lms-employee-training-report' },
+            { name: () => 'Training Report', icon: 'fa-solid fa-chart-bar', route: '/lms/training-report-page', code: 'lms-training-report' },
+            { name: () => 'Quiz Report', icon: 'fa-solid fa-question-circle', route: '/lms/quiz-report-page', code: 'lms-quiz-report' },
         ],
     },
 ];

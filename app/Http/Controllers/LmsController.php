@@ -2056,16 +2056,27 @@ class LmsController extends Controller
                 })
                 ->leftJoin('users as trainers', 'training_schedule_trainers.trainer_id', '=', 'trainers.id')
                 ->whereIn('training_reviews.training_schedule_id', $scheduleIds)
-                ->whereNotNull('training_reviews.trainer_rating')
+                ->whereNotNull('training_reviews.training_rating')
                 ->select(
                     'training_reviews.id as review_id',
-                    'training_reviews.trainer_rating as rating',
-                    'training_reviews.trainer_feedback as comment',
+                    'training_reviews.training_rating as rating',
+                    'training_reviews.material_suggestions as comment',
+                    'training_reviews.material_needs',
                     'training_reviews.created_at',
                     'users.nama_lengkap as participant_name',
                     'tbl_data_jabatan.nama_jabatan as participant_position',
                     'trainers.nama_lengkap as trainer_name',
-                    'training_schedule_trainers.external_trainer_name'
+                    'training_schedule_trainers.external_trainer_name',
+                    // Trainer ratings
+                    'training_reviews.trainer_mastery',
+                    'training_reviews.trainer_language',
+                    'training_reviews.trainer_intonation',
+                    'training_reviews.trainer_presentation',
+                    'training_reviews.trainer_qna',
+                    // Material ratings
+                    'training_reviews.material_benefit',
+                    'training_reviews.material_clarity',
+                    'training_reviews.material_display'
                 )
                 ->orderBy('training_reviews.created_at', 'desc')
                 ->get();
@@ -2079,6 +2090,22 @@ class LmsController extends Controller
                 } else {
                     $rating->trainer_name_final = 'Trainer tidak tersedia';
                 }
+                
+                // Add structured trainer ratings
+                $rating->trainer_ratings = [
+                    'mastery' => $rating->trainer_mastery,
+                    'language' => $rating->trainer_language,
+                    'intonation' => $rating->trainer_intonation,
+                    'presentation' => $rating->trainer_presentation,
+                    'qna' => $rating->trainer_qna
+                ];
+                
+                // Add structured material ratings
+                $rating->material_ratings = [
+                    'benefit' => $rating->material_benefit,
+                    'clarity' => $rating->material_clarity,
+                    'display' => $rating->material_display
+                ];
             });
 
             // Calculate statistics
@@ -2686,6 +2713,7 @@ class LmsController extends Controller
                     'training_schedule_trainers.trainer_type',
                     'users.nama_lengkap as internal_trainer_name',
                     'users.email as trainer_email',
+                    'users.avatar as trainer_avatar',
                     'tbl_data_jabatan.nama_jabatan as trainer_position',
                     'tbl_data_divisi.nama_divisi as trainer_division',
                     'training_schedules.id as schedule_id',
@@ -2720,6 +2748,7 @@ class LmsController extends Controller
                         'trainer_name' => $trainerName,
                         'trainer_type' => $training->trainer_type,
                         'trainer_email' => $training->trainer_email,
+                        'trainer_avatar' => $training->trainer_avatar,
                         'trainer_position' => $training->trainer_position,
                         'trainer_division' => $training->trainer_division,
                         'total_trainings' => 0,
@@ -2771,13 +2800,13 @@ class LmsController extends Controller
                              ->where('training_schedule_trainers.trainer_type', '=', 'internal');
                     })
                     ->where('training_schedule_trainers.trainer_id', $trainerId)
-                    ->whereNotNull('training_reviews.trainer_rating')
-                    ->select('training_reviews.trainer_rating')
+                    ->whereNotNull('training_reviews.training_rating')
+                    ->select('training_reviews.training_rating')
                     ->get();
 
                 if ($ratings->count() > 0) {
                     $stats['total_ratings'] = $ratings->count();
-                    $stats['average_rating'] = round($ratings->avg('trainer_rating'), 2);
+                    $stats['average_rating'] = round($ratings->avg('training_rating'), 2);
                 }
             }
 
@@ -2798,6 +2827,485 @@ class LmsController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Gagal memuat report trainer'
+            ], 500);
+        }
+    }
+
+    /**
+     * Get training report with comprehensive statistics
+     */
+    public function getTrainingReport(Request $request)
+    {
+        try {
+            // Check if user can view training reports
+            $user = auth()->user();
+            $canView = false;
+            
+            if ($user->id_role === '5af56935b011a' && $user->status === 'A') {
+                $canView = true;
+            } elseif ($user->id_jabatan === 170 && $user->status === 'A') {
+                $canView = true;
+            }
+            
+            if (!$canView) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Anda tidak memiliki izin untuk melihat report training'
+                ], 403);
+            }
+
+            // Get filter parameters
+            $filters = [
+                'division_id' => $request->get('division_id'),
+                'outlet_id' => $request->get('outlet_id'),
+                'jabatan_id' => $request->get('jabatan_id'),
+                'level_id' => $request->get('level_id'),
+                'category_id' => $request->get('category_id'),
+                'trainer_type' => $request->get('trainer_type'),
+                'from_date' => $request->get('from_date'),
+                'to_date' => $request->get('to_date'),
+            ];
+
+            // Get Man Power (MP) - Active users
+            $mpQuery = DB::table('users')
+                ->leftJoin('tbl_data_divisi', 'users.division_id', '=', 'tbl_data_divisi.id')
+                ->leftJoin('tbl_data_outlet', 'users.id_outlet', '=', 'tbl_data_outlet.id_outlet')
+                ->leftJoin('tbl_data_jabatan', 'users.id_jabatan', '=', 'tbl_data_jabatan.id_jabatan')
+                ->leftJoin('tbl_data_level', 'tbl_data_jabatan.id_level', '=', 'tbl_data_level.id')
+                ->where('users.status', 'A');
+
+            // Apply filters for MP
+            if ($filters['division_id']) {
+                $mpQuery->where('users.division_id', $filters['division_id']);
+            }
+            if ($filters['outlet_id']) {
+                $mpQuery->where('users.id_outlet', $filters['outlet_id']);
+            }
+            if ($filters['jabatan_id']) {
+                $mpQuery->where('users.id_jabatan', $filters['jabatan_id']);
+            }
+            if ($filters['level_id']) {
+                $mpQuery->where('tbl_data_jabatan.id_level', $filters['level_id']);
+            }
+
+            $manPower = $mpQuery->count();
+
+            // Get training data
+            $trainingQuery = DB::table('training_schedules as ts')
+                ->leftJoin('lms_courses as c', 'ts.course_id', '=', 'c.id')
+                ->leftJoin('lms_categories as cc', 'c.category_id', '=', 'cc.id')
+                ->leftJoin('training_schedule_trainers as tst', 'ts.id', '=', 'tst.schedule_id')
+                ->leftJoin('training_invitations as ti', 'ts.id', '=', 'ti.schedule_id')
+                ->leftJoin('users as u', 'ti.user_id', '=', 'u.id')
+                ->leftJoin('tbl_data_divisi as d', 'u.division_id', '=', 'd.id')
+                ->leftJoin('tbl_data_outlet as o', 'u.id_outlet', '=', 'o.id_outlet')
+                ->leftJoin('tbl_data_jabatan as j', 'u.id_jabatan', '=', 'j.id_jabatan')
+                ->leftJoin('tbl_data_level as l', 'j.id_level', '=', 'l.id')
+                ->where('ts.status', 'completed')
+                ->where('u.status', 'A');
+
+            // Apply filters for training data
+            if ($filters['division_id']) {
+                $trainingQuery->where('u.division_id', $filters['division_id']);
+            }
+            if ($filters['outlet_id']) {
+                $trainingQuery->where('u.id_outlet', $filters['outlet_id']);
+            }
+            if ($filters['jabatan_id']) {
+                $trainingQuery->where('u.id_jabatan', $filters['jabatan_id']);
+            }
+            if ($filters['level_id']) {
+                $trainingQuery->where('j.id_level', $filters['level_id']);
+            }
+            if ($filters['category_id']) {
+                $trainingQuery->where('c.category_id', $filters['category_id']);
+            }
+            if ($filters['trainer_type']) {
+                $trainingQuery->where('tst.trainer_type', $filters['trainer_type']);
+            }
+            if ($filters['from_date']) {
+                $trainingQuery->where('ts.scheduled_date', '>=', $filters['from_date']);
+            }
+            if ($filters['to_date']) {
+                $trainingQuery->where('ts.scheduled_date', '<=', $filters['to_date']);
+            }
+
+            $trainingData = $trainingQuery->select(
+                'ts.id as schedule_id',
+                'c.id as course_id',
+                'c.title as course_title',
+                'c.duration_minutes',
+                'cc.name as category_name',
+                'tst.trainer_type',
+                'ts.scheduled_date',
+                'ti.user_id',
+                'u.nama_lengkap',
+                'd.nama_divisi',
+                'o.nama_outlet',
+                'j.nama_jabatan',
+                'l.nama_level'
+            )->get();
+
+            // Calculate statistics
+            $qty = $trainingData->groupBy('schedule_id')->count(); // Jumlah training yang sudah dilaksanakan
+            $pax = $trainingData->groupBy('user_id')->count(); // Man Power yang sudah mengikuti training
+            $totalHours = $trainingData->sum('duration_minutes') / 60; // Total jam training
+            $percentage = $manPower > 0 ? round(($pax / $manPower) * 100, 2) : 0; // Persentase MP yang sudah ikut training
+
+            // Get filter options
+            $divisions = DB::table('tbl_data_divisi')->where('status', 'A')->orderBy('nama_divisi')->get();
+            $outlets = DB::table('tbl_data_outlet')->where('status', 'A')->orderBy('nama_outlet')->get();
+            $jabatans = DB::table('tbl_data_jabatan')->where('status', 'A')->orderBy('nama_jabatan')->get();
+            $levels = DB::table('tbl_data_level')->where('status', 'A')->orderBy('nama_level')->get();
+            $categories = DB::table('lms_categories')->where('status', 'A')->orderBy('name')->get();
+
+            // Get detailed data for modals
+            $manPowerDetails = $this->getManPowerDetails($request);
+            $qtyDetails = $this->getQTYDetails($request);
+            $paxDetails = $this->getPaxDetails($request);
+            $hoursDetails = $this->getHoursDetails($request);
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'man_power' => $manPower,
+                    'qty' => $qty,
+                    'pax' => $pax,
+                    'hours' => round($totalHours, 2),
+                    'percentage' => $percentage,
+                    'man_power_details' => $manPowerDetails,
+                    'qty_details' => $qtyDetails,
+                    'pax_details' => $paxDetails,
+                    'hours_details' => $hoursDetails,
+                    'filters' => $filters,
+                    'filter_options' => [
+                        'divisions' => $divisions,
+                        'outlets' => $outlets,
+                        'jabatans' => $jabatans,
+                        'levels' => $levels,
+                        'categories' => $categories,
+                    ]
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error('Error in getTrainingReport: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Terjadi kesalahan saat memuat data training report'
+            ], 500);
+        }
+    }
+
+    private function getManPowerDetails($request)
+    {
+        $filters = $request->only(['division_id', 'outlet_id', 'jabatan_id', 'level_id', 'category_id', 'trainer_type', 'from_date', 'to_date']);
+        
+        $query = DB::table('users as u')
+            ->leftJoin('tbl_data_divisi as d', 'u.division_id', '=', 'd.id')
+            ->leftJoin('tbl_data_outlet as o', 'u.id_outlet', '=', 'o.id_outlet')
+            ->leftJoin('tbl_data_jabatan as j', 'u.id_jabatan', '=', 'j.id_jabatan')
+            ->leftJoin('tbl_data_level as l', 'j.id_level', '=', 'l.id')
+            ->where('u.status', 'A')
+            ->select('u.id', 'u.nama_lengkap', 'u.avatar', 'd.nama_divisi', 'o.nama_outlet', 'j.nama_jabatan', 'l.nama_level');
+
+        // Apply filters
+        if (!empty($filters['division_id'])) {
+            $query->where('u.division_id', $filters['division_id']);
+        }
+        if (!empty($filters['outlet_id'])) {
+            $query->where('u.id_outlet', $filters['outlet_id']);
+        }
+        if (!empty($filters['jabatan_id'])) {
+            $query->where('u.id_jabatan', $filters['jabatan_id']);
+        }
+        if (!empty($filters['level_id'])) {
+            $query->where('j.id_level', $filters['level_id']);
+        }
+
+        return $query->orderBy('u.nama_lengkap')->get();
+    }
+
+    private function getQTYDetails($request)
+    {
+        $filters = $request->only(['division_id', 'outlet_id', 'jabatan_id', 'level_id', 'category_id', 'trainer_type', 'from_date', 'to_date']);
+        
+        $query = DB::table('training_schedules as ts')
+            ->leftJoin('lms_courses as c', 'ts.course_id', '=', 'c.id')
+            ->leftJoin('lms_categories as cc', 'c.category_id', '=', 'cc.id')
+            ->leftJoin('training_schedule_trainers as tst', 'ts.id', '=', 'tst.schedule_id')
+            ->leftJoin('training_invitations as ti', 'ts.id', '=', 'ti.schedule_id')
+            ->leftJoin('users as u', 'ti.user_id', '=', 'u.id')
+            ->leftJoin('tbl_data_divisi as d', 'u.division_id', '=', 'd.id')
+            ->leftJoin('tbl_data_outlet as o', 'u.id_outlet', '=', 'o.id_outlet')
+            ->leftJoin('tbl_data_jabatan as j', 'u.id_jabatan', '=', 'j.id_jabatan')
+            ->leftJoin('tbl_data_level as l', 'j.id_level', '=', 'l.id')
+            ->where('ts.status', 'completed')
+            ->where('u.status', 'A')
+            ->select('c.id as course_id', 'c.title as course_title', 'c.duration_minutes', 'cc.name as category_name')
+            ->selectRaw('COUNT(DISTINCT ts.id) as count');
+
+        // Apply filters
+        if (!empty($filters['division_id'])) {
+            $query->where('u.division_id', $filters['division_id']);
+        }
+        if (!empty($filters['outlet_id'])) {
+            $query->where('u.id_outlet', $filters['outlet_id']);
+        }
+        if (!empty($filters['jabatan_id'])) {
+            $query->where('u.id_jabatan', $filters['jabatan_id']);
+        }
+        if (!empty($filters['level_id'])) {
+            $query->where('j.id_level', $filters['level_id']);
+        }
+        if (!empty($filters['category_id'])) {
+            $query->where('c.category_id', $filters['category_id']);
+        }
+        if (!empty($filters['trainer_type'])) {
+            $query->where('tst.trainer_type', $filters['trainer_type']);
+        }
+        if (!empty($filters['from_date'])) {
+            $query->where('ts.scheduled_date', '>=', $filters['from_date']);
+        }
+        if (!empty($filters['to_date'])) {
+            $query->where('ts.scheduled_date', '<=', $filters['to_date']);
+        }
+
+        return $query->groupBy('c.id', 'c.title', 'c.duration_minutes', 'cc.name')
+                    ->orderBy('count', 'desc')
+                    ->get();
+    }
+
+    private function getPaxDetails($request)
+    {
+        $filters = $request->only(['division_id', 'outlet_id', 'jabatan_id', 'level_id', 'category_id', 'trainer_type', 'from_date', 'to_date']);
+        
+        // Get participants with their training count
+        $participants = DB::table('training_schedules as ts')
+            ->leftJoin('lms_courses as c', 'ts.course_id', '=', 'c.id')
+            ->leftJoin('lms_categories as cc', 'c.category_id', '=', 'cc.id')
+            ->leftJoin('training_schedule_trainers as tst', 'ts.id', '=', 'tst.schedule_id')
+            ->leftJoin('training_invitations as ti', 'ts.id', '=', 'ti.schedule_id')
+            ->leftJoin('users as u', 'ti.user_id', '=', 'u.id')
+            ->leftJoin('tbl_data_divisi as d', 'u.division_id', '=', 'd.id')
+            ->leftJoin('tbl_data_outlet as o', 'u.id_outlet', '=', 'o.id_outlet')
+            ->leftJoin('tbl_data_jabatan as j', 'u.id_jabatan', '=', 'j.id_jabatan')
+            ->leftJoin('tbl_data_level as l', 'j.id_level', '=', 'l.id')
+            ->where('ts.status', 'completed')
+            ->where('u.status', 'A')
+            ->select('u.id as user_id', 'u.nama_lengkap', 'u.avatar', 'd.nama_divisi', 'o.nama_outlet')
+            ->selectRaw('COUNT(DISTINCT ts.id) as training_count')
+            ->groupBy('u.id', 'u.nama_lengkap', 'u.avatar', 'd.nama_divisi', 'o.nama_outlet');
+
+        // Apply filters
+        if (!empty($filters['division_id'])) {
+            $participants->where('u.division_id', $filters['division_id']);
+        }
+        if (!empty($filters['outlet_id'])) {
+            $participants->where('u.id_outlet', $filters['outlet_id']);
+        }
+        if (!empty($filters['jabatan_id'])) {
+            $participants->where('u.id_jabatan', $filters['jabatan_id']);
+        }
+        if (!empty($filters['level_id'])) {
+            $participants->where('j.id_level', $filters['level_id']);
+        }
+        if (!empty($filters['category_id'])) {
+            $participants->where('c.category_id', $filters['category_id']);
+        }
+        if (!empty($filters['trainer_type'])) {
+            $participants->where('tst.trainer_type', $filters['trainer_type']);
+        }
+        if (!empty($filters['from_date'])) {
+            $participants->where('ts.scheduled_date', '>=', $filters['from_date']);
+        }
+        if (!empty($filters['to_date'])) {
+            $participants->where('ts.scheduled_date', '<=', $filters['to_date']);
+        }
+
+        $participants = $participants->orderBy('u.nama_lengkap')->get();
+
+        // Get training details for each participant
+        foreach ($participants as $participant) {
+            $trainings = DB::table('training_schedules as ts')
+                ->leftJoin('lms_courses as c', 'ts.course_id', '=', 'c.id')
+                ->leftJoin('lms_categories as cc', 'c.category_id', '=', 'cc.id')
+                ->leftJoin('training_schedule_trainers as tst', 'ts.id', '=', 'tst.schedule_id')
+                ->leftJoin('training_invitations as ti', 'ts.id', '=', 'ti.schedule_id')
+                ->leftJoin('users as u', 'ti.user_id', '=', 'u.id')
+                ->leftJoin('tbl_data_divisi as d', 'u.division_id', '=', 'd.id')
+                ->leftJoin('tbl_data_outlet as o', 'u.id_outlet', '=', 'o.id_outlet')
+                ->leftJoin('tbl_data_jabatan as j', 'u.id_jabatan', '=', 'j.id_jabatan')
+                ->leftJoin('tbl_data_level as l', 'j.id_level', '=', 'l.id')
+                ->where('ts.status', 'completed')
+                ->where('u.id', $participant->user_id)
+                ->where('u.status', 'A')
+                ->select('ts.id as schedule_id', 'c.title as course_title', 'cc.name as category_name', 'ts.scheduled_date');
+
+            // Apply same filters
+            if (!empty($filters['division_id'])) {
+                $trainings->where('u.division_id', $filters['division_id']);
+            }
+            if (!empty($filters['outlet_id'])) {
+                $trainings->where('u.id_outlet', $filters['outlet_id']);
+            }
+            if (!empty($filters['jabatan_id'])) {
+                $trainings->where('u.id_jabatan', $filters['jabatan_id']);
+            }
+            if (!empty($filters['level_id'])) {
+                $trainings->where('j.id_level', $filters['level_id']);
+            }
+            if (!empty($filters['category_id'])) {
+                $trainings->where('c.category_id', $filters['category_id']);
+            }
+            if (!empty($filters['trainer_type'])) {
+                $trainings->where('tst.trainer_type', $filters['trainer_type']);
+            }
+            if (!empty($filters['from_date'])) {
+                $trainings->where('ts.scheduled_date', '>=', $filters['from_date']);
+            }
+            if (!empty($filters['to_date'])) {
+                $trainings->where('ts.scheduled_date', '<=', $filters['to_date']);
+            }
+
+            $participant->trainings = $trainings->orderBy('ts.scheduled_date', 'desc')->get();
+        }
+
+        return $participants;
+    }
+
+    private function getHoursDetails($request)
+    {
+        $filters = $request->only(['division_id', 'outlet_id', 'jabatan_id', 'level_id', 'category_id', 'trainer_type', 'from_date', 'to_date']);
+        
+        $query = DB::table('training_schedules as ts')
+            ->leftJoin('lms_courses as c', 'ts.course_id', '=', 'c.id')
+            ->leftJoin('lms_categories as cc', 'c.category_id', '=', 'cc.id')
+            ->leftJoin('training_schedule_trainers as tst', 'ts.id', '=', 'tst.schedule_id')
+            ->leftJoin('training_invitations as ti', 'ts.id', '=', 'ti.schedule_id')
+            ->leftJoin('users as u', 'ti.user_id', '=', 'u.id')
+            ->leftJoin('tbl_data_divisi as d', 'u.division_id', '=', 'd.id')
+            ->leftJoin('tbl_data_outlet as o', 'u.id_outlet', '=', 'o.id_outlet')
+            ->leftJoin('tbl_data_jabatan as j', 'u.id_jabatan', '=', 'j.id_jabatan')
+            ->leftJoin('tbl_data_level as l', 'j.id_level', '=', 'l.id')
+            ->where('ts.status', 'completed')
+            ->where('u.status', 'A')
+            ->select('c.id as course_id', 'c.title as course_title', 'c.duration_minutes', 'cc.name as category_name')
+            ->selectRaw('COUNT(DISTINCT ts.id) as count');
+
+        // Apply filters
+        if (!empty($filters['division_id'])) {
+            $query->where('u.division_id', $filters['division_id']);
+        }
+        if (!empty($filters['outlet_id'])) {
+            $query->where('u.id_outlet', $filters['outlet_id']);
+        }
+        if (!empty($filters['jabatan_id'])) {
+            $query->where('u.id_jabatan', $filters['jabatan_id']);
+        }
+        if (!empty($filters['level_id'])) {
+            $query->where('j.id_level', $filters['level_id']);
+        }
+        if (!empty($filters['category_id'])) {
+            $query->where('c.category_id', $filters['category_id']);
+        }
+        if (!empty($filters['trainer_type'])) {
+            $query->where('tst.trainer_type', $filters['trainer_type']);
+        }
+        if (!empty($filters['from_date'])) {
+            $query->where('ts.scheduled_date', '>=', $filters['from_date']);
+        }
+        if (!empty($filters['to_date'])) {
+            $query->where('ts.scheduled_date', '<=', $filters['to_date']);
+        }
+
+        return $query->groupBy('c.id', 'c.title', 'c.duration_minutes', 'cc.name')
+                    ->orderBy('count', 'desc')
+                    ->get();
+    }
+
+    public function getQuizReport(Request $request)
+    {
+        try {
+            $filters = $request->only(['division_id', 'outlet_id', 'jabatan_id', 'level_id', 'from_date', 'to_date']);
+            
+            // Get quiz attempts with user and course details through enrollment
+            $query = DB::table('lms_quiz_attempts as qa')
+                ->leftJoin('users as u', 'qa.user_id', '=', 'u.id')
+                ->leftJoin('lms_quizzes as q', 'qa.quiz_id', '=', 'q.id')
+                ->leftJoin('lms_enrollments as e', 'qa.enrollment_id', '=', 'e.id')
+                ->leftJoin('lms_courses as c', 'e.course_id', '=', 'c.id')
+                ->leftJoin('lms_categories as cc', 'c.category_id', '=', 'cc.id')
+                ->leftJoin('tbl_data_divisi as d', 'u.division_id', '=', 'd.id')
+                ->leftJoin('tbl_data_outlet as o', 'u.id_outlet', '=', 'o.id_outlet')
+                ->leftJoin('tbl_data_jabatan as j', 'u.id_jabatan', '=', 'j.id_jabatan')
+                ->leftJoin('tbl_data_level as l', 'j.id_level', '=', 'l.id')
+                ->where('u.status', 'A')
+                ->where('qa.status', 'completed')
+                ->select(
+                    'qa.id as attempt_id',
+                    'qa.user_id',
+                    'u.nama_lengkap',
+                    'u.avatar',
+                    'd.nama_divisi',
+                    'o.nama_outlet',
+                    'j.nama_jabatan',
+                    'l.nama_level',
+                    'q.title as quiz_title',
+                    'q.passing_score',
+                    'qa.score',
+                    'qa.is_passed',
+                    'qa.completed_at',
+                    'cc.name as category_name'
+                );
+
+            // Apply filters
+            if (!empty($filters['division_id'])) {
+                $query->where('u.division_id', $filters['division_id']);
+            }
+            if (!empty($filters['outlet_id'])) {
+                $query->where('u.id_outlet', $filters['outlet_id']);
+            }
+            if (!empty($filters['jabatan_id'])) {
+                $query->where('u.id_jabatan', $filters['jabatan_id']);
+            }
+            if (!empty($filters['level_id'])) {
+                $query->where('j.id_level', $filters['level_id']);
+            }
+            if (!empty($filters['from_date'])) {
+                $query->where('qa.completed_at', '>=', $filters['from_date']);
+            }
+            if (!empty($filters['to_date'])) {
+                $query->where('qa.completed_at', '<=', $filters['to_date'] . ' 23:59:59');
+            }
+
+            $quizAttempts = $query->orderBy('qa.completed_at', 'desc')->get();
+
+            // Get filter options
+            $divisions = DB::table('tbl_data_divisi')->where('status', 'A')->orderBy('nama_divisi')->get();
+            $outlets = DB::table('tbl_data_outlet')->where('status', 'A')->orderBy('nama_outlet')->get();
+            $jabatans = DB::table('tbl_data_jabatan')->where('status', 'A')->orderBy('nama_jabatan')->get();
+            $levels = DB::table('tbl_data_level')->where('status', 'A')->orderBy('nama_level')->get();
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'quiz_attempts' => $quizAttempts,
+                    'filters' => $filters,
+                    'filter_options' => [
+                        'divisions' => $divisions,
+                        'outlets' => $outlets,
+                        'jabatans' => $jabatans,
+                        'levels' => $levels,
+                    ]
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error('Error in getQuizReport: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Terjadi kesalahan saat memuat data quiz report'
             ], 500);
         }
     }

@@ -81,12 +81,18 @@ const showTrainingReviewModal = ref(false);
 const isSubmittingReview = ref(false);
 const reviewForm = ref({
     trainer_id: null,
-    training_rating: 5,
-    training_feedback: '',
-    trainer_rating: 5,
-    trainer_feedback: '',
-    overall_satisfaction: 5,
-    improvement_suggestions: ''
+    // Trainer ratings
+    trainer_mastery: 5,
+    trainer_language: 5,
+    trainer_intonation: 5,
+    trainer_presentation: 5,
+    trainer_qna: 5,
+    // Training material ratings
+    material_benefit: 5,
+    material_clarity: 5,
+    material_display: 5,
+    material_suggestions: '',
+    material_needs: ''
 });
 
 // Training history modal
@@ -97,6 +103,25 @@ const loadingTrainingHistory = ref(false);
 // Computed property for development mode
 const isDevelopment = computed(() => {
     return import.meta.env.DEV;
+});
+
+// Computed property to check if all session items are completed
+const allSessionItemsCompleted = computed(() => {
+    if (!selectedTrainingDetail.value || !selectedTrainingDetail.value.sessions) {
+        return false;
+    }
+    
+    // Check if all sessions have all their items completed
+    return selectedTrainingDetail.value.sessions.every(session => {
+        if (!session.items || session.items.length === 0) {
+            return true; // No items means completed
+        }
+        
+        // Check if all items in this session are completed
+        return session.items.every(item => {
+            return item.is_completed && item.completion_status;
+        });
+    });
 });
 
 
@@ -690,20 +715,55 @@ async function markMaterialAsCompleted(item, session) {
                 time_spent_seconds: response.data.data.time_spent_seconds
             };
             
-            // Show success message (optional)
-            // Swal.fire({
-            //     icon: 'success',
-            //     title: 'Material Selesai',
-            //     text: 'Material berhasil ditandai sebagai selesai',
-            //     timer: 2000,
-            //     showConfirmButton: false
-            // });
+            // Force reactivity update using nextTick
+            await nextTick();
+            
+            // Force reactivity update
+            console.log('Updated item completion status:', {
+                item_id: item.id,
+                is_completed: item.is_completed,
+                completion_status: item.completion_status
+            });
+            
+            // Show success message
+            Swal.fire({
+                icon: 'success',
+                title: 'Material Selesai!',
+                text: 'Material berhasil ditandai sebagai selesai',
+                timer: 2000,
+                showConfirmButton: false
+            });
         } else {
             console.error('Failed to mark material as completed:', response.data);
+            Swal.fire({
+                icon: 'error',
+                title: 'Gagal',
+                text: response.data.message || 'Gagal menandai material sebagai selesai',
+                timer: 3000,
+                showConfirmButton: false
+            });
         }
     } catch (error) {
         console.error('Error marking material as completed:', error);
-        // Don't show error to user as it's not critical for the material viewing experience
+        
+        // Show error message to user
+        if (error.response && error.response.data && error.response.data.message) {
+            Swal.fire({
+                icon: 'error',
+                title: 'Gagal Menandai Material',
+                text: error.response.data.message,
+                timer: 3000,
+                showConfirmButton: false
+            });
+        } else {
+            Swal.fire({
+                icon: 'error',
+                title: 'Error',
+                text: 'Terjadi kesalahan saat menandai material sebagai selesai',
+                timer: 3000,
+                showConfirmButton: false
+            });
+        }
     }
 }
 
@@ -997,12 +1057,18 @@ function openTrainingReviewModal() {
     // Reset form
     reviewForm.value = {
         trainer_id: trainerId,
-        training_rating: 5,
-        training_feedback: '',
-        trainer_rating: 5,
-        trainer_feedback: '',
-        overall_satisfaction: 5,
-        improvement_suggestions: ''
+        // Trainer ratings
+        trainer_mastery: 5,
+        trainer_language: 5,
+        trainer_intonation: 5,
+        trainer_presentation: 5,
+        trainer_qna: 5,
+        // Training material ratings
+        material_benefit: 5,
+        material_clarity: 5,
+        material_display: 5,
+        material_suggestions: '',
+        material_needs: ''
     };
 }
 
@@ -1027,12 +1093,18 @@ async function submitTrainingReview() {
         await router.post(route('lms.training.review'), {
             training_schedule_id: selectedTrainingDetail.value.schedule_id,
             trainer_id: reviewForm.value.trainer_id,
-            training_rating: reviewForm.value.training_rating,
-            training_feedback: reviewForm.value.training_feedback,
-            trainer_rating: reviewForm.value.trainer_rating,
-            trainer_feedback: reviewForm.value.trainer_feedback,
-            overall_satisfaction: reviewForm.value.overall_satisfaction,
-            improvement_suggestions: reviewForm.value.improvement_suggestions,
+            // Trainer ratings
+            trainer_mastery: reviewForm.value.trainer_mastery,
+            trainer_language: reviewForm.value.trainer_language,
+            trainer_intonation: reviewForm.value.trainer_intonation,
+            trainer_presentation: reviewForm.value.trainer_presentation,
+            trainer_qna: reviewForm.value.trainer_qna,
+            // Training material ratings
+            material_benefit: reviewForm.value.material_benefit,
+            material_clarity: reviewForm.value.material_clarity,
+            material_display: reviewForm.value.material_display,
+            material_suggestions: reviewForm.value.material_suggestions,
+            material_needs: reviewForm.value.material_needs,
         }, {
             preserveState: true,
             preserveScroll: true,
@@ -3065,10 +3137,22 @@ watch(locale, () => {
                                                     </div>
                                                 </div>
                                             </div>
-                                            <div v-if="item.can_access" class="flex items-center space-x-2">
-                                                <span class="text-xs text-blue-600 font-medium">
+                                            <div class="flex items-center space-x-2">
+                                                <!-- Material completed status for trainer -->
+                                                <span v-if="item.is_completed && item.completion_status" 
+                                                      class="px-2 py-1 bg-green-100 text-green-800 text-xs rounded-full">
+                                                    <i class="fa-solid fa-check-circle mr-1"></i>
+                                                    Selesai
+                                                </span>
+                                                <!-- Material accessible but not completed -->
+                                                <span v-else-if="item.can_access" class="text-xs text-blue-600 font-medium">
                                                     <i class="fa-solid fa-eye mr-1"></i>
                                                     Lihat Materi
+                                                </span>
+                                                <!-- Material locked -->
+                                                <span v-else class="text-xs text-gray-500 font-medium">
+                                                    <i class="fa-solid fa-lock mr-1"></i>
+                                                    Terkunci
                                                 </span>
                                             </div>
                                         </div>
@@ -3168,21 +3252,36 @@ watch(locale, () => {
                             Check-in QR Code
                         </button>
                         
-                        <!-- Check-out Button (show if checked in but not checked out) -->
-                        <button v-if="selectedTrainingDetail.check_in_time && !selectedTrainingDetail.check_out_time" 
+                        <!-- Check-out Button (show if checked in but not checked out AND review already given) -->
+                        <button v-if="selectedTrainingDetail.check_in_time && !selectedTrainingDetail.check_out_time && !selectedTrainingDetail.can_give_feedback" 
                                 @click="openTrainingCheckOutModal" 
                                 class="px-4 py-2 bg-orange-600 text-white rounded-md hover:bg-orange-700 transition-colors">
                             <i class="fa-solid fa-sign-out-alt mr-2"></i>
                             Check-out QR Code
                         </button>
                         
-                        <!-- Review Button (show if checked out and can give feedback) -->
-                        <button v-if="selectedTrainingDetail.check_out_time && selectedTrainingDetail.can_give_feedback" 
+                        <!-- Review Button (show if all items completed and can give feedback) -->
+                        <button v-if="allSessionItemsCompleted && selectedTrainingDetail.can_give_feedback" 
                                 @click="openTrainingReviewModal" 
                                 class="px-4 py-2 bg-yellow-600 text-white rounded-md hover:bg-yellow-700 transition-colors">
                             <i class="fa-solid fa-star mr-2"></i>
                             Berikan Review
                         </button>
+                        
+                        <!-- Review Button (show if checked out and can give feedback) - fallback -->
+                        <button v-else-if="selectedTrainingDetail.check_out_time && selectedTrainingDetail.can_give_feedback" 
+                                @click="openTrainingReviewModal" 
+                                class="px-4 py-2 bg-yellow-600 text-white rounded-md hover:bg-yellow-700 transition-colors">
+                            <i class="fa-solid fa-star mr-2"></i>
+                            Berikan Review
+                        </button>
+                        
+                        <!-- Message: Review required before check-out -->
+                        <div v-if="selectedTrainingDetail.check_in_time && !selectedTrainingDetail.check_out_time && selectedTrainingDetail.can_give_feedback" 
+                             class="px-4 py-2 bg-yellow-100 text-yellow-800 rounded-md border border-yellow-200 flex items-center">
+                            <i class="fa-solid fa-exclamation-triangle mr-2"></i>
+                            Berikan review terlebih dahulu sebelum check-out
+                        </div>
                         
                         <!-- Review Already Given (show if checked out but already reviewed) -->
                         <div v-if="selectedTrainingDetail.check_out_time && !selectedTrainingDetail.can_give_feedback" 
@@ -3521,93 +3620,201 @@ watch(locale, () => {
                         </div>
                     </div>
 
-                    <!-- Training Rating -->
-                    <div>
-                        <label class="block text-sm font-medium text-slate-700 mb-3">Rating Training *</label>
-                        <div class="flex items-center space-x-2">
-                            <span class="text-sm text-slate-600">Buruk</span>
-                            <div class="flex space-x-1">
-                                <button v-for="rating in 5" :key="rating" 
-                                        @click="reviewForm.training_rating = rating"
-                                        class="w-8 h-8 rounded-full border-2 flex items-center justify-center transition-colors"
-                                        :class="{
-                                            'bg-yellow-400 border-yellow-400 text-white': rating <= reviewForm.training_rating,
-                                            'bg-white border-slate-300 text-slate-400 hover:border-yellow-300': rating > reviewForm.training_rating
-                                        }">
-                                    <i class="fa-solid fa-star text-xs"></i>
-                                </button>
+                    <!-- Trainer Section -->
+                    <div class="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                        <h4 class="text-lg font-semibold text-blue-800 mb-4 flex items-center">
+                            <i class="fa-solid fa-chalkboard-teacher mr-2"></i>
+                            Penilaian Trainer
+                        </h4>
+                        
+                        <!-- Penguasaan Terhadap Materi -->
+                        <div class="mb-4">
+                            <label class="block text-sm font-medium text-slate-700 mb-2">Penguasaan Terhadap Materi *</label>
+                            <div class="flex items-center space-x-2">
+                                <span class="text-sm text-slate-600">Buruk</span>
+                                <div class="flex space-x-1">
+                                    <button v-for="rating in 5" :key="rating" 
+                                            @click="reviewForm.trainer_mastery = rating"
+                                            class="w-8 h-8 rounded-full border-2 flex items-center justify-center transition-colors"
+                                            :class="{
+                                                'bg-blue-400 border-blue-400 text-white': rating <= reviewForm.trainer_mastery,
+                                                'bg-white border-slate-300 text-slate-400 hover:border-blue-300': rating > reviewForm.trainer_mastery
+                                            }">
+                                        <i class="fa-solid fa-star text-xs"></i>
+                                    </button>
+                                </div>
+                                <span class="text-sm text-slate-600">Sangat Baik</span>
                             </div>
-                            <span class="text-sm text-slate-600">Sangat Baik</span>
+                        </div>
+
+                        <!-- Penggunaan bahasa yang mudah dipahami -->
+                        <div class="mb-4">
+                            <label class="block text-sm font-medium text-slate-700 mb-2">Penggunaan bahasa yang mudah dipahami *</label>
+                            <div class="flex items-center space-x-2">
+                                <span class="text-sm text-slate-600">Buruk</span>
+                                <div class="flex space-x-1">
+                                    <button v-for="rating in 5" :key="rating" 
+                                            @click="reviewForm.trainer_language = rating"
+                                            class="w-8 h-8 rounded-full border-2 flex items-center justify-center transition-colors"
+                                            :class="{
+                                                'bg-blue-400 border-blue-400 text-white': rating <= reviewForm.trainer_language,
+                                                'bg-white border-slate-300 text-slate-400 hover:border-blue-300': rating > reviewForm.trainer_language
+                                            }">
+                                        <i class="fa-solid fa-star text-xs"></i>
+                                    </button>
+                                </div>
+                                <span class="text-sm text-slate-600">Sangat Baik</span>
+                            </div>
+                        </div>
+
+                        <!-- Intonasi dan nada suara -->
+                        <div class="mb-4">
+                            <label class="block text-sm font-medium text-slate-700 mb-2">Intonasi dan nada suara *</label>
+                            <div class="flex items-center space-x-2">
+                                <span class="text-sm text-slate-600">Buruk</span>
+                                <div class="flex space-x-1">
+                                    <button v-for="rating in 5" :key="rating" 
+                                            @click="reviewForm.trainer_intonation = rating"
+                                            class="w-8 h-8 rounded-full border-2 flex items-center justify-center transition-colors"
+                                            :class="{
+                                                'bg-blue-400 border-blue-400 text-white': rating <= reviewForm.trainer_intonation,
+                                                'bg-white border-slate-300 text-slate-400 hover:border-blue-300': rating > reviewForm.trainer_intonation
+                                            }">
+                                        <i class="fa-solid fa-star text-xs"></i>
+                                    </button>
+                                </div>
+                                <span class="text-sm text-slate-600">Sangat Baik</span>
+                            </div>
+                        </div>
+
+                        <!-- Gaya penyampaian yang menarik -->
+                        <div class="mb-4">
+                            <label class="block text-sm font-medium text-slate-700 mb-2">Gaya penyampaian yang menarik *</label>
+                            <div class="flex items-center space-x-2">
+                                <span class="text-sm text-slate-600">Buruk</span>
+                                <div class="flex space-x-1">
+                                    <button v-for="rating in 5" :key="rating" 
+                                            @click="reviewForm.trainer_presentation = rating"
+                                            class="w-8 h-8 rounded-full border-2 flex items-center justify-center transition-colors"
+                                            :class="{
+                                                'bg-blue-400 border-blue-400 text-white': rating <= reviewForm.trainer_presentation,
+                                                'bg-white border-slate-300 text-slate-400 hover:border-blue-300': rating > reviewForm.trainer_presentation
+                                            }">
+                                        <i class="fa-solid fa-star text-xs"></i>
+                                    </button>
+                                </div>
+                                <span class="text-sm text-slate-600">Sangat Baik</span>
+                            </div>
+                        </div>
+
+                        <!-- Kesempatan Tanya Jawab & Diskusi -->
+                        <div class="mb-4">
+                            <label class="block text-sm font-medium text-slate-700 mb-2">Kesempatan Tanya Jawab & Diskusi *</label>
+                            <div class="flex items-center space-x-2">
+                                <span class="text-sm text-slate-600">Buruk</span>
+                                <div class="flex space-x-1">
+                                    <button v-for="rating in 5" :key="rating" 
+                                            @click="reviewForm.trainer_qna = rating"
+                                            class="w-8 h-8 rounded-full border-2 flex items-center justify-center transition-colors"
+                                            :class="{
+                                                'bg-blue-400 border-blue-400 text-white': rating <= reviewForm.trainer_qna,
+                                                'bg-white border-slate-300 text-slate-400 hover:border-blue-300': rating > reviewForm.trainer_qna
+                                            }">
+                                        <i class="fa-solid fa-star text-xs"></i>
+                                    </button>
+                                </div>
+                                <span class="text-sm text-slate-600">Sangat Baik</span>
+                            </div>
+                        </div>
+
+                    </div>
+
+                    <!-- Training Material Section -->
+                    <div class="bg-green-50 p-4 rounded-lg border border-green-200">
+                        <h4 class="text-lg font-semibold text-green-800 mb-4 flex items-center">
+                            <i class="fa-solid fa-book mr-2"></i>
+                            Penilaian Materi Training
+                        </h4>
+                        
+                        <!-- Manfaat training bagi pekerjaan / kehidupan -->
+                        <div class="mb-4">
+                            <label class="block text-sm font-medium text-slate-700 mb-2">Manfaat training bagi pekerjaan / kehidupan *</label>
+                            <div class="flex items-center space-x-2">
+                                <span class="text-sm text-slate-600">Buruk</span>
+                                <div class="flex space-x-1">
+                                    <button v-for="rating in 5" :key="rating" 
+                                            @click="reviewForm.material_benefit = rating"
+                                            class="w-8 h-8 rounded-full border-2 flex items-center justify-center transition-colors"
+                                            :class="{
+                                                'bg-green-400 border-green-400 text-white': rating <= reviewForm.material_benefit,
+                                                'bg-white border-slate-300 text-slate-400 hover:border-green-300': rating > reviewForm.material_benefit
+                                            }">
+                                        <i class="fa-solid fa-star text-xs"></i>
+                                    </button>
+                                </div>
+                                <span class="text-sm text-slate-600">Sangat Baik</span>
+                            </div>
+                        </div>
+
+                        <!-- Kejelasan & kelengkapan materi -->
+                        <div class="mb-4">
+                            <label class="block text-sm font-medium text-slate-700 mb-2">Kejelasan & kelengkapan materi *</label>
+                            <div class="flex items-center space-x-2">
+                                <span class="text-sm text-slate-600">Buruk</span>
+                                <div class="flex space-x-1">
+                                    <button v-for="rating in 5" :key="rating" 
+                                            @click="reviewForm.material_clarity = rating"
+                                            class="w-8 h-8 rounded-full border-2 flex items-center justify-center transition-colors"
+                                            :class="{
+                                                'bg-green-400 border-green-400 text-white': rating <= reviewForm.material_clarity,
+                                                'bg-white border-slate-300 text-slate-400 hover:border-green-300': rating > reviewForm.material_clarity
+                                            }">
+                                        <i class="fa-solid fa-star text-xs"></i>
+                                    </button>
+                                </div>
+                                <span class="text-sm text-slate-600">Sangat Baik</span>
+                            </div>
+                        </div>
+
+                        <!-- Tampilan materi pelatihan -->
+                        <div class="mb-4">
+                            <label class="block text-sm font-medium text-slate-700 mb-2">Tampilan materi pelatihan *</label>
+                            <div class="flex items-center space-x-2">
+                                <span class="text-sm text-slate-600">Buruk</span>
+                                <div class="flex space-x-1">
+                                    <button v-for="rating in 5" :key="rating" 
+                                            @click="reviewForm.material_display = rating"
+                                            class="w-8 h-8 rounded-full border-2 flex items-center justify-center transition-colors"
+                                            :class="{
+                                                'bg-green-400 border-green-400 text-white': rating <= reviewForm.material_display,
+                                                'bg-white border-slate-300 text-slate-400 hover:border-green-300': rating > reviewForm.material_display
+                                            }">
+                                        <i class="fa-solid fa-star text-xs"></i>
+                                    </button>
+                                </div>
+                                <span class="text-sm text-slate-600">Sangat Baik</span>
+                            </div>
+                        </div>
+
+                        <!-- Saran dan perbaikan untuk kualitas Pemateri dan Materi -->
+                        <div class="mb-4">
+                            <label class="block text-sm font-medium text-slate-700 mb-2">Saran dan perbaikan untuk kualitas Pemateri dan Materi</label>
+                            <textarea v-model="reviewForm.material_suggestions" 
+                                      rows="3" 
+                                      placeholder="Bagikan saran untuk perbaikan trainer dan materi..."
+                                      class="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"></textarea>
+                        </div>
+
+                        <!-- Materi yang dibutuhkan untuk menunjang pekerjaan/pribadi -->
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-2">Materi yang dibutuhkan untuk menunjang pekerjaan/pribadi</label>
+                            <textarea v-model="reviewForm.material_needs" 
+                                      rows="3" 
+                                      placeholder="Jelaskan materi apa yang Anda butuhkan untuk menunjang pekerjaan atau kehidupan pribadi..."
+                                      class="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"></textarea>
                         </div>
                     </div>
 
-                    <!-- Training Feedback -->
-                    <div>
-                        <label class="block text-sm font-medium text-slate-700 mb-2">Feedback Training</label>
-                        <textarea v-model="reviewForm.training_feedback" 
-                                  rows="3" 
-                                  placeholder="Bagikan pengalaman Anda tentang training ini..."
-                                  class="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500"></textarea>
-                    </div>
-
-                    <!-- Trainer Rating -->
-                    <div>
-                        <label class="block text-sm font-medium text-slate-700 mb-3">Rating Trainer</label>
-                        <div class="flex items-center space-x-2">
-                            <span class="text-sm text-slate-600">Buruk</span>
-                            <div class="flex space-x-1">
-                                <button v-for="rating in 5" :key="rating" 
-                                        @click="reviewForm.trainer_rating = rating"
-                                        class="w-8 h-8 rounded-full border-2 flex items-center justify-center transition-colors"
-                                        :class="{
-                                            'bg-blue-400 border-blue-400 text-white': rating <= reviewForm.trainer_rating,
-                                            'bg-white border-slate-300 text-slate-400 hover:border-blue-300': rating > reviewForm.trainer_rating
-                                        }">
-                                    <i class="fa-solid fa-star text-xs"></i>
-                                </button>
-                            </div>
-                            <span class="text-sm text-slate-600">Sangat Baik</span>
-                        </div>
-                    </div>
-
-                    <!-- Trainer Feedback -->
-                    <div>
-                        <label class="block text-sm font-medium text-slate-700 mb-2">Feedback Trainer</label>
-                        <textarea v-model="reviewForm.trainer_feedback" 
-                                  rows="3" 
-                                  placeholder="Bagikan pendapat Anda tentang trainer..."
-                                  class="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"></textarea>
-                    </div>
-
-                    <!-- Overall Satisfaction -->
-                    <div>
-                        <label class="block text-sm font-medium text-slate-700 mb-3">Kepuasan Keseluruhan *</label>
-                        <div class="flex items-center space-x-2">
-                            <span class="text-sm text-slate-600">Tidak Puas</span>
-                            <div class="flex space-x-1">
-                                <button v-for="rating in 5" :key="rating" 
-                                        @click="reviewForm.overall_satisfaction = rating"
-                                        class="w-8 h-8 rounded-full border-2 flex items-center justify-center transition-colors"
-                                        :class="{
-                                            'bg-green-400 border-green-400 text-white': rating <= reviewForm.overall_satisfaction,
-                                            'bg-white border-slate-300 text-slate-400 hover:border-green-300': rating > reviewForm.overall_satisfaction
-                                        }">
-                                    <i class="fa-solid fa-heart text-xs"></i>
-                                </button>
-                            </div>
-                            <span class="text-sm text-slate-600">Sangat Puas</span>
-                        </div>
-                    </div>
-
-
-                    <!-- Improvement Suggestions -->
-                    <div>
-                        <label class="block text-sm font-medium text-slate-700 mb-2">Saran Perbaikan</label>
-                        <textarea v-model="reviewForm.improvement_suggestions" 
-                                  rows="3" 
-                                  placeholder="Bagikan saran Anda untuk perbaikan training..."
-                                  class="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500"></textarea>
-                    </div>
 
                     <!-- Action Buttons -->
                     <div class="flex gap-3 pt-4 border-t border-slate-200">
@@ -3760,10 +3967,22 @@ watch(locale, () => {
                                                                 </div>
                                                             </div>
                                                             
-                                                            <div v-if="item.can_access" class="flex items-center space-x-2">
-                                                                <span class="text-xs text-green-600 font-medium">
+                                                            <div class="flex items-center space-x-2">
+                                                                <!-- Material completed status for trainer -->
+                                                                <span v-if="item.is_completed && item.completion_status" 
+                                                                      class="px-2 py-1 bg-green-100 text-green-800 text-xs rounded-full">
+                                                                    <i class="fa-solid fa-check-circle mr-1"></i>
+                                                                    Selesai
+                                                                </span>
+                                                                <!-- Material accessible but not completed -->
+                                                                <span v-else-if="item.can_access" class="text-xs text-green-600 font-medium">
                                                                     <i class="fa-solid fa-eye mr-1"></i>
                                                                     Lihat Materi
+                                                                </span>
+                                                                <!-- Material locked -->
+                                                                <span v-else class="text-xs text-gray-500 font-medium">
+                                                                    <i class="fa-solid fa-lock mr-1"></i>
+                                                                    Terkunci
                                                                 </span>
                                                             </div>
                                                         </div>

@@ -494,7 +494,10 @@ const selectedDateReminders = computed(() => {
 });
 
 const formatDateString = (date) => {
-    return date.toISOString().split('T')[0];
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
 };
 
 const formatTimeString = (date) => {
@@ -654,7 +657,9 @@ const closeReminderDetail = () => {
 
 const formatDateDisplay = (dateString) => {
     if (!dateString) return '';
-    const date = new Date(dateString);
+    // Parse date string as local date to avoid timezone issues
+    const [year, month, day] = dateString.split('-').map(Number);
+    const date = new Date(year, month - 1, day);
     return date.toLocaleDateString('id-ID', {
         weekday: 'long',
         year: 'numeric',

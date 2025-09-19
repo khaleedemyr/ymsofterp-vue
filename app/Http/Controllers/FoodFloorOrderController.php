@@ -274,6 +274,33 @@ class FoodFloorOrderController extends Controller
     {
         \Log::info('SUBMIT FO DIPANGGIL', ['id' => $id]);
         $order = FoodFloorOrder::findOrFail($id);
+        
+        // Budget checking untuk RO yang akan di-approve (RO Utama/Tambahan)
+        if ($order->fo_mode !== 'RO Khusus') {
+            \Log::info('FO_SUBMIT: Cek budget untuk RO yang akan di-approve', [
+                'order_id' => $order->id,
+                'fo_mode' => $order->fo_mode,
+                'outlet_id' => $order->id_outlet
+            ]);
+            
+            $budgetCheckResult = $this->checkBudgetForFloorOrder($order);
+            if (!$budgetCheckResult['success']) {
+                \Log::error('FO_SUBMIT: Budget check failed', [
+                    'order_id' => $order->id,
+                    'message' => $budgetCheckResult['message']
+                ]);
+                return response()->json([
+                    'success' => false,
+                    'message' => $budgetCheckResult['message']
+                ], 422);
+            }
+            
+            \Log::info('FO_SUBMIT: Budget check passed', [
+                'order_id' => $order->id,
+                'budget_info' => $budgetCheckResult['budget_info']
+            ]);
+        }
+        
         $date = now()->format('Ymd');
         $random = strtoupper(substr(bin2hex(random_bytes(2)), 0, 4));
         $order_number = 'RO-' . $date . '-' . $random;
@@ -365,6 +392,27 @@ class FoodFloorOrderController extends Controller
         if (($order->fo_mode !== 'RO Khusus') || $order->status !== 'submitted') {
             abort(400, 'Tidak bisa approve order ini');
         }
+
+        // Budget checking untuk RO Khusus yang akan di-approve
+        \Log::info('FO_APPROVE: Cek budget untuk RO Khusus', [
+            'order_id' => $order->id,
+            'fo_mode' => $order->fo_mode,
+            'outlet_id' => $order->id_outlet
+        ]);
+        
+        $budgetCheckResult = $this->checkBudgetForFloorOrder($order);
+        if (!$budgetCheckResult['success']) {
+            \Log::error('FO_APPROVE: Budget check failed', [
+                'order_id' => $order->id,
+                'message' => $budgetCheckResult['message']
+            ]);
+            return redirect()->back()->withErrors(['budget' => $budgetCheckResult['message']]);
+        }
+        
+        \Log::info('FO_APPROVE: Budget check passed', [
+            'order_id' => $order->id,
+            'budget_info' => $budgetCheckResult['budget_info']
+        ]);
 
         $order->update([
             'status' => 'approved',
@@ -634,6 +682,183 @@ class FoodFloorOrderController extends Controller
                 'trace' => $e->getTraceAsString()
             ]);
             return response()->json(['error' => 'Failed to fetch RO Supplier data'], 500);
+        }
+    }
+
+    /**
+     * Check budget untuk Food Floor Order
+     */
+    private function checkBudgetForFloorOrder($order)
+    {
+        try {
+            \Log::info('FO_BUDGET_CHECK: Mulai cek budget', [
+                'order_id' => $order->id,
+                'outlet_id' => $order->id_outlet
+            ]);
+
+            $budgetViolations = [];
+            $budgetInfo = [];
+
+            // Load items dengan relasi
+            $order->load('items');
+            
+            foreach ($order->items as $item) {
+                // Cari item master untuk mendapatkan sub_category_id
+                $itemMaster = \DB::table('items')->where('id', $item->item_id)->first();
+                
+                if (!$itemMaster || !$itemMaster->sub_category_id) {
+                    \Log::info('FO_BUDGET_CHECK: Item tidak memiliki sub_category_id', [
+                        'item_id' => $item->item_id,
+                        'item_name' => $item->item_name
+                    ]);
+                    continue;
+                }
+
+                // Cek apakah ada budget lock untuk sub_category_id ini
+                $lockedBudget = \DB::table('locked_budget_food_categories')
+                    ->where('sub_category_id', $itemMaster->sub_category_id)
+                    ->where('outlet_id', $order->id_outlet)
+                    ->first();
+
+                if (!$lockedBudget) {
+                    \Log::info('FO_BUDGET_CHECK: Tidak ada budget lock', [
+                        'sub_category_id' => $itemMaster->sub_category_id,
+                        'outlet_id' => $order->id_outlet
+                    ]);
+                    continue;
+                }
+
+                // Ambil informasi sub category dan category
+                $subCategoryInfo = \DB::table('sub_categories as sc')
+                    ->join('categories as c', 'sc.category_id', '=', 'c.id')
+                    ->where('sc.id', $itemMaster->sub_category_id)
+                    ->select('sc.name as sub_category_name', 'c.name as category_name')
+                    ->first();
+
+                \Log::info('FO_BUDGET_CHECK: Budget ditemukan', [
+                    'budget_id' => $lockedBudget->id,
+                    'budget_amount' => $lockedBudget->budget,
+                    'category_name' => $subCategoryInfo->category_name ?? 'N/A',
+                    'sub_category_name' => $subCategoryInfo->sub_category_name ?? 'N/A'
+                ]);
+
+                // Hitung total transaksi bulan berjalan
+                $currentMonth = date('Y-m');
+                
+                // 1. Total dari retail_food_items
+                $retailFoodTotal = \DB::table('retail_food_items as rfi')
+                    ->join('retail_food as rf', 'rfi.retail_food_id', '=', 'rf.id')
+                    ->join('items as i', \DB::raw('TRIM(i.name)'), '=', \DB::raw('TRIM(rfi.item_name)'))
+                    ->where('i.sub_category_id', $itemMaster->sub_category_id)
+                    ->where('rf.outlet_id', $order->id_outlet)
+                    ->where('rf.status', 'approved')
+                    ->whereRaw("DATE_FORMAT(rf.transaction_date, '%Y-%m') = ?", [$currentMonth])
+                    ->sum('rfi.subtotal');
+
+                // 2. Total dari food_floor_order_items (exclude current order)
+                $foodFloorOrderTotal = \DB::table('food_floor_order_items as ffoi')
+                    ->join('food_floor_orders as ffo', 'ffoi.floor_order_id', '=', 'ffo.id')
+                    ->join('items as i', 'ffoi.item_id', '=', 'i.id')
+                    ->where('i.sub_category_id', $itemMaster->sub_category_id)
+                    ->where('ffo.id_outlet', $order->id_outlet)
+                    ->whereIn('ffo.status', ['approved', 'received'])
+                    ->where('ffo.id', '!=', $order->id) // Exclude current order
+                    ->whereRaw("DATE_FORMAT(ffo.tanggal, '%Y-%m') = ?", [$currentMonth])
+                    ->sum('ffoi.subtotal');
+
+                // 3. Total gabungan
+                $monthlyTotal = $retailFoodTotal + $foodFloorOrderTotal;
+                
+                // Hitung subtotal item baru
+                $newItemSubtotal = $item->qty * $item->price;
+                
+                // Total setelah ditambah item baru
+                $totalAfterNewItem = $monthlyTotal + $newItemSubtotal;
+
+                \Log::info('FO_BUDGET_CHECK: Perhitungan budget', [
+                    'retail_food_total' => $retailFoodTotal,
+                    'food_floor_order_total' => $foodFloorOrderTotal,
+                    'monthly_total' => $monthlyTotal,
+                    'new_item_subtotal' => $newItemSubtotal,
+                    'total_after_new_item' => $totalAfterNewItem,
+                    'budget_limit' => $lockedBudget->budget
+                ]);
+
+                // Cek apakah melebihi budget
+                if ($totalAfterNewItem > $lockedBudget->budget) {
+                    $violation = [
+                        'item_name' => $item->item_name,
+                        'category_name' => $subCategoryInfo->category_name ?? 'N/A',
+                        'sub_category_name' => $subCategoryInfo->sub_category_name ?? 'N/A',
+                        'budget_amount' => $lockedBudget->budget,
+                        'retail_food_total' => $retailFoodTotal,
+                        'food_floor_order_total' => $foodFloorOrderTotal,
+                        'monthly_total' => $monthlyTotal,
+                        'new_item_subtotal' => $newItemSubtotal,
+                        'total_after_new_item' => $totalAfterNewItem,
+                        'excess_amount' => $totalAfterNewItem - $lockedBudget->budget
+                    ];
+                    
+                    $budgetViolations[] = $violation;
+                    
+                    \Log::error('FO_BUDGET_CHECK: Budget terlampaui', $violation);
+                } else {
+                    $budgetInfo[] = [
+                        'item_name' => $item->item_name,
+                        'category_name' => $subCategoryInfo->category_name ?? 'N/A',
+                        'sub_category_name' => $subCategoryInfo->sub_category_name ?? 'N/A',
+                        'budget_amount' => $lockedBudget->budget,
+                        'retail_food_total' => $retailFoodTotal,
+                        'food_floor_order_total' => $foodFloorOrderTotal,
+                        'monthly_total' => $monthlyTotal,
+                        'new_item_subtotal' => $newItemSubtotal,
+                        'total_after_new_item' => $totalAfterNewItem,
+                        'remaining_budget' => $lockedBudget->budget - $totalAfterNewItem,
+                        'budget_percentage' => $totalAfterNewItem > 0 ? round(($totalAfterNewItem / $lockedBudget->budget) * 100, 2) : 0
+                    ];
+                }
+            }
+
+            // Jika ada pelanggaran budget
+            if (!empty($budgetViolations)) {
+                $message = "Transaksi ditolak! Budget untuk beberapa kategori telah terlampaui.\n\n";
+                
+                foreach ($budgetViolations as $violation) {
+                    $message .= "📊 {$violation['sub_category_name']} (Kategori: {$violation['category_name']}):\n";
+                    $message .= "• Budget yang ditetapkan: Rp " . number_format((float)$violation['budget_amount'], 0, ',', '.') . "\n";
+                    $message .= "• Total Retail Food (bulan ini): Rp " . number_format((float)$violation['retail_food_total'], 0, ',', '.') . "\n";
+                    $message .= "• Total Food Floor Order (bulan ini): Rp " . number_format((float)$violation['food_floor_order_total'], 0, ',', '.') . "\n";
+                    $message .= "• Total Gabungan: Rp " . number_format((float)$violation['monthly_total'], 0, ',', '.') . "\n";
+                    $message .= "• Item baru: Rp " . number_format((float)$violation['new_item_subtotal'], 0, ',', '.') . "\n";
+                    $message .= "• Total setelah item baru: Rp " . number_format((float)$violation['total_after_new_item'], 0, ',', '.') . "\n";
+                    $message .= "• Kelebihan: Rp " . number_format((float)$violation['excess_amount'], 0, ',', '.') . "\n\n";
+                }
+
+                return [
+                    'success' => false,
+                    'message' => $message,
+                    'violations' => $budgetViolations
+                ];
+            }
+
+            return [
+                'success' => true,
+                'budget_info' => $budgetInfo
+            ];
+
+        } catch (\Exception $e) {
+            \Log::error('FO_BUDGET_CHECK: Error terjadi', [
+                'message' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => $e->getTraceAsString(),
+                'order_id' => $order->id
+            ]);
+            
+            return [
+                'success' => false,
+                'message' => 'Terjadi kesalahan saat mengecek budget: ' . $e->getMessage()
+            ];
         }
     }
 } 

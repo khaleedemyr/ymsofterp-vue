@@ -419,6 +419,8 @@ class LmsCourse extends Model
 
     public function getAverageRatingAttribute()
     {
+        // Use training_rating field which is automatically calculated in controller
+        // This field contains the overall training rating (average of trainer + material aspects)
         $averageRating = $this->trainingReviews()->avg('training_rating');
         return $averageRating ? round($averageRating, 1) : 0;
     }

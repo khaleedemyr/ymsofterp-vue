@@ -113,6 +113,27 @@ async function approveFO() {
   if (note !== undefined) {
     router.post(route('floor-order.approve', props.order.id), {
       notes: note,
+    }, {
+      onError: (errors) => {
+        // Handle budget error specifically
+        if (errors.budget) {
+          Swal.fire({
+            icon: 'error',
+            title: 'Budget Terlampaui',
+            html: errors.budget,
+            confirmButtonText: 'OK'
+          });
+        } else {
+          // Handle other errors
+          const errorMessage = Object.values(errors).join('<br>');
+          Swal.fire({
+            icon: 'error',
+            title: 'Gagal Approve',
+            html: errorMessage,
+            confirmButtonText: 'OK'
+          });
+        }
+      }
     });
   }
 }

@@ -846,13 +846,18 @@ function submitOrderWithLoading() {
         }).then(() => {
           router.visit('/floor-order');
         });
-      }).catch(() => {
+      }).catch((error) => {
         isSubmitting.value = false;
         Swal.close();
+        
+        // Ambil message dari response error
+        const errorMessage = error.response?.data?.message || 'Terjadi kesalahan saat mengirim RO.';
+        
         Swal.fire({
           icon: 'error',
           title: 'Gagal',
-          text: 'Terjadi kesalahan saat mengirim RO.',
+          text: errorMessage,
+          confirmButtonText: 'OK'
         });
       });
     }

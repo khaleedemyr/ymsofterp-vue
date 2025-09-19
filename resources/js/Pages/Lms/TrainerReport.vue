@@ -52,7 +52,17 @@
               <div class="p-6">
                 <div class="flex items-center justify-between">
                   <div class="flex items-center space-x-4">
-                    <div class="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center">
+                    <!-- Avatar for internal trainer, icon for external -->
+                    <div v-if="trainer.trainer_type === 'internal'" class="w-12 h-12 rounded-full overflow-hidden border-2 border-white/20 shadow-lg">
+                      <img v-if="trainer.trainer_avatar" 
+                           :src="`/storage/${trainer.trainer_avatar}`" 
+                           :alt="trainer.trainer_name" 
+                           class="w-full h-full object-cover" />
+                      <div v-else class="w-full h-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-sm font-bold">
+                        {{ getInitials(trainer.trainer_name) }}
+                      </div>
+                    </div>
+                    <div v-else class="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center">
                       <i class="fas fa-chalkboard-teacher text-white text-lg"></i>
                     </div>
                     <div>
@@ -236,6 +246,12 @@ const fetchTrainerReport = async () => {
 
 const refreshData = () => {
   fetchTrainerReport()
+}
+
+// Function to get initials from name
+const getInitials = (name) => {
+  if (!name) return ''
+  return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
 }
 
 const toggleTrainerDetails = (trainerId) => {

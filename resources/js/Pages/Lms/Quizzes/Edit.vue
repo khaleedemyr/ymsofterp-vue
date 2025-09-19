@@ -292,11 +292,24 @@ const updateQuiz = async () => {
     return
   }
 
+  // Show loading modal
+  Swal.fire({
+    title: 'Sabar Bu Ghea....',
+    text: 'Antosan sakedap Bu Ghea, Nuju loding',
+    allowOutsideClick: false,
+    allowEscapeKey: false,
+    showConfirmButton: false,
+    didOpen: () => {
+      Swal.showLoading()
+    }
+  })
+
   loading.value = true
 
   try {
     await router.put(route('lms.quizzes.update', props.quiz.id), form.value, {
       onSuccess: () => {
+        Swal.close()
         Swal.fire({
           icon: 'success',
           title: 'Berhasil!',
@@ -304,6 +317,7 @@ const updateQuiz = async () => {
         })
       },
       onError: (errors) => {
+        Swal.close()
         Swal.fire({
           icon: 'error',
           title: 'Error!',
@@ -315,6 +329,7 @@ const updateQuiz = async () => {
       }
     })
   } catch (error) {
+    Swal.close()
     loading.value = false
     Swal.fire({
       icon: 'error',
