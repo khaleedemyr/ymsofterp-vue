@@ -8,6 +8,7 @@ import UserFormModal from './UserFormModal.vue';
 import axios from 'axios';
 import PinManagementModal from './PinManagementModal.vue';
 import ActivationModal from './ActivationModal.vue';
+import VueEasyLightbox from 'vue-easy-lightbox';
 
 const props = defineProps({
   users: Object, // { data, links, meta }
@@ -40,6 +41,11 @@ const selectedUserForActivation = ref(null);
 const outletId = ref(props.filters?.outlet_id || '');
 const divisionId = ref(props.filters?.division_id || '');
 const status = ref(props.filters?.status || 'A');
+
+// Lightbox state
+const lightboxVisible = ref(false);
+const lightboxImages = ref([]);
+const lightboxIndex = ref(0);
 
 const debouncedSearch = debounce(() => {
   router.get('/users', {
@@ -175,6 +181,30 @@ watch([outletId, divisionId, status], () => {
     status: status.value,
   }, { preserveState: true, replace: true });
 });
+
+// Avatar and lightbox functions
+function getInitials(name) {
+  if (!name) return '?';
+  return name.split(' ').map(word => word.charAt(0)).join('').toUpperCase().substring(0, 2);
+}
+
+function getImageUrl(imagePath) {
+  if (!imagePath) return null;
+  try {
+    return `/storage/${imagePath}`;
+  } catch (error) {
+    console.error('Error processing image:', error);
+    return null;
+  }
+}
+
+function openImageModal(imageUrl) {
+  if (!imageUrl) return;
+  
+  lightboxImages.value = [imageUrl];
+  lightboxIndex.value = 0;
+  lightboxVisible.value = true;
+}
 </script>
 
 <template>
@@ -298,6 +328,7 @@ watch([outletId, divisionId, status], () => {
         <table class="min-w-full divide-y divide-blue-200">
           <thead class="bg-blue-600 text-white">
             <tr>
+              <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Avatar</th>
               <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">NIK</th>
               <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">No KTP</th>
               <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">Nama</th>
@@ -311,6 +342,15 @@ watch([outletId, divisionId, status], () => {
           </thead>
           <tbody>
             <tr v-for="user in users.data" :key="user.id" class="hover:bg-blue-50 transition">
+              <td class="px-4 py-2 whitespace-nowrap text-center">
+                <!-- Avatar with lightbox functionality -->
+                <div v-if="user.avatar" class="w-12 h-12 rounded-full overflow-hidden border-2 border-blue-200 shadow-md cursor-pointer hover:shadow-lg transition-all" @click="openImageModal(getImageUrl(user.avatar))">
+                  <img :src="getImageUrl(user.avatar)" :alt="user.nama_lengkap" class="w-full h-full object-cover hover:scale-105 transition-transform" />
+                </div>
+                <div v-else class="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-sm font-bold border-2 border-blue-200 shadow-md">
+                  {{ getInitials(user.nama_lengkap) }}
+                </div>
+              </td>
               <td class="px-4 py-2 whitespace-nowrap">{{ user.nik }}</td>
               <td class="px-4 py-2 whitespace-nowrap">{{ user.no_ktp }}</td>
               <td class="px-4 py-2 whitespace-nowrap font-semibold">{{ user.nama_lengkap }}</td>
@@ -349,7 +389,7 @@ watch([outletId, divisionId, status], () => {
               </td>
             </tr>
             <tr v-if="users.data.length === 0">
-              <td colspan="9" class="text-center py-8 text-gray-400">Tidak ada data karyawan</td>
+              <td colspan="10" class="text-center py-8 text-gray-400">Tidak ada data karyawan</td>
             </tr>
           </tbody>
         </table>
@@ -373,6 +413,14 @@ watch([outletId, divisionId, status], () => {
       :outlets="outlets" 
       @close="closeActivationModal" 
       @success="onActivationSuccess" 
+    />
+    
+    <!-- Lightbox for Avatar Images -->
+    <VueEasyLightbox
+        :visible="lightboxVisible"
+        :imgs="lightboxImages"
+        :index="lightboxIndex"
+        @hide="lightboxVisible = false"
     />
   </AppLayout>
 </template> 
