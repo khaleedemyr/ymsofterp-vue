@@ -1512,7 +1512,7 @@ const props = defineProps({
   divisions: Array,
   jabatans: Array,
   outlets: Array,
-  internalTrainers: Array,
+  // internalTrainers removed - trainer fields not used in course creation
   user: Object,
   availableQuizzes: {
     type: Array,
@@ -1774,24 +1774,7 @@ const isFormValid = computed(() => {
   //   // return false
   // }
 
-  // Trainer validation
-  if (!form.value.trainer_type) {
-    console.log('Trainer type validation failed')
-    // TEMPORARY: Skip this validation for testing
-    // return false
-  }
-
-  if (form.value.trainer_type === 'internal' && !form.value.instructor_id) {
-    console.log('Internal trainer validation failed')
-    // TEMPORARY: Skip this validation for testing
-    // return false
-  }
-
-  if (form.value.trainer_type === 'external' && !form.value.external_trainer_name.trim()) {
-    console.log('External trainer validation failed')
-    // TEMPORARY: Skip this validation for testing
-    // return false
-  }
+  // Trainer validation - REMOVED - trainer fields not used in course creation
 
   // TEMPORARY: Basic sessions validation for testing
   if (form.value.sessions.length === 0) {
@@ -1815,10 +1798,7 @@ const isFormValid = computed(() => {
   return true
 })
 
-// Custom label function for trainer multiselect
-const trainerLabel = (trainer) => {
-  return `${trainer.nama_lengkap} - ${trainer.jabatan?.nama_jabatan || 'Jabatan tidak ditentukan'}`
-}
+// Trainer label function removed - trainer fields not used in course creation
 
 // Methods
 const clearFilters = () => {
@@ -1857,10 +1837,7 @@ const closeModal = () => {
         duration_minutes: ''
       }
     ], // Default with 1 empty lesson
-    trainer_type: '', // 'internal' or 'external'
-    instructor_id: '', // For internal trainer
-    external_trainer_name: '', // For external trainer
-    external_trainer_description: '', // For external trainer description
+    // Trainer fields removed - not used in course creation
     thumbnail: null, // For thumbnail upload
     certificate_template_id: '', // For certificate template selection
     competencies: {} // For competency selection
@@ -2041,66 +2018,7 @@ const createCourse = async () => {
   //   // return
   // }
 
-  // Trainer validation
-  if (!form.value.trainer_type) {
-    console.log('Trainer type validation failed')
-    Swal.close()
-    Swal.fire({
-      icon: 'error',
-      title: 'Field Wajib Belum Diisi!',
-      html: `
-        <div class="text-left">
-          <p class="mb-3">Mohon lengkapi field berikut:</p>
-          <ul class="list-disc list-inside space-y-1">
-            <li class="text-red-600">Tipe Trainer</li>
-          </ul>
-        </div>
-      `,
-      confirmButtonColor: '#EF4444',
-      confirmButtonText: 'OK'
-    })
-    return
-  }
-
-  if (form.value.trainer_type === 'internal' && !form.value.instructor_id) {
-    console.log('Internal trainer validation failed')
-    Swal.close()
-    Swal.fire({
-      icon: 'error',
-      title: 'Field Wajib Belum Diisi!',
-      html: `
-        <div class="text-left">
-          <p class="mb-3">Mohon lengkapi field berikut:</p>
-          <ul class="list-disc list-inside space-y-1">
-            <li class="text-red-600">Trainer Internal</li>
-          </ul>
-        </div>
-      `,
-      confirmButtonColor: '#EF4444',
-      confirmButtonText: 'OK'
-    })
-    return
-  }
-
-  if (form.value.trainer_type === 'external' && !form.value.external_trainer_name.trim()) {
-    console.log('External trainer validation failed')
-    Swal.close()
-    Swal.fire({
-      icon: 'error',
-      title: 'Field Wajib Belum Diisi!',
-      html: `
-        <div class="text-left">
-          <p class="mb-3">Mohon lengkapi field berikut:</p>
-          <ul class="list-disc list-inside space-y-1">
-            <li class="text-red-600">Nama Trainer External</li>
-          </ul>
-        </div>
-      `,
-      confirmButtonColor: '#EF4444',
-      confirmButtonText: 'OK'
-    })
-    return
-  }
+  // Trainer validation - REMOVED - trainer fields not used in course creation
 
   // Sessions validation - at least one session with required fields
   if (form.value.sessions.length === 0 || form.value.sessions.every(session => !session.session_title.trim() || !session.order_number || !session.estimated_duration_minutes)) {
@@ -2359,8 +2277,8 @@ const createCourse = async () => {
            })
          }
        } else {
-         // Handle instructor_id specially - extract ID from object
-         if (key === 'instructor_id' && typeof form.value[key] === 'object' && form.value[key] !== null) {
+         // Handle form data
+         if (typeof form.value[key] === 'object' && form.value[key] !== null) {
            formData.append(key, form.value[key].id || form.value[key].value || '')
          } else {
            formData.append(key, form.value[key])
