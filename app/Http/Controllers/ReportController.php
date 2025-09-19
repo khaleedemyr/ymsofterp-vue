@@ -549,13 +549,12 @@ class ReportController extends Controller
             ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
             ->join('units as u', 'i.unit_id', '=', 'u.id')
             ->join('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
-            ->join('food_packing_lists as pl', 'do.packing_list_id', '=', 'pl.id')
-            ->join('warehouse_division as wd', 'pl.warehouse_division_id', '=', 'wd.id')
-            ->join('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
             ->join('food_floor_order_items as fo', function($join) {
                 $join->on('i.item_id', '=', 'fo.item_id')
-                     ->on('fo.floor_order_id', '=', 'pl.food_floor_order_id');
+                     ->on('fo.floor_order_id', '=', 'do.floor_order_id'); // Use do.floor_order_id directly
             })
+            ->leftJoin('warehouse_division as wd', 'it.warehouse_division_id', '=', 'wd.id') // Use item's warehouse_division_id
+            ->leftJoin('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
             ->join('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
             ->select(
                 'o.nama_outlet as customer',
@@ -592,12 +591,12 @@ class ReportController extends Controller
             ->join('items as it', 'i.item_id', '=', 'it.id')
             ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
             ->join('units as u', 'i.unit_id', '=', 'u.id')
-            ->leftJoin('warehouse_division as wd', 'it.warehouse_division_id', '=', 'wd.id')
+            ->leftJoin('warehouse_division as wd', 'it.warehouse_division_id', '=', 'wd.id') // Use item's warehouse_division_id
             ->leftJoin('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
             ->leftJoin('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
             ->leftJoin('food_floor_order_items as fo', function($join) {
                 $join->on('i.item_id', '=', 'fo.item_id')
-                     ->on('fo.floor_order_id', '=', 'do.floor_order_id');
+                     ->on('fo.floor_order_id', '=', 'do.floor_order_id'); // Use do.floor_order_id directly
             })
             ->join('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
             ->select(
@@ -826,13 +825,12 @@ class ReportController extends Controller
                 ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
                 ->join('units as u', 'i.unit_id', '=', 'u.id')
                 ->join('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
-                ->join('food_packing_lists as pl', 'do.packing_list_id', '=', 'pl.id')
-                ->join('warehouse_division as wd', 'pl.warehouse_division_id', '=', 'wd.id')
-                ->join('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
                 ->join('food_floor_order_items as fo', function($join) {
                     $join->on('i.item_id', '=', 'fo.item_id')
-                         ->on('fo.floor_order_id', '=', 'pl.food_floor_order_id');
+                         ->on('fo.floor_order_id', '=', 'do.floor_order_id'); // Use do.floor_order_id directly
                 })
+                ->leftJoin('warehouse_division as wd', 'it.warehouse_division_id', '=', 'wd.id') // Use item's warehouse_division_id
+                ->leftJoin('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
                 ->join('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
                 ->select(
                     'o.nama_outlet as customer',
@@ -2448,13 +2446,12 @@ class ReportController extends Controller
                 ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
                 ->join('units as u', 'i.unit_id', '=', 'u.id')
                 ->join('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
-                ->join('food_packing_lists as pl', 'do.packing_list_id', '=', 'pl.id')
-                ->join('warehouse_division as wd', 'pl.warehouse_division_id', '=', 'wd.id')
-                ->join('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
                 ->join('food_floor_order_items as fo', function($join) {
                     $join->on('i.item_id', '=', 'fo.item_id')
-                         ->on('fo.floor_order_id', '=', 'pl.food_floor_order_id');
+                         ->on('fo.floor_order_id', '=', 'do.floor_order_id'); // Use do.floor_order_id directly
                 })
+                ->leftJoin('warehouse_division as wd', 'it.warehouse_division_id', '=', 'wd.id') // Use item's warehouse_division_id
+                ->leftJoin('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
                 ->join('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
                 ->where('o.nama_outlet', $customer)
                 ->whereDate('gr.receive_date', '>=', $from)

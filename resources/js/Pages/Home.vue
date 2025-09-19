@@ -2517,14 +2517,28 @@ watch(locale, () => {
                                          isNight ? 'bg-slate-700/50 border-slate-600/50' : 'bg-slate-50 border-slate-200',
                                          training.is_completed ? 'opacity-75' : ''
                                      ]">
-                                    <div class="flex items-start justify-between">
-                                        <div class="flex-1">
+                                    <div class="flex items-start gap-3">
+                                        <!-- Thumbnail -->
+                                        <div class="flex-shrink-0">
+                                            <div v-if="training.thumbnail_url" class="w-16 h-16 rounded-lg overflow-hidden bg-gray-100">
+                                                <img :src="training.thumbnail_url" 
+                                                     :alt="training.title"
+                                                     class="w-full h-full object-cover"
+                                                     @error="$event.target.style.display='none'">
+                                            </div>
+                                            <div v-else class="w-16 h-16 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
+                                                <i class="fas fa-graduation-cap text-white text-xl"></i>
+                                            </div>
+                                        </div>
+                                        
+                                        <!-- Content -->
+                                        <div class="flex-1 min-w-0">
                                             <div class="flex items-center gap-2 mb-1">
-                                                <div class="font-semibold text-sm" :class="isNight ? 'text-white' : 'text-slate-800'">
+                                                <div class="font-semibold text-sm truncate" :class="isNight ? 'text-white' : 'text-slate-800'">
                                                     {{ training.title }}
                                                 </div>
                                                 <span :class="getTrainingStatusBadge(training).class" 
-                                                      class="px-2 py-1 text-xs rounded-full border">
+                                                      class="px-2 py-1 text-xs rounded-full border flex-shrink-0">
                                                     <i :class="getTrainingStatusBadge(training).icon" class="mr-1"></i>
                                                     {{ getTrainingStatusBadge(training).text }}
                                                 </span>
@@ -2545,9 +2559,6 @@ watch(locale, () => {
                                                 <span v-if="training.course_type" class="mr-2">
                                                     <i class="fas fa-graduation-cap mr-1"></i>{{ training.course_type }}
                                                 </span>
-                                            </div>
-                                            <div class="text-xs mt-1" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
-                                                {{ getTargetDisplayText(training) }}
                                             </div>
                                         </div>
                                     </div>
@@ -4189,9 +4200,23 @@ watch(locale, () => {
                                  class="border border-gray-200 dark:border-gray-600 rounded-lg p-4 hover:shadow-md transition-shadow"
                                  :class="training.is_completed ? 'opacity-75' : ''">
                                 
-                                <!-- Header -->
-                                <div class="flex items-start justify-between mb-3">
-                                    <div class="flex-1">
+                                <!-- Header with Thumbnail -->
+                                <div class="flex items-start gap-4 mb-3">
+                                    <!-- Thumbnail -->
+                                    <div class="flex-shrink-0">
+                                        <div v-if="training.thumbnail_url" class="w-20 h-20 rounded-lg overflow-hidden bg-gray-100">
+                                            <img :src="training.thumbnail_url" 
+                                                 :alt="training.title"
+                                                 class="w-full h-full object-cover"
+                                                 @error="$event.target.style.display='none'">
+                                        </div>
+                                        <div v-else class="w-20 h-20 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
+                                            <i class="fas fa-graduation-cap text-white text-2xl"></i>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Content -->
+                                    <div class="flex-1 min-w-0">
                                         <h4 class="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
                                             {{ training.title }}
                                             <span :class="getTrainingStatusBadge(training).class" 
@@ -4234,11 +4259,6 @@ watch(locale, () => {
                                     </div>
                                 </div>
 
-                                <!-- Target Information -->
-                                <div class="mb-3">
-                                    <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Target:</span>
-                                    <span class="ml-2 text-sm text-gray-900 dark:text-white">{{ getTargetDisplayText(training) }}</span>
-                                </div>
 
                                 <!-- Current Invitations -->
                                 <div v-if="training.current_invitations && training.current_invitations.length > 0" class="mb-3">
