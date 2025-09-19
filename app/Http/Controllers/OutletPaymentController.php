@@ -37,6 +37,7 @@ class OutletPaymentController extends Controller
             // Get GR number
             $gr = DB::table('outlet_food_good_receives')
                 ->where('id', $payment->gr_id)
+                ->whereNull('deleted_at')
                 ->first();
             $payment->gr_number = $gr ? $gr->number : 'GR Not Found';
             
@@ -366,6 +367,7 @@ class OutletPaymentController extends Controller
             ->leftJoin('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
             ->leftJoin('warehouse_outlets as wo', 'gr.warehouse_outlet_id', '=', 'wo.id')
             ->whereNull('op.id')
+            ->whereNull('gr.deleted_at')
             ->select(
                 'gr.id',
                 'gr.number',
@@ -401,6 +403,7 @@ class OutletPaymentController extends Controller
                          ->on('do.floor_order_id', '=', 'foi.floor_order_id');
                 })
                 ->where('gri.outlet_food_good_receive_id', $gr->id)
+                ->whereNull('gr.deleted_at')
                 ->sum(DB::raw('COALESCE(gri.received_qty * foi.price, 0)'));
 
             return (object) [
@@ -441,6 +444,7 @@ class OutletPaymentController extends Controller
             ->leftJoin('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
             ->leftJoin('warehouse_outlets as wo', 'gr.warehouse_outlet_id', '=', 'wo.id')
             ->whereNull('op.id')
+            ->whereNull('gr.deleted_at')
             ->select(
                 'gr.id',
                 'gr.number',
@@ -476,6 +480,7 @@ class OutletPaymentController extends Controller
                          ->on('do.floor_order_id', '=', 'foi.floor_order_id');
                 })
                 ->where('gri.outlet_food_good_receive_id', $gr->id)
+                ->whereNull('gr.deleted_at')
                 ->sum(DB::raw('COALESCE(gri.received_qty * foi.price, 0)'));
 
             return (object) [
@@ -514,6 +519,7 @@ class OutletPaymentController extends Controller
                          ->on('do.floor_order_id', '=', 'foi.floor_order_id');
                 })
                 ->where('gri.outlet_food_good_receive_id', $grId)
+                ->whereNull('gr.deleted_at')
                 ->select(
                     'gri.id as item_id',
                     'gri.item_id as item_master_id',
@@ -574,6 +580,7 @@ class OutletPaymentController extends Controller
                      ->on('do.floor_order_id', '=', 'foi.floor_order_id');
             })
             ->whereNull('op.id') // GR yang belum ada payment
+            ->whereNull('gr.deleted_at') // GR yang belum dihapus
             ->select(
                 'gr.id',
                 'gr.number',

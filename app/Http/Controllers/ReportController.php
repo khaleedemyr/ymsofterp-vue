@@ -1002,6 +1002,7 @@ class ReportController extends Controller
             ->join('units as u', 'i.unit_id', '=', 'u.id')
             ->join('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
             ->whereDate('gr.receive_date', $tanggal)
+            ->whereNull('gr.deleted_at')
             ->select(
                 'it.id as item_id',
                 'it.name as item_name',
@@ -1021,6 +1022,7 @@ class ReportController extends Controller
             ->join('units as u', 'i.unit_id', '=', 'u.id')
             ->join('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
             ->whereDate('gr.receive_date', $tanggal)
+            ->whereNull('gr.deleted_at')
             ->select(
                 'it.id as item_id',
                 'it.name as item_name',
@@ -1084,6 +1086,7 @@ class ReportController extends Controller
             ->join('units as u', 'i.unit_id', '=', 'u.id')
             ->join('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
             ->whereDate('gr.receive_date', $tanggal)
+            ->whereNull('gr.deleted_at')
             ->select(
                 'it.id as item_id',
                 'it.name as item_name',
@@ -1103,6 +1106,7 @@ class ReportController extends Controller
             ->join('units as u', 'i.unit_id', '=', 'u.id')
             ->join('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
             ->whereDate('gr.receive_date', $tanggal)
+            ->whereNull('gr.deleted_at')
             ->select(
                 'it.id as item_id',
                 'it.name as item_name',
