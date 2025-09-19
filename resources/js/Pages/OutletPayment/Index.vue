@@ -47,8 +47,8 @@
             <tr v-for="payment in payments.data" :key="payment.id" class="hover:bg-yellow-50 transition shadow-sm">
               <td class="px-6 py-3 font-mono font-semibold text-yellow-700">{{ payment.payment_number }}</td>
               <td class="px-6 py-3">{{ formatDate(payment.date) }}</td>
-              <td class="px-6 py-3">{{ payment.outlet ? payment.outlet.nama_outlet : '-' }}</td>
-              <td class="px-6 py-3">{{ payment.good_receive ? payment.good_receive.number : '-' }}</td>
+              <td class="px-6 py-3">{{ payment.outlet_name || '-' }}</td>
+              <td class="px-6 py-3">{{ payment.gr_number || '-' }}</td>
               <td class="px-6 py-3 text-right">{{ formatCurrency(payment.total_amount) }}</td>
               <td class="px-6 py-3">
                 <span :class="getStatusClass(payment.status)" class="px-2 py-1 rounded-full text-xs font-semibold shadow">
