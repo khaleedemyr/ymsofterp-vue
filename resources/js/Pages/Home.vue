@@ -4178,7 +4178,7 @@ watch(locale, () => {
     </div>
 
     <!-- Training Cards - Moved to Bottom -->
-    <div class="px-4 md:px-6 space-y-4">
+    <div class="ml-72 px-4 md:px-6 space-y-4 mb-6">
         <!-- Training Section (Invitations + History) -->
         <div class="flex-shrink-0 mb-4">
             <div class="backdrop-blur-md rounded-2xl shadow-2xl border p-4 transition-all duration-500 animate-fade-in hover:shadow-3xl"
@@ -4426,8 +4426,10 @@ watch(locale, () => {
     </div>
 
     <!-- Footer -->
-    <div class="flex-shrink-0 text-center text-xs opacity-90 py-4 mt-6 px-4 md:px-6" :class="isNight ? 'text-indigo-300' : 'text-indigo-500'">
-        {{ t('home.powered') }} &copy; {{ new Date().getFullYear() }}
+    <div class="ml-72 px-4 md:px-6 py-4 text-center">
+        <p class="text-sm text-gray-500 dark:text-gray-400">
+            Crafted with ❤️ by IT Department-Justus Group © 2025
+        </p>
     </div>
 
 </template>
