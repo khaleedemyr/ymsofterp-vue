@@ -2397,7 +2397,7 @@ watch(locale, () => {
         <div v-if="showApprovalModal && selectedApproval" class="fixed inset-0 z-50 overflow-y-auto">
             <div class="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
                 <!-- Background overlay -->
-                <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" @click="showApprovalModal = false"></div>
+                <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity z-40" @click="showApprovalModal = false"></div>
 
                 <!-- Modal panel -->
                 <div class="inline-block align-bottom bg-white dark:bg-gray-800 rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
@@ -3877,25 +3877,19 @@ watch(locale, () => {
         </div>
 
         <!-- Available Trainings Modal -->
-        <div v-if="showAvailableTrainingsModal" class="fixed inset-0 z-50 overflow-y-auto">
-            <div class="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
-                <!-- Background overlay -->
-                <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" @click="closeAvailableTrainingsModal"></div>
+        <div v-if="showAvailableTrainingsModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click="closeAvailableTrainingsModal">
+            <div class="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-6xl mx-4 max-h-[90vh] overflow-y-auto" @click.stop>
+                <div class="flex items-center justify-between mb-6">
+                    <h3 class="text-xl font-medium text-gray-900 dark:text-white">
+                        Training Tersedia untuk Anda
+                    </h3>
+                    <button @click="closeAvailableTrainingsModal" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                        <i class="fa-solid fa-times text-xl"></i>
+                    </button>
+                </div>
 
-                <!-- Modal panel -->
-                <div class="inline-block align-bottom bg-white dark:bg-gray-800 rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-6xl sm:w-full">
-                    <div class="bg-white dark:bg-gray-800 px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
-                        <div class="flex items-center justify-between mb-6">
-                            <h3 class="text-xl font-medium text-gray-900 dark:text-white">
-                                Training Tersedia untuk Anda
-                            </h3>
-                            <button @click="closeAvailableTrainingsModal" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
-                                <i class="fa-solid fa-times text-xl"></i>
-                            </button>
-                        </div>
-
-                        <!-- User Info -->
-                        <div class="mb-6 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                <!-- User Info -->
+                <div class="mb-6 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
                             <h4 class="text-sm font-medium text-blue-800 dark:text-blue-200 mb-2">Profil Anda</h4>
                             <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
                                 <div>
@@ -3911,9 +3905,9 @@ watch(locale, () => {
                                     <span class="ml-2 text-gray-700 dark:text-gray-300">{{ userOutlet }}</span>
                                 </div>
                             </div>
-                        </div>
+                </div>
 
-                        <!-- Stats Summary -->
+                <!-- Stats Summary -->
                         <div class="mb-6 grid grid-cols-2 md:grid-cols-4 gap-4">
                             <div class="text-center p-4 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg">
                                 <div class="text-2xl font-bold text-emerald-600">{{ availableTrainingsStats.total }}</div>
@@ -4064,17 +4058,14 @@ watch(locale, () => {
                         </div>
                     </div>
 
-                    <!-- Modal Actions -->
-                    <div class="bg-gray-50 dark:bg-gray-700 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
-                        <button @click="closeAvailableTrainingsModal" 
-                                class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:mt-0 sm:w-auto sm:text-sm">
-                            Tutup
-                        </button>
-                    </div>
+                <!-- Modal Actions -->
+                <div class="flex justify-end gap-3 mt-6 pt-4 border-t border-slate-200">
+                    <button @click="closeAvailableTrainingsModal" 
+                            class="px-4 py-2 text-slate-600 border border-slate-300 rounded-md hover:bg-slate-50 transition-colors">
+                        Tutup
+                    </button>
                 </div>
             </div>
-        </div>
-    </AppLayout>
 
     <!-- Lightbox for Document Images -->
     <VueEasyLightbox
@@ -4178,7 +4169,7 @@ watch(locale, () => {
     </div>
 
     <!-- Training Cards - Moved to Bottom -->
-    <div class="ml-72 px-4 md:px-6 space-y-4 mb-6">
+    <div class="px-4 md:px-6 space-y-4 mb-6">
         <!-- Training Section (Invitations + History) -->
         <div class="flex-shrink-0 mb-4">
             <div class="backdrop-blur-md rounded-2xl shadow-2xl border p-4 transition-all duration-500 animate-fade-in hover:shadow-3xl"
@@ -4426,12 +4417,12 @@ watch(locale, () => {
     </div>
 
     <!-- Footer -->
-    <div class="ml-72 px-4 md:px-6 py-4 text-center">
+    <div class="px-4 md:px-6 py-4 text-center">
         <p class="text-sm text-gray-500 dark:text-gray-400">
             Crafted with ❤️ by IT Department-Justus Group © 2025
         </p>
     </div>
-
+    </AppLayout>
 </template>
 
 <style scoped>
