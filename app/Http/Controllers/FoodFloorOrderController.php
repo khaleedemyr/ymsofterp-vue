@@ -447,12 +447,16 @@ class FoodFloorOrderController extends Controller
         $userStatus = $user->status;
 
         // Cek berdasarkan nama warehouse outlet
+        // Sekarang semua jabatan yang menerima notifikasi juga bisa approve
         switch ($warehouseName) {
             case 'Kitchen':
+                // Jabatan yang bisa approve: semua yang menerima notifikasi
                 return in_array($userJabatan, [174, 180, 345, 346, 347, 348, 349]) && $userStatus === 'A';
             case 'Bar':
+                // Jabatan yang bisa approve: semua yang menerima notifikasi
                 return in_array($userJabatan, [175, 182, 323]) && $userStatus === 'A';
             case 'Service':
+                // Jabatan yang bisa approve: semua yang menerima notifikasi
                 return in_array($userJabatan, [176, 322, 164, 321]) && $userStatus === 'A';
             default:
                 return false;

@@ -72,12 +72,16 @@ const canUserApproveByWarehouse = (user, warehouseOutletName) => {
   const userJabatan = user.id_jabatan;
   const userStatus = user.status;
   
+  // Sekarang semua jabatan yang menerima notifikasi juga bisa approve
   switch (warehouseOutletName) {
     case 'Kitchen':
+      // Jabatan yang bisa approve: semua yang menerima notifikasi
       return [174, 180, 345, 346, 347, 348, 349].includes(userJabatan) && userStatus === 'A';
     case 'Bar':
+      // Jabatan yang bisa approve: semua yang menerima notifikasi
       return [175, 182, 323].includes(userJabatan) && userStatus === 'A';
     case 'Service':
+      // Jabatan yang bisa approve: semua yang menerima notifikasi
       return [176, 322, 164, 321].includes(userJabatan) && userStatus === 'A';
     default:
       return false;
