@@ -256,24 +256,24 @@ const getFileAcceptTypes = () => {
 const getFileTypeDescription = () => {
   switch (form.value.material_type) {
     case 'pdf':
-      return 'PDF files up to 10MB'
+      return 'PDF files up to 100MB'
     case 'image':
-      return 'Image files (JPG, PNG, GIF) up to 10MB'
+      return 'Image files (JPG, PNG, GIF) up to 100MB'
     case 'video':
-      return 'Video files (MP4, AVI, MOV) up to 10MB'
+      return 'Video files (MP4, AVI, MOV) up to 100MB'
     case 'document':
-      return 'Document files (Word, Excel, PowerPoint) up to 10MB'
+      return 'Document files (Word, Excel, PowerPoint) up to 100MB'
     default:
-      return 'All files up to 10MB'
+      return 'All files up to 100MB'
   }
 }
 
 const handleFileChange = (event) => {
   const file = event.target.files[0]
   if (file) {
-    // Check file size (10MB limit)
-    if (file.size > 10 * 1024 * 1024) {
-      showToast('File terlalu besar. Maksimal 10MB.', 'error')
+    // Check file size (100MB limit)
+    if (file.size > 100 * 1024 * 1024) {
+      showToast('File terlalu besar. Maksimal 100MB.', 'error')
       event.target.value = ''
       selectedFile.value = null
       return

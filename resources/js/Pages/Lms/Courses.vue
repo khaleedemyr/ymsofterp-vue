@@ -946,7 +946,7 @@
                               class="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
                               :disabled="loading"
                             />
-                            <p class="text-xs text-gray-400">Format: PDF, DOC, PPT, JPG, PNG, MP4, AVI, MOV (Max: 10MB per file)</p>
+                            <p class="text-xs text-gray-400">Format: PDF, DOC, PPT, JPG, PNG, MP4, AVI, MOV (Max: 100MB per file)</p>
                           </div>
                           
                           <!-- Material Files Preview -->
@@ -2794,13 +2794,13 @@ const onMaterialFileChange = (event, sessionIndex, itemIndex) => {
       return
     }
     
-    // Validate file size (10MB = 10 * 1024 * 1024 bytes)
-    const maxSize = 10 * 1024 * 1024
+    // Validate file size (100MB = 100 * 1024 * 1024 bytes)
+    const maxSize = 100 * 1024 * 1024
     if (file.size > maxSize) {
       Swal.fire({
         icon: 'error',
         title: 'Error!',
-        text: `File ${file.name} terlalu besar! Ukuran maksimal 10MB.`,
+        text: `File ${file.name} terlalu besar! Ukuran maksimal 100MB.`,
         confirmButtonColor: '#EF4444'
       })
       return
