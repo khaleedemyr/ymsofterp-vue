@@ -936,6 +936,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('/outlet-payments', [OutletPaymentController::class, 'store'])->name('outlet-payments.store');
     Route::get('/outlet-payments/unpaid-gr', [\App\Http\Controllers\OutletPaymentController::class, 'unpaidGR'])->name('outlet-payments.unpaid-gr');
     Route::get('/outlet-payments/gr-items/{grId}', [\App\Http\Controllers\OutletPaymentController::class, 'getGrItems'])->name('outlet-payments.gr-items');
+    Route::get('/outlet-payments/gr-list', [\App\Http\Controllers\OutletPaymentController::class, 'getGrList'])->name('outlet-payments.gr-list');
     Route::get('/outlet-payments/debug', [\App\Http\Controllers\OutletPaymentController::class, 'debug'])->name('outlet-payments.debug');
     Route::put('/outlet-payments/{outletPayment}', [OutletPaymentController::class, 'update'])->name('outlet-payments.update');
     Route::put('/outlet-payments/{outletPayment}/status', [OutletPaymentController::class, 'updateStatus'])->name('outlet-payments.status');

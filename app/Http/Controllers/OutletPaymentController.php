@@ -201,47 +201,79 @@ class OutletPaymentController extends Controller
     public function store(Request $request)
     {
         \Log::info('DEBUG: OutletPaymentController@store terpanggil', $request->all());
+        
+        // Handle both single gr_id and multiple gr_ids
+        $grIds = $request->input('gr_ids', []);
+        if (empty($grIds) && $request->has('gr_id')) {
+            $grIds = [$request->gr_id];
+        }
+        
         $request->validate([
             'outlet_id' => 'required|exists:tbl_data_outlet,id_outlet',
-            'gr_id' => 'required|exists:outlet_food_good_receives,id',
-            'date' => 'required|date',
+            'gr_ids' => 'required|array|min:1',
+            'gr_ids.*' => 'exists:outlet_food_good_receives,id',
+            'date_from' => 'required|date',
+            'date_to' => 'required|date|after_or_equal:date_from',
             'total_amount' => 'required|numeric|min:0'
         ]);
 
-        $gr = OutletFoodGoodReceive::findOrFail($request->gr_id);
-        
-        \Log::info('DEBUG: Cek outletPayment', [
-            'gr_id' => $gr->id,
-            'outletPayment' => $gr->outletPayment ? $gr->outletPayment->toArray() : null
-        ]);
-        \Log::info('DEBUG: Cek total_amount', [
-            'gr_total_amount' => $gr->total_amount,
-            'request_total_amount' => $request->total_amount
-        ]);
-        // Check if GR already has a payment
-        if ($gr->outletPayment && $gr->outletPayment->status !== 'cancelled') {
-            return back()->with('error', 'GR ini sudah memiliki payment yang aktif.');
+        // Check if any GR already has a payment
+        foreach ($grIds as $grId) {
+            $gr = OutletFoodGoodReceive::findOrFail($grId);
+            if ($gr->outletPayment && $gr->outletPayment->status !== 'cancelled') {
+                return back()->with('error', "GR {$gr->number} sudah memiliki payment yang aktif.");
+            }
         }
 
         \Log::info('DEBUG OUTLET PAYMENT STORE - REQUEST', $request->all());
-        $dataToInsert = [
-            'outlet_id' => $request->outlet_id,
-            'gr_id' => $request->gr_id,
-            'date' => $request->date,
-            'total_amount' => $request->total_amount,
-            'notes' => $request->notes,
-            'status' => 'pending',
-        ];
-        \Log::info('DEBUG: Sebelum create OutletPayment', $dataToInsert);
+        
         try {
-            $created = OutletPayment::create($dataToInsert);
-            \Log::info('DEBUG: Setelah create OutletPayment', ['created' => $created]);
+            DB::beginTransaction();
+            
+            $createdPayments = [];
+            foreach ($grIds as $grId) {
+                $gr = OutletFoodGoodReceive::findOrFail($grId);
+                
+                // Calculate individual GR total amount
+                $grTotalAmount = DB::table('outlet_food_good_receive_items as gri')
+                    ->join('outlet_food_good_receives as gr', 'gri.outlet_food_good_receive_id', '=', 'gr.id')
+                    ->join('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
+                    ->leftJoin('food_floor_order_items as foi', function($join) {
+                        $join->on('gri.item_id', '=', 'foi.item_id')
+                             ->on('do.floor_order_id', '=', 'foi.floor_order_id');
+                    })
+                    ->where('gri.outlet_food_good_receive_id', $grId)
+                    ->sum(DB::raw('COALESCE(gri.received_qty * foi.price, 0)'));
+                
+                $dataToInsert = [
+                    'outlet_id' => $request->outlet_id,
+                    'gr_id' => $grId,
+                    'date' => $request->date_from, // Use date_from as the payment date
+                    'total_amount' => $grTotalAmount ?: 0,
+                    'notes' => $request->notes,
+                    'status' => 'pending',
+                ];
+                
+                \Log::info('DEBUG: Creating payment for GR', $dataToInsert);
+                $created = OutletPayment::create($dataToInsert);
+                $createdPayments[] = $created;
+            }
+            
+            DB::commit();
+            \Log::info('DEBUG: Successfully created payments', ['count' => count($createdPayments)]);
+            
         } catch (\Exception $e) {
+            DB::rollback();
             \Log::error('DEBUG: Gagal create OutletPayment', ['error' => $e->getMessage()]);
+            return back()->with('error', 'Gagal membuat payment: ' . $e->getMessage());
         }
 
+        $message = count($createdPayments) > 1 
+            ? "Berhasil membuat " . count($createdPayments) . " payments." 
+            : 'Payment berhasil dibuat.';
+            
         return redirect()->route('outlet-payments.index')
-            ->with('success', 'Payment berhasil dibuat.');
+            ->with('success', $message);
     }
 
     public function update(Request $request, OutletPayment $outletPayment)
@@ -320,22 +352,41 @@ class OutletPaymentController extends Controller
             ->orderBy('nama_outlet')
             ->get();
 
+        // Get filter parameters
+        $outletId = $request->input('outlet_id');
+        $dateFrom = $request->input('date_from');
+        $dateTo = $request->input('date_to');
+
         // ULTRA OPTIMIZED: Super minimal GR list - only essential data
-        $grList = DB::table('outlet_food_good_receives as gr')
+        $grQuery = DB::table('outlet_food_good_receives as gr')
             ->leftJoin('outlet_payments as op', function($join) {
                 $join->on('gr.id', '=', 'op.gr_id')
                      ->where('op.status', '!=', 'cancelled');
             })
             ->leftJoin('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
+            ->leftJoin('warehouse_outlets as wo', 'gr.warehouse_outlet_id', '=', 'wo.id')
             ->whereNull('op.id')
             ->select(
                 'gr.id',
                 'gr.number',
                 'gr.receive_date',
                 'gr.outlet_id',
-                'o.nama_outlet as outlet_name'
-            )
-            ->orderBy('gr.receive_date', 'desc')
+                'o.nama_outlet as outlet_name',
+                'wo.name as warehouse_outlet_name'
+            );
+
+        // Apply filters if provided
+        if ($outletId) {
+            $grQuery->where('gr.outlet_id', $outletId);
+        }
+        if ($dateFrom) {
+            $grQuery->whereDate('gr.receive_date', '>=', $dateFrom);
+        }
+        if ($dateTo) {
+            $grQuery->whereDate('gr.receive_date', '<=', $dateTo);
+        }
+
+        $grList = $grQuery->orderBy('gr.receive_date', 'desc')
             ->limit(50) // Reduced to 50 for faster loading
             ->get();
 
@@ -359,7 +410,8 @@ class OutletPaymentController extends Controller
                 'receive_date' => $gr->receive_date,
                 'outlet_id' => $gr->outlet_id,
                 'outlet_name' => $gr->outlet_name,
-                'total_amount' => $totalAmount ?: 0,
+                'warehouse_outlet_name' => $gr->warehouse_outlet_name,
+                'total_amount' => (float) ($totalAmount ?: 0), // Ensure it's a float
                 'items' => [] // Will be loaded via API when needed
             ];
         });
@@ -368,6 +420,80 @@ class OutletPaymentController extends Controller
             'mode' => 'create',
             'outlets' => $outlets,
             'grList' => $groupedGrList,
+        ]);
+    }
+
+    /**
+     * Get GR list with filters for AJAX requests
+     */
+    public function getGrList(Request $request)
+    {
+        $outletId = $request->input('outlet_id');
+        $dateFrom = $request->input('date_from');
+        $dateTo = $request->input('date_to');
+
+        // Build query for GR list
+        $grQuery = DB::table('outlet_food_good_receives as gr')
+            ->leftJoin('outlet_payments as op', function($join) {
+                $join->on('gr.id', '=', 'op.gr_id')
+                     ->where('op.status', '!=', 'cancelled');
+            })
+            ->leftJoin('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
+            ->leftJoin('warehouse_outlets as wo', 'gr.warehouse_outlet_id', '=', 'wo.id')
+            ->whereNull('op.id')
+            ->select(
+                'gr.id',
+                'gr.number',
+                'gr.receive_date',
+                'gr.outlet_id',
+                'o.nama_outlet as outlet_name',
+                'wo.name as warehouse_outlet_name'
+            );
+
+        // Apply filters
+        if ($outletId) {
+            $grQuery->where('gr.outlet_id', $outletId);
+        }
+        if ($dateFrom) {
+            $grQuery->whereDate('gr.receive_date', '>=', $dateFrom);
+        }
+        if ($dateTo) {
+            $grQuery->whereDate('gr.receive_date', '<=', $dateTo);
+        }
+
+        $grList = $grQuery->orderBy('gr.receive_date', 'desc')
+            ->limit(50)
+            ->get();
+
+        // Format data with total_amount calculation
+        $groupedGrList = $grList->map(function($gr) {
+            // Calculate total_amount for each GR
+            $totalAmount = DB::table('outlet_food_good_receive_items as gri')
+                ->join('outlet_food_good_receives as gr', 'gri.outlet_food_good_receive_id', '=', 'gr.id')
+                ->join('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
+                ->leftJoin('food_floor_order_items as foi', function($join) {
+                    $join->on('gri.item_id', '=', 'foi.item_id')
+                         ->on('do.floor_order_id', '=', 'foi.floor_order_id');
+                })
+                ->where('gri.outlet_food_good_receive_id', $gr->id)
+                ->sum(DB::raw('COALESCE(gri.received_qty * foi.price, 0)'));
+
+            return (object) [
+                'id' => $gr->id,
+                'number' => $gr->number,
+                'gr_number' => $gr->number,
+                'receive_date' => $gr->receive_date,
+                'outlet_id' => $gr->outlet_id,
+                'outlet_name' => $gr->outlet_name,
+                'warehouse_outlet_name' => $gr->warehouse_outlet_name,
+                'total_amount' => (float) ($totalAmount ?: 0), // Ensure it's a float
+                'items' => [] // Will be loaded via API when needed
+            ];
+        });
+
+        return response()->json([
+            'success' => true,
+            'grList' => $groupedGrList
         ]);
     }
 
