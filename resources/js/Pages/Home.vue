@@ -2517,54 +2517,49 @@ watch(locale, () => {
                                          isNight ? 'bg-slate-700/50 border-slate-600/50' : 'bg-slate-50 border-slate-200',
                                          training.is_completed ? 'opacity-75' : ''
                                      ]">
-                                    <!-- Banner Style -->
-                                    <div class="relative">
-                                        <!-- Banner Background -->
-                                        <div v-if="training.thumbnail_url" class="w-full h-32 rounded-lg overflow-hidden bg-gray-100 shadow-md">
-                                            <img :src="training.thumbnail_url" 
-                                                 :alt="training.title"
-                                                 class="w-full h-full object-cover"
-                                                 @error="$event.target.style.display='none'">
-                                            <!-- Overlay -->
-                                            <div class="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent"></div>
+                                    <!-- Banner -->
+                                    <div class="w-full h-28 rounded-lg overflow-hidden bg-gray-100 shadow-md">
+                                        <img v-if="training.thumbnail_url" 
+                                             :src="training.thumbnail_url" 
+                                             :alt="training.title"
+                                             class="w-full h-full object-contain bg-gray-50"
+                                             @error="$event.target.style.display='none'">
+                                        <div v-else class="w-full h-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
+                                            <i class="fas fa-graduation-cap text-white text-3xl"></i>
                                         </div>
-                                        <div v-else class="w-full h-32 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center shadow-md">
-                                            <i class="fas fa-graduation-cap text-white text-4xl"></i>
-                                        </div>
-                                        
-                                        <!-- Content Overlay -->
-                                        <div class="absolute bottom-0 left-0 right-0 p-3">
-                                            <div class="flex items-center justify-between">
-                                                <div class="flex-1 min-w-0">
-                                                    <div class="flex items-center gap-2 mb-1">
-                                                        <div class="font-semibold text-white text-sm truncate">
-                                                            {{ training.title }}
-                                                        </div>
-                                                        <span :class="getTrainingStatusBadge(training).class" 
-                                                              class="px-2 py-1 text-xs rounded-full border flex-shrink-0 bg-white/20 backdrop-blur-sm">
-                                                            <i :class="getTrainingStatusBadge(training).icon" class="mr-1"></i>
-                                                            {{ getTrainingStatusBadge(training).text }}
-                                                        </span>
-                                                    </div>
-                                                    <div class="text-xs text-white/90">
-                                                        {{ training.duration_formatted }} • {{ training.category?.name || 'Umum' }}
-                                                    </div>
+                                    </div>
+                                    
+                                    <!-- Training Information Below Banner -->
+                                    <div class="mt-3 space-y-2">
+                                        <!-- Title and Status -->
+                                        <div class="flex items-center justify-between">
+                                            <div class="flex-1 min-w-0">
+                                                <div class="font-semibold text-sm truncate" :class="isNight ? 'text-white' : 'text-slate-800'">
+                                                    {{ training.title }}
+                                                </div>
+                                                <div class="text-xs" :class="isNight ? 'text-slate-300' : 'text-slate-600'">
+                                                    {{ training.duration_formatted }} • {{ training.category?.name || 'Umum' }}
                                                 </div>
                                             </div>
+                                            <span :class="getTrainingStatusBadge(training).class" 
+                                                  class="px-2 py-1 text-xs rounded-full border flex-shrink-0">
+                                                <i :class="getTrainingStatusBadge(training).icon" class="mr-1"></i>
+                                                {{ getTrainingStatusBadge(training).text }}
+                                            </span>
                                         </div>
                                         
-                                        <!-- Training Details Below Banner -->
-                                        <div class="mt-2 text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
-                                            <span v-if="training.difficulty_level" class="mr-2">
+                                        <!-- Training Details -->
+                                        <div class="flex flex-wrap gap-2">
+                                            <span v-if="training.difficulty_level" class="inline-flex items-center px-2 py-1 bg-gray-100 rounded-full text-xs">
                                                 <i class="fas fa-signal mr-1"></i>{{ training.difficulty_level }}
                                             </span>
-                                            <span v-if="training.type" class="mr-2">
+                                            <span v-if="training.type" class="inline-flex items-center px-2 py-1 bg-gray-100 rounded-full text-xs">
                                                 <i class="fas fa-tag mr-1"></i>{{ training.type }}
                                             </span>
-                                            <span v-if="training.specification" class="mr-2">
+                                            <span v-if="training.specification" class="inline-flex items-center px-2 py-1 bg-gray-100 rounded-full text-xs">
                                                 <i class="fas fa-cog mr-1"></i>{{ training.specification }}
                                             </span>
-                                            <span v-if="training.course_type" class="mr-2">
+                                            <span v-if="training.course_type" class="inline-flex items-center px-2 py-1 bg-gray-100 rounded-full text-xs">
                                                 <i class="fas fa-graduation-cap mr-1"></i>{{ training.course_type }}
                                             </span>
                                         </div>
@@ -4207,38 +4202,35 @@ watch(locale, () => {
                                  class="border border-gray-200 dark:border-gray-600 rounded-lg p-4 hover:shadow-md transition-shadow"
                                  :class="training.is_completed ? 'opacity-75' : ''">
                                 
-                                <!-- Banner Header -->
-                                <div class="relative mb-4">
-                                    <!-- Banner Background -->
-                                    <div v-if="training.thumbnail_url" class="w-full h-40 rounded-lg overflow-hidden bg-gray-100 shadow-lg">
-                                        <img :src="training.thumbnail_url" 
-                                             :alt="training.title"
-                                             class="w-full h-full object-cover"
-                                             @error="$event.target.style.display='none'">
-                                        <!-- Overlay -->
-                                        <div class="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent"></div>
+                                <!-- Banner -->
+                                <div class="w-full h-36 rounded-lg overflow-hidden bg-gray-100 shadow-lg mb-4">
+                                    <img v-if="training.thumbnail_url" 
+                                         :src="training.thumbnail_url" 
+                                         :alt="training.title"
+                                         class="w-full h-full object-contain bg-gray-50"
+                                         @error="$event.target.style.display='none'">
+                                    <div v-else class="w-full h-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
+                                        <i class="fas fa-graduation-cap text-white text-4xl"></i>
                                     </div>
-                                    <div v-else class="w-full h-40 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center shadow-lg">
-                                        <i class="fas fa-graduation-cap text-white text-5xl"></i>
-                                    </div>
-                                    
-                                    <!-- Content Overlay -->
-                                    <div class="absolute bottom-0 left-0 right-0 p-4">
-                                        <div class="flex items-center justify-between">
-                                            <div class="flex-1 min-w-0">
-                                                <h4 class="font-bold text-white text-lg flex items-center gap-2 mb-1">
-                                                    {{ training.title }}
-                                                    <span :class="getTrainingStatusBadge(training).class" 
-                                                          class="px-3 py-1 text-xs rounded-full border bg-white/20 backdrop-blur-sm">
-                                                        <i :class="getTrainingStatusBadge(training).icon" class="mr-1"></i>
-                                                        {{ getTrainingStatusBadge(training).text }}
-                                                    </span>
-                                                </h4>
-                                                <p v-if="training.short_description" class="text-sm text-white/90 line-clamp-2">
-                                                    {{ training.short_description }}
-                                                </p>
-                                            </div>
+                                </div>
+                                
+                                <!-- Training Information Below Banner -->
+                                <div class="mb-4">
+                                    <!-- Title and Status -->
+                                    <div class="flex items-start justify-between mb-2">
+                                        <div class="flex-1 min-w-0">
+                                            <h4 class="font-bold text-gray-900 dark:text-white text-lg mb-1">
+                                                {{ training.title }}
+                                            </h4>
+                                            <p v-if="training.short_description" class="text-sm text-gray-600 dark:text-gray-300">
+                                                {{ training.short_description }}
+                                            </p>
                                         </div>
+                                        <span :class="getTrainingStatusBadge(training).class" 
+                                              class="px-3 py-1 text-xs rounded-full border flex-shrink-0">
+                                            <i :class="getTrainingStatusBadge(training).icon" class="mr-1"></i>
+                                            {{ getTrainingStatusBadge(training).text }}
+                                        </span>
                                     </div>
                                 </div>
 
