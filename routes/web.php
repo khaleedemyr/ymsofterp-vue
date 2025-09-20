@@ -280,6 +280,97 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/categories/{id}', [App\Http\Controllers\CategoryController::class, 'update'])->name('categories.update');
     Route::patch('/categories/{id}/toggle-status', [CategoryController::class, 'toggleStatus'])->name('categories.toggle-status');
 
+    // Master Report routes
+    Route::get('/master-report', [\App\Http\Controllers\MasterReportController::class, 'index'])->name('master-report.index');
+    Route::post('/master-report', [\App\Http\Controllers\MasterReportController::class, 'store'])->name('master-report.store');
+    Route::put('/master-report/{id}', [\App\Http\Controllers\MasterReportController::class, 'update'])->name('master-report.update');
+    Route::delete('/master-report/{id}', [\App\Http\Controllers\MasterReportController::class, 'destroy'])->name('master-report.destroy');
+    Route::patch('/master-report/{id}/toggle-status', [\App\Http\Controllers\MasterReportController::class, 'toggleStatus'])->name('master-report.toggle-status');
+    Route::get('/master-report/next-area-code', [\App\Http\Controllers\MasterReportController::class, 'getNextAreaCode'])->name('master-report.next-area-code');
+
+    // Daily Report routes
+    Route::get('/daily-report', [\App\Http\Controllers\DailyReportController::class, 'index'])->name('daily-report.index');
+    Route::get('/daily-report/create', [\App\Http\Controllers\DailyReportController::class, 'create'])->name('daily-report.create');
+    Route::post('/daily-report', [\App\Http\Controllers\DailyReportController::class, 'store'])->name('daily-report.store');
+    Route::get('/daily-report/areas', [\App\Http\Controllers\DailyReportController::class, 'getAreas'])->name('daily-report.areas');
+    Route::post('/daily-report/upload-documentation', [\App\Http\Controllers\DailyReportController::class, 'uploadDocumentation'])->name('daily-report.upload-documentation');
+    Route::get('/daily-report/{id}', [\App\Http\Controllers\DailyReportController::class, 'show'])->name('daily-report.show');
+    Route::get('/daily-report/{id}/inspect', [\App\Http\Controllers\DailyReportController::class, 'inspect'])->name('daily-report.inspect');
+    Route::post('/daily-report/{id}/auto-save', [\App\Http\Controllers\DailyReportController::class, 'autoSave'])->name('daily-report.auto-save');
+    Route::post('/daily-report/{id}/save-area', [\App\Http\Controllers\DailyReportController::class, 'saveArea'])->name('daily-report.save-area');
+    Route::post('/daily-report/{id}/skip-area', [\App\Http\Controllers\DailyReportController::class, 'skipArea'])->name('daily-report.skip-area');
+    Route::post('/daily-report/{id}/complete', [\App\Http\Controllers\DailyReportController::class, 'completeReport'])->name('daily-report.complete');
+    Route::post('/daily-report/{id}/force-complete', [\App\Http\Controllers\DailyReportController::class, 'forceCompleteReport'])->name('daily-report.force-complete');
+    Route::get('/daily-report/{id}/post-inspection', [\App\Http\Controllers\DailyReportController::class, 'postInspection'])->name('daily-report.post-inspection');
+    Route::post('/daily-report/{id}/save-briefing', [\App\Http\Controllers\DailyReportController::class, 'saveBriefing'])->name('daily-report.save-briefing');
+    Route::post('/daily-report/{id}/save-productivity', [\App\Http\Controllers\DailyReportController::class, 'saveProductivity'])->name('daily-report.save-productivity');
+    Route::post('/daily-report/{id}/save-visit-table', [\App\Http\Controllers\DailyReportController::class, 'saveVisitTable'])->name('daily-report.save-visit-table');
+    Route::post('/daily-report/{id}/save-summary', [\App\Http\Controllers\DailyReportController::class, 'saveSummary'])->name('daily-report.save-summary');
+    Route::delete('/daily-report/{id}', [\App\Http\Controllers\DailyReportController::class, 'destroy'])->name('daily-report.destroy');
+
+    // Daily Report Comments routes
+    Route::get('/daily-report/{id}/comments', [\App\Http\Controllers\DailyReportCommentController::class, 'index'])->name('daily-report.comments.index');
+    Route::post('/daily-report/{id}/comments', [\App\Http\Controllers\DailyReportCommentController::class, 'store'])->name('daily-report.comments.store');
+    Route::put('/daily-report/comments/{id}', [\App\Http\Controllers\DailyReportCommentController::class, 'update'])->name('daily-report.comments.update');
+    Route::delete('/daily-report/comments/{id}', [\App\Http\Controllers\DailyReportCommentController::class, 'destroy'])->name('daily-report.comments.destroy');
+    
+    // Daily Report Ticket Integration
+    Route::post('/daily-report/{id}/create-ticket', [\App\Http\Controllers\DailyReportController::class, 'createTicketFromConcern'])->name('daily-report.create-ticket');
+    Route::post('/daily-report/{id}/convert-to-ticket', [\App\Http\Controllers\DailyReportController::class, 'convertToTicket'])->name('daily-report.convert-to-ticket');
+    Route::get('/daily-report/ticket-options', [\App\Http\Controllers\DailyReportController::class, 'getTicketOptions'])->name('daily-report.ticket-options');
+
+    // Ticketing System routes
+    Route::get('/tickets', [\App\Http\Controllers\TicketController::class, 'index'])->name('tickets.index');
+    Route::get('/tickets/create', [\App\Http\Controllers\TicketController::class, 'create'])->name('tickets.create');
+    Route::post('/tickets', [\App\Http\Controllers\TicketController::class, 'store'])->name('tickets.store');
+    Route::get('/tickets/{id}', [\App\Http\Controllers\TicketController::class, 'show'])->name('tickets.show');
+    Route::get('/tickets/{id}/edit', [\App\Http\Controllers\TicketController::class, 'edit'])->name('tickets.edit');
+    Route::put('/tickets/{id}', [\App\Http\Controllers\TicketController::class, 'update'])->name('tickets.update');
+    Route::delete('/tickets/{id}', [\App\Http\Controllers\TicketController::class, 'destroy'])->name('tickets.destroy');
+    Route::post('/tickets/from-daily-report', [\App\Http\Controllers\TicketController::class, 'createFromDailyReport'])->name('tickets.from-daily-report');
+    
+    // Ticket Comments routes
+    Route::post('/tickets/{id}/comments', [\App\Http\Controllers\TicketController::class, 'addComment'])->name('tickets.comments.store');
+    Route::put('/tickets/comments/{id}', [\App\Http\Controllers\TicketController::class, 'updateComment'])->name('tickets.comments.update');
+    Route::delete('/tickets/comments/{id}', [\App\Http\Controllers\TicketController::class, 'deleteComment'])->name('tickets.comments.destroy');
+    
+    // Ticket API endpoints
+    Route::get('/tickets/categories', [\App\Http\Controllers\TicketController::class, 'getCategories'])->name('tickets.categories');
+    Route::get('/tickets/priorities', [\App\Http\Controllers\TicketController::class, 'getPriorities'])->name('tickets.priorities');
+    Route::get('/tickets/by-area/{areaId}', [\App\Http\Controllers\TicketController::class, 'getTicketsByArea'])->name('tickets.by-area');
+
+    // Purchase Requisition API endpoints (must be before resource routes)
+    Route::get('/purchase-requisitions/categories', [\App\Http\Controllers\PurchaseRequisitionController::class, 'getCategories'])->name('purchase-requisitions.categories')->middleware('auth');
+    Route::get('/purchase-requisitions/tickets', [\App\Http\Controllers\PurchaseRequisitionController::class, 'getTickets'])->name('purchase-requisitions.tickets')->middleware('auth');
+    Route::get('/purchase-requisitions/budget-info', [\App\Http\Controllers\PurchaseRequisitionController::class, 'getBudgetInfo'])->name('purchase-requisitions.budget-info')->middleware('auth');
+    Route::get('/purchase-requisitions/approvers', [\App\Http\Controllers\PurchaseRequisitionController::class, 'getApprovers'])->name('purchase-requisitions.approvers')->middleware('auth');
+Route::get('/api/purchase-requisitions/pending-approvals', [\App\Http\Controllers\PurchaseRequisitionController::class, 'getPendingApprovals'])->name('purchase-requisitions.pending-approvals')->middleware('auth');
+Route::get('/api/purchase-requisitions/{id}/approval-details', [\App\Http\Controllers\PurchaseRequisitionController::class, 'getApprovalDetails'])->name('purchase-requisitions.approval-details')->middleware('auth');
+
+    // Purchase Requisition Ops routes
+    Route::get('/purchase-requisitions', [\App\Http\Controllers\PurchaseRequisitionController::class, 'index'])->name('purchase-requisitions.index');
+    Route::get('/purchase-requisitions/create', [\App\Http\Controllers\PurchaseRequisitionController::class, 'create'])->name('purchase-requisitions.create');
+    Route::post('/purchase-requisitions', [\App\Http\Controllers\PurchaseRequisitionController::class, 'store'])->name('purchase-requisitions.store');
+    Route::get('/purchase-requisitions/{purchaseRequisition}', [\App\Http\Controllers\PurchaseRequisitionController::class, 'show'])->name('purchase-requisitions.show');
+    Route::get('/purchase-requisitions/{purchaseRequisition}/edit', [\App\Http\Controllers\PurchaseRequisitionController::class, 'edit'])->name('purchase-requisitions.edit');
+    Route::put('/purchase-requisitions/{purchaseRequisition}', [\App\Http\Controllers\PurchaseRequisitionController::class, 'update'])->name('purchase-requisitions.update');
+    Route::delete('/purchase-requisitions/{purchaseRequisition}', [\App\Http\Controllers\PurchaseRequisitionController::class, 'destroy'])->name('purchase-requisitions.destroy');
+    
+    // Purchase Requisition Actions
+    Route::post('/purchase-requisitions/{purchaseRequisition}/submit', [\App\Http\Controllers\PurchaseRequisitionController::class, 'submit'])->name('purchase-requisitions.submit');
+    Route::post('/purchase-requisitions/{purchaseRequisition}/approve', [\App\Http\Controllers\PurchaseRequisitionController::class, 'approve'])->name('purchase-requisitions.approve');
+    Route::post('/purchase-requisitions/{purchaseRequisition}/reject', [\App\Http\Controllers\PurchaseRequisitionController::class, 'reject'])->name('purchase-requisitions.reject');
+    Route::post('/purchase-requisitions/{purchaseRequisition}/process', [\App\Http\Controllers\PurchaseRequisitionController::class, 'process'])->name('purchase-requisitions.process');
+    Route::post('/purchase-requisitions/{purchaseRequisition}/complete', [\App\Http\Controllers\PurchaseRequisitionController::class, 'complete'])->name('purchase-requisitions.complete');
+    Route::delete('/purchase-requisitions/{purchaseRequisition}', [\App\Http\Controllers\PurchaseRequisitionController::class, 'destroy'])->name('purchase-requisitions.destroy');
+    
+    // Purchase Requisition Comments
+    Route::post('/purchase-requisitions/{purchaseRequisition}/comments', [\App\Http\Controllers\PurchaseRequisitionController::class, 'addComment'])->name('purchase-requisitions.comments.store');
+    
+    // Purchase Requisition Attachments
+    Route::post('/purchase-requisitions/{purchaseRequisition}/attachments', [\App\Http\Controllers\PurchaseRequisitionController::class, 'uploadAttachment'])->name('purchase-requisitions.attachments.store');
+    Route::delete('/purchase-requisitions/attachments/{attachment}', [\App\Http\Controllers\PurchaseRequisitionController::class, 'deleteAttachment'])->name('purchase-requisitions.attachments.destroy');
+
     // Sub Category resource route
     Route::resource('sub-categories', SubCategoryController::class);
     Route::put('/sub-categories/{id}', [SubCategoryController::class, 'update']);
@@ -1031,6 +1122,9 @@ Route::get('/sales-outlet-dashboard/holidays', [App\Http\Controllers\SalesOutlet
 Route::get('/sales-outlet-dashboard/outlet-orders', [App\Http\Controllers\SalesOutletDashboardController::class, 'getOutletOrders'])->name('sales-outlet-dashboard.outlet-orders');
 Route::get('/sales-outlet-dashboard/bank-promo-discount-transactions', [App\Http\Controllers\SalesOutletDashboardController::class, 'getBankPromoDiscountTransactions'])->name('sales-outlet-dashboard.bank-promo-discount-transactions');
 Route::get('/sales-outlet-dashboard/export-bank-promo-discount-transactions', [App\Http\Controllers\SalesOutletDashboardController::class, 'exportBankPromoDiscountTransactions'])->name('sales-outlet-dashboard.export-bank-promo-discount-transactions');
+Route::get('/sales-outlet-dashboard/non-promo-bank-discount-transactions', [App\Http\Controllers\SalesOutletDashboardController::class, 'getNonPromoBankDiscountTransactions'])->name('sales-outlet-dashboard.non-promo-bank-discount-transactions');
+Route::get('/sales-outlet-dashboard/export-non-promo-bank-discount-transactions', [App\Http\Controllers\SalesOutletDashboardController::class, 'exportNonPromoBankDiscountTransactions'])->name('sales-outlet-dashboard.export-non-promo-bank-discount-transactions');
+Route::get('/sales-outlet-dashboard/promo-usage-by-outlet', [App\Http\Controllers\SalesOutletDashboardController::class, 'getPromoUsageByOutlet'])->name('sales-outlet-dashboard.promo-usage-by-outlet');
 Route::delete('/retail-warehouse-sale/{id}', [App\Http\Controllers\RetailWarehouseSaleController::class, 'destroy'])->name('retail-warehouse-sale.destroy');
 Route::post('/retail-warehouse-sale/search-items', [App\Http\Controllers\RetailWarehouseSaleController::class, 'searchItems'])->name('retail-warehouse-sale.search-items');
 Route::post('/retail-warehouse-sale/search-items-by-name', [App\Http\Controllers\RetailWarehouseSaleController::class, 'searchItemsByName'])->name('retail-warehouse-sale.search-items-by-name');

@@ -321,6 +321,18 @@ const menuGroups = [
             { name: () => 'Point Management', icon: 'fa-solid fa-coins', route: '/crm/point-management', code: 'crm_point_management' },
         ],
     },
+        {
+          title: () => 'Ops Management',
+          icon: 'fa-solid fa-cogs',
+          collapsible: true,
+          open: ref(false),
+          menus: [
+            { name: () => 'Master Daily Report', icon: 'fa-solid fa-chart-line', route: '/master-report', code: 'master_report' },
+            { name: () => 'Daily Report', icon: 'fa-solid fa-clipboard-list', route: '/daily-report', code: 'daily_report' },
+            { name: () => 'Ticketing System', icon: 'fa-solid fa-ticket-alt', route: '/tickets', code: 'tickets' },
+            { name: () => 'Purchase Requisition Ops', icon: 'fa-solid fa-shopping-cart', route: '/purchase-requisitions', code: 'purchase_requisition_ops' },
+          ],
+        },
     {
         title: () => 'LMS',
         icon: 'fa-solid fa-graduation-cap',

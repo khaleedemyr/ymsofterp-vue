@@ -1,0 +1,603 @@
+<template>
+  <AppLayout title="Purchase Requisition Details">
+    <div class="w-full py-8 px-4">
+      <div class="flex justify-between items-center mb-6">
+        <h1 class="text-2xl font-bold text-gray-800 flex items-center gap-2">
+          <i class="fa-solid fa-shopping-cart text-blue-500"></i> 
+          Purchase Requisition: {{ purchaseRequisition.pr_number }}
+        </h1>
+        <div class="flex space-x-2">
+          <Link
+            v-if="purchaseRequisition.status === 'DRAFT'"
+            :href="`/purchase-requisitions/${purchaseRequisition.id}/edit`"
+            class="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded"
+          >
+            <i class="fas fa-edit mr-2"></i>
+            Edit
+          </Link>
+          <Link
+            :href="'/purchase-requisitions'"
+            class="bg-gray-500 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded"
+          >
+            <i class="fas fa-arrow-left mr-2"></i>
+            Back to List
+          </Link>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <!-- Main Content -->
+        <div class="lg:col-span-2 space-y-6">
+          <!-- Basic Information -->
+          <div class="bg-white rounded-xl shadow-lg p-6">
+            <h2 class="text-lg font-semibold text-gray-800 mb-4">Basic Information</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label class="text-sm font-medium text-gray-600">PR Number</label>
+                <p class="text-lg font-semibold text-gray-900">{{ purchaseRequisition.pr_number }}</p>
+              </div>
+              <div>
+                <label class="text-sm font-medium text-gray-600">Status</label>
+                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
+                      :class="getStatusColor(purchaseRequisition.status)">
+                  {{ purchaseRequisition.status }}
+                </span>
+              </div>
+              <div>
+                <label class="text-sm font-medium text-gray-600">Title</label>
+                <p class="text-gray-900">{{ purchaseRequisition.title }}</p>
+              </div>
+              <div>
+                <label class="text-sm font-medium text-gray-600">Amount</label>
+                <p class="text-lg font-semibold text-green-600">{{ formatCurrency(purchaseRequisition.amount) }}</p>
+              </div>
+              <div>
+                <label class="text-sm font-medium text-gray-600">Division</label>
+                <p class="text-gray-900">{{ purchaseRequisition.division?.nama_divisi || '-' }}</p>
+              </div>
+              <div>
+                <label class="text-sm font-medium text-gray-600">Outlet</label>
+                <p class="text-gray-900">{{ purchaseRequisition.outlet?.nama_outlet || '-' }}</p>
+              </div>
+              <div>
+                <label class="text-sm font-medium text-gray-600">Priority</label>
+                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
+                      :class="getPriorityColor(purchaseRequisition.priority)">
+                  {{ purchaseRequisition.priority }}
+                </span>
+              </div>
+              <div>
+                <label class="text-sm font-medium text-gray-600">Created Date</label>
+                <p class="text-gray-900">{{ formatDate(purchaseRequisition.created_at) }}</p>
+              </div>
+            </div>
+            
+            <div v-if="purchaseRequisition.description" class="mt-4">
+              <label class="text-sm font-medium text-gray-600">Description</label>
+              <p class="text-gray-900 mt-1">{{ purchaseRequisition.description }}</p>
+            </div>
+          </div>
+
+          <!-- Items -->
+          <div class="bg-white rounded-xl shadow-lg p-6">
+            <h2 class="text-lg font-semibold text-gray-800 mb-4">Items</h2>
+            <div class="overflow-x-auto">
+              <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                  <tr>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Item Name</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Qty</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Unit</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Unit Price</th>
+                    <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Subtotal</th>
+                  </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-gray-200">
+                  <tr v-for="item in purchaseRequisition.items" :key="item.id">
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ item.item_name }}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ item.qty }}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ item.unit }}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ formatCurrency(item.unit_price) }}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{{ formatCurrency(item.subtotal) }}</td>
+                  </tr>
+                </tbody>
+                <tfoot>
+                  <tr>
+                    <td colspan="4" class="px-6 py-4 text-right font-bold text-gray-900">Total Amount:</td>
+                    <td class="px-6 py-4 text-right font-bold text-gray-900">{{ formatCurrency(purchaseRequisition.amount) }}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+
+          <!-- Approval Flow -->
+          <div v-if="purchaseRequisition.approval_flows && purchaseRequisition.approval_flows.length > 0" class="bg-white rounded-xl shadow-lg p-6">
+            <h2 class="text-lg font-semibold text-gray-800 mb-4 flex items-center">
+              <i class="fa fa-users mr-2 text-blue-500"></i>
+              Approval Flow
+            </h2>
+            <div class="space-y-4">
+              <div
+                v-for="(flow, index) in purchaseRequisition.approval_flows"
+                :key="flow.id"
+                class="flex items-center justify-between p-4 border border-gray-200 rounded-lg bg-gradient-to-r from-gray-50 to-white"
+                :class="getApprovalFlowClass(flow.status)"
+              >
+                <div class="flex items-center space-x-4">
+                  <div class="flex items-center space-x-3">
+                    <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                      <i class="fa fa-layer-group mr-1"></i>
+                      Level {{ flow.approval_level }}
+                    </span>
+                    <div class="w-10 h-10 rounded-full flex items-center justify-center shadow-md"
+                         :class="getApprovalStatusIconClass(flow.status)">
+                      <i :class="getApprovalStatusIcon(flow.status)"></i>
+                    </div>
+                  </div>
+                  <div class="flex-1">
+                    <div class="font-semibold text-gray-900 text-lg">{{ flow.approver?.nama_lengkap || flow.approver?.name }}</div>
+                    <div class="text-sm text-gray-600 flex items-center mt-1">
+                      <i class="fa fa-envelope mr-2"></i>{{ flow.approver?.email }}
+                    </div>
+                    <div v-if="flow.approver?.jabatan?.nama_jabatan" class="text-sm text-blue-600 font-medium mt-1 flex items-center">
+                      <i class="fa fa-briefcase mr-2"></i>{{ flow.approver.jabatan.nama_jabatan }}
+                    </div>
+                    <div v-if="flow.comments" class="text-sm text-gray-600 mt-2 p-2 bg-gray-100 rounded border-l-4 border-blue-400">
+                      <strong class="text-gray-800">Comments:</strong> {{ flow.comments }}
+                    </div>
+                  </div>
+                </div>
+                <div class="text-right">
+                  <div class="text-sm font-medium px-3 py-1 rounded-full"
+                       :class="getApprovalStatusTextClass(flow.status)">
+                    <i class="fa fa-circle mr-1 text-xs"></i>{{ flow.status }}
+                  </div>
+                  <div v-if="flow.approved_at" class="text-xs text-gray-500 mt-1">
+                    <i class="fa fa-check-circle mr-1 text-green-500"></i>Approved: {{ formatDate(flow.approved_at) }}
+                  </div>
+                  <div v-if="flow.rejected_at" class="text-xs text-gray-500 mt-1">
+                    <i class="fa fa-times-circle mr-1 text-red-500"></i>Rejected: {{ formatDate(flow.rejected_at) }}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Budget Information -->
+          <div v-if="budgetInfo" class="bg-white rounded-xl shadow-lg p-6">
+            <h2 class="text-lg font-semibold text-gray-800 mb-4 flex items-center">
+              <i class="fa fa-chart-pie mr-2 text-green-500"></i>
+              Budget Information - {{ getMonthName(budgetInfo.current_month) }} {{ budgetInfo.current_year }}
+            </h2>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <div class="flex items-center justify-between">
+                  <div>
+                    <p class="text-sm font-medium text-blue-600">Total Budget</p>
+                    <p class="text-2xl font-bold text-blue-800">{{ formatCurrency(budgetInfo.category_budget) }}</p>
+                  </div>
+                  <div class="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
+                    <i class="fa fa-wallet text-blue-600 text-xl"></i>
+                  </div>
+                </div>
+              </div>
+              
+              <div class="bg-orange-50 border border-orange-200 rounded-lg p-4">
+                <div class="flex items-center justify-between">
+                  <div>
+                    <p class="text-sm font-medium text-orange-600">Used This Month</p>
+                    <p class="text-2xl font-bold text-orange-800">{{ formatCurrency(budgetInfo.category_used_amount) }}</p>
+                  </div>
+                  <div class="w-12 h-12 bg-orange-100 rounded-full flex items-center justify-center">
+                    <i class="fa fa-chart-line text-orange-600 text-xl"></i>
+                  </div>
+                </div>
+              </div>
+              
+              <div class="bg-green-50 border border-green-200 rounded-lg p-4">
+                <div class="flex items-center justify-between">
+                  <div>
+                    <p class="text-sm font-medium text-green-600">Remaining Budget</p>
+                    <p class="text-2xl font-bold" :class="budgetInfo.category_remaining_amount < 0 ? 'text-red-800' : 'text-green-800'">
+                      {{ formatCurrency(budgetInfo.category_remaining_amount) }}
+                    </p>
+                  </div>
+                  <div class="w-12 h-12 rounded-full flex items-center justify-center" 
+                       :class="budgetInfo.category_remaining_amount < 0 ? 'bg-red-100' : 'bg-green-100'">
+                    <i class="fa fa-piggy-bank text-xl" 
+                       :class="budgetInfo.category_remaining_amount < 0 ? 'text-red-600' : 'text-green-600'"></i>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Progress Bar -->
+            <div class="mt-4">
+              <div class="flex justify-between text-sm text-gray-600 mb-2">
+                <span>Budget Usage</span>
+                <span>{{ Math.round((budgetInfo.category_used_amount / budgetInfo.category_budget) * 100) }}%</span>
+              </div>
+              <div class="w-full bg-gray-200 rounded-full h-3">
+                <div class="h-3 rounded-full transition-all duration-300"
+                     :class="getBudgetProgressColor(budgetInfo.category_used_amount, budgetInfo.category_budget)"
+                     :style="{ width: Math.min((budgetInfo.category_used_amount / budgetInfo.category_budget) * 100, 100) + '%' }">
+                </div>
+              </div>
+            </div>
+            
+            <!-- Warning Messages -->
+            <div v-if="budgetInfo.category_remaining_amount < 0" class="mt-4 p-3 bg-red-100 border border-red-300 rounded text-red-800 text-sm">
+              <i class="fa fa-exclamation-triangle mr-2"></i>
+              <strong>Budget Exceeded!</strong> This category has exceeded its monthly budget limit.
+            </div>
+            <div v-else-if="budgetInfo.category_remaining_amount < (budgetInfo.category_budget * 0.1)" class="mt-4 p-3 bg-yellow-100 border border-yellow-300 rounded text-yellow-800 text-sm">
+              <i class="fa fa-exclamation-circle mr-2"></i>
+              <strong>Budget Warning!</strong> Only {{ formatCurrency(budgetInfo.category_remaining_amount) }} remaining in this category.
+            </div>
+          </div>
+
+          <!-- Related Ticket -->
+          <div v-if="purchaseRequisition.ticket" class="bg-white rounded-xl shadow-lg p-6">
+            <h2 class="text-lg font-semibold text-gray-800 mb-4">Related Ticket</h2>
+            <div class="p-4 bg-blue-50 rounded-lg">
+              <Link
+                :href="`/tickets/${purchaseRequisition.ticket.id}`"
+                class="text-blue-600 hover:text-blue-800 font-medium"
+              >
+                {{ purchaseRequisition.ticket.ticket_number }} - {{ purchaseRequisition.ticket.title }}
+              </Link>
+              <p class="text-sm text-gray-500 mt-1">
+                {{ purchaseRequisition.ticket.outlet?.nama_outlet }} - {{ formatDate(purchaseRequisition.ticket.created_at) }}
+              </p>
+            </div>
+          </div>
+
+          <!-- Comments -->
+          <div class="bg-white rounded-xl shadow-lg p-6">
+            <h2 class="text-lg font-semibold text-gray-800 mb-4">Comments</h2>
+            
+            <!-- Add Comment Form -->
+            <div class="mb-4 p-4 bg-gray-50 rounded-lg">
+              <textarea
+                v-model="newComment"
+                rows="3"
+                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="Add a comment..."
+              ></textarea>
+              <div class="mt-2 flex items-center justify-between">
+                <label class="flex items-center">
+                  <input
+                    v-model="isInternalComment"
+                    type="checkbox"
+                    class="mr-2"
+                  />
+                  <span class="text-sm text-gray-600">Internal comment</span>
+                </label>
+                <button
+                  @click="addComment"
+                  :disabled="!newComment.trim()"
+                  class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
+                >
+                  Add Comment
+                </button>
+              </div>
+            </div>
+
+            <!-- Comments List -->
+            <div v-if="purchaseRequisition.comments && purchaseRequisition.comments.length > 0" class="space-y-4">
+              <div
+                v-for="comment in purchaseRequisition.comments"
+                :key="comment.id"
+                class="p-4 border border-gray-200 rounded-lg"
+              >
+                <div class="flex items-center justify-between mb-2">
+                  <div class="flex items-center space-x-2">
+                    <span class="font-medium text-gray-900">{{ comment.user?.nama_lengkap || 'Unknown User' }}</span>
+                    <span v-if="comment.is_internal" class="px-2 py-1 bg-yellow-100 text-yellow-800 text-xs rounded-full">
+                      Internal
+                    </span>
+                  </div>
+                  <span class="text-sm text-gray-500">{{ formatDate(comment.created_at) }}</span>
+                </div>
+                <p class="text-gray-700">{{ comment.comment }}</p>
+              </div>
+            </div>
+            <div v-else class="text-center py-8 text-gray-500">
+              No comments yet
+            </div>
+          </div>
+        </div>
+
+        <!-- Sidebar -->
+        <div class="space-y-6">
+          <!-- Actions -->
+          <div class="bg-white rounded-xl shadow-lg p-6">
+            <h2 class="text-lg font-semibold text-gray-800 mb-4">Actions</h2>
+            <div class="space-y-2">
+              <!-- Edit Button - Only for creator when status is DRAFT -->
+              <button
+                v-if="canEdit"
+                @click="editRequisition"
+                class="w-full px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700"
+              >
+                <i class="fa fa-edit mr-2"></i>Edit
+              </button>
+              
+              <!-- Submit Button - Only for creator when status is DRAFT -->
+              <button
+                v-if="canSubmit"
+                @click="submitRequisition"
+                class="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+              >
+                <i class="fa fa-paper-plane mr-2"></i>Submit for Approval
+              </button>
+              
+              <!-- Approve Button - Only for current approver in line -->
+              <button
+                v-if="canApprove"
+                @click="approveRequisition"
+                class="w-full px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
+              >
+                <i class="fa fa-check mr-2"></i>Approve
+              </button>
+              
+              <!-- Reject Button - Only for current approver in line -->
+              <button
+                v-if="canApprove"
+                @click="showRejectModal = true"
+                class="w-full px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
+              >
+                <i class="fa fa-times mr-2"></i>Reject
+              </button>
+              
+              
+              <!-- No Actions Available -->
+              <div v-if="!canEdit && !canSubmit && !canApprove" 
+                   class="text-center py-4 text-gray-500">
+                <i class="fa fa-info-circle mr-2"></i>
+                No actions available for you
+              </div>
+            </div>
+          </div>
+
+          <!-- Status Timeline -->
+          <div class="bg-white rounded-xl shadow-lg p-6">
+            <h2 class="text-lg font-semibold text-gray-800 mb-4">Status Timeline</h2>
+            <div class="space-y-4">
+              <div class="flex items-center space-x-3">
+                <div class="w-3 h-3 bg-green-500 rounded-full"></div>
+                <div>
+                  <p class="text-sm font-medium text-gray-900">Created</p>
+                  <p class="text-xs text-gray-500">{{ formatDate(purchaseRequisition.created_at) }}</p>
+                </div>
+              </div>
+              <div v-if="purchaseRequisition.status !== 'DRAFT'" class="flex items-center space-x-3">
+                <div class="w-3 h-3 bg-blue-500 rounded-full"></div>
+                <div>
+                  <p class="text-sm font-medium text-gray-900">Submitted</p>
+                  <p class="text-xs text-gray-500">{{ formatDate(purchaseRequisition.updated_at) }}</p>
+                </div>
+              </div>
+              <div v-if="['APPROVED', 'PROCESSED', 'COMPLETED'].includes(purchaseRequisition.status)" class="flex items-center space-x-3">
+                <div class="w-3 h-3 bg-green-500 rounded-full"></div>
+                <div>
+                  <p class="text-sm font-medium text-gray-900">Approved</p>
+                  <p class="text-xs text-gray-500">{{ formatDate(purchaseRequisition.approved_ssd_at) }}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </AppLayout>
+</template>
+
+<script setup>
+import { ref, computed } from 'vue'
+import { router } from '@inertiajs/vue3'
+import AppLayout from '@/Layouts/AppLayout.vue'
+import { Link } from '@inertiajs/vue3'
+
+const props = defineProps({
+  purchaseRequisition: Object,
+  budgetInfo: Object,
+  currentUser: Object,
+})
+
+const newComment = ref('')
+const isInternalComment = ref(false)
+const showRejectModal = ref(false)
+const rejectionReason = ref('')
+
+// Computed properties for permissions
+const canEdit = computed(() => {
+  return props.purchaseRequisition.status === 'DRAFT' && 
+         props.purchaseRequisition.created_by === props.currentUser?.id
+})
+
+const canSubmit = computed(() => {
+  return props.purchaseRequisition.status === 'DRAFT' && 
+         props.purchaseRequisition.created_by === props.currentUser?.id
+})
+
+const canApprove = computed(() => {
+  if (props.purchaseRequisition.status !== 'SUBMITTED') return false
+  
+  // Check if current user is in the approval flow
+  const currentUserFlow = props.purchaseRequisition.approval_flows?.find(flow => 
+    flow.approver_id === props.currentUser?.id && flow.status === 'PENDING'
+  )
+  
+  if (!currentUserFlow) return false
+  
+  // Check if this is the next approver in line (lowest level that is still pending)
+  const pendingFlows = props.purchaseRequisition.approval_flows?.filter(flow => flow.status === 'PENDING')
+  if (!pendingFlows || pendingFlows.length === 0) return false
+  
+  const nextApprover = pendingFlows.reduce((min, flow) => 
+    flow.approval_level < min.approval_level ? flow : min
+  )
+  
+  return currentUserFlow.approval_level === nextApprover.approval_level
+})
+
+
+function getStatusColor(status) {
+  return {
+    'DRAFT': 'bg-gray-100 text-gray-800',
+    'SUBMITTED': 'bg-yellow-100 text-yellow-800',
+    'APPROVED': 'bg-green-100 text-green-800',
+    'REJECTED': 'bg-red-100 text-red-800',
+    'PROCESSED': 'bg-blue-100 text-blue-800',
+    'COMPLETED': 'bg-purple-100 text-purple-800',
+  }[status] || 'bg-gray-100 text-gray-800'
+}
+
+function getPriorityColor(priority) {
+  return {
+    'LOW': 'bg-green-100 text-green-800',
+    'MEDIUM': 'bg-yellow-100 text-yellow-800',
+    'HIGH': 'bg-orange-100 text-orange-800',
+    'URGENT': 'bg-red-100 text-red-800',
+  }[priority] || 'bg-gray-100 text-gray-800'
+}
+
+function formatCurrency(amount) {
+  if (!amount) return '-'
+  return new Intl.NumberFormat('id-ID', {
+    style: 'currency',
+    currency: 'IDR',
+    minimumFractionDigits: 0,
+  }).format(amount)
+}
+
+function formatDate(date) {
+  if (!date) return '-'
+  return new Date(date).toLocaleDateString('id-ID', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+// Approval Flow styling methods
+function getApprovalFlowClass(status) {
+  switch (status) {
+    case 'APPROVED':
+      return 'bg-green-50 border-green-200'
+    case 'REJECTED':
+      return 'bg-red-50 border-red-200'
+    case 'PENDING':
+      return 'bg-yellow-50 border-yellow-200'
+    default:
+      return 'bg-gray-50 border-gray-200'
+  }
+}
+
+function getApprovalLevelClass(level) {
+  const colors = [
+    'bg-blue-100 text-blue-800',
+    'bg-indigo-100 text-indigo-800',
+    'bg-purple-100 text-purple-800',
+    'bg-pink-100 text-pink-800',
+    'bg-red-100 text-red-800'
+  ]
+  return colors[(level - 1) % colors.length]
+}
+
+function getApprovalStatusIconClass(status) {
+  switch (status) {
+    case 'APPROVED':
+      return 'bg-green-100 text-green-600'
+    case 'REJECTED':
+      return 'bg-red-100 text-red-600'
+    case 'PENDING':
+      return 'bg-yellow-100 text-yellow-600'
+    default:
+      return 'bg-gray-100 text-gray-600'
+  }
+}
+
+function getApprovalStatusIcon(status) {
+  switch (status) {
+    case 'APPROVED':
+      return 'fa fa-check text-sm'
+    case 'REJECTED':
+      return 'fa fa-times text-sm'
+    case 'PENDING':
+      return 'fa fa-clock text-sm'
+    default:
+      return 'fa fa-question text-sm'
+  }
+}
+
+function getApprovalStatusTextClass(status) {
+  switch (status) {
+    case 'APPROVED':
+      return 'text-green-600'
+    case 'REJECTED':
+      return 'text-red-600'
+    case 'PENDING':
+      return 'text-yellow-600'
+    default:
+      return 'text-gray-600'
+  }
+}
+
+function getMonthName(monthNumber) {
+  const months = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+  ]
+  return months[monthNumber - 1] || 'Unknown'
+}
+
+function getBudgetProgressColor(usedAmount, totalBudget) {
+  const percentage = (usedAmount / totalBudget) * 100
+  if (percentage >= 100) return 'bg-red-500'
+  if (percentage >= 80) return 'bg-yellow-500'
+  if (percentage >= 60) return 'bg-orange-500'
+  return 'bg-green-500'
+}
+
+// Action methods
+const editRequisition = () => {
+  router.visit(`/purchase-requisitions/${props.purchaseRequisition.id}/edit`)
+}
+
+const addComment = () => {
+  router.post(`/purchase-requisitions/${props.purchaseRequisition.id}/comments`, {
+    comment: newComment.value,
+    is_internal: isInternalComment.value,
+  }, {
+    onSuccess: () => {
+      newComment.value = ''
+      isInternalComment.value = false
+    }
+  })
+}
+
+const submitRequisition = () => {
+  router.post(`/purchase-requisitions/${props.purchaseRequisition.id}/submit`)
+}
+
+const approveRequisition = () => {
+  router.post(`/purchase-requisitions/${props.purchaseRequisition.id}/approve`)
+}
+
+const rejectRequisition = () => {
+  router.post(`/purchase-requisitions/${props.purchaseRequisition.id}/reject`, {
+    rejection_reason: rejectionReason.value,
+  }, {
+    onSuccess: () => {
+      showRejectModal.value = false
+      rejectionReason.value = ''
+    }
+  })
+}
+
+</script>

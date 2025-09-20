@@ -59,6 +59,29 @@ const bankPromoRegionFilter = ref('');
 const bankPromoOutlets = ref([]);
 const bankPromoRegions = ref([]);
 
+// Non Promo Bank Discount data
+const nonPromoBankTransactions = ref([]);
+const nonPromoBankPagination = ref(null);
+const nonPromoBankLoading = ref(false);
+const nonPromoBankSearch = ref('');
+const nonPromoBankPerPage = ref(10);
+const nonPromoBankCurrentPage = ref(1);
+const nonPromoBankGrandTotal = ref({ total_grand_total: 0, total_discount_amount: 0 });
+const nonPromoBankBreakdown = ref([]);
+const nonPromoBankOutletFilter = ref('');
+const nonPromoBankRegionFilter = ref('');
+const nonPromoBankOutlets = ref([]);
+const nonPromoBankRegions = ref([]);
+
+// Promo Usage Modal states
+const showPromoUsageModal = ref(false);
+const promoUsageData = ref([]);
+const promoUsageRegionSummary = ref([]);
+const promoUsageComparison = ref(null);
+const promoUsageLoading = ref(false);
+const expandedRegions = ref(new Set());
+const expandedOutlets = ref(new Set());
+
 // Filter states
 const filters = ref({
     date_from: props.filters.date_from || new Date().toISOString().split('T')[0],
@@ -1891,11 +1914,15 @@ onMounted(() => {
     fetchBankPromoTransactions();
     fetchBankPromoOutlets();
     fetchBankPromoRegions();
+    fetchNonPromoBankTransactions();
+    fetchNonPromoBankOutlets();
+    fetchNonPromoBankRegions();
 });
 
 // Watch for dashboard data changes to fetch bank promo transactions
 watch(dashboardData, () => {
     fetchBankPromoTransactions();
+    fetchNonPromoBankTransactions();
 }, { deep: true });
 
 // Menu region analysis functions
@@ -1978,6 +2005,58 @@ function closeWeekendWeekdayModal() {
     selectedWeekendWeekdayOutlet.value = null;
     selectedWeekendWeekdayRegion.value = null;
     selectedDayType.value = null;
+}
+
+// Promo Usage Modal functions
+async function openPromoUsageModal() {
+    showPromoUsageModal.value = true;
+    promoUsageLoading.value = true;
+    expandedRegions.value.clear();
+    expandedOutlets.value.clear();
+    
+    try {
+        const response = await axios.get('/sales-outlet-dashboard/promo-usage-by-outlet', {
+            params: {
+                date_from: filters.value.date_from,
+                date_to: filters.value.date_to
+            }
+        });
+        
+        promoUsageData.value = response.data.data || [];
+        promoUsageRegionSummary.value = response.data.region_summary || [];
+        promoUsageComparison.value = response.data.comparison || null;
+    } catch (error) {
+        console.error('Error fetching promo usage data:', error);
+        promoUsageData.value = [];
+        promoUsageRegionSummary.value = [];
+    } finally {
+        promoUsageLoading.value = false;
+    }
+}
+
+function closePromoUsageModal() {
+    showPromoUsageModal.value = false;
+    promoUsageData.value = [];
+    promoUsageRegionSummary.value = [];
+    promoUsageComparison.value = null;
+    expandedRegions.value.clear();
+    expandedOutlets.value.clear();
+}
+
+function toggleRegionExpansion(regionName) {
+    if (expandedRegions.value.has(regionName)) {
+        expandedRegions.value.delete(regionName);
+    } else {
+        expandedRegions.value.add(regionName);
+    }
+}
+
+function toggleOutletExpansion(outletCode) {
+    if (expandedOutlets.value.has(outletCode)) {
+        expandedOutlets.value.delete(outletCode);
+    } else {
+        expandedOutlets.value.add(outletCode);
+    }
 }
 
 async function fetchHolidays() {
@@ -2155,6 +2234,161 @@ async function exportBankPromoTransactions() {
         // Reset button
         const button = event.target;
         button.innerHTML = '<i class="fa-solid fa-file-excel mr-2"></i>Export Excel';
+        button.disabled = false;
+    }
+}
+
+// Non Promo Bank Discount functions
+async function fetchNonPromoBankTransactions() {
+    nonPromoBankLoading.value = true;
+    try {
+        const response = await axios.get('/sales-outlet-dashboard/non-promo-bank-discount-transactions', {
+            params: {
+                date_from: filters.value.date_from,
+                date_to: filters.value.date_to,
+                search: nonPromoBankSearch.value,
+                outlet: nonPromoBankOutletFilter.value,
+                region: nonPromoBankRegionFilter.value,
+                page: nonPromoBankCurrentPage.value,
+                per_page: nonPromoBankPerPage.value
+            }
+        });
+        
+        nonPromoBankTransactions.value = response.data.transactions || [];
+        nonPromoBankPagination.value = response.data.pagination || null;
+        nonPromoBankGrandTotal.value = response.data.grand_total || { total_grand_total: 0, total_discount_amount: 0 };
+        nonPromoBankBreakdown.value = response.data.breakdown_by_reason || [];
+    } catch (error) {
+        console.error('Error fetching non promo bank transactions:', error);
+        nonPromoBankTransactions.value = [];
+        nonPromoBankPagination.value = null;
+    } finally {
+        nonPromoBankLoading.value = false;
+    }
+}
+
+// Fetch outlets for non promo bank filter
+async function fetchNonPromoBankOutlets() {
+    try {
+        const response = await axios.get('/api/outlets/report');
+        nonPromoBankOutlets.value = response.data.outlets || [];
+    } catch (error) {
+        console.error('Error fetching outlets:', error);
+        nonPromoBankOutlets.value = [];
+    }
+}
+
+// Fetch regions for non promo bank filter
+async function fetchNonPromoBankRegions() {
+    try {
+        const response = await axios.get('/api/regions');
+        nonPromoBankRegions.value = response.data.regions || [];
+    } catch (error) {
+        console.error('Error fetching regions:', error);
+        nonPromoBankRegions.value = [];
+    }
+}
+
+function searchNonPromoBankTransactions() {
+    // Debounce search
+    clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(() => {
+        nonPromoBankCurrentPage.value = 1;
+        fetchNonPromoBankTransactions();
+    }, 500);
+}
+
+// Handle outlet filter change
+function onNonPromoBankOutletChange() {
+    nonPromoBankCurrentPage.value = 1;
+    fetchNonPromoBankTransactions();
+}
+
+// Handle region filter change
+function onNonPromoBankRegionChange() {
+    nonPromoBankOutletFilter.value = ''; // Reset outlet filter when region changes
+    nonPromoBankCurrentPage.value = 1;
+    fetchNonPromoBankTransactions();
+}
+
+function goToNonPromoBankPage(page) {
+    if (page < 1 || page > nonPromoBankPagination.value.total_pages) return;
+    nonPromoBankCurrentPage.value = page;
+    fetchNonPromoBankTransactions();
+}
+
+function getNonPromoBankPageNumbers() {
+    if (!nonPromoBankPagination.value) return [];
+    
+    const current = nonPromoBankPagination.value.current_page;
+    const total = nonPromoBankPagination.value.total_pages;
+    const pages = [];
+    
+    // Show up to 5 pages around current page
+    const start = Math.max(1, current - 2);
+    const end = Math.min(total, current + 2);
+    
+    for (let i = start; i <= end; i++) {
+        pages.push(i);
+    }
+    
+    return pages;
+}
+
+async function exportNonPromoBankTransactions(event) {
+    if (!filters.value.date_from || !filters.value.date_to) {
+        alert('Pilih tanggal terlebih dahulu');
+        return;
+    }
+    
+    if (!nonPromoBankTransactions.value.length) {
+        alert('Tidak ada data untuk di-export');
+        return;
+    }
+    
+    try {
+        // Show loading state
+        const button = event.target;
+        const originalText = button.innerHTML;
+        button.innerHTML = '<span class="mr-2"><i class="fas fa-spinner fa-spin"></i></span>Exporting...';
+        button.disabled = true;
+        
+        // Use axios to download the file
+        const response = await axios.get('/sales-outlet-dashboard/export-non-promo-bank-discount-transactions', {
+            params: { 
+                date_from: filters.value.date_from, 
+                date_to: filters.value.date_to,
+                search: nonPromoBankSearch.value,
+                outlet: nonPromoBankOutletFilter.value,
+                region: nonPromoBankRegionFilter.value
+            },
+            responseType: 'blob'
+        });
+        
+        // Create blob and download
+        const blob = new Blob([response.data], { 
+            type: 'text/csv' 
+        });
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `Non_Promo_Bank_Discount_Transactions_${filters.value.date_from}_to_${filters.value.date_to}.csv`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(url);
+        
+        // Reset button
+        button.innerHTML = originalText;
+        button.disabled = false;
+        
+    } catch (error) {
+        console.error('Export error:', error);
+        alert('Terjadi kesalahan saat export. Silakan coba lagi.');
+        
+        // Reset button
+        const button = event.target;
+        button.innerHTML = '<i class="fa-solid fa-download mr-2"></i>Export CSV';
         button.disabled = false;
     }
 }
@@ -2611,7 +2845,7 @@ const menuRegionChartOptions = computed(() => ({
                         </div>
 
                         <!-- Promo Usage -->
-                        <div class="bg-white rounded-lg shadow-sm border p-6">
+                        <div class="bg-white rounded-lg shadow-sm border p-6 cursor-pointer hover:shadow-md transition-shadow duration-200" @click="openPromoUsageModal">
                             <div class="flex items-center justify-between">
                                 <div>
                                     <p class="text-sm font-medium text-gray-600">Promo Usage</p>
@@ -3472,6 +3706,211 @@ const menuRegionChartOptions = computed(() => ({
                             </div>
                         </div>
                     </div>
+
+                    <!-- Non Promo Bank Discount Transactions -->
+                    <div class="bg-white rounded-lg shadow-sm border p-6">
+                        <div class="flex justify-between items-center mb-4">
+                            <h3 class="text-lg font-semibold text-gray-900">Non Promo Bank Discount Transactions</h3>
+                            <div class="flex items-center gap-4">
+                                <!-- Region Filter -->
+                                <select v-model="nonPromoBankRegionFilter" @change="onNonPromoBankRegionChange" class="border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                    <option value="">All Regions</option>
+                                    <option v-for="region in nonPromoBankRegions" :key="region.id" :value="region.id">
+                                        {{ region.name }}
+                                    </option>
+                                </select>
+                                
+                                <!-- Outlet Filter -->
+                                <select v-model="nonPromoBankOutletFilter" @change="onNonPromoBankOutletChange" class="border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                    <option value="">All Outlets</option>
+                                    <option v-for="outlet in nonPromoBankOutlets" :key="outlet.id" :value="outlet.qr_code">
+                                        {{ outlet.name }}
+                                    </option>
+                                </select>
+                                
+                                <!-- Search Input -->
+                                <div class="relative">
+                                    <input 
+                                        type="text" 
+                                        v-model="nonPromoBankSearch" 
+                                        @input="searchNonPromoBankTransactions"
+                                        placeholder="Search discount reason..."
+                                        class="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                    >
+                                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                        <i class="fa-solid fa-search text-gray-400"></i>
+                                    </div>
+                                </div>
+                                <!-- Per Page Selector -->
+                                <select v-model="nonPromoBankPerPage" @change="fetchNonPromoBankTransactions" class="border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                    <option value="10">10 per page</option>
+                                    <option value="25">25 per page</option>
+                                    <option value="50">50 per page</option>
+                                    <option value="100">100 per page</option>
+                                    <option value="200">200 per page</option>
+                                    <option value="300">300 per page</option>
+                                    <option value="400">400 per page</option>
+                                    <option value="500">500 per page</option>
+                                    <option value="1000">1000 per page</option>
+                                </select>
+                                
+                                <!-- Export Button -->
+                                <button 
+                                    @click="exportNonPromoBankTransactions"
+                                    class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg transition-colors flex items-center gap-2"
+                                >
+                                    <i class="fa-solid fa-download"></i>
+                                    Export CSV
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Loading State -->
+                        <div v-if="nonPromoBankLoading" class="flex justify-center items-center py-12">
+                            <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+                        </div>
+
+                        <!-- Table -->
+                        <div v-else class="overflow-x-auto">
+                            <table class="min-w-full divide-y divide-gray-200">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID ORDER</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">PAID NUMBER</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">OUTLET</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">REGION</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">KASIR</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">PAYMENT METHOD</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">GRAND TOTAL</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">DISCOUNT AMOUNT</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">DISCOUNT REASON</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">CREATED AT</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="bg-white divide-y divide-gray-200">
+                                    <tr v-for="order in nonPromoBankTransactions" :key="order.id" class="hover:bg-gray-50">
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ order.id }}</td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ order.paid_number }}</td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ order.outlet_name }}</td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ order.region_name }}</td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ order.kasir || '-' }}</td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-blue-600 hover:text-blue-800 cursor-pointer">
+                                            <span v-if="order.payment_method">{{ order.payment_method }}</span>
+                                            <span v-else class="text-gray-400">-</span>
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ formatCurrency(order.grand_total) }}</td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-red-600 font-semibold">{{ formatCurrency(order.manual_discount_amount) }}</td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ order.manual_discount_reason || '-' }}</td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ formatDateTime(order.created_at) }}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- Pagination -->
+                        <div v-if="nonPromoBankPagination && nonPromoBankPagination.total_pages > 1" class="mt-6 flex items-center justify-between">
+                            <div class="text-sm text-gray-700">
+                                Showing {{ ((nonPromoBankPagination.current_page - 1) * nonPromoBankPagination.per_page) + 1 }} to 
+                                {{ Math.min(nonPromoBankPagination.current_page * nonPromoBankPagination.per_page, nonPromoBankPagination.total) }} of 
+                                {{ nonPromoBankPagination.total }} results
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <button 
+                                    @click="goToNonPromoBankPage(nonPromoBankPagination.current_page - 1)"
+                                    :disabled="!nonPromoBankPagination.has_prev_page"
+                                    class="px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    Previous
+                                </button>
+                                
+                                <div class="flex items-center gap-1">
+                                    <button 
+                                        v-for="page in getNonPromoBankPageNumbers()" 
+                                        :key="page"
+                                        @click="goToNonPromoBankPage(page)"
+                                        :class="[
+                                            'px-3 py-2 text-sm font-medium rounded-md',
+                                            page === nonPromoBankPagination.current_page 
+                                                ? 'bg-blue-600 text-white' 
+                                                : 'text-gray-500 bg-white border border-gray-300 hover:bg-gray-50'
+                                        ]"
+                                    >
+                                        {{ page }}
+                                    </button>
+                                </div>
+                                
+                                <button 
+                                    @click="goToNonPromoBankPage(nonPromoBankPagination.current_page + 1)"
+                                    :disabled="!nonPromoBankPagination.has_next_page"
+                                    class="px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    Next
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Grand Total Summary -->
+                        <div v-if="nonPromoBankGrandTotal.total_grand_total > 0" class="mt-6 bg-gradient-to-r from-green-50 to-green-100 rounded-lg p-6 border border-green-200">
+                            <div class="flex items-center justify-between">
+                                <h4 class="text-lg font-bold text-green-800">Grand Total Summary</h4>
+                                <div class="text-right">
+                                    <div class="text-2xl font-bold text-green-800">{{ formatCurrency(nonPromoBankGrandTotal.total_grand_total) }}</div>
+                                    <div class="text-sm text-green-600">Total Grand Total</div>
+                                </div>
+                            </div>
+                            <div class="mt-4 flex items-center justify-between">
+                                <div class="text-sm text-green-700">Total Discount Amount:</div>
+                                <div class="text-lg font-semibold text-red-600">{{ formatCurrency(nonPromoBankGrandTotal.total_discount_amount) }}</div>
+                            </div>
+                        </div>
+
+                        <!-- Breakdown by Reason -->
+                        <div v-if="nonPromoBankBreakdown.length > 0" class="mt-6 bg-gradient-to-r from-blue-50 to-blue-100 rounded-lg p-6 border border-blue-200">
+                            <h4 class="text-lg font-bold text-blue-800 mb-4">Breakdown by Discount Reason</h4>
+                            <div class="overflow-x-auto">
+                                <table class="min-w-full divide-y divide-blue-200">
+                                    <thead class="bg-blue-50">
+                                        <tr>
+                                            <th class="px-4 py-3 text-left text-xs font-medium text-blue-700 uppercase tracking-wider">Discount Reason</th>
+                                            <th class="px-4 py-3 text-left text-xs font-medium text-blue-700 uppercase tracking-wider">Transactions</th>
+                                            <th class="px-4 py-3 text-left text-xs font-medium text-blue-700 uppercase tracking-wider">Total Grand Total</th>
+                                            <th class="px-4 py-3 text-left text-xs font-medium text-blue-700 uppercase tracking-wider">Total Discount</th>
+                                            <th class="px-4 py-3 text-left text-xs font-medium text-blue-700 uppercase tracking-wider">% of Total Discount</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="bg-white divide-y divide-blue-200">
+                                        <tr v-for="breakdown in nonPromoBankBreakdown" :key="breakdown.discount_reason" class="hover:bg-blue-50">
+                                            <td class="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
+                                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                                    {{ breakdown.discount_reason }}
+                                                </span>
+                                            </td>
+                                            <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+                                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                                                    {{ breakdown.transaction_count }}
+                                                </span>
+                                            </td>
+                                            <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{{ formatCurrency(breakdown.total_grand_total) }}</td>
+                                            <td class="px-4 py-3 whitespace-nowrap text-sm font-semibold text-red-600">{{ formatCurrency(breakdown.total_discount_amount) }}</td>
+                                            <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+                                                <div class="flex items-center">
+                                                    <div class="w-16 bg-gray-200 rounded-full h-2 mr-2">
+                                                        <div 
+                                                            class="bg-red-500 h-2 rounded-full" 
+                                                            :style="{ width: nonPromoBankGrandTotal.total_discount_amount > 0 ? (breakdown.total_discount_amount / nonPromoBankGrandTotal.total_discount_amount * 100) + '%' : '0%' }"
+                                                        ></div>
+                                                    </div>
+                                                    <span class="text-xs text-gray-600">
+                                                        {{ nonPromoBankGrandTotal.total_discount_amount > 0 ? ((breakdown.total_discount_amount / nonPromoBankGrandTotal.total_discount_amount) * 100).toFixed(1) : '0' }}%
+                                                    </span>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -3609,6 +4048,247 @@ const menuRegionChartOptions = computed(() => ({
             :date-to="filters.date_to"
             @close="closeWeekendWeekdayModal"
         />
+
+        <!-- Promo Usage Modal -->
+        <div v-if="showPromoUsageModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50" @click="closePromoUsageModal">
+            <div class="relative top-20 mx-auto p-5 border w-11/12 max-w-6xl shadow-lg rounded-md bg-white" @click.stop>
+                <div class="mt-3">
+                    <!-- Modal Header -->
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-lg font-semibold text-gray-900">
+                            <i class="fa-solid fa-tags text-pink-600 mr-2"></i>
+                            Promo Usage by Outlet
+                        </h3>
+                        <button @click="closePromoUsageModal" class="text-gray-400 hover:text-gray-600">
+                            <i class="fa-solid fa-times text-xl"></i>
+                        </button>
+                    </div>
+
+                    <!-- Loading State -->
+                    <div v-if="promoUsageLoading" class="flex justify-center items-center py-8">
+                        <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-pink-600"></div>
+                        <span class="ml-2 text-gray-600">Loading promo usage data...</span>
+                    </div>
+
+                    <!-- Comparison Info -->
+                    <div v-if="promoUsageComparison" class="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                        <h4 class="text-lg font-semibold text-blue-900 mb-3">Discount Comparison</h4>
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                            <div class="bg-white p-3 rounded border">
+                                <div class="text-gray-600">Total Discount (All Orders)</div>
+                                <div class="font-semibold text-lg">{{ formatCurrency(promoUsageComparison.total_discount_all_orders) }}</div>
+                            </div>
+                            <div class="bg-white p-3 rounded border">
+                                <div class="text-gray-600">Discount from Promo Orders</div>
+                                <div class="font-semibold text-lg text-green-600">{{ formatCurrency(promoUsageComparison.total_discount_promo_orders) }}</div>
+                            </div>
+                            <div class="bg-white p-3 rounded border">
+                                <div class="text-gray-600">Difference (Non-Promo Discount)</div>
+                                <div class="font-semibold text-lg text-orange-600">{{ formatCurrency(promoUsageComparison.difference) }}</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Region Summary -->
+                    <div v-if="promoUsageRegionSummary.length > 0" class="mb-6">
+                        <h4 class="text-lg font-semibold text-gray-900 mb-4">Summary by Region</h4>
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                            <div v-for="region in promoUsageRegionSummary" :key="region.region_name" 
+                                 class="bg-gradient-to-r from-pink-50 to-purple-50 border border-pink-200 rounded-lg p-4 cursor-pointer hover:shadow-md transition-shadow duration-200"
+                                 @click="toggleRegionExpansion(region.region_name)">
+                                <div class="flex items-center justify-between mb-2">
+                                    <h5 class="font-semibold text-gray-900">{{ region.region_name }}</h5>
+                                    <div class="flex items-center space-x-2">
+                                        <span class="text-xs bg-pink-100 text-pink-800 px-2 py-1 rounded-full">{{ region.region_code }}</span>
+                                        <i class="fa-solid fa-chevron-right text-gray-400 transition-transform duration-200" :class="{ 'rotate-90': expandedRegions.has(region.region_name) }"></i>
+                                    </div>
+                                </div>
+                                <div class="space-y-1">
+                                    <div class="flex justify-between text-sm">
+                                        <span class="text-gray-600">Total Usage:</span>
+                                        <span class="font-medium text-gray-900">{{ region.total_usage_count }}</span>
+                                    </div>
+                                    <div class="flex justify-between text-sm">
+                                        <span class="text-gray-600">Total Discount:</span>
+                                        <span class="font-medium text-red-600">{{ formatCurrency(region.total_discount_amount) }}</span>
+                                    </div>
+                                    <div class="flex justify-between text-sm">
+                                        <span class="text-gray-600">Outlets:</span>
+                                        <span class="font-medium text-gray-900">{{ region.total_outlets }}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Expanded Region Outlets -->
+                        <div v-if="promoUsageData.length > 0" class="mt-6 space-y-6">
+                            <div v-for="region in promoUsageData" :key="region.region_name" v-show="expandedRegions.has(region.region_name)" class="border border-gray-200 rounded-lg">
+                                <!-- Region Header -->
+                                <div class="bg-gradient-to-r from-pink-100 to-purple-100 px-4 py-3 border-b border-gray-200">
+                                    <div class="flex items-center justify-between">
+                                        <div class="flex items-center space-x-3">
+                                            <i class="fa-solid fa-chevron-right text-gray-600 rotate-90"></i>
+                                            <div>
+                                                <h4 class="font-semibold text-gray-900">{{ region.region_name }}</h4>
+                                                <p class="text-sm text-gray-600">{{ region.total_outlets }} outlets • {{ region.total_usage_count }} total usage</p>
+                                            </div>
+                                        </div>
+                                        <div class="text-right">
+                                            <div class="text-sm font-medium text-gray-900">{{ formatCurrency(region.total_transaction_value) }}</div>
+                                            <div class="text-sm font-semibold text-red-600">{{ formatCurrency(region.total_discount_amount) }} discount</div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Outlets in Region -->
+                                <div class="p-4 bg-white space-y-3">
+                                    <div v-for="outlet in region.outlets" :key="outlet.outlet_code" class="border border-gray-200 rounded-lg">
+                                        <!-- Outlet Header -->
+                                        <div class="bg-gray-50 px-4 py-3 border-b border-gray-200 cursor-pointer" @click="toggleOutletExpansion(outlet.outlet_code)">
+                                            <div class="flex items-center justify-between">
+                                                <div class="flex items-center space-x-3">
+                                                    <i class="fa-solid fa-chevron-right text-gray-400 transition-transform duration-200" :class="{ 'rotate-90': expandedOutlets.has(outlet.outlet_code) }"></i>
+                                                    <div>
+                                                        <h5 class="font-semibold text-gray-900">{{ outlet.outlet_name }}</h5>
+                                                        <p class="text-sm text-gray-600">{{ outlet.outlet_code }}</p>
+                                                    </div>
+                                                </div>
+                                                <div class="text-right">
+                                                    <div class="text-sm font-medium text-gray-900">{{ outlet.total_usage_count }} uses</div>
+                                                    <div class="text-sm text-gray-600">{{ formatCurrency(outlet.total_discount_amount) }} discount</div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <!-- Promo Details (Expandable) -->
+                                        <div v-if="expandedOutlets.has(outlet.outlet_code)" class="p-4 bg-white">
+                                            <div class="overflow-x-auto">
+                                                <table class="min-w-full divide-y divide-gray-200">
+                                                    <thead class="bg-gray-50">
+                                                        <tr>
+                                                            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Promo Code</th>
+                                                            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Promo Name</th>
+                                                            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Usage Count</th>
+                                                            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Transaction</th>
+                                                            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Discount</th>
+                                                            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Avg Discount</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody class="bg-white divide-y divide-gray-200">
+                                                        <tr v-for="promo in outlet.promos" :key="promo.promo_code" class="hover:bg-gray-50">
+                                                            <td class="px-3 py-2 whitespace-nowrap text-sm font-medium text-gray-900">
+                                                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-pink-100 text-pink-800">
+                                                                    {{ promo.promo_code }}
+                                                                </span>
+                                                            </td>
+                                                            <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-900">{{ promo.promo_name || 'N/A' }}</td>
+                                                            <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-900">
+                                                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                                                    {{ promo.usage_count }}
+                                                                </span>
+                                                            </td>
+                                                            <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-900">{{ formatCurrency(promo.total_transaction_value) }}</td>
+                                                            <td class="px-3 py-2 whitespace-nowrap text-sm font-semibold text-red-600">{{ formatCurrency(promo.total_discount_amount) }}</td>
+                                                            <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-900">{{ formatCurrency(promo.avg_discount_amount) }}</td>
+                                                        </tr>
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Content by Region (Fallback) -->
+                    <div v-else-if="promoUsageData.length > 0" class="space-y-6">
+                        <div v-for="region in promoUsageData" :key="region.region_name" class="border border-gray-200 rounded-lg">
+                            <!-- Region Header -->
+                            <div class="bg-gradient-to-r from-pink-100 to-purple-100 px-4 py-3 border-b border-gray-200 cursor-pointer" @click="toggleRegionExpansion(region.region_name)">
+                                <div class="flex items-center justify-between">
+                                    <div class="flex items-center space-x-3">
+                                        <i class="fa-solid fa-chevron-right text-gray-600 transition-transform duration-200" :class="{ 'rotate-90': expandedRegions.has(region.region_name) }"></i>
+                                        <div>
+                                            <h4 class="font-semibold text-gray-900">{{ region.region_name }}</h4>
+                                            <p class="text-sm text-gray-600">{{ region.total_outlets }} outlets • {{ region.total_usage_count }} total usage</p>
+                                        </div>
+                                    </div>
+                                    <div class="text-right">
+                                        <div class="text-sm font-medium text-gray-900">{{ formatCurrency(region.total_transaction_value) }}</div>
+                                        <div class="text-sm font-semibold text-red-600">{{ formatCurrency(region.total_discount_amount) }} discount</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Outlets in Region (Expandable) -->
+                            <div v-if="expandedRegions.has(region.region_name)" class="p-4 bg-white space-y-3">
+                                <div v-for="outlet in region.outlets" :key="outlet.outlet_code" class="border border-gray-200 rounded-lg">
+                                    <!-- Outlet Header -->
+                                    <div class="bg-gray-50 px-4 py-3 border-b border-gray-200 cursor-pointer" @click="toggleOutletExpansion(outlet.outlet_code)">
+                                        <div class="flex items-center justify-between">
+                                            <div class="flex items-center space-x-3">
+                                                <i class="fa-solid fa-chevron-right text-gray-400 transition-transform duration-200" :class="{ 'rotate-90': expandedOutlets.has(outlet.outlet_code) }"></i>
+                                                <div>
+                                                    <h5 class="font-semibold text-gray-900">{{ outlet.outlet_name }}</h5>
+                                                    <p class="text-sm text-gray-600">{{ outlet.outlet_code }}</p>
+                                                </div>
+                                            </div>
+                                            <div class="text-right">
+                                                <div class="text-sm font-medium text-gray-900">{{ outlet.total_usage_count }} uses</div>
+                                                <div class="text-sm text-gray-600">{{ formatCurrency(outlet.total_discount_amount) }} discount</div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Promo Details (Expandable) -->
+                                    <div v-if="expandedOutlets.has(outlet.outlet_code)" class="p-4 bg-white">
+                                        <div class="overflow-x-auto">
+                                            <table class="min-w-full divide-y divide-gray-200">
+                                                <thead class="bg-gray-50">
+                                                    <tr>
+                                                        <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Promo Code</th>
+                                                        <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Promo Name</th>
+                                                        <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Usage Count</th>
+                                                        <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Transaction</th>
+                                                        <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Discount</th>
+                                                        <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Avg Discount</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody class="bg-white divide-y divide-gray-200">
+                                                    <tr v-for="promo in outlet.promos" :key="promo.promo_code" class="hover:bg-gray-50">
+                                                        <td class="px-3 py-2 whitespace-nowrap text-sm font-medium text-gray-900">
+                                                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-pink-100 text-pink-800">
+                                                                {{ promo.promo_code }}
+                                                            </span>
+                                                        </td>
+                                                        <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-900">{{ promo.promo_name || 'N/A' }}</td>
+                                                        <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-900">
+                                                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                                                {{ promo.usage_count }}
+                                                            </span>
+                                                        </td>
+                                                        <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-900">{{ formatCurrency(promo.total_transaction_value) }}</td>
+                                                        <td class="px-3 py-2 whitespace-nowrap text-sm font-semibold text-red-600">{{ formatCurrency(promo.total_discount_amount) }}</td>
+                                                        <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-900">{{ formatCurrency(promo.avg_discount_amount) }}</td>
+                                                    </tr>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Empty State -->
+                    <div v-else class="text-center py-8">
+                        <i class="fa-solid fa-tags text-gray-300 text-4xl mb-4"></i>
+                        <p class="text-gray-500">No promo usage data found for the selected date range.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
     </AppLayout>
 </template>
 

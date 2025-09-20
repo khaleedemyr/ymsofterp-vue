@@ -59,4 +59,17 @@ class Divisi extends Model
     {
         return 'Rp ' . number_format($this->nominal_ph, 0, ',', '.');
     }
+
+    /**
+     * Get all tickets for this division
+     */
+    public function tickets()
+    {
+        return $this->hasMany(Ticket::class, 'divisi_id');
+    }
+
+    public function purchaseRequisitions()
+    {
+        return $this->hasMany(PurchaseRequisition::class, 'division_id');
+    }
 } 

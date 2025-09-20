@@ -30,6 +30,13 @@ const loadingApprovals = ref(false);
 const showApprovalModal = ref(false);
 const selectedApproval = ref(null);
 
+// Purchase Requisition approvals
+const pendingPrApprovals = ref([]);
+const loadingPrApprovals = ref(false);
+const showPrApprovalModal = ref(false);
+const selectedPrApproval = ref(null);
+const prApprovalBudgetInfo = ref(null);
+
 // General notifications
 const leaveNotifications = ref([]);
 const loadingNotifications = ref(false);
@@ -161,6 +168,10 @@ const totalNotificationsCount = computed(() => {
     return approvalCount + hrdApprovalCount + correctionApprovalCount + leaveNotificationCount;
 });
 
+const prApprovalCount = computed(() => {
+    return pendingPrApprovals.value.length;
+});
+
 const availableTrainingsStats = computed(() => {
     const total = availableTrainings.value.length;
     const completed = availableTrainings.value.filter(t => t.is_completed).length;
@@ -252,6 +263,144 @@ async function loadPendingApprovals() {
         console.error('Error loading pending approvals:', error);
     } finally {
         loadingApprovals.value = false;
+    }
+}
+
+// Load Purchase Requisition approvals
+async function loadPendingPrApprovals() {
+    loadingPrApprovals.value = true;
+    try {
+        const response = await axios.get('/api/purchase-requisitions/pending-approvals');
+        if (response.data.success) {
+            pendingPrApprovals.value = response.data.purchase_requisitions;
+        }
+    } catch (error) {
+        console.error('Error loading pending PR approvals:', error);
+    } finally {
+        loadingPrApprovals.value = false;
+    }
+}
+
+// Show PR approval details
+async function showPrApprovalDetails(prId) {
+    try {
+        const response = await axios.get(`/api/purchase-requisitions/${prId}/approval-details`);
+        if (response.data.success) {
+            selectedPrApproval.value = response.data.purchase_requisition;
+            prApprovalBudgetInfo.value = response.data.budget_info;
+            
+            // Debug logging
+            console.log('PR Approval Details:', response.data.purchase_requisition);
+            console.log('Outlet data:', response.data.purchase_requisition.outlet);
+            console.log('Outlet name:', response.data.purchase_requisition.outlet?.nama_outlet);
+            
+            showPrApprovalModal.value = true;
+        }
+    } catch (error) {
+        console.error('Error loading PR approval details:', error);
+        Swal.fire('Error', 'Gagal memuat detail Purchase Requisition', 'error');
+    }
+}
+
+// Approve PR
+async function approvePr(prId) {
+    try {
+        const response = await axios.post(`/purchase-requisitions/${prId}/approve`);
+        if (response.status === 200) {
+            Swal.fire('Success', 'Purchase Requisition berhasil disetujui', 'success');
+            showPrApprovalModal.value = false;
+            loadPendingPrApprovals(); // Reload the list
+        }
+    } catch (error) {
+        console.error('Error approving PR:', error);
+        Swal.fire('Error', 'Gagal menyetujui Purchase Requisition', 'error');
+    }
+}
+
+// Reject PR
+async function rejectPr(prId, reason) {
+    try {
+        const response = await axios.post(`/purchase-requisitions/${prId}/reject`, {
+            rejection_reason: reason
+        });
+        if (response.status === 200) {
+            Swal.fire('Success', 'Purchase Requisition berhasil ditolak', 'success');
+            showPrApprovalModal.value = false;
+            loadPendingPrApprovals(); // Reload the list
+        }
+    } catch (error) {
+        console.error('Error rejecting PR:', error);
+        Swal.fire('Error', 'Gagal menolak Purchase Requisition', 'error');
+    }
+}
+
+// Show reject PR modal
+function showRejectPrModal(prId) {
+    Swal.fire({
+        title: 'Tolak Purchase Requisition',
+        input: 'textarea',
+        inputLabel: 'Alasan Penolakan',
+        inputPlaceholder: 'Masukkan alasan penolakan...',
+        inputAttributes: {
+            'aria-label': 'Masukkan alasan penolakan'
+        },
+        showCancelButton: true,
+        confirmButtonText: 'Tolak',
+        cancelButtonText: 'Batal',
+        confirmButtonColor: '#EF4444',
+        cancelButtonColor: '#6B7280',
+        inputValidator: (value) => {
+            if (!value) {
+                return 'Alasan penolakan harus diisi!'
+            }
+        }
+    }).then((result) => {
+        if (result.isConfirmed) {
+            rejectPr(prId, result.value);
+        }
+    });
+}
+
+// Helper functions for modal
+function getMonthName(monthNumber) {
+    const months = [
+        'January', 'February', 'March', 'April', 'May', 'June',
+        'July', 'August', 'September', 'October', 'November', 'December'
+    ]
+    return months[monthNumber - 1] || 'Unknown'
+}
+
+function getBudgetProgressColor(usedAmount, totalBudget) {
+    const percentage = (usedAmount / totalBudget) * 100
+    if (percentage >= 100) return 'bg-red-500'
+    if (percentage >= 80) return 'bg-yellow-500'
+    if (percentage >= 60) return 'bg-orange-500'
+    return 'bg-green-500'
+}
+
+function getApprovalFlowClass(status) {
+    switch (status) {
+        case 'APPROVED':
+            return 'bg-green-50 border-green-200 dark:bg-green-900/20 dark:border-green-700'
+        case 'REJECTED':
+            return 'bg-red-50 border-red-200 dark:bg-red-900/20 dark:border-red-700'
+        case 'PENDING':
+            return 'bg-yellow-50 border-yellow-200 dark:bg-yellow-900/20 dark:border-yellow-700'
+        default:
+            return 'bg-gray-50 border-gray-200 dark:bg-gray-700 dark:border-gray-600'
+    }
+}
+
+function getApprovalStatusTextClass(status) {
+    switch (status) {
+        case 'APPROVED':
+            return 'text-green-600 dark:text-green-400'
+        case 'REJECTED':
+            return 'text-red-600 dark:text-red-400'
+        case 'PENDING':
+            return 'text-yellow-600 dark:text-yellow-400'
+        default:
+            return 'text-gray-600 dark:text-gray-400'
     }
 }
 
@@ -2092,6 +2241,7 @@ onMounted(() => {
     fetchQuote();
     fetchWeather();
     loadPendingApprovals();
+    loadPendingPrApprovals();
     loadLeaveNotifications();
     loadPendingHrdApprovals();
     loadPendingCorrectionApprovals();
@@ -2341,6 +2491,64 @@ watch(locale, () => {
                     </div>
                 </div>
 
+                <!-- Purchase Requisition Approval Section -->
+                <div v-if="prApprovalCount > 0" class="flex-shrink-0 mb-4">
+                    <div class="backdrop-blur-md rounded-2xl shadow-2xl border p-4 transition-all duration-500 animate-fade-in hover:shadow-3xl"
+                        :class="isNight ? 'bg-slate-800/90 border-slate-600/50' : 'bg-white/90 border-white/20'">
+                        <div class="flex items-center justify-between mb-3">
+                            <div class="flex items-center gap-2">
+                                <div class="w-3 h-3 rounded-full bg-green-500 animate-pulse"></div>
+                                <h3 class="text-lg font-bold" :class="isNight ? 'text-white' : 'text-slate-800'">
+                                    <i class="fa fa-shopping-cart mr-2 text-green-500"></i>
+                                    Purchase Requisition Approval
+                                </h3>
+                            </div>
+                            <div class="bg-green-500 text-white text-xs font-bold px-2 py-1 rounded-full">
+                                {{ prApprovalCount }}
+                            </div>
+                        </div>
+                        
+                        <div v-if="loadingPrApprovals" class="text-center py-4">
+                            <div class="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-green-500"></div>
+                            <p class="text-sm mt-2" :class="isNight ? 'text-slate-300' : 'text-slate-600'">Memuat data...</p>
+                        </div>
+                        
+                        <div v-else class="space-y-2">
+                            <!-- Purchase Requisition Approvals -->
+                            <div v-for="pr in pendingPrApprovals.slice(0, 3)" :key="'pr-approval-' + pr.id"
+                                @click="showPrApprovalDetails(pr.id)"
+                                class="p-3 rounded-lg cursor-pointer transition-all duration-200 hover:scale-105"
+                                :class="isNight ? 'bg-slate-700/50 hover:bg-slate-600/50' : 'bg-green-50 hover:bg-green-100'">
+                                <div class="flex items-center justify-between">
+                                    <div class="flex-1">
+                                        <div class="font-semibold text-sm" :class="isNight ? 'text-white' : 'text-slate-800'">
+                                            {{ pr.pr_number }}
+                                        </div>
+                                        <div class="text-xs" :class="isNight ? 'text-slate-300' : 'text-slate-600'">
+                                            {{ pr.title }}
+                                        </div>
+                                        <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
+                                            {{ pr.division?.nama_divisi }} • Rp {{ new Intl.NumberFormat('id-ID').format(pr.amount) }}
+                                        </div>
+                                        <div v-if="pr.outlet?.nama_outlet" class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
+                                            <i class="fa fa-map-marker-alt mr-1 text-blue-500"></i>{{ pr.outlet.nama_outlet }}
+                                        </div>
+                                    </div>
+                                    <div class="text-xs text-green-500 font-medium">
+                                        <i class="fa fa-shopping-cart mr-1"></i>PR Approval
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Show more button if there are more than 3 PRs -->
+                            <div v-if="pendingPrApprovals.length > 3" class="text-center pt-2">
+                                <button class="text-sm text-green-500 hover:text-green-700 font-medium">
+                                    Lihat {{ pendingPrApprovals.length - 3 }} PR lainnya...
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
 
                 <!-- Bottom Section: Clock, Weather, Calendar, Notes, and Announcements -->
                 <div class="flex-1 grid grid-cols-1 lg:grid-cols-5 gap-4 min-h-0 mb-6 items-stretch px-4 md:px-6">
@@ -2583,6 +2791,181 @@ watch(locale, () => {
                     <button @click="showApprovalModal = false" 
                             class="px-4 py-2 text-slate-600 border border-slate-300 rounded-md hover:bg-slate-50 transition-colors">
                         Tutup
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Purchase Requisition Approval Detail Modal -->
+        <div v-if="showPrApprovalModal && selectedPrApproval" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click="showPrApprovalModal = false">
+            <div class="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-4xl mx-4 max-h-[90vh] overflow-y-auto" @click.stop>
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-lg font-medium text-gray-900 dark:text-white">
+                        <i class="fa fa-shopping-cart mr-2 text-green-500"></i>
+                        Detail Purchase Requisition
+                    </h3>
+                    <button @click="showPrApprovalModal = false" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                        <i class="fa-solid fa-times text-xl"></i>
+                    </button>
+                </div>
+
+                <div class="space-y-6">
+                    <!-- Basic Information -->
+                    <div class="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
+                        <h4 class="text-md font-semibold text-gray-900 dark:text-white mb-3">Informasi Dasar</h4>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <div class="text-sm font-medium text-gray-700 dark:text-gray-300">PR Number</div>
+                                <div class="text-lg font-semibold text-gray-900 dark:text-white">{{ selectedPrApproval.pr_number }}</div>
+                            </div>
+                            <div>
+                                <div class="text-sm font-medium text-gray-700 dark:text-gray-300">Status</div>
+                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                                    {{ selectedPrApproval.status }}
+                                </span>
+                            </div>
+                            <div>
+                                <div class="text-sm font-medium text-gray-700 dark:text-gray-300">Title</div>
+                                <div class="text-gray-900 dark:text-white">{{ selectedPrApproval.title }}</div>
+                            </div>
+                            <div>
+                                <div class="text-sm font-medium text-gray-700 dark:text-gray-300">Division</div>
+                                <div class="text-gray-900 dark:text-white">{{ selectedPrApproval.division?.nama_divisi }}</div>
+                            </div>
+                            <div>
+                                <div class="text-sm font-medium text-gray-700 dark:text-gray-300">Category</div>
+                                <div class="text-gray-900 dark:text-white">{{ selectedPrApproval.category?.name }}</div>
+                            </div>
+                            <div>
+                                <div class="text-sm font-medium text-gray-700 dark:text-gray-300">Outlet</div>
+                                <div class="text-gray-900 dark:text-white">{{ selectedPrApproval.outlet?.nama_outlet || '-' }}</div>
+                            </div>
+                            <div>
+                                <div class="text-sm font-medium text-gray-700 dark:text-gray-300">Amount</div>
+                                <div class="text-lg font-semibold text-gray-900 dark:text-white">
+                                    Rp {{ new Intl.NumberFormat('id-ID').format(selectedPrApproval.amount) }}
+                                </div>
+                            </div>
+                        </div>
+                        <div class="mt-4">
+                            <div class="text-sm font-medium text-gray-700 dark:text-gray-300">Description</div>
+                            <div class="text-gray-900 dark:text-white mt-1">{{ selectedPrApproval.description }}</div>
+                        </div>
+                    </div>
+
+                    <!-- Budget Information -->
+                    <div v-if="prApprovalBudgetInfo" class="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
+                        <h4 class="text-md font-semibold text-gray-900 dark:text-white mb-3">
+                            <i class="fa fa-chart-pie mr-2 text-blue-500"></i>
+                            Informasi Budget - {{ getMonthName(prApprovalBudgetInfo.current_month) }} {{ prApprovalBudgetInfo.current_year }}
+                        </h4>
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div class="bg-white dark:bg-gray-800 p-3 rounded-lg">
+                                <div class="text-sm font-medium text-blue-600">Total Budget</div>
+                                <div class="text-lg font-bold text-blue-800">
+                                    Rp {{ new Intl.NumberFormat('id-ID').format(prApprovalBudgetInfo.category_budget) }}
+                                </div>
+                            </div>
+                            <div class="bg-white dark:bg-gray-800 p-3 rounded-lg">
+                                <div class="text-sm font-medium text-orange-600">Used This Month</div>
+                                <div class="text-lg font-bold text-orange-800">
+                                    Rp {{ new Intl.NumberFormat('id-ID').format(prApprovalBudgetInfo.category_used_amount) }}
+                                </div>
+                            </div>
+                            <div class="bg-white dark:bg-gray-800 p-3 rounded-lg">
+                                <div class="text-sm font-medium text-green-600">Remaining Budget</div>
+                                <div class="text-lg font-bold" :class="prApprovalBudgetInfo.category_remaining_amount < 0 ? 'text-red-800' : 'text-green-800'">
+                                    Rp {{ new Intl.NumberFormat('id-ID').format(prApprovalBudgetInfo.category_remaining_amount) }}
+                                </div>
+                            </div>
+                        </div>
+                        <div class="mt-4">
+                            <div class="flex justify-between text-sm text-gray-600 mb-2">
+                                <span>Budget Usage</span>
+                                <span>{{ Math.round((prApprovalBudgetInfo.category_used_amount / prApprovalBudgetInfo.category_budget) * 100) }}%</span>
+                            </div>
+                            <div class="w-full bg-gray-200 rounded-full h-3">
+                                <div class="h-3 rounded-full transition-all duration-300"
+                                     :class="getBudgetProgressColor(prApprovalBudgetInfo.category_used_amount, prApprovalBudgetInfo.category_budget)"
+                                     :style="{ width: Math.min((prApprovalBudgetInfo.category_used_amount / prApprovalBudgetInfo.category_budget) * 100, 100) + '%' }">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Items -->
+                    <div v-if="selectedPrApproval.items && selectedPrApproval.items.length > 0" class="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
+                        <h4 class="text-md font-semibold text-gray-900 dark:text-white mb-3">Items</h4>
+                        <div class="overflow-x-auto">
+                            <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-600">
+                                <thead class="bg-gray-100 dark:bg-gray-600">
+                                    <tr>
+                                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Item Name</th>
+                                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Qty</th>
+                                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Unit</th>
+                                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Unit Price</th>
+                                        <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Subtotal</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-600">
+                                    <tr v-for="item in selectedPrApproval.items" :key="item.id">
+                                        <td class="px-4 py-2 text-sm text-gray-900 dark:text-white">{{ item.item_name }}</td>
+                                        <td class="px-4 py-2 text-sm text-gray-900 dark:text-white">{{ item.qty }}</td>
+                                        <td class="px-4 py-2 text-sm text-gray-900 dark:text-white">{{ item.unit }}</td>
+                                        <td class="px-4 py-2 text-sm text-gray-900 dark:text-white">Rp {{ new Intl.NumberFormat('id-ID').format(item.unit_price) }}</td>
+                                        <td class="px-4 py-2 text-sm text-gray-900 dark:text-white text-right">Rp {{ new Intl.NumberFormat('id-ID').format(item.subtotal) }}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Approval Flow -->
+                    <div v-if="selectedPrApproval.approval_flows && selectedPrApproval.approval_flows.length > 0" class="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
+                        <h4 class="text-md font-semibold text-gray-900 dark:text-white mb-3">Approval Flow</h4>
+                        <div class="space-y-3">
+                            <div v-for="flow in selectedPrApproval.approval_flows" :key="flow.id"
+                                 class="flex items-center justify-between p-3 border border-gray-200 dark:border-gray-600 rounded-lg"
+                                 :class="getApprovalFlowClass(flow.status)">
+                                <div class="flex items-center space-x-3">
+                                    <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                        Level {{ flow.approval_level }}
+                                    </span>
+                                    <div>
+                                        <div class="font-medium text-gray-900 dark:text-white">{{ flow.approver?.nama_lengkap || flow.approver?.name }}</div>
+                                        <div class="text-sm text-gray-600 dark:text-gray-400">{{ flow.approver?.email }}</div>
+                                        <div v-if="flow.approver?.jabatan?.nama_jabatan" class="text-xs text-blue-600 font-medium">{{ flow.approver.jabatan.nama_jabatan }}</div>
+                                    </div>
+                                </div>
+                                <div class="text-right">
+                                    <div class="text-sm font-medium" :class="getApprovalStatusTextClass(flow.status)">
+                                        {{ flow.status }}
+                                    </div>
+                                    <div v-if="flow.approved_at" class="text-xs text-gray-500">
+                                        Approved: {{ new Date(flow.approved_at).toLocaleDateString('id-ID') }}
+                                    </div>
+                                    <div v-if="flow.rejected_at" class="text-xs text-gray-500">
+                                        Rejected: {{ new Date(flow.rejected_at).toLocaleDateString('id-ID') }}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="flex justify-end gap-3 mt-6 pt-4 border-t border-gray-200 dark:border-gray-600">
+                    <button @click="showPrApprovalModal = false" 
+                            class="px-4 py-2 text-gray-600 dark:text-gray-400 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                        Tutup
+                    </button>
+                    <button @click="approvePr(selectedPrApproval.id)" 
+                            class="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors">
+                        <i class="fa fa-check mr-2"></i>Approve
+                    </button>
+                    <button @click="showRejectPrModal(selectedPrApproval.id)" 
+                            class="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors">
+                        <i class="fa fa-times mr-2"></i>Reject
                     </button>
                 </div>
             </div>

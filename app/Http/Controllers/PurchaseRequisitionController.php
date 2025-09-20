@@ -1,0 +1,976 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\PurchaseRequisition;
+use App\Models\PurchaseRequisitionCategory;
+use App\Models\PurchaseRequisitionItem;
+use App\Models\PurchaseRequisitionApprovalFlow;
+use App\Models\DivisionBudget;
+use App\Models\Divisi;
+use App\Models\Outlet;
+use App\Models\Ticket;
+use App\Models\User;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Validator;
+use Inertia\Inertia;
+
+class PurchaseRequisitionController extends Controller
+{
+    /**
+     * Display a listing of purchase requisitions
+     */
+    public function index(Request $request)
+    {
+        $search = $request->get('search', '');
+        $status = $request->get('status', 'all');
+        $division = $request->get('division', 'all');
+        $perPage = $request->get('per_page', 15);
+
+        $query = PurchaseRequisition::with([
+            'division',
+            'outlet',
+            'ticket',
+            'category',
+            'creator'
+        ]);
+
+        // Apply filters
+        if ($search) {
+            $query->where(function($q) use ($search) {
+                $q->where('pr_number', 'like', "%{$search}%")
+                  ->orWhere('title', 'like', "%{$search}%")
+                  ->orWhere('description', 'like', "%{$search}%");
+            });
+        }
+
+        if ($status !== 'all') {
+            $query->where('status', $status);
+        }
+
+        if ($division !== 'all') {
+            $query->where('division_id', $division);
+        }
+
+        $purchaseRequisitions = $query->orderBy('created_at', 'desc')
+                                    ->paginate($perPage)
+                                    ->withQueryString();
+
+        // Get filter options
+        $divisions = Divisi::whereHas('purchaseRequisitions')->active()->orderBy('nama_divisi')->get();
+        
+        // Statistics
+        $statistics = [
+            'total' => PurchaseRequisition::count(),
+            'draft' => PurchaseRequisition::where('status', 'DRAFT')->count(),
+            'submitted' => PurchaseRequisition::where('status', 'SUBMITTED')->count(),
+            'approved' => PurchaseRequisition::where('status', 'APPROVED')->count(),
+        ];
+
+        return Inertia::render('PurchaseRequisition/Index', [
+            'data' => $purchaseRequisitions,
+            'filters' => [
+                'search' => $search,
+                'status' => $status,
+                'division' => $division,
+                'per_page' => $perPage,
+            ],
+            'filterOptions' => [
+                'divisions' => $divisions,
+            ],
+            'statistics' => $statistics,
+        ]);
+    }
+
+    /**
+     * Show the form for creating a new purchase requisition
+     */
+    public function create()
+    {
+        $categories = PurchaseRequisitionCategory::orderBy('name')->get();
+        $outlets = Outlet::active()->orderBy('nama_outlet')->get();
+        $tickets = Ticket::whereHas('status', function($query) {
+                        $query->whereNotIn('slug', ['closed', 'cancelled']);
+                    })
+                    ->with(['outlet', 'category', 'status'])
+                    ->orderBy('created_at', 'desc')
+                    ->limit(100)
+                    ->get();
+        $divisions = Divisi::active()->orderBy('nama_divisi')->get();
+
+        return Inertia::render('PurchaseRequisition/Create', [
+            'categories' => $categories,
+            'outlets' => $outlets,
+            'tickets' => $tickets,
+            'divisions' => $divisions,
+        ]);
+    }
+
+    /**
+     * Store a newly created purchase requisition
+     */
+    public function store(Request $request)
+    {
+        $validated = $request->validate([
+            'title' => 'required|string|max:255',
+            'description' => 'nullable|string',
+            'division_id' => 'required|exists:tbl_data_divisi,id',
+            'category_id' => 'nullable|exists:purchase_requisition_categories,id',
+            'outlet_id' => 'nullable|exists:tbl_data_outlet,id_outlet',
+            'ticket_id' => 'nullable|exists:tickets,id',
+            'amount' => 'required|numeric|min:0',
+            'currency' => 'string|in:IDR,USD',
+            'priority' => 'string|in:LOW,MEDIUM,HIGH,URGENT',
+            'items' => 'required|array|min:1',
+            'items.*.item_name' => 'required|string|max:255',
+            'items.*.qty' => 'required|numeric|min:0.01',
+            'items.*.unit' => 'required|string|max:50',
+            'items.*.unit_price' => 'required|numeric|min:0',
+            'items.*.subtotal' => 'required|numeric|min:0',
+            'approvers' => 'nullable|array',
+            'approvers.*' => 'required|exists:users,id',
+        ]);
+
+        // Check budget limit before saving
+        if ($validated['category_id']) {
+            $category = PurchaseRequisitionCategory::find($validated['category_id']);
+            if ($category) {
+                $currentMonth = date('m');
+                $currentYear = date('Y');
+                
+                $usedAmount = PurchaseRequisition::where('category_id', $validated['category_id'])
+                    ->whereYear('created_at', $currentYear)
+                    ->whereMonth('created_at', $currentMonth)
+                    ->whereIn('status', ['SUBMITTED', 'APPROVED', 'PROCESSED', 'COMPLETED'])
+                    ->sum('amount');
+                
+                $totalWithCurrent = $usedAmount + $validated['amount'];
+                
+                if ($totalWithCurrent > $category->budget_limit) {
+                    return back()->withErrors([
+                        'budget_exceeded' => "Total amount (Rp " . number_format($totalWithCurrent, 0, ',', '.') . ") exceeds category budget limit (Rp " . number_format($category->budget_limit, 0, ',', '.') . ") for this month."
+                    ]);
+                }
+            }
+        }
+
+        // Generate PR number
+        $validated['pr_number'] = $this->generateRequisitionNumber();
+        $validated['date'] = now()->toDateString();
+        $validated['warehouse_id'] = 1; // Default warehouse
+        $validated['requested_by'] = auth()->id();
+        $validated['department'] = 'Operations';
+        $validated['status'] = 'DRAFT';
+        $validated['created_by'] = auth()->id();
+
+        try {
+            DB::beginTransaction();
+            
+            // Create purchase requisition
+            $purchaseRequisition = PurchaseRequisition::create($validated);
+            
+            // Create items
+            foreach ($validated['items'] as $itemData) {
+                PurchaseRequisitionItem::create([
+                    'purchase_requisition_id' => $purchaseRequisition->id,
+                    'item_name' => $itemData['item_name'],
+                    'qty' => $itemData['qty'],
+                    'unit' => $itemData['unit'],
+                    'unit_price' => $itemData['unit_price'],
+                    'subtotal' => $itemData['subtotal'],
+                ]);
+            }
+
+            // Create approval flows if approvers provided
+            if (!empty($validated['approvers'])) {
+                foreach ($validated['approvers'] as $index => $approverId) {
+                    PurchaseRequisitionApprovalFlow::create([
+                        'purchase_requisition_id' => $purchaseRequisition->id,
+                        'approver_id' => $approverId,
+                        'approval_level' => $index + 1, // Level 1 = terendah, level terakhir = tertinggi
+                        'status' => 'PENDING',
+                    ]);
+                }
+            }
+            
+            DB::commit();
+            
+            // Send notification to the lowest level approver
+            $this->sendNotificationToNextApprover($purchaseRequisition);
+            
+            return redirect()->route('purchase-requisitions.show', $purchaseRequisition)
+                           ->with('success', 'Purchase Requisition created successfully!');
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return back()->withErrors(['error' => 'Failed to create purchase requisition: ' . $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Display the specified purchase requisition
+     */
+    public function show(PurchaseRequisition $purchaseRequisition)
+    {
+        $purchaseRequisition->load([
+            'division',
+            'outlet',
+            'ticket',
+            'category',
+            'creator',
+            'comments.user',
+            'attachments',
+            'history.user',
+            'items',
+            'approvalFlows.approver.jabatan'
+        ]);
+
+        // Get budget information for the category
+        $budgetInfo = null;
+        if ($purchaseRequisition->category_id) {
+            $category = $purchaseRequisition->category;
+            if ($category) {
+                $currentMonth = date('m');
+                $currentYear = date('Y');
+                
+                $usedAmount = PurchaseRequisition::where('category_id', $purchaseRequisition->category_id)
+                    ->whereYear('created_at', $currentYear)
+                    ->whereMonth('created_at', $currentMonth)
+                    ->whereIn('status', ['SUBMITTED', 'APPROVED', 'PROCESSED', 'COMPLETED'])
+                    ->sum('amount');
+                
+                $budgetInfo = [
+                    'category_budget' => $category->budget_limit,
+                    'category_used_amount' => $usedAmount,
+                    'category_remaining_amount' => $category->budget_limit - $usedAmount,
+                    'current_month' => $currentMonth,
+                    'current_year' => $currentYear,
+                ];
+            }
+        }
+
+        return Inertia::render('PurchaseRequisition/Show', [
+            'purchaseRequisition' => $purchaseRequisition,
+            'budgetInfo' => $budgetInfo,
+            'currentUser' => auth()->user(),
+        ]);
+    }
+
+    /**
+     * Show the form for editing the specified purchase requisition
+     */
+    public function edit(PurchaseRequisition $purchaseRequisition)
+    {
+        if ($purchaseRequisition->status !== 'DRAFT') {
+            return redirect()->route('purchase-requisitions.show', $purchaseRequisition)
+                           ->with('error', 'Only draft purchase requisitions can be edited.');
+        }
+
+        $categories = PurchaseRequisitionCategory::orderBy('name')->get();
+        $outlets = Outlet::active()->orderBy('nama_outlet')->get();
+        $tickets = Ticket::whereHas('status', function($query) {
+                        $query->whereNotIn('slug', ['closed', 'cancelled']);
+                    })
+                    ->with(['outlet', 'category', 'status'])
+                    ->orderBy('created_at', 'desc')
+                    ->limit(100)
+                    ->get();
+        $divisions = Divisi::active()->orderBy('nama_divisi')->get();
+
+        return Inertia::render('PurchaseRequisition/Edit', [
+            'purchaseRequisition' => $purchaseRequisition,
+            'categories' => $categories,
+            'outlets' => $outlets,
+            'tickets' => $tickets,
+            'divisions' => $divisions,
+        ]);
+    }
+
+    /**
+     * Update the specified purchase requisition
+     */
+    public function update(Request $request, PurchaseRequisition $purchaseRequisition)
+    {
+        if ($purchaseRequisition->status !== 'DRAFT') {
+            return back()->withErrors(['error' => 'Only draft purchase requisitions can be edited.']);
+        }
+
+        $validated = $request->validate([
+            'title' => 'required|string|max:255',
+            'description' => 'nullable|string',
+            'division_id' => 'required|exists:tbl_data_divisi,id',
+            'category_id' => 'nullable|exists:purchase_requisition_categories,id',
+            'outlet_id' => 'nullable|exists:outlets,id',
+            'ticket_id' => 'nullable|exists:tickets,id',
+            'amount' => 'required|numeric|min:0',
+            'currency' => 'string|in:IDR,USD',
+            'priority' => 'string|in:LOW,MEDIUM,HIGH,URGENT',
+        ]);
+
+        // Check budget limit before updating (exclude current record from calculation)
+        if ($validated['category_id']) {
+            $category = PurchaseRequisitionCategory::find($validated['category_id']);
+            if ($category) {
+                $currentMonth = date('m');
+                $currentYear = date('Y');
+                
+                $usedAmount = PurchaseRequisition::where('category_id', $validated['category_id'])
+                    ->where('id', '!=', $purchaseRequisition->id) // Exclude current record
+                    ->whereYear('created_at', $currentYear)
+                    ->whereMonth('created_at', $currentMonth)
+                    ->whereIn('status', ['SUBMITTED', 'APPROVED', 'PROCESSED', 'COMPLETED'])
+                    ->sum('amount');
+                
+                $totalWithCurrent = $usedAmount + $validated['amount'];
+                
+                if ($totalWithCurrent > $category->budget_limit) {
+                    return back()->withErrors([
+                        'budget_exceeded' => "Total amount (Rp " . number_format($totalWithCurrent, 0, ',', '.') . ") exceeds category budget limit (Rp " . number_format($category->budget_limit, 0, ',', '.') . ") for this month."
+                    ]);
+                }
+            }
+        }
+
+        $validated['updated_by'] = auth()->id();
+
+        try {
+            $purchaseRequisition->update($validated);
+            
+            return redirect()->route('purchase-requisitions.show', $purchaseRequisition)
+                           ->with('success', 'Purchase Requisition updated successfully!');
+        } catch (\Exception $e) {
+            return back()->withErrors(['error' => 'Failed to update purchase requisition: ' . $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Remove the specified purchase requisition
+     */
+    public function destroy(PurchaseRequisition $purchaseRequisition)
+    {
+        if ($purchaseRequisition->status !== 'DRAFT') {
+            return back()->withErrors(['error' => 'Only draft purchase requisitions can be deleted.']);
+        }
+
+        if ($purchaseRequisition->created_by !== auth()->id()) {
+            return back()->withErrors(['error' => 'You can only delete your own purchase requisitions.']);
+        }
+
+        try {
+            // Delete related data first (due to foreign key constraints)
+            $purchaseRequisition->items()->delete();
+            $purchaseRequisition->approvalFlows()->delete();
+            $purchaseRequisition->comments()->delete();
+            $purchaseRequisition->attachments()->delete();
+            $purchaseRequisition->history()->delete();
+
+            // Delete the main record
+            $purchaseRequisition->delete();
+            
+            return redirect()->route('purchase-requisitions.index')
+                           ->with('success', 'Purchase Requisition deleted successfully!');
+        } catch (\Exception $e) {
+            \Log::error('Error deleting purchase requisition', [
+                'id' => $purchaseRequisition->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return back()->withErrors(['error' => 'Failed to delete purchase requisition: ' . $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Submit purchase requisition for approval
+     */
+    public function submit(PurchaseRequisition $purchaseRequisition)
+    {
+        if ($purchaseRequisition->status !== 'DRAFT') {
+            return back()->withErrors(['error' => 'Only draft purchase requisitions can be submitted.']);
+        }
+
+        try {
+            $purchaseRequisition->update(['status' => 'SUBMITTED']);
+            
+            return redirect()->route('purchase-requisitions.show', $purchaseRequisition)
+                           ->with('success', 'Purchase Requisition submitted for approval!');
+        } catch (\Exception $e) {
+            return back()->withErrors(['error' => 'Failed to submit purchase requisition: ' . $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Approve purchase requisition
+     */
+    public function approve(PurchaseRequisition $purchaseRequisition)
+    {
+        if ($purchaseRequisition->status !== 'SUBMITTED') {
+            return back()->withErrors(['error' => 'Only submitted purchase requisitions can be approved.']);
+        }
+
+        try {
+            // Get current approver
+            $currentApprover = auth()->user();
+            
+            // Update the approval flow for current approver
+            $currentApprovalFlow = $purchaseRequisition->approvalFlows()
+                ->where('approver_id', $currentApprover->id)
+                ->where('status', 'PENDING')
+                ->first();
+            
+            if ($currentApprovalFlow) {
+                $currentApprovalFlow->update([
+                    'status' => 'APPROVED',
+                    'approved_at' => now(),
+                ]);
+            }
+            
+            // Check if there are more approvers pending
+            $pendingApprovers = $purchaseRequisition->approvalFlows()
+                ->where('status', 'PENDING')
+                ->count();
+            
+            if ($pendingApprovers > 0) {
+                // Still have pending approvers, keep status as SUBMITTED
+                // Send notification to next approver
+                $this->sendNotificationToNextApprover($purchaseRequisition);
+                
+                $message = 'Purchase Requisition approved! Notification sent to next approver.';
+            } else {
+                // All approvers have approved, update status to APPROVED
+                $purchaseRequisition->update([
+                    'status' => 'APPROVED',
+                    'approved_ssd_by' => auth()->id(),
+                    'approved_ssd_at' => now(),
+                ]);
+                
+                // Send notification to creator that PR is fully approved
+                $this->sendNotificationToCreator($purchaseRequisition, 'approved');
+                
+                $message = 'Purchase Requisition fully approved!';
+            }
+            
+            return redirect()->route('purchase-requisitions.show', $purchaseRequisition)
+                           ->with('success', $message);
+        } catch (\Exception $e) {
+            return back()->withErrors(['error' => 'Failed to approve purchase requisition: ' . $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Reject purchase requisition
+     */
+    public function reject(Request $request, PurchaseRequisition $purchaseRequisition)
+    {
+        if ($purchaseRequisition->status !== 'SUBMITTED') {
+            return back()->withErrors(['error' => 'Only submitted purchase requisitions can be rejected.']);
+        }
+
+        $validated = $request->validate([
+            'rejection_reason' => 'required|string|max:500',
+        ]);
+
+        try {
+            // Get current approver
+            $currentApprover = auth()->user();
+            
+            // Update the approval flow for current approver
+            $currentApprovalFlow = $purchaseRequisition->approvalFlows()
+                ->where('approver_id', $currentApprover->id)
+                ->where('status', 'PENDING')
+                ->first();
+            
+            if ($currentApprovalFlow) {
+                $currentApprovalFlow->update([
+                    'status' => 'REJECTED',
+                    'rejected_at' => now(),
+                    'comments' => $validated['rejection_reason'],
+                ]);
+            }
+            
+            $purchaseRequisition->update([
+                'status' => 'REJECTED',
+                'notes' => $validated['rejection_reason'],
+            ]);
+            
+            // Send notification to creator that PR was rejected
+            $this->sendNotificationToCreator($purchaseRequisition, 'rejected');
+            
+            return redirect()->route('purchase-requisitions.show', $purchaseRequisition)
+                           ->with('success', 'Purchase Requisition rejected.');
+        } catch (\Exception $e) {
+            return back()->withErrors(['error' => 'Failed to reject purchase requisition: ' . $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Process purchase requisition
+     */
+    public function process(PurchaseRequisition $purchaseRequisition)
+    {
+        if ($purchaseRequisition->status !== 'APPROVED') {
+            return back()->withErrors(['error' => 'Only approved purchase requisitions can be processed.']);
+        }
+
+        try {
+            $purchaseRequisition->update(['status' => 'PROCESSED']);
+            
+            return redirect()->route('purchase-requisitions.show', $purchaseRequisition)
+                           ->with('success', 'Purchase Requisition is being processed!');
+        } catch (\Exception $e) {
+            return back()->withErrors(['error' => 'Failed to process purchase requisition: ' . $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Complete purchase requisition
+     */
+    public function complete(PurchaseRequisition $purchaseRequisition)
+    {
+        if ($purchaseRequisition->status !== 'PROCESSED') {
+            return back()->withErrors(['error' => 'Only processed purchase requisitions can be completed.']);
+        }
+
+        try {
+            $purchaseRequisition->update(['status' => 'COMPLETED']);
+            
+            return redirect()->route('purchase-requisitions.show', $purchaseRequisition)
+                           ->with('success', 'Purchase Requisition completed!');
+        } catch (\Exception $e) {
+            return back()->withErrors(['error' => 'Failed to complete purchase requisition: ' . $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Add comment to purchase requisition
+     */
+    public function addComment(Request $request, PurchaseRequisition $purchaseRequisition)
+    {
+        $validated = $request->validate([
+            'comment' => 'required|string|max:1000',
+            'is_internal' => 'boolean',
+        ]);
+
+        try {
+            $purchaseRequisition->comments()->create([
+                'user_id' => auth()->id(),
+                'comment' => $validated['comment'],
+                'is_internal' => $validated['is_internal'] ?? false,
+            ]);
+            
+            return back()->with('success', 'Comment added successfully!');
+        } catch (\Exception $e) {
+            return back()->withErrors(['error' => 'Failed to add comment: ' . $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Upload attachment to purchase requisition
+     */
+    public function uploadAttachment(Request $request, PurchaseRequisition $purchaseRequisition)
+    {
+        $validated = $request->validate([
+            'file' => 'required|file|max:10240', // 10MB max
+        ]);
+
+        try {
+            $file = $request->file('file');
+            $fileName = time() . '_' . $file->getClientOriginalName();
+            $filePath = $file->storeAs('purchase_requisitions', $fileName, 'public');
+
+            $purchaseRequisition->attachments()->create([
+                'file_name' => $file->getClientOriginalName(),
+                'file_path' => $filePath,
+                'file_size' => $file->getSize(),
+                'mime_type' => $file->getMimeType(),
+                'uploaded_by' => auth()->id(),
+            ]);
+            
+            return back()->with('success', 'Attachment uploaded successfully!');
+        } catch (\Exception $e) {
+            return back()->withErrors(['error' => 'Failed to upload attachment: ' . $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Delete attachment from purchase requisition
+     */
+    public function deleteAttachment($attachmentId)
+    {
+        try {
+            $attachment = \App\Models\PurchaseRequisitionAttachment::findOrFail($attachmentId);
+            $attachment->delete();
+            
+            return back()->with('success', 'Attachment deleted successfully!');
+        } catch (\Exception $e) {
+            return back()->withErrors(['error' => 'Failed to delete attachment: ' . $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Get categories for API
+     */
+    public function getCategories()
+    {
+        $categories = PurchaseRequisitionCategory::orderBy('name')->get();
+        return response()->json(['success' => true, 'categories' => $categories]);
+    }
+
+    /**
+     * Get tickets for API
+     */
+    public function getTickets(Request $request)
+    {
+        $tickets = Ticket::whereHas('status', function($query) {
+                        $query->whereNotIn('slug', ['closed', 'cancelled']);
+                    })
+                    ->with(['outlet', 'category', 'status'])
+                    ->orderBy('created_at', 'desc')
+                    ->limit(100)
+                    ->get();
+        
+        return response()->json(['success' => true, 'tickets' => $tickets]);
+    }
+
+    /**
+     * Get users for approval autocomplete
+     */
+    public function getApprovers(Request $request)
+    {
+        $search = $request->get('search', '');
+        
+        $users = User::where('users.status', 'A')
+            ->join('tbl_data_jabatan', 'users.id_jabatan', '=', 'tbl_data_jabatan.id_jabatan')
+            ->where(function($query) use ($search) {
+                $query->where('users.nama_lengkap', 'like', "%{$search}%")
+                      ->orWhere('users.email', 'like', "%{$search}%")
+                      ->orWhere('tbl_data_jabatan.nama_jabatan', 'like', "%{$search}%");
+            })
+            ->select('users.id', 'users.nama_lengkap as name', 'users.email', 'tbl_data_jabatan.nama_jabatan as jabatan')
+            ->orderBy('users.nama_lengkap')
+            ->limit(20)
+            ->get();
+        
+        return response()->json(['success' => true, 'users' => $users]);
+    }
+
+    /**
+     * Send notification to the next approver in line
+     */
+    private function sendNotificationToNextApprover($purchaseRequisition)
+    {
+        try {
+            // Get the lowest level approver that is still pending
+            $nextApprover = $purchaseRequisition->approvalFlows()
+                ->where('status', 'PENDING')
+                ->orderBy('approval_level')
+                ->first();
+
+            if (!$nextApprover) {
+                return; // No pending approvers
+            }
+
+            // Get approver details
+            $approver = $nextApprover->approver;
+            if (!$approver) {
+                return;
+            }
+
+            // Get creator details
+            $creator = $purchaseRequisition->creator;
+            $creatorName = $creator ? $creator->nama_lengkap : 'Unknown User';
+
+            // Get division and category details
+            $divisionName = $purchaseRequisition->division ? $purchaseRequisition->division->nama_divisi : 'Unknown Division';
+            $categoryName = $purchaseRequisition->category ? $purchaseRequisition->category->name : 'Unknown Category';
+
+            // Create notification message
+            $message = "Purchase Requisition baru memerlukan persetujuan Anda:\n\n";
+            $message .= "No: {$purchaseRequisition->pr_number}\n";
+            $message .= "Judul: {$purchaseRequisition->title}\n";
+            $message .= "Divisi: {$divisionName}\n";
+            $message .= "Kategori: {$categoryName}\n";
+            $message .= "Jumlah: Rp " . number_format($purchaseRequisition->amount, 0, ',', '.') . "\n";
+            $message .= "Level Approval: {$nextApprover->approval_level}\n";
+            $message .= "Diajukan oleh: {$creatorName}\n\n";
+            $message .= "Silakan segera lakukan review dan approval.";
+
+            // Insert notification
+            DB::table('notifications')->insert([
+                'user_id' => $approver->id,
+                'task_id' => $purchaseRequisition->id,
+                'type' => 'purchase_requisition_approval',
+                'message' => $message,
+                'url' => config('app.url') . '/purchase-requisitions/' . $purchaseRequisition->id,
+                'is_read' => 0,
+                'created_at' => now(),
+                'updated_at' => now()
+            ]);
+
+            \Log::info('Notification sent to next approver', [
+                'purchase_requisition_id' => $purchaseRequisition->id,
+                'approver_id' => $approver->id,
+                'approval_level' => $nextApprover->approval_level
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error('Failed to send notification to next approver', [
+                'purchase_requisition_id' => $purchaseRequisition->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+        }
+    }
+
+    /**
+     * Send notification to creator about PR status
+     */
+    private function sendNotificationToCreator($purchaseRequisition, $status)
+    {
+        try {
+            $creator = $purchaseRequisition->creator;
+            if (!$creator) {
+                return;
+            }
+
+            // Get division and category details
+            $divisionName = $purchaseRequisition->division ? $purchaseRequisition->division->nama_divisi : 'Unknown Division';
+            $categoryName = $purchaseRequisition->category ? $purchaseRequisition->category->name : 'Unknown Category';
+
+            $message = '';
+            $type = '';
+
+            switch ($status) {
+                case 'approved':
+                    $message = "Purchase Requisition Anda telah disetujui:\n\n";
+                    $message .= "No: {$purchaseRequisition->pr_number}\n";
+                    $message .= "Judul: {$purchaseRequisition->title}\n";
+                    $message .= "Divisi: {$divisionName}\n";
+                    $message .= "Kategori: {$categoryName}\n";
+                    $message .= "Jumlah: Rp " . number_format($purchaseRequisition->amount, 0, ',', '.') . "\n\n";
+                    $message .= "PR telah disetujui oleh semua approver dan siap untuk diproses.";
+                    $type = 'purchase_requisition_approved';
+                    break;
+                
+                case 'rejected':
+                    $message = "Purchase Requisition Anda telah ditolak:\n\n";
+                    $message .= "No: {$purchaseRequisition->pr_number}\n";
+                    $message .= "Judul: {$purchaseRequisition->title}\n";
+                    $message .= "Divisi: {$divisionName}\n";
+                    $message .= "Kategori: {$categoryName}\n";
+                    $message .= "Jumlah: Rp " . number_format($purchaseRequisition->amount, 0, ',', '.') . "\n\n";
+                    $message .= "Alasan penolakan: " . ($purchaseRequisition->notes ?? 'Tidak ada alasan yang diberikan');
+                    $type = 'purchase_requisition_rejected';
+                    break;
+            }
+
+            // Insert notification
+            DB::table('notifications')->insert([
+                'user_id' => $creator->id,
+                'task_id' => $purchaseRequisition->id,
+                'type' => $type,
+                'message' => $message,
+                'url' => config('app.url') . '/purchase-requisitions/' . $purchaseRequisition->id,
+                'is_read' => 0,
+                'created_at' => now(),
+                'updated_at' => now()
+            ]);
+
+            \Log::info('Notification sent to creator', [
+                'purchase_requisition_id' => $purchaseRequisition->id,
+                'creator_id' => $creator->id,
+                'status' => $status
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error('Failed to send notification to creator', [
+                'purchase_requisition_id' => $purchaseRequisition->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+        }
+    }
+
+    /**
+     * Get pending approvals for current user
+     */
+    public function getPendingApprovals()
+    {
+        try {
+            $currentUser = auth()->user();
+            
+            // Get PRs where current user is the next approver in line
+            $pendingApprovals = PurchaseRequisition::where('status', 'SUBMITTED')
+                ->whereHas('approvalFlows', function($query) use ($currentUser) {
+                    $query->where('approver_id', $currentUser->id)
+                          ->where('status', 'PENDING');
+                })
+                ->with([
+                    'division',
+                    'category',
+                    'outlet',
+                    'creator',
+                    'approvalFlows.approver.jabatan'
+                ])
+                ->orderBy('created_at', 'desc')
+                ->get();
+
+            // Filter to only show PRs where current user is next in line
+            $filteredApprovals = $pendingApprovals->filter(function($pr) use ($currentUser) {
+                $pendingFlows = $pr->approvalFlows->where('status', 'PENDING');
+                if ($pendingFlows->isEmpty()) return false;
+                
+                $nextApprover = $pendingFlows->sortBy('approval_level')->first();
+                return $nextApprover->approver_id === $currentUser->id;
+            });
+
+            return response()->json([
+                'success' => true,
+                'purchase_requisitions' => $filteredApprovals->values()
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error('Error getting pending PR approvals', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'error' => 'Failed to get pending approvals'
+            ], 500);
+        }
+    }
+
+    /**
+     * Get approval details for modal
+     */
+    public function getApprovalDetails($id)
+    {
+        try {
+            $purchaseRequisition = PurchaseRequisition::with([
+                'division',
+                'category',
+                'outlet',
+                'creator',
+                'items',
+                'approvalFlows.approver.jabatan'
+            ])->findOrFail($id);
+
+            // Get budget information
+            $budgetInfo = null;
+            if ($purchaseRequisition->category_id) {
+                $category = $purchaseRequisition->category;
+                if ($category) {
+                    $currentMonth = date('m');
+                    $currentYear = date('Y');
+                    
+                    $usedAmount = PurchaseRequisition::where('category_id', $purchaseRequisition->category_id)
+                        ->whereYear('created_at', $currentYear)
+                        ->whereMonth('created_at', $currentMonth)
+                        ->whereIn('status', ['SUBMITTED', 'APPROVED', 'PROCESSED', 'COMPLETED'])
+                        ->sum('amount');
+                    
+                    $budgetInfo = [
+                        'category_budget' => $category->budget_limit,
+                        'category_used_amount' => $usedAmount,
+                        'category_remaining_amount' => $category->budget_limit - $usedAmount,
+                        'current_month' => $currentMonth,
+                        'current_year' => $currentYear,
+                    ];
+                }
+            }
+
+            // Debug logging
+            \Log::info('PR Approval Details Response', [
+                'pr_id' => $purchaseRequisition->id,
+                'pr_number' => $purchaseRequisition->pr_number,
+                'outlet_id' => $purchaseRequisition->outlet_id,
+                'outlet_data' => $purchaseRequisition->outlet,
+                'outlet_name' => $purchaseRequisition->outlet?->nama_outlet
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'purchase_requisition' => $purchaseRequisition,
+                'budget_info' => $budgetInfo
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error('Error getting PR approval details', [
+                'id' => $id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'error' => 'Failed to get approval details'
+            ], 500);
+        }
+    }
+
+
+    /**
+     * Get budget info for API
+     */
+    public function getBudgetInfo(Request $request)
+    {
+        $categoryId = $request->get('category_id');
+        $currentAmount = $request->get('current_amount', 0); // Amount being input
+        $year = $request->get('year', date('Y'));
+        $month = $request->get('month', date('m'));
+
+        if (!$categoryId) {
+            return response()->json(['success' => false, 'message' => 'Category is required']);
+        }
+
+        // Get category budget
+        $category = PurchaseRequisitionCategory::find($categoryId);
+        if (!$category) {
+            return response()->json(['success' => false, 'message' => 'Category not found']);
+        }
+
+        $categoryBudget = $category->budget_limit;
+        
+        // Calculate used amount for this category in current month (across all divisions)
+        $categoryUsedAmount = PurchaseRequisition::where('category_id', $categoryId)
+            ->whereYear('created_at', $year)
+            ->whereMonth('created_at', $month)
+            ->whereIn('status', ['SUBMITTED', 'APPROVED', 'PROCESSED', 'COMPLETED'])
+            ->sum('amount');
+
+        // Add current amount being input to the calculation
+        $totalWithCurrent = $categoryUsedAmount + $currentAmount;
+        $remainingAfterCurrent = $categoryBudget - $totalWithCurrent;
+
+        return response()->json([
+            'success' => true,
+            'category_budget' => $categoryBudget,
+            'category_used_amount' => $categoryUsedAmount,
+            'current_amount' => $currentAmount,
+            'total_with_current' => $totalWithCurrent,
+            'category_remaining_amount' => $categoryBudget - $categoryUsedAmount,
+            'remaining_after_current' => $remainingAfterCurrent,
+            'exceeds_budget' => $totalWithCurrent > $categoryBudget,
+        ]);
+    }
+
+    /**
+     * Generate unique requisition number
+     */
+    private function generateRequisitionNumber()
+    {
+        $year = date('Y');
+        $month = date('m');
+        
+        $lastPR = PurchaseRequisition::whereYear('created_at', $year)
+                                   ->whereMonth('created_at', $month)
+                                   ->orderBy('id', 'desc')
+                                   ->first();
+        
+        $sequence = $lastPR ? (int) substr($lastPR->pr_number, -4) + 1 : 1;
+        
+        return "PR{$year}{$month}" . str_pad($sequence, 4, '0', STR_PAD_LEFT);
+    }
+}
