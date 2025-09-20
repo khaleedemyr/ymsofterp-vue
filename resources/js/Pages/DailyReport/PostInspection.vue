@@ -66,15 +66,20 @@ const showParticipantDropdown = ref(false);
 // Computed properties
 const isKitchen = computed(() => props.dailyReport.department.nama_departemen.toLowerCase() === 'kitchen');
 const isService = computed(() => props.dailyReport.department.nama_departemen.toLowerCase() === 'service');
+const isBar = computed(() => props.dailyReport.department.nama_departemen.toLowerCase() === 'bar');
 const isLunch = computed(() => props.dailyReport.inspection_time === 'lunch');
 const isDinner = computed(() => props.dailyReport.inspection_time === 'dinner');
 
 const showProductivity = computed(() => {
-  return isKitchen.value && isLunch.value || isService.value && isLunch.value;
+  return isKitchen.value && isLunch.value || isService.value && isLunch.value || isBar.value && isLunch.value;
 });
 
 const showServiceFields = computed(() => {
   return isService.value;
+});
+
+const showBarFields = computed(() => {
+  return isBar.value;
 });
 
 const showMorningBriefing = computed(() => {
@@ -599,6 +604,39 @@ onMounted(() => {
                     />
                   </div>
                 </template>
+
+                <!-- Bar-specific fields -->
+                <template v-if="showBarFields">
+                  <div class="form-group">
+                    <label class="form-label">Guest Comment Target</label>
+                    <input 
+                      type="text" 
+                      v-model="briefingForm.guest_comment_target"
+                      class="form-input"
+                      placeholder="Enter guest comment target"
+                    />
+                  </div>
+
+                  <div class="form-group">
+                    <label class="form-label">Trip Advisor Target</label>
+                    <input 
+                      type="text" 
+                      v-model="briefingForm.trip_advisor_target"
+                      class="form-input"
+                      placeholder="Enter trip advisor target"
+                    />
+                  </div>
+
+                  <div class="form-group">
+                    <label class="form-label">Other Preparation</label>
+                    <input 
+                      type="text" 
+                      v-model="briefingForm.other_preparation"
+                      class="form-input"
+                      placeholder="Enter other preparation"
+                    />
+                  </div>
+                </template>
               </div>
 
               <div class="form-actions">
@@ -628,6 +666,16 @@ onMounted(() => {
                 </div>
 
                 <div v-if="showServiceFields" class="form-group">
+                  <label class="form-label">SOS & Hospitality Role Play</label>
+                  <textarea 
+                    v-model="productivityForm.sos_hospitality_role_play"
+                    rows="3"
+                    class="form-textarea"
+                    placeholder="Masukkan SOS & Hospitality Role Play"
+                  ></textarea>
+                </div>
+
+                <div v-if="showBarFields" class="form-group">
                   <label class="form-label">SOS & Hospitality Role Play</label>
                   <textarea 
                     v-model="productivityForm.sos_hospitality_role_play"
