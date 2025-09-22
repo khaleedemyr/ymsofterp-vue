@@ -344,6 +344,45 @@ class OutletPaymentController extends Controller
             ->with('success', 'Payment berhasil dihapus.');
     }
 
+    public function bulkConfirm(Request $request)
+    {
+        $request->validate([
+            'payment_ids' => 'required|array|min:1',
+            'payment_ids.*' => 'exists:outlet_payments,id'
+        ]);
+
+        try {
+            DB::beginTransaction();
+            
+            $payments = OutletPayment::whereIn('id', $request->payment_ids)
+                ->where('status', 'pending')
+                ->get();
+
+            if ($payments->isEmpty()) {
+                return back()->with('error', 'Tidak ada payment pending yang dipilih.');
+            }
+
+            $confirmedCount = 0;
+            foreach ($payments as $payment) {
+                $payment->update(['status' => 'paid']);
+                $confirmedCount++;
+            }
+
+            DB::commit();
+
+            $message = $confirmedCount > 1 
+                ? "Berhasil mengkonfirmasi {$confirmedCount} payments." 
+                : 'Payment berhasil dikonfirmasi.';
+                
+            return back()->with('success', $message);
+
+        } catch (\Exception $e) {
+            DB::rollback();
+            \Log::error('DEBUG: Gagal bulk confirm OutletPayment', ['error' => $e->getMessage()]);
+            return back()->with('error', 'Gagal mengkonfirmasi payments: ' . $e->getMessage());
+        }
+    }
+
     public function create(Request $request)
     {
         // ULTRA FAST: Get outlets with minimal query

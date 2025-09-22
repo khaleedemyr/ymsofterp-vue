@@ -1031,6 +1031,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/outlet-payments/debug', [\App\Http\Controllers\OutletPaymentController::class, 'debug'])->name('outlet-payments.debug');
     Route::put('/outlet-payments/{outletPayment}', [OutletPaymentController::class, 'update'])->name('outlet-payments.update');
     Route::put('/outlet-payments/{outletPayment}/status', [OutletPaymentController::class, 'updateStatus'])->name('outlet-payments.status');
+    Route::post('/outlet-payments/bulk-confirm', [OutletPaymentController::class, 'bulkConfirm'])->name('outlet-payments.bulk-confirm');
     Route::get('/outlet-payments/{outletPayment}', [OutletPaymentController::class, 'show'])->name('outlet-payments.show');
   
     Route::delete('/outlet-payments/{outletPayment}', [OutletPaymentController::class, 'destroy'])->name('outlet-payments.destroy');

@@ -63,9 +63,8 @@ class OutletPayment extends Model
             $today = date('Ymd');
             $prefix = 'OPY-' . $today . '-';
             
-            // Cari nomor terakhir hari ini (termasuk data yang soft deleted)
-            $lastNumber = static::withTrashed()
-                ->where('payment_number', 'like', $prefix . '%')
+            // Cari nomor terakhir hari ini
+            $lastNumber = static::where('payment_number', 'like', $prefix . '%')
                 ->orderBy('payment_number', 'desc')
                 ->first();
                 

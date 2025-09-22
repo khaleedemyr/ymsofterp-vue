@@ -9,6 +9,13 @@
           <button @click="goToUnpaidGRPage" class="bg-gradient-to-r from-red-400 to-red-600 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold">
             <i class="fa fa-clock mr-1"></i> GR Belum Dibuat Payment
           </button>
+          <button 
+            v-if="selectedPayments.length > 0" 
+            @click="bulkConfirm" 
+            class="bg-gradient-to-r from-blue-500 to-blue-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold"
+          >
+            <i class="fa fa-check mr-1"></i> Konfirmasi ({{ selectedPayments.length }})
+          </button>
           <button @click="goToCreatePage" class="bg-gradient-to-r from-green-500 to-green-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold">
             + Buat Payment
           </button>
@@ -31,7 +38,15 @@
         <table class="w-full min-w-full divide-y divide-gray-200">
           <thead class="bg-gradient-to-r from-yellow-100 to-yellow-200">
             <tr>
-              <th class="px-6 py-3 text-left text-xs font-bold text-yellow-700 uppercase tracking-wider rounded-tl-2xl">No. Payment</th>
+              <th class="px-6 py-3 text-left text-xs font-bold text-yellow-700 uppercase tracking-wider rounded-tl-2xl">
+                <input 
+                  type="checkbox" 
+                  v-model="selectAll" 
+                  @change="toggleSelectAll"
+                  class="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50"
+                />
+              </th>
+              <th class="px-6 py-3 text-left text-xs font-bold text-yellow-700 uppercase tracking-wider">No. Payment</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-yellow-700 uppercase tracking-wider">Tanggal</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-yellow-700 uppercase tracking-wider">Outlet</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-yellow-700 uppercase tracking-wider">No. GR</th>
@@ -42,9 +57,18 @@
           </thead>
           <tbody>
             <tr v-if="!payments.data || !payments.data.length">
-              <td colspan="7" class="text-center py-10 text-gray-400">Belum ada data Payment.</td>
+              <td colspan="8" class="text-center py-10 text-gray-400">Belum ada data Payment.</td>
             </tr>
             <tr v-for="payment in payments.data" :key="payment.id" class="hover:bg-yellow-50 transition shadow-sm">
+              <td class="px-6 py-3">
+                <input 
+                  type="checkbox" 
+                  :value="payment.id"
+                  v-model="selectedPayments"
+                  :disabled="payment.status !== 'pending'"
+                  class="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50"
+                />
+              </td>
               <td class="px-6 py-3 font-mono font-semibold text-yellow-700">{{ payment.payment_number }}</td>
               <td class="px-6 py-3">{{ formatDate(payment.date) }}</td>
               <td class="px-6 py-3">{{ payment.outlet_name || '-' }}</td>
@@ -92,7 +116,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 
@@ -107,6 +131,29 @@ const filters = ref({
   outlet: props.filters?.outlet || '',
   status: props.filters?.status || '',
   date: props.filters?.date || ''
+});
+
+// Bulk selection
+const selectedPayments = ref([]);
+const selectAll = ref(false);
+
+// Computed properties
+const pendingPayments = computed(() => {
+  return props.payments?.data?.filter(payment => payment.status === 'pending') || [];
+});
+
+// Watch for changes in selectedPayments to update selectAll
+watch(selectedPayments, (newVal) => {
+  selectAll.value = newVal.length > 0 && newVal.length === pendingPayments.value.length;
+}, { deep: true });
+
+// Watch for changes in selectAll
+watch(selectAll, (newVal) => {
+  if (newVal) {
+    selectedPayments.value = pendingPayments.value.map(payment => payment.id);
+  } else {
+    selectedPayments.value = [];
+  }
 });
 
 function formatDate(date) {
@@ -182,5 +229,47 @@ function deletePayment(payment) {
 
 function goToUnpaidGRPage() {
   router.get('/outlet-payments/unpaid-gr');
+}
+
+function toggleSelectAll() {
+  if (selectAll.value) {
+    selectedPayments.value = pendingPayments.value.map(payment => payment.id);
+  } else {
+    selectedPayments.value = [];
+  }
+}
+
+function bulkConfirm() {
+  if (selectedPayments.value.length === 0) {
+    return;
+  }
+
+  import('sweetalert2').then(({ default: Swal }) => {
+    Swal.fire({
+      title: 'Konfirmasi Pembayaran?',
+      text: `Apakah Anda yakin ingin mengkonfirmasi ${selectedPayments.value.length} payment?`,
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonColor: '#3085d6',
+      cancelButtonColor: '#d33',
+      confirmButtonText: 'Ya, Konfirmasi!',
+      cancelButtonText: 'Batal'
+    }).then((result) => {
+      if (result.isConfirmed) {
+        router.post('/outlet-payments/bulk-confirm', {
+          payment_ids: selectedPayments.value
+        }, {
+          onSuccess: () => {
+            selectedPayments.value = [];
+            selectAll.value = false;
+            Swal.fire('Berhasil', 'Payments berhasil dikonfirmasi!', 'success');
+          },
+          onError: () => {
+            Swal.fire('Gagal', 'Gagal mengkonfirmasi payments', 'error');
+          }
+        });
+      }
+    });
+  });
 }
 </script> 
