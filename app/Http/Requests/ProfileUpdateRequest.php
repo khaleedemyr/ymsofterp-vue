@@ -65,11 +65,7 @@ class ProfileUpdateRequest extends FormRequest
             'nomor_kk' => ['nullable', 'string', 'max:50'],
             'imei' => ['nullable', 'string', 'max:50'],
             
-            // Files
-            'avatar' => ['nullable', 'image', 'max:2048'], // Max 2MB
-            'foto_ktp' => ['nullable', 'file', 'mimes:jpeg,png,jpg', 'max:2048'],
-            'foto_kk' => ['nullable', 'file', 'mimes:jpeg,png,jpg', 'max:2048'],
-            'upload_latest_color_photo' => ['nullable', 'file', 'mimes:jpeg,png,jpg', 'max:2048'],
+            // Files are handled separately - no file validation needed here
         ];
     }
 }

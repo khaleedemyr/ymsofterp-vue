@@ -67,8 +67,11 @@ class ItemController extends Controller
         $units = Unit::all();
         $itemsArr = $items->toArray();
 
-        $bomMaterialIds = collect($itemsArr['data'])->pluck('boms')->flatten(1)->pluck('material_item_id')->unique()->filter();
-        $bomItems = \App\Models\Item::whereIn('id', $bomMaterialIds)->get();
+        // Ambil semua item aktif untuk BOM dropdown
+        $bomItems = \App\Models\Item::with('smallUnit')
+            ->where('status', 'active')
+            ->orderBy('name')
+            ->get();
         $regions = \DB::table('regions')->where('status', 'active')->get()->keyBy('id');
         $outlets = \DB::table('tbl_data_outlet')->where('status', 'A')->get()->keyBy('id_outlet');
         $itemsArr = $items->toArray();
@@ -170,14 +173,31 @@ class ItemController extends Controller
         $categories = Category::all();
         $subCategories = SubCategory::all();
         $units = Unit::all();
+        $warehouseDivisions = WarehouseDivision::where('status', 'active')->get();
+        $menuTypes = \DB::table('menu_type')->where('status', 'active')->get();
         $regions = \DB::table('regions')->where('status', 'active')->get()->values();
         $outlets = \DB::table('tbl_data_outlet')->where('status', 'A')->get()->values();
+        
+        // Ambil semua item aktif untuk BOM dropdown
+        $bomItems = \App\Models\Item::with('smallUnit')
+            ->where('status', 'active')
+            ->orderBy('name')
+            ->get();
+        $modifiers = Modifier::with('options')->get();
+        
+        \Log::info('CREATE BOM ITEMS COUNT', ['count' => $bomItems->count()]);
+        \Log::info('CREATE BOM ITEMS', $bomItems->pluck('name', 'id')->toArray());
+        
         return Inertia::render('Items/Create', [
             'categories' => $categories,
             'subCategories' => $subCategories,
             'units' => $units,
+            'warehouseDivisions' => $warehouseDivisions,
+            'menuTypes' => $menuTypes,
             'regions' => $regions,
             'outlets' => $outlets,
+            'bomItems' => $bomItems,
+            'modifiers' => $modifiers,
         ]);
     }
 
@@ -195,7 +215,7 @@ class ItemController extends Controller
             $validated = $request->validate([
                 'category_id' => 'required|exists:categories,id',
                 'sub_category_id' => 'nullable|exists:sub_categories,id',
-                'warehouse_division_id' => 'nullable|string|max:255',
+                'warehouse_division_id' => 'nullable|integer|exists:warehouse_division,id',
                 'sku' => 'required|string|max:255|unique:items',
                 'type' => ['nullable', Rule::in($allowedTypes)],
                 'name' => 'required|string|max:255',
@@ -358,13 +378,30 @@ class ItemController extends Controller
         $menuTypes = \DB::table('menu_type')->where('status', 'active')->get();
         $regions = \DB::table('regions')->where('status', 'active')->get()->keyBy('id');
         $outlets = \DB::table('tbl_data_outlet')->where('status', 'A')->get()->keyBy('id_outlet');
-       // Ambil semua item yang menjadi child di BOM untuk item ini
-$bomMaterialIds = $item->boms->pluck('material_item_id')->unique()->filter();
-$bomItems = \App\Models\Item::whereIn('id', $bomMaterialIds)->get();
+        // Ambil semua item aktif untuk BOM dropdown (kecuali item itu sendiri)
+        $bomItems = \App\Models\Item::with('smallUnit')
+            ->where('id', '!=', $item->id)
+            ->where('status', 'active')
+            ->orderBy('name')
+            ->get();
         $modifiers = Modifier::with('options')->get();
-        \Log::info('BOM MATERIAL IDS', $bomMaterialIds->toArray());
-        \Log::info('BOM ITEMS', $bomItems->pluck('name', 'id')->toArray());
-        \Log::info('BOM RAW', $item['boms'] instanceof \Illuminate\Support\Collection ? $item['boms']->toArray() : (array) $item['boms']);
+        \Log::info('BOM ITEMS DETAIL', $bomItems->map(function($item) {
+            return [
+                'id' => $item->id,
+                'name' => $item->name,
+                'status' => $item->status,
+                'small_unit_id' => $item->small_unit_id,
+                'small_unit_name' => $item->smallUnit ? $item->smallUnit->name : null
+            ];
+        })->toArray());
+        
+        // Debug: Cek apakah ada item yang tidak aktif
+        $allItems = \App\Models\Item::where('id', '!=', $item->id)->get();
+        $inactiveItems = $allItems->where('status', '!=', 'active');
+        \Log::info('INACTIVE ITEMS FOUND', [
+            'count' => $inactiveItems->count(),
+            'items' => $inactiveItems->pluck('name', 'id')->toArray()
+        ]);
 
 
         $item->load([
@@ -579,9 +616,9 @@ $bomItems = \App\Models\Item::whereIn('id', $bomMaterialIds)->get();
 
             // Update BOM jika composition_type = 'composed'
             if ($request->has('bom')) {
-                $item->boms()->delete();
-                // Hanya insert jika ada BOM valid
-                if ($request->composition_type === 'composed' && is_array($request->bom)) {
+                // Hanya hapus dan insert ulang jika ada BOM yang dikirim
+                if ($request->composition_type === 'composed' && is_array($request->bom) && !empty($request->bom)) {
+                    $item->boms()->delete();
                     foreach ($request->bom as $bom) {
                         if (!empty($bom['item_id']) && !empty($bom['qty']) && !empty($bom['unit_id'])) {
                             $item->boms()->create([
@@ -591,7 +628,11 @@ $bomItems = \App\Models\Item::whereIn('id', $bomMaterialIds)->get();
                             ]);
                         }
                     }
+                } else if ($request->composition_type === 'single') {
+                    // Jika composition_type = 'single', hapus semua BOM
+                    $item->boms()->delete();
                 }
+                // Jika composition_type = 'composed' tapi BOM kosong, jangan hapus BOM yang ada
             }
 
             // Update modifier options
@@ -666,13 +707,31 @@ $bomItems = \App\Models\Item::whereIn('id', $bomMaterialIds)->get();
         $units = Unit::all();
         $regions = \DB::table('regions')->where('status', 'active')->get()->keyBy('id');
         $outlets = \DB::table('tbl_data_outlet')->where('status', 'A')->get()->keyBy('id_outlet');
-       // Ambil semua item yang menjadi child di BOM untuk item ini
-$bomMaterialIds = $item->boms->pluck('material_item_id')->unique()->filter();
-$bomItems = \App\Models\Item::whereIn('id', $bomMaterialIds)->get();
+        // Ambil semua item aktif untuk BOM dropdown (kecuali item itu sendiri)
+        $bomItems = \App\Models\Item::with('smallUnit')
+            ->where('id', '!=', $item->id)
+            ->where('status', 'active')
+            ->orderBy('name')
+            ->get();
         $modifiers = Modifier::with('options')->get();
-        \Log::info('BOM MATERIAL IDS', $bomMaterialIds->toArray());
-        \Log::info('BOM ITEMS', $bomItems->pluck('name', 'id')->toArray());
-        \Log::info('BOM RAW', $item['boms'] instanceof \Illuminate\Support\Collection ? $item['boms']->toArray() : (array) $item['boms']);
+        \Log::info('BOM ITEMS DETAIL', $bomItems->map(function($item) {
+            return [
+                'id' => $item->id,
+                'name' => $item->name,
+                'status' => $item->status,
+                'small_unit_id' => $item->small_unit_id,
+                'small_unit_name' => $item->smallUnit ? $item->smallUnit->name : null
+            ];
+        })->toArray());
+        
+        // Debug: Cek apakah ada item yang tidak aktif
+        $allItems = \App\Models\Item::where('id', '!=', $item->id)->get();
+        $inactiveItems = $allItems->where('status', '!=', 'active');
+        \Log::info('INACTIVE ITEMS FOUND', [
+            'count' => $inactiveItems->count(),
+            'items' => $inactiveItems->pluck('name', 'id')->toArray()
+        ]);
+        
         $mappedPrices = $item->prices->map(function($p) use ($regions, $outlets) {
             $regionId = $p->region_id !== null ? (int) $p->region_id : null;
             $outletId = $p->outlet_id !== null ? (int) $p->outlet_id : null;

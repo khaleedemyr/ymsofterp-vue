@@ -344,13 +344,87 @@ watch(() => props.show, (val) => {
     }
 });
 
-const submitProfile = () => {
+const submitProfile = async () => {
     isLoading.value = true;
     
+    try {
+        // 1. Update avatar separately if it exists
+        if (form.avatar && form.avatar instanceof File) {
+            await updateAvatar();
+        }
+        
+        // 2. Update documents separately if they exist
+        if (hasDocumentFiles()) {
+            await updateDocuments();
+        }
+        
+        // 3. Update other profile data (excluding all file fields)
+        await updateProfileData();
+        
+        // 4. Reload user data and show success
+        Inertia.reload({ only: ['auth'] });
+        Swal.fire('Success', 'Profile updated successfully!', 'success');
+        emit('close');
+        
+        if (previewUrl.value && previewUrl.value.startsWith('blob:')) {
+            URL.revokeObjectURL(previewUrl.value);
+        }
+    } catch (error) {
+        console.error('Profile update error:', error);
+        console.error('Error response:', error.response?.data);
+        Swal.fire('Error', 'Failed to update profile!', 'error');
+    } finally {
+        isLoading.value = false;
+    }
+};
+
+const hasDocumentFiles = () => {
+    return (form.foto_ktp && form.foto_ktp instanceof File) ||
+           (form.foto_kk && form.foto_kk instanceof File) ||
+           (form.upload_latest_color_photo && form.upload_latest_color_photo instanceof File);
+};
+
+const updateAvatar = async () => {
+    const fd = new FormData();
+    fd.append('avatar', form.avatar);
+    
+    await axios.post(route('profile.update-avatar'), fd, {
+        headers: {
+            'Content-Type': 'multipart/form-data',
+        },
+        _method: 'patch',
+    });
+};
+
+const updateDocuments = async () => {
+    const fd = new FormData();
+    
+    if (form.foto_ktp && form.foto_ktp instanceof File) {
+        fd.append('foto_ktp', form.foto_ktp);
+    }
+    if (form.foto_kk && form.foto_kk instanceof File) {
+        fd.append('foto_kk', form.foto_kk);
+    }
+    if (form.upload_latest_color_photo && form.upload_latest_color_photo instanceof File) {
+        fd.append('upload_latest_color_photo', form.upload_latest_color_photo);
+    }
+    
+    await axios.post(route('profile.update-documents'), fd, {
+        headers: {
+            'Content-Type': 'multipart/form-data',
+        },
+        _method: 'patch',
+    });
+};
+
+const updateProfileData = async () => {
     const fd = new FormData();
     
     // Fields that should NOT be submitted (readonly work fields)
     const readonlyFields = ['id_jabatan', 'id_outlet', 'division_id', 'tanggal_masuk'];
+    
+    // File fields that should be excluded from profile update
+    const fileFields = ['avatar', 'foto_ktp', 'foto_kk', 'upload_latest_color_photo'];
     
     Object.entries(form.data()).forEach(([key, value]) => {
         // Skip readonly fields
@@ -358,28 +432,27 @@ const submitProfile = () => {
             return;
         }
         
-        if (value !== null && value !== undefined) {
+        // Skip file fields (they are handled separately)
+        if (fileFields.includes(key)) {
+            return;
+        }
+        
+        // For other fields, only send if they have meaningful values
+        if (value !== null && value !== undefined && value !== '') {
             fd.append(key, value);
         }
     });
     
-    axios.post(route('profile.update'), fd, {
+    console.log('Profile data FormData contents:');
+    for (let [key, value] of fd.entries()) {
+        console.log(key, value);
+    }
+    
+    await axios.post(route('profile.update'), fd, {
         headers: {
             'Content-Type': 'multipart/form-data',
         },
         _method: 'patch',
-    }).then(() => {
-            Inertia.reload({ only: ['auth'] });
-            Swal.fire('Success', 'Profile updated successfully!', 'success');
-            emit('close');
-            if (previewUrl.value && previewUrl.value.startsWith('blob:')) {
-                URL.revokeObjectURL(previewUrl.value);
-            }
-    }).catch((error) => {
-        console.error('Profile update error:', error);
-        Swal.fire('Error', 'Failed to update profile!', 'error');
-    }).finally(() => {
-            isLoading.value = false;
     });
 };
 

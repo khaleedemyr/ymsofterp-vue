@@ -171,10 +171,22 @@
         <div v-show="currentStep === 'bom'">
           <label class="block text-sm font-medium text-gray-700 mb-2">Bill of Material (BOM)</label>
           <div v-for="(bom, idx) in form.bom" :key="idx" class="flex gap-2 mb-2 items-center">
-            <select v-model="bom.item_id" class="rounded border-gray-300">
-              <option value="">Pilih Bahan</option>
-              <option v-for="item in bomItems" :key="item.id" :value="item.id">{{ item.name }}</option>
-            </select>
+            <div class="flex-1">
+              <Multiselect
+                v-model="bom.selectedItem"
+                :options="bomItems"
+                :searchable="true"
+                :clear-on-select="false"
+                :close-on-select="true"
+                :show-labels="false"
+                track-by="id"
+                label="name"
+                placeholder="Pilih atau cari bahan..."
+                class="w-full"
+                @select="(selectedItem) => onBomItemSelect(selectedItem, bom)"
+                @clear="() => onBomItemClear(bom)"
+              />
+            </div>
             <input
               type="number"
               :value="formatQty(bom.qty)"
@@ -485,6 +497,8 @@
 import { ref, computed, watch, onMounted } from 'vue';
 import { useForm } from '@inertiajs/vue3';
 import Swal from 'sweetalert2';
+import Multiselect from 'vue-multiselect';
+import 'vue-multiselect/dist/vue-multiselect.min.css';
 
 const props = defineProps({
   show: Boolean,
@@ -637,9 +651,20 @@ watch(() => form.category_id, (val) => {
 
 watch(currentStep, (val) => {
   if (val === 'bom' && form.bom.length === 0) {
-    form.bom.push({ item_id: '', qty: '', unit_id: '' });
+    form.bom.push({ item_id: '', qty: '', unit_id: '', selectedItem: null });
   }
 });
+
+// Initialize selectedItem for existing BOM data
+watch(() => form.bom, (newBom) => {
+  if (Array.isArray(newBom)) {
+    newBom.forEach(bom => {
+      if (bom.item_id && !bom.selectedItem) {
+        bom.selectedItem = getBomItemObject(bom.item_id);
+      }
+    });
+  }
+}, { deep: true });
 
 const regionsArray = computed(() => {
   if (!props.regions) return [];
@@ -953,8 +978,29 @@ function getValidOptions(options) {
 const addBomRow = () => {
   form.bom.push({
     item_id: '',
-    qty: 1
+    qty: 1,
+    selectedItem: null
   });
+};
+
+const onBomItemSelect = (selectedItem, bom) => {
+  if (selectedItem) {
+    bom.item_id = selectedItem.id;
+    bom.selectedItem = selectedItem;
+    // Set unit_id ke small_unit_id dari item yang dipilih
+    bom.unit_id = selectedItem.small_unit_id || '';
+  }
+};
+
+const onBomItemClear = (bom) => {
+  bom.item_id = '';
+  bom.selectedItem = null;
+  bom.unit_id = '';
+};
+
+const getBomItemObject = (itemId) => {
+  if (!itemId) return null;
+  return props.bomItems.find(item => item.id == itemId) || null;
 };
 
 const removeBomRow = (index) => {
@@ -1064,3 +1110,6 @@ watch(() => props.item, (val) => {
   console.log('DEBUG [EditItemModal] props.item (watch):', JSON.parse(JSON.stringify(val)));
 });
 </script> 
+
+
+

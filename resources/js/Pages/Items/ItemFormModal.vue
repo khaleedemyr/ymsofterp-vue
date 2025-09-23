@@ -168,10 +168,22 @@
         <div v-if="currentStep === 'bom'">
           <label class="block text-sm font-medium text-gray-700 mb-2">Bill of Material (BOM)</label>
           <div v-for="(bom, idx) in form.bom" :key="idx" class="flex gap-2 mb-2 items-center">
-            <select v-model="bom.item_id" class="rounded border-gray-300">
-              <option value="">Pilih Bahan</option>
-              <option v-for="item in bomItems" :key="item.id" :value="item.id">{{ item.name }}</option>
-            </select>
+            <div class="flex-1">
+              <Multiselect
+                v-model="bom.selectedItem"
+                :options="bomItems"
+                :searchable="true"
+                :clear-on-select="false"
+                :close-on-select="true"
+                :show-labels="false"
+                track-by="id"
+                label="name"
+                placeholder="Pilih atau cari bahan..."
+                class="w-full"
+                @select="(selectedItem) => onBomItemSelect(selectedItem, bom)"
+                @clear="() => onBomItemClear(bom)"
+              />
+            </div>
             <input type="number" v-model="bom.qty" min="0" step="0.01" placeholder="Qty" class="rounded border-gray-300 w-24" required />
             <span v-if="getSmallUnit(bom.item_id)" class="text-gray-700">{{ getSmallUnit(bom.item_id).name }}</span>
             <button type="button" @click="removeBomRow(idx)" class="text-red-500 hover:text-red-700"><i class="fa-solid fa-trash"></i></button>
@@ -509,6 +521,8 @@
 import { ref, watch, onMounted, computed } from 'vue';
 import { useForm } from '@inertiajs/vue3';
 import Swal from 'sweetalert2';
+import Multiselect from 'vue-multiselect';
+import 'vue-multiselect/dist/vue-multiselect.min.css';
 
 const FileType = window.File;
 const URLObject = window.URL || window.webkitURL;
@@ -666,7 +680,7 @@ const usedAvailRegionIds = computed(() => form.availabilities.map(a => a.region_
 const usedAvailOutletIds = computed(() => form.availabilities.map(a => a.outlet_id).filter(Boolean));
 
 const addBomRow = () => {
-  form.bom.push({ item_id: '', qty: '', unit_id: '' });
+  form.bom.push({ item_id: '', qty: '', unit_id: '', selectedItem: null });
 };
 const removeBomRow = (idx) => {
   form.bom.splice(idx, 1);
@@ -676,6 +690,26 @@ const getSmallUnit = (itemId) => {
   const item = props.bomItems.find(i => i.id == itemId);
   if (!item) return null;
   return props.units.find(u => u.id == item.small_unit_id) || null;
+};
+
+const onBomItemSelect = (selectedItem, bom) => {
+  if (selectedItem) {
+    bom.item_id = selectedItem.id;
+    bom.selectedItem = selectedItem;
+    // Set unit_id ke small_unit_id dari item yang dipilih
+    bom.unit_id = selectedItem.small_unit_id || '';
+  }
+};
+
+const onBomItemClear = (bom) => {
+  bom.item_id = '';
+  bom.selectedItem = null;
+  bom.unit_id = '';
+};
+
+const getBomItemObject = (itemId) => {
+  if (!itemId) return null;
+  return props.bomItems.find(item => item.id == itemId) || null;
 };
 
 watch(
@@ -804,9 +838,20 @@ const submit = () => {
 
 watch(currentStep, (val) => {
   if (val === 'bom' && form.bom.length === 0) {
-    form.bom.push({ item_id: '', qty: '', unit_id: '' });
+    form.bom.push({ item_id: '', qty: '', unit_id: '', selectedItem: null });
   }
 });
+
+// Initialize selectedItem for existing BOM data
+watch(() => form.bom, (newBom) => {
+  if (Array.isArray(newBom)) {
+    newBom.forEach(bom => {
+      if (bom.item_id && !bom.selectedItem) {
+        bom.selectedItem = getBomItemObject(bom.item_id);
+      }
+    });
+  }
+}, { deep: true });
 
 const modifiers = props.modifiers || [];
 const accordionOpen = ref({});

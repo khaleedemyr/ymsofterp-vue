@@ -4,7 +4,7 @@
       <!-- Header -->
       <div class="flex items-center justify-between p-6 border-b">
         <h3 class="text-lg font-semibold text-gray-900">
-          Aktivasi Karyawan Baru
+          {{ user?.status === 'B' ? 'Aktivasi Karyawan Baru' : 'Lengkapi Data Karyawan' }}
         </h3>
         <button @click="$emit('close')" class="text-gray-400 hover:text-gray-600">
           <i class="fa-solid fa-times text-xl"></i>
@@ -14,10 +14,13 @@
       <!-- Content -->
       <div class="p-6">
         <div class="mb-4">
-          <p class="text-sm text-gray-600 mb-2">Karyawan yang akan diaktifkan:</p>
+          <p class="text-sm text-gray-600 mb-2">
+            {{ user?.status === 'B' ? 'Karyawan baru yang akan diaktifkan:' : 'Karyawan yang perlu melengkapi data:' }}
+          </p>
           <div class="bg-gray-50 p-3 rounded-lg">
             <p class="font-semibold">{{ user?.nama_lengkap }}</p>
             <p class="text-sm text-gray-600">NIK: {{ user?.nik }}</p>
+            <p class="text-sm text-gray-600">Status: {{ user?.status === 'B' ? 'Baru' : user?.status === 'A' ? 'Aktif' : 'Non-Aktif' }}</p>
           </div>
         </div>
 
@@ -115,7 +118,7 @@
           :disabled="loading || !isFormValid"
         >
           <span v-if="loading">Memproses...</span>
-          <span v-else>Aktifkan Karyawan</span>
+          <span v-else>{{ user?.status === 'B' ? 'Aktifkan Karyawan' : 'Simpan Data' }}</span>
         </button>
       </div>
     </div>

@@ -129,6 +129,14 @@ async function toggleStatus(user) {
     return;
   }
 
+  // Jika status 'A' atau 'N' dan field yang diperlukan masih null, tampilkan modal aktivasi
+  if ((user.status === 'A' || user.status === 'N') && 
+      (!user.id_outlet || !user.id_jabatan || !user.division_id)) {
+    selectedUserForActivation.value = user;
+    showActivationModal.value = true;
+    return;
+  }
+
   // Untuk status lain, gunakan logika lama
   const action = user.status === 'A' ? 'menonaktifkan' : 'mengaktifkan';
   const result = await Swal.fire({

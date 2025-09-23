@@ -52,27 +52,67 @@ class ProfileController extends Controller
             }
         }
 
-        // Handle file uploads
-        if ($request->hasFile('avatar')) {
-            // Delete old avatar if exists
-            if ($user->avatar) {
-                Storage::disk('public')->delete($user->avatar);
-            }
-            $user->avatar = $request->file('avatar')->store('users/avatars', 'public');
+        // File uploads are handled separately via updateAvatar method
+
+        $user->save();
+
+        return Redirect::route('profile.edit');
+    }
+
+    /**
+     * Update the user's avatar.
+     */
+    public function updateAvatar(Request $request): RedirectResponse
+    {
+        $request->validate([
+            'avatar' => ['required', 'image', 'max:2048'],
+        ]);
+
+        $user = $request->user();
+
+        // Delete old avatar if exists
+        if ($user->avatar) {
+            Storage::disk('public')->delete($user->avatar);
         }
-        if ($request->hasFile('foto_ktp')) {
+
+        // Store new avatar
+        $user->avatar = $request->file('avatar')->store('users/avatars', 'public');
+        $user->save();
+
+        return Redirect::route('profile.edit');
+    }
+
+    /**
+     * Update the user's documents (foto_ktp, foto_kk, upload_latest_color_photo).
+     */
+    public function updateDocuments(Request $request): RedirectResponse
+    {
+        $request->validate([
+            'foto_ktp' => ['nullable', 'image', 'mimes:jpeg,png,jpg', 'max:2048'],
+            'foto_kk' => ['nullable', 'image', 'mimes:jpeg,png,jpg', 'max:2048'],
+            'upload_latest_color_photo' => ['nullable', 'image', 'mimes:jpeg,png,jpg', 'max:2048'],
+        ]);
+
+        $user = $request->user();
+
+        // Handle foto_ktp upload
+        if ($request->hasFile('foto_ktp') && $request->file('foto_ktp')->isValid()) {
             if ($user->foto_ktp) {
                 Storage::disk('public')->delete($user->foto_ktp);
             }
             $user->foto_ktp = $request->file('foto_ktp')->store('users/foto_ktp', 'public');
         }
-        if ($request->hasFile('foto_kk')) {
+
+        // Handle foto_kk upload
+        if ($request->hasFile('foto_kk') && $request->file('foto_kk')->isValid()) {
             if ($user->foto_kk) {
                 Storage::disk('public')->delete($user->foto_kk);
             }
             $user->foto_kk = $request->file('foto_kk')->store('users/foto_kk', 'public');
         }
-        if ($request->hasFile('upload_latest_color_photo')) {
+
+        // Handle upload_latest_color_photo upload
+        if ($request->hasFile('upload_latest_color_photo') && $request->file('upload_latest_color_photo')->isValid()) {
             if ($user->upload_latest_color_photo) {
                 Storage::disk('public')->delete($user->upload_latest_color_photo);
             }

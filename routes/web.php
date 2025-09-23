@@ -128,6 +128,8 @@ Route::middleware('auth')->group(function () {
     })->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::post('/profile', [ProfileController::class, 'update']);
+    Route::patch('/profile/avatar', [ProfileController::class, 'updateAvatar'])->name('profile.update-avatar');
+    Route::patch('/profile/documents', [ProfileController::class, 'updateDocuments'])->name('profile.update-documents');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
     Route::get('/home', [\App\Http\Controllers\HomeController::class, 'show'])->name('home');
     

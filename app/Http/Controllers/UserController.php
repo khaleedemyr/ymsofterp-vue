@@ -477,16 +477,26 @@ class UserController extends Controller
         ]);
 
         try {
-            $user->update([
+            $updateData = [
                 'id_jabatan' => $request->jabatan_id,
                 'division_id' => $request->division_id,
                 'id_outlet' => $request->outlet_id,
-                'status' => 'A', // Aktifkan karyawan
-            ]);
+            ];
+
+            // Jika status 'B' (Baru), aktifkan karyawan
+            if ($user->status === 'B') {
+                $updateData['status'] = 'A';
+                $message = 'Karyawan berhasil diaktifkan!';
+            } else {
+                // Jika status lain, hanya update data tanpa mengubah status
+                $message = 'Data karyawan berhasil diperbarui!';
+            }
+
+            $user->update($updateData);
 
             return response()->json([
                 'success' => true,
-                'message' => 'Karyawan berhasil diaktifkan!'
+                'message' => $message
             ]);
         } catch (\Exception $e) {
             return response()->json([
