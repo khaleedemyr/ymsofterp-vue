@@ -148,7 +148,7 @@ const exportExcel = () => {
 
 <template>
   <AppLayout title="Report Attendance">
-    <div class="max-w-6xl mx-auto px-2 md:px-0 py-8">
+    <div class="w-full px-2 md:px-4 py-8">
       <div v-if="isLoading || isExporting" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-30">
         <div class="flex flex-col items-center gap-4">
           <svg class="animate-spin h-12 w-12 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -160,7 +160,9 @@ const exportExcel = () => {
           </div>
         </div>
       </div>
-      <div class="flex flex-col md:flex-row md:items-end gap-4 mb-6">
+      <div class="bg-white rounded-2xl shadow-lg p-6 mb-6">
+        <div class="text-lg font-semibold text-gray-700 mb-4">Filter Report</div>
+        <div class="flex flex-col md:flex-row md:items-end gap-4">
         <div class="flex-1 min-w-[180px]">
           <label class="block text-sm font-medium text-gray-700 mb-1">Outlet</label>
           <select v-model="outletId" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
@@ -203,19 +205,31 @@ const exportExcel = () => {
             <option v-for="t in tahunOptions" :key="t" :value="t">{{ t }}</option>
           </select>
         </div>
-        <div>
-          <button @click="applyFilter" :disabled="isLoading || isExporting" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-medium transition-all duration-200 transform hover:scale-105 shadow-lg">
-            <i class="fa fa-search mr-2"></i> Tampilkan
+          <div>
+            <button @click="applyFilter" :disabled="isLoading || isExporting" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-medium transition-all duration-200 transform hover:scale-105 shadow-lg">
+              <i class="fa fa-search mr-2"></i> Tampilkan
+            </button>
+          </div>
+        </div>
+        <div class="flex justify-end items-center mt-4">
+          <button @click="exportExcel" :disabled="isLoading || isExporting" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-6 rounded-xl shadow flex items-center gap-2">
+            <i class="fa fa-file-excel-o"></i> Export to Excel
           </button>
         </div>
       </div>
-      <div class="flex justify-end items-center mb-4">
-        <button @click="exportExcel" :disabled="isLoading || isExporting" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-6 rounded-xl shadow flex items-center gap-2">
-          <i class="fa fa-file-excel-o"></i> Export to Excel
-        </button>
-      </div>
-      <div class="bg-white rounded-2xl shadow-lg">
-        <table class="w-full divide-y divide-blue-200">
+      
+      <div class="bg-white rounded-2xl shadow-lg overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-200">
+          <div class="flex justify-between items-center">
+            <h3 class="text-lg font-semibold text-gray-700">Data Absensi</h3>
+            <div class="text-sm text-gray-500">
+              Total: {{ props.data ? props.data.length : 0 }} record
+            </div>
+          </div>
+        </div>
+        
+        <div class="overflow-x-auto">
+          <table class="w-full divide-y divide-blue-200">
           <thead class="bg-blue-600 text-white">
             <tr>
               <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">Tanggal</th>
@@ -303,6 +317,7 @@ const exportExcel = () => {
             </tr>
           </tbody>
         </table>
+        </div>
       </div>
       <div v-if="props.summary" class="flex gap-6 mt-6 mb-10">
         <div class="bg-blue-100 text-blue-800 rounded-xl px-6 py-4 font-bold text-lg shadow flex items-center gap-2">
