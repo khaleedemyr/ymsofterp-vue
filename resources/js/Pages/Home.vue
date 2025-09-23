@@ -49,6 +49,11 @@ const loadingHrdApprovals = ref(false);
 const pendingCorrectionApprovals = ref([]);
 const loadingCorrectionApprovals = ref(false);
 
+// All approvals modal
+const showAllApprovalsModal = ref(false);
+const allApprovals = ref([]);
+const loadingAllApprovals = ref(false);
+
 // Training invitations
 const trainingInvitations = ref([]);
 const loadingTrainingInvitations = ref(false);
@@ -451,6 +456,95 @@ async function loadPendingCorrectionApprovals() {
     } finally {
         loadingCorrectionApprovals.value = false;
     }
+}
+
+// All approvals modal functions
+async function loadAllApprovals() {
+    loadingAllApprovals.value = true;
+    try {
+        // Load all types of approvals
+        const [approvalsResponse, hrdResponse, correctionResponse] = await Promise.all([
+            axios.get('/api/approval/pending'),
+            user.division_id === 6 ? axios.get('/api/approval/pending-hrd') : Promise.resolve({ data: { success: true, approvals: [] } }),
+            user.division_id === 6 ? axios.get('/api/schedule-attendance-correction/pending-approvals') : Promise.resolve({ data: { success: true, approvals: [] } })
+        ]);
+
+        const allApprovalsData = [];
+        
+        // Add leave approvals
+        if (approvalsResponse.data.success) {
+            approvalsResponse.data.approvals.forEach(approval => {
+                allApprovalsData.push({
+                    ...approval,
+                    type: 'leave',
+                    typeLabel: 'Izin/Cuti'
+                });
+            });
+        }
+
+        // Add HRD approvals
+        if (hrdResponse.data.success) {
+            hrdResponse.data.approvals.forEach(approval => {
+                allApprovalsData.push({
+                    ...approval,
+                    type: 'hrd_leave',
+                    typeLabel: 'Izin/Cuti HRD'
+                });
+            });
+        }
+
+        // Add correction approvals
+        if (correctionResponse.data.success) {
+            correctionResponse.data.approvals.forEach(approval => {
+                allApprovalsData.push({
+                    ...approval,
+                    type: 'correction',
+                    typeLabel: approval.type === 'schedule' ? 'Koreksi Schedule' : 'Koreksi Attendance'
+                });
+            });
+        }
+
+        // Sort by created date
+        allApprovalsData.sort((a, b) => new Date(b.created_at || b.tanggal) - new Date(a.created_at || a.tanggal));
+        
+        allApprovals.value = allApprovalsData;
+    } catch (error) {
+        console.error('Error loading all approvals:', error);
+    } finally {
+        loadingAllApprovals.value = false;
+    }
+}
+
+function showAllApprovals() {
+    showAllApprovalsModal.value = true;
+    loadAllApprovals();
+}
+
+// Handle approval actions from modal
+async function handleApprovalAction(approval) {
+    if (approval.type === 'leave') {
+        await showApprovalDetails(approval.id);
+    } else if (approval.type === 'hrd_leave') {
+        await showApprovalDetails(approval.id);
+    } else if (approval.type === 'correction') {
+        // For correction approvals, directly approve
+        await approveCorrection(approval.id);
+        // Reload all approvals after action
+        await loadAllApprovals();
+    }
+}
+
+async function handleRejectionAction(approval) {
+    if (approval.type === 'leave') {
+        await rejectRequest(approval.id);
+    } else if (approval.type === 'hrd_leave') {
+        await hrdRejectRequest(approval.id);
+    } else if (approval.type === 'correction') {
+        await rejectCorrection(approval.id);
+    }
+    
+    // Reload all approvals after action
+    await loadAllApprovals();
 }
 
 // Training invitation functions
@@ -2043,14 +2137,40 @@ async function rejectCorrection(approvalId) {
 
 // Format correction value for display
 function formatCorrectionValue(approval) {
-    if (approval.type === 'schedule') {
-        return `Dari: ${approval.old_value} → Ke: ${approval.new_value}`;
-    } else if (approval.type === 'attendance') {
-        try {
-            // Try to parse JSON data for new format
-            const oldData = JSON.parse(approval.old_value);
-            const newData = JSON.parse(approval.new_value);
-            
+    return formatAnyCorrectionValue(approval.old_value, approval.new_value, approval.type);
+}
+
+// Format correction time for detailed display
+function getFormattedCorrectionTime(jsonValue) {
+    try {
+        const data = JSON.parse(jsonValue);
+        const dateTime = new Date(data.scan_date);
+        const date = dateTime.toLocaleDateString('id-ID');
+        const time = dateTime.toLocaleTimeString('id-ID', {
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit'
+        });
+        const mode = data.inoutmode === 1 ? 'Masuk' : 'Keluar';
+        
+        return `${date} ${time} (${mode})`;
+    } catch (error) {
+        return jsonValue;
+    }
+}
+
+// Enhanced function to format any correction value
+function formatAnyCorrectionValue(oldValue, newValue, type = 'attendance') {
+    if (type === 'schedule') {
+        return `Dari: ${oldValue} → Ke: ${newValue}`;
+    }
+    
+    // Try to parse as JSON for attendance
+    try {
+        const oldData = JSON.parse(oldValue);
+        const newData = JSON.parse(newValue);
+        
+        if (oldData.scan_date && newData.scan_date) {
             const oldTime = new Date(oldData.scan_date).toLocaleTimeString('id-ID', {
                 hour: '2-digit',
                 minute: '2-digit',
@@ -2062,15 +2182,33 @@ function formatCorrectionValue(approval) {
                 second: '2-digit'
             });
             
-            const inoutMode = oldData.inoutmode === 1 ? 'Masuk' : 'Keluar';
+            const mode = oldData.inoutmode === 1 ? 'Masuk' : 'Keluar';
+            return `Waktu ${mode}: ${oldTime} → ${newTime}`;
+        }
+    } catch (error) {
+        // If JSON parsing fails, try to extract time from string
+        const timeRegex = /(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})/;
+        const oldMatch = oldValue.match(timeRegex);
+        const newMatch = newValue.match(timeRegex);
+        
+        if (oldMatch && newMatch) {
+            const oldTime = new Date(oldMatch[1]).toLocaleTimeString('id-ID', {
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            });
+            const newTime = new Date(newMatch[1]).toLocaleTimeString('id-ID', {
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            });
             
-            return `Waktu ${inoutMode}: ${oldTime} → ${newTime}`;
-        } catch (error) {
-            // Fallback for old format (non-JSON)
-            return `Dari: ${approval.old_value} → Ke: ${approval.new_value}`;
+            return `Waktu: ${oldTime} → ${newTime}`;
         }
     }
-    return `Dari: ${approval.old_value} → Ke: ${approval.new_value}`;
+    
+    // Final fallback - show a clean message
+    return `Koreksi Attendance`;
 }
 
 // Lightbox state
@@ -2428,6 +2566,11 @@ watch(locale, () => {
                                         <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
                                             {{ new Date(approval.tanggal).toLocaleDateString('id-ID') }} • {{ formatCorrectionValue(approval) }}
                                         </div>
+                                        <!-- Reason Display -->
+                                        <div v-if="approval.reason" class="mt-2 p-2 bg-blue-50 rounded text-xs border-l-4 border-blue-400">
+                                            <div class="font-medium mb-1 text-blue-700">Alasan Koreksi:</div>
+                                            <div class="text-xs text-blue-600">{{ approval.reason }}</div>
+                                        </div>
                                     </div>
                                 </div>
                                 <div class="flex gap-2">
@@ -2480,10 +2623,10 @@ watch(locale, () => {
                             </div>
                             
                             <!-- Tombol untuk melihat semua approval yang pending -->
-                            <div v-if="(pendingApprovals.length > 0 || pendingHrdApprovals.length > 0)" class="text-center pt-2">
-                                <button @click="showAllPendingApprovals" class="text-sm bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600 transition-colors">
+                            <div v-if="(pendingApprovals.length > 0 || pendingHrdApprovals.length > 0 || pendingCorrectionApprovals.length > 0)" class="text-center pt-2">
+                                <button @click="showAllApprovals" class="text-sm bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600 transition-colors">
                                     <i class="fa-solid fa-list-check mr-1"></i>
-                                    Lihat Semua Approval ({{ pendingApprovals.length + pendingHrdApprovals.length }})
+                                    Lihat Semua Approval ({{ pendingApprovals.length + pendingHrdApprovals.length + pendingCorrectionApprovals.length }})
                                 </button>
                             </div>
                             
@@ -2603,195 +2746,200 @@ watch(locale, () => {
 
         <!-- Approval Detail Modal -->
         <div v-if="showApprovalModal && selectedApproval" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click="showApprovalModal = false">
-            <div class="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto" @click.stop>
-                <div class="flex items-center justify-between mb-4">
-                            <h3 class="text-lg font-medium text-gray-900 dark:text-white">
-                                Detail Permohonan Izin/Cuti
-                            </h3>
-                            <button @click="showApprovalModal = false" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
-                                <i class="fa-solid fa-times text-xl"></i>
-                            </button>
+            <div class="bg-white dark:bg-gray-800 rounded-lg w-full max-w-lg mx-4 max-h-[90vh] overflow-hidden" @click.stop>
+                <!-- Modal Header -->
+                <div class="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
+                    <h3 class="text-lg font-medium text-gray-900 dark:text-white">
+                        Detail Permohonan Izin/Cuti
+                    </h3>
+                    <button @click="showApprovalModal = false" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                        <i class="fa-solid fa-times text-xl"></i>
+                    </button>
+                </div>
+
+                <!-- Modal Body -->
+                <div class="p-6 overflow-y-auto max-h-[calc(90vh-140px)]">
+                    <div class="space-y-4">
+                        <!-- Employee Info -->
+                        <div class="bg-gray-50 dark:bg-gray-700 p-3 rounded-lg">
+                            <div class="text-sm font-medium text-gray-700 dark:text-gray-300">Karyawan</div>
+                            <div class="text-lg font-semibold text-gray-900 dark:text-white">{{ selectedApproval.user.nama_lengkap }}</div>
+                            <div class="text-sm text-gray-600 dark:text-gray-400">{{ selectedApproval.user.jabatan?.nama_jabatan || 'N/A' }}</div>
                         </div>
 
-                        <div class="space-y-4">
-                            <!-- Employee Info -->
-                            <div class="bg-gray-50 dark:bg-gray-700 p-3 rounded-lg">
-                                <div class="text-sm font-medium text-gray-700 dark:text-gray-300">Karyawan</div>
-                                <div class="text-lg font-semibold text-gray-900 dark:text-white">{{ selectedApproval.user.nama_lengkap }}</div>
-                                <div class="text-sm text-gray-600 dark:text-gray-400">{{ selectedApproval.user.jabatan?.nama_jabatan || 'N/A' }}</div>
-                            </div>
-
-                            <!-- Leave Details -->
-                            <div class="grid grid-cols-2 gap-4">
-                                <div>
-                                    <div class="text-sm font-medium text-gray-700 dark:text-gray-300">Jenis Izin/Cuti</div>
-                                    <div class="text-sm text-gray-900 dark:text-white">{{ selectedApproval.leave_type.name }}</div>
-                                </div>
-                                <div>
-                                    <div class="text-sm font-medium text-gray-700 dark:text-gray-300">Durasi</div>
-                                    <div class="text-sm text-gray-900 dark:text-white">{{ selectedApproval.duration_text }}</div>
-                                </div>
-                            </div>
-
-                            <div class="grid grid-cols-2 gap-4">
-                                <div>
-                                    <div class="text-sm font-medium text-gray-700 dark:text-gray-300">Tanggal Mulai</div>
-                                    <div class="text-sm text-gray-900 dark:text-white">{{ new Date(selectedApproval.date_from).toLocaleDateString('id-ID') }}</div>
-                                </div>
-                                <div>
-                                    <div class="text-sm font-medium text-gray-700 dark:text-gray-300">Tanggal Selesai</div>
-                                    <div class="text-sm text-gray-900 dark:text-white">{{ new Date(selectedApproval.date_to).toLocaleDateString('id-ID') }}</div>
-                                </div>
-                            </div>
-
-                            <!-- Reason -->
+                        <!-- Leave Details -->
+                        <div class="grid grid-cols-2 gap-4">
                             <div>
-                                <div class="text-sm font-medium text-gray-700 dark:text-gray-300">Alasan</div>
-                                <div class="text-sm text-gray-900 dark:text-white bg-gray-50 dark:bg-gray-700 p-2 rounded">{{ selectedApproval.reason }}</div>
+                                <div class="text-sm font-medium text-gray-700 dark:text-gray-300">Jenis Izin/Cuti</div>
+                                <div class="text-sm text-gray-900 dark:text-white">{{ selectedApproval.leave_type.name }}</div>
                             </div>
-
-                            <!-- Documents -->
-                            <div v-if="(selectedApproval.document_paths && selectedApproval.document_paths.length > 0) || selectedApproval.document_path">
-                                <div class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Dokumen Pendukung</div>
-                                
-                                <!-- Multiple Images Grid -->
-                                <div v-if="selectedApproval.document_paths && selectedApproval.document_paths.length > 0" class="grid grid-cols-2 gap-3">
-                                    <div 
-                                        v-for="(docPath, index) in selectedApproval.document_paths" 
-                                        :key="index"
-                                        class="relative group"
-                                    >
-                                        <!-- Check if it's an image -->
-                                        <div v-if="isImageFile(docPath)" class="relative cursor-pointer" @click="openImageModal(`/storage/${docPath}`, selectedApproval.document_paths)">
-                                            <img 
-                                                :src="`/storage/${docPath}`" 
-                                                :alt="`Document ${index + 1}`"
-                                                class="w-full h-32 object-cover rounded-lg border border-gray-300 dark:border-gray-600 hover:opacity-90 transition-opacity"
-                                            >
-                                            <div class="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 transition-all rounded-lg flex items-center justify-center pointer-events-none">
-                                                <i class="fa-solid fa-search-plus text-white opacity-0 group-hover:opacity-100 transition-opacity"></i>
-                                            </div>
-                                        </div>
-                                        
-                                        <!-- Non-image files -->
-                                        <div v-else class="w-full h-32 bg-gray-100 dark:bg-gray-700 rounded-lg border border-gray-300 dark:border-gray-600 flex items-center justify-center">
-                                            <a :href="`/storage/${docPath}`" target="_blank" 
-                                               class="text-center text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300">
-                                                <i class="fa-solid fa-file-pdf text-2xl mb-2"></i>
-                                                <div class="text-xs">Lihat Dokumen</div>
-                                            </a>
-                                        </div>
-                                    </div>
-                                </div>
-                                
-                                <!-- Legacy single document support -->
-                                <div v-else-if="selectedApproval.document_path" class="mt-2">
-                                    <a :href="`/storage/${selectedApproval.document_path}`" target="_blank" 
-                                       class="text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300">
-                                        <i class="fa-solid fa-file-pdf mr-1"></i> Lihat Dokumen
-                                    </a>
-                                </div>
+                            <div>
+                                <div class="text-sm font-medium text-gray-700 dark:text-gray-300">Durasi</div>
+                                <div class="text-sm text-gray-900 dark:text-white">{{ selectedApproval.duration_text }}</div>
                             </div>
+                        </div>
 
-                            <!-- Approval Information -->
-                            <div v-if="selectedApproval.status === 'approved' || selectedApproval.hrd_status === 'approved'">
-                                <div class="text-sm font-medium text-gray-700 dark:text-gray-300">Informasi Approval</div>
-                                <div class="bg-green-50 dark:bg-green-900/20 p-3 rounded-lg space-y-2">
-                                    <!-- Supervisor Approval -->
-                                    <div v-if="selectedApproval.status === 'approved'">
-                                        <div class="text-xs text-green-700 dark:text-green-300">
-                                            <i class="fa-solid fa-check-circle mr-1"></i>
-                                            Disetujui oleh Atasan: <strong>{{ selectedApproval.approver?.nama_lengkap }}</strong>
-                                        </div>
-                                        <div class="text-xs text-gray-600 dark:text-gray-400">
-                                            {{ selectedApproval.approved_at ? new Date(selectedApproval.approved_at).toLocaleString('id-ID') : '' }}
-                                        </div>
-                                        <div v-if="selectedApproval.approval_notes" class="text-xs text-gray-600 dark:text-gray-400">
-                                            Catatan: {{ selectedApproval.approval_notes }}
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <div class="text-sm font-medium text-gray-700 dark:text-gray-300">Tanggal Mulai</div>
+                                <div class="text-sm text-gray-900 dark:text-white">{{ new Date(selectedApproval.date_from).toLocaleDateString('id-ID') }}</div>
+                            </div>
+                            <div>
+                                <div class="text-sm font-medium text-gray-700 dark:text-gray-300">Tanggal Selesai</div>
+                                <div class="text-sm text-gray-900 dark:text-white">{{ new Date(selectedApproval.date_to).toLocaleDateString('id-ID') }}</div>
+                            </div>
+                        </div>
+
+                        <!-- Reason -->
+                        <div>
+                            <div class="text-sm font-medium text-gray-700 dark:text-gray-300">Alasan</div>
+                            <div class="text-sm text-gray-900 dark:text-white bg-gray-50 dark:bg-gray-700 p-2 rounded">{{ selectedApproval.reason }}</div>
+                        </div>
+
+                        <!-- Documents -->
+                        <div v-if="(selectedApproval.document_paths && selectedApproval.document_paths.length > 0) || selectedApproval.document_path">
+                            <div class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Dokumen Pendukung</div>
+                            
+                            <!-- Multiple Images Grid -->
+                            <div v-if="selectedApproval.document_paths && selectedApproval.document_paths.length > 0" class="grid grid-cols-2 gap-3">
+                                <div 
+                                    v-for="(docPath, index) in selectedApproval.document_paths" 
+                                    :key="index"
+                                    class="relative group"
+                                >
+                                    <!-- Check if it's an image -->
+                                    <div v-if="isImageFile(docPath)" class="relative cursor-pointer" @click="openImageModal(`/storage/${docPath}`, selectedApproval.document_paths)">
+                                        <img 
+                                            :src="`/storage/${docPath}`" 
+                                            :alt="`Document ${index + 1}`"
+                                            class="w-full h-32 object-cover rounded-lg border border-gray-300 dark:border-gray-600 hover:opacity-90 transition-opacity"
+                                        >
+                                        <div class="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 transition-all rounded-lg flex items-center justify-center pointer-events-none">
+                                            <i class="fa-solid fa-search-plus text-white opacity-0 group-hover:opacity-100 transition-opacity"></i>
                                         </div>
                                     </div>
                                     
-                                    <!-- HRD Approval -->
-                                    <div v-if="selectedApproval.hrd_status === 'approved'">
-                                        <div class="text-xs text-green-700 dark:text-green-300">
-                                            <i class="fa-solid fa-check-circle mr-1"></i>
-                                            Disetujui oleh HRD: <strong>{{ selectedApproval.hrd_approver?.nama_lengkap }}</strong>
-                                        </div>
-                                        <div class="text-xs text-gray-600 dark:text-gray-400">
-                                            {{ selectedApproval.hrd_approved_at ? new Date(selectedApproval.hrd_approved_at).toLocaleString('id-ID') : '' }}
-                                        </div>
-                                        <div v-if="selectedApproval.hrd_approval_notes" class="text-xs text-gray-600 dark:text-gray-400">
-                                            Catatan: {{ selectedApproval.hrd_approval_notes }}
-                                        </div>
+                                    <!-- Non-image files -->
+                                    <div v-else class="w-full h-32 bg-gray-100 dark:bg-gray-700 rounded-lg border border-gray-300 dark:border-gray-600 flex items-center justify-center">
+                                        <a :href="`/storage/${docPath}`" target="_blank" 
+                                           class="text-center text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300">
+                                            <i class="fa-solid fa-file-pdf text-2xl mb-2"></i>
+                                            <div class="text-xs">Lihat Dokumen</div>
+                                        </a>
                                     </div>
                                 </div>
                             </div>
+                            
+                            <!-- Legacy single document support -->
+                            <div v-else-if="selectedApproval.document_path" class="mt-2">
+                                <a :href="`/storage/${selectedApproval.document_path}`" target="_blank" 
+                                   class="text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300">
+                                    <i class="fa-solid fa-file-pdf mr-1"></i> Lihat Dokumen
+                                </a>
+                            </div>
+                        </div>
 
-                            <!-- Rejection Information -->
-                            <div v-if="selectedApproval.status === 'rejected' || selectedApproval.hrd_status === 'rejected'">
-                                <div class="text-sm font-medium text-gray-700 dark:text-gray-300">Informasi Penolakan</div>
-                                <div class="bg-red-50 dark:bg-red-900/20 p-3 rounded-lg space-y-2">
-                                    <!-- Supervisor Rejection -->
-                                    <div v-if="selectedApproval.status === 'rejected'">
-                                        <div class="text-xs text-red-700 dark:text-red-300">
-                                            <i class="fa-solid fa-times-circle mr-1"></i>
-                                            Ditolak oleh Atasan: <strong>{{ selectedApproval.approver?.nama_lengkap }}</strong>
-                                        </div>
-                                        <div class="text-xs text-gray-600 dark:text-gray-400">
-                                            {{ selectedApproval.rejected_at ? new Date(selectedApproval.rejected_at).toLocaleString('id-ID') : '' }}
-                                        </div>
-                                        <div v-if="selectedApproval.approval_notes" class="text-xs text-gray-600 dark:text-gray-400">
-                                            Alasan: {{ selectedApproval.approval_notes }}
-                                        </div>
+                        <!-- Approval Information -->
+                        <div v-if="selectedApproval.status === 'approved' || selectedApproval.hrd_status === 'approved'">
+                            <div class="text-sm font-medium text-gray-700 dark:text-gray-300">Informasi Approval</div>
+                            <div class="bg-green-50 dark:bg-green-900/20 p-3 rounded-lg space-y-2">
+                                <!-- Supervisor Approval -->
+                                <div v-if="selectedApproval.status === 'approved'">
+                                    <div class="text-xs text-green-700 dark:text-green-300">
+                                        <i class="fa-solid fa-check-circle mr-1"></i>
+                                        Disetujui oleh Atasan: <strong>{{ selectedApproval.approver?.nama_lengkap }}</strong>
                                     </div>
-                                    
-                                    <!-- HRD Rejection -->
-                                    <div v-if="selectedApproval.hrd_status === 'rejected'">
-                                        <div class="text-xs text-red-700 dark:text-red-300">
-                                            <i class="fa-solid fa-times-circle mr-1"></i>
-                                            Ditolak oleh HRD: <strong>{{ selectedApproval.hrd_approver?.nama_lengkap }}</strong>
-                                        </div>
-                                        <div class="text-xs text-gray-600 dark:text-gray-400">
-                                            {{ selectedApproval.hrd_rejected_at ? new Date(selectedApproval.hrd_rejected_at).toLocaleString('id-ID') : '' }}
-                                        </div>
-                                        <div v-if="selectedApproval.hrd_approval_notes" class="text-xs text-gray-600 dark:text-gray-400">
-                                            Alasan: {{ selectedApproval.hrd_approval_notes }}
-                                        </div>
+                                    <div class="text-xs text-gray-600 dark:text-gray-400">
+                                        {{ selectedApproval.approved_at ? new Date(selectedApproval.approved_at).toLocaleString('id-ID') : '' }}
+                                    </div>
+                                    <div v-if="selectedApproval.approval_notes" class="text-xs text-gray-600 dark:text-gray-400">
+                                        Catatan: {{ selectedApproval.approval_notes }}
+                                    </div>
+                                </div>
+                                
+                                <!-- HRD Approval -->
+                                <div v-if="selectedApproval.hrd_status === 'approved'">
+                                    <div class="text-xs text-green-700 dark:text-green-300">
+                                        <i class="fa-solid fa-check-circle mr-1"></i>
+                                        Disetujui oleh HRD: <strong>{{ selectedApproval.hrd_approver?.nama_lengkap }}</strong>
+                                    </div>
+                                    <div class="text-xs text-gray-600 dark:text-gray-400">
+                                        {{ selectedApproval.hrd_approved_at ? new Date(selectedApproval.hrd_approved_at).toLocaleString('id-ID') : '' }}
+                                    </div>
+                                    <div v-if="selectedApproval.hrd_approval_notes" class="text-xs text-gray-600 dark:text-gray-400">
+                                        Catatan: {{ selectedApproval.hrd_approval_notes }}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Rejection Information -->
+                        <div v-if="selectedApproval.status === 'rejected' || selectedApproval.hrd_status === 'rejected'">
+                            <div class="text-sm font-medium text-gray-700 dark:text-gray-300">Informasi Penolakan</div>
+                            <div class="bg-red-50 dark:bg-red-900/20 p-3 rounded-lg space-y-2">
+                                <!-- Supervisor Rejection -->
+                                <div v-if="selectedApproval.status === 'rejected'">
+                                    <div class="text-xs text-red-700 dark:text-red-300">
+                                        <i class="fa-solid fa-times-circle mr-1"></i>
+                                        Ditolak oleh Atasan: <strong>{{ selectedApproval.approver?.nama_lengkap }}</strong>
+                                    </div>
+                                    <div class="text-xs text-gray-600 dark:text-gray-400">
+                                        {{ selectedApproval.rejected_at ? new Date(selectedApproval.rejected_at).toLocaleString('id-ID') : '' }}
+                                    </div>
+                                    <div v-if="selectedApproval.approval_notes" class="text-xs text-gray-600 dark:text-gray-400">
+                                        Alasan: {{ selectedApproval.approval_notes }}
+                                    </div>
+                                </div>
+                                
+                                <!-- HRD Rejection -->
+                                <div v-if="selectedApproval.hrd_status === 'rejected'">
+                                    <div class="text-xs text-red-700 dark:text-red-300">
+                                        <i class="fa-solid fa-times-circle mr-1"></i>
+                                        Ditolak oleh HRD: <strong>{{ selectedApproval.hrd_approver?.nama_lengkap }}</strong>
+                                    </div>
+                                    <div class="text-xs text-gray-600 dark:text-gray-400">
+                                        {{ selectedApproval.hrd_rejected_at ? new Date(selectedApproval.hrd_rejected_at).toLocaleString('id-ID') : '' }}
+                                    </div>
+                                    <div v-if="selectedApproval.hrd_approval_notes" class="text-xs text-gray-600 dark:text-gray-400">
+                                        Alasan: {{ selectedApproval.hrd_approval_notes }}
                                     </div>
                                 </div>
                             </div>
                         </div>
                     </div>
+                </div>
 
-                    <!-- Modal Actions -->
-                    <div class="bg-gray-50 dark:bg-gray-700 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+                <!-- Modal Footer -->
+                <div class="bg-gray-50 dark:bg-gray-700 px-6 py-4 border-t border-gray-200 dark:border-gray-600">
+                    <div class="flex justify-end gap-3">
                         <!-- HRD Actions -->
                         <template v-if="user.division_id === 6 && selectedApproval.status === 'supervisor_approved'">
                             <button @click="hrdRejectRequest(selectedApproval.id)" 
-                                    class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-red-600 text-base font-medium text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 sm:ml-3 sm:w-auto sm:text-sm">
+                                    class="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 transition-colors">
                                 Tolak HRD
                             </button>
                             <button @click="hrdApproveRequest(selectedApproval.id)" 
-                                    class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-green-600 text-base font-medium text-white hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm">
+                                    class="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 transition-colors">
                                 Setujui HRD
                             </button>
                         </template>
                         <!-- Supervisor Actions -->
                         <template v-else-if="selectedApproval.status === 'pending'">
                             <button @click="rejectRequest(selectedApproval.id)" 
-                                    class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-red-600 text-base font-medium text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 sm:ml-3 sm:w-auto sm:text-sm">
+                                    class="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 transition-colors">
                                 Tolak
                             </button>
                             <button @click="approveRequest(selectedApproval.id)" 
-                                    class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-green-600 text-base font-medium text-white hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm">
+                                    class="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 transition-colors">
                                 Setujui
                             </button>
                         </template>
-                <div class="flex justify-end gap-3 mt-6 pt-4 border-t border-slate-200">
-                    <button @click="showApprovalModal = false" 
-                            class="px-4 py-2 text-slate-600 border border-slate-300 rounded-md hover:bg-slate-50 transition-colors">
-                        Tutup
-                    </button>
+                        <!-- Close Button -->
+                        <button @click="showApprovalModal = false" 
+                                class="px-4 py-2 text-gray-600 border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-500 transition-colors">
+                            Tutup
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -4798,6 +4946,147 @@ watch(locale, () => {
         <p class="text-sm text-gray-500 dark:text-gray-400">
             Crafted with ❤️ by IT Department-Justus Group © 2025
         </p>
+    </div>
+
+    <!-- All Approvals Modal -->
+    <div v-if="showAllApprovalsModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click="showAllApprovalsModal = false">
+        <div class="bg-white dark:bg-gray-800 rounded-lg w-full max-w-4xl mx-4 max-h-[90vh] overflow-hidden" @click.stop>
+            <!-- Modal Header -->
+            <div class="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
+                <h3 class="text-lg font-medium text-gray-900 dark:text-white">
+                    <i class="fa-solid fa-list-check mr-2 text-blue-500"></i>
+                    Semua Approval Pending
+                </h3>
+                <button @click="showAllApprovalsModal = false" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                    <i class="fa-solid fa-times text-xl"></i>
+                </button>
+            </div>
+
+            <!-- Modal Body -->
+            <div class="p-6 overflow-y-auto max-h-[calc(90vh-140px)]">
+                <!-- Loading State -->
+                <div v-if="loadingAllApprovals" class="text-center py-8">
+                    <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+                    <p class="text-sm mt-2 text-gray-600 dark:text-gray-400">Memuat data...</p>
+                </div>
+
+                <!-- Empty State -->
+                <div v-else-if="allApprovals.length === 0" class="text-center py-8">
+                    <i class="fa-solid fa-check-circle text-4xl text-green-500 mb-4"></i>
+                    <p class="text-gray-600 dark:text-gray-400">Tidak ada approval pending</p>
+                </div>
+
+                <!-- Approvals List -->
+                <div v-else class="space-y-4">
+                    <div v-for="approval in allApprovals" :key="`all-approval-${approval.type}-${approval.id}`" 
+                         class="border border-gray-200 dark:border-gray-600 rounded-lg p-4 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                        
+                        <!-- Approval Header -->
+                        <div class="flex items-center justify-between mb-3">
+                            <div class="flex items-center gap-3">
+                                <div class="w-10 h-10 bg-blue-100 dark:bg-blue-900 rounded-full flex items-center justify-center">
+                                    <i v-if="approval.type === 'leave'" class="fa-solid fa-calendar-times text-blue-600 dark:text-blue-400"></i>
+                                    <i v-else-if="approval.type === 'hrd_leave'" class="fa-solid fa-user-check text-blue-600 dark:text-blue-400"></i>
+                                    <i v-else-if="approval.type === 'correction'" class="fa-solid fa-edit text-blue-600 dark:text-blue-400"></i>
+                                </div>
+                                <div>
+                                    <div class="font-semibold text-gray-900 dark:text-white">
+                                        {{ approval.employee_name || approval.user?.nama_lengkap }}
+                                    </div>
+                                    <div class="text-sm text-gray-600 dark:text-gray-400">
+                                        {{ approval.typeLabel }}
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="text-right">
+                                <div class="text-sm text-gray-500 dark:text-gray-400">
+                                    {{ new Date(approval.created_at || approval.tanggal).toLocaleDateString('id-ID') }}
+                                </div>
+                                <div class="text-xs text-gray-400 dark:text-gray-500">
+                                    {{ new Date(approval.created_at || approval.tanggal).toLocaleTimeString('id-ID') }}
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Approval Details -->
+                        <div class="mb-3">
+                            <!-- Leave Details -->
+                            <div v-if="approval.type === 'leave' || approval.type === 'hrd_leave'">
+                                <div class="text-sm text-gray-600 dark:text-gray-400">
+                                    <span class="font-medium">{{ approval.leave_type?.name }}</span> • 
+                                    {{ approval.duration_text }} • 
+                                    <span v-if="approval.type === 'hrd_leave'" class="text-purple-600 dark:text-purple-400">HRD Approval</span>
+                                    <span v-else class="text-blue-600 dark:text-blue-400">Supervisor Approval</span>
+                                </div>
+                                <div class="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                                    {{ new Date(approval.date_from).toLocaleDateString('id-ID') }} - {{ new Date(approval.date_to).toLocaleDateString('id-ID') }}
+                                </div>
+                            </div>
+
+                            <!-- Correction Details -->
+                            <div v-else-if="approval.type === 'correction'">
+                                <div class="text-sm text-gray-600 dark:text-gray-400">
+                                    {{ approval.nama_outlet }} • {{ new Date(approval.tanggal).toLocaleDateString('id-ID') }}
+                                </div>
+                                <div class="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                                    {{ formatCorrectionValue(approval) }}
+                                </div>
+                                
+                                <!-- Detailed Correction Info -->
+                                <div v-if="approval.type === 'attendance'" class="mt-3 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                                    <div class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Detail Koreksi:</div>
+                                    <div class="space-y-2">
+                                        <div class="flex justify-between items-center">
+                                            <span class="text-sm text-gray-600 dark:text-gray-400">Dari:</span>
+                                            <span class="text-sm font-medium text-red-600 dark:text-red-400">
+                                                {{ getFormattedCorrectionTime(approval.old_value) }}
+                                            </span>
+                                        </div>
+                                        <div class="flex justify-between items-center">
+                                            <span class="text-sm text-gray-600 dark:text-gray-400">Ke:</span>
+                                            <span class="text-sm font-medium text-green-600 dark:text-green-400">
+                                                {{ getFormattedCorrectionTime(approval.new_value) }}
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <!-- Reason Display -->
+                                <div v-if="approval.reason" class="mt-2 p-2 bg-blue-50 rounded text-xs border-l-4 border-blue-400">
+                                    <div class="font-medium mb-1 text-blue-700">Alasan Koreksi:</div>
+                                    <div class="text-xs text-blue-600">{{ approval.reason }}</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Action Buttons -->
+                        <div class="flex gap-2">
+                            <button @click="handleApprovalAction(approval)" 
+                                    class="flex-1 bg-green-500 text-white px-3 py-2 rounded-md hover:bg-green-600 transition-colors text-sm">
+                                <i class="fa-solid fa-check mr-1"></i>Setujui
+                            </button>
+                            <button @click="handleRejectionAction(approval)" 
+                                    class="flex-1 bg-red-500 text-white px-3 py-2 rounded-md hover:bg-red-600 transition-colors text-sm">
+                                <i class="fa-solid fa-times mr-1"></i>Tolak
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Modal Footer -->
+            <div class="bg-gray-50 dark:bg-gray-700 px-6 py-4 border-t border-gray-200 dark:border-gray-600">
+                <div class="flex justify-between items-center">
+                    <div class="text-sm text-gray-600 dark:text-gray-400">
+                        Total: {{ allApprovals.length }} approval pending
+                    </div>
+                    <button @click="showAllApprovalsModal = false" 
+                            class="px-4 py-2 text-gray-600 border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-500 transition-colors">
+                        Tutup
+                    </button>
+                </div>
+            </div>
+        </div>
     </div>
     </AppLayout>
 </template>

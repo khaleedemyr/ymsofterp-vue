@@ -464,46 +464,67 @@ class ScheduleAttendanceCorrectionController extends Controller
                     'new_data' => $newData
                 ]);
                 
-                // First, check if the record exists
+                // Find record by sn and pin only (as suggested by user)
                 $existingRecord = DB::table('att_log')
-                    ->where('pin', $oldData['pin'])
-                    ->where('scan_date', $oldData['scan_date'])
-                    ->where('inoutmode', $oldData['inoutmode'])
                     ->where('sn', $oldData['sn'])
-                    ->select('*') // Make sure to select all fields including id
+                    ->where('pin', $oldData['pin'])
+                    ->where('inoutmode', $oldData['inoutmode'])
+                    ->whereDate('scan_date', date('Y-m-d', strtotime($oldData['scan_date'])))
+                    ->select('*')
                     ->first();
                 
-                \Log::info('Existing record check:', [
+                \Log::info('Existing record check (simplified):', [
                     'found' => $existingRecord ? true : false,
+                    'sn' => $oldData['sn'],
+                    'pin' => $oldData['pin'],
+                    'inoutmode' => $oldData['inoutmode'],
+                    'date' => date('Y-m-d', strtotime($oldData['scan_date'])),
                     'record_data' => $existingRecord
                 ]);
                 
+                // If still not found, try to find any record with same sn and pin on the same day
                 if (!$existingRecord) {
-                    // Try to find similar records with different conditions
-                    $similarRecords = DB::table('att_log')
-                        ->where('pin', $oldData['pin'])
-                        ->where('inoutmode', $oldData['inoutmode'])
+                    $existingRecord = DB::table('att_log')
                         ->where('sn', $oldData['sn'])
+                        ->where('pin', $oldData['pin'])
                         ->whereDate('scan_date', date('Y-m-d', strtotime($oldData['scan_date'])))
-                        ->select('*') // Make sure to select all fields including id
-                        ->get();
+                        ->select('*')
+                        ->first();
                     
-                    \Log::info('Similar records found:', [
-                        'count' => $similarRecords->count(),
-                        'records' => $similarRecords->toArray()
+                    \Log::info('Fallback record search:', [
+                        'found' => $existingRecord ? true : false,
+                        'record_data' => $existingRecord
+                    ]);
+                }
+                
+                // Check if the new scan_date already exists for this sn and pin
+                $conflictingRecord = DB::table('att_log')
+                    ->where('sn', $newData['sn'])
+                    ->where('pin', $newData['pin'])
+                    ->where('scan_date', $newData['scan_date'])
+                    ->where('inoutmode', $newData['inoutmode'])
+                    ->first();
+                
+                if ($conflictingRecord) {
+                    \Log::warning('Conflicting record found with new scan_date:', [
+                        'conflicting_record' => $conflictingRecord,
+                        'new_scan_date' => $newData['scan_date'],
+                        'sn' => $newData['sn'],
+                        'pin' => $newData['pin']
                     ]);
                     
-                    if ($similarRecords->count() > 0) {
-                        // Use the first similar record
-                        $existingRecord = $similarRecords->first();
-                        \Log::info('Using similar record:', ['record' => $existingRecord]);
-                    }
+                    // Delete the conflicting record first
+                    DB::table('att_log')->where('id', $conflictingRecord->id)->delete();
+                    \Log::info('Deleted conflicting record:', ['id' => $conflictingRecord->id]);
                 }
                 
                 if ($existingRecord && isset($existingRecord->id)) {
-                    // Update the found record
+                    // Update the found record using the original conditions
                     $updated = DB::table('att_log')
-                        ->where('id', $existingRecord->id)
+                        ->where('sn', $oldData['sn'])
+                        ->where('pin', $oldData['pin'])
+                        ->where('scan_date', $oldData['scan_date'])
+                        ->where('inoutmode', $oldData['inoutmode'])
                         ->update([
                             'scan_date' => $newData['scan_date'],
                             'verifymode' => $newData['verifymode'] ?? $oldData['verifymode'],
@@ -512,12 +533,21 @@ class ScheduleAttendanceCorrectionController extends Controller
                     
                     \Log::info('Attendance update result:', [
                         'updated_rows' => $updated,
-                        'record_id' => $existingRecord->id
+                        'old_conditions' => [
+                            'sn' => $oldData['sn'],
+                            'pin' => $oldData['pin'],
+                            'scan_date' => $oldData['scan_date'],
+                            'inoutmode' => $oldData['inoutmode']
+                        ]
                     ]);
                 } else {
-                    \Log::warning('Existing record found but no ID available:', [
-                        'existing_record' => $existingRecord,
-                        'has_id' => isset($existingRecord->id)
+                    \Log::warning('No existing record found with original conditions:', [
+                        'old_conditions' => [
+                            'sn' => $oldData['sn'],
+                            'pin' => $oldData['pin'],
+                            'scan_date' => $oldData['scan_date'],
+                            'inoutmode' => $oldData['inoutmode']
+                        ]
                     ]);
                     
                     // Try alternative approach - find by record_id if available
@@ -540,34 +570,36 @@ class ScheduleAttendanceCorrectionController extends Controller
                 }
                 
                 if ($updated === 0) {
-                    // Last resort: create a new record if the original doesn't exist
-                    \Log::info('Attempting to create new attendance record');
-                    
-                    $newRecordId = DB::table('att_log')->insertGetId([
-                        'sn' => $newData['sn'],
-                        'pin' => $newData['pin'],
-                        'scan_date' => $newData['scan_date'],
-                        'inoutmode' => $newData['inoutmode'],
-                        'verifymode' => $newData['verifymode'] ?? $oldData['verifymode'],
-                        'device_ip' => $newData['device_ip'] ?? $oldData['device_ip'],
-                        'created_at' => now(),
-                        'updated_at' => now()
+                    \Log::error('Failed to update attendance record', [
+                        'approval_id' => $id,
+                        'sn' => $oldData['sn'],
+                        'pin' => $oldData['pin'],
+                        'inoutmode' => $oldData['inoutmode'],
+                        'old_scan_date' => $oldData['scan_date'],
+                        'new_scan_date' => $newData['scan_date'],
+                        'existing_record' => $existingRecord,
+                        'approval_record_id' => $approval->record_id ?? 'not_provided'
                     ]);
                     
-                    if ($newRecordId) {
-                        \Log::info('Created new attendance record:', [
-                            'new_record_id' => $newRecordId,
-                            'data' => $newData
+                    // Try one more time with original conditions
+                    $finalAttempt = DB::table('att_log')
+                        ->where('sn', $oldData['sn'])
+                        ->where('pin', $oldData['pin'])
+                        ->where('scan_date', $oldData['scan_date'])
+                        ->where('inoutmode', $oldData['inoutmode'])
+                        ->update([
+                            'scan_date' => $newData['scan_date'],
+                            'verifymode' => $newData['verifymode'] ?? $oldData['verifymode'],
+                            'device_ip' => $newData['device_ip'] ?? $oldData['device_ip']
                         ]);
-                        $updated = 1; // Mark as successful
+                    
+                    if ($finalAttempt > 0) {
+                        \Log::info('Successfully updated with final attempt:', [
+                            'updated_rows' => $finalAttempt
+                        ]);
+                        $updated = $finalAttempt;
                     } else {
-                        \Log::error('Failed to create new attendance record', [
-                            'approval_id' => $id,
-                            'old_data' => $oldData,
-                            'new_data' => $newData,
-                            'approval_record_id' => $approval->record_id ?? 'not_provided'
-                        ]);
-                        throw new \Exception('Gagal mengupdate data attendance: Record tidak ditemukan dan tidak dapat dibuat baru');
+                        throw new \Exception('Gagal mengupdate data attendance: Record dengan SN ' . $oldData['sn'] . ' dan PIN ' . $oldData['pin'] . ' tidak ditemukan');
                     }
                 }
                 

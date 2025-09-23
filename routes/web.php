@@ -1037,6 +1037,12 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::delete('/outlet-payments/{outletPayment}', [OutletPaymentController::class, 'destroy'])->name('outlet-payments.destroy');
   
 });
+
+// Employee Upload Routes
+Route::middleware(['auth', 'verified'])->group(function () {
+    Route::post('/employee-upload', [\App\Http\Controllers\EmployeeUploadController::class, 'upload'])->name('employee-upload.upload');
+    Route::get('/employee-upload/template', [\App\Http\Controllers\EmployeeUploadController::class, 'downloadTemplate'])->name('employee-upload.template');
+});
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/promos', [PromoController::class, 'index'])->name('promos.index');
     Route::get('/promos/create', [PromoController::class, 'create'])->name('promos.create');

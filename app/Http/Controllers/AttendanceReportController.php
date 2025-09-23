@@ -1244,6 +1244,321 @@ class AttendanceReportController extends Controller
         ]);
     }
 
+    /**
+     * Calculate total days in period (26 bulan sebelumnya - 25 bulan berjalan)
+     */
+    private function calculateTotalDaysInPeriod($startDate, $endDate)
+    {
+        $start = new \DateTime($startDate);
+        $end = new \DateTime($endDate);
+        $interval = $start->diff($end);
+        return $interval->days + 1; // +1 to include both start and end dates
+    }
+
+    /**
+     * Calculate off days (days without shift) for a user in a period
+     */
+    private function calculateOffDays($userId, $outletId, $startDate, $endDate)
+    {
+        // Get all dates in the period
+        $period = [];
+        $dt = new \DateTime($startDate);
+        $dtEnd = new \DateTime($endDate);
+        while ($dt <= $dtEnd) {
+            $period[] = $dt->format('Y-m-d');
+            $dt->modify('+1 day');
+        }
+        
+        // Get all shift data for this user in this period
+        $shifts = DB::table('user_shifts as us')
+            ->leftJoin('shifts as s', 'us.shift_id', '=', 's.id')
+            ->where('us.user_id', $userId)
+            ->where('us.outlet_id', $outletId)
+            ->whereIn('us.tanggal', $period)
+            ->select('us.tanggal', 's.shift_name', 'us.shift_id')
+            ->get()
+            ->keyBy('tanggal');
+        
+        // Count days without shift (or with 'off' shift)
+        $offDays = 0;
+        foreach ($period as $date) {
+            $shift = $shifts->get($date);
+            if (!$shift || is_null($shift->shift_id) || strtolower($shift->shift_name ?? '') === 'off') {
+                $offDays++;
+            }
+        }
+        
+        return $offDays;
+    }
+
+    /**
+     * Calculate PH days (Public Holiday compensations) for a user in a period
+     */
+    private function calculatePHDays($userId, $startDate, $endDate)
+    {
+        // Get holiday attendance compensations for this user in the period
+        $compensations = DB::table('holiday_attendance_compensations')
+            ->where('user_id', $userId)
+            ->whereBetween('holiday_date', [$startDate, $endDate])
+            ->whereIn('status', ['approved', 'used']) // Only count approved or used compensations
+            ->get();
+        
+        // Count total PH days (both extra_off and bonus compensations)
+        $phDays = 0;
+        foreach ($compensations as $compensation) {
+            if ($compensation->compensation_type === 'extra_off') {
+                // Extra off days are counted as 1 day each
+                $phDays += $compensation->compensation_amount;
+            } else if ($compensation->compensation_type === 'bonus') {
+                // Bonus compensations are also counted as PH days
+                $phDays += 1; // Each bonus compensation counts as 1 PH day
+            }
+        }
+        
+        return $phDays;
+    }
+
+    /**
+     * Calculate PH data (days and bonus amount) for a user in a period
+     */
+    private function calculatePHData($userId, $startDate, $endDate)
+    {
+        // Get holiday attendance compensations for this user in the period
+        $compensations = DB::table('holiday_attendance_compensations')
+            ->where('user_id', $userId)
+            ->whereBetween('holiday_date', [$startDate, $endDate])
+            ->whereIn('status', ['approved', 'used']) // Only count approved or used compensations
+            ->get();
+        
+        $phDays = 0;
+        $phBonus = 0;
+        
+        foreach ($compensations as $compensation) {
+            if ($compensation->compensation_type === 'extra_off') {
+                // Extra off days are counted as 1 day each
+                $phDays += $compensation->compensation_amount;
+            } else if ($compensation->compensation_type === 'bonus') {
+                // Bonus compensations are also counted as PH days
+                $phDays += 1; // Each bonus compensation counts as 1 PH day
+                // Add bonus amount
+                $phBonus += $compensation->compensation_amount;
+            }
+        }
+        
+        return [
+            'days' => $phDays,
+            'bonus' => $phBonus
+        ];
+    }
+
+    /**
+     * Calculate leave data (cuti, extra off, sakit) for a user in a period
+     */
+    private function calculateLeaveData($userId, $startDate, $endDate)
+    {
+        // Get approved absent requests for this user in the period
+        $approvedAbsents = DB::table('absent_requests')
+            ->join('leave_types', 'absent_requests.leave_type_id', '=', 'leave_types.id')
+            ->where('absent_requests.user_id', $userId)
+            ->where('absent_requests.status', 'approved')
+            ->where(function($query) use ($startDate, $endDate) {
+                $query->whereBetween('absent_requests.date_from', [$startDate, $endDate])
+                      ->orWhereBetween('absent_requests.date_to', [$startDate, $endDate])
+                      ->orWhere(function($q) use ($startDate, $endDate) {
+                          $q->where('absent_requests.date_from', '<=', $startDate)
+                            ->where('absent_requests.date_to', '>=', $endDate);
+                      });
+            })
+            ->select([
+                'absent_requests.date_from',
+                'absent_requests.date_to',
+                'leave_types.name as leave_type_name'
+            ])
+            ->get();
+        
+        $cutiDays = 0;
+        $extraOffDays = 0;
+        $sakitDays = 0;
+        
+        foreach ($approvedAbsents as $absent) {
+            // Calculate days between date_from and date_to
+            $fromDate = new \DateTime($absent->date_from);
+            $toDate = new \DateTime($absent->date_to);
+            $daysCount = $fromDate->diff($toDate)->days + 1;
+            
+            // Categorize based on leave type name
+            $leaveTypeName = strtolower($absent->leave_type_name);
+            
+            if (strpos($leaveTypeName, 'cuti') !== false || strpos($leaveTypeName, 'annual') !== false) {
+                $cutiDays += $daysCount;
+            } else if (strpos($leaveTypeName, 'extra off') !== false || strpos($leaveTypeName, 'extraoff') !== false) {
+                $extraOffDays += $daysCount;
+            } else if (strpos($leaveTypeName, 'sakit') !== false || strpos($leaveTypeName, 'sick') !== false) {
+                $sakitDays += $daysCount;
+            }
+        }
+        
+        return [
+            'cuti_days' => $cutiDays,
+            'extra_off_days' => $extraOffDays,
+            'sakit_days' => $sakitDays
+        ];
+    }
+
+    /**
+     * Calculate alpa days (days with shift but no attendance and no absent request)
+     */
+    private function calculateAlpaDays($userId, $outletId, $startDate, $endDate)
+    {
+        // Get all days in the period
+        $period = [];
+        $dt = new \DateTime($startDate);
+        $dtEnd = new \DateTime($endDate);
+        while ($dt <= $dtEnd) {
+            $period[] = $dt->format('Y-m-d');
+            $dt->modify('+1 day');
+        }
+        
+        // Get user's shifts for the period
+        $shifts = DB::table('user_shifts as us')
+            ->leftJoin('shifts as s', 'us.shift_id', '=', 's.id')
+            ->where('us.user_id', $userId)
+            ->where('us.outlet_id', $outletId)
+            ->whereIn('us.tanggal', $period)
+            ->whereNotNull('us.shift_id') // Must have a shift (not off)
+            ->where('s.shift_name', '!=', 'off') // Exclude 'off' shifts
+            ->select('us.tanggal', 's.shift_name')
+            ->get()
+            ->keyBy('tanggal');
+        
+        // Get user's attendance data using the same logic as AttendanceReportController
+        $rawData = DB::table('att_log as a')
+            ->join('tbl_data_outlet as o', 'a.sn', '=', 'o.sn')
+            ->join('user_pins as up', function($q) {
+                $q->on('a.pin', '=', 'up.pin')->on('o.id_outlet', '=', 'up.outlet_id');
+            })
+            ->where('up.user_id', $userId)
+            ->whereBetween(DB::raw('DATE(a.scan_date)'), [$startDate, $endDate])
+            ->select('a.scan_date', 'a.inoutmode')
+            ->orderBy('a.scan_date')
+            ->get();
+        
+        // Process attendance data like in AttendanceReportController
+        $processedData = [];
+        foreach ($rawData as $scan) {
+            $date = date('Y-m-d', strtotime($scan->scan_date));
+            $key = $date;
+            
+            if (!isset($processedData[$key])) {
+                $processedData[$key] = [
+                    'tanggal' => $date,
+                    'scans' => []
+                ];
+            }
+            
+            $processedData[$key]['scans'][] = [
+                'scan_date' => $scan->scan_date,
+                'inoutmode' => $scan->inoutmode
+            ];
+        }
+        
+        // Process each day to determine if there's valid attendance
+        $attendanceDates = [];
+        foreach ($processedData as $key => $data) {
+            $scans = collect($data['scans'])->sortBy('scan_date');
+            $inScans = $scans->where('inoutmode', 1);
+            $outScans = $scans->where('inoutmode', 2);
+            
+            // Check if there's valid attendance (first in and last out)
+            $jamMasuk = $inScans->first()['scan_date'] ?? null;
+            $jamKeluar = null;
+            $isCrossDay = false;
+            
+            if ($jamMasuk) {
+                // Cari scan keluar di hari yang sama
+                $sameDayOut = $outScans->where('scan_date', '>', $jamMasuk)->first();
+                
+                if ($sameDayOut) {
+                    // Ada scan keluar di hari yang sama
+                    $jamKeluar = $sameDayOut['scan_date'];
+                    $isCrossDay = false;
+                } else {
+                    // Cari scan keluar di hari berikutnya (cross-day)
+                    $nextDay = date('Y-m-d', strtotime($data['tanggal'] . ' +1 day'));
+                    $nextDayKey = $nextDay;
+                    
+                    if (isset($processedData[$nextDayKey])) {
+                        $nextDayScans = collect($processedData[$nextDayKey]['scans'])->sortBy('scan_date');
+                        $nextDayOut = $nextDayScans->where('inoutmode', 2)->first();
+                        
+                        if ($nextDayOut) {
+                            $jamKeluar = $nextDayOut['scan_date'];
+                            $isCrossDay = true;
+                        }
+                    }
+                }
+            }
+            
+            // If there's both check-in and check-out, consider it as attended
+            if ($jamMasuk && $jamKeluar) {
+                $attendanceDates[] = $data['tanggal'];
+                
+                // For cross-day, also mark the next day as attended (since OUT happened there)
+                if ($isCrossDay) {
+                    $nextDay = date('Y-m-d', strtotime($data['tanggal'] . ' +1 day'));
+                    $attendanceDates[] = $nextDay;
+                }
+            }
+        }
+        
+        // Get user's approved absent requests for the period
+        $absentDates = DB::table('absent_requests')
+            ->where('user_id', $userId)
+            ->where('status', 'approved')
+            ->where(function($query) use ($startDate, $endDate) {
+                $query->whereBetween('date_from', [$startDate, $endDate])
+                      ->orWhereBetween('date_to', [$startDate, $endDate])
+                      ->orWhere(function($q) use ($startDate, $endDate) {
+                          $q->where('date_from', '<=', $startDate)
+                            ->where('date_to', '>=', $endDate);
+                      });
+            })
+            ->get();
+        
+        // Create array of all absent dates
+        $absentDateArray = [];
+        foreach ($absentDates as $absent) {
+            $fromDate = new \DateTime($absent->date_from);
+            $toDate = new \DateTime($absent->date_to);
+            while ($fromDate <= $toDate) {
+                $absentDateArray[] = $fromDate->format('Y-m-d');
+                $fromDate->modify('+1 day');
+            }
+        }
+        
+        $alpaDays = 0;
+        $today = date('Y-m-d');
+        
+        // Check each day in the period
+        foreach ($period as $date) {
+            // Only count alpa for dates that have already passed (including today)
+            if ($date > $today) {
+                continue; // Skip future dates
+            }
+            
+            $hasShift = $shifts->has($date);
+            $hasAttendance = in_array($date, $attendanceDates);
+            $hasAbsent = in_array($date, $absentDateArray);
+            
+            // Alpa: has shift but no attendance and no absent request
+            if ($hasShift && !$hasAttendance && !$hasAbsent) {
+                $alpaDays++;
+            }
+        }
+        
+        return $alpaDays;
+    }
+
     // Endpoint untuk summary per karyawan
     public function employeeSummary(Request $request)
     {
@@ -1642,6 +1957,22 @@ class AttendanceReportController extends Controller
                 $totalEmployees = $rows->groupBy('user_id')->count();
                 \Log::info('Total unique employees to process: ' . $totalEmployees);
                 
+                // Get all user data (NIK and jabatan) at once to avoid N+1 queries
+                $userIds = $rows->pluck('user_id')->unique()->toArray();
+                \Log::info('Fetching user data for ' . count($userIds) . ' users');
+                
+                $allUserData = DB::table('users as u')
+                    ->leftJoin('tbl_data_jabatan as j', 'u.id_jabatan', '=', 'j.id_jabatan')
+                    ->select('u.id', 'u.nik', 'j.nama_jabatan as jabatan')
+                    ->whereIn('u.id', $userIds)
+                    ->get()
+                    ->keyBy('id');
+                
+                \Log::info('User data fetched:', [
+                    'count' => $allUserData->count(),
+                    'sample' => $allUserData->take(3)->toArray()
+                ]);
+                
                 // Tambahkan progress tracking untuk mencegah infinite loop
                 $processedEmployees = 0;
                 $maxEmployeeProcessingTime = 30; // 30 detik per employee
@@ -1666,15 +1997,47 @@ class AttendanceReportController extends Controller
                     try {
                         $firstRow = $employeeRows->first();
                         
+                        // Get NIK and jabatan from pre-fetched data
+                        $userData = $allUserData->get($firstRow->user_id);
+                        
+                        \Log::info('User data for user_id ' . $firstRow->user_id . ':', [
+                            'user_data' => $userData,
+                            'nik' => $userData->nik ?? 'null',
+                            'jabatan' => $userData->jabatan ?? 'null'
+                        ]);
+                        
+                        // Calculate off days (days without shift)
+                        $offDays = $this->calculateOffDays($firstRow->user_id, $firstRow->outlet_id, $start, $end);
+                        
+                        // Calculate PH days (Public Holiday compensations)
+                        $phData = $this->calculatePHData($firstRow->user_id, $start, $end);
+                        
+                        // Calculate leave data (cuti, extra off, sakit)
+                        $leaveData = $this->calculateLeaveData($firstRow->user_id, $start, $end);
+                        
+                        // Calculate alpa days (days with shift but no attendance and no absent request)
+                        $alpaDays = $this->calculateAlpaDays($firstRow->user_id, $firstRow->outlet_id, $start, $end);
+                        
                         $result = [
                             'user_id' => $firstRow->user_id,
+                            'nik' => $userData->nik ?? '-',
                             'nama_lengkap' => $firstRow->nama_lengkap,
+                            'jabatan' => $userData->jabatan ?? '-',
                             'division_id' => $firstRow->division_id,
                             'outlet_id' => $firstRow->outlet_id,
                             'nama_outlet' => $firstRow->nama_outlet,
+                            'hari_kerja' => $employeeRows->count(), // Jumlah hari yang bekerja
+                            'off_days' => $offDays, // Jumlah hari tanpa shift
+                            'ph_days' => $phData['days'], // Jumlah hari libur nasional dengan kompensasi
+                            'ph_bonus' => $phData['bonus'], // Total bonus PH yang diterima
+                            'cuti_days' => $leaveData['cuti_days'], // Jumlah hari cuti
+                            'extra_off_days' => $leaveData['extra_off_days'], // Jumlah hari extra off
+                            'sakit_days' => $leaveData['sakit_days'], // Jumlah hari sakit
+                            'alpa_days' => $alpaDays, // Jumlah hari alpa
+                            'ot_full_days' => $employeeRows->sum('lembur'), // Total lembur (OT Full)
                             'total_telat' => $employeeRows->sum('telat'),
                             'total_lembur' => $employeeRows->sum('lembur'),
-                            'total_days' => $employeeRows->count(),
+                            'total_days' => $this->calculateTotalDaysInPeriod($start, $end), // Total hari dalam periode
                         ];
                         
                         $employeeSummary->push($result);
@@ -1697,13 +2060,24 @@ class AttendanceReportController extends Controller
                         // Return default values untuk employee yang error
                         $errorResult = [
                             'user_id' => $employeeRows->first()->user_id ?? 0,
+                            'nik' => '-',
                             'nama_lengkap' => $employeeRows->first()->nama_lengkap ?? 'Error Processing',
+                            'jabatan' => '-',
                             'division_id' => $employeeRows->first()->division_id ?? 0,
                             'outlet_id' => $employeeRows->first()->outlet_id ?? 0,
                             'nama_outlet' => $employeeRows->first()->nama_outlet ?? 'Error',
+                            'hari_kerja' => 0,
+                            'off_days' => isset($start) && isset($end) ? $this->calculateOffDays($employeeRows->first()->user_id ?? 0, $employeeRows->first()->outlet_id ?? 0, $start, $end) : 0,
+                            'ph_days' => isset($start) && isset($end) ? $this->calculatePHData($employeeRows->first()->user_id ?? 0, $start, $end)['days'] : 0,
+                            'ph_bonus' => isset($start) && isset($end) ? $this->calculatePHData($employeeRows->first()->user_id ?? 0, $start, $end)['bonus'] : 0,
+                            'cuti_days' => isset($start) && isset($end) ? $this->calculateLeaveData($employeeRows->first()->user_id ?? 0, $start, $end)['cuti_days'] : 0,
+                            'extra_off_days' => isset($start) && isset($end) ? $this->calculateLeaveData($employeeRows->first()->user_id ?? 0, $start, $end)['extra_off_days'] : 0,
+                            'sakit_days' => isset($start) && isset($end) ? $this->calculateLeaveData($employeeRows->first()->user_id ?? 0, $start, $end)['sakit_days'] : 0,
+                            'alpa_days' => isset($start) && isset($end) ? $this->calculateAlpaDays($employeeRows->first()->user_id ?? 0, $employeeRows->first()->outlet_id ?? 0, $start, $end) : 0,
+                            'ot_full_days' => 0,
                             'total_telat' => 0,
                             'total_lembur' => 0,
-                            'total_days' => 0,
+                            'total_days' => isset($start) && isset($end) ? $this->calculateTotalDaysInPeriod($start, $end) : 0,
                         ];
                         
                         $employeeSummary->push($errorResult);
@@ -1741,6 +2115,17 @@ class AttendanceReportController extends Controller
         \Log::info('Final memory usage: ' . memory_get_usage(true) / 1024 / 1024 . ' MB');
         \Log::info('Total execution time: ' . (microtime(true) - $_SERVER['REQUEST_TIME_FLOAT']) . ' seconds');
 
+        // Calculate summary statistics
+        $summary = [
+            'total_employees' => $employeeSummary ? $employeeSummary->count() : 0,
+            'total_lembur' => $employeeSummary ? $employeeSummary->sum('total_lembur') : 0,
+            'total_telat' => $employeeSummary ? $employeeSummary->sum('total_telat') : 0,
+            'avg_lembur_per_employee' => $employeeSummary && $employeeSummary->count() > 0 ? 
+                round($employeeSummary->sum('total_lembur') / $employeeSummary->count(), 2) : 0,
+            'avg_telat_per_employee' => $employeeSummary && $employeeSummary->count() > 0 ? 
+                round($employeeSummary->sum('total_telat') / $employeeSummary->count(), 2) : 0,
+        ];
+
         return Inertia::render('AttendanceReport/EmployeeSummary', [
             'rows' => $employeeSummary ?? collect(),
             'outlets' => $outlets,
@@ -1752,6 +2137,8 @@ class AttendanceReportController extends Controller
                 'tahun' => $tahun,
             ],
             'period' => isset($start) ? ['start' => $start, 'end' => $end] : null,
+            'summary' => $summary,
+            'user' => auth()->user(),
         ]);
     }
 
@@ -1976,18 +2363,53 @@ class AttendanceReportController extends Controller
                 $employeeSummary = collect();
                 $employeeGroups = $rows->groupBy('user_id');
                 
+                // Get all user data (NIK and jabatan) at once to avoid N+1 queries
+                $userIds = $rows->pluck('user_id')->unique()->toArray();
+                $allUserData = DB::table('users as u')
+                    ->leftJoin('tbl_data_jabatan as j', 'u.id_jabatan', '=', 'j.id_jabatan')
+                    ->select('u.id', 'u.nik', 'j.nama_jabatan as jabatan')
+                    ->whereIn('u.id', $userIds)
+                    ->get()
+                    ->keyBy('id');
+
                 foreach ($employeeGroups as $userId => $employeeRows) {
                     $firstRow = $employeeRows->first();
                     
+                    // Get NIK and jabatan from pre-fetched data
+                    $userData = $allUserData->get($firstRow->user_id);
+                    
+                    // Calculate off days (days without shift)
+                    $offDays = $this->calculateOffDays($firstRow->user_id, $firstRow->outlet_id, $start, $end);
+                    
+                    // Calculate PH days (Public Holiday compensations)
+                    $phData = $this->calculatePHData($firstRow->user_id, $start, $end);
+                    
+                    // Calculate leave data (cuti, extra off, sakit)
+                    $leaveData = $this->calculateLeaveData($firstRow->user_id, $start, $end);
+                    
+                    // Calculate alpa days (days with shift but no attendance and no absent request)
+                    $alpaDays = $this->calculateAlpaDays($firstRow->user_id, $firstRow->outlet_id, $start, $end);
+                    
                     $result = (object)[
                         'user_id' => $firstRow->user_id,
+                        'nik' => $userData->nik ?? '-',
                         'nama_lengkap' => $firstRow->nama_lengkap,
+                        'jabatan' => $userData->jabatan ?? '-',
                         'division_id' => $firstRow->division_id,
                         'outlet_id' => $firstRow->outlet_id,
                         'nama_outlet' => $firstRow->nama_outlet,
+                        'hari_kerja' => $employeeRows->count(), // Jumlah hari yang bekerja
+                        'off_days' => $offDays, // Jumlah hari tanpa shift
+                        'ph_days' => $phData['days'], // Jumlah hari libur nasional dengan kompensasi
+                        'ph_bonus' => $phData['bonus'], // Total bonus PH yang diterima
+                        'cuti_days' => $leaveData['cuti_days'], // Jumlah hari cuti
+                        'extra_off_days' => $leaveData['extra_off_days'], // Jumlah hari extra off
+                        'sakit_days' => $leaveData['sakit_days'], // Jumlah hari sakit
+                        'alpa_days' => $alpaDays, // Jumlah hari alpa
+                        'ot_full_days' => $employeeRows->sum('lembur'), // Total lembur (OT Full)
                         'total_telat' => $employeeRows->sum('telat'),
                         'total_lembur' => $employeeRows->sum('lembur'),
-                        'total_days' => $employeeRows->count(),
+                        'total_days' => $this->calculateTotalDaysInPeriod($start, $end), // Total hari dalam periode
                     ];
                     
                     $employeeSummary->push($result);

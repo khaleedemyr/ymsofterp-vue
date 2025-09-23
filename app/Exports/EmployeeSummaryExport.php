@@ -29,7 +29,7 @@ class EmployeeSummaryExport implements FromCollection, WithHeadings, WithMapping
     public function headings(): array
     {
         return [
-            'No', 'Nama Karyawan', 'Outlet', 'Total Telat (Menit)', 'Total Lembur (Jam)', 'Total Hari'
+            'No', 'Outlet', 'NIK', 'Nama Karyawan', 'Jabatan', 'Hari Kerja', 'Off', 'PH (Bonus)', 'Cuti', 'Extra Off', 'Sakit', 'Alpa', 'OT Full', 'Telat', 'Total Days'
         ];
     }
 
@@ -39,10 +39,19 @@ class EmployeeSummaryExport implements FromCollection, WithHeadings, WithMapping
         
         return [
             $no++,
-            $row->nama_lengkap,
             $row->nama_outlet ?? '-',
+            $row->nik ?? '-',
+            $row->nama_lengkap,
+            $row->jabatan ?? '-',
+            $row->hari_kerja ?? 0,
+            $row->off_days ?? 0,
+            $row->ph_days ?? 0 . ' hari (' . ($row->ph_bonus ?? 0) . ')',
+            $row->cuti_days ?? 0,
+            $row->extra_off_days ?? 0,
+            $row->sakit_days ?? 0,
+            $row->alpa_days ?? 0,
+            $row->ot_full_days ?? 0,
             $row->total_telat ?? 0,
-            $row->total_lembur ?? 0,
             $row->total_days ?? 0,
         ];
     }
@@ -50,7 +59,7 @@ class EmployeeSummaryExport implements FromCollection, WithHeadings, WithMapping
     public function styles(Worksheet $sheet)
     {
         // Header style
-        $sheet->getStyle('A1:F1')->applyFromArray([
+        $sheet->getStyle('A1:O1')->applyFromArray([
             'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF']],
             'fill' => [
                 'fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
@@ -59,7 +68,7 @@ class EmployeeSummaryExport implements FromCollection, WithHeadings, WithMapping
         ]);
         
         // Auto-size columns
-        foreach (range('A', 'F') as $column) {
+        foreach (range('A', 'O') as $column) {
             $sheet->getColumnDimension($column)->setAutoSize(true);
         }
     }
@@ -68,11 +77,20 @@ class EmployeeSummaryExport implements FromCollection, WithHeadings, WithMapping
     {
         return [
             'A' => 8,   // No
-            'B' => 35,  // Nama Karyawan
-            'C' => 25,  // Outlet
-            'D' => 20,  // Total Telat
-            'E' => 20,  // Total Lembur
-            'F' => 15,  // Total Hari
+            'B' => 25,  // Outlet
+            'C' => 15,  // NIK
+            'D' => 35,  // Nama Karyawan
+            'E' => 25,  // Jabatan
+            'F' => 15,  // Hari Kerja
+            'G' => 10,  // Off
+            'H' => 20,  // PH (Bonus)
+            'I' => 10,  // Cuti
+            'J' => 15,  // Extra Off
+            'K' => 10,  // Sakit
+            'L' => 10,  // Alpa
+            'M' => 15,  // OT Full
+            'N' => 15,  // Telat
+            'O' => 15,  // Total Days
         ];
     }
 

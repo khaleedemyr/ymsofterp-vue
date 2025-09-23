@@ -41,6 +41,9 @@ const selectedUserForActivation = ref(null);
 const outletId = ref(props.filters?.outlet_id || '');
 const divisionId = ref(props.filters?.division_id || '');
 const status = ref(props.filters?.status || 'A');
+const showUploadModal = ref(false);
+const selectedFile = ref(null);
+const uploading = ref(false);
 
 // Lightbox state
 const lightboxVisible = ref(false);
@@ -205,6 +208,260 @@ function openImageModal(imageUrl) {
   lightboxIndex.value = 0;
   lightboxVisible.value = true;
 }
+
+function openUploadModal() {
+  showUploadModal.value = true;
+}
+
+function closeUploadModal() {
+  showUploadModal.value = false;
+}
+
+function handleFileSelect(event) {
+  const file = event.target.files[0];
+  if (file) {
+    // Validate file type
+    const allowedTypes = [
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
+      'application/vnd.ms-excel' // .xls
+    ];
+    
+    if (!allowedTypes.includes(file.type)) {
+      Swal.fire({
+        icon: 'error',
+        title: 'Format File Salah',
+        text: 'File harus berformat Excel (.xlsx atau .xls)',
+        confirmButtonColor: '#ef4444'
+      });
+      clearFile();
+      return;
+    }
+    
+    // Validate file size (10MB)
+    if (file.size > 10 * 1024 * 1024) {
+      Swal.fire({
+        icon: 'error',
+        title: 'Ukuran File Terlalu Besar',
+        text: 'Ukuran file maksimal 10MB',
+        confirmButtonColor: '#ef4444'
+      });
+      clearFile();
+      return;
+    }
+    
+    selectedFile.value = file;
+    
+    // Show success message
+    Swal.fire({
+      icon: 'success',
+      title: 'File Berhasil Dipilih',
+      html: `
+        <div class="text-left">
+          <p><strong>Nama File:</strong> ${file.name}</p>
+          <p><strong>Ukuran:</strong> ${formatFileSize(file.size)}</p>
+          <p><strong>Format:</strong> Excel</p>
+        </div>
+      `,
+      confirmButtonColor: '#10b981',
+      timer: 2000,
+      showConfirmButton: false
+    });
+  }
+}
+
+function clearFile() {
+  selectedFile.value = null;
+  if (document.querySelector('input[type="file"]')) {
+    document.querySelector('input[type="file"]').value = '';
+  }
+}
+
+function formatFileSize(bytes) {
+  if (bytes === 0) return '0 Bytes';
+  const k = 1024;
+  const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
+
+function uploadFile() {
+  if (!selectedFile.value) {
+    Swal.fire({
+      icon: 'warning',
+      title: 'Peringatan',
+      text: 'Pilih file terlebih dahulu!',
+      confirmButtonColor: '#3085d6'
+    });
+    return;
+  }
+
+  // Konfirmasi sebelum upload
+  Swal.fire({
+    title: 'Konfirmasi Upload',
+    html: `
+      <div class="text-left">
+        <p>Anda akan mengupload file:</p>
+        <p class="font-semibold text-blue-600">${selectedFile.value.name}</p>
+        <p class="text-sm text-gray-500 mt-2">Pastikan data di Excel sudah benar sebelum melanjutkan.</p>
+      </div>
+    `,
+    icon: 'question',
+    showCancelButton: true,
+    confirmButtonColor: '#10b981',
+    cancelButtonColor: '#6b7280',
+    confirmButtonText: 'Ya, Upload!',
+    cancelButtonText: 'Batal'
+  }).then((result) => {
+    if (result.isConfirmed) {
+      performUpload();
+    }
+  });
+}
+
+function performUpload() {
+  uploading.value = true;
+  console.log('Starting upload process...');
+  
+  const formData = new FormData();
+  formData.append('file', selectedFile.value);
+  console.log('FormData created, file:', selectedFile.value?.name);
+
+  router.post('/employee-upload', formData, {
+    forceFormData: true,
+    onStart: () => {
+      console.log('Upload request started');
+    },
+    onProgress: (progress) => {
+      console.log('Upload progress:', progress);
+    },
+    onSuccess: (page) => {
+      console.log('Upload success response:', page);
+      uploading.value = false;
+      clearFile();
+      closeUploadModal();
+      
+      // Show success message with details
+      console.log('Flash messages:', page.props.flash);
+      if (page.props.flash.success) {
+        const details = page.props.flash.success.details;
+        
+        if (details && details.errors && details.errors.length > 0) {
+          // Ada error, tampilkan dengan detail
+          let errorMessage = `<div class="text-left">`;
+          errorMessage += `<p><strong>Total data diproses:</strong> ${details.total_processed}</p>`;
+          errorMessage += `<p><strong>Berhasil diupdate:</strong> ${details.successful_updates}</p>`;
+          errorMessage += `<p><strong>Error:</strong> ${details.errors.length}</p>`;
+          errorMessage += `<br><p><strong>Detail Error:</strong></p>`;
+          errorMessage += `<ul class="list-disc list-inside text-sm">`;
+          details.errors.forEach(error => {
+            errorMessage += `<li class="text-red-600">${error}</li>`;
+          });
+          errorMessage += `</ul></div>`;
+          
+          Swal.fire({
+            icon: 'warning',
+            title: 'Upload Selesai dengan Error',
+            html: errorMessage,
+            confirmButtonColor: '#f59e0b',
+            confirmButtonText: 'OK'
+          });
+        } else {
+          // Berhasil semua
+          Swal.fire({
+            icon: 'success',
+            title: 'Berhasil!',
+            html: `
+              <div class="text-left">
+                <p><strong>Total data diproses:</strong> ${details?.total_processed || 0}</p>
+                <p><strong>Berhasil diupdate:</strong> ${details?.successful_updates || 0}</p>
+                <p><strong>Error:</strong> 0</p>
+              </div>
+            `,
+            confirmButtonColor: '#10b981',
+            confirmButtonText: 'OK'
+          });
+        }
+        
+        reload(); // Reload the page to show updated data
+      } else {
+        // Fallback: no flash message but request was successful
+        console.log('No flash message found, but request was successful');
+        Swal.fire({
+          icon: 'success',
+          title: 'Upload Berhasil',
+          text: 'File berhasil diupload, namun tidak ada detail yang tersedia.',
+          confirmButtonText: 'OK'
+        });
+        reload();
+      }
+    },
+    onError: (errors) => {
+      uploading.value = false;
+      console.error('Upload error:', errors);
+      console.error('Error details:', JSON.stringify(errors, null, 2));
+      
+      // Check if it's a flash error message
+      if (errors && errors.flash && errors.flash.error) {
+        console.log('Flash error found:', errors.flash.error);
+        Swal.fire({
+          icon: 'error',
+          title: 'Upload Gagal',
+          text: errors.flash.error,
+          confirmButtonText: 'OK'
+        });
+        return;
+      }
+      
+      let errorMessage = '<div class="text-left">';
+      errorMessage += '<p>Terjadi kesalahan saat mengupload file:</p>';
+      errorMessage += '<ul class="list-disc list-inside text-sm mt-2">';
+      
+      if (typeof errors === 'object') {
+        Object.keys(errors).forEach(key => {
+          if (Array.isArray(errors[key])) {
+            errors[key].forEach(error => {
+              errorMessage += `<li class="text-red-600">${error}</li>`;
+            });
+          } else {
+            errorMessage += `<li class="text-red-600">${errors[key]}</li>`;
+          }
+        });
+      } else {
+        errorMessage += `<li class="text-red-600">${errors}</li>`;
+      }
+      
+      errorMessage += '</ul></div>';
+      
+      Swal.fire({
+        icon: 'error',
+        title: 'Upload Gagal',
+        html: errorMessage,
+        confirmButtonColor: '#ef4444',
+        confirmButtonText: 'OK'
+      });
+    },
+    onFinish: () => {
+      console.log('Upload request finished - checking for any unhandled responses');
+      // Fallback: if we reach here without success/error, something went wrong
+      setTimeout(() => {
+        if (uploading.value) {
+          console.log('Upload seems to be stuck, forcing stop');
+          uploading.value = false;
+          Swal.fire({
+            icon: 'warning',
+            title: 'Upload Timeout',
+            text: 'Upload sepertinya mengalami timeout. Silakan coba lagi.',
+            confirmButtonText: 'OK'
+          });
+        }
+      }, 30000); // 30 second timeout
+    }
+  });
+}
+
+function downloadTemplate() {
+  window.open('/employee-upload/template', '_blank');
+}
 </script>
 
 <template>
@@ -214,9 +471,14 @@ function openImageModal(imageUrl) {
          <h1 class="text-2xl font-bold text-gray-800 flex items-center gap-2">
            <i class="fa-solid fa-users text-blue-500"></i> Data Karyawan
          </h1>
-         <button @click="openCreate" class="bg-gradient-to-r from-blue-500 to-blue-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold">
-           + Tambah Karyawan Baru
-         </button>
+         <div class="flex gap-2">
+           <button @click="openUploadModal" class="bg-gradient-to-r from-green-500 to-green-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold">
+             <i class="fa-solid fa-upload mr-2"></i>Upload Excel
+           </button>
+           <button @click="openCreate" class="bg-gradient-to-r from-blue-500 to-blue-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold">
+             + Tambah Karyawan Baru
+           </button>
+         </div>
        </div>
 
        <!-- Statistics Cards -->
@@ -422,5 +684,120 @@ function openImageModal(imageUrl) {
         :index="lightboxIndex"
         @hide="lightboxVisible = false"
     />
+
+    <!-- Upload Modal -->
+    <div v-if="showUploadModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div class="bg-white rounded-2xl shadow-2xl p-8 max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto relative">
+        <!-- Loading Overlay -->
+        <div v-if="uploading" class="absolute inset-0 bg-white bg-opacity-90 flex items-center justify-center rounded-2xl z-10">
+          <div class="text-center">
+            <i class="fa fa-spinner fa-spin text-4xl text-green-500 mb-4"></i>
+            <p class="text-lg font-semibold text-gray-700">Memproses File Excel...</p>
+            <p class="text-sm text-gray-500 mt-2">Mohon tunggu, sedang mengupdate data karyawan</p>
+          </div>
+        </div>
+        <div class="flex justify-between items-center mb-6">
+          <h2 class="text-2xl font-bold text-gray-800 flex items-center gap-2">
+            <i class="fa-solid fa-upload text-green-500"></i> Upload Data Karyawan
+          </h2>
+          <button @click="closeUploadModal" class="text-gray-400 hover:text-gray-600 transition-colors">
+            <i class="fa-solid fa-times text-xl"></i>
+          </button>
+        </div>
+
+        <!-- Upload Form -->
+        <form @submit.prevent="uploadFile" enctype="multipart/form-data" class="space-y-6">
+          <div class="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center hover:border-green-400 transition-colors">
+            <div class="space-y-4">
+              <i class="fa-solid fa-file-excel text-6xl text-green-500"></i>
+              <div>
+                <p class="text-lg font-medium text-gray-700">Pilih File Excel</p>
+                <p class="text-sm text-gray-500">Format yang didukung: .xlsx, .xls (Max 10MB)</p>
+              </div>
+              <input
+                ref="fileInput"
+                type="file"
+                @change="handleFileSelect"
+                accept=".xlsx,.xls"
+                class="hidden"
+                required
+              />
+              <button
+                type="button"
+                @click="$refs.fileInput.click()"
+                class="bg-green-500 hover:bg-green-600 text-white px-6 py-2 rounded-lg font-medium transition-colors"
+              >
+                <i class="fa fa-folder-open mr-2"></i>Pilih File
+              </button>
+            </div>
+          </div>
+
+          <!-- Selected File Info -->
+          <div v-if="selectedFile" class="bg-green-50 border border-green-200 rounded-lg p-4">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center space-x-3">
+                <i class="fa-solid fa-file-excel text-green-500 text-xl"></i>
+                <div>
+                  <p class="font-medium text-green-800">{{ selectedFile.name }}</p>
+                  <p class="text-sm text-green-600">{{ formatFileSize(selectedFile.size) }}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                @click="clearFile"
+                class="text-red-500 hover:text-red-700 transition-colors"
+              >
+                <i class="fa fa-times"></i>
+              </button>
+            </div>
+          </div>
+
+          <!-- Upload Button -->
+          <div class="flex justify-end space-x-4">
+            <button
+              type="button"
+              @click="downloadTemplate"
+              class="bg-gray-500 hover:bg-gray-600 text-white px-6 py-2 rounded-lg font-medium transition-colors"
+            >
+              <i class="fa fa-download mr-2"></i>Download Template
+            </button>
+            <button
+              type="submit"
+              :disabled="!selectedFile || uploading"
+              class="bg-green-500 hover:bg-green-600 disabled:bg-gray-300 disabled:cursor-not-allowed text-white px-6 py-2 rounded-lg font-medium transition-colors flex items-center"
+            >
+              <i v-if="uploading" class="fa fa-spinner fa-spin mr-2"></i>
+              <i v-else class="fa fa-upload mr-2"></i>
+              {{ uploading ? 'Memproses...' : 'Upload File' }}
+            </button>
+          </div>
+        </form>
+
+        <!-- Instructions -->
+        <div class="bg-blue-50 border border-blue-200 rounded-2xl p-6 mt-6">
+          <h3 class="text-lg font-semibold text-blue-800 mb-4">
+            <i class="fa fa-info-circle mr-2"></i>Petunjuk Upload
+          </h3>
+          <div class="space-y-3 text-blue-700">
+            <div class="flex items-start space-x-3">
+              <i class="fa fa-check-circle text-blue-500 mt-1"></i>
+              <p>Download template Excel terlebih dahulu untuk memastikan format yang benar</p>
+            </div>
+            <div class="flex items-start space-x-3">
+              <i class="fa fa-check-circle text-blue-500 mt-1"></i>
+              <p>Kolom <strong>ID</strong>, <strong>NIK</strong>, dan <strong>Nama Lengkap</strong> wajib diisi</p>
+            </div>
+            <div class="flex items-start space-x-3">
+              <i class="fa fa-check-circle text-blue-500 mt-1"></i>
+              <p>Pastikan <strong>QR Code Outlet</strong>, <strong>Jabatan</strong>, dan <strong>Divisi</strong> sesuai dengan data yang ada di sistem</p>
+            </div>
+            <div class="flex items-start space-x-3">
+              <i class="fa fa-check-circle text-blue-500 mt-1"></i>
+              <p>Status hanya bisa diisi dengan <strong>A</strong> (Aktif) atau <strong>N</strong> (Non-Aktif)</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   </AppLayout>
 </template> 
