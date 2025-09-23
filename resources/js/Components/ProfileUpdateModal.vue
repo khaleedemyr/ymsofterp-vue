@@ -388,7 +388,7 @@ const updateAvatar = async () => {
     const fd = new FormData();
     fd.append('avatar', form.avatar);
     
-    await axios.post(route('profile.update-avatar'), fd, {
+    await axios.patch(route('profile.update-avatar'), fd, {
         headers: {
             'Content-Type': 'multipart/form-data',
         },
