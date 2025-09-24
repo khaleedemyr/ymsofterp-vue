@@ -134,6 +134,7 @@ const passwordForm = useForm({
 
 const previewUrl = ref(null);
 const isLoading = ref(false);
+const isUploadingAvatar = ref(false);
 
 // Display names for readonly fields
 const jabatanDisplayName = ref('');
@@ -173,11 +174,18 @@ const fetchUser = async () => {
             const { data } = await axios.get('/api/auth/user');
             console.log('User data received from API:', data);
             
-            // Populate all form fields
+            // Populate all form fields with proper data type conversion
             Object.keys(form.data()).forEach(key => {
                 if (data[key] !== undefined && data[key] !== null) {
-                    form[key] = data[key];
-                    console.log(`Setting ${key}:`, data[key]);
+                    let value = data[key];
+                    
+                    // Ensure string fields are converted to string
+                    if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean') {
+                        value = String(value);
+                    }
+                    
+                    form[key] = value;
+                    console.log(`Setting ${key}:`, value, `(type: ${typeof value})`);
                 }
             });
             
@@ -193,8 +201,15 @@ const fetchUser = async () => {
                 if (data.success && data.user) {
                     Object.keys(form.data()).forEach(key => {
                         if (data.user[key] !== undefined && data.user[key] !== null) {
-                            form[key] = data.user[key];
-                            console.log(`Setting ${key} from test route:`, data.user[key]);
+                            let value = data.user[key];
+                            
+                            // Ensure string fields are converted to string
+                            if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean') {
+                                value = String(value);
+                            }
+                            
+                            form[key] = value;
+                            console.log(`Setting ${key} from test route:`, value, `(type: ${typeof value})`);
                         }
                     });
                     
@@ -215,14 +230,51 @@ const fetchUser = async () => {
     }
 };
 
-// Handle file uploads
-function handleFileChange(e, field) {
+// Handle file uploads - EXACT same pattern as daily report
+async function handleFileChange(e, field) {
     const file = e.target.files[0];
-    if (file) {
+    console.log('handleFileChange called:', { field, file, fileType: typeof file });
+    
+    if (!file) return;
+    
+    if (field === 'avatar') {
+        // Upload avatar immediately like daily report
+        await uploadAvatar(file);
+    } else {
+        // For other files, store in form for later upload
         form[field] = file;
-        if (field === 'avatar') {
-            previewUrl.value = URL.createObjectURL(file);
+        console.log('File saved to form:', { field, formField: form[field], isFile: form[field] instanceof File });
+    }
+}
+
+// Avatar upload - EXACT same pattern as daily report uploadFile
+async function uploadAvatar(file) {
+    console.log('=== AVATAR UPLOAD (Daily Report Pattern) ===');
+    console.log('File:', file);
+    console.log('File instanceof File:', file instanceof File);
+    
+    isUploadingAvatar.value = true;
+    
+    const formData = new FormData();
+    formData.append('avatar', file);
+    
+    try {
+        const response = await axios.post('/profile/avatar', formData, {
+            headers: { 'Content-Type': 'multipart/form-data' }
+        });
+        
+        if (response.data.success) {
+            // Update preview with new avatar URL
+            if (response.data.avatar_url) {
+                previewUrl.value = response.data.avatar_url;
+            }
+            Swal.fire('Success', 'Avatar updated successfully!', 'success');
         }
+    } catch (error) {
+        console.error('Avatar upload error:', error);
+        Swal.fire('Error', error.response?.data?.message || 'Failed to upload avatar!', 'error');
+    } finally {
+        isUploadingAvatar.value = false;
     }
 }
 
@@ -327,7 +379,15 @@ watch(() => props.show, (val) => {
             console.log('User from usePage:', user);
             Object.keys(form.data()).forEach(key => {
                 if (user[key] !== undefined && user[key] !== null) {
-                    form[key] = user[key];
+                    let value = user[key];
+                    
+                    // Ensure string fields are converted to string
+                    if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean') {
+                        value = String(value);
+                    }
+                    
+                    form[key] = value;
+                    console.log(`Setting ${key} from usePage:`, value, `(type: ${typeof value})`);
                 }
             });
         previewUrl.value = user.avatar ? `/storage/${user.avatar}` : null;
@@ -348,20 +408,24 @@ const submitProfile = async () => {
     isLoading.value = true;
     
     try {
-        // 1. Update avatar separately if it exists
-        if (form.avatar && form.avatar instanceof File) {
-            await updateAvatar();
-        }
+        console.log('=== PROFILE UPDATE DEBUG ===');
+        console.log('hasDocumentFiles():', hasDocumentFiles());
         
-        // 2. Update documents separately if they exist
+        // Avatar is now uploaded immediately when selected, so skip it here
+        
+        // 1. Update documents separately if they exist
         if (hasDocumentFiles()) {
+            console.log('Updating documents...');
             await updateDocuments();
+        } else {
+            console.log('No document files to update');
         }
         
-        // 3. Update other profile data (excluding all file fields)
+        // 2. Update other profile data (excluding all file fields)
+        console.log('Updating profile data...');
         await updateProfileData();
         
-        // 4. Reload user data and show success
+        // 3. Reload user data and show success
         Inertia.reload({ only: ['auth'] });
         Swal.fire('Success', 'Profile updated successfully!', 'success');
         emit('close');
@@ -372,7 +436,15 @@ const submitProfile = async () => {
     } catch (error) {
         console.error('Profile update error:', error);
         console.error('Error response:', error.response?.data);
-        Swal.fire('Error', 'Failed to update profile!', 'error');
+        
+        let errorMessage = 'Failed to update profile!';
+        if (error.response?.data?.message) {
+            errorMessage = error.response.data.message;
+        } else if (error.message) {
+            errorMessage = error.message;
+        }
+        
+        Swal.fire('Error', errorMessage, 'error');
     } finally {
         isLoading.value = false;
     }
@@ -384,41 +456,38 @@ const hasDocumentFiles = () => {
            (form.upload_latest_color_photo && form.upload_latest_color_photo instanceof File);
 };
 
-const updateAvatar = async () => {
-    const fd = new FormData();
-    fd.append('avatar', form.avatar);
-    
-    await axios.patch(route('profile.update-avatar'), fd, {
-        headers: {
-            'Content-Type': 'multipart/form-data',
-        },
-        _method: 'patch',
-    });
-};
 
 const updateDocuments = async () => {
-    const fd = new FormData();
+    const formData = new FormData();
     
     if (form.foto_ktp && form.foto_ktp instanceof File) {
-        fd.append('foto_ktp', form.foto_ktp);
+        formData.append('foto_ktp', form.foto_ktp);
     }
     if (form.foto_kk && form.foto_kk instanceof File) {
-        fd.append('foto_kk', form.foto_kk);
+        formData.append('foto_kk', form.foto_kk);
     }
     if (form.upload_latest_color_photo && form.upload_latest_color_photo instanceof File) {
-        fd.append('upload_latest_color_photo', form.upload_latest_color_photo);
+        formData.append('upload_latest_color_photo', form.upload_latest_color_photo);
     }
     
-    await axios.post(route('profile.update-documents'), fd, {
+    console.log('Documents FormData contents:');
+    for (let [key, value] of formData.entries()) {
+        console.log(key, value);
+    }
+    
+    await axios.patch(route('profile.update-documents'), formData, {
         headers: {
             'Content-Type': 'multipart/form-data',
         },
-        _method: 'patch',
     });
 };
 
 const updateProfileData = async () => {
-    const fd = new FormData();
+    console.log('=== UPDATE PROFILE DATA DEBUG ===');
+    console.log('Form data:', form.data());
+    
+    // Prepare data object instead of FormData for non-file fields
+    const profileData = {};
     
     // Fields that should NOT be submitted (readonly work fields)
     const readonlyFields = ['id_jabatan', 'id_outlet', 'division_id', 'tanggal_masuk'];
@@ -426,33 +495,71 @@ const updateProfileData = async () => {
     // File fields that should be excluded from profile update
     const fileFields = ['avatar', 'foto_ktp', 'foto_kk', 'upload_latest_color_photo'];
     
+    // Display name fields that should be excluded (they are computed, not stored)
+    const displayFields = ['jabatan_name', 'outlet_name', 'division_name'];
+    
     Object.entries(form.data()).forEach(([key, value]) => {
         // Skip readonly fields
         if (readonlyFields.includes(key)) {
+            console.log(`Skipping readonly field: ${key}`);
             return;
         }
         
         // Skip file fields (they are handled separately)
         if (fileFields.includes(key)) {
+            console.log(`Skipping file field: ${key}`);
             return;
         }
         
-        // For other fields, only send if they have meaningful values
+        // Skip display name fields (they are computed, not stored)
+        if (displayFields.includes(key)) {
+            console.log(`Skipping display field: ${key}`);
+            return;
+        }
+        
+        // For other fields, ensure proper data type and only send if they have meaningful values
         if (value !== null && value !== undefined && value !== '') {
-            fd.append(key, value);
+            // Ensure string values are properly converted
+            let processedValue = value;
+            
+            // Special handling for specific fields
+            if (key === 'pin_pos') {
+                // pin_pos must be a string, ensure it's properly converted
+                processedValue = String(processedValue).trim();
+                console.log(`Special handling for pin_pos: "${processedValue}" (type: ${typeof processedValue})`);
+            } else {
+                // Convert to string if it's not already
+                if (typeof processedValue !== 'string') {
+                    processedValue = String(processedValue);
+                }
+                
+                // Trim whitespace
+                processedValue = processedValue.trim();
+            }
+            
+            // Only add if not empty after processing
+            if (processedValue !== '') {
+                console.log(`Adding field: ${key} = "${processedValue}" (type: ${typeof processedValue})`);
+                profileData[key] = processedValue;
+            } else {
+                console.log(`Skipping empty field after processing: ${key}`);
+            }
+        } else {
+            console.log(`Skipping empty field: ${key} = ${value}`);
         }
     });
     
-    console.log('Profile data FormData contents:');
-    for (let [key, value] of fd.entries()) {
-        console.log(key, value);
-    }
+    console.log('Profile data object:', profileData);
+    console.log('Data types check:');
+    Object.entries(profileData).forEach(([key, value]) => {
+        console.log(`${key}: "${value}" (${typeof value})`);
+    });
     
-    await axios.post(route('profile.update'), fd, {
+    await axios.patch(route('profile.update'), profileData, {
         headers: {
-            'Content-Type': 'multipart/form-data',
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
         },
-        _method: 'patch',
     });
 };
 
@@ -517,20 +624,27 @@ const submitPassword = () => {
                                 </div>
                                 <label 
                                     for="avatar-upload" 
-                                    class="absolute bottom-0 right-0 bg-blue-500 text-white rounded-full p-1 cursor-pointer hover:bg-blue-600"
+                                    :class="[
+                                        'absolute bottom-0 right-0 rounded-full p-1 cursor-pointer transition-colors',
+                                        isUploadingAvatar ? 'bg-yellow-500 cursor-not-allowed' : 'bg-blue-500 hover:bg-blue-600'
+                                    ]"
+                                    :disabled="isUploadingAvatar"
                                 >
-                                    <i class="fas fa-camera"></i>
+                                    <i v-if="isUploadingAvatar" class="fas fa-spinner fa-spin text-white"></i>
+                                    <i v-else class="fas fa-camera text-white"></i>
                                 </label>
                                 <input 
                                     id="avatar-upload" 
                                     type="file" 
                                     class="hidden" 
                                     accept="image/*"
-                                        @change="handleFileChange($event, 'avatar')"
+                                    :disabled="isUploadingAvatar"
+                                    @change="handleFileChange($event, 'avatar')"
                                 />
                             </div>
                             <div class="text-sm text-gray-500">
-                                Click the camera icon to change your profile picture
+                                <span v-if="isUploadingAvatar">Uploading avatar...</span>
+                                <span v-else>Click the camera icon to change your profile picture</span>
                             </div>
                         </div>
                         <InputError class="mt-2" :message="form.errors.avatar" />

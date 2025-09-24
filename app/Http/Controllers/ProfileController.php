@@ -8,9 +8,9 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Redirect;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
-use Illuminate\Support\Facades\Storage;
 
 class ProfileController extends Controller
 {
@@ -28,7 +28,7 @@ class ProfileController extends Controller
     /**
      * Update the user's profile information.
      */
-    public function update(ProfileUpdateRequest $request): RedirectResponse
+    public function update(ProfileUpdateRequest $request)
     {
         \Log::info('REQUEST ALL:', $request->all());
         \Log::info('VALIDATED:', $request->validated());
@@ -37,33 +37,65 @@ class ProfileController extends Controller
 
         // Update all fields that are provided (excluding readonly work fields)
         $allowedFields = [
+            // Personal Info
             'nama_lengkap', 'nama_panggilan', 'email', 'no_hp', 'jenis_kelamin',
             'tempat_lahir', 'tanggal_lahir', 'suku', 'agama', 'status_pernikahan',
-            'golongan_darah', 'alamat', 'alamat_ktp', 'pin_pos', 'nama_rekening', 'no_rekening',
-            'npwp_number', 'bpjs_health_number', 'bpjs_employment_number',
+            'golongan_darah',
+            
+            // Address
+            'alamat', 'alamat_ktp',
+            
+            // Work Info (only pin_pos is editable, others are readonly)
+            'pin_pos',
+            
+            // Financial
+            'nama_rekening', 'no_rekening', 'npwp_number', 'bpjs_health_number', 'bpjs_employment_number',
+            
+            // Education
             'last_education', 'name_school_college', 'school_college_major',
+            
+            // Emergency Contact
             'nama_kontak_darurat', 'no_hp_kontak_darurat', 'hubungan_kontak_darurat',
+            
+            // Documents
             'no_ktp', 'nomor_kk', 'imei'
         ];
 
+        $updatedFields = [];
         foreach ($allowedFields as $field) {
             if (isset($data[$field])) {
                 $user->$field = $data[$field];
+                $updatedFields[] = $field;
+                \Log::info("Updated field {$field}: {$data[$field]}");
             }
         }
 
         // File uploads are handled separately via updateAvatar method
+        \Log::info('Updated fields:', $updatedFields);
 
         $user->save();
 
-        return Redirect::route('profile.edit');
+        return response()->json([
+            'success' => true,
+            'message' => 'Profile updated successfully',
+            'updated_fields' => $updatedFields
+        ]);
     }
 
     /**
      * Update the user's avatar.
      */
-    public function updateAvatar(Request $request): RedirectResponse
+    public function updateAvatar(Request $request)
     {
+        // Debug: Log semua data yang diterima
+        \Log::info('Avatar update request data:', [
+            'all' => $request->all(),
+            'files' => $request->allFiles(),
+            'hasFile_avatar' => $request->hasFile('avatar'),
+            'file_avatar' => $request->file('avatar'),
+            'input_avatar' => $request->input('avatar'),
+        ]);
+        
         $request->validate([
             'avatar' => ['required', 'image', 'max:2048'],
         ]);
@@ -79,13 +111,16 @@ class ProfileController extends Controller
         $user->avatar = $request->file('avatar')->store('users/avatars', 'public');
         $user->save();
 
-        return Redirect::route('profile.edit');
+        return response()->json([
+            'message' => 'Avatar updated successfully',
+            'avatar_url' => Storage::disk('public')->url($user->avatar)
+        ]);
     }
 
     /**
      * Update the user's documents (foto_ktp, foto_kk, upload_latest_color_photo).
      */
-    public function updateDocuments(Request $request): RedirectResponse
+    public function updateDocuments(Request $request)
     {
         $request->validate([
             'foto_ktp' => ['nullable', 'image', 'mimes:jpeg,png,jpg', 'max:2048'],
@@ -121,7 +156,10 @@ class ProfileController extends Controller
 
         $user->save();
 
-        return Redirect::route('profile.edit');
+        return response()->json([
+            'success' => true,
+            'message' => 'Documents updated successfully'
+        ]);
     }
 
     /**
