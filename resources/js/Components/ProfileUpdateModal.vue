@@ -491,35 +491,88 @@ const submitProfile = async () => {
 };
 
 const hasDocumentFiles = () => {
-    return (form.foto_ktp && form.foto_ktp instanceof File) ||
-           (form.foto_kk && form.foto_kk instanceof File) ||
-           (form.upload_latest_color_photo && form.upload_latest_color_photo instanceof File);
+    // Check if there are new files to upload
+    const hasNewFiles = (form.foto_ktp && form.foto_ktp instanceof File) ||
+                       (form.foto_kk && form.foto_kk instanceof File) ||
+                       (form.upload_latest_color_photo && form.upload_latest_color_photo instanceof File);
+    
+    // Check if there are existing files that need to be preserved
+    const hasExistingFiles = (form.foto_ktp && typeof form.foto_ktp === 'string') ||
+                            (form.foto_kk && typeof form.foto_kk === 'string') ||
+                            (form.upload_latest_color_photo && typeof form.upload_latest_color_photo === 'string');
+    
+    console.log('hasNewFiles:', hasNewFiles);
+    console.log('hasExistingFiles:', hasExistingFiles);
+    
+    return hasNewFiles || hasExistingFiles;
 };
 
 
 const updateDocuments = async () => {
-    const formData = new FormData();
+    console.log('=== UPDATE DOCUMENTS DEBUG ===');
+    console.log('form.foto_ktp:', form.foto_ktp, 'isFile:', form.foto_ktp instanceof File);
+    console.log('form.foto_kk:', form.foto_kk, 'isFile:', form.foto_kk instanceof File);
+    console.log('form.upload_latest_color_photo:', form.upload_latest_color_photo, 'isFile:', form.upload_latest_color_photo instanceof File);
     
+    const formData = new FormData();
+    let hasFilesToUpload = false;
+    
+    // Handle new files (File objects)
     if (form.foto_ktp && form.foto_ktp instanceof File) {
         formData.append('foto_ktp', form.foto_ktp);
+        hasFilesToUpload = true;
+        console.log('Added NEW foto_ktp to FormData');
     }
     if (form.foto_kk && form.foto_kk instanceof File) {
         formData.append('foto_kk', form.foto_kk);
+        hasFilesToUpload = true;
+        console.log('Added NEW foto_kk to FormData');
     }
     if (form.upload_latest_color_photo && form.upload_latest_color_photo instanceof File) {
         formData.append('upload_latest_color_photo', form.upload_latest_color_photo);
+        hasFilesToUpload = true;
+        console.log('Added NEW upload_latest_color_photo to FormData');
+    }
+    
+    // Handle existing files (string paths) - send as data to preserve them
+    if (form.foto_ktp && typeof form.foto_ktp === 'string') {
+        formData.append('existing_foto_ktp', form.foto_ktp);
+        console.log('Added EXISTING foto_ktp path to FormData:', form.foto_ktp);
+    }
+    if (form.foto_kk && typeof form.foto_kk === 'string') {
+        formData.append('existing_foto_kk', form.foto_kk);
+        console.log('Added EXISTING foto_kk path to FormData:', form.foto_kk);
+    }
+    if (form.upload_latest_color_photo && typeof form.upload_latest_color_photo === 'string') {
+        formData.append('existing_upload_latest_color_photo', form.upload_latest_color_photo);
+        console.log('Added EXISTING upload_latest_color_photo path to FormData:', form.upload_latest_color_photo);
     }
     
     console.log('Documents FormData contents:');
     for (let [key, value] of formData.entries()) {
-        console.log(key, value);
+        console.log(`${key}:`, value, `(type: ${typeof value})`);
     }
     
-    await axios.patch(route('profile.update-documents'), formData, {
-        headers: {
-            'Content-Type': 'multipart/form-data',
-        },
-    });
+    // Always call API if there are any document fields (new or existing)
+    if (!hasFilesToUpload && formData.entries().next().done) {
+        console.log('No document data to update, skipping documents update');
+        return;
+    }
+    
+    try {
+        const response = await axios.patch(route('profile.update-documents'), formData, {
+            headers: {
+                'Content-Type': 'multipart/form-data',
+            },
+        });
+        
+        console.log('Documents update response:', response.data);
+        return response;
+    } catch (error) {
+        console.error('Documents update error:', error);
+        console.error('Error response:', error.response?.data);
+        throw error;
+    }
 };
 
 const updateProfileData = async () => {
