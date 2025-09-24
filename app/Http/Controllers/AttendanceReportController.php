@@ -1587,6 +1587,8 @@ class AttendanceReportController extends Controller
         ]);
 
         $rows = collect();
+        $employeeSummary = collect(); // Initialize employeeSummary to prevent undefined variable error
+        
         if (!empty($outletId) || !empty($divisionId) || !empty($bulan) || !empty($tahun)) {
             $bulan = $bulan ?: date('m');
             $tahun = $tahun ?: date('Y');
