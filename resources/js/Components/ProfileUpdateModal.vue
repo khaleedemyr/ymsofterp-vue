@@ -136,6 +136,11 @@ const previewUrl = ref(null);
 const isLoading = ref(false);
 const isUploadingAvatar = ref(false);
 
+// Preview URLs for document files
+const fotoKtpPreview = ref(null);
+const fotoKkPreview = ref(null);
+const colorPhotoPreview = ref(null);
+
 // Display names for readonly fields
 const jabatanDisplayName = ref('');
 const outletDisplayName = ref('');
@@ -190,6 +195,11 @@ const fetchUser = async () => {
             });
             
         previewUrl.value = data.avatar ? `/storage/${data.avatar}` : null;
+        
+        // Set preview for existing document files
+        fotoKtpPreview.value = data.foto_ktp ? `/storage/${data.foto_ktp}` : null;
+        fotoKkPreview.value = data.foto_kk ? `/storage/${data.foto_kk}` : null;
+        colorPhotoPreview.value = data.upload_latest_color_photo ? `/storage/${data.upload_latest_color_photo}` : null;
         } catch (apiError) {
             console.error('API error:', apiError);
             
@@ -214,6 +224,11 @@ const fetchUser = async () => {
                     });
                     
                     previewUrl.value = data.user.avatar ? `/storage/${data.user.avatar}` : null;
+                    
+                    // Set preview for existing document files
+                    fotoKtpPreview.value = data.user.foto_ktp ? `/storage/${data.user.foto_ktp}` : null;
+                    fotoKkPreview.value = data.user.foto_kk ? `/storage/${data.user.foto_kk}` : null;
+                    colorPhotoPreview.value = data.user.upload_latest_color_photo ? `/storage/${data.user.upload_latest_color_photo}` : null;
                 }
             } catch (testError) {
                 console.error('Test route error:', testError);
@@ -244,6 +259,15 @@ async function handleFileChange(e, field) {
         // For other files, store in form for later upload
         form[field] = file;
         console.log('File saved to form:', { field, formField: form[field], isFile: form[field] instanceof File });
+        
+        // Create preview for document files
+        if (field === 'foto_ktp') {
+            fotoKtpPreview.value = URL.createObjectURL(file);
+        } else if (field === 'foto_kk') {
+            fotoKkPreview.value = URL.createObjectURL(file);
+        } else if (field === 'upload_latest_color_photo') {
+            colorPhotoPreview.value = URL.createObjectURL(file);
+        }
     }
 }
 
@@ -391,6 +415,11 @@ watch(() => props.show, (val) => {
                 }
             });
         previewUrl.value = user.avatar ? `/storage/${user.avatar}` : null;
+        
+        // Set preview for existing document files
+        fotoKtpPreview.value = user.foto_ktp ? `/storage/${user.foto_ktp}` : null;
+        fotoKkPreview.value = user.foto_kk ? `/storage/${user.foto_kk}` : null;
+        colorPhotoPreview.value = user.upload_latest_color_photo ? `/storage/${user.upload_latest_color_photo}` : null;
         }
         
         // Then fetch fresh data from API
@@ -432,6 +461,17 @@ const submitProfile = async () => {
         
         if (previewUrl.value && previewUrl.value.startsWith('blob:')) {
             URL.revokeObjectURL(previewUrl.value);
+        }
+        
+        // Cleanup document file previews
+        if (fotoKtpPreview.value && fotoKtpPreview.value.startsWith('blob:')) {
+            URL.revokeObjectURL(fotoKtpPreview.value);
+        }
+        if (fotoKkPreview.value && fotoKkPreview.value.startsWith('blob:')) {
+            URL.revokeObjectURL(fotoKkPreview.value);
+        }
+        if (colorPhotoPreview.value && colorPhotoPreview.value.startsWith('blob:')) {
+            URL.revokeObjectURL(colorPhotoPreview.value);
         }
     } catch (error) {
         console.error('Profile update error:', error);
@@ -1067,6 +1107,13 @@ const submitPassword = () => {
                             <InputLabel for="foto_ktp" value="Foto KTP" />
                             <input type="file" @change="handleFileChange($event, 'foto_ktp')" accept="image/*" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500" />
                             <p class="text-xs text-gray-500 mt-1">Format: JPG, PNG. Maksimal 2MB</p>
+                            
+                            <!-- Foto KTP Thumbnail -->
+                            <div v-if="fotoKtpPreview" class="mt-2">
+                                <img :src="fotoKtpPreview" alt="Foto KTP Preview" class="w-32 h-32 object-cover rounded-lg border border-gray-200" />
+                                <p class="text-xs text-green-600 mt-1">✓ Foto KTP terpilih</p>
+                            </div>
+                            
                             <InputError class="mt-2" :message="form.errors.foto_ktp" />
                         </div>
 
@@ -1074,6 +1121,13 @@ const submitPassword = () => {
                             <InputLabel for="foto_kk" value="Foto KK" />
                             <input type="file" @change="handleFileChange($event, 'foto_kk')" accept="image/*" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500" />
                             <p class="text-xs text-gray-500 mt-1">Format: JPG, PNG. Maksimal 2MB</p>
+                            
+                            <!-- Foto KK Thumbnail -->
+                            <div v-if="fotoKkPreview" class="mt-2">
+                                <img :src="fotoKkPreview" alt="Foto KK Preview" class="w-32 h-32 object-cover rounded-lg border border-gray-200" />
+                                <p class="text-xs text-green-600 mt-1">✓ Foto KK terpilih</p>
+                            </div>
+                            
                             <InputError class="mt-2" :message="form.errors.foto_kk" />
                         </div>
 
@@ -1081,6 +1135,13 @@ const submitPassword = () => {
                             <InputLabel for="upload_latest_color_photo" value="Upload Latest Color Photo" />
                             <input type="file" @change="handleFileChange($event, 'upload_latest_color_photo')" accept="image/*" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500" />
                             <p class="text-xs text-gray-500 mt-1">Format: JPG, PNG. Maksimal 2MB</p>
+                            
+                            <!-- Color Photo Thumbnail -->
+                            <div v-if="colorPhotoPreview" class="mt-2">
+                                <img :src="colorPhotoPreview" alt="Color Photo Preview" class="w-32 h-32 object-cover rounded-lg border border-gray-200" />
+                                <p class="text-xs text-green-600 mt-1">✓ Color Photo terpilih</p>
+                            </div>
+                            
                             <InputError class="mt-2" :message="form.errors.upload_latest_color_photo" />
                         </div>
                     </div>
