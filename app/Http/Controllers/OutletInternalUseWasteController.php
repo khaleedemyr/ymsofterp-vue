@@ -284,7 +284,7 @@ class OutletInternalUseWasteController extends Controller
                 // Hapus kartu stok OUT terkait untuk setiap detail
                 DB::table('outlet_food_inventory_cards')
                     ->where('reference_type', 'outlet_internal_use_waste')
-                    ->where('reference_id', $detail->id)
+                    ->where('reference_id', $id) // Menggunakan header ID, bukan detail ID
                     ->delete();
             }
 
