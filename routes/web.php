@@ -916,6 +916,18 @@ Route::get('/outlet-internal-use-waste/{id}', [\App\Http\Controllers\OutletInter
 Route::delete('/outlet-internal-use-waste/{id}', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'destroy'])->name('outlet-internal-use-waste.destroy');
 Route::get('/outlet-internal-use-waste/get-item-units/{id}', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'getItemUnits'])->name('outlet-internal-use-waste.get-item-units');
 
+// Regional Routes
+Route::middleware(['auth', 'verified'])->group(function () {
+    Route::get('/regional', [\App\Http\Controllers\RegionalController::class, 'index'])->name('regional.index');
+    Route::get('/regional/create', [\App\Http\Controllers\RegionalController::class, 'create'])->name('regional.create');
+    Route::post('/regional', [\App\Http\Controllers\RegionalController::class, 'store'])->name('regional.store');
+    Route::get('/regional/{id}/edit', [\App\Http\Controllers\RegionalController::class, 'edit'])->name('regional.edit');
+    Route::put('/regional/{id}', [\App\Http\Controllers\RegionalController::class, 'update'])->name('regional.update');
+    Route::delete('/regional/{id}', [\App\Http\Controllers\RegionalController::class, 'destroy'])->name('regional.destroy');
+        Route::get('/api/regional/user-outlets/{userId}', [\App\Http\Controllers\RegionalController::class, 'getUserOutlets'])->name('regional.user-outlets');
+        Route::get('/api/regional/search-users', [\App\Http\Controllers\RegionalController::class, 'searchUsers'])->name('regional.search-users');
+});
+
 // Outlet Rejection Routes
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/outlet-rejections', [\App\Http\Controllers\OutletRejectionController::class, 'index'])->name('outlet-rejections.index');
