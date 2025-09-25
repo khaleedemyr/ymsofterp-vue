@@ -12,6 +12,7 @@ const props = defineProps({
 const dropdownData = ref({ outlets: [], jabatans: [], divisions: [] });
 const isLoadingDropdown = ref(false);
 const isSubmitting = ref(false);
+const fieldErrors = ref({});
 
 const jenisKelaminOptions = [
   { value: 'L', label: 'Laki-laki' },
@@ -110,6 +111,8 @@ async function fetchDropdownData() {
         divisions: response.data.divisions || [],
       };
       console.log('Dropdown data set:', dropdownData.value);
+      console.log('Divisions data:', dropdownData.value.divisions);
+      console.log('Sample division:', dropdownData.value.divisions[0]);
     } else {
       console.error('Failed to load dropdown data:', response.data);
     }
@@ -123,7 +126,9 @@ async function fetchDropdownData() {
 onMounted(fetchDropdownData);
 
 function handleFileChange(e, field) {
-  form[field] = e.target.files[0];
+  const file = e.target.files[0];
+  console.log(`File selected for ${field}:`, file);
+  form[field] = file;
 }
 
 async function submit() {
@@ -138,27 +143,138 @@ async function submit() {
   if (!confirm.isConfirmed) return;
 
   isSubmitting.value = true;
+  fieldErrors.value = {}; // Clear previous errors
   
   // Log form data before submission
   console.log('Form data to submit:', form.data());
   console.log('Form errors:', form.errors);
+  console.log('Specific fields being sent:', {
+    id_jabatan: form.id_jabatan,
+    id_outlet: form.id_outlet,
+    division_id: form.division_id
+  });
+  
+  // Check if fields are empty strings and convert to null
+  if (form.id_jabatan === '') form.id_jabatan = null;
+  if (form.id_outlet === '') form.id_outlet = null;
+  if (form.division_id === '') form.division_id = null;
+  
+  console.log('After null conversion:', {
+    id_jabatan: form.id_jabatan,
+    id_outlet: form.id_outlet,
+    division_id: form.division_id
+  });
+  
+  // Check file uploads
+  console.log('File uploads:', {
+    foto_ktp: form.foto_ktp,
+    foto_kk: form.foto_kk,
+    upload_latest_color_photo: form.upload_latest_color_photo,
+    avatar: form.avatar
+  });
   
   // Gunakan Inertia form.put untuk lebih reliable
+  console.log('Form data before submission:', form.data());
+  console.log('Form data keys:', Object.keys(form.data()));
+  console.log('Form data values:', Object.values(form.data()));
+  console.log('Form data entries:', Object.entries(form.data()));
+  console.log('Form data has files:', {
+    foto_ktp: form.foto_ktp instanceof File,
+    foto_kk: form.foto_kk instanceof File,
+    upload_latest_color_photo: form.upload_latest_color_photo instanceof File,
+    avatar: form.avatar instanceof File
+  });
+  
+  // Check if files are actually being sent
+  const formData = form.data();
+  console.log('Form data files check:', {
+    foto_ktp: formData.foto_ktp,
+    foto_kk: formData.foto_kk,
+    upload_latest_color_photo: formData.upload_latest_color_photo,
+    avatar: formData.avatar
+  });
+  
+  // Check if files are null or undefined
+  console.log('File null check:', {
+    foto_ktp: form.foto_ktp === null,
+    foto_kk: form.foto_kk === null,
+    upload_latest_color_photo: form.upload_latest_color_photo === null,
+    avatar: form.avatar === null
+  });
+  
+  // Check if files are undefined
+  console.log('File undefined check:', {
+    foto_ktp: form.foto_ktp === undefined,
+    foto_kk: form.foto_kk === undefined,
+    upload_latest_color_photo: form.upload_latest_color_photo === undefined,
+    avatar: form.avatar === undefined
+  });
+  
+  // Check if files are empty strings
+  console.log('File empty string check:', {
+    foto_ktp: form.foto_ktp === '',
+    foto_kk: form.foto_kk === '',
+    upload_latest_color_photo: form.upload_latest_color_photo === '',
+    avatar: form.avatar === ''
+  });
+  
+  // Check if files are falsy
+  console.log('File falsy check:', {
+    foto_ktp: !form.foto_ktp,
+    foto_kk: !form.foto_kk,
+    upload_latest_color_photo: !form.upload_latest_color_photo,
+    avatar: !form.avatar
+  });
   form.put(route('users.update', props.user.id), {
     onSuccess: () => {
       console.log('Update successful');
       Swal.fire('Berhasil', 'Data karyawan berhasil diupdate!', 'success').then(() => {
-        router.visit('/users');
+        router.visit(`/users/${props.user.id}`);
       });
     },
     onError: (errors) => {
       console.error('Update failed with errors:', errors);
-    Swal.fire('Gagal', 'Gagal update data karyawan!', 'error');
+      fieldErrors.value = errors;
+      
+      // Create detailed error message for SweetAlert
+      let errorMessage = '<div class="text-left">';
+      errorMessage += '<p class="font-semibold text-red-600 mb-3">Gagal menyimpan data karyawan. Periksa field berikut:</p>';
+      errorMessage += '<ul class="list-disc list-inside text-sm space-y-1">';
+      
+      // Process validation errors
+      if (typeof errors === 'object' && errors !== null) {
+        Object.keys(errors).forEach(field => {
+          const fieldName = getFieldDisplayName(field);
+          if (Array.isArray(errors[field])) {
+            errors[field].forEach(error => {
+              errorMessage += `<li class="text-red-600"><strong>${fieldName}:</strong> ${error}</li>`;
+            });
+          } else {
+            errorMessage += `<li class="text-red-600"><strong>${fieldName}:</strong> ${errors[field]}</li>`;
+          }
+        });
+      } else {
+        errorMessage += `<li class="text-red-600">${errors}</li>`;
+      }
+      
+      errorMessage += '</ul>';
+      errorMessage += '<p class="text-xs text-gray-500 mt-3">Silakan perbaiki field yang bermasalah dan coba lagi.</p>';
+      errorMessage += '</div>';
+      
+      Swal.fire({
+        icon: 'error',
+        title: 'Gagal Menyimpan Data',
+        html: errorMessage,
+        confirmButtonColor: '#ef4444',
+        confirmButtonText: 'OK',
+        width: '500px'
+      });
+      
       console.error('Update errors:', errors);
     },
     onFinish: () => {
       console.log('Update finished');
-    isSubmitting.value = false;
+      isSubmitting.value = false;
     },
     preserveScroll: true,
   });
@@ -166,6 +282,52 @@ async function submit() {
 
 function cancel() {
   router.visit('/users');
+}
+
+function getFieldDisplayName(field) {
+  const fieldNames = {
+    'nik': 'NIK',
+    'no_ktp': 'No KTP',
+    'nama_lengkap': 'Nama Lengkap',
+    'email': 'Email',
+    'password': 'Password',
+    'hint_password': 'Hint Password',
+    'nama_panggilan': 'Nama Panggilan',
+    'jenis_kelamin': 'Jenis Kelamin',
+    'tempat_lahir': 'Tempat Lahir',
+    'tanggal_lahir': 'Tanggal Lahir',
+    'suku': 'Suku',
+    'agama': 'Agama',
+    'status_pernikahan': 'Status Pernikahan',
+    'alamat': 'Alamat',
+    'alamat_ktp': 'Alamat KTP',
+    'foto_ktp': 'Foto KTP',
+    'avatar': 'Avatar',
+    'nomor_kk': 'Nomor KK',
+    'foto_kk': 'Foto KK',
+    'no_hp': 'No HP',
+    'id_jabatan': 'Jabatan',
+    'id_outlet': 'Outlet',
+    'division_id': 'Divisi',
+    'imei': 'IMEI',
+    'golongan_darah': 'Golongan Darah',
+    'nama_rekening': 'Nama Rekening',
+    'no_rekening': 'No Rekening',
+    'nama_kontak_darurat': 'Nama Kontak Darurat',
+    'no_hp_kontak_darurat': 'No HP Kontak Darurat',
+    'hubungan_kontak_darurat': 'Hubungan Kontak Darurat',
+    'pin_pos': 'PIN POS',
+    'npwp_number': 'NPWP Number',
+    'bpjs_health_number': 'BPJS Health Number',
+    'bpjs_employment_number': 'BPJS Employment Number',
+    'last_education': 'Pendidikan Terakhir',
+    'name_school_college': 'Nama Sekolah/Kampus',
+    'school_college_major': 'Jurusan',
+    'upload_latest_color_photo': 'Upload Latest Color Photo',
+    'tanggal_masuk': 'Tanggal Masuk'
+  };
+  
+  return fieldNames[field] || field;
 }
 </script>
 
@@ -187,7 +349,11 @@ function cancel() {
         
         <div>
           <label class="block text-sm font-medium text-gray-700">Nama Lengkap *</label>
-          <input v-model="form.nama_lengkap" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm" required maxlength="255" />
+          <input v-model="form.nama_lengkap" :class="[
+            'mt-1 block w-full rounded-lg border-gray-300 shadow-sm',
+            fieldErrors.nama_lengkap ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : 'focus:border-blue-500 focus:ring-blue-500'
+          ]" required maxlength="255" />
+          <p v-if="fieldErrors.nama_lengkap" class="text-red-500 text-sm mt-1">{{ fieldErrors.nama_lengkap }}</p>
         </div>
         
         <div>
@@ -197,7 +363,11 @@ function cancel() {
         
         <div>
           <label class="block text-sm font-medium text-gray-700">Email</label>
-          <input v-model="form.email" type="email" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm" maxlength="255" />
+          <input v-model="form.email" type="email" :class="[
+            'mt-1 block w-full rounded-lg border-gray-300 shadow-sm',
+            fieldErrors.email ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : 'focus:border-blue-500 focus:ring-blue-500'
+          ]" maxlength="255" />
+          <p v-if="fieldErrors.email" class="text-red-500 text-sm mt-1">{{ fieldErrors.email }}</p>
         </div>
         
         <div>
@@ -269,26 +439,38 @@ function cancel() {
         
         <div>
           <label class="block text-sm font-medium text-gray-700">Jabatan</label>
-          <select v-model="form.id_jabatan" :disabled="isLoadingDropdown" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm">
+          <select v-model="form.id_jabatan" :disabled="isLoadingDropdown" :class="[
+            'mt-1 block w-full rounded-lg border-gray-300 shadow-sm',
+            fieldErrors.id_jabatan ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : 'focus:border-blue-500 focus:ring-blue-500'
+          ]">
             <option value="">Pilih Jabatan</option>
             <option v-for="jabatan in dropdownData.jabatans" :key="jabatan.id_jabatan" :value="jabatan.id_jabatan">{{ jabatan.nama_jabatan }}</option>
           </select>
+          <p v-if="fieldErrors.id_jabatan" class="text-red-500 text-sm mt-1">{{ fieldErrors.id_jabatan }}</p>
         </div>
         
         <div>
           <label class="block text-sm font-medium text-gray-700">Outlet</label>
-          <select v-model="form.id_outlet" :disabled="isLoadingDropdown" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm">
+          <select v-model="form.id_outlet" :disabled="isLoadingDropdown" :class="[
+            'mt-1 block w-full rounded-lg border-gray-300 shadow-sm',
+            fieldErrors.id_outlet ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : 'focus:border-blue-500 focus:ring-blue-500'
+          ]">
             <option value="">Pilih Outlet</option>
             <option v-for="outlet in dropdownData.outlets" :key="outlet.id_outlet" :value="outlet.id_outlet">{{ outlet.nama_outlet }}</option>
           </select>
+          <p v-if="fieldErrors.id_outlet" class="text-red-500 text-sm mt-1">{{ fieldErrors.id_outlet }}</p>
         </div>
         
         <div>
           <label class="block text-sm font-medium text-gray-700">Divisi</label>
-          <select v-model="form.division_id" :disabled="isLoadingDropdown" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm">
+          <select v-model="form.division_id" :disabled="isLoadingDropdown" :class="[
+            'mt-1 block w-full rounded-lg border-gray-300 shadow-sm',
+            fieldErrors.division_id ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : 'focus:border-blue-500 focus:ring-blue-500'
+          ]">
             <option value="">Pilih Divisi</option>
             <option v-for="division in dropdownData.divisions" :key="division.id_division" :value="division.id_division">{{ division.nama_division }}</option>
           </select>
+          <p v-if="fieldErrors.division_id" class="text-red-500 text-sm mt-1">{{ fieldErrors.division_id }}</p>
           <p v-if="dropdownData.divisions.length === 0 && !isLoadingDropdown" class="text-xs text-gray-500 mt-1">Tidak ada data divisi tersedia</p>
         </div>
         

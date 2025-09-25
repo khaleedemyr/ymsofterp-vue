@@ -41,6 +41,8 @@ const selectedUserForActivation = ref(null);
 const outletId = ref(props.filters?.outlet_id || '');
 const divisionId = ref(props.filters?.division_id || '');
 const status = ref(props.filters?.status || 'A');
+const perPage = ref(props.filters?.per_page || 15);
+const viewMode = ref(localStorage.getItem('userViewMode') || 'list'); // 'list' or 'card'
 const showUploadModal = ref(false);
 const selectedFile = ref(null);
 const uploading = ref(false);
@@ -56,6 +58,7 @@ const debouncedSearch = debounce(() => {
     outlet_id: outletId.value,
     division_id: divisionId.value,
     status: status.value,
+    per_page: perPage.value,
   }, { preserveState: true, replace: true });
 }, 400);
 
@@ -63,8 +66,28 @@ function onSearchInput() {
   debouncedSearch();
 }
 
+// Watch for filter changes
+watch([outletId, divisionId, status, perPage], () => {
+  router.get('/users', {
+    search: search.value,
+    outlet_id: outletId.value,
+    division_id: divisionId.value,
+    status: status.value,
+    per_page: perPage.value,
+  }, { preserveState: true, replace: true });
+});
+
 function goToPage(url) {
-  if (url) router.visit(url, { preserveState: true, replace: true });
+  if (url) {
+    // Parse URL to add current filter parameters
+    const urlObj = new URL(url, window.location.origin);
+    urlObj.searchParams.set('search', search.value);
+    urlObj.searchParams.set('outlet_id', outletId.value);
+    urlObj.searchParams.set('division_id', divisionId.value);
+    urlObj.searchParams.set('status', status.value);
+    urlObj.searchParams.set('per_page', perPage.value);
+    router.visit(urlObj.toString(), { preserveState: true, replace: true });
+  }
 }
 
 async function fetchDropdownData() {
@@ -184,14 +207,10 @@ function filterByStatus(newStatus) {
   status.value = newStatus;
 }
 
-watch([outletId, divisionId, status], () => {
-  router.get('/users', {
-    search: search.value,
-    outlet_id: outletId.value,
-    division_id: divisionId.value,
-    status: status.value,
-  }, { preserveState: true, replace: true });
-});
+function toggleViewMode() {
+  viewMode.value = viewMode.value === 'list' ? 'card' : 'list';
+  localStorage.setItem('userViewMode', viewMode.value);
+}
 
 // Avatar and lightbox functions
 function getInitials(name) {
@@ -474,12 +493,16 @@ function downloadTemplate() {
 
 <template>
   <AppLayout title="Data Karyawan">
-    <div class="max-w-7xl w-full mx-auto py-8 px-2">
+    <div class="w-full py-8 px-4">
              <div class="flex justify-between items-center mb-6">
          <h1 class="text-2xl font-bold text-gray-800 flex items-center gap-2">
            <i class="fa-solid fa-users text-blue-500"></i> Data Karyawan
          </h1>
          <div class="flex gap-2">
+           <button @click="toggleViewMode" class="bg-gradient-to-r from-purple-500 to-purple-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold">
+             <i :class="viewMode === 'list' ? 'fa-solid fa-th-large mr-2' : 'fa-solid fa-list mr-2'"></i>
+             {{ viewMode === 'list' ? 'Card View' : 'List View' }}
+           </button>
            <button @click="openUploadModal" class="bg-gradient-to-r from-green-500 to-green-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold">
              <i class="fa-solid fa-upload mr-2"></i>Upload Excel
            </button>
@@ -571,7 +594,7 @@ function downloadTemplate() {
            </div>
          </div>
        </div>
-      <div class="mb-4 flex gap-4">
+      <div class="mb-4 flex gap-4 flex-wrap">
         <select v-model="status" class="form-input rounded-xl">
           <option value="A">Aktif</option>
           <option value="N">Non-Aktif</option>
@@ -586,15 +609,23 @@ function downloadTemplate() {
           <option value="">Semua Divisi</option>
           <option v-for="d in divisions" :key="d.id" :value="d.id">{{ d.nama_divisi }}</option>
         </select>
+        <select v-model="perPage" class="form-input rounded-xl">
+          <option value="10">10 per halaman</option>
+          <option value="15">15 per halaman</option>
+          <option value="25">25 per halaman</option>
+          <option value="50">50 per halaman</option>
+          <option value="100">100 per halaman</option>
+        </select>
         <input
           v-model="search"
           @input="onSearchInput"
           type="text"
           placeholder="Cari NIK, No KTP, Nama, Email, No HP..."
-          class="flex-1 px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition"
+          class="flex-1 px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition min-w-64"
         />
       </div>
-      <div class="bg-white rounded-2xl shadow-lg overflow-x-auto">
+      <!-- List View -->
+      <div v-if="viewMode === 'list'" class="bg-white rounded-2xl shadow-lg overflow-x-auto">
         <table class="min-w-full divide-y divide-blue-200">
           <thead class="bg-blue-600 text-white">
             <tr>
@@ -664,7 +695,90 @@ function downloadTemplate() {
           </tbody>
         </table>
       </div>
-      <div class="mt-4 flex justify-end">
+
+      <!-- Card View -->
+      <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+        <div v-for="user in users.data" :key="user.id" class="bg-white rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300 overflow-hidden border border-gray-100">
+          <!-- Card Header with Avatar -->
+          <div class="bg-gradient-to-r from-blue-500 to-purple-600 p-6 text-center">
+            <div v-if="user.avatar" class="w-20 h-20 rounded-full overflow-hidden border-4 border-white shadow-lg cursor-pointer hover:shadow-xl transition-all mx-auto" @click="openImageModal(getImageUrl(user.avatar))">
+              <img :src="getImageUrl(user.avatar)" :alt="user.nama_lengkap" class="w-full h-full object-cover hover:scale-105 transition-transform" />
+            </div>
+            <div v-else class="w-20 h-20 rounded-full bg-white bg-opacity-20 flex items-center justify-center text-white text-2xl font-bold border-4 border-white shadow-lg mx-auto">
+              {{ getInitials(user.nama_lengkap) }}
+            </div>
+            <h3 class="text-white font-bold text-lg mt-3">{{ user.nama_lengkap }}</h3>
+            <p class="text-blue-100 text-sm">{{ user.nama_jabatan || 'Jabatan tidak tersedia' }}</p>
+          </div>
+
+          <!-- Card Body -->
+          <div class="p-6">
+            <div class="space-y-3">
+              <div class="flex items-center">
+                <i class="fa-solid fa-id-card text-gray-400 w-5"></i>
+                <span class="ml-3 text-sm text-gray-600">{{ user.nik }}</span>
+              </div>
+              <div class="flex items-center">
+                <i class="fa-solid fa-building text-gray-400 w-5"></i>
+                <span class="ml-3 text-sm text-gray-600">{{ user.nama_outlet || 'Outlet tidak tersedia' }}</span>
+              </div>
+              <div class="flex items-center">
+                <i class="fa-solid fa-envelope text-gray-400 w-5"></i>
+                <span class="ml-3 text-sm text-gray-600 truncate">{{ user.email }}</span>
+              </div>
+              <div class="flex items-center">
+                <i class="fa-solid fa-phone text-gray-400 w-5"></i>
+                <span class="ml-3 text-sm text-gray-600">{{ user.no_hp || 'No HP tidak tersedia' }}</span>
+              </div>
+            </div>
+
+            <!-- Status Badge -->
+            <div class="mt-4 text-center">
+              <span :class="[
+                'px-3 py-1 rounded-full text-xs font-semibold',
+                user.status === 'A' ? 'bg-green-100 text-green-800' : 
+                user.status === 'N' ? 'bg-red-100 text-red-800' : 
+                'bg-yellow-100 text-yellow-800'
+              ]">
+                {{ user.status === 'A' ? 'Aktif' : user.status === 'N' ? 'Non-Aktif' : 'Baru' }}
+              </span>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="mt-6 flex justify-center gap-2">
+              <button @click="openShow(user)" class="px-3 py-2 rounded-lg bg-blue-100 text-blue-700 hover:bg-blue-200 transition text-sm" title="Detail">
+                <i class="fa-solid fa-eye"></i>
+              </button>
+              <button @click="openEdit(user)" class="px-3 py-2 rounded-lg bg-yellow-100 text-yellow-700 hover:bg-yellow-200 transition text-sm" title="Edit">
+                <i class="fa-solid fa-pen-to-square"></i>
+              </button>
+              <button @click="toggleStatus(user)" :class="[
+                'px-3 py-2 rounded-lg transition text-sm',
+                user.status === 'A' ? 'bg-red-100 text-red-700 hover:bg-red-200' : 
+                user.status === 'B' ? 'bg-blue-100 text-blue-700 hover:bg-blue-200' : 
+                'bg-green-100 text-green-700 hover:bg-green-200'
+              ]" :title="user.status === 'A' ? 'Nonaktifkan' : user.status === 'B' ? 'Aktifkan' : 'Aktifkan'">
+                <i :class="user.status === 'A' ? 'fa-solid fa-user-slash' : 'fa-solid fa-user-check'"></i>
+              </button>
+              <button @click="openPinModal(user)" class="px-3 py-2 rounded-lg bg-green-100 text-green-700 hover:bg-green-200 transition text-sm" title="Kelola PIN">
+                <i class="fa-solid fa-key"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Empty State for Card View -->
+        <div v-if="users.data.length === 0" class="col-span-full text-center py-12">
+          <div class="text-gray-400 text-lg">
+            <i class="fa-solid fa-users text-4xl mb-4"></i>
+            <p>Tidak ada data karyawan</p>
+          </div>
+        </div>
+      </div>
+      <div class="mt-4 flex justify-between items-center">
+        <div class="text-sm text-gray-600">
+          Menampilkan {{ users.from || 0 }} - {{ users.to || 0 }} dari {{ users.total || 0 }} data
+        </div>
         <nav v-if="users.links && users.links.length > 3" class="inline-flex -space-x-px">
           <template v-for="(link, i) in users.links" :key="i">
             <button v-if="link.url" @click="goToPage(link.url)" :class="['px-3 py-1 border border-gray-300', link.active ? 'bg-blue-600 text-white' : 'bg-white text-blue-700 hover:bg-blue-50']" v-html="link.label"></button>

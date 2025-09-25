@@ -237,40 +237,81 @@ const submitRegister = () => {
             // Handle validation errors
             const errors = error.response.data.errors;
             
-            // Check for specific unique validation errors
-            if (errors.email && errors.email.includes('has already been taken')) {
-                Swal.fire({
-                    title: 'Email Sudah Terdaftar',
-                    text: 'Email yang Anda gunakan sudah terdaftar dalam sistem. Silakan gunakan email lain atau hubungi administrator.',
-                    icon: 'error',
-                    confirmButtonText: 'OK'
+            // Field display names mapping
+            const getFieldDisplayName = (field) => {
+                const fieldNames = {
+                    'nama_lengkap': 'Nama Lengkap',
+                    'nama_panggilan': 'Nama Panggilan',
+                    'email': 'Email',
+                    'password': 'Password',
+                    'password_confirmation': 'Konfirmasi Password',
+                    'no_hp': 'No HP',
+                    'jenis_kelamin': 'Jenis Kelamin',
+                    'tempat_lahir': 'Tempat Lahir',
+                    'tanggal_lahir': 'Tanggal Lahir',
+                    'suku': 'Suku',
+                    'agama': 'Agama',
+                    'status_pernikahan': 'Status Pernikahan',
+                    'golongan_darah': 'Golongan Darah',
+                    'alamat': 'Alamat',
+                    'alamat_ktp': 'Alamat KTP',
+                    'nama_kontak_darurat': 'Nama Kontak Darurat',
+                    'no_hp_kontak_darurat': 'No HP Kontak Darurat',
+                    'hubungan_kontak_darurat': 'Hubungan Kontak Darurat',
+                    'no_ktp': 'No KTP',
+                    'nomor_kk': 'Nomor KK',
+                    'npwp_number': 'NPWP',
+                    'bpjs_health_number': 'BPJS Kesehatan',
+                    'bpjs_employment_number': 'BPJS Ketenagakerjaan',
+                    'last_education': 'Pendidikan Terakhir',
+                    'name_school_college': 'Nama Sekolah/Kampus',
+                    'school_college_major': 'Jurusan',
+                    'nama_rekening': 'Nama Rekening',
+                    'no_rekening': 'No Rekening',
+                    'avatar': 'Avatar',
+                    'foto_ktp': 'Foto KTP',
+                    'foto_kk': 'Foto KK',
+                    'upload_latest_color_photo': 'Foto Terbaru'
+                };
+                return fieldNames[field] || field;
+            };
+            
+            // Create detailed error message for SweetAlert
+            let errorMessage = '<div class="text-left">';
+            errorMessage += '<p class="font-semibold text-red-600 mb-3">Gagal mendaftar akun. Periksa field berikut:</p>';
+            errorMessage += '<ul class="list-disc list-inside text-sm space-y-1">';
+            
+            // Process validation errors
+            if (typeof errors === 'object' && errors !== null) {
+                Object.keys(errors).forEach(field => {
+                    const fieldName = getFieldDisplayName(field);
+                    if (Array.isArray(errors[field])) {
+                        errors[field].forEach(error => {
+                            errorMessage += `<li class="text-red-600"><strong>${fieldName}:</strong> ${error}</li>`;
+                        });
+                    } else {
+                        errorMessage += `<li class="text-red-600"><strong>${fieldName}:</strong> ${errors[field]}</li>`;
+                    }
                 });
-                return;
+            } else {
+                errorMessage += `<li class="text-red-600">${errors}</li>`;
             }
             
-            if (errors.no_ktp && errors.no_ktp.includes('has already been taken')) {
-                Swal.fire({
-                    title: 'No KTP Sudah Terdaftar',
-                    text: 'Nomor KTP yang Anda gunakan sudah terdaftar dalam sistem. Silakan periksa kembali nomor KTP Anda.',
-                    icon: 'error',
-                    confirmButtonText: 'OK'
-                });
-                return;
-            }
+            errorMessage += '</ul>';
+            errorMessage += '<p class="text-xs text-gray-500 mt-3">Silakan perbaiki field yang bermasalah dan coba lagi.</p>';
+            errorMessage += '</div>';
             
-            // Handle other validation errors
+            Swal.fire({
+                icon: 'error',
+                title: 'Gagal Mendaftar',
+                html: errorMessage,
+                confirmButtonColor: '#ef4444',
+                confirmButtonText: 'OK',
+                width: '500px'
+            });
+            
+            // Set form errors for individual field display
             form.setError(errors);
-            
-            // Show general validation error
-            const errorMessages = Object.values(errors).flat();
-            if (errorMessages.length > 0) {
-                Swal.fire({
-                    title: 'Data Tidak Valid',
-                    html: `Silakan periksa kembali data yang Anda masukkan:<br><br><div style="text-align: left; font-family: monospace; background: #f8f9fa; padding: 10px; border-radius: 5px; margin: 10px 0;">${errorMessages.map(msg => `• ${msg}`).join('<br>')}</div>`,
-                    icon: 'warning',
-                    confirmButtonText: 'OK'
-                });
-            }
         } else {
             Swal.fire('Error', 'Gagal mendaftar! Silakan coba lagi.', 'error');
         }

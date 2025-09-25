@@ -18,6 +18,7 @@ class UserController extends Controller
         $outletId = $request->input('outlet_id');
         $divisionId = $request->input('division_id');
         $status = $request->input('status', 'A'); // Default to active users
+        $perPage = $request->input('per_page', 15); // Default to 15 per page
 
         $query = User::query()
             ->leftJoin('tbl_data_jabatan', 'users.id_jabatan', '=', 'tbl_data_jabatan.id_jabatan')
@@ -55,7 +56,7 @@ class UserController extends Controller
         if ($divisionId) {
             $query->where('users.division_id', $divisionId);
         }
-        $users = $query->orderBy('users.id', 'desc')->paginate(10)->withQueryString();
+        $users = $query->orderBy('users.id', 'desc')->paginate($perPage)->withQueryString();
 
         $outlets = DB::table('tbl_data_outlet')->where('status', 'A')->select('id_outlet', 'nama_outlet')->orderBy('nama_outlet')->get();
         $divisions = DB::table('tbl_data_divisi')->where('status', 'A')->select('id', 'nama_divisi')->orderBy('nama_divisi')->get();
@@ -96,6 +97,7 @@ class UserController extends Controller
                 'outlet_id' => $outletId,
                 'division_id' => $divisionId,
                 'status' => $status,
+                'per_page' => $perPage,
             ],
             'outlets' => $outlets,
             'divisions' => $divisions,
@@ -215,6 +217,20 @@ class UserController extends Controller
     {
         \Log::info('UserController@update request', $request->all());
         \Log::info('UserController@update user before update', $user->toArray());
+        \Log::info('UserController@update specific request fields', [
+            'id_jabatan' => $request->input('id_jabatan'),
+            'id_outlet' => $request->input('id_outlet'),
+            'division_id' => $request->input('division_id'),
+            'has_id_jabatan' => $request->has('id_jabatan'),
+            'has_id_outlet' => $request->has('id_outlet'),
+            'has_division_id' => $request->has('division_id'),
+        ]);
+        \Log::info('UserController@update file uploads', [
+            'has_foto_ktp' => $request->hasFile('foto_ktp'),
+            'has_foto_kk' => $request->hasFile('foto_kk'),
+            'has_upload_latest_color_photo' => $request->hasFile('upload_latest_color_photo'),
+            'has_avatar' => $request->hasFile('avatar'),
+        ]);
         
         try {
             $validated = $request->validate([
@@ -237,7 +253,7 @@ class UserController extends Controller
                 'no_hp' => 'nullable|string|max:15',
                 'id_jabatan' => 'nullable|integer|exists:tbl_data_jabatan,id_jabatan',
                 'id_outlet' => 'nullable|integer|exists:tbl_data_outlet,id_outlet',
-                'division_id' => 'nullable|integer',
+                'division_id' => 'nullable|integer|exists:tbl_data_divisi,id',
                 'imei' => 'nullable|string|max:50',
                 'golongan_darah' => 'nullable|string|max:5',
                 'nama_rekening' => 'nullable|string|max:255',
@@ -260,6 +276,11 @@ class UserController extends Controller
             ]);
             
             \Log::info('UserController@update validated data', $validated);
+            \Log::info('UserController@update validation specific fields', [
+                'id_jabatan' => $validated['id_jabatan'] ?? 'not in validated',
+                'id_outlet' => $validated['id_outlet'] ?? 'not in validated',
+                'division_id' => $validated['division_id'] ?? 'not in validated',
+            ]);
             
             // Validasi unik pin_pos untuk karyawan aktif (kecuali diri sendiri)
             if ($request->filled('pin_pos')) {
@@ -276,28 +297,36 @@ class UserController extends Controller
             
             // Handle file uploads
             if ($request->hasFile('foto_ktp')) {
+                \Log::info('UserController@update processing foto_ktp upload');
                 if ($user->foto_ktp && Storage::disk('public')->exists($user->foto_ktp)) {
                     Storage::disk('public')->delete($user->foto_ktp);
                 }
                 $validated['foto_ktp'] = $request->file('foto_ktp')->store('users/foto_ktp', 'public');
+                \Log::info('UserController@update foto_ktp stored at: ' . $validated['foto_ktp']);
             }
             if ($request->hasFile('foto_kk')) {
+                \Log::info('UserController@update processing foto_kk upload');
                 if ($user->foto_kk && Storage::disk('public')->exists($user->foto_kk)) {
                     Storage::disk('public')->delete($user->foto_kk);
                 }
                 $validated['foto_kk'] = $request->file('foto_kk')->store('users/foto_kk', 'public');
+                \Log::info('UserController@update foto_kk stored at: ' . $validated['foto_kk']);
             }
             if ($request->hasFile('upload_latest_color_photo')) {
+                \Log::info('UserController@update processing upload_latest_color_photo upload');
                 if ($user->upload_latest_color_photo && Storage::disk('public')->exists($user->upload_latest_color_photo)) {
                     Storage::disk('public')->delete($user->upload_latest_color_photo);
                 }
                 $validated['upload_latest_color_photo'] = $request->file('upload_latest_color_photo')->store('users/photos', 'public');
+                \Log::info('UserController@update upload_latest_color_photo stored at: ' . $validated['upload_latest_color_photo']);
             }
             if ($request->hasFile('avatar')) {
+                \Log::info('UserController@update processing avatar upload');
                 if ($user->avatar && Storage::disk('public')->exists($user->avatar)) {
                     Storage::disk('public')->delete($user->avatar);
                 }
                 $validated['avatar'] = $request->file('avatar')->store('users/avatars', 'public');
+                \Log::info('UserController@update avatar stored at: ' . $validated['avatar']);
             }
             if (!empty($validated['password'])) {
                 $validated['password'] = bcrypt($validated['password']);
@@ -306,13 +335,26 @@ class UserController extends Controller
             }
             
             \Log::info('UserController@update final data to save', $validated);
+            \Log::info('UserController@update specific fields', [
+                'id_jabatan' => $validated['id_jabatan'] ?? 'not set',
+                'id_outlet' => $validated['id_outlet'] ?? 'not set', 
+                'division_id' => $validated['division_id'] ?? 'not set'
+            ]);
             
             $user->update($validated);
             
-            \Log::info('UserController@update user after update', $user->fresh()->toArray());
+            // Refresh user data to get updated values
+            $user->refresh();
+            
+            \Log::info('UserController@update user after update', $user->toArray());
+            \Log::info('UserController@update specific fields after update', [
+                'id_jabatan' => $user->id_jabatan,
+                'id_outlet' => $user->id_outlet,
+                'division_id' => $user->division_id
+            ]);
             \Log::info('UserController@update success', $validated);
             
-            return redirect()->route('users.index')->with('success', 'Data karyawan berhasil diupdate');
+            return redirect()->route('users.show', $user->id)->with('success', 'Data karyawan berhasil diupdate');
         } catch (\Illuminate\Validation\ValidationException $ve) {
             \Log::error('UserController@update validation error', ['errors' => $ve->errors()]);
             return back()->withErrors($ve->errors());
