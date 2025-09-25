@@ -13,6 +13,7 @@ class OutletPayment extends Model
         'payment_number',
         'outlet_id',
         'gr_id',
+        'retail_sales_id',
         'date',
         'total_amount',
         'status',
@@ -34,6 +35,11 @@ class OutletPayment extends Model
     public function goodReceive()
     {
         return $this->belongsTo(OutletFoodGoodReceive::class, 'gr_id');
+    }
+
+    public function retailSales()
+    {
+        return $this->belongsTo(\App\Models\RetailWarehouseSale::class, 'retail_sales_id');
     }
 
     public function creator()

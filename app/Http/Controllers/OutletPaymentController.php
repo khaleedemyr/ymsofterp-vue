@@ -147,10 +147,42 @@ class OutletPaymentController extends Controller
         $outlets = DB::table('tbl_data_outlet')->limit(3)->get();
         $gr = DB::table('outlet_food_good_receives')->limit(3)->get();
         
+        // Debug retail sales
+        $retailSales = DB::table('retail_warehouse_sales as rws')
+            ->join('customers as c', 'rws.customer_id', '=', 'c.id')
+            ->select('rws.id', 'rws.number', 'rws.status', 'c.name as customer_name', 'c.id_outlet')
+            ->limit(5)
+            ->get();
+        
+        $customers = DB::table('customers')
+            ->select('id', 'name', 'id_outlet', 'type')
+            ->whereNotNull('id_outlet')
+            ->limit(5)
+            ->get();
+        
+        // Debug specific outlet
+        $outletId = 1; // Test with outlet ID 1
+        $customersForOutlet = DB::table('customers')
+            ->where('id_outlet', (string)$outletId)
+            ->select('id', 'name', 'id_outlet', 'type')
+            ->get();
+        
+        $retailSalesForOutlet = DB::table('retail_warehouse_sales as rws')
+            ->join('customers as c', 'rws.customer_id', '=', 'c.id')
+            ->where('rws.status', 'completed')
+            ->where('c.id_outlet', (string)$outletId)
+            ->select('rws.id', 'rws.number', 'rws.status', 'rws.sale_date', 'c.name as customer_name', 'c.id_outlet')
+            ->limit(10)
+            ->get();
+        
         return response()->json([
             'payments' => $payments,
             'outlets' => $outlets,
-            'gr' => $gr
+            'gr' => $gr,
+            'retail_sales' => $retailSales,
+            'customers' => $customers,
+            'customers_for_outlet_1' => $customersForOutlet,
+            'retail_sales_for_outlet_1' => $retailSalesForOutlet
         ]);
     }
 
@@ -205,18 +237,27 @@ class OutletPaymentController extends Controller
         
         // Handle both single gr_id and multiple gr_ids
         $grIds = $request->input('gr_ids', []);
+        $retailIds = $request->input('retail_ids', []);
+        
         if (empty($grIds) && $request->has('gr_id')) {
             $grIds = [$request->gr_id];
         }
         
         $request->validate([
             'outlet_id' => 'required|exists:tbl_data_outlet,id_outlet',
-            'gr_ids' => 'required|array|min:1',
+            'gr_ids' => 'nullable|array',
             'gr_ids.*' => 'exists:outlet_food_good_receives,id',
+            'retail_ids' => 'nullable|array',
+            'retail_ids.*' => 'exists:retail_warehouse_sales,id',
             'date_from' => 'required|date',
             'date_to' => 'required|date|after_or_equal:date_from',
             'total_amount' => 'required|numeric|min:0'
         ]);
+
+        // Validate that at least one transaction is selected
+        if (empty($grIds) && empty($retailIds)) {
+            return back()->with('error', 'Pilih minimal satu transaksi (GR atau Retail Sales).');
+        }
 
         // Check if any GR already has a payment
         foreach ($grIds as $grId) {
@@ -226,12 +267,22 @@ class OutletPaymentController extends Controller
             }
         }
 
+        // Check if any Retail Sales already has a payment (status = paid)
+        foreach ($retailIds as $retailId) {
+            $retail = DB::table('retail_warehouse_sales')->where('id', $retailId)->first();
+            if ($retail && $retail->status === 'paid') {
+                return back()->with('error', "Retail Sales {$retail->number} sudah dibayar.");
+            }
+        }
+
         \Log::info('DEBUG OUTLET PAYMENT STORE - REQUEST', $request->all());
         
         try {
             DB::beginTransaction();
             
             $createdPayments = [];
+            
+            // Process GR payments
             foreach ($grIds as $grId) {
                 $gr = OutletFoodGoodReceive::findOrFail($grId);
                 
@@ -249,13 +300,33 @@ class OutletPaymentController extends Controller
                 $dataToInsert = [
                     'outlet_id' => $request->outlet_id,
                     'gr_id' => $grId,
-                    'date' => $request->date_from, // Use date_from as the payment date
+                    'retail_sales_id' => null, // GR payment
+                    'date' => $request->date_from,
                     'total_amount' => $grTotalAmount ?: 0,
                     'notes' => $request->notes,
                     'status' => 'pending',
                 ];
                 
                 \Log::info('DEBUG: Creating payment for GR', $dataToInsert);
+                $created = OutletPayment::create($dataToInsert);
+                $createdPayments[] = $created;
+            }
+            
+            // Process Retail Sales payments
+            foreach ($retailIds as $retailId) {
+                $retail = DB::table('retail_warehouse_sales')->where('id', $retailId)->first();
+                
+                $dataToInsert = [
+                    'outlet_id' => $request->outlet_id,
+                    'gr_id' => null, // Retail sales payment
+                    'retail_sales_id' => $retailId,
+                    'date' => $request->date_from,
+                    'total_amount' => $retail->total_amount,
+                    'notes' => $request->notes,
+                    'status' => 'pending',
+                ];
+                
+                \Log::info('DEBUG: Creating payment for Retail Sales', $dataToInsert);
                 $created = OutletPayment::create($dataToInsert);
                 $createdPayments[] = $created;
             }
@@ -324,9 +395,27 @@ class OutletPaymentController extends Controller
             'status' => 'required|in:paid,cancelled'
         ]);
 
-        $outletPayment->update([
-            'status' => $request->status
-        ]);
+        try {
+            DB::beginTransaction();
+            
+            $outletPayment->update([
+                'status' => $request->status
+            ]);
+
+            // If payment is confirmed as paid, update retail sales status
+            if ($request->status === 'paid' && $outletPayment->retail_sales_id) {
+                DB::table('retail_warehouse_sales')
+                    ->where('id', $outletPayment->retail_sales_id)
+                    ->update(['status' => 'paid']);
+            }
+            
+            DB::commit();
+            
+        } catch (\Exception $e) {
+            DB::rollback();
+            \Log::error('Error updating payment status: ' . $e->getMessage());
+            return back()->with('error', 'Gagal mengupdate status payment: ' . $e->getMessage());
+        }
 
         return redirect()->route('outlet-payments.show', $outletPayment)
             ->with('success', 'Status payment berhasil diupdate.');
@@ -531,7 +620,8 @@ class OutletPaymentController extends Controller
                 'outlet_name' => $gr->outlet_name,
                 'warehouse_outlet_name' => $gr->warehouse_outlet_name,
                 'total_amount' => (float) ($totalAmount ?: 0), // Ensure it's a float
-                'items' => [] // Will be loaded via API when needed
+                'items' => [], // Will be loaded via API when needed
+                'type' => 'gr' // Add type identifier
             ];
         });
 
@@ -539,6 +629,163 @@ class OutletPaymentController extends Controller
             'success' => true,
             'grList' => $groupedGrList
         ]);
+    }
+
+    /**
+     * Get Retail Sales list for outlet payment
+     */
+    public function getRetailSalesList(Request $request)
+    {
+        $outletId = $request->input('outlet_id');
+        $dateFrom = $request->input('date_from');
+        $dateTo = $request->input('date_to');
+
+        \Log::info('DEBUG: getRetailSalesList called', [
+            'outlet_id' => $outletId,
+            'date_from' => $dateFrom,
+            'date_to' => $dateTo
+        ]);
+
+        // Debug: Check customers with id_outlet
+        $customersWithOutlet = DB::table('customers')
+            ->where('id_outlet', (string)$outletId)
+            ->select('id', 'name', 'id_outlet', 'type')
+            ->get();
+        
+        \Log::info('DEBUG: Customers with outlet_id', [
+            'outlet_id' => $outletId,
+            'customers_count' => $customersWithOutlet->count(),
+            'customers' => $customersWithOutlet->toArray()
+        ]);
+
+        // Debug: Check retail sales with completed status
+        $allRetailSales = DB::table('retail_warehouse_sales')
+            ->where('status', 'completed')
+            ->select('id', 'number', 'customer_id', 'sale_date', 'status')
+            ->limit(10)
+            ->get();
+        
+        \Log::info('DEBUG: All completed retail sales', [
+            'count' => $allRetailSales->count(),
+            'data' => $allRetailSales->toArray()
+        ]);
+
+        // Build query for Retail Sales list
+        $retailQuery = DB::table('retail_warehouse_sales as rws')
+            ->join('customers as c', 'rws.customer_id', '=', 'c.id')
+            ->join('tbl_data_outlet as o', 'c.id_outlet', '=', 'o.id_outlet')
+            ->leftJoin('warehouses as w', 'rws.warehouse_id', '=', 'w.id')
+            ->leftJoin('warehouse_division as wd', 'rws.warehouse_division_id', '=', 'wd.id')
+            ->where('rws.status', 'completed') // Only completed sales that haven't been paid
+            ->where('c.id_outlet', (string)$outletId) // Only sales to this outlet (cast to string)
+            ->select(
+                'rws.id',
+                'rws.number',
+                'rws.sale_date',
+                'rws.total_amount',
+                'rws.notes',
+                'rws.created_by',
+                'c.name as customer_name',
+                'c.code as customer_code',
+                'c.id_outlet as outlet_id',
+                'o.nama_outlet as outlet_name',
+                'w.name as warehouse_name',
+                'wd.name as division_name'
+            );
+
+        // Apply filters
+        if ($dateFrom) {
+            $retailQuery->whereDate('rws.sale_date', '>=', $dateFrom);
+        }
+        if ($dateTo) {
+            $retailQuery->whereDate('rws.sale_date', '<=', $dateTo);
+        }
+
+        $retailList = $retailQuery->orderBy('rws.sale_date', 'desc')
+            ->limit(50)
+            ->get();
+
+        \Log::info('DEBUG: Retail Sales query result', [
+            'count' => $retailList->count(),
+            'raw_data' => $retailList->toArray()
+        ]);
+
+        // Format data
+        $formattedRetailList = $retailList->map(function($retail) {
+            return (object) [
+                'id' => $retail->id,
+                'number' => $retail->number,
+                'sale_date' => $retail->sale_date,
+                'total_amount' => (float) $retail->total_amount,
+                'notes' => $retail->notes,
+                'created_by' => $retail->created_by,
+                'customer_name' => $retail->customer_name,
+                'customer_code' => $retail->customer_code,
+                'outlet_id' => $retail->outlet_id,
+                'outlet_name' => $retail->outlet_name,
+                'warehouse_name' => $retail->warehouse_name,
+                'division_name' => $retail->division_name,
+                'items' => [], // Will be loaded via API when needed
+                'type' => 'retail_sales' // Add type identifier
+            ];
+        });
+
+        \Log::info('DEBUG: Final retail sales response', [
+            'success' => true,
+            'count' => $formattedRetailList->count(),
+            'data' => $formattedRetailList->toArray()
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'retailList' => $formattedRetailList
+        ]);
+    }
+
+    /**
+     * Get Retail Sales items for specific Retail Sales ID
+     */
+    public function getRetailSalesItems($retailId)
+    {
+        try {
+            $items = DB::table('retail_warehouse_sale_items as rwsi')
+                ->join('items as i', 'rwsi.item_id', '=', 'i.id')
+                ->where('rwsi.retail_warehouse_sale_id', $retailId)
+                ->select(
+                    'rwsi.id as item_id',
+                    'rwsi.item_id as item_master_id',
+                    'rwsi.qty as received_qty',
+                    'rwsi.price as item_price',
+                    'rwsi.unit as unit_name',
+                    'i.name as item_name',
+                    'rwsi.subtotal'
+                )
+                ->get();
+
+            $totalAmount = $items->sum('subtotal');
+
+            return response()->json([
+                'success' => true,
+                'total_amount' => $totalAmount,
+                'items' => $items->map(function($item) {
+                    return [
+                        'id' => $item->item_id,
+                        'item_id' => $item->item_master_id,
+                        'received_qty' => $item->received_qty,
+                        'price' => $item->item_price ?: 0,
+                        'item_name' => $item->item_name,
+                        'unit' => $item->unit_name,
+                        'subtotal' => $item->subtotal ?: 0
+                    ];
+                })
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Error in getRetailSalesItems: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal memuat detail items: ' . $e->getMessage()
+            ], 500);
+        }
     }
 
     /**

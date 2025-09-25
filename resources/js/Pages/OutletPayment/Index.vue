@@ -6,9 +6,6 @@
           <i class="fa-solid fa-money-bill-wave"></i> Outlet Payments
         </h1>
         <div class="flex gap-2 items-center">
-          <button @click="goToUnpaidGRPage" class="bg-gradient-to-r from-red-400 to-red-600 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold">
-            <i class="fa fa-clock mr-1"></i> GR Belum Dibuat Payment
-          </button>
           <button 
             v-if="selectedPayments.length > 0" 
             @click="bulkConfirm" 
@@ -227,9 +224,6 @@ function deletePayment(payment) {
   }
 }
 
-function goToUnpaidGRPage() {
-  router.get('/outlet-payments/unpaid-gr');
-}
 
 function toggleSelectAll() {
   if (selectAll.value) {
