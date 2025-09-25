@@ -9,6 +9,7 @@ import { ref, watch } from 'vue';
 import axios from 'axios';
 import Swal from 'sweetalert2';
 
+
 const props = defineProps({
     show: {
         type: Boolean,
@@ -115,6 +116,9 @@ const form = useForm({
 
 const previewUrl = ref(null);
 const isLoading = ref(false);
+const alertMessage = ref('');
+const alertType = ref(''); // 'success', 'error', 'warning'
+const showAlert = ref(false);
 
 // Handle file uploads
 function handleFileChange(e, field) {
@@ -125,6 +129,23 @@ function handleFileChange(e, field) {
             previewUrl.value = URL.createObjectURL(file);
         }
     }
+}
+
+// Show alert in modal
+function showModalAlert(message, type = 'error') {
+    alertMessage.value = message;
+    alertType.value = type;
+    showAlert.value = true;
+    
+    // Auto hide after 5 seconds
+    setTimeout(() => {
+        showAlert.value = false;
+    }, 5000);
+}
+
+// Hide alert
+function hideAlert() {
+    showAlert.value = false;
 }
 
 watch(() => props.show, (val) => {
@@ -187,50 +208,52 @@ const submitRegister = () => {
         }
     });
 
-    // Jika ada field yang kosong, tampilkan SweetAlert
+    // Jika ada field yang kosong, tampilkan alert di modal
     if (emptyFields.length > 0) {
         const fieldList = emptyFields.map(field => `• ${field}`).join('\n');
-        Swal.fire({
-            title: 'Data Belum Lengkap',
-            html: `Silakan lengkapi data berikut:<br><br><div style="text-align: left; font-family: monospace; background: #f8f9fa; padding: 10px; border-radius: 5px; margin: 10px 0;">${fieldList}</div>`,
-            icon: 'warning',
-            confirmButtonText: 'OK',
-            confirmButtonColor: '#3085d6'
-        });
+        showModalAlert(`Data Belum Lengkap\n\nSilakan lengkapi data berikut:\n\n${fieldList}`, 'warning');
         return;
     }
 
     // Validasi password confirmation
     if (form.password !== form.password_confirmation) {
-        Swal.fire({
-            title: 'Password Tidak Cocok',
-            text: 'Password dan Konfirmasi Password tidak sama. Silakan periksa kembali.',
-            icon: 'error',
-            confirmButtonText: 'OK'
-        });
+        showModalAlert('Password Tidak Cocok\n\nPassword dan Konfirmasi Password tidak sama. Silakan periksa kembali.', 'error');
         return;
     }
 
     isLoading.value = true;
     
+    console.log('Form data before sending:', form.data());
+    console.log('no_ktp value:', form.no_ktp);
+    
     const fd = new FormData();
     Object.entries(form.data()).forEach(([key, value]) => {
         if (value !== null && value !== undefined) {
             fd.append(key, value);
+            console.log(`Adding to FormData: ${key} = ${value}`);
         }
     });
+    
+    console.log('FormData contents:');
+    for (let [key, value] of fd.entries()) {
+        console.log(`${key}: ${value}`);
+    }
     
     axios.post('/register', fd, {
         headers: {
             'Content-Type': 'multipart/form-data',
         },
     }).then(() => {
-        Swal.fire('Success', 'Pendaftaran berhasil! Silakan login dengan email dan password Anda.', 'success');
-        emit('success');
-        emit('close');
-        if (previewUrl.value && previewUrl.value.startsWith('blob:')) {
-            URL.revokeObjectURL(previewUrl.value);
-        }
+        showModalAlert('Pendaftaran berhasil! Silakan login dengan email dan password Anda.', 'success');
+        
+        // Close modal after 2 seconds
+        setTimeout(() => {
+            emit('success');
+            emit('close');
+            if (previewUrl.value && previewUrl.value.startsWith('blob:')) {
+                URL.revokeObjectURL(previewUrl.value);
+            }
+        }, 2000);
     }).catch((error) => {
         console.error('Register error:', error);
         if (error.response?.data?.errors) {
@@ -301,19 +324,12 @@ const submitRegister = () => {
             errorMessage += '<p class="text-xs text-gray-500 mt-3">Silakan perbaiki field yang bermasalah dan coba lagi.</p>';
             errorMessage += '</div>';
             
-            Swal.fire({
-                icon: 'error',
-                title: 'Gagal Mendaftar',
-                html: errorMessage,
-                confirmButtonColor: '#ef4444',
-                confirmButtonText: 'OK',
-                width: '500px'
-            });
+            showModalAlert(`Gagal Mendaftar\n\n${errorMessage.replace(/<[^>]*>/g, '')}`, 'error');
             
             // Set form errors for individual field display
             form.setError(errors);
         } else {
-            Swal.fire('Error', 'Gagal mendaftar! Silakan coba lagi.', 'error');
+            showModalAlert('Gagal mendaftar! Silakan coba lagi.', 'error');
         }
     }).finally(() => {
         isLoading.value = false;
@@ -321,12 +337,127 @@ const submitRegister = () => {
 };
 </script>
 
+<style scoped>
+/* Ensure SweetAlert appears above modal */
+:deep(.swal2-container) {
+    z-index: 999999 !important;
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+}
+
+:deep(.swal2-popup) {
+    z-index: 999999 !important;
+    position: relative !important;
+}
+
+:deep(.swal2-backdrop-show) {
+    z-index: 999998 !important;
+}
+
+:deep(.swal2-backdrop) {
+    z-index: 999998 !important;
+}
+
+:deep(.swal2-html-container) {
+    z-index: 999999 !important;
+}
+
+:deep(.swal2-actions) {
+    z-index: 999999 !important;
+}
+
+:deep(.swal2-title) {
+    z-index: 999999 !important;
+}
+
+:deep(.swal2-content) {
+    z-index: 999999 !important;
+}
+</style>
+
+<style>
+/* Global SweetAlert z-index override */
+.swal2-container {
+    z-index: 999999 !important;
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+}
+
+.swal2-popup {
+    z-index: 999999 !important;
+    position: relative !important;
+}
+
+.swal2-backdrop {
+    z-index: 999998 !important;
+}
+
+.swal2-backdrop-show {
+    z-index: 999998 !important;
+}
+
+.swal2-html-container {
+    z-index: 999999 !important;
+}
+
+.swal2-actions {
+    z-index: 999999 !important;
+}
+
+.swal2-title {
+    z-index: 999999 !important;
+}
+
+.swal2-content {
+    z-index: 999999 !important;
+}
+</style>
+
 <template>
     <Modal :show="show" @close="emit('close')">
         <div class="p-6 min-w-[600px] max-w-4xl max-h-[90vh] overflow-y-auto">
             <h2 class="text-lg font-medium text-gray-900 mb-4">
                 Daftar Akun Baru
             </h2>
+            
+            <!-- Alert Message -->
+            <div v-if="showAlert" :class="[
+                'mb-4 p-4 rounded-lg border-l-4',
+                alertType === 'success' ? 'bg-green-50 border-green-400 text-green-700' :
+                alertType === 'warning' ? 'bg-yellow-50 border-yellow-400 text-yellow-700' :
+                'bg-red-50 border-red-400 text-red-700'
+            ]">
+                <div class="flex items-start">
+                    <div class="flex-shrink-0">
+                        <i :class="[
+                            'text-lg',
+                            alertType === 'success' ? 'fa-solid fa-check-circle' :
+                            alertType === 'warning' ? 'fa-solid fa-exclamation-triangle' :
+                            'fa-solid fa-times-circle'
+                        ]"></i>
+                    </div>
+                    <div class="ml-3 flex-1">
+                        <p class="text-sm font-medium whitespace-pre-line">{{ alertMessage }}</p>
+                    </div>
+                    <div class="ml-4 flex-shrink-0">
+                        <button @click="hideAlert" class="text-gray-400 hover:text-gray-600">
+                            <i class="fa-solid fa-times"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
             <div class="flex border-b mb-4 overflow-x-auto">
                 <button :class="['px-4 py-2 -mb-px font-semibold whitespace-nowrap', activeTab === 'personal' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-500']" @click="activeTab = 'personal'">Personal</button>
                 <button :class="['px-4 py-2 -mb-px font-semibold whitespace-nowrap', activeTab === 'contact' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-500']" @click="activeTab = 'contact'">Contact</button>

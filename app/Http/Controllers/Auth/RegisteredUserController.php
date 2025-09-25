@@ -30,6 +30,9 @@ class RegisteredUserController extends Controller
      */
     public function store(Request $request): RedirectResponse
     {
+        \Log::info('Register request data:', $request->all());
+        \Log::info('no_ktp value:', ['no_ktp' => $request->no_ktp]);
+        
         $request->validate([
             // Personal Info
             'nama_lengkap' => 'required|string|max:255',
@@ -69,7 +72,7 @@ class RegisteredUserController extends Controller
             'hubungan_kontak_darurat' => 'nullable|string|max:50',
             
             // Documents
-            'no_ktp' => 'nullable|string|max:50|unique:users,no_ktp',
+            'no_ktp' => 'nullable|string|max:50',
             'nomor_kk' => 'nullable|string|max:50',
             
             // Files
@@ -114,6 +117,9 @@ class RegisteredUserController extends Controller
             'nomor_kk' => $request->nomor_kk,
             'status' => 'B', // New user status
         ];
+        
+        \Log::info('User data before create:', $userData);
+        \Log::info('no_ktp in userData:', ['no_ktp' => $userData['no_ktp']]);
 
         // Handle file uploads
         if ($request->hasFile('avatar')) {
@@ -130,6 +136,9 @@ class RegisteredUserController extends Controller
         }
 
         $user = User::create($userData);
+        
+        \Log::info('User created successfully:', $user->toArray());
+        \Log::info('no_ktp after create:', ['no_ktp' => $user->no_ktp]);
 
         event(new Registered($user));
 
