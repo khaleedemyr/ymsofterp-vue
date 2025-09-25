@@ -474,6 +474,7 @@ class UserController extends Controller
             'jabatan_id' => 'required|integer|exists:tbl_data_jabatan,id_jabatan',
             'division_id' => 'required|integer|exists:tbl_data_divisi,id',
             'outlet_id' => 'required|integer|exists:tbl_data_outlet,id_outlet',
+            'tanggal_masuk' => 'required|date|before_or_equal:today',
         ]);
 
         try {
@@ -481,6 +482,7 @@ class UserController extends Controller
                 'id_jabatan' => $request->jabatan_id,
                 'division_id' => $request->division_id,
                 'id_outlet' => $request->outlet_id,
+                'tanggal_masuk' => $request->tanggal_masuk,
             ];
 
             // Jika status 'B' (Baru), aktifkan karyawan

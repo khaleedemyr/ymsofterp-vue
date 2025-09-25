@@ -89,24 +89,6 @@ function getTargetIcon(targetType) {
 
         <!-- Main Content -->
         <div class="p-8">
-          <!-- Target Penerima -->
-          <div class="mb-8">
-            <h3 class="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
-              <i class="fa fa-users text-blue-500"></i>
-              Target Penerima
-            </h3>
-            <div class="flex flex-wrap gap-3">
-              <span v-for="t in announcement?.targets" :key="t.id"
-                    class="bg-blue-100 text-blue-700 px-4 py-2 rounded-full text-sm flex items-center gap-2">
-                <i :class="getTargetIcon(t.target_type)" class="text-blue-500"></i>
-                <span class="font-medium">{{ t.target_type }}:</span>
-                <span>{{ t.target_name || t.target_id }}</span>
-              </span>
-            </div>
-            <div v-if="!announcement?.targets?.length" class="text-gray-500 text-sm">
-              <i class="fa fa-info-circle mr-1"></i>Tidak ada target spesifik
-            </div>
-          </div>
 
           <!-- Content -->
           <div v-if="announcement?.content" class="mb-8">

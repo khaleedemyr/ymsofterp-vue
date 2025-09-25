@@ -69,7 +69,7 @@ class RegisteredUserController extends Controller
             'hubungan_kontak_darurat' => 'nullable|string|max:50',
             
             // Documents
-            'no_ktp' => 'nullable|string|max:50',
+            'no_ktp' => 'nullable|string|max:50|unique:users,no_ktp',
             'nomor_kk' => 'nullable|string|max:50',
             
             // Files
