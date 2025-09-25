@@ -214,75 +214,85 @@ class OutletInternalUseWasteController extends Controller
     {
         DB::beginTransaction();
         try {
-            $data = DB::table('outlet_internal_use_wastes')->where('id', $id)->first();
-            if (!$data) {
+            // Ambil data header
+            $header = DB::table('outlet_internal_use_waste_headers')->where('id', $id)->first();
+            if (!$header) {
                 return response()->json(['success' => false, 'message' => 'Data tidak ditemukan'], 404);
             }
 
-            // Cari inventory_item_id
-            $inventoryItem = DB::table('outlet_food_inventory_items')->where('item_id', $data->item_id)->first();
-            if (!$inventoryItem) {
-                throw new \Exception('Inventory item not found for item_id: ' . $data->item_id);
-            }
-            $inventory_item_id = $inventoryItem->id;
+            // Ambil semua detail untuk header ini
+            $details = DB::table('outlet_internal_use_waste_details')->where('header_id', $id)->get();
 
-            // Ambil data konversi dari tabel items
-            $itemMaster = DB::table('items')->where('id', $data->item_id)->first();
-            $unit = DB::table('units')->where('id', $data->unit_id)->value('name');
-            $qty_input = $data->qty;
-            $qty_small = 0;
-            $qty_medium = 0;
-            $qty_large = 0;
+            // Proses rollback stok untuk setiap detail
+            foreach ($details as $detail) {
+                // Cari inventory_item_id
+                $inventoryItem = DB::table('outlet_food_inventory_items')->where('item_id', $detail->item_id)->first();
+                if (!$inventoryItem) {
+                    throw new \Exception('Inventory item not found for item_id: ' . $detail->item_id);
+                }
+                $inventory_item_id = $inventoryItem->id;
 
-            $unitSmall = DB::table('units')->where('id', $itemMaster->small_unit_id)->value('name');
-            $unitMedium = DB::table('units')->where('id', $itemMaster->medium_unit_id)->value('name');
-            $unitLarge = DB::table('units')->where('id', $itemMaster->large_unit_id)->value('name');
-            $smallConv = $itemMaster->small_conversion_qty ?: 1;
-            $mediumConv = $itemMaster->medium_conversion_qty ?: 1;
+                // Ambil data konversi dari tabel items
+                $itemMaster = DB::table('items')->where('id', $detail->item_id)->first();
+                $unit = DB::table('units')->where('id', $detail->unit_id)->value('name');
+                $qty_input = $detail->qty;
+                $qty_small = 0;
+                $qty_medium = 0;
+                $qty_large = 0;
 
-            if ($unit === $unitSmall) {
-                $qty_small = $qty_input;
-                $qty_medium = $smallConv > 0 ? $qty_small / $smallConv : 0;
-                $qty_large = ($smallConv > 0 && $mediumConv > 0) ? $qty_small / ($smallConv * $mediumConv) : 0;
-            } elseif ($unit === $unitMedium) {
-                $qty_medium = $qty_input;
-                $qty_small = $qty_medium * $smallConv;
-                $qty_large = $mediumConv > 0 ? $qty_medium / $mediumConv : 0;
-            } elseif ($unit === $unitLarge) {
-                $qty_large = $qty_input;
-                $qty_medium = $qty_large * $mediumConv;
-                $qty_small = $qty_medium * $smallConv;
-            } else {
-                $qty_small = $qty_input;
-            }
+                $unitSmall = DB::table('units')->where('id', $itemMaster->small_unit_id)->value('name');
+                $unitMedium = DB::table('units')->where('id', $itemMaster->medium_unit_id)->value('name');
+                $unitLarge = DB::table('units')->where('id', $itemMaster->large_unit_id)->value('name');
+                $smallConv = $itemMaster->small_conversion_qty ?: 1;
+                $mediumConv = $itemMaster->medium_conversion_qty ?: 1;
 
-            // Rollback stok di outlet_food_inventory_stocks
-            $stock = DB::table('outlet_food_inventory_stocks')
-                ->where('inventory_item_id', $inventory_item_id)
-                ->where('id_outlet', $data->outlet_id)
-                ->where('warehouse_outlet_id', $data->warehouse_outlet_id)
-                ->first();
-            if ($stock) {
-                DB::table('outlet_food_inventory_stocks')
+                if ($unit === $unitSmall) {
+                    $qty_small = $qty_input;
+                    $qty_medium = $smallConv > 0 ? $qty_small / $smallConv : 0;
+                    $qty_large = ($smallConv > 0 && $mediumConv > 0) ? $qty_small / ($smallConv * $mediumConv) : 0;
+                } elseif ($unit === $unitMedium) {
+                    $qty_medium = $qty_input;
+                    $qty_small = $qty_medium * $smallConv;
+                    $qty_large = $mediumConv > 0 ? $qty_medium / $mediumConv : 0;
+                } elseif ($unit === $unitLarge) {
+                    $qty_large = $qty_input;
+                    $qty_medium = $qty_large * $mediumConv;
+                    $qty_small = $qty_medium * $smallConv;
+                } else {
+                    $qty_small = $qty_input;
+                }
+
+                // Rollback stok di outlet_food_inventory_stocks
+                $stock = DB::table('outlet_food_inventory_stocks')
                     ->where('inventory_item_id', $inventory_item_id)
-                    ->where('id_outlet', $data->outlet_id)
-                    ->where('warehouse_outlet_id', $data->warehouse_outlet_id)
-                    ->update([
-                        'qty_small' => $stock->qty_small + $qty_small,
-                        'qty_medium' => $stock->qty_medium + $qty_medium,
-                        'qty_large' => $stock->qty_large + $qty_large,
-                        'updated_at' => now(),
-                    ]);
+                    ->where('id_outlet', $header->outlet_id)
+                    ->where('warehouse_outlet_id', $header->warehouse_outlet_id)
+                    ->first();
+                if ($stock) {
+                    DB::table('outlet_food_inventory_stocks')
+                        ->where('inventory_item_id', $inventory_item_id)
+                        ->where('id_outlet', $header->outlet_id)
+                        ->where('warehouse_outlet_id', $header->warehouse_outlet_id)
+                        ->update([
+                            'qty_small' => $stock->qty_small + $qty_small,
+                            'qty_medium' => $stock->qty_medium + $qty_medium,
+                            'qty_large' => $stock->qty_large + $qty_large,
+                            'updated_at' => now(),
+                        ]);
+                }
+
+                // Hapus kartu stok OUT terkait untuk setiap detail
+                DB::table('outlet_food_inventory_cards')
+                    ->where('reference_type', 'outlet_internal_use_waste')
+                    ->where('reference_id', $detail->id)
+                    ->delete();
             }
 
-            // Hapus kartu stok OUT terkait
-            DB::table('outlet_food_inventory_cards')
-                ->where('reference_type', 'outlet_internal_use_waste')
-                ->where('reference_id', $id)
-                ->delete();
-
-            // Hapus data internal use waste
-            DB::table('outlet_internal_use_wastes')->where('id', $id)->delete();
+            // Hapus semua detail terlebih dahulu
+            DB::table('outlet_internal_use_waste_details')->where('header_id', $id)->delete();
+            
+            // Hapus header
+            DB::table('outlet_internal_use_waste_headers')->where('id', $id)->delete();
 
             // Activity log DELETE
             DB::table('activity_logs')->insert([
@@ -292,7 +302,7 @@ class OutletInternalUseWasteController extends Controller
                 'description' => 'Menghapus internal use/waste outlet: ' . $id,
                 'ip_address' => request()->ip(),
                 'user_agent' => request()->userAgent(),
-                'old_data' => json_encode($data),
+                'old_data' => json_encode(['header' => $header, 'details' => $details]),
                 'new_data' => null,
                 'created_at' => now(),
                 'updated_at' => now(),
