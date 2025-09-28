@@ -1600,7 +1600,12 @@ class AttendanceReportController extends Controller
                     )
                     ->whereBetween(DB::raw('DATE(a.scan_date)'), [$start, $end]);
 
-                // Apply filters - Filter outlet hanya untuk dropdown karyawan, bukan untuk report
+                // Apply filters - Filter outlet dan divisi untuk memfilter karyawan
+                if (!empty($outletId)) {
+                    $sub->where('u.id_outlet', $outletId);
+                    \Log::info('Applied outlet filter: ' . $outletId);
+                }
+                
                 if (!empty($divisionId)) {
                     $sub->where('u.division_id', $divisionId);
                     \Log::info('Applied division filter: ' . $divisionId);
