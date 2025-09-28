@@ -1003,4 +1003,109 @@ class DailyReportController extends Controller
             \Log::error('Failed to send ticket created notifications from daily report', ['ticket_id' => $ticket->id, 'error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
         }
     }
+
+    public function getSummaryRating(Request $request)
+    {
+        $startDate = $request->get('startDate');
+        $endDate = $request->get('endDate');
+        $region = $request->get('region');
+
+        // Set default date range if not provided
+        if (!$startDate || !$endDate) {
+            $endDate = now()->format('Y-m-d');
+            $startDate = now()->subDays(30)->format('Y-m-d');
+        }
+
+        try {
+            $query = DB::table('daily_reports as dr')
+                ->join('tbl_data_outlet as o', 'dr.outlet_id', '=', 'o.id_outlet')
+                ->join('regions as r', 'o.region_id', '=', 'r.id')
+                ->join('daily_report_areas as dra', 'dr.id', '=', 'dra.daily_report_id')
+                ->whereBetween(DB::raw('DATE(dr.created_at)'), [$startDate, $endDate])
+                ->where('dr.status', 'completed');
+
+            // Apply region filter if provided
+            if ($region) {
+                $query->where('r.id', $region);
+            }
+
+            $summaryData = $query->select([
+                'o.id_outlet as id',
+                'o.nama_outlet',
+                'r.name as region_name',
+                'r.id as region_id',
+                DB::raw('COUNT(DISTINCT dr.id) as total_reports'),
+                DB::raw('COUNT(DISTINCT CASE WHEN dr.status = "completed" THEN dr.id END) as completed_reports'),
+                DB::raw('COUNT(DISTINCT CASE WHEN dr.status = "draft" THEN dr.id END) as draft_reports'),
+                DB::raw('AVG(CASE WHEN dra.status = "G" THEN 100 WHEN dra.status = "NG" THEN 0 END) as average_rating')
+            ])
+            ->groupBy('o.id_outlet', 'o.nama_outlet', 'r.name', 'r.id')
+            ->orderBy('average_rating', 'desc')
+            ->get();
+
+            // Format the data
+            $formattedData = $summaryData->map(function ($item) {
+                return [
+                    'id' => $item->id,
+                    'nama_outlet' => $item->nama_outlet,
+                    'region' => $item->region_name,
+                    'region_id' => $item->region_id,
+                    'total_reports' => (int) $item->total_reports,
+                    'completed_reports' => (int) $item->completed_reports,
+                    'draft_reports' => (int) $item->draft_reports,
+                    'average_rating' => round($item->average_rating ?? 0, 1)
+                ];
+            });
+
+            return response()->json([
+                'success' => true,
+                'data' => $formattedData,
+                'filters' => [
+                    'startDate' => $startDate,
+                    'endDate' => $endDate,
+                    'region' => $region
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error('Error getting summary rating data', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'filters' => $request->all()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal memuat data summary rating',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function getRegions()
+    {
+        try {
+            $regions = DB::table('regions')
+                ->select('id', 'name')
+                ->orderBy('name')
+                ->get();
+
+            return response()->json([
+                'success' => true,
+                'data' => $regions
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error('Error getting regions data', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal memuat data regions',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
 }

@@ -34,6 +34,18 @@ const perPage = ref(props.filters?.per_page || 15);
 const showImageModal = ref(false);
 const selectedImageUrl = ref('');
 
+// Summary modal functionality
+const showSummaryModal = ref(false);
+const summaryData = ref([]);
+const loadingSummary = ref(false);
+const regions = ref([]);
+const loadingRegions = ref(false);
+const summaryFilters = ref({
+  startDate: '',
+  endDate: '',
+  region: ''
+});
+
 const debouncedSearch = debounce(() => {
   router.get('/daily-report', {
     search: search.value,
@@ -166,6 +178,91 @@ function openImageModal(imageUrl) {
 function closeImageModal() {
   showImageModal.value = false;
   selectedImageUrl.value = '';
+}
+
+// Summary modal methods
+function openSummaryModal() {
+  showSummaryModal.value = true;
+  // Set default date range (last 30 days)
+  const endDate = new Date();
+  const startDate = new Date();
+  startDate.setDate(startDate.getDate() - 30);
+  
+  summaryFilters.value = {
+    startDate: startDate.toISOString().split('T')[0],
+    endDate: endDate.toISOString().split('T')[0],
+    region: ''
+  };
+  
+  // Don't load data automatically - wait for user to click load button
+  summaryData.value = [];
+  
+  // Load regions if not already loaded
+  if (regions.value.length === 0) {
+    loadRegions();
+  }
+}
+
+function closeSummaryModal() {
+  showSummaryModal.value = false;
+  summaryData.value = [];
+}
+
+async function loadSummaryData() {
+  loadingSummary.value = true;
+  try {
+    const response = await axios.get('/api/daily-report/summary-rating', {
+      params: summaryFilters.value
+    });
+    summaryData.value = response.data.data || [];
+  } catch (error) {
+    console.error('Error loading summary data:', error);
+    Swal.fire({
+      icon: 'error',
+      title: 'Error',
+      text: 'Gagal memuat data summary rating'
+    });
+  } finally {
+    loadingSummary.value = false;
+  }
+}
+
+async function loadRegions() {
+  loadingRegions.value = true;
+  try {
+    const response = await axios.get('/api/daily-report/regions');
+    if (response.data.success) {
+      regions.value = response.data.data || [];
+    }
+  } catch (error) {
+    console.error('Error loading regions:', error);
+    Swal.fire({
+      icon: 'error',
+      title: 'Error',
+      text: 'Gagal memuat data regions'
+    });
+  } finally {
+    loadingRegions.value = false;
+  }
+}
+
+function applySummaryFilters() {
+  // Validate date range
+  if (summaryFilters.value.startDate && summaryFilters.value.endDate) {
+    const startDate = new Date(summaryFilters.value.startDate);
+    const endDate = new Date(summaryFilters.value.endDate);
+    
+    if (startDate > endDate) {
+      Swal.fire({
+        icon: 'warning',
+        title: 'Invalid Date Range',
+        text: 'Tanggal mulai tidak boleh lebih besar dari tanggal selesai'
+      });
+      return;
+    }
+  }
+  
+  loadSummaryData();
 }
 
 function getInspectionTimeText(time) {
@@ -407,6 +504,15 @@ watch([status, perPage], () => {
           placeholder="Cari outlet, department..."
           class="flex-1 px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition"
         />
+        
+        <!-- Summary Rating Button -->
+        <button
+          @click="openSummaryModal"
+          class="px-4 py-2 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 flex items-center gap-2"
+        >
+          <i class="fa-solid fa-chart-bar"></i>
+          <span>Summary Rating</span>
+        </button>
       </div>
 
       <!-- Report Cards -->
@@ -720,6 +826,147 @@ watch([status, perPage], () => {
           :alt="'Avatar preview'"
           class="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
         />
+      </div>
+    </div>
+
+    <!-- Summary Rating Modal -->
+    <div v-if="showSummaryModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50" @click="closeSummaryModal">
+      <div class="bg-white rounded-2xl shadow-2xl max-w-6xl w-full mx-4 max-h-[90vh] overflow-hidden flex flex-col" @click.stop>
+        <!-- Modal Header -->
+        <div class="bg-gradient-to-r from-purple-600 to-blue-600 text-white p-6">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3">
+              <i class="fa-solid fa-chart-bar text-2xl"></i>
+              <h2 class="text-2xl font-bold">Summary Rating per Outlet</h2>
+            </div>
+            <button @click="closeSummaryModal" class="text-white hover:text-gray-200 transition-colors">
+              <i class="fa-solid fa-times text-xl"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- Modal Body -->
+        <div class="p-6 flex-1 overflow-y-auto">
+          <!-- Filters -->
+          <div class="mb-6 bg-gray-50 rounded-xl p-4">
+            <h3 class="text-lg font-semibold text-gray-800 mb-4">Filter Data</h3>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-2">Tanggal Mulai</label>
+                <input 
+                  v-model="summaryFilters.startDate"
+                  type="date"
+                  class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                />
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-2">Tanggal Selesai</label>
+                <input 
+                  v-model="summaryFilters.endDate"
+                  type="date"
+                  class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                />
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-2">Region</label>
+                <select 
+                  v-model="summaryFilters.region"
+                  :disabled="loadingRegions"
+                  class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 disabled:opacity-50"
+                >
+                  <option value="">Semua Region</option>
+                  <option 
+                    v-for="region in regions" 
+                    :key="region.id" 
+                    :value="region.id"
+                  >
+                    {{ region.name }}
+                  </option>
+                </select>
+                <div v-if="loadingRegions" class="text-xs text-gray-500 mt-1">
+                  <i class="fa-solid fa-spinner fa-spin mr-1"></i>
+                  Loading regions...
+                </div>
+              </div>
+            </div>
+            <div class="mt-4 flex justify-end">
+              <button 
+                @click="applySummaryFilters"
+                :disabled="loadingSummary || !summaryFilters.startDate || !summaryFilters.endDate"
+                class="px-6 py-2 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-lg hover:shadow-lg transition-all disabled:opacity-50"
+              >
+                <i v-if="loadingSummary" class="fa-solid fa-spinner fa-spin mr-2"></i>
+                <i v-else class="fa-solid fa-download mr-2"></i>
+                {{ loadingSummary ? 'Loading...' : 'Load Data' }}
+              </button>
+            </div>
+          </div>
+
+          <!-- Summary Data -->
+          <div v-if="loadingSummary" class="text-center py-8">
+            <i class="fa-solid fa-spinner fa-spin text-3xl text-purple-600 mb-4"></i>
+            <p class="text-gray-600">Memuat data summary rating...</p>
+          </div>
+
+          <div v-else-if="summaryData.length === 0" class="text-center py-8">
+            <i class="fa-solid fa-chart-line text-4xl text-gray-400 mb-4"></i>
+            <p class="text-gray-600">Pilih filter dan klik "Load Data" untuk melihat summary rating</p>
+          </div>
+
+          <div v-else class="space-y-4">
+            <div 
+              v-for="outlet in summaryData" 
+              :key="outlet.id"
+              class="bg-white border border-gray-200 rounded-xl p-6 shadow-sm hover:shadow-md transition-all"
+            >
+              <div class="flex items-center justify-between mb-4">
+                <div>
+                  <h4 class="text-lg font-semibold text-gray-800">{{ outlet.nama_outlet }}</h4>
+                  <p class="text-sm text-gray-600">{{ outlet.region || 'N/A' }}</p>
+                </div>
+                <div class="text-right">
+                  <div class="text-2xl font-bold text-purple-600">{{ outlet.average_rating }}%</div>
+                  <div class="text-sm text-gray-500">Average Rating</div>
+                </div>
+              </div>
+
+              <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                <div class="text-center">
+                  <div class="text-2xl font-bold text-blue-600">{{ outlet.total_reports }}</div>
+                  <div class="text-sm text-gray-500">Total Reports</div>
+                </div>
+                <div class="text-center">
+                  <div class="text-2xl font-bold text-green-600">{{ outlet.completed_reports }}</div>
+                  <div class="text-sm text-gray-500">Completed</div>
+                </div>
+                <div class="text-center">
+                  <div class="text-2xl font-bold text-yellow-600">{{ outlet.draft_reports }}</div>
+                  <div class="text-sm text-gray-500">Draft</div>
+                </div>
+              </div>
+
+              <!-- Rating Stars -->
+              <div class="flex items-center justify-center gap-1 mb-2">
+                <i 
+                  v-for="star in 5" 
+                  :key="star"
+                  :class="[
+                    'text-lg',
+                    star <= Math.round(outlet.average_rating / 20) ? 'fa-solid fa-star text-yellow-400' : 'fa-regular fa-star text-gray-300'
+                  ]"
+                ></i>
+              </div>
+
+              <!-- Progress Bar -->
+              <div class="w-full bg-gray-200 rounded-full h-2">
+                <div 
+                  class="bg-gradient-to-r from-purple-500 to-blue-500 h-2 rounded-full transition-all duration-500"
+                  :style="{ width: outlet.average_rating + '%' }"
+                ></div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </AppLayout>
