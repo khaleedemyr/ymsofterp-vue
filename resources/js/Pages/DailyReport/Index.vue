@@ -30,6 +30,10 @@ const search = ref(props.filters?.search || '');
 const status = ref(props.filters?.status || 'all');
 const perPage = ref(props.filters?.per_page || 15);
 
+// Lightbox functionality
+const showImageModal = ref(false);
+const selectedImageUrl = ref('');
+
 const debouncedSearch = debounce(() => {
   router.get('/daily-report', {
     search: search.value,
@@ -147,6 +151,21 @@ function getInitials(name) {
     return (words[0][0] + words[1][0]).toUpperCase();
   }
   return words[0][0].toUpperCase();
+}
+
+// Lightbox methods
+function getImageUrl(avatar) {
+  return `/storage/${avatar}`;
+}
+
+function openImageModal(imageUrl) {
+  selectedImageUrl.value = imageUrl;
+  showImageModal.value = true;
+}
+
+function closeImageModal() {
+  showImageModal.value = false;
+  selectedImageUrl.value = '';
 }
 
 function getInspectionTimeText(time) {
@@ -414,8 +433,8 @@ watch([status, perPage], () => {
 
             <!-- User Info -->
             <div class="flex items-center gap-4 mb-4">
-              <div v-if="report.user?.avatar" class="w-16 h-16 rounded-full overflow-hidden border-3 border-white shadow-xl">
-                <img :src="`/storage/${report.user.avatar}`" :alt="report.user.nama_lengkap" class="w-full h-full object-cover" />
+              <div v-if="report.user?.avatar" class="w-16 h-16 rounded-full overflow-hidden border-3 border-white shadow-xl cursor-pointer hover:shadow-2xl transition-all" @click="openImageModal(getImageUrl(report.user.avatar))">
+                <img :src="getImageUrl(report.user.avatar)" :alt="report.user.nama_lengkap" class="w-full h-full object-cover hover:scale-105 transition-transform" />
               </div>
               <div v-else class="w-16 h-16 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-lg font-bold border-3 border-white shadow-xl">
                 {{ getInitials(report.user?.nama_lengkap || 'U') }}
@@ -502,8 +521,8 @@ watch([status, perPage], () => {
                  <div v-if="report.commentsExpanded" class="space-y-4">
                    <!-- Comment Input -->
                    <div class="flex gap-3">
-                     <div v-if="$page.props.auth.user.avatar" class="w-8 h-8 rounded-full overflow-hidden border border-gray-200 flex-shrink-0">
-                       <img :src="`/storage/${$page.props.auth.user.avatar}`" :alt="$page.props.auth.user.nama_lengkap" class="w-full h-full object-cover" />
+                     <div v-if="$page.props.auth.user.avatar" class="w-8 h-8 rounded-full overflow-hidden border border-gray-200 flex-shrink-0 cursor-pointer hover:shadow-lg transition-all" @click="openImageModal(getImageUrl($page.props.auth.user.avatar))">
+                       <img :src="getImageUrl($page.props.auth.user.avatar)" :alt="$page.props.auth.user.nama_lengkap" class="w-full h-full object-cover hover:scale-105 transition-transform" />
                      </div>
                      <div v-else class="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-xs font-bold border border-gray-200 flex-shrink-0">
                        {{ getInitials($page.props.auth.user.nama_lengkap) }}
@@ -537,8 +556,8 @@ watch([status, perPage], () => {
                        class="flex gap-3"
                      >
                        <!-- Comment Avatar -->
-                       <div v-if="comment.user?.avatar" class="w-8 h-8 rounded-full overflow-hidden border border-gray-200 flex-shrink-0">
-                         <img :src="`/storage/${comment.user.avatar}`" :alt="comment.user.nama_lengkap" class="w-full h-full object-cover" />
+                       <div v-if="comment.user?.avatar" class="w-8 h-8 rounded-full overflow-hidden border border-gray-200 flex-shrink-0 cursor-pointer hover:shadow-lg transition-all" @click="openImageModal(getImageUrl(comment.user.avatar))">
+                         <img :src="getImageUrl(comment.user.avatar)" :alt="comment.user.nama_lengkap" class="w-full h-full object-cover hover:scale-105 transition-transform" />
                        </div>
                        <div v-else class="w-8 h-8 rounded-full bg-gradient-to-br from-gray-400 to-gray-600 flex items-center justify-center text-white text-xs font-bold border border-gray-200 flex-shrink-0">
                          {{ getInitials(comment.user?.nama_lengkap || 'U') }}
@@ -684,6 +703,23 @@ watch([status, perPage], () => {
             ></span>
           </template>
         </nav>
+      </div>
+    </div>
+
+    <!-- Lightbox Modal -->
+    <div v-if="showImageModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-75" @click="closeImageModal">
+      <div class="relative max-w-4xl max-h-[90vh] p-4" @click.stop>
+        <button 
+          @click="closeImageModal"
+          class="absolute -top-4 -right-4 bg-white rounded-full p-2 shadow-lg hover:bg-gray-100 transition-colors z-10"
+        >
+          <i class="fa-solid fa-times text-gray-600"></i>
+        </button>
+        <img 
+          :src="selectedImageUrl" 
+          :alt="'Avatar preview'"
+          class="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
+        />
       </div>
     </div>
   </AppLayout>
