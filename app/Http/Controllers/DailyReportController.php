@@ -1108,4 +1108,80 @@ class DailyReportController extends Controller
             ], 500);
         }
     }
+
+    public function getDepartmentRatings(Request $request)
+    {
+        $outletId = $request->get('outletId');
+        $startDate = $request->get('startDate');
+        $endDate = $request->get('endDate');
+        $region = $request->get('region');
+
+        if (!$outletId) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Outlet ID diperlukan'
+            ], 400);
+        }
+
+        // Set default date range if not provided
+        if (!$startDate || !$endDate) {
+            $endDate = now()->format('Y-m-d');
+            $startDate = now()->subDays(30)->format('Y-m-d');
+        }
+
+        try {
+            $query = DB::table('daily_reports as dr')
+                ->join('tbl_data_outlet as o', 'dr.outlet_id', '=', 'o.id_outlet')
+                ->join('regions as r', 'o.region_id', '=', 'r.id')
+                ->join('departemens as d', 'dr.department_id', '=', 'd.id')
+                ->join('daily_report_areas as dra', 'dr.id', '=', 'dra.daily_report_id')
+                ->where('dr.outlet_id', $outletId)
+                ->whereBetween(DB::raw('DATE(dr.created_at)'), [$startDate, $endDate])
+                ->where('dr.status', 'completed');
+
+            // Apply region filter if provided
+            if ($region) {
+                $query->where('r.id', $region);
+            }
+
+            $departmentData = $query->select([
+                'd.id',
+                'd.nama_departemen',
+                DB::raw('COUNT(DISTINCT dr.id) as total_reports'),
+                DB::raw('AVG(CASE WHEN dra.status = "G" THEN 100 WHEN dra.status = "NG" THEN 0 END) as average_rating')
+            ])
+            ->groupBy('d.id', 'd.nama_departemen')
+            ->orderBy('average_rating', 'desc')
+            ->get();
+
+            // Format the data
+            $formattedData = $departmentData->map(function ($item) {
+                return [
+                    'id' => $item->id,
+                    'nama_departemen' => $item->nama_departemen,
+                    'total_reports' => (int) $item->total_reports,
+                    'average_rating' => round($item->average_rating ?? 0, 1)
+                ];
+            });
+
+            return response()->json([
+                'success' => true,
+                'data' => $formattedData
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error('Error getting department ratings data', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'outletId' => $outletId,
+                'filters' => $request->all()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal memuat data rating departemen',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
 }

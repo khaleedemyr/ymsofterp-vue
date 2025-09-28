@@ -342,4 +342,5 @@ Route::post('/pr-foods/items', [PurchaseOrderFoodsController::class, 'getPRItems
 // Daily Report API routes
 Route::get('/daily-report/summary-rating', [\App\Http\Controllers\DailyReportController::class, 'getSummaryRating']);
 Route::get('/daily-report/regions', [\App\Http\Controllers\DailyReportController::class, 'getRegions']);
+Route::get('/daily-report/department-ratings', [\App\Http\Controllers\DailyReportController::class, 'getDepartmentRatings']);
 

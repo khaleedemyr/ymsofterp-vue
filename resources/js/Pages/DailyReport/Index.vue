@@ -40,6 +40,9 @@ const summaryData = ref([]);
 const loadingSummary = ref(false);
 const regions = ref([]);
 const loadingRegions = ref(false);
+const expandedOutlets = ref(new Set());
+const departmentRatings = ref({});
+const loadingDepartments = ref(new Set());
 const summaryFilters = ref({
   startDate: '',
   endDate: '',
@@ -263,6 +266,46 @@ function applySummaryFilters() {
   }
   
   loadSummaryData();
+}
+
+// Expand functionality
+function toggleOutletExpansion(outletId) {
+  if (expandedOutlets.value.has(outletId)) {
+    expandedOutlets.value.delete(outletId);
+  } else {
+    expandedOutlets.value.add(outletId);
+    // Load department ratings if not already loaded
+    if (!departmentRatings.value[outletId]) {
+      loadDepartmentRatings(outletId);
+    }
+  }
+}
+
+async function loadDepartmentRatings(outletId) {
+  loadingDepartments.value.add(outletId);
+  try {
+    const response = await axios.get('/api/daily-report/department-ratings', {
+      params: {
+        outletId: outletId,
+        startDate: summaryFilters.value.startDate,
+        endDate: summaryFilters.value.endDate,
+        region: summaryFilters.value.region
+      }
+    });
+    
+    if (response.data.success) {
+      departmentRatings.value[outletId] = response.data.data || [];
+    }
+  } catch (error) {
+    console.error('Error loading department ratings:', error);
+    Swal.fire({
+      icon: 'error',
+      title: 'Error',
+      text: 'Gagal memuat data rating departemen'
+    });
+  } finally {
+    loadingDepartments.value.delete(outletId);
+  }
 }
 
 function getInspectionTimeText(time) {
@@ -920,13 +963,27 @@ watch([status, perPage], () => {
               class="bg-white border border-gray-200 rounded-xl p-6 shadow-sm hover:shadow-md transition-all"
             >
               <div class="flex items-center justify-between mb-4">
-                <div>
+                <div class="flex-1">
                   <h4 class="text-lg font-semibold text-gray-800">{{ outlet.nama_outlet }}</h4>
                   <p class="text-sm text-gray-600">{{ outlet.region || 'N/A' }}</p>
                 </div>
-                <div class="text-right">
-                  <div class="text-2xl font-bold text-purple-600">{{ outlet.average_rating }}%</div>
-                  <div class="text-sm text-gray-500">Average Rating</div>
+                <div class="flex items-center gap-4">
+                  <div class="text-right">
+                    <div class="text-2xl font-bold text-purple-600">{{ outlet.average_rating }}%</div>
+                    <div class="text-sm text-gray-500">Average Rating</div>
+                  </div>
+                  <button 
+                    @click="toggleOutletExpansion(outlet.id)"
+                    class="p-2 rounded-lg bg-gray-100 hover:bg-gray-200 transition-colors"
+                    :class="{ 'bg-purple-100 text-purple-600': expandedOutlets.has(outlet.id) }"
+                  >
+                    <i 
+                      :class="[
+                        'fa-solid transition-transform duration-200',
+                        expandedOutlets.has(outlet.id) ? 'fa-chevron-up' : 'fa-chevron-down'
+                      ]"
+                    ></i>
+                  </button>
                 </div>
               </div>
 
@@ -963,6 +1020,61 @@ watch([status, perPage], () => {
                   class="bg-gradient-to-r from-purple-500 to-blue-500 h-2 rounded-full transition-all duration-500"
                   :style="{ width: outlet.average_rating + '%' }"
                 ></div>
+              </div>
+
+              <!-- Expanded Department Ratings -->
+              <div v-if="expandedOutlets.has(outlet.id)" class="mt-6 pt-6 border-t border-gray-200">
+                <h5 class="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                  <i class="fa-solid fa-building text-purple-600"></i>
+                  Rating per Departemen
+                </h5>
+                
+                <!-- Loading State -->
+                <div v-if="loadingDepartments.has(outlet.id)" class="text-center py-4">
+                  <i class="fa-solid fa-spinner fa-spin text-purple-600 mb-2"></i>
+                  <p class="text-gray-600">Memuat data departemen...</p>
+                </div>
+                
+                <!-- Department Ratings -->
+                <div v-else-if="departmentRatings[outlet.id] && departmentRatings[outlet.id].length > 0" class="space-y-3">
+                  <div 
+                    v-for="dept in departmentRatings[outlet.id]" 
+                    :key="dept.id"
+                    class="bg-gray-50 rounded-lg p-4"
+                  >
+                    <div class="flex items-center justify-between mb-2">
+                      <div>
+                        <h6 class="font-medium text-gray-800">{{ dept.nama_departemen }}</h6>
+                        <p class="text-sm text-gray-500">{{ dept.total_reports }} reports</p>
+                      </div>
+                      <div class="text-right">
+                        <div class="text-xl font-bold text-purple-600">{{ dept.average_rating }}%</div>
+                        <div class="flex items-center gap-1">
+                          <i 
+                            v-for="star in 5" 
+                            :key="star"
+                            :class="[
+                              'text-sm',
+                              star <= Math.round(dept.average_rating / 20) ? 'fa-solid fa-star text-yellow-400' : 'fa-regular fa-star text-gray-300'
+                            ]"
+                          ></i>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="w-full bg-gray-200 rounded-full h-1.5">
+                      <div 
+                        class="bg-gradient-to-r from-purple-400 to-blue-400 h-1.5 rounded-full transition-all duration-500"
+                        :style="{ width: dept.average_rating + '%' }"
+                      ></div>
+                    </div>
+                  </div>
+                </div>
+                
+                <!-- No Data -->
+                <div v-else class="text-center py-4 text-gray-500">
+                  <i class="fa-solid fa-building text-2xl mb-2"></i>
+                  <p>Tidak ada data departemen untuk outlet ini</p>
+                </div>
               </div>
             </div>
           </div>
