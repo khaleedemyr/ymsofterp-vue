@@ -102,11 +102,9 @@ class AttendanceController extends Controller
                 'user_shifts.id',
                 'user_shifts.tanggal as schedule_date',
                 'user_shifts.shift_id',
-                'user_shifts.outlet_id',
                 'shifts.shift_name',
                 'shifts.time_start as start_time',
                 'shifts.time_end as end_time',
-                'tbl_data_outlet.nama_outlet'
             ])
             ->orderBy('user_shifts.tanggal')
             ->orderBy('shifts.time_start')
@@ -117,36 +115,115 @@ class AttendanceController extends Controller
     
     private function getAttendanceRecords($userId, $startDate, $endDate)
     {
-        // Get attendance records from att_log table (similar to AttendanceReportController)
-        $attendance = DB::table('att_log as a')
+        // Get raw attendance data and process manually (following AttendanceReportController logic)
+        $rawData = DB::table('att_log as a')
             ->join('tbl_data_outlet as o', 'a.sn', '=', 'o.sn')
             ->join('user_pins as up', function($q) {
                 $q->on('a.pin', '=', 'up.pin')->on('o.id_outlet', '=', 'up.outlet_id');
             })
             ->join('users as u', 'up.user_id', '=', 'u.id')
-            ->leftJoin('user_shifts as us', function($q) {
-                $q->on('u.id', '=', 'us.user_id')
-                  ->on(DB::raw('DATE(a.scan_date)'), '=', 'us.tanggal')
-                  ->on('o.id_outlet', '=', 'us.outlet_id');
-            })
-            ->leftJoin('shifts as s', 'us.shift_id', '=', 's.id')
+            ->select(
+                'a.scan_date',
+                'a.inoutmode',
+                'u.id as user_id',
+                'u.nama_lengkap'
+            )
             ->where('u.id', $userId)
             ->whereBetween(DB::raw('DATE(a.scan_date)'), [$startDate, $endDate])
-            ->select([
-                DB::raw('DATE(a.scan_date) as attendance_date'),
-                DB::raw('MIN(CASE WHEN a.inoutmode = 1 THEN a.scan_date END) as check_in_time'),
-                DB::raw('MAX(CASE WHEN a.inoutmode = 2 THEN a.scan_date END) as check_out_time'),
-                's.shift_name',
-                's.time_start as start_time',
-                's.time_end as end_time',
-                'o.nama_outlet',
-                'us.shift_id',
-                'o.id_outlet as outlet_id',
-                DB::raw('TIMESTAMPDIFF(MINUTE, MIN(CASE WHEN a.inoutmode = 1 THEN a.scan_date END), MAX(CASE WHEN a.inoutmode = 2 THEN a.scan_date END)) as work_duration_minutes')
-            ])
-            ->groupBy(DB::raw('DATE(a.scan_date)'), 'u.id', 'o.id_outlet', 's.shift_name', 's.time_start', 's.time_end', 'o.nama_outlet', 'us.shift_id')
-            ->orderBy(DB::raw('DATE(a.scan_date)'), 'desc')
+            ->orderBy('a.scan_date')
             ->get();
+
+        // Process data to handle cross-day correctly (following AttendanceReportController logic)
+        $processedData = [];
+        
+        // Step 1: Group scans by user and date
+        foreach ($rawData as $scan) {
+            $date = date('Y-m-d', strtotime($scan->scan_date));
+            $key = $scan->user_id . '_' . $date;
+            
+            if (!isset($processedData[$key])) {
+                $processedData[$key] = [
+                    'tanggal' => $date,
+                    'user_id' => $scan->user_id,
+                    'nama_lengkap' => $scan->nama_lengkap,
+                    'scans' => []
+                ];
+            }
+            
+            $processedData[$key]['scans'][] = [
+                'scan_date' => $scan->scan_date,
+                'inoutmode' => $scan->inoutmode
+            ];
+        }
+        
+        // Step 2: Process each group to determine first in and last out
+        $attendance = [];
+        foreach ($processedData as $key => $data) {
+            $scans = collect($data['scans'])->sortBy('scan_date');
+            $inScans = $scans->where('inoutmode', 1);
+            $outScans = $scans->where('inoutmode', 2);
+            
+            // Get first in scan
+            $firstIn = $inScans->first()['scan_date'] ?? null;
+            
+            // Get last out scan (including cross-day)
+            $lastOut = null;
+            $isCrossDay = false;
+            
+            if ($firstIn) {
+                // Look for last out on the same day (following AttendanceReportController logic)
+                $sameDayOuts = $outScans->where('scan_date', '>', $firstIn);
+                if ($sameDayOuts->isNotEmpty()) {
+                    $lastOut = $sameDayOuts->last()['scan_date'];
+                    $isCrossDay = false;
+                } else {
+                    // Look for last out on the next day
+                    $nextDay = date('Y-m-d', strtotime($data['tanggal'] . ' +1 day'));
+                    $nextDayKey = $data['user_id'] . '_' . $nextDay;
+                    
+                    if (isset($processedData[$nextDayKey])) {
+                        $nextDayScans = collect($processedData[$nextDayKey]['scans'])->sortBy('scan_date');
+                        $nextDayOuts = $nextDayScans->where('inoutmode', 2);
+                        
+                        if ($nextDayOuts->isNotEmpty()) {
+                            $lastOut = $nextDayOuts->last()['scan_date'];
+                            $isCrossDay = true;
+                            
+                            // Remove this scan from next day (following AttendanceReportController logic)
+                            $processedData[$nextDayKey]['scans'] = $nextDayScans->where('inoutmode', '!=', 2)->values()->toArray();
+                        }
+                    }
+                }
+            }
+            
+            // Get shift data for this date
+            $shift = DB::table('user_shifts as us')
+                ->leftJoin('shifts as s', 'us.shift_id', '=', 's.id')
+                ->where('us.user_id', $data['user_id'])
+                ->where('us.tanggal', $data['tanggal'])
+                ->select('s.time_start', 's.time_end', 's.shift_name', 'us.shift_id')
+                ->first();
+            
+            // Calculate work duration
+            $workDurationMinutes = 0;
+            if ($firstIn && $lastOut) {
+                $workDurationMinutes = (strtotime($lastOut) - strtotime($firstIn)) / 60;
+            }
+            
+            $attendance[] = (object) [
+                'attendance_date' => $data['tanggal'],
+                'check_in_time' => $firstIn,
+                'check_out_time' => $lastOut,
+                'shift_name' => $shift->shift_name ?? null,
+                'start_time' => $shift->time_start ?? null,
+                'end_time' => $shift->time_end ?? null,
+                'shift_id' => $shift->shift_id ?? null,
+                'work_duration_minutes' => $workDurationMinutes,
+                'is_cross_day' => $isCrossDay
+            ];
+        }
+        
+        $attendance = collect($attendance);
             
         // Format work duration and add status
         $attendance->transform(function ($record) {
@@ -240,11 +317,13 @@ class AttendanceController extends Controller
         $absentDays = 0;
         $totalLemburHours = 0;
         
-        // Get all shift dates in the period
+        // Get all shift dates in the period (only up to today)
+        $today = date('Y-m-d');
         $shiftDates = DB::table('user_shifts as us')
             ->leftJoin('shifts as s', 'us.shift_id', '=', 's.id')
             ->where('us.user_id', $userId)
             ->whereBetween('us.tanggal', [$startDate, $endDate])
+            ->where('us.tanggal', '<=', $today) // Only count shifts up to today
             ->whereNotNull('us.shift_id') // Only count shifts, not OFF days
             ->select('us.tanggal', 's.time_start')
             ->get();
@@ -261,7 +340,14 @@ class AttendanceController extends Controller
         }
         
         // Calculate present/absent days based on shift dates
+        $today = date('Y-m-d');
+        
         foreach ($shiftDates as $shift) {
+            // Skip future dates (hari yang belum berjalan)
+            if ($shift->tanggal > $today) {
+                continue;
+            }
+            
             $attendanceInfo = $attendanceData[$shift->tanggal] ?? null;
             
             if ($attendanceInfo && $attendanceInfo['first_in']) {
@@ -270,6 +356,9 @@ class AttendanceController extends Controller
                 $absentDays++;
             }
         }
+        
+        // Calculate total shifts (only up to today)
+        $totalShifts = $shiftDates->count();
         
         // Calculate percentage
         $percentage = $totalShifts > 0 ? round(($presentDays / $totalShifts) * 100, 1) : 0;
@@ -290,43 +379,43 @@ class AttendanceController extends Controller
         $startDate = $request->get('start_date', Carbon::now()->startOfMonth()->format('Y-m-d'));
         $endDate = $request->get('end_date', Carbon::now()->endOfMonth()->format('Y-m-d'));
         
-        // Get calendar data combining schedules and attendance
-        $calendarData = DB::table('user_shifts as us')
+        // Get schedules first
+        $schedules = DB::table('user_shifts as us')
             ->leftJoin('shifts as s', 'us.shift_id', '=', 's.id')
-            ->leftJoin('tbl_data_outlet as o', 'us.outlet_id', '=', 'o.id_outlet')
-            ->leftJoin('att_log as a', function($join) use ($user) {
-                $join->on(DB::raw('DATE(a.scan_date)'), '=', 'us.tanggal')
-                     ->join('user_pins as up', function($q) {
-                         $q->on('a.pin', '=', 'up.pin')->on('o.id_outlet', '=', 'up.outlet_id');
-                     })
-                     ->where('up.user_id', '=', $user->id);
-            })
             ->where('us.user_id', $user->id)
             ->whereBetween('us.tanggal', [$startDate, $endDate])
             ->select([
                 'us.tanggal as schedule_date',
                 'us.shift_id',
-                'us.outlet_id',
                 's.shift_name',
                 's.time_start as start_time',
-                's.time_end as end_time',
-                'o.nama_outlet',
-                DB::raw('MIN(CASE WHEN a.inoutmode = 1 THEN a.scan_date END) as check_in_time'),
-                DB::raw('MAX(CASE WHEN a.inoutmode = 2 THEN a.scan_date END) as check_out_time'),
-                DB::raw('CASE 
-                    WHEN MIN(CASE WHEN a.inoutmode = 0 THEN a.scan_date END) IS NOT NULL 
-                         AND MAX(CASE WHEN a.inoutmode = 1 THEN a.scan_date END) IS NOT NULL 
-                    THEN "present"
-                    WHEN MIN(CASE WHEN a.inoutmode = 0 THEN a.scan_date END) IS NOT NULL 
-                         AND MAX(CASE WHEN a.inoutmode = 1 THEN a.scan_date END) IS NULL 
-                    THEN "half_day"
-                    ELSE "absent"
-                END as attendance_status')
+                's.time_end as end_time'
             ])
-            ->groupBy('us.tanggal', 'us.shift_id', 'us.outlet_id', 's.shift_name', 's.time_start', 's.time_end', 'o.nama_outlet')
             ->orderBy('us.tanggal')
             ->orderBy('s.time_start')
             ->get();
+
+        // Get attendance data using the same logic as getAttendanceRecords
+        $attendanceData = $this->getAttendanceDataWithFirstInLastOut($user->id, $startDate, $endDate);
+        
+        // Combine schedules with attendance data
+        $calendarData = [];
+        foreach ($schedules as $schedule) {
+            $attendanceInfo = $attendanceData->where('attendance_date', $schedule->schedule_date)->first();
+            
+            $calendarData[] = (object) [
+                'schedule_date' => $schedule->schedule_date,
+                'shift_id' => $schedule->shift_id,
+                'shift_name' => $schedule->shift_name,
+                'start_time' => $schedule->start_time,
+                'end_time' => $schedule->end_time,
+                'check_in_time' => $attendanceInfo->check_in_time ?? null,
+                'check_out_time' => $attendanceInfo->check_out_time ?? null,
+                'attendance_status' => $attendanceInfo ? 'present' : 'absent'
+            ];
+        }
+        
+        $calendarData = collect($calendarData);
             
         // Group by date for calendar display
         $groupedData = $calendarData->groupBy('schedule_date');
@@ -338,7 +427,6 @@ class AttendanceController extends Controller
                     'shift_name' => $record->shift_name,
                     'start_time' => $record->start_time,
                     'end_time' => $record->end_time,
-                    'outlet_name' => $record->nama_outlet,
                     'schedule_status' => 'scheduled',
                     'attendance_status' => $record->attendance_status,
                     'check_in_time' => $record->check_in_time,
@@ -365,9 +453,7 @@ class AttendanceController extends Controller
                 'a.scan_date',
                 'a.inoutmode',
                 'u.id as user_id',
-                'u.nama_lengkap',
-                'o.id_outlet',
-                'o.nama_outlet'
+                'u.nama_lengkap'
             )
             ->where('u.id', $userId)
             ->whereBetween(DB::raw('DATE(a.scan_date)'), [$startDate, $endDate])
@@ -377,18 +463,16 @@ class AttendanceController extends Controller
         // Process data to handle cross-day correctly (following AttendanceReportController logic)
         $processedData = [];
         
-        // Step 1: Group scans by user, outlet, and date
+        // Step 1: Group scans by user and date
         foreach ($rawData as $scan) {
             $date = date('Y-m-d', strtotime($scan->scan_date));
-            $key = $scan->user_id . '_' . $scan->id_outlet . '_' . $date;
+            $key = $scan->user_id . '_' . $date;
             
             if (!isset($processedData[$key])) {
                 $processedData[$key] = [
                     'tanggal' => $date,
                     'user_id' => $scan->user_id,
                     'nama_lengkap' => $scan->nama_lengkap,
-                    'id_outlet' => $scan->id_outlet,
-                    'nama_outlet' => $scan->nama_outlet,
                     'scans' => []
                 ];
             }
@@ -414,24 +498,24 @@ class AttendanceController extends Controller
             $isCrossDay = false;
             
             if ($firstIn) {
-                // Look for first out on the same day (following AttendanceReportController logic)
-                $sameDayOut = $outScans->where('scan_date', '>', $firstIn)->first();
+                // Look for last out on the same day (following AttendanceReportController logic)
+                $sameDayOuts = $outScans->where('scan_date', '>', $firstIn);
                 
-                if ($sameDayOut) {
-                    // Ada scan keluar di hari yang sama
-                    $lastOut = $sameDayOut['scan_date'];
+                if ($sameDayOuts->isNotEmpty()) {
+                    // Ada scan keluar di hari yang sama - ambil yang paling akhir
+                    $lastOut = $sameDayOuts->last()['scan_date'];
                     $isCrossDay = false;
                 } else {
                     // Cari scan keluar di hari berikutnya
                     $nextDay = date('Y-m-d', strtotime($data['tanggal'] . ' +1 day'));
-                    $nextDayKey = $data['user_id'] . '_' . $data['id_outlet'] . '_' . $nextDay;
+                    $nextDayKey = $data['user_id'] . '_' . $nextDay;
                     
                     if (isset($processedData[$nextDayKey])) {
                         $nextDayScans = collect($processedData[$nextDayKey]['scans'])->sortBy('scan_date');
-                        $nextDayOut = $nextDayScans->where('inoutmode', 2)->first();
+                        $nextDayOuts = $nextDayScans->where('inoutmode', 2);
                         
-                        if ($nextDayOut) {
-                            $lastOut = $nextDayOut['scan_date'];
+                        if ($nextDayOuts->isNotEmpty()) {
+                            $lastOut = $nextDayOuts->last()['scan_date'];
                             $isCrossDay = true;
                             
                             // Hapus scan keluar ini dari hari berikutnya (following AttendanceReportController logic)
@@ -452,7 +536,6 @@ class AttendanceController extends Controller
                     ->leftJoin('shifts as s', 'us.shift_id', '=', 's.id')
                     ->where('us.user_id', $data['user_id'])
                     ->where('us.tanggal', $data['tanggal'])
-                    ->where('us.outlet_id', $data['id_outlet'])
                     ->select('s.time_start', 's.time_end', 's.shift_name', 'us.shift_id')
                     ->first();
                 
@@ -494,7 +577,6 @@ class AttendanceController extends Controller
             $attendanceData[$data['tanggal']] = [
                 'first_in' => $firstIn ? date('H:i', strtotime($firstIn)) : null,
                 'last_out' => $lastOut ? date('H:i', strtotime($lastOut)) : null,
-                'outlet_name' => $data['nama_outlet'],
                 'is_cross_day' => $isCrossDay,
                 'telat' => $telat,
                 'lembur' => $lembur
@@ -764,7 +846,6 @@ class AttendanceController extends Controller
         // Get outlets for filter
         $outlets = DB::table('tbl_data_outlet')
             ->where('status', 'A')
-            ->orderBy('nama_outlet')
             ->get();
             
         // Get divisions for filter
@@ -822,7 +903,6 @@ class AttendanceController extends Controller
                 'users.nama_lengkap as employee_name',
                 'users.id as user_id',
                 'leave_types.name as leave_type_name',
-                'tbl_data_outlet.nama_outlet',
                 'tbl_data_divisi.nama_divisi',
                 'approvers.nama_lengkap as approver_name',
                 'hrd_approvers.nama_lengkap as hrd_approver_name'
@@ -915,7 +995,6 @@ class AttendanceController extends Controller
                 'absent_requests.rejection_reason',
                 'users.nama_lengkap as employee_name',
                 'leave_types.name as leave_type_name',
-                'tbl_data_outlet.nama_outlet',
                 'tbl_data_divisi.nama_divisi',
                 'approvers.nama_lengkap as approver_name',
                 'hrd_approvers.nama_lengkap as hrd_approver_name'

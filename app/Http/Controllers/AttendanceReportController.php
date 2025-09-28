@@ -49,14 +49,10 @@ class AttendanceReportController extends Controller
                     'a.scan_date',
                     'a.inoutmode',
                     'u.id as user_id',
-                    'u.nama_lengkap',
-                    'o.id_outlet',
-                    'o.nama_outlet'
+                    'u.nama_lengkap'
                 )
                 ->whereBetween(DB::raw('DATE(a.scan_date)'), [$start, $end]);
-            if (!empty($outletId)) {
-                $sub->where('o.id_outlet', $outletId);
-            }
+            // Filter outlet hanya untuk dropdown karyawan, bukan untuk report
             if (!empty($divisionId)) {
                 $sub->where('u.division_id', $divisionId);
             }
@@ -71,18 +67,16 @@ class AttendanceReportController extends Controller
             // Proses data manual untuk menangani cross-day dengan benar
             $processedData = [];
             
-            // Step 1: Kelompokkan scan berdasarkan user, outlet, dan tanggal
+            // Step 1: Kelompokkan scan berdasarkan user dan tanggal
             foreach ($rawData as $scan) {
                 $date = date('Y-m-d', strtotime($scan->scan_date));
-                $key = $scan->user_id . '_' . $scan->id_outlet . '_' . $date;
+                $key = $scan->user_id . '_' . $date;
                 
                 if (!isset($processedData[$key])) {
                     $processedData[$key] = [
                         'tanggal' => $date,
                         'user_id' => $scan->user_id,
                         'nama_lengkap' => $scan->nama_lengkap,
-                        'id_outlet' => $scan->id_outlet,
-                        'nama_outlet' => $scan->nama_outlet,
                         'scans' => []
                     ];
                 }
@@ -110,24 +104,22 @@ class AttendanceReportController extends Controller
                 $totalKeluar = $outScans->count();
                 
                 if ($jamMasuk) {
-                    // Cari scan keluar di hari yang sama
-                    $sameDayOut = $outScans->where('scan_date', '>', $jamMasuk)->first();
-                    
-                    if ($sameDayOut) {
-                        // Ada scan keluar di hari yang sama
-                        $jamKeluar = $sameDayOut['scan_date'];
+                    // Cari scan keluar TERAKHIR di hari yang sama
+                    $sameDayOuts = $outScans->where('scan_date', '>', $jamMasuk);
+                    if ($sameDayOuts->isNotEmpty()) {
+                        $jamKeluar = $sameDayOuts->last()['scan_date'];
                         $isCrossDay = false;
                     } else {
-                        // Cari scan keluar di hari berikutnya
+                        // Cari scan keluar TERAKHIR di hari berikutnya
                         $nextDay = date('Y-m-d', strtotime($data['tanggal'] . ' +1 day'));
-                        $nextDayKey = $data['user_id'] . '_' . $data['id_outlet'] . '_' . $nextDay;
+                        $nextDayKey = $data['user_id'] . '_' . $nextDay;
                         
                         if (isset($processedData[$nextDayKey])) {
                             $nextDayScans = collect($processedData[$nextDayKey]['scans'])->sortBy('scan_date');
-                            $nextDayOut = $nextDayScans->where('inoutmode', 2)->first();
+                            $nextDayOuts = $nextDayScans->where('inoutmode', 2);
                             
-                            if ($nextDayOut) {
-                                $jamKeluar = $nextDayOut['scan_date'];
+                            if ($nextDayOuts->isNotEmpty()) {
+                                $jamKeluar = $nextDayOuts->last()['scan_date'];
                                 $isCrossDay = true;
                                 $totalKeluar = 1; // Cross-day scan keluar
                                 
@@ -142,8 +134,6 @@ class AttendanceReportController extends Controller
                     'tanggal' => $data['tanggal'],
                     'user_id' => $data['user_id'],
                     'nama_lengkap' => $data['nama_lengkap'],
-                    'id_outlet' => $data['id_outlet'],
-                    'nama_outlet' => $data['nama_outlet'],
                     'jam_masuk' => $jamMasuk,
                     'jam_keluar' => $jamKeluar,
                     'total_masuk' => $totalMasuk,
@@ -157,7 +147,7 @@ class AttendanceReportController extends Controller
             // Index dataRows by tanggal dan outlet
             $indexedData = [];
             foreach ($dataRows as $row) {
-                $key = $row['tanggal'] . '_' . $row['id_outlet'];
+                $key = $row['tanggal'];
                 if (!isset($indexedData[$key])) {
                     $indexedData[$key] = [];
                 }
@@ -173,18 +163,12 @@ class AttendanceReportController extends Controller
                 $dt->modify('+1 day');
             }
 
-            // Ambil semua outlet
-            $outlets = DB::table('tbl_data_outlet')->select('id_outlet', 'nama_outlet')->get();
-
-            // Generate data untuk setiap tanggal dan outlet
+            // Generate data untuk setiap tanggal
             $finalData = [];
             foreach ($period as $tanggal) {
-                foreach ($outlets as $outlet) {
-                    $key = $tanggal . '_' . $outlet->id_outlet;
-                    if (isset($indexedData[$key])) {
-                        foreach ($indexedData[$key] as $row) {
-                            $finalData[] = (object) $row;
-                        }
+                if (isset($indexedData[$tanggal])) {
+                    foreach ($indexedData[$tanggal] as $row) {
+                        $finalData[] = (object) $row;
                     }
                 }
             }
@@ -311,7 +295,6 @@ class AttendanceReportController extends Controller
                                 ->leftJoin('shifts as s', 'us.shift_id', '=', 's.id')
                                 ->where('us.user_id', $rowUserId)
                                 ->where('us.tanggal', $tanggal)
-                                ->where('us.outlet_id', $row->id_outlet)
                                 ->select('s.time_start', 's.time_end', 's.shift_name', 'us.shift_id')
                                 ->first();
                             if ($shift) {
@@ -381,8 +364,6 @@ class AttendanceReportController extends Controller
                             'tanggal' => $tanggal,
                             'user_id' => $rowUserId,
                             'nama_lengkap' => $rowNama,
-                            'outlet_id' => $row->id_outlet,
-                            'nama_outlet' => $row->nama_outlet,
                             'jam_masuk' => $jam_masuk,
                             'jam_keluar' => $jam_keluar,
                             'total_masuk' => $row->total_masuk,
@@ -522,7 +503,7 @@ class AttendanceReportController extends Controller
             ->orderBy('a.scan_date')
             ->get();
             
-        // Proses data untuk menangani cross-day
+        // Proses data untuk menangani cross-day - kelompokkan berdasarkan outlet
         $processedData = [];
         foreach ($rows as $row) {
             $date = date('Y-m-d', strtotime($row->scan_date));
@@ -530,9 +511,9 @@ class AttendanceReportController extends Controller
             
             if (!isset($processedData[$key])) {
                 $processedData[$key] = [
+                    'tanggal' => $date,
                     'id_outlet' => $row->id_outlet,
                     'nama_outlet' => $row->nama_outlet,
-                    'tanggal' => $date,
                     'scans' => []
                 ];
             }
@@ -558,20 +539,19 @@ class AttendanceReportController extends Controller
                 $totalOut = $outScans->count();
                 
                 if ($jamIn) {
-                    // Cari scan keluar di hari yang sama
-                    $sameDayOut = $outScans->where('scan_date', '>', $jamIn)->first();
-                    
-                    if ($sameDayOut) {
-                        $jamOut = $sameDayOut['scan_date'];
+                    // Cari scan keluar TERAKHIR di hari yang sama
+                    $sameDayOuts = $outScans->where('scan_date', '>', $jamIn);
+                    if ($sameDayOuts->isNotEmpty()) {
+                        $jamOut = $sameDayOuts->last()['scan_date'];
                     } else {
-                        // Cari scan keluar di hari berikutnya
+                        // Cari scan keluar TERAKHIR di hari berikutnya
                         $nextDayKey = $data['id_outlet'] . '_' . $nextDay;
                         if (isset($processedData[$nextDayKey])) {
                             $nextDayScans = collect($processedData[$nextDayKey]['scans'])->sortBy('scan_date');
-                            $nextDayOut = $nextDayScans->where('inoutmode', 2)->first();
+                            $nextDayOuts = $nextDayScans->where('inoutmode', 2);
                             
-                            if ($nextDayOut) {
-                                $jamOut = $nextDayOut['scan_date'];
+                            if ($nextDayOuts->isNotEmpty()) {
+                                $jamOut = $nextDayOuts->last()['scan_date'];
                                 $totalOut = 1; // Cross-day scan keluar
                             }
                         }
@@ -579,6 +559,7 @@ class AttendanceReportController extends Controller
                 }
                 
                 $result[] = [
+                    'id_outlet' => $data['id_outlet'],
                     'nama_outlet' => $data['nama_outlet'],
                     'jam_in' => $jamIn ? date('H:i:s', strtotime($jamIn)) : null,
                     'jam_out' => $jamOut ? date('H:i:s', strtotime($jamOut)) : null,
@@ -691,18 +672,16 @@ class AttendanceReportController extends Controller
             // Proses data manual untuk menangani cross-day dengan benar
             $processedData = [];
             
-            // Step 1: Kelompokkan scan berdasarkan user, outlet, dan tanggal
+            // Step 1: Kelompokkan scan berdasarkan user dan tanggal
             foreach ($rawData as $scan) {
                 $date = date('Y-m-d', strtotime($scan->scan_date));
-                $key = $scan->user_id . '_' . $scan->id_outlet . '_' . $date;
+                $key = $scan->user_id . '_' . $date;
                 
                 if (!isset($processedData[$key])) {
                     $processedData[$key] = [
                         'tanggal' => $date,
                         'user_id' => $scan->user_id,
                         'nama_lengkap' => $scan->nama_lengkap,
-                        'id_outlet' => $scan->id_outlet,
-                        'nama_outlet' => $scan->nama_outlet,
                         'scans' => []
                     ];
                 }
@@ -728,24 +707,22 @@ class AttendanceReportController extends Controller
                 $isCrossDay = false;
                 
                 if ($jamMasuk) {
-                    // Cari scan keluar di hari yang sama
-                    $sameDayOut = $outScans->where('scan_date', '>', $jamMasuk)->first();
-                    
-                    if ($sameDayOut) {
-                        // Ada scan keluar di hari yang sama
-                        $jamKeluar = $sameDayOut['scan_date'];
+                    // Cari scan keluar TERAKHIR di hari yang sama
+                    $sameDayOuts = $outScans->where('scan_date', '>', $jamMasuk);
+                    if ($sameDayOuts->isNotEmpty()) {
+                        $jamKeluar = $sameDayOuts->last()['scan_date'];
                         $isCrossDay = false;
                     } else {
-                        // Cari scan keluar di hari berikutnya
+                        // Cari scan keluar TERAKHIR di hari berikutnya
                         $nextDay = date('Y-m-d', strtotime($data['tanggal'] . ' +1 day'));
-                        $nextDayKey = $data['user_id'] . '_' . $data['id_outlet'] . '_' . $nextDay;
+                        $nextDayKey = $data['user_id'] . '_' . $nextDay;
                         
                         if (isset($processedData[$nextDayKey])) {
                             $nextDayScans = collect($processedData[$nextDayKey]['scans'])->sortBy('scan_date');
-                            $nextDayOut = $nextDayScans->where('inoutmode', 2)->first();
+                            $nextDayOuts = $nextDayScans->where('inoutmode', 2);
                             
-                            if ($nextDayOut) {
-                                $jamKeluar = $nextDayOut['scan_date'];
+                            if ($nextDayOuts->isNotEmpty()) {
+                                $jamKeluar = $nextDayOuts->last()['scan_date'];
                                 $isCrossDay = true;
                                 
                                 // Hapus scan keluar ini dari hari berikutnya
@@ -763,8 +740,6 @@ class AttendanceReportController extends Controller
                     'tanggal' => $data['tanggal'],
                     'user_id' => $data['user_id'],
                     'nama_lengkap' => $data['nama_lengkap'],
-                    'id_outlet' => $data['id_outlet'],
-                    'nama_outlet' => $data['nama_outlet'],
                     'jam_masuk' => $jamMasuk,
                     'jam_keluar' => $jamKeluar,
                     'total_masuk' => $totalMasuk,
@@ -890,7 +865,6 @@ class AttendanceReportController extends Controller
                                 ->leftJoin('shifts as s', 'us.shift_id', '=', 's.id')
                                 ->where('us.user_id', $rowUserId)
                                 ->where('us.tanggal', $tanggal)
-                                ->where('us.outlet_id', $row->id_outlet)
                                 ->select('s.time_start', 's.time_end', 's.shift_name', 'us.shift_id')
                                 ->first();
                             if ($shift) {
@@ -940,7 +914,7 @@ class AttendanceReportController extends Controller
                                 $lembur = 0;
                             }
                             // Detail sudah ada dari query utama
-                            $detail = $row->nama_outlet . ': ' . ($jam_masuk ?? '-') . ' - ' . ($jam_keluar ?? '-') . 
+                            $detail = ($jam_masuk ?? '-') . ' - ' . ($jam_keluar ?? '-') . 
                                      ' (IN: ' . $row->total_masuk . ', OUT: ' . $row->total_keluar . ')';
                         }
                         if ($holidays->has($tanggal)) {
@@ -951,8 +925,6 @@ class AttendanceReportController extends Controller
                             'tanggal' => $tanggal,
                             'user_id' => $rowUserId,
                             'nama_lengkap' => $rowNama,
-                            'outlet_id' => $row->id_outlet,
-                            'nama_outlet' => $row->nama_outlet,
                             'jam_masuk' => $jam_masuk,
                             'jam_keluar' => $jam_keluar,
                             'total_masuk' => $row->total_masuk,
@@ -1056,14 +1028,10 @@ class AttendanceReportController extends Controller
                 'a.scan_date',
                 'a.inoutmode',
                 'u.id as user_id',
-                'u.nama_lengkap',
-                'o.id_outlet',
-                'o.nama_outlet'
+                'u.nama_lengkap'
             )
             ->whereBetween(DB::raw('DATE(a.scan_date)'), [$start, $end]);
-        if (!empty($outletId)) {
-            $sub->where('o.id_outlet', $outletId);
-        }
+        // Filter outlet hanya untuk dropdown karyawan, bukan untuk report
         if (!empty($divisionId)) {
             $sub->where('u.division_id', $divisionId);
         }
@@ -1073,14 +1041,12 @@ class AttendanceReportController extends Controller
         $processedData = [];
         foreach ($rawData as $scan) {
             $date = date('Y-m-d', strtotime($scan->scan_date));
-            $key = $scan->user_id . '_' . $scan->id_outlet . '_' . $date;
+            $key = $scan->user_id . '_' . $date;
             if (!isset($processedData[$key])) {
                 $processedData[$key] = [
                     'tanggal' => $date,
                     'user_id' => $scan->user_id,
                     'nama_lengkap' => $scan->nama_lengkap,
-                    'id_outlet' => $scan->id_outlet,
-                    'nama_outlet' => $scan->nama_outlet,
                     'scans' => []
                 ];
             }
@@ -1100,18 +1066,18 @@ class AttendanceReportController extends Controller
             $jamKeluar = null;
             $isCrossDay = false;
             if ($jamMasuk) {
-                $sameDayOut = $outScans->where('scan_date', '>', $jamMasuk)->first();
-                if ($sameDayOut) {
-                    $jamKeluar = $sameDayOut['scan_date'];
+                $sameDayOuts = $outScans->where('scan_date', '>', $jamMasuk);
+                    if ($sameDayOuts->isNotEmpty()) {
+                        $jamKeluar = $sameDayOuts->last()['scan_date'];
                     $isCrossDay = false;
                 } else {
                     $nextDay = date('Y-m-d', strtotime($data['tanggal'] . ' +1 day'));
-                    $nextDayKey = $data['user_id'] . '_' . $data['id_outlet'] . '_' . $nextDay;
+                    $nextDayKey = $data['user_id'] . '_' . $nextDay;
                     if (isset($processedData[$nextDayKey])) {
                         $nextDayScans = collect($processedData[$nextDayKey]['scans'])->sortBy('scan_date');
                         $nextDayOut = $nextDayScans->where('inoutmode', 2)->first();
-                        if ($nextDayOut) {
-                            $jamKeluar = $nextDayOut['scan_date'];
+                            if ($nextDayOuts->isNotEmpty()) {
+                                $jamKeluar = $nextDayOuts->last()['scan_date'];
                             $isCrossDay = true;
                             // Hapus OUT di hari berikutnya seperti index()
                             $processedData[$nextDayKey]['scans'] = $nextDayScans->where('inoutmode', '!=', 2)->values()->toArray();
@@ -1123,8 +1089,6 @@ class AttendanceReportController extends Controller
                 'tanggal' => $data['tanggal'],
                 'user_id' => $data['user_id'],
                 'nama_lengkap' => $data['nama_lengkap'],
-                'id_outlet' => $data['id_outlet'],
-                'nama_outlet' => $data['nama_outlet'],
                 'jam_masuk' => $jamMasuk,
                 'jam_keluar' => $jamKeluar,
                 'total_masuk' => $inScans->count(),
@@ -1182,7 +1146,6 @@ class AttendanceReportController extends Controller
                         ->leftJoin('shifts as s', 'us.shift_id', '=', 's.id')
                         ->where('us.user_id', $row->user_id)
                         ->where('us.tanggal', $tanggal)
-                        ->where('us.outlet_id', $row->id_outlet)
                         ->select('s.time_start', 's.time_end', 's.shift_name', 'us.shift_id')
                         ->first();
                     if ($shift) {
@@ -1205,8 +1168,6 @@ class AttendanceReportController extends Controller
 
                     $rows->push((object) [
                         'tanggal' => $tanggal,
-                        'outlet_id' => $row->id_outlet,
-                        'nama_outlet' => $row->nama_outlet,
                         'telat' => $telat,
                         'lembur' => $lembur,
                         'is_off' => $is_off,
@@ -1476,7 +1437,7 @@ class AttendanceReportController extends Controller
             
             if ($jamMasuk) {
                 // Cari scan keluar di hari yang sama
-                $sameDayOut = $outScans->where('scan_date', '>', $jamMasuk)->first();
+                $sameDayOuts = $outScans->where('scan_date', '>', $jamMasuk);
                 
                 if ($sameDayOut) {
                     // Ada scan keluar di hari yang sama
@@ -1491,8 +1452,8 @@ class AttendanceReportController extends Controller
                         $nextDayScans = collect($processedData[$nextDayKey]['scans'])->sortBy('scan_date');
                         $nextDayOut = $nextDayScans->where('inoutmode', 2)->first();
                         
-                        if ($nextDayOut) {
-                            $jamKeluar = $nextDayOut['scan_date'];
+                            if ($nextDayOuts->isNotEmpty()) {
+                                $jamKeluar = $nextDayOuts->last()['scan_date'];
                             $isCrossDay = true;
                         }
                     }
@@ -1625,17 +1586,11 @@ class AttendanceReportController extends Controller
                         'a.inoutmode',
                         'u.id as user_id',
                         'u.nama_lengkap',
-                        'u.division_id',
-                        'o.id_outlet',
-                        'o.nama_outlet'
+                        'u.division_id'
                     )
                     ->whereBetween(DB::raw('DATE(a.scan_date)'), [$start, $end]);
 
-                // Apply filters
-                if (!empty($outletId)) {
-                    $sub->where('o.id_outlet', $outletId);
-                    \Log::info('Applied outlet filter: ' . $outletId);
-                }
+                // Apply filters - Filter outlet hanya untuk dropdown karyawan, bukan untuk report
                 if (!empty($divisionId)) {
                     $sub->where('u.division_id', $divisionId);
                     \Log::info('Applied division filter: ' . $divisionId);
@@ -1660,7 +1615,7 @@ class AttendanceReportController extends Controller
                 \Log::info('Starting data processing step 1: Grouping scans...');
                 $processedData = [];
                 
-                // Step 1: Kelompokkan scan berdasarkan user, outlet, dan tanggal
+                // Step 1: Kelompokkan scan berdasarkan user dan tanggal
                 $processedCount = 0;
                 $totalScans = $rawData->count();
                 
@@ -1674,7 +1629,7 @@ class AttendanceReportController extends Controller
                     }
                     
                     $date = date('Y-m-d', strtotime($scan->scan_date));
-                    $key = $scan->user_id . '_' . $scan->id_outlet . '_' . $date;
+                    $key = $scan->user_id . '_' . $date;
                     
                     if (!isset($processedData[$key])) {
                         $processedData[$key] = [
@@ -1682,8 +1637,6 @@ class AttendanceReportController extends Controller
                             'user_id' => $scan->user_id,
                             'nama_lengkap' => $scan->nama_lengkap,
                             'division_id' => $scan->division_id,
-                            'id_outlet' => $scan->id_outlet,
-                            'nama_outlet' => $scan->nama_outlet,
                             'scans' => []
                         ];
                     }
@@ -1734,22 +1687,22 @@ class AttendanceReportController extends Controller
                     
                     if ($jamMasuk) {
                         // Cari scan keluar di hari yang sama
-                        $sameDayOut = $outScans->where('scan_date', '>', $jamMasuk)->first();
+                        $sameDayOuts = $outScans->where('scan_date', '>', $jamMasuk);
                         
-                        if ($sameDayOut) {
-                            $jamKeluar = $sameDayOut['scan_date'];
+                    if ($sameDayOuts->isNotEmpty()) {
+                        $jamKeluar = $sameDayOuts->last()['scan_date'];
                             $isCrossDay = false;
                         } else {
                             // Cari scan keluar di hari berikutnya
                             $nextDay = date('Y-m-d', strtotime($data['tanggal'] . ' +1 day'));
-                            $nextDayKey = $data['user_id'] . '_' . $data['id_outlet'] . '_' . $nextDay;
+                            $nextDayKey = $data['user_id'] . '_' . $nextDay;
                             
                             if (isset($processedData[$nextDayKey])) {
                                 $nextDayScans = collect($processedData[$nextDayKey]['scans'])->sortBy('scan_date');
-                                $nextDayOut = $nextDayScans->where('inoutmode', 2)->first();
+                                $nextDayOuts = $nextDayScans->where('inoutmode', 2);
                                 
-                                if ($nextDayOut) {
-                                    $jamKeluar = $nextDayOut['scan_date'];
+                            if ($nextDayOuts->isNotEmpty()) {
+                                $jamKeluar = $nextDayOuts->last()['scan_date'];
                                     $isCrossDay = true;
                                     $totalKeluar = 1;
                                 }
@@ -1762,8 +1715,6 @@ class AttendanceReportController extends Controller
                         'user_id' => $data['user_id'],
                         'nama_lengkap' => $data['nama_lengkap'],
                         'division_id' => $data['division_id'],
-                        'id_outlet' => $data['id_outlet'],
-                        'nama_outlet' => $data['nama_outlet'],
                         'jam_masuk' => $jamMasuk,
                         'jam_keluar' => $jamKeluar,
                         'total_masuk' => $totalMasuk,
@@ -2187,16 +2138,11 @@ class AttendanceReportController extends Controller
                         'a.inoutmode',
                         'u.id as user_id',
                         'u.nama_lengkap',
-                        'u.division_id',
-                        'o.id_outlet',
-                        'o.nama_outlet'
+                        'u.division_id'
                     )
                     ->whereBetween(DB::raw('DATE(a.scan_date)'), [$start, $end]);
 
-                // Apply filters
-                if (!empty($outletId)) {
-                    $sub->where('o.id_outlet', $outletId);
-                }
+                // Apply filters - Filter outlet hanya untuk dropdown karyawan, bukan untuk report
                 if (!empty($divisionId)) {
                     $sub->where('u.division_id', $divisionId);
                 }
@@ -2211,7 +2157,7 @@ class AttendanceReportController extends Controller
                 $processedData = [];
                 foreach ($rawData as $scan) {
                     $date = date('Y-m-d', strtotime($scan->scan_date));
-                    $key = $scan->user_id . '_' . $scan->id_outlet . '_' . $date;
+                    $key = $scan->user_id . '_' . $date;
                     
                     if (!isset($processedData[$key])) {
                         $processedData[$key] = [
@@ -2219,8 +2165,6 @@ class AttendanceReportController extends Controller
                             'user_id' => $scan->user_id,
                             'nama_lengkap' => $scan->nama_lengkap,
                             'division_id' => $scan->division_id,
-                            'id_outlet' => $scan->id_outlet,
-                            'nama_outlet' => $scan->nama_outlet,
                             'scans' => []
                         ];
                     }
@@ -2242,21 +2186,21 @@ class AttendanceReportController extends Controller
                     $isCrossDay = false;
                     
                     if ($jamMasuk) {
-                        $sameDayOut = $outScans->where('scan_date', '>', $jamMasuk)->first();
+                        $sameDayOuts = $outScans->where('scan_date', '>', $jamMasuk);
                         
-                        if ($sameDayOut) {
-                            $jamKeluar = $sameDayOut['scan_date'];
+                    if ($sameDayOuts->isNotEmpty()) {
+                        $jamKeluar = $sameDayOuts->last()['scan_date'];
                             $isCrossDay = false;
                         } else {
                             $nextDay = date('Y-m-d', strtotime($data['tanggal'] . ' +1 day'));
-                            $nextDayKey = $data['user_id'] . '_' . $data['id_outlet'] . '_' . $nextDay;
+                            $nextDayKey = $data['user_id'] . '_' . $nextDay;
                             
                             if (isset($processedData[$nextDayKey])) {
                                 $nextDayScans = collect($processedData[$nextDayKey]['scans'])->sortBy('scan_date');
-                                $nextDayOut = $nextDayScans->where('inoutmode', 2)->first();
+                                $nextDayOuts = $nextDayScans->where('inoutmode', 2);
                                 
-                                if ($nextDayOut) {
-                                    $jamKeluar = $nextDayOut['scan_date'];
+                            if ($nextDayOuts->isNotEmpty()) {
+                                $jamKeluar = $nextDayOuts->last()['scan_date'];
                                     $isCrossDay = true;
                                 }
                             }
@@ -2268,8 +2212,6 @@ class AttendanceReportController extends Controller
                         'user_id' => $data['user_id'],
                         'nama_lengkap' => $data['nama_lengkap'],
                         'division_id' => $data['division_id'],
-                        'id_outlet' => $data['id_outlet'],
-                        'nama_outlet' => $data['nama_outlet'],
                         'jam_masuk' => $jamMasuk,
                         'jam_keluar' => $jamKeluar,
                         'is_cross_day' => $isCrossDay
@@ -2321,13 +2263,25 @@ class AttendanceReportController extends Controller
                     });
 
                 foreach ($dataRows as $row) {
-                    $jam_masuk = $row['jam_masuk'] ? date('H:i:s', strtotime($row['jam_masuk'])) : null;
-                    $jam_keluar = $row['jam_keluar'] ? date('H:i:s', strtotime($row['jam_keluar'])) : null;
+                    // Fix: Pastikan data jam_masuk dan jam_keluar tidak null
+                    $jam_masuk = !empty($row['jam_masuk']) ? date('H:i:s', strtotime($row['jam_masuk'])) : null;
+                    $jam_keluar = !empty($row['jam_keluar']) ? date('H:i:s', strtotime($row['jam_keluar'])) : null;
                     $telat = 0;
                     $lembur = 0;
                     
                     $shiftKey = $row['user_id'] . '_' . $row['tanggal'] . '_' . $row['id_outlet'];
                     $shift = $allShiftData->get($shiftKey, collect())->first();
+                    
+                    // Debug: Log jika data kosong
+                    if (empty($jam_masuk) && empty($jam_keluar)) {
+                        \Log::warning('Empty attendance data for user:', [
+                            'user_id' => $row['user_id'],
+                            'tanggal' => $row['tanggal'],
+                            'id_outlet' => $row['id_outlet'],
+                            'raw_jam_masuk' => $row['jam_masuk'] ?? 'null',
+                            'raw_jam_keluar' => $row['jam_keluar'] ?? 'null'
+                        ]);
+                    }
 
                     if ($shift) {
                         if ($shift->time_start && $jam_masuk) {
@@ -2346,18 +2300,30 @@ class AttendanceReportController extends Controller
                         }
                     }
 
+                    // Debug logging untuk troubleshooting
+                    \Log::info('Processing row for main table:', [
+                        'user_id' => $row['user_id'],
+                        'tanggal' => $row['tanggal'],
+                        'id_outlet' => $row['id_outlet'],
+                        'nama_outlet' => $row['nama_outlet'],
+                        'jam_masuk' => $jam_masuk,
+                        'jam_keluar' => $jam_keluar,
+                        'has_shift' => $shift ? true : false
+                    ]);
+
+                    // Fix: Pastikan data outlet dan jam selalu ada, meskipun kosong
                     $rows->push((object)[
                         'tanggal' => $row['tanggal'],
                         'user_id' => $row['user_id'],
                         'nama_lengkap' => $row['nama_lengkap'],
                         'division_id' => $row['division_id'],
                         'outlet_id' => $row['id_outlet'],
-                        'nama_outlet' => $row['nama_outlet'],
+                        'nama_outlet' => $row['nama_outlet'] ?? 'Unknown Outlet',
                         'jam_masuk' => $jam_masuk,
                         'jam_keluar' => $jam_keluar,
                         'telat' => $telat,
                         'lembur' => $lembur,
-                        'is_cross_day' => $row['is_cross_day'],
+                        'is_cross_day' => $row['is_cross_day'] ?? false,
                     ]);
                 }
 

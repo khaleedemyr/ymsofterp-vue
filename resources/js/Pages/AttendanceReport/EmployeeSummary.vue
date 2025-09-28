@@ -188,7 +188,6 @@ function formatCurrency(num) {
             <thead class="bg-blue-600 text-white">
               <tr>
                 <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">No</th>
-                <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">Outlet</th>
                 <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">NIK</th>
                 <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">Nama Karyawan</th>
                 <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">Jabatan</th>
@@ -208,7 +207,6 @@ function formatCurrency(num) {
               <tr v-for="(row, index) in props.rows" :key="row.user_id" 
                   :class="index % 2 === 0 ? 'bg-white' : 'bg-blue-50'">
                 <td class="px-4 py-3 text-sm text-gray-900 font-medium">{{ index + 1 }}</td>
-                <td class="px-4 py-3 text-sm text-gray-600">{{ row.nama_outlet || '-' }}</td>
                 <td class="px-4 py-3 text-sm text-gray-600 font-mono">{{ row.nik || '-' }}</td>
                 <td class="px-4 py-3 text-sm text-gray-900 font-semibold">{{ row.nama_lengkap }}</td>
                 <td class="px-4 py-3 text-sm text-gray-600">{{ row.jabatan || '-' }}</td>

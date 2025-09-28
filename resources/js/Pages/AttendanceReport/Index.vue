@@ -234,7 +234,6 @@ const exportExcel = () => {
             <tr>
               <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">Tanggal</th>
               <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">Nama Karyawan</th>
-              <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">Outlet</th>
               <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Jam Masuk</th>
               <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Jam Keluar</th>
               <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">IN/OUT</th>
@@ -258,7 +257,6 @@ const exportExcel = () => {
                 <span v-if="!row.is_holiday && row.is_approved_absent && row.approved_absent_name" class="ml-1 text-xs font-semibold">({{ row.approved_absent_name }})</span>
               </td>
               <td class="px-4 py-2 whitespace-nowrap">{{ row.nama_lengkap }}</td>
-              <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-600">{{ row.nama_outlet || '-' }}</td>
               <td class="px-4 py-2 whitespace-nowrap text-center font-mono">
                 <span v-if="row.is_off">OFF</span>
                 <span v-else-if="row.approved_absent" class="text-green-600 font-semibold">
@@ -337,7 +335,6 @@ const exportExcel = () => {
           <table class="w-full divide-y divide-blue-200 mb-4 modal-detail-table">
             <thead>
               <tr>
-                <th class="px-4 py-2 text-left">Outlet</th>
                 <th class="px-4 py-2 text-center">Jam In</th>
                 <th class="px-4 py-2 text-center">Jam Out</th>
                 <th class="px-4 py-2 text-center">Total IN</th>
@@ -345,15 +342,14 @@ const exportExcel = () => {
               </tr>
             </thead>
             <tbody>
-              <tr v-for="(d, i) in detailRows" :key="d.nama_outlet">
-                <td class="px-4 py-2 whitespace-nowrap">{{ d.nama_outlet }}</td>
+              <tr v-for="(d, i) in detailRows" :key="i">
                 <td class="px-4 py-2 whitespace-nowrap text-center font-mono">{{ d.jam_in }}</td>
                 <td class="px-4 py-2 whitespace-nowrap text-center font-mono">{{ d.jam_out }}</td>
                 <td class="px-4 py-2 whitespace-nowrap text-center font-mono text-green-600 font-semibold">{{ d.total_in }}</td>
                 <td class="px-4 py-2 whitespace-nowrap text-center font-mono text-red-600 font-semibold">{{ d.total_out }}</td>
               </tr>
               <tr v-if="!detailRows.length">
-                <td colspan="5" class="text-center py-6 text-gray-400">Tidak ada data</td>
+                <td colspan="4" class="text-center py-6 text-gray-400">Tidak ada data</td>
               </tr>
             </tbody>
           </table>
