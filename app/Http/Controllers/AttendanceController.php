@@ -86,6 +86,7 @@ class AttendanceController extends Controller
                 'id' => $user->id,
                 'nama_lengkap' => $user->nama_lengkap,
                 'id_outlet' => $user->id_outlet,
+                'cuti' => $user->cuti ?? 0, // ✅ FIX: Include cuti balance for saldo cuti
             ]
         ]);
     }

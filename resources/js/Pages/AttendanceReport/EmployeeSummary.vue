@@ -2,6 +2,7 @@
 import { ref, computed } from 'vue'
 import { router } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
+import Swal from 'sweetalert2'
 
 const props = defineProps({
   rows: Array,
@@ -40,15 +41,46 @@ const availableOutlets = computed(() => {
 })
 
 function applyFilter() {
+  // Show loading spinner
+  Swal.fire({
+    title: 'Loading...',
+    text: 'Memproses data absensi karyawan',
+    allowOutsideClick: false,
+    allowEscapeKey: false,
+    showConfirmButton: false,
+    didOpen: () => {
+      Swal.showLoading()
+    }
+  })
+  
   router.get('/attendance-report/employee-summary', {
     outlet_id: outletId.value || '',
     division_id: divisionId.value || '',
     bulan: bulan.value,
     tahun: tahun.value,
-  }, { preserveState: true, replace: true })
+  }, { 
+    preserveState: true, 
+    replace: true,
+    onFinish: () => {
+      // Close loading spinner
+      Swal.close()
+    }
+  })
 }
 
 function exportExcel() {
+  // Show loading spinner
+  Swal.fire({
+    title: 'Exporting...',
+    text: 'Menyiapkan file Excel',
+    allowOutsideClick: false,
+    allowEscapeKey: false,
+    showConfirmButton: false,
+    didOpen: () => {
+      Swal.showLoading()
+    }
+  })
+  
   // Buat URL dengan parameter yang sama seperti filter
   const params = new URLSearchParams({
     outlet_id: outletId.value || '',
@@ -57,8 +89,18 @@ function exportExcel() {
     tahun: tahun.value,
   })
   
-  // Redirect ke URL export
-  window.location.href = `/attendance-report/employee-summary/export?${params.toString()}`
+  // Create a temporary link element to trigger download
+  const link = document.createElement('a')
+  link.href = `/attendance-report/employee-summary/export?${params.toString()}`
+  link.style.display = 'none'
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  
+  // Close loading spinner after a short delay
+  setTimeout(() => {
+    Swal.close()
+  }, 2000)
 }
 
 // Computed untuk total summary
