@@ -1719,6 +1719,11 @@ Route::middleware(['auth'])->group(function () {
     Route::delete('/api/notes/{id}', [App\Http\Controllers\NotesController::class, 'destroy']);
 });
 
+// Birthday API routes
+Route::middleware(['auth'])->group(function () {
+    Route::get('/api/birthdays', [App\Http\Controllers\BirthdayController::class, 'getBirthdays']);
+});
+
 // Locked Budget Food Categories routes
 Route::middleware(['auth'])->group(function () {
     Route::resource('locked-budget-food-categories', App\Http\Controllers\LockedBudgetFoodCategoryController::class);

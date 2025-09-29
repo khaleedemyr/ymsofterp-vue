@@ -4,6 +4,7 @@ import { Head, usePage, router } from '@inertiajs/vue3';
 import AnalogClock from '@/Components/AnalogClock.vue';
 import CalendarWidget from '@/Components/CalendarWidget.vue';
 import NotesWidget from '@/Components/NotesWidget.vue';
+import BirthdayWidget from '@/Components/BirthdayWidget.vue';
 import WeatherIcon from '@/Components/WeatherIcon.vue';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import AnnouncementList from '@/Components/AnnouncementList.vue';
@@ -2693,8 +2694,8 @@ watch(locale, () => {
                     </div>
                 </div>
 
-                <!-- Bottom Section: Clock, Weather, Calendar, Notes, and Announcements -->
-                <div class="flex-1 grid grid-cols-1 lg:grid-cols-5 gap-4 min-h-0 mb-6 items-stretch px-4 md:px-6">
+                <!-- Bottom Section: Clock, Weather, Calendar, Notes, Birthday, and Announcements -->
+                <div class="flex-1 grid grid-cols-1 lg:grid-cols-6 gap-4 min-h-0 mb-6 items-stretch px-4 md:px-6">
                     <!-- Left: Clock and Weather -->
                     <div class="lg:col-span-1 flex flex-col gap-4">
                         <!-- Clock Card -->
@@ -2729,6 +2730,13 @@ watch(locale, () => {
                     <div class="lg:col-span-1 flex">
                         <div class="w-full">
                             <NotesWidget :is-night="isNight" />
+                        </div>
+                    </div>
+
+                    <!-- Birthday Widget -->
+                    <div class="lg:col-span-1 flex">
+                        <div class="w-full">
+                            <BirthdayWidget :is-night="isNight" />
                         </div>
                     </div>
 
