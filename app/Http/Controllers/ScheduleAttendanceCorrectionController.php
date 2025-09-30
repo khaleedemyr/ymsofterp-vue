@@ -16,6 +16,31 @@ use Maatwebsite\Excel\Concerns\WithMapping;
 class ScheduleAttendanceCorrectionController extends Controller
 {
     /**
+     * Calculate payroll period based on date
+     */
+    private function calculatePayrollPeriod($date)
+    {
+        $dateObj = new \DateTime($date);
+        $day = $dateObj->format('d');
+        
+        if ($day >= 26) {
+            // If day >= 26, period is current month 26 to next month 25
+            $periodStart = $dateObj->format('Y-m-26');
+            $periodEnd = $dateObj->modify('+1 month')->format('Y-m-25');
+        } else {
+            // If day < 26, period is previous month 26 to current month 25
+            $periodStart = $dateObj->modify('-1 month')->format('Y-m-26');
+            $periodEnd = $dateObj->modify('+1 month')->format('Y-m-25');
+        }
+        
+        return [
+            'start' => $periodStart,
+            'end' => $periodEnd,
+            'start_formatted' => date('d M Y', strtotime($periodStart)),
+            'end_formatted' => date('d M Y', strtotime($periodEnd))
+        ];
+    }
+    /**
      * Display the correction page
      */
     public function index(Request $request)
@@ -254,8 +279,9 @@ class ScheduleAttendanceCorrectionController extends Controller
         ]);
         
         $scanDate = $request->scan_date;
-        $periodStart = date('Y-m-26', strtotime($scanDate . ' -1 month'));
-        $periodEnd = date('Y-m-25', strtotime($scanDate));
+        $period = $this->calculatePayrollPeriod($scanDate);
+        $periodStart = $period['start'];
+        $periodEnd = $period['end'];
         
         // Count existing manual attendance requests for this user in current period
         $existingCount = DB::table('schedule_attendance_correction_approvals')
@@ -273,12 +299,7 @@ class ScheduleAttendanceCorrectionController extends Controller
             'can_submit' => $canSubmit,
             'remaining' => $remaining,
             'used' => $existingCount,
-            'period' => [
-                'start' => $periodStart,
-                'end' => $periodEnd,
-                'start_formatted' => date('d M Y', strtotime($periodStart)),
-                'end_formatted' => date('d M Y', strtotime($periodEnd))
-            ]
+            'period' => $period
         ]);
     }
     
@@ -300,10 +321,11 @@ class ScheduleAttendanceCorrectionController extends Controller
         try {
             DB::beginTransaction();
             
-            // Check manual attendance limit (2x per period per user)
-            $scanDate = $request->scan_date;
-            $periodStart = date('Y-m-26', strtotime($scanDate . ' -1 month'));
-            $periodEnd = date('Y-m-25', strtotime($scanDate));
+        // Check manual attendance limit (2x per period per user)
+        $scanDate = $request->scan_date;
+        $period = $this->calculatePayrollPeriod($scanDate);
+        $periodStart = $period['start'];
+        $periodEnd = $period['end'];
             
             // Count existing manual attendance requests for this user in current period
             $existingCount = DB::table('schedule_attendance_correction_approvals')
@@ -314,7 +336,7 @@ class ScheduleAttendanceCorrectionController extends Controller
                 ->count();
                 
             if ($existingCount >= 2) {
-                throw new \Exception('User ini sudah mencapai batas maksimal 2x input absen manual dalam periode ini (26 ' . date('M Y', strtotime($periodStart)) . ' - 25 ' . date('M Y', strtotime($periodEnd)) . '). Silakan coba lagi di periode berikutnya.');
+                throw new \Exception('User ini sudah mencapai batas maksimal 2x input absen manual dalam periode ini (' . $period['start_formatted'] . ' - ' . $period['end_formatted'] . '). Silakan coba lagi di periode berikutnya.');
             }
             
             // Get outlet SN
