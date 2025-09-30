@@ -191,12 +191,26 @@
                 <h3 class="text-sm font-medium" :class="importResults.success ? 'text-green-800' : 'text-red-800'">
                   {{ importResults.message }}
                 </h3>
-                <div v-if="importResults.errors && importResults.errors.length > 0" class="mt-2 text-sm text-red-700">
-                  <ul class="list-disc pl-5 space-y-1">
-                    <li v-for="(error, index) in importResults.errors" :key="index">
-                      Row {{ error.row }}: {{ error.error }}
-                    </li>
-                  </ul>
+                <div v-if="importResults.errors && importResults.errors.length > 0" class="mt-3">
+                  <div class="bg-red-50 border border-red-200 rounded-md p-3">
+                    <div class="flex items-center mb-2">
+                      <i class="fas fa-exclamation-triangle text-red-500 mr-2"></i>
+                      <span class="text-sm font-medium text-red-800">
+                        {{ importResults.errors.length }} error ditemukan:
+                      </span>
+                    </div>
+                    <div class="max-h-40 overflow-y-auto">
+                      <ul class="space-y-2">
+                        <li v-for="(error, index) in importResults.errors" :key="index" 
+                            class="flex items-start text-sm">
+                          <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800 mr-2 flex-shrink-0">
+                            Row {{ error.row }}
+                          </span>
+                          <span class="text-red-700">{{ error.error }}</span>
+                        </li>
+                      </ul>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>

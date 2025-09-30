@@ -27,8 +27,16 @@ class OutletStockBalanceImport implements ToCollection, WithHeadingRow, WithVali
                 if (collect($row)->filter()->isEmpty()) continue;
                 try {
                     // Validasi data
-                    if (empty($row['sku']) || empty($row['name']) || empty($row['small_unit']) || empty($row['outlet']) || !isset($row['quantity']) || !isset($row['cost'])) {
-                        throw new \Exception('Semua field wajib diisi kecuali Notes');
+                    $missingFields = [];
+                    if (empty($row['sku'])) $missingFields[] = 'SKU';
+                    if (empty($row['name'])) $missingFields[] = 'Name';
+                    if (empty($row['small_unit'])) $missingFields[] = 'Small Unit';
+                    if (empty($row['outlet'])) $missingFields[] = 'Outlet';
+                    if (!isset($row['quantity']) || $row['quantity'] === '') $missingFields[] = 'Quantity';
+                    if (!isset($row['cost']) || $row['cost'] === '') $missingFields[] = 'Cost';
+                    
+                    if (!empty($missingFields)) {
+                        throw new \Exception('Field wajib diisi: ' . implode(', ', $missingFields));
                     }
                     // Cek item
                     $item = Item::where('sku', $row['sku'])
@@ -38,15 +46,43 @@ class OutletStockBalanceImport implements ToCollection, WithHeadingRow, WithVali
                             $query->where('show_pos', '0');
                         })
                         ->first();
-                    if (!$item) throw new \Exception('Item tidak ditemukan atau tidak aktif');
+                    if (!$item) {
+                        // Cek apakah item ada tapi tidak aktif
+                        $inactiveItem = Item::where('sku', $row['sku'])
+                            ->where('name', $row['name'])
+                            ->first();
+                        if ($inactiveItem) {
+                            throw new \Exception("Item '{$row['name']}' (SKU: {$row['sku']}) ditemukan tapi status tidak aktif");
+                        } else {
+                            throw new \Exception("Item '{$row['name']}' (SKU: {$row['sku']}) tidak ditemukan dalam database");
+                        }
+                    }
                     // Cek outlet
                     $outlet = Outlet::where('nama_outlet', $row['outlet'])
                         ->where('status', 'A')
                         ->first();
-                    if (!$outlet) throw new \Exception('Outlet tidak ditemukan atau tidak aktif');
+                    if (!$outlet) {
+                        // Cek apakah outlet ada tapi tidak aktif
+                        $inactiveOutlet = Outlet::where('nama_outlet', $row['outlet'])->first();
+                        if ($inactiveOutlet) {
+                            throw new \Exception("Outlet '{$row['outlet']}' ditemukan tapi status tidak aktif");
+                        } else {
+                            throw new \Exception("Outlet '{$row['outlet']}' tidak ditemukan dalam database");
+                        }
+                    }
                     // Validasi quantity dan cost
-                    if (!is_numeric($row['quantity'])) throw new \Exception('Quantity harus berupa angka');
-                    if (!is_numeric($row['cost']) || $row['cost'] < 0) throw new \Exception('Cost harus berupa angka positif');
+                    if (!is_numeric($row['quantity'])) {
+                        throw new \Exception("Quantity '{$row['quantity']}' harus berupa angka");
+                    }
+                    if (!is_numeric($row['cost'])) {
+                        throw new \Exception("Cost '{$row['cost']}' harus berupa angka");
+                    }
+                    if ($row['cost'] < 0) {
+                        throw new \Exception("Cost '{$row['cost']}' tidak boleh negatif");
+                    }
+                    if ($row['quantity'] < 0) {
+                        throw new \Exception("Quantity '{$row['quantity']}' tidak boleh negatif");
+                    }
                     // === INVENTORY LOGIC ===
                     // 1. Cek/insert outlet_food_inventory_items
                     $inventoryItem = DB::table('outlet_food_inventory_items')

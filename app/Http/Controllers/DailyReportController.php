@@ -28,7 +28,10 @@ class DailyReportController extends Controller
     public function index(Request $request)
     {
         $search = $request->get('search', '');
+        $creator = $request->get('creator', '');
         $status = $request->get('status', 'all');
+        $dateFrom = $request->get('date_from', '');
+        $dateTo = $request->get('date_to', '');
         $perPage = $request->get('per_page', 15);
 
             $query = DailyReport::with(['outlet', 'department', 'user.jabatan', 'reportAreas', 'comments.user.jabatan']);
@@ -39,6 +42,20 @@ class DailyReportController extends Controller
             })->orWhereHas('department', function($q) use ($search) {
                 $q->where('nama_departemen', 'like', "%{$search}%");
             });
+        }
+
+        if ($creator) {
+            $query->whereHas('user', function($q) use ($creator) {
+                $q->where('nama_lengkap', 'like', "%{$creator}%");
+            });
+        }
+
+        if ($dateFrom) {
+            $query->whereDate('created_at', '>=', $dateFrom);
+        }
+
+        if ($dateTo) {
+            $query->whereDate('created_at', '<=', $dateTo);
         }
 
         if ($status !== 'all') {
@@ -64,7 +81,10 @@ class DailyReportController extends Controller
             'data' => $reports,
             'filters' => [
                 'search' => $search,
+                'creator' => $creator,
                 'status' => $status,
+                'date_from' => $dateFrom,
+                'date_to' => $dateTo,
                 'per_page' => $perPage,
             ],
             'statistics' => $statistics,

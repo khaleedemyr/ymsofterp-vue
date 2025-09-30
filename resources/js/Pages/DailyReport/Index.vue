@@ -27,7 +27,10 @@ const props = defineProps({
 });
 
 const search = ref(props.filters?.search || '');
+const creator = ref(props.filters?.creator || '');
 const status = ref(props.filters?.status || 'all');
+const dateFrom = ref(props.filters?.date_from || '');
+const dateTo = ref(props.filters?.date_to || '');
 const perPage = ref(props.filters?.per_page || 15);
 
 // Lightbox functionality
@@ -52,7 +55,10 @@ const summaryFilters = ref({
 const debouncedSearch = debounce(() => {
   router.get('/daily-report', {
     search: search.value,
+    creator: creator.value,
     status: status.value,
+    date_from: dateFrom.value,
+    date_to: dateTo.value,
     per_page: perPage.value,
   }, { preserveState: true, replace: true });
 }, 400);
@@ -61,11 +67,59 @@ function onSearchInput() {
   debouncedSearch();
 }
 
+function onCreatorInput() {
+  debouncedSearch();
+}
+
+function onDateInput() {
+  // Validate date range
+  if (dateFrom.value && dateTo.value && dateFrom.value > dateTo.value) {
+    // Swap dates if from date is after to date
+    const temp = dateFrom.value;
+    dateFrom.value = dateTo.value;
+    dateTo.value = temp;
+  }
+  debouncedSearch();
+}
+
+function clearDateFilters() {
+  dateFrom.value = '';
+  dateTo.value = '';
+  debouncedSearch();
+}
+
+function setDateRange(range) {
+  const today = new Date();
+  const todayStr = today.toISOString().split('T')[0];
+  
+  switch (range) {
+    case 'today':
+      dateFrom.value = todayStr;
+      dateTo.value = todayStr;
+      break;
+    case 'week':
+      const weekStart = new Date(today);
+      weekStart.setDate(today.getDate() - today.getDay());
+      dateFrom.value = weekStart.toISOString().split('T')[0];
+      dateTo.value = todayStr;
+      break;
+    case 'month':
+      const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+      dateFrom.value = monthStart.toISOString().split('T')[0];
+      dateTo.value = todayStr;
+      break;
+  }
+  debouncedSearch();
+}
+
 function goToPage(url) {
   if (url) {
     const urlObj = new URL(url);
     urlObj.searchParams.set('search', search.value);
+    urlObj.searchParams.set('creator', creator.value);
     urlObj.searchParams.set('status', status.value);
+    urlObj.searchParams.set('date_from', dateFrom.value);
+    urlObj.searchParams.set('date_to', dateTo.value);
     urlObj.searchParams.set('per_page', perPage.value);
     
     router.visit(urlObj.toString(), { preserveState: true, replace: true });
@@ -461,7 +515,10 @@ function getCommentCountText(report) {
 watch([status, perPage], () => {
   router.get('/daily-report', {
     search: search.value,
+    creator: creator.value,
     status: status.value,
+    date_from: dateFrom.value,
+    date_to: dateTo.value,
     per_page: perPage.value,
   }, { preserveState: true, replace: true });
 });
@@ -525,7 +582,7 @@ watch([status, perPage], () => {
       </div>
 
       <!-- Filters -->
-      <div class="mb-4 flex gap-4 items-center">
+      <div class="mb-4 flex gap-4 items-center flex-wrap">
         <select v-model="status" class="form-input rounded-xl">
           <option value="all">Semua Status</option>
           <option value="draft">Draft</option>
@@ -540,13 +597,92 @@ watch([status, perPage], () => {
           <option value="100">100 per halaman</option>
         </select>
         
-        <input
-          v-model="search"
-          @input="onSearchInput"
-          type="text"
-          placeholder="Cari outlet, department..."
-          class="flex-1 px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition"
-        />
+        <div class="relative flex-1 min-w-64">
+          <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+            <i class="fas fa-search text-blue-500"></i>
+          </div>
+          <input
+            v-model="search"
+            @input="onSearchInput"
+            type="text"
+            placeholder="Cari outlet, department..."
+            class="w-full pl-10 pr-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition"
+          />
+        </div>
+        
+        <div class="relative flex-1 min-w-48">
+          <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+            <i class="fas fa-user text-green-500"></i>
+          </div>
+          <input
+            v-model="creator"
+            @input="onCreatorInput"
+            type="text"
+            placeholder="Cari creator..."
+            class="w-full pl-10 pr-4 py-2 rounded-xl border border-green-200 shadow focus:ring-2 focus:ring-green-400 focus:border-green-400 transition"
+          />
+        </div>
+      </div>
+
+      <!-- Date Range Filters -->
+      <div class="mb-4 flex gap-4 items-center flex-wrap">
+        <div class="flex flex-col">
+          <label class="text-sm font-medium text-gray-700 mb-1">Dari Tanggal</label>
+          <div class="relative">
+            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <i class="fas fa-calendar-alt text-purple-500"></i>
+            </div>
+            <input
+              v-model="dateFrom"
+              @input="onDateInput"
+              type="date"
+              class="pl-10 pr-4 py-2 rounded-xl border border-purple-200 shadow focus:ring-2 focus:ring-purple-400 focus:border-purple-400 transition"
+            />
+          </div>
+        </div>
+        
+        <div class="flex flex-col">
+          <label class="text-sm font-medium text-gray-700 mb-1">Sampai Tanggal</label>
+          <div class="relative">
+            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <i class="fas fa-calendar-alt text-purple-500"></i>
+            </div>
+            <input
+              v-model="dateTo"
+              @input="onDateInput"
+              type="date"
+              class="pl-10 pr-4 py-2 rounded-xl border border-purple-200 shadow focus:ring-2 focus:ring-purple-400 focus:border-purple-400 transition"
+            />
+          </div>
+        </div>
+        
+        <div class="flex gap-2">
+          <button
+            @click="setDateRange('today')"
+            class="px-3 py-2 bg-blue-500 text-white rounded-lg shadow hover:bg-blue-600 transition-all duration-300 text-sm"
+          >
+            Hari Ini
+          </button>
+          <button
+            @click="setDateRange('week')"
+            class="px-3 py-2 bg-blue-500 text-white rounded-lg shadow hover:bg-blue-600 transition-all duration-300 text-sm"
+          >
+            Minggu Ini
+          </button>
+          <button
+            @click="setDateRange('month')"
+            class="px-3 py-2 bg-blue-500 text-white rounded-lg shadow hover:bg-blue-600 transition-all duration-300 text-sm"
+          >
+            Bulan Ini
+          </button>
+          <button
+            @click="clearDateFilters"
+            class="px-3 py-2 bg-gray-500 text-white rounded-lg shadow hover:bg-gray-600 transition-all duration-300 text-sm flex items-center gap-1"
+          >
+            <i class="fas fa-times"></i>
+            Clear
+          </button>
+        </div>
         
         <!-- Summary Rating Button -->
         <button

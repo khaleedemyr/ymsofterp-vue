@@ -32,9 +32,16 @@ class FoodStockBalanceImport implements ToCollection, WithHeadingRow, WithValida
                 }
                 try {
                     // Validasi data
-                    if (empty($row['sku']) || empty($row['name']) || empty($row['small_unit']) || 
-                        empty($row['warehouse']) || !isset($row['quantity']) || !isset($row['cost'])) {
-                        throw new \Exception('Semua field wajib diisi kecuali Notes');
+                    $missingFields = [];
+                    if (empty($row['sku'])) $missingFields[] = 'SKU';
+                    if (empty($row['name'])) $missingFields[] = 'Name';
+                    if (empty($row['small_unit'])) $missingFields[] = 'Small Unit';
+                    if (empty($row['warehouse'])) $missingFields[] = 'Warehouse';
+                    if (!isset($row['quantity']) || $row['quantity'] === '') $missingFields[] = 'Quantity';
+                    if (!isset($row['cost']) || $row['cost'] === '') $missingFields[] = 'Cost';
+                    
+                    if (!empty($missingFields)) {
+                        throw new \Exception('Field wajib diisi: ' . implode(', ', $missingFields));
                     }
 
                     // Cek item
@@ -46,7 +53,15 @@ class FoodStockBalanceImport implements ToCollection, WithHeadingRow, WithValida
                         })
                         ->first();
                     if (!$item) {
-                        throw new \Exception('Item tidak ditemukan atau tidak aktif');
+                        // Cek apakah item ada tapi tidak aktif
+                        $inactiveItem = Item::where('sku', $row['sku'])
+                            ->where('name', $row['name'])
+                            ->first();
+                        if ($inactiveItem) {
+                            throw new \Exception("Item '{$row['name']}' (SKU: {$row['sku']}) ditemukan tapi status tidak aktif");
+                        } else {
+                            throw new \Exception("Item '{$row['name']}' (SKU: {$row['sku']}) tidak ditemukan dalam database");
+                        }
                     }
 
                     // Cek warehouse
@@ -54,15 +69,27 @@ class FoodStockBalanceImport implements ToCollection, WithHeadingRow, WithValida
                         ->where('status', 'active')
                         ->first();
                     if (!$warehouse) {
-                        throw new \Exception('Gudang tidak ditemukan atau tidak aktif');
+                        // Cek apakah warehouse ada tapi tidak aktif
+                        $inactiveWarehouse = Warehouse::where('name', $row['warehouse'])->first();
+                        if ($inactiveWarehouse) {
+                            throw new \Exception("Warehouse '{$row['warehouse']}' ditemukan tapi status tidak aktif");
+                        } else {
+                            throw new \Exception("Warehouse '{$row['warehouse']}' tidak ditemukan dalam database");
+                        }
                     }
 
                     // Validasi quantity dan cost
                     if (!is_numeric($row['quantity'])) {
-                        throw new \Exception('Quantity harus berupa angka');
+                        throw new \Exception("Quantity '{$row['quantity']}' harus berupa angka");
                     }
-                    if (!is_numeric($row['cost']) || $row['cost'] < 0) {
-                        throw new \Exception('Cost harus berupa angka positif');
+                    if (!is_numeric($row['cost'])) {
+                        throw new \Exception("Cost '{$row['cost']}' harus berupa angka");
+                    }
+                    if ($row['cost'] < 0) {
+                        throw new \Exception("Cost '{$row['cost']}' tidak boleh negatif");
+                    }
+                    if ($row['quantity'] < 0) {
+                        throw new \Exception("Quantity '{$row['quantity']}' tidak boleh negatif");
                     }
 
                     // === INVENTORY LOGIC ===
