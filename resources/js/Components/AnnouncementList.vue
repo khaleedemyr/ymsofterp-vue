@@ -55,8 +55,18 @@
               <h4 class="font-medium text-sm line-clamp-1" :class="isNight ? 'text-white' : 'text-slate-900'">
                 {{ announcement.title }}
               </h4>
-              <div class="flex items-center gap-1 mt-1">
-                <i class="fas fa-user text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-400'"></i>
+              <div class="flex items-center gap-2 mt-1">
+                <!-- Avatar User Pembuat -->
+                <div v-if="announcement.creator_avatar" class="w-5 h-5 rounded-full overflow-hidden flex-shrink-0 cursor-pointer hover:scale-110 transition-transform" @click="openAvatarLightbox(`/storage/${announcement.creator_avatar}`)">
+                  <img 
+                    :src="`/storage/${announcement.creator_avatar}`" 
+                    :alt="announcement.creator_name"
+                    class="w-full h-full object-cover"
+                  />
+                </div>
+                <div v-else class="w-5 h-5 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+                  {{ getInitials(announcement.creator_name) }}
+                </div>
                 <span class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
                   {{ announcement.creator_name || 'Unknown' }}
                 </span>
@@ -103,12 +113,21 @@
       </div>
     </div>
   </div>
+
+  <!-- Lightbox for Avatar Images -->
+  <VueEasyLightbox
+    :visible="lightboxVisible"
+    :imgs="lightboxImages"
+    :index="lightboxIndex"
+    @hide="lightboxVisible = false"
+  />
 </template>
 
 <script setup>
 import { ref, onMounted } from 'vue'
 import { router, Link } from '@inertiajs/vue3'
 import axios from 'axios'
+import VueEasyLightbox from 'vue-easy-lightbox'
 
 const props = defineProps({
   isNight: {
@@ -121,6 +140,11 @@ const emit = defineEmits(['show-all'])
 
 const announcements = ref([])
 const loading = ref(true)
+
+// Lightbox state
+const lightboxVisible = ref(false)
+const lightboxImages = ref([])
+const lightboxIndex = ref(0)
 
 // Fetch user announcements
 const fetchAnnouncements = async () => {
@@ -148,6 +172,25 @@ const getTargetNames = (targets) => {
   } else {
     return `${names.slice(0, 2).join(', ')} dan ${names.length - 2} lainnya`
   }
+}
+
+// Get initials from name
+const getInitials = (name) => {
+  if (!name) return 'U'
+  
+  const words = name.trim().split(' ')
+  if (words.length === 1) {
+    return words[0].charAt(0).toUpperCase()
+  } else {
+    return (words[0].charAt(0) + words[words.length - 1].charAt(0)).toUpperCase()
+  }
+}
+
+// Open avatar lightbox
+const openAvatarLightbox = (imageUrl) => {
+  lightboxImages.value = [imageUrl]
+  lightboxIndex.value = 0
+  lightboxVisible.value = true
 }
 
 // View announcement detail

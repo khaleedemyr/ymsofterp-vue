@@ -2,10 +2,16 @@
 import AppLayout from '@/Layouts/AppLayout.vue'
 import { Head, Link } from '@inertiajs/vue3'
 import { ref, onMounted } from 'vue'
+import VueEasyLightbox from 'vue-easy-lightbox'
 
 const props = defineProps({
   announcement: Object,
 })
+
+// Lightbox state
+const lightboxVisible = ref(false)
+const lightboxImages = ref([])
+const lightboxIndex = ref(0)
 
 function formatDate(dateStr) {
   if (!dateStr) return '-';
@@ -31,6 +37,25 @@ function getTargetIcon(targetType) {
   };
   return icons[targetType] || 'fa fa-users';
 }
+
+// Get initials from name
+function getInitials(name) {
+  if (!name) return 'U'
+  
+  const words = name.trim().split(' ')
+  if (words.length === 1) {
+    return words[0].charAt(0).toUpperCase()
+  } else {
+    return (words[0].charAt(0) + words[words.length - 1].charAt(0)).toUpperCase()
+  }
+}
+
+// Open avatar lightbox
+function openAvatarLightbox(imageUrl) {
+  lightboxImages.value = [imageUrl]
+  lightboxIndex.value = 0
+  lightboxVisible.value = true
+}
 </script>
 
 <template>
@@ -55,7 +80,17 @@ function getTargetIcon(targetType) {
               <h1 class="text-2xl font-bold">{{ announcement?.title }}</h1>
               <div class="flex items-center gap-4 mt-2">
                 <div class="flex items-center gap-2">
-                  <i class="fa fa-user text-blue-200"></i>
+                  <!-- Avatar User Pembuat -->
+                  <div v-if="announcement?.creator_avatar" class="w-6 h-6 rounded-full overflow-hidden cursor-pointer hover:scale-110 transition-transform" @click="openAvatarLightbox(`/storage/${announcement.creator_avatar}`)">
+                    <img 
+                      :src="`/storage/${announcement.creator_avatar}`" 
+                      :alt="announcement.creator_name"
+                      class="w-full h-full object-cover"
+                    />
+                  </div>
+                  <div v-else class="w-6 h-6 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-xs font-bold">
+                    {{ getInitials(announcement?.creator_name) }}
+                  </div>
                   <span class="text-blue-100">{{ announcement?.creator_name || 'Unknown' }}</span>
                 </div>
                 <div class="flex items-center gap-2">
@@ -135,7 +170,7 @@ function getTargetIcon(targetType) {
       </div>
 
       <!-- Actions -->
-      <div class="mt-8 flex justify-center gap-4">
+      <div class="mt-8 flex justify-center">
         <Link 
           :href="route('home')" 
           class="bg-gray-600 hover:bg-gray-700 text-white px-6 py-3 rounded-xl font-semibold transition-colors"
@@ -143,15 +178,16 @@ function getTargetIcon(targetType) {
           <i class="fa fa-home mr-2"></i>
           Kembali ke Beranda
         </Link>
-        <Link 
-          :href="route('announcement.index')" 
-          class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl font-semibold transition-colors"
-        >
-          <i class="fa fa-list mr-2"></i>
-          Lihat Semua Announcement
-        </Link>
       </div>
     </div>
+
+    <!-- Lightbox for Avatar Images -->
+    <VueEasyLightbox
+      :visible="lightboxVisible"
+      :imgs="lightboxImages"
+      :index="lightboxIndex"
+      @hide="lightboxVisible = false"
+    />
   </AppLayout>
 </template>
 

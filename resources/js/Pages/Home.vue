@@ -3254,7 +3254,7 @@ watch(locale, () => {
                                         </h4>
                                         <div class="flex items-center gap-2 mt-1">
                                             <!-- Avatar User Pembuat -->
-                                            <div v-if="announcement.creator_avatar" class="w-5 h-5 rounded-full overflow-hidden">
+                                            <div v-if="announcement.creator_avatar" class="w-5 h-5 rounded-full overflow-hidden cursor-pointer hover:scale-110 transition-transform" @click="openImageModal(`/storage/${announcement.creator_avatar}`)">
                                                 <img 
                                                     :src="`/storage/${announcement.creator_avatar}`" 
                                                     :alt="announcement.creator_name"
