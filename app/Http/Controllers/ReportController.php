@@ -1431,14 +1431,14 @@ class ReportController extends Controller
                 $manualDiscount = floatval($order->manual_discount_amount ?? 0);
                 
                 // Debug log
-                \Log::info('DEBUG DISCOUNT CALCULATION', [
-                    'order_id' => $order->id,
-                    'nomor' => $order->nomor,
-                    'discount_raw' => $order->discount,
-                    'manual_discount_raw' => $order->manual_discount_amount,
-                    'discount_parsed' => $discount,
-                    'manual_discount_parsed' => $manualDiscount
-                ]);
+              //  \Log::info('DEBUG DISCOUNT CALCULATION', [
+              //      'order_id' => $order->id,
+              //      'nomor' => $order->nomor,
+             //       'discount_raw' => $order->discount,
+              //      'manual_discount_raw' => $order->manual_discount_amount,
+               //     'discount_parsed' => $discount,
+               //     'manual_discount_parsed' => $manualDiscount
+                //]);
                 
                 // Jika keduanya > 0, ambil yang terbesar
                 if ($discount > 0 && $manualDiscount > 0) {
