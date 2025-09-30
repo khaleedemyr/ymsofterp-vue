@@ -15,7 +15,7 @@
           <label class="text-sm">Warehouse Outlet</label>
           <select v-model="selectedWarehouseOutlet" class="border border-gray-300 rounded-lg px-2 py-2 focus:ring-blue-500 focus:border-blue-500">
             <option value="">Semua Warehouse Outlet</option>
-            <option v-for="w in warehouse_outlets" :key="w.id" :value="w.id">{{ w.name }}</option>
+            <option v-for="w in filteredWarehouseOutlets" :key="w.id" :value="w.id">{{ w.name }}</option>
           </select>
         </div>
         <div class="flex items-center gap-2">
@@ -25,8 +25,24 @@
           </select>
           <span class="text-sm">data</span>
         </div>
+        <button @click="reloadData" :disabled="loadingReload" class="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-md font-semibold hover:bg-blue-700">
+          <span v-if="loadingReload" class="animate-spin mr-2"><i class="fas fa-spinner"></i></span>
+          <span v-else class="mr-2"><i class="fas fa-sync-alt"></i></span>
+          Load Data
+        </button>
       </div>
-      <div class="bg-white rounded-xl shadow-lg overflow-hidden">
+      <div v-if="props.error" class="bg-red-50 border-l-4 border-red-400 text-red-800 p-4 rounded my-8 text-center font-semibold">
+        {{ props.error }}
+      </div>
+      <div v-else-if="!hasAnySelection" class="bg-blue-50 border-l-4 border-blue-400 text-blue-800 p-4 rounded my-8 text-center font-semibold">
+        <i class="fas fa-info-circle mr-2"></i>
+        Silakan pilih minimal satu filter (Outlet atau Warehouse Outlet), kemudian klik tombol "Load Data" untuk melihat laporan stok akhir.
+      </div>
+      <div v-else-if="stocks.length === 0" class="bg-yellow-50 border-l-4 border-yellow-400 text-yellow-800 p-4 rounded my-8 text-center font-semibold">
+        <i class="fas fa-exclamation-triangle mr-2"></i>
+        Tidak ada data stok untuk filter yang dipilih. Coba ubah filter atau pilih kombinasi filter yang berbeda.
+      </div>
+      <div v-else class="bg-white rounded-xl shadow-lg overflow-hidden">
         <table class="min-w-full divide-y divide-gray-200">
           <thead class="bg-gray-50">
             <tr>
@@ -81,17 +97,26 @@
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { ref, computed, watch, onMounted } from 'vue';
+import { router } from '@inertiajs/vue3';
+
 const props = defineProps({
   stocks: Array,
   outlets: Array,
   user_outlet_id: [String, Number],
-  warehouse_outlets: Array
+  warehouse_outlets: Array,
+  error: String
 });
 const search = ref('');
 const perPage = ref(25);
 const page = ref(1);
 const selectedOutlet = ref('');
 const selectedWarehouseOutlet = ref('');
+const loadingReload = ref(false);
+
+// Check if user has made any selection
+const hasAnySelection = computed(() => {
+  return selectedOutlet.value || selectedWarehouseOutlet.value;
+});
 
 // Set outlet filter sesuai user saat mount
 onMounted(() => {
@@ -101,6 +126,23 @@ onMounted(() => {
 });
 
 const outletSelectable = computed(() => String(props.user_outlet_id) === '1');
+
+// Filter warehouse outlets based on selected outlet
+const filteredWarehouseOutlets = computed(() => {
+  let warehouseOutlets = props.warehouse_outlets;
+  
+  // Jika bukan superadmin, hanya tampilkan warehouse outlet milik outlet user
+  if (!outletSelectable.value && props.user_outlet_id) {
+    warehouseOutlets = warehouseOutlets.filter(wo => String(wo.outlet_id) === String(props.user_outlet_id));
+  }
+  
+  // Jika outlet dipilih, filter berdasarkan outlet tersebut
+  if (selectedOutlet.value) {
+    warehouseOutlets = warehouseOutlets.filter(wo => String(wo.outlet_id) === String(selectedOutlet.value));
+  }
+  
+  return warehouseOutlets;
+});
 
 const filteredStocks = computed(() => {
   let data = props.stocks;
@@ -130,4 +172,45 @@ function nextPage() {
   if (page.value < totalPages.value) page.value++;
 }
 watch([perPage, search], () => { page.value = 1; });
+
+// Clear warehouse outlet selection when outlet changes
+watch(selectedOutlet, () => {
+  selectedWarehouseOutlet.value = '';
+});
+
+function reloadData() {
+  // Validasi: harus ada minimal satu filter yang dipilih
+  if (!hasAnySelection.value) {
+    alert('Silakan pilih minimal satu filter terlebih dahulu!');
+    return;
+  }
+  
+  loadingReload.value = true
+  
+  // Prepare parameters
+  const params = {
+    outlet_id: selectedOutlet.value || '',
+    warehouse_outlet_id: selectedWarehouseOutlet.value || ''
+  }
+  
+  // Remove empty parameters
+  Object.keys(params).forEach(key => {
+    if (!params[key]) {
+      delete params[key]
+    }
+  })
+  
+  // Make request to server
+  router.get('/outlet-inventory/stock-position', params, {
+    preserveState: true,
+    preserveScroll: true,
+    onSuccess: () => {
+      loadingReload.value = false
+    },
+    onError: (errors) => {
+      loadingReload.value = false
+      console.error('Error loading data:', errors)
+    }
+  })
+}
 </script> 

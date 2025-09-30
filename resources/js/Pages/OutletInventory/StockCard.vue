@@ -53,10 +53,14 @@
           Load Data
         </button>
       </div>
-      <div v-if="!selectedItem" class="bg-yellow-50 border-l-4 border-yellow-400 text-yellow-800 p-4 rounded my-8 text-center font-semibold">
-        Silakan pilih barang terlebih dahulu untuk melihat kartu stok.
+      <div v-if="props.error" class="bg-red-50 border-l-4 border-red-400 text-red-800 p-4 rounded my-8 text-center font-semibold">
+        {{ props.error }}
       </div>
-      <template v-else>
+      <div v-else-if="!selectedItem" class="bg-blue-50 border-l-4 border-blue-400 text-blue-800 p-4 rounded my-8 text-center font-semibold">
+        <i class="fas fa-info-circle mr-2"></i>
+        Silakan pilih outlet, warehouse outlet, barang, dan periode tanggal, kemudian klik tombol "Load Data" untuk melihat kartu stok.
+      </div>
+      <template v-else-if="selectedItem && cards.length > 0">
         <div class="bg-white rounded-xl shadow-lg overflow-hidden">
           <div class="overflow-x-auto">
             <table class="min-w-full divide-y divide-gray-200">
@@ -103,6 +107,10 @@
           </div>
         </div>
       </template>
+      <div v-else-if="selectedItem && cards.length === 0" class="bg-yellow-50 border-l-4 border-yellow-400 text-yellow-800 p-4 rounded my-8 text-center font-semibold">
+        <i class="fas fa-exclamation-triangle mr-2"></i>
+        Tidak ada data kartu stok untuk item yang dipilih. Coba ubah filter outlet, warehouse outlet, atau periode tanggal.
+      </div>
     </div>
   </AppLayout>
 </template>
@@ -110,14 +118,17 @@
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { ref, computed, watch, onMounted } from 'vue';
-import { usePage } from '@inertiajs/vue3';
+import { usePage, router } from '@inertiajs/vue3';
 import Multiselect from 'vue-multiselect';
 import 'vue-multiselect/dist/vue-multiselect.min.css';
 const props = defineProps({
   cards: Array,
   outlets: Array,
   items: Array,
-  warehouse_outlets: Array
+  warehouse_outlets: Array,
+  saldo_awal: Object,
+  error: String,
+  user_outlet_id: Number
 });
 const page = usePage();
 const userOutletId = computed(() => page.props.auth?.user?.id_outlet || '');
@@ -221,8 +232,42 @@ function formatSaldoQty(row) {
   return `${formatNumber(row.saldo_qty_small)} ${row.small_unit_name || ''} | ${formatNumber(row.saldo_qty_medium)} ${row.medium_unit_name || ''} | ${formatNumber(row.saldo_qty_large)} ${row.large_unit_name || ''}`;
 }
 function reloadData() {
+  // Validasi: harus ada item yang dipilih
+  if (!selectedItem.value) {
+    alert('Silakan pilih barang terlebih dahulu!');
+    return;
+  }
+  
   loadingReload.value = true
-  window.location.reload()
+  
+  // Prepare parameters
+  const params = {
+    item_id: selectedItem.value?.id || '',
+    outlet_id: selectedOutlet.value || '',
+    warehouse_outlet_id: selectedWarehouseOutlet.value || '',
+    from: fromDate.value || '',
+    to: toDate.value || ''
+  }
+  
+  // Remove empty parameters
+  Object.keys(params).forEach(key => {
+    if (!params[key]) {
+      delete params[key]
+    }
+  })
+  
+  // Make request to server
+  router.get('/outlet-inventory/stock-card', params, {
+    preserveState: true,
+    preserveScroll: true,
+    onSuccess: () => {
+      loadingReload.value = false
+    },
+    onError: (errors) => {
+      loadingReload.value = false
+      console.error('Error loading data:', errors)
+    }
+  })
 }
 </script>
 
