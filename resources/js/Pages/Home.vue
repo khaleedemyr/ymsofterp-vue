@@ -3254,18 +3254,18 @@ watch(locale, () => {
                                         </h4>
                                         <div class="flex items-center gap-2 mt-1">
                                             <!-- Avatar User Pembuat -->
-                                            <img 
-                                                v-if="announcement.creator_photo" 
-                                                :src="`/storage/${announcement.creator_photo}`" 
-                                                :alt="announcement.creator_name"
-                                                class="w-5 h-5 rounded-full object-cover"
-                                                @error="(e) => e.target.style.display = 'none'"
-                                            />
+                                            <div v-if="announcement.creator_avatar" class="w-5 h-5 rounded-full overflow-hidden">
+                                                <img 
+                                                    :src="`/storage/${announcement.creator_avatar}`" 
+                                                    :alt="announcement.creator_name"
+                                                    class="w-full h-full object-cover"
+                                                />
+                                            </div>
                                             <div 
                                                 v-else 
-                                                class="w-5 h-5 rounded-full bg-gray-300 dark:bg-gray-600 flex items-center justify-center"
+                                                class="w-5 h-5 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-xs font-bold"
                                             >
-                                                <i class="fas fa-user text-xs text-gray-500 dark:text-gray-400"></i>
+                                                {{ getInitials(announcement.creator_name) }}
                                             </div>
                                             <span class="text-xs text-gray-500 dark:text-gray-400">
                                                 {{ announcement.creator_name || 'Unknown' }}

@@ -146,7 +146,7 @@ class AnnouncementController extends Controller
                 'announcements.*',
                 'creators.nama_lengkap as creator_name',
                 'creators.id as creator_id',
-                'creators.photo as creator_photo'
+                'creators.avatar as creator_avatar'
             )
             ->where('announcements.id', $id)
             ->first();
@@ -307,7 +307,7 @@ class AnnouncementController extends Controller
                 'announcements.*',
                 'creators.nama_lengkap as creator_name',
                 'creators.id as creator_id',
-                'creators.photo as creator_photo'
+                'creators.avatar as creator_avatar'
             )
             ->where('announcements.status', 'Publish')
             ->whereExists(function ($query) use ($userId, $userJabatan, $userDivisi, $userLevel, $userOutlet) {
