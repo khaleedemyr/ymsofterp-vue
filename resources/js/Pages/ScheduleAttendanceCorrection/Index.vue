@@ -260,8 +260,15 @@ async function submitManualAttendance() {
   submittingCorrection.value = true;
   
   try {
+    // Convert date format from MM/DD/YYYY to YYYY-MM-DD if needed
+    let scanDate = manualAttendanceForm.value.scanDate;
+    if (scanDate.includes('/')) {
+      const [month, day, year] = scanDate.split('/');
+      scanDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+    }
+    
     // Combine date and time
-    const scanDateTime = `${manualAttendanceForm.value.scanDate} ${manualAttendanceForm.value.scanTime}:00`;
+    const scanDateTime = `${scanDate} ${manualAttendanceForm.value.scanTime}:00`;
     
     const payload = {
       user_id: selectedEmployee.value.id,
@@ -421,15 +428,29 @@ async function checkManualAttendanceLimit() {
   
   checkingLimit.value = true;
   try {
+    // Convert date format from MM/DD/YYYY to YYYY-MM-DD if needed
+    let scanDate = manualAttendanceForm.value.scanDate;
+    if (scanDate.includes('/')) {
+      const [month, day, year] = scanDate.split('/');
+      scanDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+    }
+    
+    
     const response = await axios.get('/api/schedule-attendance-correction/check-manual-limit', {
       params: {
         user_id: selectedEmployee.value.id,
-        scan_date: manualAttendanceForm.value.scanDate
+        scan_date: scanDate
       }
     });
     
     if (response.data.success) {
-      manualAttendanceLimit.value = response.data;
+      // Map snake_case to camelCase
+      manualAttendanceLimit.value = {
+        canSubmit: response.data.can_submit,
+        remaining: response.data.remaining,
+        used: response.data.used,
+        period: response.data.period
+      };
     }
   } catch (error) {
     console.error('Error checking manual attendance limit:', error);
