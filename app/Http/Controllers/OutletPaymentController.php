@@ -639,11 +639,12 @@ class OutletPaymentController extends Controller
         $outletId = $request->input('outlet_id');
         $dateFrom = $request->input('date_from');
         $dateTo = $request->input('date_to');
-
+        $perPage = $request->input('per_page', 100); // Default 100, bisa disesuaikan
         \Log::info('DEBUG: getRetailSalesList called', [
             'outlet_id' => $outletId,
             'date_from' => $dateFrom,
-            'date_to' => $dateTo
+            'date_to' => $dateTo,
+            'per_page' => $perPage
         ]);
 
         // Debug: Check customers with id_outlet
@@ -658,26 +659,76 @@ class OutletPaymentController extends Controller
             'customers' => $customersWithOutlet->toArray()
         ]);
 
-        // Debug: Check retail sales with completed status
-        $allRetailSales = DB::table('retail_warehouse_sales')
-            ->where('status', 'completed')
-            ->select('id', 'number', 'customer_id', 'sale_date', 'status')
-            ->limit(10)
+        // Debug: Check ALL retail sales for this outlet and date range
+        $allRetailSalesForOutlet = DB::table('retail_warehouse_sales as rws')
+            ->join('customers as c', 'rws.customer_id', '=', 'c.id')
+            ->where('c.id_outlet', (string)$outletId)
+            ->where('rws.status', 'completed')
+            ->select('rws.id', 'rws.number', 'rws.customer_id', 'rws.sale_date', 'rws.status', 'c.name as customer_name', 'c.id_outlet')
             ->get();
         
-        \Log::info('DEBUG: All completed retail sales', [
-            'count' => $allRetailSales->count(),
-            'data' => $allRetailSales->toArray()
+        \Log::info('DEBUG: All retail sales for outlet', [
+            'outlet_id' => $outletId,
+            'count' => $allRetailSalesForOutlet->count(),
+            'data' => $allRetailSalesForOutlet->toArray()
+        ]);
+
+        // Debug: Check retail sales with date filter
+        if ($dateFrom && $dateTo) {
+            $retailSalesWithDateFilter = DB::table('retail_warehouse_sales as rws')
+                ->join('customers as c', 'rws.customer_id', '=', 'c.id')
+                ->where('c.id_outlet', (string)$outletId)
+                ->where('rws.status', 'completed')
+                ->whereDate('rws.sale_date', '>=', $dateFrom)
+                ->whereDate('rws.sale_date', '<=', $dateTo)
+                ->select('rws.id', 'rws.number', 'rws.customer_id', 'rws.sale_date', 'rws.status', 'c.name as customer_name', 'c.id_outlet')
+                ->get();
+            
+            \Log::info('DEBUG: Retail sales with date filter', [
+                'outlet_id' => $outletId,
+                'date_from' => $dateFrom,
+                'date_to' => $dateTo,
+                'count' => $retailSalesWithDateFilter->count(),
+                'data' => $retailSalesWithDateFilter->toArray()
+            ]);
+        }
+
+        // Debug: Check if outlet exists in tbl_data_outlet
+        $outletExists = DB::table('tbl_data_outlet')
+            ->where('id_outlet', (string)$outletId)
+            ->first();
+        
+        \Log::info('DEBUG: Outlet exists check', [
+            'outlet_id' => $outletId,
+            'outlet_exists' => $outletExists ? true : false,
+            'outlet_data' => $outletExists
+        ]);
+
+        // Debug: Check customers with outlet_id and their outlet mapping
+        $customersWithOutletMapping = DB::table('customers as c')
+            ->leftJoin('tbl_data_outlet as o', 'c.id_outlet', '=', 'o.id_outlet')
+            ->where('c.id_outlet', (string)$outletId)
+            ->select('c.id', 'c.name', 'c.id_outlet', 'c.type', 'o.id_outlet as outlet_id', 'o.nama_outlet')
+            ->get();
+        
+        \Log::info('DEBUG: Customers with outlet mapping', [
+            'outlet_id' => $outletId,
+            'count' => $customersWithOutletMapping->count(),
+            'data' => $customersWithOutletMapping->toArray()
         ]);
 
         // Build query for Retail Sales list
+        // NOTE: We only show sales to branch customers (where id_outlet matches)
+        // Generic customers (id_outlet = NULL) should not be filtered by outlet
+        // because they don't belong to specific outlet
         $retailQuery = DB::table('retail_warehouse_sales as rws')
             ->join('customers as c', 'rws.customer_id', '=', 'c.id')
-            ->join('tbl_data_outlet as o', 'c.id_outlet', '=', 'o.id_outlet')
+            ->join('tbl_data_outlet as o', 'c.id_outlet', '=', 'o.id_outlet')  // INNER JOIN to only get branch customers
             ->leftJoin('warehouses as w', 'rws.warehouse_id', '=', 'w.id')
             ->leftJoin('warehouse_division as wd', 'rws.warehouse_division_id', '=', 'wd.id')
             ->where('rws.status', 'completed') // Only completed sales that haven't been paid
             ->where('c.id_outlet', (string)$outletId) // Only sales to this outlet (cast to string)
+            ->where('c.type', 'branch') // Only branch customers, not generic customers
             ->select(
                 'rws.id',
                 'rws.number',
@@ -693,25 +744,37 @@ class OutletPaymentController extends Controller
                 'wd.name as division_name'
             );
 
-        // Apply filters
+        // Apply filters - Use created_at instead of sale_date
         if ($dateFrom) {
-            $retailQuery->whereDate('rws.sale_date', '>=', $dateFrom);
+            $retailQuery->whereDate('rws.created_at', '>=', $dateFrom);
         }
         if ($dateTo) {
-            $retailQuery->whereDate('rws.sale_date', '<=', $dateTo);
+            $retailQuery->whereDate('rws.created_at', '<=', $dateTo);
         }
 
+        // Debug: Get raw SQL query
+        $rawSql = $retailQuery->toSql();
+        $rawBindings = $retailQuery->getBindings();
+        
+        \Log::info('DEBUG: Raw SQL Query', [
+            'sql' => $rawSql,
+            'bindings' => $rawBindings
+        ]);
+
         $retailList = $retailQuery->orderBy('rws.sale_date', 'desc')
-            ->limit(50)
-            ->get();
+            ->paginate($perPage);
 
         \Log::info('DEBUG: Retail Sales query result', [
-            'count' => $retailList->count(),
-            'raw_data' => $retailList->toArray()
+            'total' => $retailList->total(),
+            'per_page' => $retailList->perPage(),
+            'current_page' => $retailList->currentPage(),
+            'last_page' => $retailList->lastPage(),
+            'data_count' => $retailList->count(),
+            'raw_data' => $retailList->getCollection()->toArray()
         ]);
 
         // Format data
-        $formattedRetailList = $retailList->map(function($retail) {
+        $formattedRetailList = $retailList->getCollection()->map(function($retail) {
             return (object) [
                 'id' => $retail->id,
                 'number' => $retail->number,
@@ -733,12 +796,23 @@ class OutletPaymentController extends Controller
         \Log::info('DEBUG: Final retail sales response', [
             'success' => true,
             'count' => $formattedRetailList->count(),
-            'data' => $formattedRetailList->toArray()
+            'total' => $retailList->total(),
+            'pagination' => [
+                'current_page' => $retailList->currentPage(),
+                'last_page' => $retailList->lastPage(),
+                'per_page' => $retailList->perPage()
+            ]
         ]);
 
         return response()->json([
             'success' => true,
-            'retailList' => $formattedRetailList
+            'retailList' => $formattedRetailList,
+            'pagination' => [
+                'current_page' => $retailList->currentPage(),
+                'last_page' => $retailList->lastPage(),
+                'per_page' => $retailList->perPage(),
+                'total' => $retailList->total()
+            ]
         ]);
     }
 
