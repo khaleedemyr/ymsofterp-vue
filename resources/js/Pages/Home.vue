@@ -3253,7 +3253,20 @@ watch(locale, () => {
                                             {{ announcement.title }}
                                         </h4>
                                         <div class="flex items-center gap-2 mt-1">
-                                            <i class="fas fa-user text-xs text-gray-400"></i>
+                                            <!-- Avatar User Pembuat -->
+                                            <img 
+                                                v-if="announcement.creator_photo" 
+                                                :src="`/storage/${announcement.creator_photo}`" 
+                                                :alt="announcement.creator_name"
+                                                class="w-5 h-5 rounded-full object-cover"
+                                                @error="(e) => e.target.style.display = 'none'"
+                                            />
+                                            <div 
+                                                v-else 
+                                                class="w-5 h-5 rounded-full bg-gray-300 dark:bg-gray-600 flex items-center justify-center"
+                                            >
+                                                <i class="fas fa-user text-xs text-gray-500 dark:text-gray-400"></i>
+                                            </div>
                                             <span class="text-xs text-gray-500 dark:text-gray-400">
                                                 {{ announcement.creator_name || 'Unknown' }}
                                             </span>
