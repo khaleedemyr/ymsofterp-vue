@@ -2166,6 +2166,24 @@ function formatAnyCorrectionValue(oldValue, newValue, type = 'attendance') {
         return `Dari: ${oldValue} → Ke: ${newValue}`;
     }
     
+    if (type === 'manual_attendance') {
+        // For manual attendance, only newValue exists
+        try {
+            const newData = JSON.parse(newValue);
+            if (newData.scan_date) {
+                const time = new Date(newData.scan_date).toLocaleTimeString('id-ID', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit'
+                });
+                const mode = newData.inoutmode === 1 ? 'Masuk' : 'Keluar';
+                return `Input ${mode}: ${time}`;
+            }
+        } catch (error) {
+            return 'Input Absen Manual';
+        }
+    }
+    
     // Try to parse as JSON for attendance
     try {
         const oldData = JSON.parse(oldValue);
@@ -2562,7 +2580,7 @@ watch(locale, () => {
                                             {{ approval.employee_name }}
                                         </div>
                                         <div class="text-xs" :class="isNight ? 'text-slate-300' : 'text-slate-600'">
-                                            {{ approval.type === 'schedule' ? 'Koreksi Schedule' : 'Koreksi Attendance' }} • {{ approval.nama_outlet }}
+                                            {{ approval.type === 'schedule' ? 'Koreksi Schedule' : approval.type === 'attendance' ? 'Koreksi Attendance' : 'Input Absen Manual' }} • {{ approval.nama_outlet }}
                                         </div>
                                         <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
                                             {{ new Date(approval.tanggal).toLocaleDateString('id-ID') }} • {{ formatCorrectionValue(approval) }}

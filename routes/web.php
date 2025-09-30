@@ -1376,6 +1376,8 @@ Route::middleware(['auth'])->group(function () {
     Route::get('schedule-attendance-correction', [ScheduleAttendanceCorrectionController::class, 'index'])->name('schedule-attendance-correction.index');
     Route::post('schedule-attendance-correction/schedule', [ScheduleAttendanceCorrectionController::class, 'updateSchedule'])->name('schedule-attendance-correction.schedule');
     Route::post('schedule-attendance-correction/attendance', [ScheduleAttendanceCorrectionController::class, 'updateAttendance'])->name('schedule-attendance-correction.attendance');
+    Route::post('schedule-attendance-correction/manual-attendance', [ScheduleAttendanceCorrectionController::class, 'submitManualAttendance'])->name('schedule-attendance-correction.manual-attendance');
+    Route::get('api/schedule-attendance-correction/check-manual-limit', [ScheduleAttendanceCorrectionController::class, 'checkManualAttendanceLimit'])->name('schedule-attendance-correction.check-manual-limit');
     Route::get('schedule-attendance-correction/history', [ScheduleAttendanceCorrectionController::class, 'getCorrectionHistory'])->name('schedule-attendance-correction.history');
     
     // Report Routes

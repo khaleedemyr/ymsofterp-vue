@@ -36,6 +36,24 @@ const correctionType = ref(props.filters?.correction_type || 'schedule');
 const loading = ref(false);
 const submittingCorrection = ref(false);
 
+// Manual attendance form data
+const manualAttendanceForm = ref({
+  outletId: '',
+  scanDate: '',
+  scanTime: '',
+  inoutmode: '1',
+  reason: ''
+});
+
+// Manual attendance limit data
+const manualAttendanceLimit = ref({
+  canSubmit: true,
+  remaining: 2,
+  used: 0,
+  period: null
+});
+const checkingLimit = ref(false);
+
 // Correction modal data
 const showCorrectionModal = ref(false);
 const correctionData = ref({
@@ -126,6 +144,13 @@ watch([outletId, divisionId], async () => {
   }
 });
 
+// Watch for manual attendance form changes to check limit
+watch([selectedEmployee, () => manualAttendanceForm.value.scanDate], async () => {
+  if (correctionType.value === 'manual_attendance' && selectedEmployee.value && manualAttendanceForm.value.scanDate) {
+    await checkManualAttendanceLimit();
+  }
+});
+
 // Initialize on component mount
 onMounted(async () => {
   if (outletId.value) {
@@ -207,6 +232,74 @@ function closeCorrectionModal() {
     userInfo: null,
     dateInfo: null,
   };
+}
+
+async function submitManualAttendance() {
+  if (!manualAttendanceForm.value.outletId || !manualAttendanceForm.value.scanDate || !manualAttendanceForm.value.scanTime || !manualAttendanceForm.value.reason.trim()) {
+    Swal.fire('Error', 'Outlet absen, tanggal, waktu, dan alasan harus diisi!', 'error');
+    return;
+  }
+  
+  // Validate time format (24 hour)
+  const timePattern = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/;
+  if (!timePattern.test(manualAttendanceForm.value.scanTime)) {
+    Swal.fire('Error', 'Format waktu tidak valid! Gunakan format HH:MM (00:00 - 23:59)', 'error');
+    return;
+  }
+  
+  if (!selectedEmployee.value) {
+    Swal.fire('Error', 'Pilih karyawan terlebih dahulu!', 'error');
+    return;
+  }
+  
+  // Prevent double click
+  if (submittingCorrection.value) {
+    return;
+  }
+  
+  submittingCorrection.value = true;
+  
+  try {
+    // Combine date and time
+    const scanDateTime = `${manualAttendanceForm.value.scanDate} ${manualAttendanceForm.value.scanTime}:00`;
+    
+    const payload = {
+      user_id: selectedEmployee.value.id,
+      outlet_id: manualAttendanceForm.value.outletId,
+      scan_date: scanDateTime,
+      inoutmode: parseInt(manualAttendanceForm.value.inoutmode),
+      reason: manualAttendanceForm.value.reason
+    };
+    
+    const response = await axios.post('/schedule-attendance-correction/manual-attendance', payload);
+    
+    if (response.data.success) {
+      await Swal.fire('Berhasil!', response.data.message, 'success');
+      // Reset form
+      manualAttendanceForm.value = {
+        outletId: '',
+        scanDate: '',
+        scanTime: '',
+        inoutmode: '1',
+        reason: ''
+      };
+      selectedEmployee.value = null;
+      // Reset limit info
+      manualAttendanceLimit.value = {
+        canSubmit: true,
+        remaining: 2,
+        used: 0,
+        period: null
+      };
+    } else {
+      Swal.fire('Error', response.data.message || 'Terjadi kesalahan', 'error');
+    }
+  } catch (error) {
+    console.error('Manual attendance error:', error);
+    Swal.fire('Error', error.response?.data?.message || 'Terjadi kesalahan', 'error');
+  } finally {
+    submittingCorrection.value = false;
+  }
 }
 
 async function submitCorrection() {
@@ -305,6 +398,49 @@ function validateTimeInput(event) {
   // Limit to HH:MM format
   if (value.length > 5) {
     correctionData.value.newTime = value.slice(0, 5);
+  }
+}
+
+function validateManualTimeInput(event) {
+  const value = event.target.value;
+  // Auto-format: add colon after 2 digits
+  if (value.length === 2 && !value.includes(':')) {
+    manualAttendanceForm.value.scanTime = value + ':';
+  }
+  // Limit to HH:MM format
+  if (value.length > 5) {
+    manualAttendanceForm.value.scanTime = value.slice(0, 5);
+  }
+}
+
+// Check manual attendance limit
+async function checkManualAttendanceLimit() {
+  if (!selectedEmployee.value || !manualAttendanceForm.value.scanDate) {
+    return;
+  }
+  
+  checkingLimit.value = true;
+  try {
+    const response = await axios.get('/api/schedule-attendance-correction/check-manual-limit', {
+      params: {
+        user_id: selectedEmployee.value.id,
+        scan_date: manualAttendanceForm.value.scanDate
+      }
+    });
+    
+    if (response.data.success) {
+      manualAttendanceLimit.value = response.data;
+    }
+  } catch (error) {
+    console.error('Error checking manual attendance limit:', error);
+    manualAttendanceLimit.value = {
+      canSubmit: true,
+      remaining: 2,
+      used: 0,
+      period: null
+    };
+  } finally {
+    checkingLimit.value = false;
   }
 }
 
@@ -431,6 +567,7 @@ if (userOutletId && userOutletId != 1) {
               >
                 <option value="schedule">Schedule Correction</option>
                 <option value="attendance">Attendance Correction</option>
+                <option value="manual_attendance">Manual Attendance Entry</option>
               </select>
             </div>
           </div>
@@ -530,6 +667,148 @@ if (userOutletId && userOutletId != 1) {
                 </tr>
               </tbody>
             </table>
+          </div>
+        </div>
+
+        <!-- Manual Attendance Entry -->
+        <div v-if="correctionType === 'manual_attendance'" class="bg-white rounded-2xl shadow-lg p-6">
+          <div class="px-6 py-4 bg-purple-600 text-white -m-6 mb-6">
+            <h3 class="text-lg font-semibold">Manual Attendance Entry</h3>
+            <p class="text-sm opacity-90">Input absen manual untuk karyawan yang lupa absen</p>
+          </div>
+          
+          <div class="space-y-6">
+            <!-- Employee Selection -->
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-2">Pilih Karyawan</label>
+              <Multiselect
+                v-model="selectedEmployee"
+                :options="employees"
+                :loading="loadingEmployees"
+                :searchable="true"
+                :clear-on-select="false"
+                :close-on-select="true"
+                :show-labels="false"
+                track-by="id"
+                label="name"
+                placeholder="Pilih atau cari karyawan..."
+                :disabled="!outletId"
+              >
+                <template #noOptions>
+                  <div class="text-center py-2 text-gray-500">
+                    Pilih outlet terlebih dahulu
+                  </div>
+                </template>
+                <template #noResult>
+                  <div class="text-center py-2 text-gray-500">
+                    Tidak ada karyawan ditemukan
+                  </div>
+                </template>
+              </Multiselect>
+            </div>
+
+            <!-- Manual Attendance Form -->
+            <div v-if="selectedEmployee" class="space-y-4">
+              <!-- Limit Info -->
+              <div v-if="manualAttendanceLimit.period" class="p-3 rounded-lg" :class="manualAttendanceLimit.canSubmit ? 'bg-blue-50 border border-blue-200' : 'bg-red-50 border border-red-200'">
+                <div class="flex items-center justify-between">
+                  <div>
+                    <div class="text-sm font-medium" :class="manualAttendanceLimit.canSubmit ? 'text-blue-800' : 'text-red-800'">
+                      <i class="fa-solid fa-info-circle mr-1"></i>
+                      Limit Input Absen Manual
+                    </div>
+                    <div class="text-xs mt-1" :class="manualAttendanceLimit.canSubmit ? 'text-blue-600' : 'text-red-600'">
+                      Periode: {{ manualAttendanceLimit.period.start_formatted }} - {{ manualAttendanceLimit.period.end_formatted }}
+                    </div>
+                    <div class="text-xs" :class="manualAttendanceLimit.canSubmit ? 'text-blue-600' : 'text-red-600'">
+                      Digunakan: {{ manualAttendanceLimit.used }}/2 • Sisa: {{ manualAttendanceLimit.remaining }}
+                    </div>
+                  </div>
+                  <div v-if="checkingLimit" class="text-xs text-gray-500">
+                    <i class="fa-solid fa-spinner fa-spin"></i>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Outlet Absen -->
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-2">Outlet Absen *</label>
+                <select 
+                  v-model="manualAttendanceForm.outletId"
+                  class="w-full form-input rounded-lg border-gray-300 focus:border-blue-500 focus:ring-blue-500"
+                >
+                  <option value="">-- Pilih Outlet Absen --</option>
+                  <option v-for="outlet in outlets" :key="outlet.id" :value="outlet.id">
+                    {{ outlet.name }}
+                  </option>
+                </select>
+                <p class="text-xs text-gray-500 mt-1">Pilih outlet dimana karyawan melakukan absen</p>
+              </div>
+
+              <!-- Tanggal & Waktu dan Status -->
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label class="block text-sm font-medium text-gray-700 mb-2">Tanggal & Waktu</label>
+                  <div class="space-y-2">
+                    <input 
+                      type="date" 
+                      v-model="manualAttendanceForm.scanDate"
+                      class="w-full form-input rounded-lg border-gray-300 focus:border-blue-500 focus:ring-blue-500"
+                    >
+                    <input 
+                      type="text" 
+                      v-model="manualAttendanceForm.scanTime"
+                      placeholder="HH:MM (24 jam)"
+                      pattern="^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$"
+                      class="w-full form-input rounded-lg border-gray-300 focus:border-blue-500 focus:ring-blue-500"
+                      @input="validateManualTimeInput"
+                    >
+                  </div>
+                  <p class="text-xs text-gray-500 mt-1">Format: YYYY-MM-DD HH:MM (24 jam) - Contoh: 14:30, 09:15, 23:45</p>
+                </div>
+                
+                <div>
+                  <label class="block text-sm font-medium text-gray-700 mb-2">Status</label>
+                  <select 
+                    v-model="manualAttendanceForm.inoutmode"
+                    class="w-full form-input rounded-lg border-gray-300 focus:border-blue-500 focus:ring-blue-500"
+                  >
+                    <option value="1">Check In</option>
+                    <option value="2">Check Out</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <!-- Reason -->
+            <div v-if="selectedEmployee">
+              <label class="block text-sm font-medium text-gray-700 mb-2">Alasan</label>
+              <textarea 
+                v-model="manualAttendanceForm.reason"
+                rows="3"
+                class="w-full form-input rounded-lg border-gray-300 focus:border-blue-500 focus:ring-blue-500"
+                placeholder="Jelaskan alasan input absen manual..."
+              ></textarea>
+            </div>
+
+            <!-- Submit Button -->
+            <div v-if="selectedEmployee" class="flex justify-end">
+              <button 
+                @click="submitManualAttendance"
+                :disabled="submittingCorrection || !manualAttendanceForm.outletId || !manualAttendanceForm.scanDate || !manualAttendanceForm.scanTime || !manualAttendanceForm.reason || !manualAttendanceLimit.canSubmit"
+                class="bg-purple-600 text-white px-6 py-2 rounded-xl shadow hover:bg-purple-700 disabled:opacity-50"
+              >
+                <i v-if="submittingCorrection" class="fa-solid fa-spinner fa-spin mr-2"></i>
+                <i v-else class="fa-solid fa-plus mr-2"></i>
+                {{ submittingCorrection ? 'Mengirim...' : 'Kirim Permohonan' }}
+              </button>
+            </div>
+
+            <!-- No Employee Selected -->
+            <div v-else class="text-center py-8 text-gray-500">
+              <i class="fa-solid fa-user-plus text-4xl mb-4"></i>
+              <p>Pilih karyawan terlebih dahulu untuk input absen manual</p>
+            </div>
           </div>
         </div>
 

@@ -244,6 +244,172 @@ class ScheduleAttendanceCorrectionController extends Controller
     }
     
     /**
+     * Check manual attendance limit for user
+     */
+    public function checkManualAttendanceLimit(Request $request)
+    {
+        $request->validate([
+            'user_id' => 'required|integer',
+            'scan_date' => 'required|date'
+        ]);
+        
+        $scanDate = $request->scan_date;
+        $periodStart = date('Y-m-26', strtotime($scanDate . ' -1 month'));
+        $periodEnd = date('Y-m-25', strtotime($scanDate));
+        
+        // Count existing manual attendance requests for this user in current period
+        $existingCount = DB::table('schedule_attendance_correction_approvals')
+            ->where('user_id', $request->user_id)
+            ->where('type', 'manual_attendance')
+            ->where('status', '!=', 'rejected') // Count approved and pending
+            ->whereBetween('tanggal', [$periodStart, $periodEnd])
+            ->count();
+            
+        $remaining = max(0, 2 - $existingCount);
+        $canSubmit = $remaining > 0;
+        
+        return response()->json([
+            'success' => true,
+            'can_submit' => $canSubmit,
+            'remaining' => $remaining,
+            'used' => $existingCount,
+            'period' => [
+                'start' => $periodStart,
+                'end' => $periodEnd,
+                'start_formatted' => date('d M Y', strtotime($periodStart)),
+                'end_formatted' => date('d M Y', strtotime($periodEnd))
+            ]
+        ]);
+    }
+    
+    /**
+     * Submit manual attendance request (requires approval)
+     */
+    public function submitManualAttendance(Request $request)
+    {
+        $request->validate([
+            'user_id' => 'required|integer',
+            'outlet_id' => 'required|integer',
+            'scan_date' => 'required|date',
+            'inoutmode' => 'required|in:1,2',
+            'reason' => 'required|string|max:500'
+        ]);
+        
+        $userId = auth()->id();
+        
+        try {
+            DB::beginTransaction();
+            
+            // Check manual attendance limit (2x per period per user)
+            $scanDate = $request->scan_date;
+            $periodStart = date('Y-m-26', strtotime($scanDate . ' -1 month'));
+            $periodEnd = date('Y-m-25', strtotime($scanDate));
+            
+            // Count existing manual attendance requests for this user in current period
+            $existingCount = DB::table('schedule_attendance_correction_approvals')
+                ->where('user_id', $request->user_id)
+                ->where('type', 'manual_attendance')
+                ->where('status', '!=', 'rejected') // Count approved and pending
+                ->whereBetween('tanggal', [$periodStart, $periodEnd])
+                ->count();
+                
+            if ($existingCount >= 2) {
+                throw new \Exception('User ini sudah mencapai batas maksimal 2x input absen manual dalam periode ini (26 ' . date('M Y', strtotime($periodStart)) . ' - 25 ' . date('M Y', strtotime($periodEnd)) . '). Silakan coba lagi di periode berikutnya.');
+            }
+            
+            // Get outlet SN
+            $outlet = DB::table('tbl_data_outlet')
+                ->where('id_outlet', $request->outlet_id)
+                ->first();
+                
+            if (!$outlet) {
+                throw new \Exception('Outlet tidak ditemukan');
+            }
+            
+            // Get user PIN for this outlet
+            $userPin = DB::table('user_pins')
+                ->where('user_id', $request->user_id)
+                ->where('outlet_id', $request->outlet_id)
+                ->where('is_active', 1)
+                ->first();
+                
+            if (!$userPin) {
+                throw new \Exception('PIN user tidak ditemukan untuk outlet ini');
+            }
+            
+            // Get user info
+            $user = DB::table('users')
+                ->where('id', $request->user_id)
+                ->first();
+                
+            if (!$user) {
+                throw new \Exception('User tidak ditemukan');
+            }
+            
+            // Prepare data for approval
+            $manualAttendanceData = [
+                'sn' => $outlet->sn,
+                'pin' => $userPin->pin,
+                'scan_date' => $request->scan_date,
+                'inoutmode' => $request->inoutmode,
+                'verifymode' => 1,
+                'device_ip' => '127.0.0.1'
+            ];
+            
+            // Insert approval request
+            $approvalId = DB::table('schedule_attendance_correction_approvals')->insertGetId([
+                'type' => 'manual_attendance',
+                'record_id' => 0, // Manual attendance doesn't have existing record
+                'user_id' => $request->user_id,
+                'outlet_id' => $request->outlet_id,
+                'division_id' => $user->division_id,
+                'tanggal' => date('Y-m-d', strtotime($request->scan_date)),
+                'old_value' => null, // No old value for manual attendance
+                'new_value' => json_encode($manualAttendanceData),
+                'reason' => $request->reason,
+                'status' => 'pending',
+                'requested_by' => $userId,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+            
+            // Get all HRD users (division_id = 6)
+            $hrdUsers = DB::table('users')
+                ->where('division_id', 6)
+                ->where('status', 'A')
+                ->pluck('id');
+            
+            // Send notification to all HRD users
+            foreach ($hrdUsers as $hrdUserId) {
+                DB::table('notifications')->insert([
+                    'user_id' => $hrdUserId,
+                    'type' => 'manual_attendance_approval',
+                    'message' => "Permohonan input absen manual untuk {$user->nama_lengkap} pada tanggal " . date('d/m/Y H:i', strtotime($request->scan_date)) . " membutuhkan persetujuan Anda.",
+                    'url' => '/schedule-attendance-correction',
+                    'is_read' => 0,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            }
+            
+            DB::commit();
+            
+            return response()->json([
+                'success' => true,
+                'message' => 'Permohonan input absen manual telah dikirim untuk persetujuan!'
+            ]);
+            
+        } catch (\Exception $e) {
+            DB::rollBack();
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal mengirim permohonan: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+    
+    /**
      * Update attendance correction (requires approval)
      */
     public function updateAttendance(Request $request)
@@ -452,6 +618,43 @@ class ScheduleAttendanceCorrectionController extends Controller
                         'updated_at' => now(),
                     ]);
                     
+            } elseif ($approval->type === 'manual_attendance') {
+                // Parse the new values from JSON for manual attendance
+                $newData = json_decode($approval->new_value, true);
+                
+                // Insert new record to att_log
+                $attLogId = DB::table('att_log')->insertGetId([
+                    'sn' => $newData['sn'],
+                    'pin' => $newData['pin'],
+                    'scan_date' => $newData['scan_date'],
+                    'verifymode' => $newData['verifymode'],
+                    'inoutmode' => $newData['inoutmode'],
+                    'device_ip' => $newData['device_ip'],
+                    'created_at' => now(),
+                    'updated_at' => now()
+                ]);
+                
+                \Log::info('Manual attendance inserted:', [
+                    'att_log_id' => $attLogId,
+                    'sn' => $newData['sn'],
+                    'pin' => $newData['pin'],
+                    'scan_date' => $newData['scan_date'],
+                    'inoutmode' => $newData['inoutmode']
+                ]);
+                
+                // Log the correction for audit trail
+                DB::table('schedule_attendance_corrections')->insert([
+                    'type' => 'manual_attendance',
+                    'record_id' => $attLogId,
+                    'old_value' => null,
+                    'new_value' => $approval->new_value,
+                    'reason' => $approval->reason,
+                    'corrected_by' => $user->id,
+                    'corrected_at' => now(),
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+                
             } elseif ($approval->type === 'attendance') {
                 // Parse the old and new values from JSON
                 $oldData = json_decode($approval->old_value, true);
