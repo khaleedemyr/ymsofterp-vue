@@ -26,10 +26,50 @@ const form = useForm({
   })) || [],
 });
 
+// Debug: Log form data
+console.log('Form initialized:', {
+  title: form.title,
+  content: form.content,
+  targets: form.targets
+});
+
 const isSubmitting = ref(false);
 
 async function submit() {
   isSubmitting.value = true;
+  
+  // Debug: Log form data before submit
+  console.log('Form data before submit:', {
+    title: form.title,
+    content: form.content,
+    targets: form.targets,
+    hasTitle: !!form.title,
+    titleLength: form.title?.length || 0
+  });
+  
+  // Client-side validation
+  if (!form.title || form.title.trim() === '') {
+    Swal.fire({
+      title: 'Gagal!',
+      text: 'Judul harus diisi!',
+      icon: 'error',
+      confirmButtonColor: '#3085d6',
+    });
+    isSubmitting.value = false;
+    return;
+  }
+  
+  if (!form.targets || form.targets.length === 0) {
+    Swal.fire({
+      title: 'Gagal!',
+      text: 'Minimal harus ada satu target!',
+      icon: 'error',
+      confirmButtonColor: '#3085d6',
+    });
+    isSubmitting.value = false;
+    return;
+  }
+  
   try {
     await form.put(route('announcement.update', props.announcement.id), {
       onSuccess: () => {
@@ -90,9 +130,13 @@ function handleImageChange(e) {
         </div>
         <form @submit.prevent="submit" class="space-y-5">
           <div>
-            <label class="block text-sm font-medium text-gray-700">Judul</label>
-            <input type="text" v-model="form.title"
-                   class="mt-1 focus:ring-blue-500 focus:border-blue-500 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md">
+            <label class="block text-sm font-medium text-gray-700">Judul *</label>
+            <input type="text" v-model="form.title" required
+                   class="mt-1 focus:ring-blue-500 focus:border-blue-500 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md"
+                   placeholder="Masukkan judul pengumuman">
+            <div v-if="!form.title || form.title.trim() === ''" class="text-red-500 text-sm mt-1">
+              Judul harus diisi
+            </div>
           </div>
           <div>
             <label class="block text-sm font-medium text-gray-700">Content</label>
