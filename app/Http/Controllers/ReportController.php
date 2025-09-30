@@ -1317,11 +1317,11 @@ class ReportController extends Controller
         $dateFrom = $request->input('date_from');
         $dateTo = $request->input('date_to');
 
-        \Log::info('DEBUG FILTER', [
-            'outlet' => $outlet,
-            'dateFrom' => $dateFrom,
-            'dateTo' => $dateTo,
-        ]);
+       // \Log::info('DEBUG FILTER', [
+       //     'outlet' => $outlet,
+       //     'dateFrom' => $dateFrom,
+       //     'dateTo' => $dateTo,
+       // ]);
 
         $query = \DB::table('orders')
             ->select([
@@ -1364,31 +1364,31 @@ class ReportController extends Controller
         }
 
         $orders = $query->orderBy('orders.created_at')->get();
-        \Log::info('DEBUG ORDERS COUNT', ['count' => $orders->count()]);
+        //\Log::info('DEBUG ORDERS COUNT', ['count' => $orders->count()]);
         
 
         
         // DEBUG: Log sample orders dengan commfee
         $sampleOrders = $orders->take(5);
-        \Log::info('DEBUG SAMPLE ORDERS', [
-            'sample_orders' => $sampleOrders->map(function($order) {
-                return [
-                    'id' => $order->id,
-                    'nomor' => $order->nomor,
-                    'commfee' => $order->commfee,
-                    'rounding' => $order->rounding,
-                    'grand_total' => $order->grand_total,
-                ];
-            })->toArray()
-        ]);
+       // \Log::info('DEBUG SAMPLE ORDERS', [
+         //   'sample_orders' => $sampleOrders->map(function($order) {
+         //       return [
+         //           'id' => $order->id,
+         //           'nomor' => $order->nomor,
+         //           'commfee' => $order->commfee,
+         //           'rounding' => $order->rounding,
+         //           'grand_total' => $order->grand_total,
+         //       ];
+         //   })->toArray()
+        //]);
         
         // DEBUG: Log total commfee dan rounding
-        \Log::info('DEBUG COMMFEE ROUNDING TOTALS', [
-            'total_commfee' => $orders->sum('commfee'),
-            'total_rounding' => $orders->sum('rounding'),
-            'orders_with_commfee' => $orders->where('commfee', '>', 0)->count(),
-            'orders_with_rounding' => $orders->where('rounding', '>', 0)->count(),
-        ]);
+       // \Log::info('DEBUG COMMFEE ROUNDING TOTALS', [
+       //     'total_commfee' => $orders->sum('commfee'),
+       //     'total_rounding' => $orders->sum('rounding'),
+       //     'orders_with_commfee' => $orders->where('commfee', '>', 0)->count(),
+      //      'orders_with_rounding' => $orders->where('rounding', '>', 0)->count(),
+     //   ]);
 
         // Tambahkan items dan promo ke setiap order
         foreach ($orders as $order) {

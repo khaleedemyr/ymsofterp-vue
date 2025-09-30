@@ -691,12 +691,12 @@ class OutletFoodGoodReceiveController extends Controller
             )
             ->limit(20)
             ->get();
-        \Log::info('DEBUG DO OUTLET', [
-            'id_outlet' => $idOutlet,
-            'result' => $dos,
-            'query_sql' => $query->toSql(),
-            'query_bindings' => $query->getBindings()
-        ]);
+       // \Log::info('DEBUG DO OUTLET', [
+       //     'id_outlet' => $idOutlet,
+       //     'result' => $dos,
+       //     'query_sql' => $query->toSql(),
+       //        'query_bindings' => $query->getBindings()
+        //]);
         return response()->json($dos);
     }
 

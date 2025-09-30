@@ -1340,7 +1340,7 @@ class ItemController extends Controller
 
     public function searchForWarehouseTransfer(Request $request)
     {
-        \Log::info('DEBUG: masuk method searchForWarehouseTransfer');
+      //  \Log::info('DEBUG: masuk method searchForWarehouseTransfer');
             $q = $request->input('q');
         // $warehouseId = $request->input('warehouse_id'); // Boleh ada, tapi tidak dipakai di query
 
@@ -1367,7 +1367,7 @@ class ItemController extends Controller
             ->limit(10)
             ->get();
 
-        \Log::info('DEBUG: hasil items', ['items' => $items]);
+        //\Log::info('DEBUG: hasil items', ['items' => $items]);
             return response()->json($items);
     }
 
@@ -2038,14 +2038,14 @@ class ItemController extends Controller
             ->limit(20)
             ->get();
 
-        \Log::info('searchForOutletTransfer', [
-            'q' => $q,
-            'warehouse_outlet_id' => $warehouse_outlet_id,
-            'outlet_id' => $outlet_id,
-            'region_id' => $region_id,
-            'result_count' => $items->count(),
-            'first_item' => $items->first(),
-        ]);
+      //  \Log::info('searchForOutletTransfer', [
+       //     'q' => $q,
+       //     'warehouse_outlet_id' => $warehouse_outlet_id,
+       //     'outlet_id' => $outlet_id,
+        //    'region_id' => $region_id,
+        //    'result_count' => $items->count(),
+        //    'first_item' => $items->first(),
+        //]);
 
         foreach ($items as $item) {
             $item->unit_small = optional(\DB::table('units')->where('id', $item->small_unit_id)->first())->name;
