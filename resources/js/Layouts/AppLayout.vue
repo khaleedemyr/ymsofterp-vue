@@ -131,6 +131,7 @@ const menuGroups = [
             { name: () => 'Master Payroll', icon: 'fa-solid fa-money-check-dollar', route: '/payroll/master', code: 'payroll_master' },
             { name: () => 'Payroll', icon: 'fa-solid fa-file-invoice-dollar', route: '/payroll/report', code: 'payroll_report' },
             { name: () => 'Employee Movement', icon: 'fa-solid fa-people-arrows', route: '/employee-movements', code: 'employee_movement' },
+            { name: () => 'Outlet/HO Inspection', icon: 'fa-solid fa-clipboard-check', route: '/dynamic-inspections', code: 'dynamic_inspection' },
         ],
     },
     {

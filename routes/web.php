@@ -841,6 +841,12 @@ Route::resource('food-inventory-adjustment', \App\Http\Controllers\FoodInventory
 Route::post('/food-inventory-adjustment/{id}/approve', [\App\Http\Controllers\FoodInventoryAdjustmentController::class, 'approve'])->name('food-inventory-adjustment.approve');
 Route::post('/food-inventory-adjustment/{id}/reject', [\App\Http\Controllers\FoodInventoryAdjustmentController::class, 'reject'])->name('food-inventory-adjustment.reject');
 
+// Dynamic Inspection Routes
+Route::resource('dynamic-inspections', \App\Http\Controllers\DynamicInspectionController::class);
+Route::post('dynamic-inspections/store-subject', [\App\Http\Controllers\DynamicInspectionController::class, 'storeSubject'])->name('dynamic-inspections.store-subject');
+Route::post('dynamic-inspections/{dynamicInspection}/update-subject', [\App\Http\Controllers\DynamicInspectionController::class, 'updateSubject'])->name('dynamic-inspections.update-subject');
+Route::post('dynamic-inspections/{dynamicInspection}/complete', [\App\Http\Controllers\DynamicInspectionController::class, 'complete'])->name('dynamic-inspections.complete');
+
 Route::post('/outlet-food-good-receives/scan', [\App\Http\Controllers\OutletFoodGoodReceiveController::class, 'storeScan'])->name('outlet-food-good-receives.scan');
 Route::get('/outlet-food-good-receives/available-dos', [\App\Http\Controllers\OutletFoodGoodReceiveController::class, 'availableDOs']);
 Route::resource('outlet-food-good-receives', \App\Http\Controllers\OutletFoodGoodReceiveController::class);
