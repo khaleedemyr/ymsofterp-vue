@@ -31,11 +31,48 @@ class WarehouseTransferController extends Controller
         DB::beginTransaction();
         try {
             Log::info('Start simpan transfer', $validated);
-            // Generate transfer number
+            // Generate transfer number using timestamp-based approach
             $dateStr = date('Ymd', strtotime($validated['transfer_date']));
-            $countToday = WarehouseTransfer::whereDate('transfer_date', $validated['transfer_date'])->count() + 1;
-            $transferNumber = 'WT-' . $dateStr . '-' . str_pad($countToday, 4, '0', STR_PAD_LEFT);
-            Log::info('Generated transfer number', ['transferNumber' => $transferNumber]);
+            $transferNumber = null;
+            
+            // Get the highest existing number for this date
+            $existingNumbers = WarehouseTransfer::whereDate('transfer_date', $validated['transfer_date'])
+                ->where('transfer_number', 'like', 'WT-' . $dateStr . '-%')
+                ->pluck('transfer_number')
+                ->toArray();
+            
+            // Extract numbers and find the highest
+            $maxNumber = 0;
+            foreach ($existingNumbers as $number) {
+                $parts = explode('-', $number);
+                if (count($parts) === 3 && $parts[0] === 'WT' && $parts[1] === $dateStr) {
+                    $currentNumber = (int) $parts[2];
+                    if ($currentNumber > $maxNumber) {
+                        $maxNumber = $currentNumber;
+                    }
+                }
+            }
+            
+            // Generate next number
+            $nextNumber = $maxNumber + 1;
+            $transferNumber = 'WT-' . $dateStr . '-' . str_pad($nextNumber, 4, '0', STR_PAD_LEFT);
+            
+            // Double check if it exists (race condition protection)
+            $attempts = 0;
+            $maxAttempts = 5;
+            while (WarehouseTransfer::where('transfer_number', $transferNumber)->exists() && $attempts < $maxAttempts) {
+                $nextNumber++;
+                $transferNumber = 'WT-' . $dateStr . '-' . str_pad($nextNumber, 4, '0', STR_PAD_LEFT);
+                $attempts++;
+            }
+            
+            if ($attempts >= $maxAttempts) {
+                // Fallback to timestamp-based unique number
+                $timestamp = time();
+                $transferNumber = 'WT-' . $dateStr . '-' . substr($timestamp, -4);
+            }
+            
+            Log::info('Generated transfer number', ['transferNumber' => $transferNumber, 'attempts' => $attempts]);
 
             // Simpan header transfer
             $transfer = WarehouseTransfer::create([
