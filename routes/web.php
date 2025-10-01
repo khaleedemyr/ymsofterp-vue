@@ -1249,6 +1249,129 @@ Route::patch('qa-parameters/{qaParameter}/toggle-status', [\App\Http\Controllers
 Route::resource('qa-guidances', \App\Http\Controllers\QaGuidanceController::class);
 Route::patch('qa-guidances/{qaGuidance}/toggle-status', [\App\Http\Controllers\QaGuidanceController::class, 'toggleStatus'])->name('qa-guidances.toggle-status');
 
+// Inspection Routes
+Route::resource('inspections', \App\Http\Controllers\InspectionController::class);
+Route::get('inspections/{inspection}/add-finding', [\App\Http\Controllers\InspectionController::class, 'addFinding'])->name('inspections.add-finding');
+Route::post('inspections/{inspection}/store-finding', [\App\Http\Controllers\InspectionController::class, 'storeFinding'])->name('inspections.store-finding');
+Route::patch('inspections/{inspection}/complete', [\App\Http\Controllers\InspectionController::class, 'complete'])->name('inspections.complete');
+Route::delete('inspections/{inspection}/delete-finding/{finding}', [\App\Http\Controllers\InspectionController::class, 'deleteFinding'])->name('inspections.delete-finding');
+
+// Debug route
+Route::get('debug-inspection', function() {
+    try {
+        $outlets = \App\Models\Outlet::select('id_outlet', 'nama_outlet')->get();
+        $guidances = \App\Models\QaGuidance::where('status', 'A')->get();
+        $inspections = \App\Models\Inspection::with(['outlet', 'guidance', 'createdByUser'])->get();
+        return response()->json([
+            'outlets' => $outlets,
+            'guidances' => $guidances,
+            'inspections' => $inspections,
+            'message' => 'Database connection works'
+        ]);
+    } catch(\Exception $e) {
+        return response()->json([
+            'error' => $e->getMessage(),
+            'trace' => $e->getTraceAsString()
+        ], 500);
+    }
+});
+
+// Debug route untuk cek inspections
+Route::get('debug-inspections', function() {
+    try {
+        $inspections = \App\Models\Inspection::all();
+        $inspectionsWithRelations = \App\Models\Inspection::with(['outlet', 'guidance', 'createdByUser'])->get();
+        return response()->json([
+            'total_inspections' => $inspections->count(),
+            'inspections' => $inspections->toArray(),
+            'inspections_with_relations' => $inspectionsWithRelations->toArray()
+        ]);
+    } catch(\Exception $e) {
+        return response()->json([
+            'error' => $e->getMessage(),
+            'trace' => $e->getTraceAsString()
+        ], 500);
+    }
+});
+
+// Debug route untuk cek guidance points
+Route::get('debug-guidance-points', function() {
+    try {
+        $inspection = \App\Models\Inspection::with('guidance.guidanceCategories.parameters.details')->first();
+        
+        if (!$inspection) {
+            return response()->json(['error' => 'No inspections found'], 404);
+        }
+        
+        $guidanceTotalPoints = 0;
+        if ($inspection->guidance && $inspection->guidance->guidanceCategories) {
+            foreach ($inspection->guidance->guidanceCategories as $guidanceCategory) {
+                if ($guidanceCategory->parameters) {
+                    foreach ($guidanceCategory->parameters as $parameter) {
+                        if ($parameter->details) {
+                            foreach ($parameter->details as $detail) {
+                                $guidanceTotalPoints += $detail->point;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        return response()->json([
+            'inspection_id' => $inspection->id,
+            'guidance_id' => $inspection->guidance_id,
+            'guidance_title' => $inspection->guidance ? $inspection->guidance->title : 'No guidance',
+            'guidance_categories_count' => $inspection->guidance ? $inspection->guidance->guidanceCategories->count() : 0,
+            'calculated_total_points' => $guidanceTotalPoints,
+            'accessor_total_points' => $inspection->guidance_total_points,
+            'guidance_data' => $inspection->guidance ? $inspection->guidance->toArray() : null
+        ]);
+    } catch (\Exception $e) {
+        return response()->json(['error' => $e->getMessage()], 500);
+    }
+});
+
+// Debug route untuk test index data
+Route::get('test-index-data', function() {
+    $guidances = \App\Models\QaGuidance::with([
+        'guidanceCategories.category',
+        'guidanceCategories.parameters.details.parameter'
+    ])->get();
+    
+    $firstGuidance = $guidances->first();
+    $firstGuidanceCategories = $firstGuidance ? $firstGuidance->guidanceCategories : collect();
+    
+    return response()->json([
+        'guidances_count' => $guidances->count(),
+        'first_guidance_id' => $firstGuidance ? $firstGuidance->id : null,
+        'first_guidance_title' => $firstGuidance ? $firstGuidance->title : null,
+        'guidance_categories_count' => $firstGuidanceCategories->count(),
+        'first_category_name' => $firstGuidanceCategories->first() ? $firstGuidanceCategories->first()->category->categories : null,
+        'parameters_count' => $firstGuidanceCategories->first() ? $firstGuidanceCategories->first()->parameters->count() : 0,
+        'raw_data' => $firstGuidance ? $firstGuidance->toArray() : null
+    ]);
+});
+
+// Debug route untuk test data langsung
+Route::get('test-simple-data', function() {
+    $guidance = \App\Models\QaGuidance::first();
+    $guidanceCategories = \App\Models\QaGuidanceCategory::where('guidance_id', $guidance->id)->get();
+    $categoryParameters = \App\Models\QaGuidanceCategoryParameter::whereIn('guidance_category_id', $guidanceCategories->pluck('id'))->get();
+    
+    return response()->json([
+        'guidance' => $guidance,
+        'guidanceCategories' => $guidanceCategories,
+        'categoryParameters' => $categoryParameters,
+        'counts' => [
+            'guidance' => \App\Models\QaGuidance::count(),
+            'guidanceCategories' => \App\Models\QaGuidanceCategory::count(),
+            'categoryParameters' => \App\Models\QaGuidanceCategoryParameter::count(),
+            'parameterDetails' => \App\Models\QaGuidanceParameterDetail::count()
+        ]
+    ]);
+});
+
 
 
 

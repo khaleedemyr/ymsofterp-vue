@@ -89,6 +89,7 @@ const menuGroups = [
             { name: () => 'QA Categories', icon: 'fa-solid fa-clipboard-list', route: '/qa-categories', code: 'qa_categories' },
             { name: () => 'QA Parameters', icon: 'fa-solid fa-cogs', route: '/qa-parameters', code: 'qa_parameters' },
             { name: () => 'QA Guidance', icon: 'fa-solid fa-clipboard-check', route: '/qa-guidances', code: 'qa_guidances' },
+            { name: () => 'Inspections', icon: 'fa-solid fa-camera', route: '/inspections', code: 'inspections' },
         ],
     },
     {

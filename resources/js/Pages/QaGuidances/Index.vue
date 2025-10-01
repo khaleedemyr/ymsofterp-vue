@@ -14,6 +14,14 @@ const props = defineProps({
   departemenOptions: Array,
 });
 
+// Debug: Uncomment to see data structure
+console.log('=== INDEX PAGE DEBUG ===');
+console.log('Guidances data:', props.guidances);
+if (props.guidances && props.guidances.data && props.guidances.data.length > 0) {
+  console.log('First guidance:', props.guidances.data[0]);
+  console.log('First guidance guidance_categories:', props.guidances.data[0].guidance_categories);
+}
+
 const search = ref(props.filters?.search || '');
 const departemen = ref(props.filters?.departemen || '');
 const categoryId = ref(props.filters?.category_id || '');
@@ -246,15 +254,15 @@ function filterByStatus(newStatus) {
               <td class="px-4 py-2 whitespace-nowrap">{{ guidance.departemen }}</td>
               <td class="px-4 py-2 whitespace-nowrap">
                 <div class="flex flex-wrap gap-1">
-                  <span v-for="category in guidance.categories" :key="category.id" class="px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-xs font-semibold">
-                    {{ category.categories }}
+                  <span v-for="guidanceCategory in guidance.guidance_categories" :key="guidanceCategory.id" class="px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-xs font-semibold">
+                    {{ guidanceCategory.category?.categories }}
                   </span>
-                  <span v-if="!guidance.categories || guidance.categories.length === 0" class="text-gray-400 text-xs">-</span>
+                  <span v-if="!guidance.guidance_categories || guidance.guidance_categories.length === 0" class="text-gray-400 text-xs">-</span>
                 </div>
               </td>
               <td class="px-4 py-2 whitespace-nowrap text-center">
                 <span class="px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-xs font-semibold">
-                  {{ guidance.guidanceCategories?.reduce((total, cat) => total + (cat.parameters?.length || 0), 0) || 0 }} Parameter
+                  {{ guidance.guidance_categories?.reduce((total, cat) => total + (cat.parameters?.length || 0), 0) || 0 }} Parameter
                 </span>
               </td>
               <td class="px-4 py-2 whitespace-nowrap text-center">

@@ -726,7 +726,12 @@ class OutletPaymentController extends Controller
             ->join('tbl_data_outlet as o', 'c.id_outlet', '=', 'o.id_outlet')  // INNER JOIN to only get branch customers
             ->leftJoin('warehouses as w', 'rws.warehouse_id', '=', 'w.id')
             ->leftJoin('warehouse_division as wd', 'rws.warehouse_division_id', '=', 'wd.id')
+            ->leftJoin('outlet_payments as op', function($join) {
+                $join->on('rws.id', '=', 'op.retail_sales_id')
+                     ->where('op.status', '!=', 'cancelled');
+            })
             ->where('rws.status', 'completed') // Only completed sales that haven't been paid
+            ->whereNull('op.id') // Exclude retail sales that already have payment
             ->where('c.id_outlet', (string)$outletId) // Only sales to this outlet (cast to string)
             ->where('c.type', 'branch') // Only branch customers, not generic customers
             ->select(

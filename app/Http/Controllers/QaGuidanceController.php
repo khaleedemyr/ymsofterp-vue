@@ -24,7 +24,7 @@ class QaGuidanceController extends Controller
         $perPage = $request->input('per_page', 15);
 
         $query = QaGuidance::with([
-            'categories',
+            'guidanceCategories.category',
             'guidanceCategories.parameters.details.parameter'
         ]);
         
@@ -39,7 +39,7 @@ class QaGuidanceController extends Controller
             $query->where(function($q) use ($search) {
                 $q->where('title', 'like', "%$search%")
                   ->orWhere('departemen', 'like', "%$search%")
-                  ->orWhereHas('categories', function($categoryQuery) use ($search) {
+                  ->orWhereHas('guidanceCategories.category', function($categoryQuery) use ($search) {
                       $categoryQuery->where('categories', 'like', "%$search%");
                   });
             });
@@ -50,12 +50,17 @@ class QaGuidanceController extends Controller
         }
         
         if ($categoryId) {
-            $query->whereHas('categories', function($categoryQuery) use ($categoryId) {
+            $query->whereHas('guidanceCategories', function($categoryQuery) use ($categoryId) {
                 $categoryQuery->where('category_id', $categoryId);
             });
         }
         
         $guidances = $query->orderBy('id', 'desc')->paginate($perPage)->withQueryString();
+        
+        // Debug: Uncomment to see data structure
+        // if ($guidances->count() > 0) {
+        //     dd($guidances->first()->toArray());
+        // }
 
         // Get statistics
         $total = QaGuidance::count();
