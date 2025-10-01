@@ -194,7 +194,12 @@ class InspectionController extends Controller
             'createdByUser', 
             'auditees',
             'details.category',
-            'details.parameter'
+            'details.parameter',
+            'details.createdByUser', // Load finding creator
+            'cpas.inspectionDetail.category', // Load CPA with finding category
+            'cpas.inspectionDetail.parameter', // Load CPA with finding parameter
+            'cpas.inspectionDetail.createdByUser', // Load CPA with finding creator
+            'cpas.createdBy' // Load CPA creator
         ]);
         
         return Inertia::render('Inspections/Show', [
@@ -317,5 +322,76 @@ class InspectionController extends Controller
 
         return redirect()->route('inspections.index')
             ->with('success', 'Inspection deleted successfully!');
+    }
+
+    public function cpa(Inspection $inspection)
+    {
+        // Load inspection with all necessary relationships (same as show method)
+        $inspection->load([
+            'outlet', 
+            'guidance', 
+            'createdByUser', 
+            'auditees',
+            'details.category',
+            'details.parameter',
+            'details.createdByUser'
+        ]);
+
+        // Get all findings for CPA (tidak filter berdasarkan status)
+        $findings = $inspection->details;
+
+        // Get users from same outlet with status 'A'
+        $users = \App\Models\User::where('id_outlet', $inspection->outlet_id)
+            ->where('status', 'A')
+            ->with('jabatan')
+            ->get();
+
+        return Inertia::render('Inspections/CPA', [
+            'inspection' => $inspection,
+            'findings' => $findings,
+            'users' => $users,
+        ]);
+    }
+
+    public function storeCPA(Request $request, Inspection $inspection)
+    {
+        $validated = $request->validate([
+            'inspection_detail_id' => 'required|exists:inspection_details,id',
+            'action_plan' => 'required|string|max:2000',
+            'responsible_person' => 'required|string|max:255',
+            'due_date' => 'required|date|after:today',
+            'notes' => 'nullable|string|max:1000',
+            'documentation.*' => 'required|image|mimes:jpeg,png,jpg,gif|max:5120', // 5MB max per file
+        ]);
+
+        try {
+            // Handle file uploads (same as inspection)
+            $documentationPaths = [];
+            if ($request->hasFile('documentation')) {
+                foreach ($request->file('documentation') as $file) {
+                    if ($file) {
+                        $path = $file->store('cpa-documentation', 'public');
+                        $documentationPaths[] = $path;
+                    }
+                }
+            }
+
+            $validated['inspection_id'] = $inspection->id;
+            $validated['documentation_paths'] = json_encode($documentationPaths);
+            $validated['status'] = 'Open';
+            $validated['created_by'] = auth()->id();
+
+            \App\Models\InspectionCPA::create($validated);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'CPA saved successfully!'
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to save CPA: ' . $e->getMessage()
+            ], 500);
+        }
     }
 }

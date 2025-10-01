@@ -1255,6 +1255,8 @@ Route::get('inspections/{inspection}/add-finding', [\App\Http\Controllers\Inspec
 Route::post('inspections/{inspection}/store-finding', [\App\Http\Controllers\InspectionController::class, 'storeFinding'])->name('inspections.store-finding');
 Route::patch('inspections/{inspection}/complete', [\App\Http\Controllers\InspectionController::class, 'complete'])->name('inspections.complete');
 Route::delete('inspections/{inspection}/delete-finding/{finding}', [\App\Http\Controllers\InspectionController::class, 'deleteFinding'])->name('inspections.delete-finding');
+Route::get('inspections/{inspection}/cpa', [\App\Http\Controllers\InspectionController::class, 'cpa'])->name('inspections.cpa');
+Route::post('inspections/{inspection}/cpa', [\App\Http\Controllers\InspectionController::class, 'storeCPA'])->name('inspections.cpa.store');
 
 // Debug route
 Route::get('debug-inspection', function() {

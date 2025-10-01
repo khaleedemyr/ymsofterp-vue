@@ -64,6 +64,12 @@ class Inspection extends Model
         return $this->belongsToMany(User::class, 'inspection_auditees', 'inspection_id', 'user_id');
     }
 
+    // Relationship dengan CPA
+    public function cpas()
+    {
+        return $this->hasMany(InspectionCPA::class, 'inspection_id');
+    }
+
     // Scope untuk data draft
     public function scopeDraft($query)
     {

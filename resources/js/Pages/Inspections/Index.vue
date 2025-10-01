@@ -1,6 +1,6 @@
 <script setup>
-import { ref, watch, onMounted } from 'vue';
-import { router } from '@inertiajs/vue3';
+import { ref, watch, onMounted, computed } from 'vue';
+import { router, usePage } from '@inertiajs/vue3';
 import { debounce } from 'lodash';
 import Swal from 'sweetalert2';
 import AppLayout from '@/Layouts/AppLayout.vue';
@@ -15,6 +15,11 @@ const props = defineProps({
   statusOptions: Array,
 });
 
+// Get current user from page props
+const page = usePage();
+const currentUser = computed(() => page.props.auth?.user || {});
+const isOutletUser = computed(() => currentUser.value.id_outlet && currentUser.value.id_outlet !== 1);
+
 
 const search = ref(props.filters?.search || '');
 const outletId = ref(props.filters?.outlet_id || '');
@@ -22,10 +27,17 @@ const departemen = ref(props.filters?.departemen || '');
 const status = ref(props.filters?.status || '');
 const perPage = ref(props.filters?.per_page || 15);
 
+// Lightbox functionality
+const showImageModal = ref(false);
+const selectedImageUrl = ref('');
+
 // Summary modal
 const showSummary = ref(false);
 const summaryData = ref({});
 const expandedOutlets = ref(new Set());
+const expandedDepartemens = ref(new Set());
+const selectedMonth = ref(new Date().getMonth());
+const selectedYear = ref(new Date().getFullYear());
 
 // Debounced search
 const debouncedSearch = debounce((value) => {
@@ -68,12 +80,38 @@ function getInitials(name) {
   return name.split(' ').map(word => word.charAt(0)).join('').toUpperCase().slice(0, 2);
 }
 
-// Open user image in lightbox
-function openUserImage(imageUrl, userName) {
-  // You can implement lightbox functionality here
-  // For now, just open in new tab
-  window.open(imageUrl, '_blank');
+// Lightbox methods
+function getImageUrl(avatar) {
+  return `/storage/${avatar}`;
 }
+
+function openImageModal(imageUrl) {
+  selectedImageUrl.value = imageUrl;
+  showImageModal.value = true;
+}
+
+function closeImageModal() {
+  showImageModal.value = false;
+  selectedImageUrl.value = '';
+}
+
+// CPA function
+function openCPA(inspection) {
+  router.visit(route('inspections.cpa', inspection.id));
+}
+
+// Computed properties for button visibility
+const shouldShowCPAButton = (inspection) => {
+  return inspection.status === 'Completed';
+};
+
+const shouldShowOtherButtons = (inspection) => {
+  return !isOutletUser.value;
+};
+
+const shouldShowDeleteButton = (inspection) => {
+  return !isOutletUser.value && inspection.created_by === currentUser.value.id;
+};
 
     // Get unique inspectors from inspection details
     function getUniqueInspectors(inspection) {
@@ -108,11 +146,18 @@ function openUserImage(imageUrl, userName) {
       return 0; // 0 stars
     }
 
-    // Generate summary data
+    // Get passing score for departemen
+    function getPassingScore(departemen) {
+      const passingScores = {
+        'Kitchen': 85,
+        'Bar': 90,
+        'Service': 95
+      };
+      return passingScores[departemen] || 80; // Default 80% if not found
+    }
+
+    // Generate summary data with outlet and departemen grouping
     function generateSummary() {
-      const currentMonth = new Date().getMonth();
-      const currentYear = new Date().getFullYear();
-      
       const summary = {};
       
       props.inspections.data.forEach(inspection => {
@@ -120,11 +165,13 @@ function openUserImage(imageUrl, userName) {
         const inspectionMonth = inspectionDate.getMonth();
         const inspectionYear = inspectionDate.getFullYear();
         
-        // Only include inspections from current month
-        if (inspectionMonth === currentMonth && inspectionYear === currentYear) {
+        // Only include inspections from selected month and year
+        if (inspectionMonth === selectedMonth.value && inspectionYear === selectedYear.value) {
           const outletId = inspection.outlet_id;
           const outletName = inspection.outlet?.nama_outlet || 'Unknown Outlet';
+          const departemen = inspection.departemen;
           
+          // Initialize outlet if not exists
           if (!summary[outletId]) {
             summary[outletId] = {
               outlet_name: outletName,
@@ -132,23 +179,57 @@ function openUserImage(imageUrl, userName) {
               total_findings: 0,
               total_points: 0,
               average_score: 0,
+              departemens: {}
+            };
+          }
+          
+          // Initialize departemen if not exists
+          if (!summary[outletId].departemens[departemen]) {
+            summary[outletId].departemens[departemen] = {
+              departemen_name: departemen,
+              total_inspections: 0,
+              total_findings: 0,
+              total_points: 0,
+              average_score: 0,
+              passing_score: getPassingScore(departemen),
               inspections: []
             };
           }
           
+          // Add to outlet totals
           summary[outletId].total_inspections++;
           summary[outletId].total_findings += inspection.total_findings || 0;
           summary[outletId].total_points += inspection.total_points || 0;
-          summary[outletId].inspections.push(inspection);
+          
+          // Add to departemen totals
+          summary[outletId].departemens[departemen].total_inspections++;
+          summary[outletId].departemens[departemen].total_findings += inspection.total_findings || 0;
+          summary[outletId].departemens[departemen].total_points += inspection.total_points || 0;
+          summary[outletId].departemens[departemen].inspections.push(inspection);
         }
       });
       
-      // Calculate average scores
+      // Calculate average scores for outlet and departemen
       Object.keys(summary).forEach(outletId => {
         const outlet = summary[outletId];
-        if (outlet.total_inspections > 0) {
-          const totalScore = outlet.inspections.reduce((sum, inspection) => sum + (inspection.score || 0), 0);
-          outlet.average_score = Math.round(totalScore / outlet.total_inspections);
+        let totalScore = 0;
+        let totalInspections = 0;
+        
+        // Calculate outlet average
+        Object.keys(outlet.departemens).forEach(departemen => {
+          const dept = outlet.departemens[departemen];
+          if (dept.total_inspections > 0) {
+            const deptTotalScore = dept.inspections.reduce((sum, inspection) => {
+              return sum + (inspection.score || 0);
+            }, 0);
+            dept.average_score = Math.round(deptTotalScore / dept.total_inspections);
+            totalScore += deptTotalScore;
+            totalInspections += dept.total_inspections;
+          }
+        });
+        
+        if (totalInspections > 0) {
+          outlet.average_score = Math.round(totalScore / totalInspections);
         }
       });
       
@@ -159,10 +240,50 @@ function openUserImage(imageUrl, userName) {
     function toggleOutlet(outletId) {
       if (expandedOutlets.value.has(outletId)) {
         expandedOutlets.value.delete(outletId);
+        // Also close all departemens in this outlet
+        Object.keys(summaryData.value[outletId]?.departemens || {}).forEach(dept => {
+          expandedDepartemens.value.delete(`${outletId}-${dept}`);
+        });
       } else {
         expandedOutlets.value.add(outletId);
       }
     }
+
+    // Toggle departemen expansion
+    function toggleDepartemen(outletId, departemen) {
+      const key = `${outletId}-${departemen}`;
+      if (expandedDepartemens.value.has(key)) {
+        expandedDepartemens.value.delete(key);
+      } else {
+        expandedDepartemens.value.add(key);
+      }
+    }
+
+    // Month options
+    const monthOptions = [
+      { value: 0, label: 'January' },
+      { value: 1, label: 'February' },
+      { value: 2, label: 'March' },
+      { value: 3, label: 'April' },
+      { value: 4, label: 'May' },
+      { value: 5, label: 'June' },
+      { value: 6, label: 'July' },
+      { value: 7, label: 'August' },
+      { value: 8, label: 'September' },
+      { value: 9, label: 'October' },
+      { value: 10, label: 'November' },
+      { value: 11, label: 'December' }
+    ];
+
+    // Year options (current year ± 2 years)
+    const yearOptions = computed(() => {
+      const currentYear = new Date().getFullYear();
+      const years = [];
+      for (let i = currentYear - 2; i <= currentYear + 2; i++) {
+        years.push({ value: i, label: i.toString() });
+      }
+      return years;
+    });
 
 function view(inspection) {
   router.visit(route('inspections.show', inspection.id));
@@ -225,6 +346,13 @@ watch([outletId, departemen, status, perPage], () => {
 // Watch for summary modal
 watch(showSummary, (newValue) => {
   if (newValue) {
+    generateSummary();
+  }
+});
+
+// Watch for month/year changes
+watch([selectedMonth, selectedYear], () => {
+  if (showSummary.value) {
     generateSummary();
   }
 });
@@ -393,8 +521,8 @@ onMounted(() => {
                     :key="inspector.id"
                     class="flex items-center gap-2 bg-gray-50 rounded-lg px-3 py-2"
                   >
-                    <div v-if="inspector.image" class="w-8 h-8 rounded-full overflow-hidden cursor-pointer hover:scale-110 transition-transform" @click="openUserImage(`/storage/${inspector.image}`, inspector.nama_lengkap)">
-                      <img :src="`/storage/${inspector.image}`" :alt="inspector.nama_lengkap" class="w-full h-full object-cover" />
+                    <div v-if="inspector.avatar" class="w-8 h-8 rounded-full overflow-hidden cursor-pointer hover:scale-110 transition-transform" @click="openImageModal(getImageUrl(inspector.avatar))">
+                      <img :src="getImageUrl(inspector.avatar)" :alt="inspector.nama_lengkap" class="w-full h-full object-cover" />
                     </div>
                     <div v-else class="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-xs font-bold">
                       {{ getInitials(inspector.nama_lengkap || 'U') }}
@@ -417,8 +545,8 @@ onMounted(() => {
                     :key="auditee.id"
                     class="flex items-center gap-2 bg-blue-50 rounded-lg px-3 py-2"
                   >
-                    <div v-if="auditee.image" class="w-8 h-8 rounded-full overflow-hidden cursor-pointer hover:scale-110 transition-transform" @click="openUserImage(`/storage/${auditee.image}`, auditee.nama_lengkap)">
-                      <img :src="`/storage/${auditee.image}`" :alt="auditee.nama_lengkap" class="w-full h-full object-cover" />
+                    <div v-if="auditee.avatar" class="w-8 h-8 rounded-full overflow-hidden cursor-pointer hover:scale-110 transition-transform" @click="openImageModal(getImageUrl(auditee.avatar))">
+                      <img :src="getImageUrl(auditee.avatar)" :alt="auditee.nama_lengkap" class="w-full h-full object-cover" />
                     </div>
                     <div v-else class="w-8 h-8 rounded-full bg-gradient-to-br from-green-500 to-blue-600 flex items-center justify-center text-white text-xs font-bold">
                       {{ getInitials(auditee.nama_lengkap || 'U') }}
@@ -490,20 +618,34 @@ onMounted(() => {
             <!-- Actions -->
             <div class="px-6 py-4 border-t border-gray-100 bg-gray-50">
               <div class="flex items-center justify-between">
+                <!-- Left side buttons -->
                 <div class="flex items-center gap-2">
-                  <button @click="view(inspection)" class="p-2 text-blue-600 hover:bg-blue-100 rounded-lg transition" title="View">
-                    <i class="fa-solid fa-eye"></i>
-                  </button>
-                  <button @click="edit(inspection)" class="p-2 text-yellow-600 hover:bg-yellow-100 rounded-lg transition" title="Add Finding">
-                    <i class="fa-solid fa-edit"></i>
-                  </button>
-                  <button v-if="inspection.status === 'Draft'" @click="complete(inspection)" class="p-2 text-green-600 hover:bg-green-100 rounded-lg transition" title="Complete">
-                    <i class="fa-solid fa-check"></i>
+                  <!-- Regular buttons for non-outlet users -->
+                  <template v-if="shouldShowOtherButtons(inspection)">
+                    <button @click="view(inspection)" class="p-2 text-blue-600 hover:bg-blue-100 rounded-lg transition" title="View">
+                      <i class="fa-solid fa-eye"></i>
+                    </button>
+                    <button @click="edit(inspection)" class="p-2 text-yellow-600 hover:bg-yellow-100 rounded-lg transition" title="Add Finding">
+                      <i class="fa-solid fa-edit"></i>
+                    </button>
+                    <button v-if="inspection.status === 'Draft'" @click="complete(inspection)" class="p-2 text-green-600 hover:bg-green-100 rounded-lg transition" title="Complete">
+                      <i class="fa-solid fa-check"></i>
+                    </button>
+                  </template>
+                  
+                  <!-- CPA button for completed inspections -->
+                  <button v-if="shouldShowCPAButton(inspection)" @click="openCPA(inspection)" class="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition font-medium" title="Corrective and Preventive Action">
+                    <i class="fa-solid fa-clipboard-list mr-2"></i>CPA
                   </button>
                 </div>
-                <button @click="hapus(inspection)" class="p-2 text-red-600 hover:bg-red-100 rounded-lg transition" title="Delete">
-                  <i class="fa-solid fa-trash"></i>
-                </button>
+                
+                <!-- Right side buttons -->
+                <div class="flex items-center gap-2">
+                  <!-- Delete button (only for creator) -->
+                  <button v-if="shouldShowDeleteButton(inspection)" @click="hapus(inspection)" class="p-2 text-red-600 hover:bg-red-100 rounded-lg transition" title="Delete">
+                    <i class="fa-solid fa-trash"></i>
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -546,10 +688,10 @@ onMounted(() => {
         <div class="bg-white rounded-2xl shadow-2xl max-w-6xl w-full mx-4 max-h-[90vh] overflow-hidden">
           <!-- Modal Header -->
           <div class="bg-gradient-to-r from-green-500 to-green-600 text-white p-6">
-            <div class="flex justify-between items-center">
+            <div class="flex justify-between items-center mb-4">
               <h2 class="text-2xl font-bold flex items-center">
                 <i class="fa-solid fa-chart-bar mr-3"></i>
-                Inspection Summary - {{ new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) }}
+                Inspection Summary
               </h2>
               <button 
                 @click="showSummary = false"
@@ -557,6 +699,37 @@ onMounted(() => {
               >
                 <i class="fa-solid fa-times"></i>
               </button>
+            </div>
+            
+            <!-- Month/Year Filter -->
+            <div class="flex items-center gap-4">
+              <div class="flex items-center gap-2">
+                <label class="text-sm font-medium">Month:</label>
+                <select 
+                  v-model="selectedMonth"
+                  class="px-3 py-1 rounded text-gray-800 text-sm focus:ring-2 focus:ring-white focus:outline-none"
+                >
+                  <option v-for="month in monthOptions" :key="month.value" :value="month.value">
+                    {{ month.label }}
+                  </option>
+                </select>
+              </div>
+              
+              <div class="flex items-center gap-2">
+                <label class="text-sm font-medium">Year:</label>
+                <select 
+                  v-model="selectedYear"
+                  class="px-3 py-1 rounded text-gray-800 text-sm focus:ring-2 focus:ring-white focus:outline-none"
+                >
+                  <option v-for="year in yearOptions" :key="year.value" :value="year.value">
+                    {{ year.label }}
+                  </option>
+                </select>
+              </div>
+              
+              <div class="text-sm text-green-100">
+                {{ monthOptions[selectedMonth].label }} {{ selectedYear }}
+              </div>
             </div>
           </div>
 
@@ -613,47 +786,118 @@ onMounted(() => {
 
                 <!-- Expanded Content -->
                 <div v-if="expandedOutlets.has(outletId)" class="border-t border-gray-200">
-                  <div class="p-4 space-y-3">
+                  <div class="p-4 space-y-4">
+                    <!-- Departemen Groups -->
                     <div 
-                      v-for="inspection in outlet.inspections" 
-                      :key="inspection.id"
-                      class="bg-gray-50 rounded-lg p-4 hover:bg-gray-100 transition cursor-pointer"
-                      @click="view(inspection)"
+                      v-for="(departemen, deptName) in outlet.departemens" 
+                      :key="deptName"
+                      class="bg-gray-50 rounded-lg border border-gray-200"
                     >
-                      <div class="flex justify-between items-center">
-                        <div class="flex items-center gap-4">
-                          <div>
-                            <div class="font-medium text-gray-800">
-                              {{ inspection.guidance?.title || 'No Guidance' }}
+                      <!-- Departemen Header -->
+                      <div 
+                        @click="toggleDepartemen(outletId, deptName)"
+                        class="p-4 cursor-pointer hover:bg-gray-100 transition"
+                      >
+                        <div class="flex justify-between items-center">
+                          <div class="flex items-center">
+                            <h4 class="text-md font-semibold text-gray-800">{{ departemen.departemen_name }}</h4>
+                            <span class="ml-3 px-2 py-1 bg-green-100 text-green-800 text-xs rounded-full">
+                              {{ departemen.total_inspections }} inspection{{ departemen.total_inspections > 1 ? 's' : '' }}
+                            </span>
+                          </div>
+                          <div class="flex items-center gap-4">
+                            <div class="text-right">
+                              <div class="text-xs text-gray-500">Avg Score</div>
+                              <div :class="[
+                                'text-sm font-bold',
+                                departemen.average_score >= departemen.passing_score ? 'text-green-600' : 'text-red-600'
+                              ]">{{ departemen.average_score }}%</div>
+                              <div class="text-xs text-gray-400">
+                                Pass: {{ departemen.passing_score }}%
+                              </div>
                             </div>
-                            <div class="text-sm text-gray-500">
-                              {{ inspection.departemen }} • {{ new Date(inspection.inspection_date).toLocaleDateString() }}
+                            <div class="text-right">
+                              <div class="text-xs text-gray-500">Findings</div>
+                              <div class="text-sm font-bold text-blue-600">{{ departemen.total_findings }}</div>
                             </div>
+                            <div class="text-right">
+                              <div class="text-xs text-gray-500">Points</div>
+                              <div class="text-sm font-bold text-purple-600">{{ departemen.total_points }}</div>
+                            </div>
+                            <div class="text-right">
+                              <div class="text-xs text-gray-500">Status</div>
+                              <span :class="[
+                                'px-2 py-1 text-xs rounded-full font-medium',
+                                departemen.average_score >= departemen.passing_score ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                              ]">
+                                {{ departemen.average_score >= departemen.passing_score ? 'PASS' : 'FAIL' }}
+                              </span>
+                            </div>
+                            <i :class="[
+                              'fa-solid transition-transform',
+                              expandedDepartemens.has(`${outletId}-${deptName}`) ? 'fa-chevron-up' : 'fa-chevron-down'
+                            ]"></i>
                           </div>
                         </div>
-                        <div class="flex items-center gap-4">
-                          <div class="text-center">
-                            <div class="text-sm text-gray-500">Score</div>
-                            <div :class="[
-                              'font-bold',
-                              inspection.score >= 80 ? 'text-green-600' : 
-                              inspection.score >= 60 ? 'text-yellow-600' : 'text-red-600'
-                            ]">{{ inspection.score || 0 }}%</div>
-                          </div>
-                          <div class="text-center">
-                            <div class="text-sm text-gray-500">Findings</div>
-                            <div class="font-bold text-blue-600">{{ inspection.total_findings || 0 }}</div>
-                          </div>
-                          <div class="text-center">
-                            <div class="text-sm text-gray-500">Points</div>
-                            <div class="font-bold text-purple-600">{{ inspection.total_points || 0 }}</div>
-                          </div>
-                          <div class="text-center">
-                            <div class="text-sm text-gray-500">Status</div>
-                            <span :class="[
-                              'px-2 py-1 text-xs rounded-full',
-                              inspection.status === 'Completed' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
-                            ]">{{ inspection.status }}</span>
+                      </div>
+
+                      <!-- Departemen Inspections -->
+                      <div v-if="expandedDepartemens.has(`${outletId}-${deptName}`)" class="border-t border-gray-200">
+                        <div class="p-4 space-y-3">
+                          <div 
+                            v-for="inspection in departemen.inspections" 
+                            :key="inspection.id"
+                            class="bg-white rounded-lg p-4 hover:bg-gray-50 transition cursor-pointer border border-gray-100"
+                            @click="view(inspection)"
+                          >
+                            <div class="flex justify-between items-center">
+                              <div class="flex items-center gap-4">
+                                <div>
+                                  <div class="font-medium text-gray-800">
+                                    {{ inspection.guidance?.title || 'No Guidance' }}
+                                  </div>
+                                  <div class="text-sm text-gray-500">
+                                    {{ new Date(inspection.inspection_date).toLocaleDateString() }}
+                                  </div>
+                                </div>
+                              </div>
+                              <div class="flex items-center gap-4">
+                                <div class="text-center">
+                                  <div class="text-sm text-gray-500">Score</div>
+                                  <div :class="[
+                                    'font-bold',
+                                    inspection.score >= getPassingScore(inspection.departemen) ? 'text-green-600' : 'text-red-600'
+                                  ]">{{ inspection.score || 0 }}%</div>
+                                  <div class="text-xs text-gray-400">
+                                    Pass: {{ getPassingScore(inspection.departemen) }}%
+                                  </div>
+                                </div>
+                                <div class="text-center">
+                                  <div class="text-sm text-gray-500">Findings</div>
+                                  <div class="font-bold text-blue-600">{{ inspection.total_findings || 0 }}</div>
+                                </div>
+                                <div class="text-center">
+                                  <div class="text-sm text-gray-500">Points</div>
+                                  <div class="font-bold text-purple-600">{{ inspection.total_points || 0 }}</div>
+                                </div>
+                                <div class="text-center">
+                                  <div class="text-sm text-gray-500">Pass/Fail</div>
+                                  <span :class="[
+                                    'px-2 py-1 text-xs rounded-full font-medium',
+                                    inspection.score >= getPassingScore(inspection.departemen) ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                                  ]">
+                                    {{ inspection.score >= getPassingScore(inspection.departemen) ? 'PASS' : 'FAIL' }}
+                                  </span>
+                                </div>
+                                <div class="text-center">
+                                  <div class="text-sm text-gray-500">Status</div>
+                                  <span :class="[
+                                    'px-2 py-1 text-xs rounded-full',
+                                    inspection.status === 'Completed' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
+                                  ]">{{ inspection.status }}</span>
+                                </div>
+                              </div>
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -663,6 +907,23 @@ onMounted(() => {
               </div>
             </div>
           </div>
+        </div>
+      </div>
+
+      <!-- Lightbox Modal -->
+      <div v-if="showImageModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-75" @click="closeImageModal">
+        <div class="relative max-w-4xl max-h-[90vh] p-4" @click.stop>
+          <button 
+            @click="closeImageModal"
+            class="absolute -top-4 -right-4 bg-white rounded-full p-2 shadow-lg hover:bg-gray-100 transition-colors z-10"
+          >
+            <i class="fa-solid fa-times text-gray-600"></i>
+          </button>
+          <img 
+            :src="selectedImageUrl" 
+            :alt="'Avatar preview'"
+            class="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
+          />
         </div>
       </div>
     </div>

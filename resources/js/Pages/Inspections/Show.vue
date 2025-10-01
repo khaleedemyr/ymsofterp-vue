@@ -196,6 +196,173 @@ function hideLightbox() {
           </div>
         </div>
 
+        <!-- CPA Section -->
+        <div v-if="inspection.cpas && inspection.cpas.length > 0" class="mt-8">
+          <div class="bg-white rounded-2xl shadow-lg p-6">
+            <div class="flex items-center gap-3 mb-6">
+              <div class="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
+                <i class="fa-solid fa-clipboard-list text-purple-600"></i>
+              </div>
+              <div>
+                <h3 class="text-xl font-bold text-gray-800">Corrective and Preventive Action (CPA)</h3>
+                <p class="text-sm text-gray-500">{{ inspection.cpas.length }} CPA record(s) found</p>
+              </div>
+            </div>
+
+            <div class="space-y-6">
+              <div 
+                v-for="(cpa, index) in inspection.cpas" 
+                :key="cpa.id"
+                class="border border-gray-200 rounded-xl p-6 bg-gray-50"
+              >
+                <!-- CPA Header -->
+                <div class="flex items-start justify-between mb-4">
+                  <div class="flex-1">
+                    <h4 class="font-semibold text-gray-800 mb-2">CPA #{{ index + 1 }}</h4>
+                    <div class="flex items-center gap-4 text-sm text-gray-600">
+                      <span>
+                        <i class="fa-solid fa-user mr-1"></i>
+                        {{ cpa.responsible_person }}
+                      </span>
+                      <span>
+                        <i class="fa-solid fa-calendar mr-1"></i>
+                        Due: {{ new Date(cpa.due_date).toLocaleDateString() }}
+                      </span>
+                      <span :class="[
+                        'px-2 py-1 rounded-full text-xs font-medium',
+                        cpa.status === 'Completed' ? 'bg-green-100 text-green-800' : 
+                        cpa.status === 'Open' ? 'bg-yellow-100 text-yellow-800' : 
+                        'bg-red-100 text-red-800'
+                      ]">
+                        {{ cpa.status }}
+                      </span>
+                    </div>
+                  </div>
+                  <div class="text-sm text-gray-500">
+                    <i class="fa-solid fa-clock mr-1"></i>
+                    {{ new Date(cpa.created_at).toLocaleDateString() }}
+                  </div>
+                </div>
+
+                <!-- Associated Finding Details -->
+                <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+                  <div class="flex items-center gap-2 mb-3">
+                    <i class="fa-solid fa-search text-blue-600"></i>
+                    <h5 class="font-semibold text-blue-800">Associated Finding Details</h5>
+                  </div>
+                  
+                  <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <label class="font-medium text-blue-700">Category:</label>
+                      <p class="text-gray-800">{{ cpa.inspection_detail?.category?.categories || '-' }}</p>
+                    </div>
+                    <div>
+                      <label class="font-medium text-blue-700">Parameter Pemeriksaan:</label>
+                      <p class="text-gray-800">{{ cpa.inspection_detail?.parameter_pemeriksaan || '-' }}</p>
+                    </div>
+                    <div>
+                      <label class="font-medium text-blue-700">Parameter:</label>
+                      <p class="text-gray-800">{{ cpa.inspection_detail?.parameter?.parameter || '-' }}</p>
+                    </div>
+                    <div>
+                      <label class="font-medium text-blue-700">Finding Status:</label>
+                      <span :class="[
+                        'px-2 py-1 rounded-full text-xs font-medium',
+                        cpa.inspection_detail?.status === 'Non-Compliance' ? 'bg-red-100 text-red-800' : 
+                        cpa.inspection_detail?.status === 'Compliance' ? 'bg-green-100 text-green-800' : 
+                        'bg-yellow-100 text-yellow-800'
+                      ]">
+                        {{ cpa.inspection_detail?.status || '-' }}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div v-if="cpa.inspection_detail?.notes" class="mt-3">
+                    <label class="font-medium text-blue-700">Finding Notes:</label>
+                    <p class="text-gray-800 bg-white p-2 rounded border text-sm">{{ cpa.inspection_detail.notes }}</p>
+                  </div>
+
+                  <div v-if="cpa.inspection_detail?.photo_paths && cpa.inspection_detail.photo_paths.length > 0" class="mt-3">
+                    <label class="font-medium text-blue-700">Finding Evidence:</label>
+                    <div class="flex gap-2 mt-2">
+                      <img 
+                        v-for="(photo, pIndex) in cpa.inspection_detail.photo_paths" 
+                        :key="pIndex"
+                        :src="`/storage/${photo}`"
+                        :alt="`Finding photo ${pIndex + 1}`"
+                        class="w-16 h-16 object-cover rounded cursor-pointer hover:opacity-80 transition border border-gray-200"
+                        @click="showLightbox(cpa.inspection_detail.photo_paths.map(p => `/storage/${p}`), pIndex)"
+                      />
+                    </div>
+                  </div>
+
+                  <div class="flex items-center justify-between mt-3 pt-3 border-t border-blue-200">
+                    <div class="text-xs text-blue-600">
+                      <span class="font-medium">Finding ID:</span> #{{ cpa.inspection_detail?.id || 'N/A' }}
+                    </div>
+                    <div class="text-xs text-blue-600">
+                      <span class="font-medium">Inspector:</span> {{ cpa.inspection_detail?.created_by_user?.nama_lengkap || 'Unknown' }}
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Action Plan -->
+                <div class="mb-4">
+                  <label class="text-sm font-medium text-gray-500 mb-1">Action Plan</label>
+                  <p class="text-gray-800 bg-white p-3 rounded-lg border">{{ cpa.action_plan }}</p>
+                </div>
+
+                <!-- Notes -->
+                <div v-if="cpa.notes" class="mb-4">
+                  <label class="text-sm font-medium text-gray-500 mb-1">Notes</label>
+                  <p class="text-gray-800 bg-white p-3 rounded-lg border">{{ cpa.notes }}</p>
+                </div>
+
+                <!-- Documentation -->
+                <div v-if="cpa.documentation_paths && cpa.documentation_paths.length > 0" class="mb-4">
+                  <label class="text-sm font-medium text-gray-500 mb-2">
+                    Documentation ({{ cpa.documentation_paths.length }} files)
+                  </label>
+                  <div class="flex gap-2 flex-wrap">
+                    <div 
+                      v-for="(doc, docIndex) in cpa.documentation_paths" 
+                      :key="docIndex"
+                      class="relative group"
+                    >
+                      <img 
+                        :src="`/storage/${doc}`"
+                        :alt="`CPA Documentation ${docIndex + 1}`"
+                        class="w-20 h-20 object-cover rounded-lg border border-gray-200 cursor-pointer hover:shadow-lg transition"
+                        @click="showLightbox(cpa.documentation_paths.map(d => `/storage/${d}`), docIndex)"
+                        @error="$event.target.style.display='none'; $event.target.nextElementSibling.style.display='flex'"
+                      />
+                      <!-- Fallback jika gambar gagal dimuat -->
+                      <div 
+                        class="w-20 h-20 bg-gray-100 rounded-lg border border-gray-200 flex flex-col items-center justify-center text-xs text-gray-500 hidden"
+                        @click="showLightbox(cpa.documentation_paths.map(d => `/storage/${d}`), docIndex)"
+                      >
+                        <i class="fa-solid fa-file-image text-lg mb-1"></i>
+                        <span>Doc {{ docIndex + 1 }}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- CPA Footer -->
+                <div class="flex items-center justify-between pt-4 border-t border-gray-200">
+                  <div class="text-sm text-gray-500">
+                    <span class="font-medium">Created by:</span> {{ cpa.created_by?.nama_lengkap || 'Unknown' }}
+                  </div>
+                  <div v-if="cpa.completion_date" class="text-sm text-green-600">
+                    <i class="fa-solid fa-check-circle mr-1"></i>
+                    Completed: {{ new Date(cpa.completion_date).toLocaleDateString() }}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- Actions -->
         <div v-if="inspection.status === 'Draft'" class="mt-8 flex justify-end">
           <button
