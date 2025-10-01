@@ -81,6 +81,17 @@ const menuGroups = [
         ],
     },
     {
+        title: () => 'Quality Assurance',
+        icon: 'fa-solid fa-shield-halved',
+        collapsible: true,
+        open: ref(false),
+        menus: [
+            { name: () => 'QA Categories', icon: 'fa-solid fa-clipboard-list', route: '/qa-categories', code: 'qa_categories' },
+            { name: () => 'QA Parameters', icon: 'fa-solid fa-cogs', route: '/qa-parameters', code: 'qa_parameters' },
+            { name: () => 'QA Guidance', icon: 'fa-solid fa-clipboard-check', route: '/qa-guidances', code: 'qa_guidances' },
+        ],
+    },
+    {
           title: () => 'Ops Management',
           icon: 'fa-solid fa-cogs',
           collapsible: true,

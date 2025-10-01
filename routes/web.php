@@ -1237,6 +1237,21 @@ Route::resource('users', UserController::class);
 Route::patch('users/{user}/toggle-status', [UserController::class, 'toggleStatus'])->name('users.toggle-status');
 Route::post('users/{user}/activate', [UserController::class, 'activate'])->name('users.activate');
 
+// QA Categories Routes
+Route::resource('qa-categories', \App\Http\Controllers\QaCategoryController::class);
+Route::patch('qa-categories/{qaCategory}/toggle-status', [\App\Http\Controllers\QaCategoryController::class, 'toggleStatus'])->name('qa-categories.toggle-status');
+
+// QA Parameters Routes
+Route::resource('qa-parameters', \App\Http\Controllers\QaParameterController::class);
+Route::patch('qa-parameters/{qaParameter}/toggle-status', [\App\Http\Controllers\QaParameterController::class, 'toggleStatus'])->name('qa-parameters.toggle-status');
+
+// QA Guidance Routes
+Route::resource('qa-guidances', \App\Http\Controllers\QaGuidanceController::class);
+Route::patch('qa-guidances/{qaGuidance}/toggle-status', [\App\Http\Controllers\QaGuidanceController::class, 'toggleStatus'])->name('qa-guidances.toggle-status');
+
+
+
+
 // Employee Movement Routes
 Route::get('employee-movements/search/employee', [\App\Http\Controllers\EmployeeMovementController::class, 'searchEmployee'])->name('employee-movements.search-employee');
 Route::get('employee-movements/employee/{id}', [\App\Http\Controllers\EmployeeMovementController::class, 'getEmployeeDetails'])->name('employee-movements.employee-details');
