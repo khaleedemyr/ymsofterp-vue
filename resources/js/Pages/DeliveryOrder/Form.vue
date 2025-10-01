@@ -304,6 +304,15 @@ function onScanBarcode() {
       return;
     }
     
+    // Validasi qty scan tidak melebihi stock yang tersedia
+    if (currentScan + qty > stock) {
+      scanFeedback.value = `❌ Qty scan tidak boleh melebihi stock (${stock} ${item.unit})`;
+      scanFeedbackClass.value = 'text-red-600';
+      barcodeInputVal.value = '';
+      nextTick(() => barcodeInput.value?.focus());
+      return;
+    }
+    
     // Validasi qty scan tidak melebihi qty packing list
     if (currentScan + qty > maxQty) {
       scanFeedback.value = `❌ Qty scan tidak boleh lebih dari ${maxQty}`;
@@ -359,6 +368,15 @@ function confirmQtyModal() {
   // Validasi stock tersedia
   if (stock <= 0) {
     scanFeedback.value = `❌ Stok tidak tersedia (${stock} ${item.unit})`;
+    scanFeedbackClass.value = 'text-red-600';
+    nextTick(() => document.getElementById('qty-modal-input')?.focus());
+    return;
+  }
+  
+  // Validasi qty scan tidak melebihi stock yang tersedia
+  if (inputQty > stock) {
+    qtyModalValue.value = stock;
+    scanFeedback.value = `❌ Qty scan tidak boleh melebihi stock (${stock} ${item.unit})`;
     scanFeedbackClass.value = 'text-red-600';
     nextTick(() => document.getElementById('qty-modal-input')?.focus());
     return;

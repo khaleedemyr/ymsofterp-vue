@@ -674,12 +674,33 @@ class DeliveryOrderController extends Controller
                     $unitNameSmall = DB::table('units')->where('id', $inv->small_unit_id)->value('name');
                     $unitNameMedium = DB::table('units')->where('id', $inv->medium_unit_id)->value('name');
                     $unitNameLarge = DB::table('units')->where('id', $inv->large_unit_id)->value('name');
+                    
+                    Log::info('Stock calculation debug', [
+                        'item_id' => $item->item_id,
+                        'item_name' => $item->name,
+                        'unit' => $unit,
+                        'unitNameSmall' => $unitNameSmall,
+                        'unitNameMedium' => $unitNameMedium,
+                        'unitNameLarge' => $unitNameLarge,
+                        'qty_small' => $stock->qty_small,
+                        'qty_medium' => $stock->qty_medium,
+                        'qty_large' => $stock->qty_large
+                    ]);
+                    
                     if ($unit == $unitNameSmall) {
                         $stockQty = $stock->qty_small;
                     } elseif ($unit == $unitNameMedium) {
                         $stockQty = $stock->qty_medium;
                     } elseif ($unit == $unitNameLarge) {
                         $stockQty = $stock->qty_large;
+                    } else {
+                        // Jika unit tidak cocok, gunakan qty_small sebagai fallback
+                        $stockQty = $stock->qty_small;
+                        Log::warning('Unit tidak cocok, menggunakan qty_small sebagai fallback', [
+                            'item_id' => $item->item_id,
+                            'unit' => $unit,
+                            'fallback_qty_small' => $stock->qty_small
+                        ]);
                     }
                 }
                 $itemStocks[$item->id] = $stockQty !== null ? (float)$stockQty : 0;
