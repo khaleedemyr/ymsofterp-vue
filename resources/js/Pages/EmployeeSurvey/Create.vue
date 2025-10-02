@@ -21,10 +21,6 @@
                             </Link>
                         </div>
 
-                        <!-- Flash Messages -->
-                        <div v-if="$page.props.flash.error" class="mb-4 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
-                            {{ $page.props.flash.error }}
-                        </div>
 
                         <form @submit.prevent="submitForm">
                             <!-- Surveyor Information -->
@@ -155,6 +151,7 @@
 import { Head, Link, useForm } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import { ref, reactive, onMounted } from 'vue'
+import Swal from 'sweetalert2'
 
 const props = defineProps({
     user: Object,
@@ -200,6 +197,28 @@ function submitForm() {
         ...data,
         responses: responsesArray
     })).post(route('employee-survey.store'), {
+        onSuccess: () => {
+            Swal.fire({
+                title: 'Berhasil!',
+                text: 'Survey berhasil dibuat.',
+                icon: 'success',
+                timer: 2000,
+                showConfirmButton: false
+            }).then(() => {
+                // Redirect will be handled by Inertia
+            })
+        },
+        onError: (errors) => {
+            let errorMessage = 'Terjadi kesalahan saat menyimpan survey.'
+            if (errors.responses) {
+                errorMessage = 'Pastikan semua pertanyaan telah dijawab.'
+            }
+            Swal.fire({
+                title: 'Error!',
+                text: errorMessage,
+                icon: 'error'
+            })
+        },
         onFinish: () => {
             isSubmitting.value = false
         }

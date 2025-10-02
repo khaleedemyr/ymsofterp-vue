@@ -17,13 +17,6 @@
                 </Link>
             </div>
 
-            <!-- Flash Messages -->
-            <div v-if="$page.props.flash.success" class="mb-4 bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded">
-                {{ $page.props.flash.success }}
-            </div>
-            <div v-if="$page.props.flash.error" class="mb-4 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
-                {{ $page.props.flash.error }}
-            </div>
 
             <!-- Filters -->
             <div class="mb-6 bg-white rounded-xl shadow-lg p-6 border border-gray-100">
@@ -314,8 +307,9 @@
 <script setup>
 import { Head, Link, router } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
-import { ref, watch } from 'vue'
+import { ref, watch, onMounted } from 'vue'
 import { debounce } from 'lodash'
+import Swal from 'sweetalert2'
 
 const props = defineProps({
     surveys: Object,
@@ -348,6 +342,27 @@ const debouncedSearch = debounce(() => {
 // Watch for changes
 watch([search, status, perPage, dateFrom, dateTo], () => {
     debouncedSearch()
+})
+
+// Handle flash messages with SweetAlert
+onMounted(() => {
+    if (props.surveys?.flash?.success) {
+        Swal.fire({
+            title: 'Berhasil!',
+            text: props.surveys.flash.success,
+            icon: 'success',
+            timer: 3000,
+            showConfirmButton: false
+        })
+    }
+    
+    if (props.surveys?.flash?.error) {
+        Swal.fire({
+            title: 'Error!',
+            text: props.surveys.flash.error,
+            icon: 'error'
+        })
+    }
 })
 
 // Filter functions
@@ -478,8 +493,37 @@ function getSurveyStarRating(survey) {
 }
 
 function deleteSurvey(id) {
-    if (confirm('Apakah Anda yakin ingin menghapus survey ini?')) {
-        router.delete(route('employee-survey.destroy', id))
-    }
+    Swal.fire({
+        title: 'Konfirmasi Hapus',
+        text: 'Apakah Anda yakin ingin menghapus survey ini?',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#d33',
+        cancelButtonColor: '#3085d6',
+        confirmButtonText: 'Ya, Hapus!',
+        cancelButtonText: 'Batal',
+        reverseButtons: true
+    }).then((result) => {
+        if (result.isConfirmed) {
+            router.delete(route('employee-survey.destroy', id), {
+                onSuccess: () => {
+                    Swal.fire({
+                        title: 'Berhasil!',
+                        text: 'Survey berhasil dihapus.',
+                        icon: 'success',
+                        timer: 2000,
+                        showConfirmButton: false
+                    })
+                },
+                onError: () => {
+                    Swal.fire({
+                        title: 'Error!',
+                        text: 'Gagal menghapus survey.',
+                        icon: 'error'
+                    })
+                }
+            })
+        }
+    })
 }
 </script>
