@@ -1,7 +1,19 @@
 <template>
   <AppLayout>
-    <div class="max-w-7xl mx-auto py-8 px-4">
-      <h1 class="text-2xl font-bold mb-6">Laporan Stok Akhir</h1>
+    <div class="w-full py-8 px-4">
+      <div class="flex justify-between items-center mb-6">
+        <h1 class="text-2xl font-bold">Laporan Stok Akhir</h1>
+        <button 
+          @click="exportToExcel" 
+          :disabled="isExporting"
+          class="bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
+        >
+          <i v-if="isExporting" class="fas fa-spinner fa-spin"></i>
+          <i v-else class="fas fa-file-excel"></i>
+          {{ isExporting ? 'Exporting...' : 'Export Excel' }}
+        </button>
+      </div>
+      
       <div class="flex flex-col md:flex-row md:items-center gap-4 mb-4">
         <input v-model="search" type="text" placeholder="Cari nama barang atau warehouse..." class="px-4 py-2 border border-gray-300 rounded-lg w-full md:w-64 focus:ring-blue-500 focus:border-blue-500" />
         <div class="flex items-center gap-2">
@@ -73,15 +85,19 @@
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { ref, computed, watch } from 'vue';
+import axios from 'axios';
+
 const props = defineProps({
   stocks: Array,
   warehouses: Array,
   warehouse_outlets: Array
 });
+
 const search = ref('');
 const perPage = ref(25);
 const page = ref(1);
 const selectedWarehouse = ref('');
+const isExporting = ref(false);
 
 const filteredStocks = computed(() => {
   let data = props.stocks;
@@ -117,5 +133,42 @@ function displayQty(val, digits = 0) {
 function displayValue(val) {
   if (!val || Number(val) === 0) return '-';
   return Number(val).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+async function exportToExcel() {
+  if (isExporting.value) return;
+  
+  try {
+    isExporting.value = true;
+    
+    const params = new URLSearchParams();
+    if (selectedWarehouse.value) {
+      params.append('warehouse_id', selectedWarehouse.value);
+    }
+    
+    const response = await axios.get(route('inventory.stock-position.export'), {
+      params: params,
+      responseType: 'blob'
+    });
+    
+    // Create blob and download
+    const blob = new Blob([response.data], { 
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+    });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `laporan_stok_akhir_${new Date().toISOString().split('T')[0]}.xlsx`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+    
+  } catch (error) {
+    console.error('Export error:', error);
+    alert('Terjadi kesalahan saat export. Silakan coba lagi.');
+  } finally {
+    isExporting.value = false;
+  }
 }
 </script> 

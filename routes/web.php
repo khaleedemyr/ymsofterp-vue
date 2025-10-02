@@ -620,6 +620,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
 // Laporan Stok Akhir
 Route::get('/inventory/stock-position', [\App\Http\Controllers\InventoryReportController::class, 'stockPosition'])->name('inventory.stock-position');
+Route::get('/inventory/stock-position/export', [\App\Http\Controllers\InventoryReportController::class, 'exportStockPosition'])->name('inventory.stock-position.export');
 
 // Laporan Kartu Stok
 Route::get('/inventory/stock-card', [\App\Http\Controllers\InventoryReportController::class, 'stockCard'])->name('inventory.stock-card');

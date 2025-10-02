@@ -6,6 +6,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Carbon\Carbon;
+use App\Exports\StockPositionExport;
+use Maatwebsite\Excel\Facades\Excel;
 
 class InventoryReportController extends Controller
 {
@@ -55,6 +57,18 @@ class InventoryReportController extends Controller
             'stocks' => $data,
             'warehouses' => $warehouses,
         ]);
+    }
+
+    // Export Stock Position to Excel
+    public function exportStockPosition(Request $request)
+    {
+        $warehouseId = $request->input('warehouse_id');
+        $timestamp = now()->format('Y-m-d_H-i-s');
+        
+        return Excel::download(
+            new StockPositionExport($warehouseId), 
+            "laporan_stok_akhir_{$timestamp}.xlsx"
+        );
     }
 
     // Laporan Kartu Stok
