@@ -208,7 +208,17 @@ Route::middleware('auth')->group(function () {
 
     Route::resource('marketing-visit-checklist', \App\Http\Controllers\MarketingVisitChecklistController::class);
     Route::get('marketing-visit-checklist/{id}/export', [\App\Http\Controllers\MarketingVisitChecklistController::class, 'export'])->name('marketing-visit-checklist.export');
+    
+    // Coaching routes
+    Route::resource('coaching', \App\Http\Controllers\CoachingController::class);
+    Route::get('coaching/search-users', [\App\Http\Controllers\CoachingController::class, 'searchUsers'])->name('coaching.search-users');
+    Route::post('coaching/{coaching}/approve', [\App\Http\Controllers\CoachingController::class, 'approve'])->name('coaching.approve');
+    Route::post('coaching/{coaching}/reject', [\App\Http\Controllers\CoachingController::class, 'reject'])->name('coaching.reject');
 });
+
+// API routes for coaching (outside middleware group)
+Route::get('/api/coaching/user-sanctions', [\App\Http\Controllers\CoachingController::class, 'getUserActiveSanctions'])->name('coaching.user-sanctions');
+Route::get('/api/coaching/pending-approvals', [\App\Http\Controllers\CoachingController::class, 'getPendingApprovals'])->name('coaching.pending-approvals');
 
 // Action Plan Routes
 Route::middleware(['auth'])->group(function () {

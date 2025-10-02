@@ -64,6 +64,14 @@ const availableTrainings = ref([]);
 const loadingAvailableTrainings = ref(false);
 const showAvailableTrainingsModal = ref(false);
 
+// Active sanctions
+const activeSanctions = ref([]);
+const loadingSanctions = ref(false);
+
+// Coaching approvals
+const pendingCoachingApprovals = ref([]);
+const loadingCoachingApprovals = ref(false);
+
 // Training detail modal
 const showTrainingDetailModal = ref(false);
 const selectedTrainingDetail = ref(null);
@@ -287,6 +295,119 @@ async function loadPendingPrApprovals() {
     }
 }
 
+// Load active sanctions
+async function loadActiveSanctions() {
+    loadingSanctions.value = true;
+    try {
+        const response = await axios.get('/api/coaching/user-sanctions');
+        if (response.data.success) {
+            activeSanctions.value = response.data.active_sanctions;
+        }
+    } catch (error) {
+        console.error('Error loading active sanctions:', error);
+    } finally {
+        loadingSanctions.value = false;
+    }
+}
+
+// Load coaching approvals
+async function loadCoachingApprovals() {
+    loadingCoachingApprovals.value = true;
+    try {
+        const response = await axios.get('/api/coaching/pending-approvals');
+        console.log('Coaching approvals response:', response.data);
+        if (response.data.success) {
+            pendingCoachingApprovals.value = response.data.pending_approvals;
+            console.log('Pending coaching approvals:', pendingCoachingApprovals.value);
+        }
+    } catch (error) {
+        console.error('Error loading coaching approvals:', error);
+    } finally {
+        loadingCoachingApprovals.value = false;
+    }
+}
+
+// Approve coaching
+async function approveCoaching(coachingId, approverId) {
+    try {
+        const response = await axios.post(`/coaching/${coachingId}/approve`, {
+            approver_id: approverId,
+            comments: ''
+        });
+        
+        if (response.data.message) {
+            Swal.fire({
+                icon: 'success',
+                title: 'Berhasil',
+                text: response.data.message,
+                timer: 2000,
+                showConfirmButton: false
+            });
+            
+            // Reload approvals
+            loadCoachingApprovals();
+        }
+    } catch (error) {
+        console.error('Error approving coaching:', error);
+        Swal.fire({
+            icon: 'error',
+            title: 'Error',
+            text: 'Gagal menyetujui coaching'
+        });
+    }
+}
+
+// Reject coaching
+async function rejectCoaching(coachingId, approverId) {
+    const { value: comments } = await Swal.fire({
+        title: 'Tolak Coaching',
+        input: 'textarea',
+        inputLabel: 'Alasan Penolakan',
+        inputPlaceholder: 'Masukkan alasan penolakan...',
+        inputAttributes: {
+            'aria-label': 'Masukkan alasan penolakan'
+        },
+        showCancelButton: true,
+        confirmButtonText: 'Tolak',
+        cancelButtonText: 'Batal',
+        confirmButtonColor: '#dc3545',
+        inputValidator: (value) => {
+            if (!value) {
+                return 'Alasan penolakan harus diisi!'
+            }
+        }
+    });
+
+    if (comments) {
+        try {
+            const response = await axios.post(`/coaching/${coachingId}/reject`, {
+                approver_id: approverId,
+                comments: comments
+            });
+            
+            if (response.data.message) {
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Berhasil',
+                    text: response.data.message,
+                    timer: 2000,
+                    showConfirmButton: false
+                });
+                
+                // Reload approvals
+                loadCoachingApprovals();
+            }
+        } catch (error) {
+            console.error('Error rejecting coaching:', error);
+            Swal.fire({
+                icon: 'error',
+                title: 'Error',
+                text: 'Gagal menolak coaching'
+            });
+        }
+    }
+}
+
 // Show PR approval details
 async function showPrApprovalDetails(prId) {
     try {
@@ -374,6 +495,29 @@ function getMonthName(monthNumber) {
         'July', 'August', 'September', 'October', 'November', 'December'
     ]
     return months[monthNumber - 1] || 'Unknown'
+}
+
+// Helper functions for sanctions
+function formatDate(dateString) {
+    if (!dateString) return 'N/A';
+    const date = new Date(dateString);
+    return date.toLocaleDateString('id-ID', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric'
+    });
+}
+
+function isSanctionActive(sanction) {
+    if (!sanction || !sanction.effective_date || !sanction.end_date) {
+        console.log('Sanction not active - missing data:', sanction);
+        return false;
+    }
+    
+    const currentDate = new Date().toISOString().split('T')[0];
+    const isActive = sanction.effective_date <= currentDate && sanction.end_date >= currentDate;
+    console.log('Checking sanction:', sanction.name, 'from', sanction.effective_date, 'to', sanction.end_date, 'current:', currentDate, 'active:', isActive);
+    return isActive;
 }
 
 function getBudgetProgressColor(usedAmount, totalBudget) {
@@ -2404,6 +2548,8 @@ onMounted(() => {
     loadPendingCorrectionApprovals();
     loadTrainingInvitations();
     loadAvailableTrainings();
+    loadActiveSanctions();
+    loadCoachingApprovals();
 });
 
 watch(locale, () => {
@@ -2483,6 +2629,72 @@ watch(locale, () => {
                                 </div>
                             </div>
                         </div>
+                        
+                        <!-- Active Sanctions Badge -->
+                        <div v-if="activeSanctions.length > 0" class="mt-4 p-4 rounded-xl border shadow-lg animate-fade-in"
+                            :class="[
+                                isNight ? 'bg-red-900/80 text-white border-red-600' : 'bg-gradient-to-r from-red-50 to-orange-50 text-red-800 border-red-200'
+                            ]">
+                            <div class="flex items-center gap-2 mb-3">
+                                <i class="fa-solid fa-gavel text-lg" :class="isNight ? 'text-red-300' : 'text-red-600'"></i>
+                                <span class="font-semibold text-sm" :class="isNight ? 'text-red-300' : 'text-red-600'">Sanksi Aktif</span>
+                            </div>
+                            <!-- Debug info -->
+                            <div class="text-xs mb-2" :class="isNight ? 'text-red-300' : 'text-red-600'">
+                                Debug: {{ activeSanctions.length }} sanctions found
+                            </div>
+                            <div v-for="sanction in activeSanctions" :key="sanction.id" class="mb-3 last:mb-0">
+                                <div v-for="(action, index) in sanction.sanctions" :key="index" 
+                                     class="p-3 rounded-lg border mb-2" 
+                                     :class="isNight ? 'bg-red-800/50 border-red-700' : 'bg-white/80 border-red-200'"
+                                     v-show="action && isSanctionActive(action)">
+                                    <!-- Sanction Details -->
+                                    <div class="space-y-2">
+                                        <!-- Sanction Name -->
+                                        <div class="flex items-center justify-between mb-2">
+                                            <div class="font-semibold text-sm" :class="isNight ? 'text-white' : 'text-red-800'">
+                                                {{ action.name }}
+                                            </div>
+                                            <div class="text-xs px-2 py-1 rounded-full" 
+                                                 :class="isNight ? 'bg-red-700 text-red-200' : 'bg-red-100 text-red-700'">
+                                                Aktif
+                                            </div>
+                                        </div>
+                                        
+                                        <!-- Violation Date -->
+                                        <div class="text-xs" :class="isNight ? 'text-red-300' : 'text-red-600'">
+                                            <span class="font-medium">Tanggal Pelanggaran:</span> {{ formatDate(sanction.violation_date) }}
+                                        </div>
+                                        
+                                        <!-- Violation Location -->
+                                        <div class="text-xs" :class="isNight ? 'text-red-300' : 'text-red-600'">
+                                            <span class="font-medium">Tempat Terjadi Pelanggaran:</span> {{ sanction.location }}
+                                        </div>
+                                        
+                                        <!-- Violation Details -->
+                                        <div class="text-xs" :class="isNight ? 'text-red-300' : 'text-red-600'">
+                                            <span class="font-medium">Detail Pelanggaran:</span> {{ sanction.violation_details }}
+                                        </div>
+                                        
+                                        <!-- Effective Date -->
+                                        <div class="text-xs" :class="isNight ? 'text-red-300' : 'text-red-600'">
+                                            <span class="font-medium">Tanggal Berlaku:</span> {{ formatDate(action.effective_date) }}
+                                        </div>
+                                        
+                                        <!-- End Date -->
+                                        <div class="text-xs" :class="isNight ? 'text-red-300' : 'text-red-600'">
+                                            <span class="font-medium">Tanggal Berakhir:</span> {{ formatDate(action.end_date) }}
+                                        </div>
+                                        
+                                        <!-- Remarks -->
+                                        <div v-if="action.remarks" class="text-xs" :class="isNight ? 'text-red-300' : 'text-red-600'">
+                                            <span class="font-medium">Keterangan:</span> {{ action.remarks }}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
                         
                         <!-- Quote Section -->
                         <div class="p-4 rounded-xl border shadow-lg animate-fade-in"
@@ -2649,6 +2861,76 @@ watch(locale, () => {
                                 </button>
                             </div>
                             
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Coaching Approval Section -->
+                <div v-if="pendingCoachingApprovals.length > 0" class="flex-shrink-0 mb-4">
+                    <div class="backdrop-blur-md rounded-2xl shadow-2xl border p-4 transition-all duration-500 animate-fade-in hover:shadow-3xl"
+                        :class="isNight ? 'bg-slate-800/90 border-slate-600/50' : 'bg-white/90 border-white/20'">
+                        <div class="flex items-center justify-between mb-3">
+                            <div class="flex items-center gap-2">
+                                <i class="fa-solid fa-clipboard-check text-lg" :class="isNight ? 'text-blue-400' : 'text-blue-600'"></i>
+                                <h3 class="text-lg font-semibold" :class="isNight ? 'text-white' : 'text-slate-800'">Coaching Menunggu Persetujuan</h3>
+                            </div>
+                            <div class="text-sm px-2 py-1 rounded-full" 
+                                 :class="isNight ? 'bg-blue-700 text-blue-200' : 'bg-blue-100 text-blue-800'">
+                                {{ pendingCoachingApprovals.length }} item
+                            </div>
+                        </div>
+                        
+                        <div class="space-y-3">
+                            <div v-for="approval in pendingCoachingApprovals.slice(0, 3)" :key="approval.id" 
+                                 class="p-3 rounded-lg border transition-all duration-200"
+                                 :class="isNight ? 'bg-slate-700/50 border-slate-600' : 'bg-blue-50 border-blue-200'">
+                                <div class="flex items-start gap-3">
+                                    <div class="flex-shrink-0 mt-1">
+                                        <div class="w-2 h-2 rounded-full bg-blue-500"></div>
+                                    </div>
+                                    <div class="flex-1">
+                                        <div class="flex items-center justify-between mb-2">
+                                            <div class="font-medium text-sm" :class="isNight ? 'text-white' : 'text-slate-800'">
+                                                {{ approval.employee_name }}
+                                            </div>
+                                            <div class="text-xs px-2 py-1 rounded-full" 
+                                                 :class="isNight ? 'bg-blue-700 text-blue-200' : 'bg-blue-100 text-blue-800'">
+                                                Level {{ approval.approval_level }}
+                                            </div>
+                                        </div>
+                                        <div class="text-xs space-y-1 mb-3" :class="isNight ? 'text-slate-300' : 'text-slate-600'">
+                                            <div class="flex justify-between">
+                                                <span>Tanggal Pelanggaran:</span>
+                                                <span>{{ formatDate(approval.violation_date) }}</span>
+                                            </div>
+                                            <div class="flex justify-between">
+                                                <span>Supervisor:</span>
+                                                <span>{{ approval.supervisor_name }}</span>
+                                            </div>
+                                        </div>
+                                        <div class="text-xs mb-3" :class="isNight ? 'text-slate-300' : 'text-slate-600'">
+                                            <span class="font-medium">Detail:</span>
+                                            <div class="mt-1">{{ approval.violation_details }}</div>
+                                        </div>
+                                        <div class="flex gap-2">
+                                            <button @click="approveCoaching(approval.coaching_id, approval.id)"
+                                                    class="px-3 py-1 text-xs rounded-full bg-green-500 hover:bg-green-600 text-white transition-colors">
+                                                <i class="fa-solid fa-check mr-1"></i>Setujui
+                                            </button>
+                                            <button @click="rejectCoaching(approval.coaching_id, approval.id)"
+                                                    class="px-3 py-1 text-xs rounded-full bg-red-500 hover:bg-red-600 text-white transition-colors">
+                                                <i class="fa-solid fa-times mr-1"></i>Tolak
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div v-if="pendingCoachingApprovals.length > 3" class="text-center pt-2">
+                                <button class="text-sm text-blue-500 hover:text-blue-700 font-medium">
+                                    Lihat {{ pendingCoachingApprovals.length - 3 }} coaching lainnya...
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
