@@ -1887,4 +1887,9 @@ Route::middleware(['auth'])->group(function () {
     Route::resource('locked-budget-food-categories', App\Http\Controllers\LockedBudgetFoodCategoryController::class);
 });
 
+// Employee Survey routes
+Route::middleware(['auth'])->group(function () {
+    Route::resource('employee-survey', App\Http\Controllers\EmployeeSurveyController::class);
+});
+
 require __DIR__.'/auth.php';
