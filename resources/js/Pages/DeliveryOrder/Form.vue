@@ -313,19 +313,12 @@ function onScanBarcode() {
       return;
     }
     
-    // Validasi qty scan tidak melebihi qty packing list
-    if (currentScan + qty > maxQty) {
-      scanFeedback.value = `❌ Qty scan tidak boleh lebih dari ${maxQty}`;
-      scanFeedbackClass.value = 'text-red-600';
-      barcodeInputVal.value = '';
-      nextTick(() => barcodeInput.value?.focus());
-      return;
-    }
     // Selalu tampilkan modal input qty jika scan tanpa qty (qty === 1, artinya user tidak input qty di barcode)
     if (qty === 1) {
       qtyModalItem.value = item;
-      // Default value sesuai qty packing list
-      qtyModalValue.value = maxQty;
+      // Default value sesuai sisa qty yang belum di-scan
+      const remainingQty = maxQty - currentScan;
+      qtyModalValue.value = Math.max(0.01, remainingQty);
       showQtyModal.value = true;
       barcodeInputVal.value = '';
       nextTick(() => {
@@ -334,8 +327,10 @@ function onScanBarcode() {
       });
       return;
     }
+    
+    // Validasi qty scan tidak melebihi qty packing list
     if (currentScan + qty > maxQty) {
-      scanFeedback.value = `❌ Qty scan tidak boleh lebih dari ${maxQty}`;
+      scanFeedback.value = `❌ Qty scan tidak boleh lebih dari ${maxQty} (sisa: ${maxQty - currentScan})`;
       scanFeedbackClass.value = 'text-red-600';
       barcodeInputVal.value = '';
       nextTick(() => barcodeInput.value?.focus());
@@ -362,6 +357,7 @@ function onScanBarcode() {
 function confirmQtyModal() {
   const item = qtyModalItem.value;
   const maxQty = Number(item.qty);
+  const currentScan = Number(item.qty_scan || 0);
   const inputQty = Number(qtyModalValue.value);
   const stock = Number(item.stock ?? 0);
   
@@ -374,18 +370,20 @@ function confirmQtyModal() {
   }
   
   // Validasi qty scan tidak melebihi stock yang tersedia
-  if (inputQty > stock) {
-    qtyModalValue.value = stock;
-    scanFeedback.value = `❌ Qty scan tidak boleh melebihi stock (${stock} ${item.unit})`;
+  if (currentScan + inputQty > stock) {
+    const maxAllowed = stock - currentScan;
+    qtyModalValue.value = Math.max(0.01, maxAllowed);
+    scanFeedback.value = `❌ Qty scan tidak boleh melebihi stock (sisa: ${maxAllowed} ${item.unit})`;
     scanFeedbackClass.value = 'text-red-600';
     nextTick(() => document.getElementById('qty-modal-input')?.focus());
     return;
   }
   
   // Validasi qty scan tidak melebihi qty packing list
-  if (inputQty > maxQty) {
-    qtyModalValue.value = maxQty;
-    scanFeedback.value = `❌ Qty scan tidak boleh lebih dari ${maxQty}`;
+  if (currentScan + inputQty > maxQty) {
+    const maxAllowed = maxQty - currentScan;
+    qtyModalValue.value = Math.max(0.01, maxAllowed);
+    scanFeedback.value = `❌ Qty scan tidak boleh lebih dari ${maxQty} (sisa: ${maxAllowed})`;
     scanFeedbackClass.value = 'text-red-600';
     nextTick(() => document.getElementById('qty-modal-input')?.focus());
     return;
