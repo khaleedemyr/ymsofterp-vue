@@ -154,11 +154,14 @@
 
                         <!-- User Info with Avatar -->
                         <div class="flex items-center gap-4 mb-4">
-                            <div class="w-16 h-16 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-lg font-bold border-3 border-white shadow-xl">
-                                {{ getInitials(survey.surveyor_name) }}
+                            <div v-if="survey.surveyor?.avatar" class="w-16 h-16 rounded-full overflow-hidden border-3 border-white shadow-xl cursor-pointer hover:shadow-2xl transition-all" @click="openImageModal(getImageUrl(survey.surveyor.avatar))">
+                                <img :src="getImageUrl(survey.surveyor.avatar)" :alt="survey.surveyor.nama_lengkap" class="w-full h-full object-cover hover:scale-105 transition-transform" />
+                            </div>
+                            <div v-else class="w-16 h-16 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-lg font-bold border-3 border-white shadow-xl">
+                                {{ getInitials(survey.surveyor?.nama_lengkap || survey.surveyor_name) }}
                             </div>
                             <div>
-                                <p class="font-medium text-gray-800 text-lg">{{ survey.surveyor_name }}</p>
+                                <p class="font-medium text-gray-800 text-lg">{{ survey.surveyor?.nama_lengkap || survey.surveyor_name }}</p>
                                 <p class="text-sm text-gray-500">{{ survey.surveyor_position }}</p>
                                 <p class="text-xs text-gray-400">{{ survey.surveyor_division }}</p>
                                 <p class="text-xs text-gray-400">{{ survey.surveyor_outlet }}</p>
@@ -295,6 +298,16 @@
                 </nav>
             </div>
         </div>
+
+        <!-- Image Modal -->
+        <div v-if="showImageModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-75" @click="closeImageModal">
+            <div class="relative max-w-4xl max-h-4xl p-4" @click.stop>
+                <button @click="closeImageModal" class="absolute top-2 right-2 text-white text-2xl hover:text-gray-300 transition-colors z-10">
+                    <i class="fa-solid fa-times"></i>
+                </button>
+                <img :src="selectedImageUrl" alt="Profile Photo" class="max-w-full max-h-full object-contain rounded-lg shadow-2xl" />
+            </div>
+        </div>
     </AppLayout>
 </template>
 
@@ -316,6 +329,10 @@ const status = ref(props.filters?.status || 'all')
 const perPage = ref(props.filters?.per_page || 10)
 const dateFrom = ref(props.filters?.date_from || '')
 const dateTo = ref(props.filters?.date_to || '')
+
+// Lightbox functionality
+const showImageModal = ref(false)
+const selectedImageUrl = ref('')
 
 // Debounced search
 const debouncedSearch = debounce(() => {
@@ -378,6 +395,23 @@ function setDateRange(range) {
             break
     }
     debouncedSearch()
+}
+
+// Image modal functions
+function getImageUrl(avatar) {
+    if (!avatar) return ''
+    if (avatar.startsWith('http')) return avatar
+    return `/storage/${avatar}`
+}
+
+function openImageModal(imageUrl) {
+    selectedImageUrl.value = imageUrl
+    showImageModal.value = true
+}
+
+function closeImageModal() {
+    showImageModal.value = false
+    selectedImageUrl.value = ''
 }
 
 function formatDate(date) {
