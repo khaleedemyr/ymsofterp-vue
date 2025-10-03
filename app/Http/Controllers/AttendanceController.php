@@ -187,7 +187,7 @@ class AttendanceController extends Controller
                         $nextDayOuts = $nextDayScans->where('inoutmode', 2);
                         
                         if ($nextDayOuts->isNotEmpty()) {
-                            $lastOut = $nextDayOuts->last()['scan_date'];
+                            $lastOut = $nextDayOuts->first()['scan_date'];
                             $isCrossDay = true;
                             
                             // Remove this scan from next day (following AttendanceReportController logic)
@@ -516,7 +516,7 @@ class AttendanceController extends Controller
                         $nextDayOuts = $nextDayScans->where('inoutmode', 2);
                         
                         if ($nextDayOuts->isNotEmpty()) {
-                            $lastOut = $nextDayOuts->last()['scan_date'];
+                            $lastOut = $nextDayOuts->first()['scan_date'];
                             $isCrossDay = true;
                             
                             // Hapus scan keluar ini dari hari berikutnya (following AttendanceReportController logic)

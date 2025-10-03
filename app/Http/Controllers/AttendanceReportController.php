@@ -52,12 +52,15 @@ class AttendanceReportController extends Controller
                     'u.nama_lengkap'
                 )
                 ->whereBetween(DB::raw('DATE(a.scan_date)'), [$start, $end]);
-            // Filter outlet hanya untuk dropdown karyawan, bukan untuk report
+            // Apply filters
+            if (!empty($outletId)) {
+                $sub->where('u.id_outlet', $outletId);
+            }
             if (!empty($divisionId)) {
                 $sub->where('u.division_id', $divisionId);
             }
             if (!empty($search)) {
-                $sub->where('u.nama_lengkap', 'like', "%$search%");
+                $sub->where('u.nama_lengkap', '=', $search);
             }
             $rawData = $sub->orderBy('a.scan_date')->get();
 
@@ -119,7 +122,7 @@ class AttendanceReportController extends Controller
                             $nextDayOuts = $nextDayScans->where('inoutmode', 2);
                             
                             if ($nextDayOuts->isNotEmpty()) {
-                                $jamKeluar = $nextDayOuts->last()['scan_date'];
+                                $jamKeluar = $nextDayOuts->first()['scan_date'];
                                 $isCrossDay = true;
                                 $totalKeluar = 1; // Cross-day scan keluar
                                 
@@ -252,7 +255,7 @@ class AttendanceReportController extends Controller
                     $scanOutTime = strtotime($scanOutDateTime);
                     
                     if ($scanOutTime > $shiftEndTime) {
-                        $lemburHours = round(($scanOutTime - $shiftEndTime) / 3600, 2);
+                        $lemburHours = floor(($scanOutTime - $shiftEndTime) / 3600);
                         $row->lembur = $lemburHours;
                     } else {
                         $row->lembur = 0;
@@ -551,7 +554,7 @@ class AttendanceReportController extends Controller
                             $nextDayOuts = $nextDayScans->where('inoutmode', 2);
                             
                             if ($nextDayOuts->isNotEmpty()) {
-                                $jamOut = $nextDayOuts->last()['scan_date'];
+                                $jamOut = $nextDayOuts->first()['scan_date'];
                                 $totalOut = 1; // Cross-day scan keluar
                             }
                         }
@@ -665,7 +668,7 @@ class AttendanceReportController extends Controller
                 $sub->where('u.division_id', $divisionId);
             }
             if (!empty($search)) {
-                $sub->where('u.nama_lengkap', 'like', "%$search%");
+                $sub->where('u.nama_lengkap', '=', $search);
             }
             $rawData = $sub->orderBy('a.scan_date')->get();
 
@@ -722,7 +725,7 @@ class AttendanceReportController extends Controller
                             $nextDayOuts = $nextDayScans->where('inoutmode', 2);
                             
                             if ($nextDayOuts->isNotEmpty()) {
-                                $jamKeluar = $nextDayOuts->last()['scan_date'];
+                                $jamKeluar = $nextDayOuts->first()['scan_date'];
                                 $isCrossDay = true;
                                 
                                 // Hapus scan keluar ini dari hari berikutnya
@@ -820,7 +823,7 @@ class AttendanceReportController extends Controller
                     $scanOutTime = strtotime($scanOutDateTime);
                     
                     if ($scanOutTime > $shiftEndTime) {
-                        $lemburHours = round(($scanOutTime - $shiftEndTime) / 3600, 2);
+                        $lemburHours = floor(($scanOutTime - $shiftEndTime) / 3600);
                         $row->lembur = $lemburHours;
                     } else {
                         $row->lembur = 0;
@@ -1014,6 +1017,28 @@ class AttendanceReportController extends Controller
         $bulan = $request->input('bulan') ?: date('m');
         $tahun = $request->input('tahun') ?: date('Y');
 
+        // ✅ OPTIMIZATION: Only load data if filters are provided
+        $hasFilters = !empty($outletId) || !empty($divisionId) || !empty($bulan) || !empty($tahun);
+        
+        if (!$hasFilters) {
+            // Return empty data with dropdowns only
+            $outlets = DB::table('tbl_data_outlet')->select('id_outlet as id', 'nama_outlet as name')->orderBy('nama_outlet')->get();
+            $divisions = DB::table('tbl_data_divisi')->select('id', 'nama_divisi as name')->orderBy('nama_divisi')->get();
+            
+            return Inertia::render('AttendanceReport/OutletSummary', [
+                'rows' => [],
+                'outlets' => $outlets,
+                'divisions' => $divisions,
+                'filter' => [
+                    'outlet_id' => $outletId,
+                    'division_id' => $divisionId,
+                    'bulan' => $bulan,
+                    'tahun' => $tahun,
+                ],
+                'period' => null,
+            ]);
+        }
+
         $start = date('Y-m-d', strtotime("$tahun-$bulan-26 -1 month"));
         $end = date('Y-m-d', strtotime("$tahun-$bulan-25"));
 
@@ -1079,7 +1104,7 @@ class AttendanceReportController extends Controller
                         $nextDayScans = collect($processedData[$nextDayKey]['scans'])->sortBy('scan_date');
                         $nextDayOuts = $nextDayScans->where('inoutmode', 2);
                         if ($nextDayOuts->isNotEmpty()) {
-                            $jamKeluar = $nextDayOuts->last()['scan_date'];
+                            $jamKeluar = $nextDayOuts->first()['scan_date'];
                             $isCrossDay = true;
                             // Hapus OUT di hari berikutnya seperti index()
                             $processedData[$nextDayKey]['scans'] = $nextDayScans->where('inoutmode', '!=', 2)->values()->toArray();
@@ -1165,10 +1190,17 @@ class AttendanceReportController extends Controller
                             $diff = $masukTs - $startTs; $telat = $diff > 0 ? round($diff/60) : 0;
                         }
                         if ($shift && $shift->time_end && $jam_keluar) {
-                            $shiftEndDateTime = date('Y-m-d', strtotime($tanggal)) . ' ' . $shift->time_end;
+                            // ✅ FIX: Handle cross-day lembur calculation (sama seperti di employee summary)
+                            if ($row->is_cross_day) {
+                                $shiftEndDateTime = date('Y-m-d', strtotime($tanggal . ' +1 day')) . ' ' . $shift->time_end;
+                            } else {
+                                $shiftEndDateTime = date('Y-m-d', strtotime($tanggal)) . ' ' . $shift->time_end;
+                            }
                             $scanOutDateTime = $row->jam_keluar;
-                            $endTs = strtotime($shiftEndDateTime); $outTs = strtotime($scanOutDateTime);
-                            $diff = $outTs - $endTs; $lembur = $diff > 0 ? floor($diff/3600) : 0;
+                            $endTs = strtotime($shiftEndDateTime); 
+                            $outTs = strtotime($scanOutDateTime);
+                            $diff = $outTs - $endTs; 
+                            $lembur = $diff > 0 ? floor($diff/3600) : 0;
                         }
                     } else { $jam_masuk = null; $jam_keluar = null; $telat = 0; $lembur = 0; }
 
@@ -1188,11 +1220,20 @@ class AttendanceReportController extends Controller
         // ✅ FIX: Group by user's outlet (not scan outlet)
         $byOutlet = $rows->groupBy('outlet_id')->map(function($g) {
             $first = $g->first();
+            $nonOffDays = $g->where('is_off', false);
+            $totalLembur = $nonOffDays->sum('lembur');
+            $totalTelat = $nonOffDays->sum('telat');
+            
+            // Calculate unique employees (users) in this outlet
+            $uniqueEmployees = $nonOffDays->pluck('user_id')->unique()->count();
+            $averageLemburPerPerson = $uniqueEmployees > 0 ? round($totalLembur / $uniqueEmployees, 2) : 0;
+            
             return [
                 'outlet_id' => $first->outlet_id ?? null,
                 'nama_outlet' => $first->nama_outlet ?? '-',
-                'total_telat' => $g->where('is_off', false)->sum('telat'),
-                'total_lembur' => $g->where('is_off', false)->sum('lembur'),
+                'total_telat' => $totalTelat,
+                'total_lembur' => $totalLembur,
+                'average_lembur_per_person' => $averageLemburPerPerson,
             ];
         })->values()->sortBy('nama_outlet')->values();
 
@@ -1462,7 +1503,7 @@ class AttendanceReportController extends Controller
                         $nextDayOuts = $nextDayScans->where('inoutmode', 2);
                         
                         if ($nextDayOuts->isNotEmpty()) {
-                            $jamKeluar = $nextDayOuts->last()['scan_date'];
+                            $jamKeluar = $nextDayOuts->first()['scan_date'];
                             $isCrossDay = true;
                         }
                     }
@@ -1717,7 +1758,7 @@ class AttendanceReportController extends Controller
                                 $nextDayOuts = $nextDayScans->where('inoutmode', 2);
                                 
                                 if ($nextDayOuts->isNotEmpty()) {
-                                    $jamKeluar = $nextDayOuts->last()['scan_date'];
+                                    $jamKeluar = $nextDayOuts->first()['scan_date'];
                                     $isCrossDay = true;
                                     $totalKeluar = 1;
                                     
@@ -1752,10 +1793,17 @@ class AttendanceReportController extends Controller
                     gc_collect_cycles();
                 }
 
-                // Ambil data shift untuk perhitungan lembur
-                \Log::info('Fetching shift data...');
-                $shiftData = DB::table('shifts')->first();
-                \Log::info('Shift data fetched: ' . ($shiftData ? 'Yes' : 'No'));
+                // Ambil data shift untuk perhitungan lembur - gunakan batch query untuk efisiensi
+                \Log::info('Fetching shift data in batch...');
+                $allShiftData = DB::table('user_shifts as us')
+                    ->leftJoin('shifts as s', 'us.shift_id', '=', 's.id')
+                    ->whereIn('us.tanggal', $dataRows->pluck('tanggal')->unique()->values())
+                    ->select('us.user_id', 'us.tanggal', 's.time_start', 's.time_end', 's.shift_name', 'us.shift_id')
+                    ->get()
+                    ->groupBy(function($item) {
+                        return $item->user_id . '_' . $item->tanggal;
+                    });
+                \Log::info('Batch shift data fetched. Total shift records: ' . $allShiftData->count());
 
                 // Hitung lembur untuk setiap baris
                 \Log::info('Calculating overtime for each row...');
@@ -1769,24 +1817,62 @@ class AttendanceReportController extends Controller
                         }
                     }
                     
+                    // Ambil shift data yang sesuai dengan user dan tanggal
+                    $shiftKey = $row['user_id'] . '_' . $row['tanggal'];
+                    $shiftData = $allShiftData->get($shiftKey, collect())->first();
+                    
                     if ($row['jam_masuk'] && $row['jam_keluar'] && $shiftData) {
+                        // REFACTOR: Gunakan logika yang sama dengan Report Attendance
                         $shiftStart = $shiftData->time_start ?? '08:00:00';
                         $shiftEnd = $shiftData->time_end ?? '17:00:00';
                         
+                        // Buat datetime untuk shift end
                         $shiftEndDateTime = date('Y-m-d', strtotime($row['jam_masuk'])) . ' ' . $shiftEnd;
                         $scanOutDateTime = $row['jam_keluar'];
                         
-                        if ($row['is_cross_day']) {
-                            $shiftEndDateTime = date('Y-m-d', strtotime($row['jam_masuk'] . ' +1 day')) . ' ' . $shiftEnd;
-                        }
+                        // Untuk cross-day, shift end tetap di hari yang sama (bukan hari berikutnya)
+                        // karena jam keluar sudah di hari berikutnya, jadi perhitungan lembur tetap benar
                         
+                        // Hitung selisih waktu
                         $shiftEndTime = strtotime($shiftEndDateTime);
                         $scanOutTime = strtotime($scanOutDateTime);
                         
+                        // Debug log untuk Agit Rasya Megantara - sebelum perhitungan
+                        if (strpos($row['nama_lengkap'], 'Agit') !== false) {
+                            \Log::info('Agit Cross-Day Overtime Calculation (Fixed)', [
+                                'tanggal' => $row['tanggal'],
+                                'jam_masuk' => $row['jam_masuk'],
+                                'jam_keluar_raw' => $row['jam_keluar'],
+                                'scanOutDateTime' => $scanOutDateTime,
+                                'shiftEndDateTime' => $shiftEndDateTime,
+                                'shiftEndTime' => $shiftEndTime,
+                                'scanOutTime' => $scanOutTime,
+                                'diff_seconds' => $scanOutTime - $shiftEndTime,
+                                'scanOutTime > shiftEndTime' => $scanOutTime > $shiftEndTime,
+                                'is_cross_day' => $row['is_cross_day']
+                            ]);
+                        }
+                        
                         if ($scanOutTime > $shiftEndTime) {
-                            $lemburHours = round(($scanOutTime - $shiftEndTime) / 3600, 2);
+                            $lemburHours = floor(($scanOutTime - $shiftEndTime) / 3600);
                             $row['lembur'] = $lemburHours;
                             $overtimeCount++;
+                            
+                            // Debug log untuk Agit Rasya Megantara
+                            if (strpos($row['nama_lengkap'], 'Agit') !== false) {
+                                \Log::info('Agit Overtime Calculation Debug (Fixed)', [
+                                    'tanggal' => $row['tanggal'],
+                                    'nama_lengkap' => $row['nama_lengkap'],
+                                    'jam_masuk' => $row['jam_masuk'],
+                                    'jam_keluar' => $row['jam_keluar'],
+                                    'is_cross_day' => $row['is_cross_day'],
+                                    'shift_start' => $shiftStart,
+                                    'shift_end' => $shiftEnd,
+                                    'shift_end_datetime' => $shiftEndDateTime,
+                                    'scan_out_datetime' => $scanOutDateTime,
+                                    'lembur_hours' => $lemburHours,
+                                ]);
+                            }
                         } else {
                             $row['lembur'] = 0;
                         }
@@ -1881,13 +1967,15 @@ class AttendanceReportController extends Controller
                             $telat = $diff > 0 ? round($diff/60) : 0;
                         }
                         if ($shift->time_end && $jam_keluar) {
-                            // ✅ FIX: Handle cross-day lembur calculation (sama seperti di report attendance)
-                            if ($row['is_cross_day']) {
-                                $shiftEndDateTime = date('Y-m-d', strtotime($row['tanggal'] . ' +1 day')) . ' ' . $shift->time_end;
-                            } else {
-                                $shiftEndDateTime = date('Y-m-d', strtotime($row['tanggal'])) . ' ' . $shift->time_end;
-                            }
+                            // REFACTOR: Gunakan logika yang sama dengan Report Attendance (Perhitungan Kedua)
+                            $shiftEndDateTime = date('Y-m-d', strtotime($row['jam_masuk'])) . ' ' . $shift->time_end;
                             $scanOutDateTime = $row['jam_keluar'];
+                            
+                            // Jika cross-day, shift end harus di hari berikutnya
+                            if ($row['is_cross_day']) {
+                                $shiftEndDateTime = date('Y-m-d', strtotime($row['jam_masuk'] . ' +1 day')) . ' ' . $shift->time_end;
+                            }
+                            
                             $shiftEndTime = strtotime($shiftEndDateTime);
                             $keluarTime = strtotime($scanOutDateTime);
                             $diff = $keluarTime - $shiftEndTime;
@@ -1895,9 +1983,9 @@ class AttendanceReportController extends Controller
                         }
                     }
 
-                    // ✅ DEBUG: Log data untuk Hendra Kusuma Wardani
-                    if (strpos($row['nama_lengkap'], 'Hendra') !== false) {
-                        \Log::info('Hendra Data Debug', [
+                    // ✅ DEBUG: Log data untuk Agit Rasya Megantara
+                    if (strpos($row['nama_lengkap'], 'Agit') !== false) {
+                        \Log::info('Agit Employee Summary Debug', [
                             'tanggal' => $row['tanggal'],
                             'nama_lengkap' => $row['nama_lengkap'],
                             'jam_masuk' => $jam_masuk,
@@ -2025,6 +2113,23 @@ class AttendanceReportController extends Controller
                             ]);
                         }
 
+                        // Siapkan data detail absensi harian untuk expandable table
+                        $dailyAttendance = $employeeRows->map(function($row) {
+                            return [
+                                'tanggal' => $row->tanggal,
+                                'jam_masuk' => $row->jam_masuk,
+                                'jam_keluar' => $row->jam_keluar,
+                                'telat' => $row->telat,
+                                'lembur' => $row->lembur,
+                                'is_cross_day' => $row->is_cross_day ?? false,
+                                'is_off' => $row->is_off ?? false,
+                                'is_holiday' => $row->is_holiday ?? false,
+                                'holiday_name' => $row->holiday_name ?? null,
+                                'shift_start' => $row->shift_start ?? null,
+                                'shift_end' => $row->shift_end ?? null,
+                            ];
+                        })->sortBy('tanggal')->values();
+
                         $result = [
                             'user_id' => $firstRow->user_id,
                             'nik' => $userData->nik ?? '-',
@@ -2044,6 +2149,8 @@ class AttendanceReportController extends Controller
                             'total_telat' => $employeeRows->sum('telat'),
                             'total_lembur' => $employeeRows->sum('lembur'),
                             'total_days' => $this->calculateTotalDaysInPeriod($start, $end), // Total hari dalam periode
+                            // Data detail untuk expandable table
+                            'daily_attendance' => $dailyAttendance,
                         ];
                         
                         $employeeSummary->push($result);
@@ -2252,7 +2359,7 @@ class AttendanceReportController extends Controller
                                 $nextDayOuts = $nextDayScans->where('inoutmode', 2);
                                 
                             if ($nextDayOuts->isNotEmpty()) {
-                                $jamKeluar = $nextDayOuts->last()['scan_date'];
+                                $jamKeluar = $nextDayOuts->first()['scan_date'];
                                     $isCrossDay = true;
                                 }
                             }
@@ -2272,11 +2379,22 @@ class AttendanceReportController extends Controller
 
                 $dataRows = collect($finalData);
 
-                // Ambil data shift untuk perhitungan lembur
-                $shiftData = DB::table('shifts')->first();
+                // Ambil data shift untuk perhitungan lembur - gunakan batch query untuk efisiensi
+                $allShiftData = DB::table('user_shifts as us')
+                    ->leftJoin('shifts as s', 'us.shift_id', '=', 's.id')
+                    ->whereIn('us.tanggal', $dataRows->pluck('tanggal')->unique()->values())
+                    ->select('us.user_id', 'us.tanggal', 's.time_start', 's.time_end', 's.shift_name', 'us.shift_id')
+                    ->get()
+                    ->groupBy(function($item) {
+                        return $item->user_id . '_' . $item->tanggal;
+                    });
 
                 // Hitung lembur untuk setiap baris
                 foreach ($dataRows as $row) {
+                    // Ambil shift data yang sesuai dengan user dan tanggal
+                    $shiftKey = $row['user_id'] . '_' . $row['tanggal'];
+                    $shiftData = $allShiftData->get($shiftKey, collect())->first();
+                    
                     if ($row['jam_masuk'] && $row['jam_keluar'] && $shiftData) {
                         $shiftStart = $shiftData->time_start ?? '08:00:00';
                         $shiftEnd = $shiftData->time_end ?? '17:00:00';
@@ -2284,15 +2402,14 @@ class AttendanceReportController extends Controller
                         $shiftEndDateTime = date('Y-m-d', strtotime($row['jam_masuk'])) . ' ' . $shiftEnd;
                         $scanOutDateTime = $row['jam_keluar'];
                         
-                        if ($row['is_cross_day']) {
-                            $shiftEndDateTime = date('Y-m-d', strtotime($row['jam_masuk'] . ' +1 day')) . ' ' . $shiftEnd;
-                        }
+                        // Untuk cross-day, shift end tetap di hari yang sama (bukan hari berikutnya)
+                        // karena jam keluar sudah di hari berikutnya, jadi perhitungan lembur tetap benar
                         
                         $shiftEndTime = strtotime($shiftEndDateTime);
                         $scanOutTime = strtotime($scanOutDateTime);
                         
                         if ($scanOutTime > $shiftEndTime) {
-                            $lemburHours = round(($scanOutTime - $shiftEndTime) / 3600, 2);
+                            $lemburHours = floor(($scanOutTime - $shiftEndTime) / 3600);
                             $row['lembur'] = $lemburHours;
                         } else {
                             $row['lembur'] = 0;
