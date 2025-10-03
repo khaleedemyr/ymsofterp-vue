@@ -335,6 +335,7 @@ const exportExcel = () => {
           <table class="w-full divide-y divide-blue-200 mb-4 modal-detail-table">
             <thead>
               <tr>
+                <th class="px-4 py-2 text-center">Outlet</th>
                 <th class="px-4 py-2 text-center">Jam In</th>
                 <th class="px-4 py-2 text-center">Jam Out</th>
                 <th class="px-4 py-2 text-center">Total IN</th>
@@ -343,13 +344,14 @@ const exportExcel = () => {
             </thead>
             <tbody>
               <tr v-for="(d, i) in detailRows" :key="i">
+                <td class="px-4 py-2 whitespace-nowrap text-center font-medium text-blue-600">{{ d.nama_outlet }}</td>
                 <td class="px-4 py-2 whitespace-nowrap text-center font-mono">{{ d.jam_in }}</td>
                 <td class="px-4 py-2 whitespace-nowrap text-center font-mono">{{ d.jam_out }}</td>
                 <td class="px-4 py-2 whitespace-nowrap text-center font-mono text-green-600 font-semibold">{{ d.total_in }}</td>
                 <td class="px-4 py-2 whitespace-nowrap text-center font-mono text-red-600 font-semibold">{{ d.total_out }}</td>
               </tr>
               <tr v-if="!detailRows.length">
-                <td colspan="4" class="text-center py-6 text-gray-400">Tidak ada data</td>
+                <td colspan="5" class="text-center py-6 text-gray-400">Tidak ada data</td>
               </tr>
             </tbody>
           </table>
