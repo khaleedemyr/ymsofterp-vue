@@ -11,6 +11,7 @@ const props = defineProps({
   rows: Array,
   outlets: Array,
   divisions: Array,
+  leaveTypes: Array,
   filter: Object,
   period: Object,
   summary: Object,
@@ -167,6 +168,12 @@ function formatTime(timeString) {
   if (!timeString) return '-'
   return timeString.substring(11, 19) // Ambil bagian jam:menit:detik
 }
+
+// Get leave days for a specific leave type
+function getLeaveDays(row, leaveTypeName) {
+  const key = leaveTypeName.toLowerCase().replace(/\s+/g, '_') + '_days'
+  return row[key] || 0
+}
 </script>
 
 <template>
@@ -268,9 +275,11 @@ function formatTime(timeString) {
                 <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Hari Kerja</th>
                 <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Off</th>
                 <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">PH (Bonus)</th>
-                <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Cuti</th>
                 <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Extra Off</th>
-                <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Sakit</th>
+                <!-- Dynamic Leave Type Columns -->
+                <th v-for="leaveType in props.leaveTypes" :key="leaveType.id" class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">
+                  {{ leaveType.name }}
+                </th>
                 <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Alpa</th>
                 <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">OT Full</th>
                 <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Telat</th>
@@ -296,14 +305,12 @@ function formatTime(timeString) {
                     <div class="font-mono text-gray-400">{{ formatNumber(row.ph_days || 0) }} hari</div>
                     <div class="font-mono text-green-600 font-semibold text-xs">{{ formatCurrency(row.ph_bonus || 0) }}</div>
                   </td>
-                  <td class="px-4 py-3 text-sm text-center font-mono text-purple-600">
-                    {{ formatNumber(row.cuti_days || 0) }}
-                  </td>
                   <td class="px-4 py-3 text-sm text-center font-mono text-orange-600">
                     {{ formatNumber(row.extra_off_days || 0) }}
                   </td>
-                  <td class="px-4 py-3 text-sm text-center font-mono text-red-600">
-                    {{ formatNumber(row.sakit_days || 0) }}
+                  <!-- Dynamic Leave Type Data -->
+                  <td v-for="leaveType in props.leaveTypes" :key="leaveType.id" class="px-4 py-3 text-sm text-center font-mono text-purple-600">
+                    {{ formatNumber(getLeaveDays(row, leaveType.name) || 0) }}
                   </td>
                   <td class="px-4 py-3 text-sm text-center font-mono text-red-700">
                     {{ formatNumber(row.alpa_days || 0) }}
@@ -332,7 +339,7 @@ function formatTime(timeString) {
                 
                 <!-- Expanded Row - Detail Absensi Harian -->
                 <tr v-if="isRowExpanded(row.user_id)" class="bg-gray-50">
-                  <td colspan="15" class="px-4 py-4">
+                  <td :colspan="13 + (props.leaveTypes ? props.leaveTypes.length : 0)" class="px-4 py-4">
                     <div class="bg-white rounded-lg shadow-sm border">
                       <div class="px-4 py-3 border-b border-gray-200">
                         <h4 class="text-lg font-semibold text-gray-800">Detail Absensi Harian - {{ row.nama_lengkap }}</h4>

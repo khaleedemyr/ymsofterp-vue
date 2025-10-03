@@ -1409,6 +1409,12 @@ class AttendanceReportController extends Controller
      */
     private function calculateLeaveData($userId, $startDate, $endDate)
     {
+        // Get all leave types
+        $leaveTypes = DB::table('leave_types')
+            ->where('is_active', 1)
+            ->select('id', 'name')
+            ->get();
+        
         // Get approved absent requests for this user in the period
         $approvedAbsents = DB::table('absent_requests')
             ->join('leave_types', 'absent_requests.leave_type_id', '=', 'leave_types.id')
@@ -1425,37 +1431,47 @@ class AttendanceReportController extends Controller
             ->select([
                 'absent_requests.date_from',
                 'absent_requests.date_to',
+                'leave_types.id as leave_type_id',
                 'leave_types.name as leave_type_name'
             ])
             ->get();
         
-        $cutiDays = 0;
-        $extraOffDays = 0;
-        $sakitDays = 0;
+        // Initialize result with all leave types
+        $result = [];
+        foreach ($leaveTypes as $leaveType) {
+            $result[strtolower(str_replace(' ', '_', $leaveType->name)) . '_days'] = 0;
+        }
         
+        // Group by leave type and calculate days
+        $leaveDataByType = [];
         foreach ($approvedAbsents as $absent) {
+            $leaveTypeId = $absent->leave_type_id;
+            $leaveTypeName = $absent->leave_type_name;
+            
             // Calculate days between date_from and date_to
             $fromDate = new \DateTime($absent->date_from);
             $toDate = new \DateTime($absent->date_to);
             $daysCount = $fromDate->diff($toDate)->days + 1;
             
-            // Categorize based on leave type name
-            $leaveTypeName = strtolower($absent->leave_type_name);
-            
-            if (strpos($leaveTypeName, 'cuti') !== false || strpos($leaveTypeName, 'annual') !== false) {
-                $cutiDays += $daysCount;
-            } else if (strpos($leaveTypeName, 'extra off') !== false || strpos($leaveTypeName, 'extraoff') !== false) {
-                $extraOffDays += $daysCount;
-            } else if (strpos($leaveTypeName, 'sakit') !== false || strpos($leaveTypeName, 'sick') !== false) {
-                $sakitDays += $daysCount;
+            if (!isset($leaveDataByType[$leaveTypeId])) {
+                $leaveDataByType[$leaveTypeId] = [
+                    'name' => $leaveTypeName,
+                    'days' => 0
+                ];
             }
+            $leaveDataByType[$leaveTypeId]['days'] += $daysCount;
         }
         
-        return [
-            'cuti_days' => $cutiDays,
-            'extra_off_days' => $extraOffDays,
-            'sakit_days' => $sakitDays
-        ];
+        // Map to result format
+        foreach ($leaveDataByType as $leaveTypeId => $data) {
+            $key = strtolower(str_replace(' ', '_', $data['name'])) . '_days';
+            $result[$key] = $data['days'];
+        }
+        
+        // Keep legacy fields for backward compatibility
+        $result['extra_off_days'] = $result['extra_off_days'] ?? 0;
+        
+        return $result;
     }
 
     /**
@@ -2195,9 +2211,7 @@ class AttendanceReportController extends Controller
                             'off_days' => $offDays, // Jumlah hari tanpa shift
                             'ph_days' => $phData['days'], // Jumlah hari libur nasional dengan kompensasi
                             'ph_bonus' => $phData['bonus'], // Total bonus PH yang diterima
-                            'cuti_days' => $leaveData['cuti_days'], // Jumlah hari cuti
                             'extra_off_days' => $leaveData['extra_off_days'], // Jumlah hari extra off
-                            'sakit_days' => $leaveData['sakit_days'], // Jumlah hari sakit
                             'alpa_days' => $alpaDays, // Jumlah hari alpa
                             'ot_full_days' => $employeeRows->sum('lembur'), // Total lembur (OT Full)
                             'total_telat' => $employeeRows->sum('telat'),
@@ -2206,6 +2220,13 @@ class AttendanceReportController extends Controller
                             // Data detail untuk expandable table
                             'daily_attendance' => $dailyAttendance,
                         ];
+                        
+                        // Add dynamic leave data
+                        foreach ($leaveData as $key => $value) {
+                            if (strpos($key, '_days') !== false && $key !== 'extra_off_days') {
+                                $result[$key] = $value;
+                            }
+                        }
                         
                         $employeeSummary->push($result);
                         $processedEmployees++;
@@ -2236,15 +2257,23 @@ class AttendanceReportController extends Controller
                             'off_days' => isset($start) && isset($end) ? $this->calculateOffDays($employeeRows->first()->user_id ?? 0, null, $start, $end) : 0,
                             'ph_days' => isset($start) && isset($end) ? $this->calculatePHData($employeeRows->first()->user_id ?? 0, $start, $end)['days'] : 0,
                             'ph_bonus' => isset($start) && isset($end) ? $this->calculatePHData($employeeRows->first()->user_id ?? 0, $start, $end)['bonus'] : 0,
-                            'cuti_days' => isset($start) && isset($end) ? $this->calculateLeaveData($employeeRows->first()->user_id ?? 0, $start, $end)['cuti_days'] : 0,
                             'extra_off_days' => isset($start) && isset($end) ? $this->calculateLeaveData($employeeRows->first()->user_id ?? 0, $start, $end)['extra_off_days'] : 0,
-                            'sakit_days' => isset($start) && isset($end) ? $this->calculateLeaveData($employeeRows->first()->user_id ?? 0, $start, $end)['sakit_days'] : 0,
                             'alpa_days' => isset($start) && isset($end) ? $this->calculateAlpaDays($employeeRows->first()->user_id ?? 0, null, $start, $end) : 0,
                             'ot_full_days' => 0,
                             'total_telat' => 0,
                             'total_lembur' => 0,
                             'total_days' => isset($start) && isset($end) ? $this->calculateTotalDaysInPeriod($start, $end) : 0,
                         ];
+                        
+                        // Add dynamic leave data for error case
+                        if (isset($start) && isset($end)) {
+                            $errorLeaveData = $this->calculateLeaveData($employeeRows->first()->user_id ?? 0, $start, $end);
+                            foreach ($errorLeaveData as $key => $value) {
+                                if (strpos($key, '_days') !== false && $key !== 'extra_off_days') {
+                                    $errorResult[$key] = $value;
+                                }
+                            }
+                        }
                         
                         $employeeSummary->push($errorResult);
                         $processedEmployees++;
@@ -2292,10 +2321,18 @@ class AttendanceReportController extends Controller
                 round($employeeSummary->sum('total_telat') / $employeeSummary->count(), 2) : 0,
         ];
 
+        // Get leave types for dynamic columns
+        $leaveTypes = DB::table('leave_types')
+            ->where('is_active', 1)
+            ->select('id', 'name')
+            ->orderBy('name')
+            ->get();
+
         return Inertia::render('AttendanceReport/EmployeeSummary', [
             'rows' => $employeeSummary ?? collect(),
             'outlets' => $outlets,
             'divisions' => $divisions,
+            'leaveTypes' => $leaveTypes,
             'filter' => [
                 'outlet_id' => $outletId,
                 'division_id' => $divisionId,
