@@ -162,76 +162,10 @@ function formatDate(dateString) {
   })
 }
 
-// Format waktu untuk display
+// Format jam untuk display
 function formatTime(timeString) {
   if (!timeString) return '-'
-  const time = new Date(timeString)
-  return time.toLocaleTimeString('id-ID', {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit'
-  })
-}
-
-// Hitung total lembur dari detail absensi
-function calculateTotalLemburFromDetails(dailyAttendance) {
-  if (!dailyAttendance || !Array.isArray(dailyAttendance)) return 0
-  return dailyAttendance.reduce((sum, day) => sum + (day.lembur || 0), 0)
-}
-
-// Hitung total telat dari detail absensi
-function calculateTotalTelatFromDetails(dailyAttendance) {
-  if (!dailyAttendance || !Array.isArray(dailyAttendance)) return 0
-  return dailyAttendance.reduce((sum, day) => sum + (day.telat || 0), 0)
-}
-
-// Modal state untuk detail dan shift
-const showDetail = ref(false)
-const detailRows = ref([])
-const detailUser = ref('')
-const detailTanggal = ref('')
-
-const showShiftModal = ref(false)
-const shiftInfo = ref({})
-
-// Functions untuk modal detail dan shift
-async function openDetail(day) {
-  showDetail.value = true
-  detailUser.value = day.nama_lengkap || 'Karyawan'
-  detailTanggal.value = day.tanggal
-  detailRows.value = []
-  
-  // Simulasi data detail - dalam implementasi nyata, ini akan memanggil API
-  detailRows.value = [
-    {
-      jam_in: day.jam_masuk || '-',
-      jam_out: day.jam_keluar || '-',
-      total_in: day.total_masuk || 0,
-      total_out: day.total_keluar || 0
-    }
-  ]
-}
-
-function closeDetail() {
-  showDetail.value = false
-  detailRows.value = []
-}
-
-async function openShiftModal(day) {
-  showShiftModal.value = true
-  shiftInfo.value = {}
-  
-  // Simulasi data shift - dalam implementasi nyata, ini akan memanggil API
-  shiftInfo.value = {
-    shift_name: day.shift_name || 'Shift Normal',
-    time_start: day.shift_start || '08:00:00',
-    time_end: day.shift_end || '17:00:00'
-  }
-}
-
-function closeShiftModal() {
-  showShiftModal.value = false
-  shiftInfo.value = {}
+  return timeString.substring(11, 19) // Ambil bagian jam:menit:detik
 }
 </script>
 
@@ -312,7 +246,6 @@ function closeShiftModal() {
         </div>
       </div>
 
-
       <!-- Data Table -->
       <div class="bg-white rounded-2xl shadow-lg overflow-hidden">
         <div class="px-6 py-4 border-b border-gray-200">
@@ -328,8 +261,7 @@ function closeShiftModal() {
           <table class="w-full">
             <thead class="bg-blue-600 text-white">
               <tr>
-                <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider w-12">No</th>
-                <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider w-12">Expand</th>
+                <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">No</th>
                 <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">NIK</th>
                 <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">Nama Karyawan</th>
                 <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">Jabatan</th>
@@ -343,6 +275,7 @@ function closeShiftModal() {
                 <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">OT Full</th>
                 <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Telat</th>
                 <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Total Days</th>
+                <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Detail</th>
               </tr>
             </thead>
             <tbody>
@@ -350,14 +283,6 @@ function closeShiftModal() {
                 <!-- Main Row -->
                 <tr :class="index % 2 === 0 ? 'bg-white' : 'bg-blue-50'">
                   <td class="px-4 py-3 text-sm text-gray-900 font-medium">{{ index + 1 }}</td>
-                  <td class="px-4 py-3 text-center">
-                    <button @click="toggleRow(row.user_id)" 
-                            class="p-1 rounded-full hover:bg-gray-200 transition-colors"
-                            :title="isRowExpanded(row.user_id) ? 'Tutup detail' : 'Lihat detail'">
-                      <i :class="isRowExpanded(row.user_id) ? 'fa fa-chevron-down' : 'fa fa-chevron-right'" 
-                         class="text-gray-600"></i>
-                    </button>
-                  </td>
                   <td class="px-4 py-3 text-sm text-gray-600 font-mono">{{ row.nik || '-' }}</td>
                   <td class="px-4 py-3 text-sm text-gray-900 font-semibold">{{ row.nama_lengkap }}</td>
                   <td class="px-4 py-3 text-sm text-gray-600">{{ row.jabatan || '-' }}</td>
@@ -384,135 +309,91 @@ function closeShiftModal() {
                     {{ formatNumber(row.alpa_days || 0) }}
                   </td>
                   <td class="px-4 py-3 text-sm text-center font-mono text-green-600">
-                    <span class="font-bold" :title="'Dari detail: ' + calculateTotalLemburFromDetails(row.daily_attendance) + ' jam'">
-                      {{ formatNumber(row.ot_full_days || 0) }}
-                    </span>
+                    {{ formatNumber(row.ot_full_days || 0) }}
                   </td>
                   <td class="px-4 py-3 text-sm text-center font-mono">
-                    <span :class="row.total_telat > 0 ? 'text-red-600 font-bold' : 'text-gray-500'"
-                          :title="'Dari detail: ' + calculateTotalTelatFromDetails(row.daily_attendance) + ' menit'">
+                    <span :class="row.total_telat > 0 ? 'text-red-600 font-bold' : 'text-gray-500'">
                       {{ formatNumber(row.total_telat || 0) }}
                     </span>
                   </td>
                   <td class="px-4 py-3 text-sm text-center font-mono text-blue-600 font-semibold">
                     {{ formatNumber(row.total_days || 0) }}
                   </td>
+                  <td class="px-4 py-3 text-center">
+                    <button 
+                      @click="toggleRow(row.user_id)"
+                      class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-xs font-medium transition-colors"
+                    >
+                      <i :class="isRowExpanded(row.user_id) ? 'fa fa-chevron-up' : 'fa fa-chevron-down'"></i>
+                      {{ isRowExpanded(row.user_id) ? 'Tutup' : 'Buka' }}
+                    </button>
+                  </td>
                 </tr>
                 
-                <!-- Expanded Detail Row -->
+                <!-- Expanded Row - Detail Absensi Harian -->
                 <tr v-if="isRowExpanded(row.user_id)" class="bg-gray-50">
                   <td colspan="15" class="px-4 py-4">
-                    <div class="bg-white rounded-lg shadow-sm border p-4">
-                      <h4 class="text-lg font-semibold text-gray-800 mb-4">
-                        Detail Absensi Harian - {{ row.nama_lengkap }}
-                      </h4>
-                      
-                      <!-- Summary dari detail -->
-                      <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4 p-3 bg-blue-50 rounded-lg">
-                        <div class="text-center">
-                          <div class="text-sm text-gray-600">Total Lembur (dari detail)</div>
-                          <div class="text-xl font-bold text-green-600">
-                            {{ calculateTotalLemburFromDetails(row.daily_attendance) }} jam
-                          </div>
-                        </div>
-                        <div class="text-center">
-                          <div class="text-sm text-gray-600">Total Telat (dari detail)</div>
-                          <div class="text-xl font-bold text-red-600">
-                            {{ calculateTotalTelatFromDetails(row.daily_attendance) }} menit
-                          </div>
-                        </div>
-                        <div class="text-center">
-                          <div class="text-sm text-gray-600">Total Hari</div>
-                          <div class="text-xl font-bold text-blue-600">
-                            {{ row.daily_attendance ? row.daily_attendance.length : 0 }} hari
-                          </div>
-                        </div>
+                    <div class="bg-white rounded-lg shadow-sm border">
+                      <div class="px-4 py-3 border-b border-gray-200">
+                        <h4 class="text-lg font-semibold text-gray-800">Detail Absensi Harian - {{ row.nama_lengkap }}</h4>
+                        <p class="text-sm text-gray-600">Total Lembur: <span class="font-bold text-green-600">{{ row.total_lembur || 0 }} jam</span></p>
                       </div>
                       
-                      <!-- Detail tabel - persis seperti Report Attendance -->
                       <div class="overflow-x-auto">
-                        <table class="w-full divide-y divide-blue-200">
-                          <thead class="bg-blue-600 text-white">
+                        <table class="w-full">
+                          <thead class="bg-gray-100">
                             <tr>
-                              <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">Tanggal</th>
-                              <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">Nama Karyawan</th>
-                              <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Jam Masuk</th>
-                              <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Jam Keluar</th>
-                              <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">IN/OUT</th>
-                              <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Telat (menit)</th>
-                              <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Lembur (jam)</th>
-                              <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Aksi</th>
-                              <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Shift</th>
+                              <th class="px-3 py-2 text-left text-xs font-bold text-gray-700">Tanggal</th>
+                              <th class="px-3 py-2 text-left text-xs font-bold text-gray-700">Jam Masuk</th>
+                              <th class="px-3 py-2 text-left text-xs font-bold text-gray-700">Jam Keluar</th>
+                              <th class="px-3 py-2 text-center text-xs font-bold text-gray-700">Telat (menit)</th>
+                              <th class="px-3 py-2 text-center text-xs font-bold text-gray-700">Lembur (jam)</th>
+                              <th class="px-3 py-2 text-center text-xs font-bold text-gray-700">Cross Day</th>
+                              <th class="px-3 py-2 text-center text-xs font-bold text-gray-700">Status</th>
+                              <th class="px-3 py-2 text-left text-xs font-bold text-gray-700">Shift</th>
                             </tr>
                           </thead>
                           <tbody>
-                            <tr v-for="(day, dayIndex) in row.daily_attendance" :key="dayIndex"
-                                :class="[
-                                  day.is_holiday ? 'bg-red-100 text-red-700 font-bold' : '',
-                                  !day.is_holiday && day.is_approved_absent ? 'bg-green-100 text-green-700 font-bold' : '',
-                                  !day.is_holiday && !day.is_approved_absent && day.is_off ? 'bg-gray-200 text-gray-500 font-bold italic' : '',
-                                  !day.is_holiday && !day.is_approved_absent && !day.is_off && dayIndex % 2 === 1 ? 'bg-blue-50' : ''
-                                ]">
-                              <td class="px-4 py-2 whitespace-nowrap font-mono" :title="day.is_holiday ? day.holiday_name : (day.is_approved_absent ? day.approved_absent_name : '')">
-                                {{ day.tanggal }}
-                                <span v-if="day.is_holiday && day.holiday_name" class="ml-1 text-xs font-semibold">({{ day.holiday_name }})</span>
-                                <span v-if="!day.is_holiday && day.is_approved_absent && day.approved_absent_name" class="ml-1 text-xs font-semibold">({{ day.approved_absent_name }})</span>
-                              </td>
-                              <td class="px-4 py-2 whitespace-nowrap">{{ row.nama_lengkap }}</td>
-                              <td class="px-4 py-2 whitespace-nowrap text-center font-mono">
-                                <span v-if="day.is_off">OFF</span>
-                                <span v-else-if="day.approved_absent" class="text-green-600 font-semibold">
-                                  <i class="fa-solid fa-check-circle mr-1"></i>{{ day.approved_absent.leave_type_name }}
-                                </span>
-                                <span v-else>{{ day.jam_masuk || '-' }}</span>
-                              </td>
-                              <td class="px-4 py-2 whitespace-nowrap text-center font-mono">
-                                <span v-if="day.is_off">OFF</span>
-                                <span v-else-if="day.approved_absent" class="text-green-600 font-semibold">
-                                  <i class="fa-solid fa-check-circle mr-1"></i>{{ day.approved_absent.leave_type_name }}
-                                </span>
-                                <span v-else>{{ day.jam_keluar || '-' }}</span>
-                              </td>
-                              <td class="px-4 py-2 whitespace-nowrap text-center font-mono text-xs">
-                                <span v-if="day.is_off">OFF</span>
-                                <span v-else class="flex flex-col">
-                                  <span class="text-green-600 font-semibold">{{ day.total_masuk || 0 }} IN</span>
-                                  <span class="text-red-600 font-semibold">{{ day.total_keluar || 0 }} OUT</span>
+                            <tr v-for="(attendance, idx) in row.daily_attendance" :key="idx" 
+                                :class="idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'">
+                              <td class="px-3 py-2 text-sm text-gray-900">{{ formatDate(attendance.tanggal) }}</td>
+                              <td class="px-3 py-2 text-sm text-gray-600 font-mono">{{ formatTime(attendance.jam_masuk) }}</td>
+                              <td class="px-3 py-2 text-sm text-gray-600 font-mono">{{ formatTime(attendance.jam_keluar) }}</td>
+                              <td class="px-3 py-2 text-sm text-center font-mono">
+                                <span :class="attendance.telat > 0 ? 'text-red-600 font-bold' : 'text-gray-500'">
+                                  {{ attendance.telat || 0 }}
                                 </span>
                               </td>
-                              <td class="px-4 py-2 whitespace-nowrap text-center font-mono">
-                                <span v-if="day.is_off">OFF</span>
-                                <span v-else>{{ day.telat || 0 }}</span>
-                              </td>
-                              <td class="px-4 py-2 whitespace-nowrap text-center font-mono">
-                                <span v-if="day.is_off">OFF</span>
-                                <span v-else>
-                                  {{ day.lembur || 0 }}
-                                  <span v-if="day.is_cross_day" 
-                                        class="text-xs text-orange-600 font-semibold ml-1" title="Cross-day overtime">
-                                    🌙
-                                  </span>
+                              <td class="px-3 py-2 text-sm text-center font-mono">
+                                <span :class="attendance.lembur > 0 ? 'text-green-600 font-bold' : 'text-gray-500'">
+                                  {{ attendance.lembur || 0 }}
                                 </span>
                               </td>
-                              <td class="px-4 py-2 whitespace-nowrap text-center">
-                                <button v-if="!day.is_off" @click="openDetail(day)" class="px-3 py-1 rounded bg-blue-100 text-blue-700 hover:bg-blue-200 transition text-xs font-semibold">
-                                  <i class="fa fa-list mr-1"></i> Detail
-                                </button>
+                              <td class="px-3 py-2 text-center">
+                                <span v-if="attendance.is_cross_day" class="bg-orange-100 text-orange-800 px-2 py-1 rounded text-xs font-medium">
+                                  <i class="fa fa-clock mr-1"></i>Cross Day
+                                </span>
+                                <span v-else class="text-gray-400 text-xs">-</span>
                               </td>
-                              <td class="px-4 py-2 whitespace-nowrap text-center">
-                                <button v-if="!day.is_off" @click="openShiftModal(day)" class="px-3 py-1 rounded bg-green-100 text-green-700 hover:bg-green-200 transition text-xs font-semibold">
-                                  <i class="fa fa-clock mr-1"></i> Shift
-                                </button>
-                                <span v-else>-</span>
+                              <td class="px-3 py-2 text-center">
+                                <span v-if="attendance.is_off" class="bg-gray-100 text-gray-600 px-2 py-1 rounded text-xs">Off</span>
+                                <span v-else-if="attendance.is_holiday" class="bg-purple-100 text-purple-600 px-2 py-1 rounded text-xs">
+                                  <i class="fa fa-calendar mr-1"></i>{{ attendance.holiday_name || 'Holiday' }}
+                                </span>
+                                <span v-else class="bg-green-100 text-green-600 px-2 py-1 rounded text-xs">
+                                  <i class="fa fa-check mr-1"></i>Hadir
+                                </span>
+                              </td>
+                              <td class="px-3 py-2 text-sm text-gray-600">
+                                <div v-if="attendance.shift_start && attendance.shift_end" class="text-xs">
+                                  {{ attendance.shift_start }} - {{ attendance.shift_end }}
+                                </div>
+                                <div v-else class="text-gray-400 text-xs">-</div>
                               </td>
                             </tr>
                             <tr v-if="!row.daily_attendance || row.daily_attendance.length === 0">
-                              <td colspan="9" class="text-center py-8 text-gray-400">
-                                <div class="flex flex-col items-center gap-2">
-                                  <i class="fa fa-search text-4xl text-gray-300"></i>
-                                  <div class="text-lg font-medium">Tidak ada data absensi</div>
-                                  <div class="text-sm text-gray-500">Tidak ada data untuk periode yang dipilih</div>
-                                </div>
+                              <td colspan="8" class="text-center py-4 text-gray-400">
+                                <i class="fa fa-info-circle mr-2"></i>Tidak ada data absensi
                               </td>
                             </tr>
                           </tbody>
@@ -522,6 +403,7 @@ function closeShiftModal() {
                   </td>
                 </tr>
               </template>
+              
               <tr v-if="!props.rows || props.rows.length === 0">
                 <td colspan="15" class="text-center py-8 text-gray-400">
                   <div class="flex flex-col items-center gap-2">
@@ -581,136 +463,11 @@ function closeShiftModal() {
           </div>
         </div>
       </div>
-      
-      <!-- Modal Detail - persis seperti Report Attendance -->
-      <div v-if="showDetail" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-30">
-        <div class="bg-white rounded-2xl shadow-2xl p-10 w-full max-w-4xl min-w-[800px] relative animate-fade-in">
-          <div class="modal-detail-header">
-            <i class="fa fa-list text-blue-500"></i>
-            Detail Absensi
-          </div>
-          <div class="modal-detail-user">{{ detailUser }} | {{ detailTanggal }}</div>
-          <table class="w-full divide-y divide-blue-200 mb-4 modal-detail-table">
-            <thead>
-              <tr>
-                <th class="px-4 py-2 text-center">Jam In</th>
-                <th class="px-4 py-2 text-center">Jam Out</th>
-                <th class="px-4 py-2 text-center">Total IN</th>
-                <th class="px-4 py-2 text-center">Total OUT</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="(d, i) in detailRows" :key="i">
-                <td class="px-4 py-2 whitespace-nowrap text-center font-mono">{{ d.jam_in }}</td>
-                <td class="px-4 py-2 whitespace-nowrap text-center font-mono">{{ d.jam_out }}</td>
-                <td class="px-4 py-2 whitespace-nowrap text-center font-mono text-green-600 font-semibold">{{ d.total_in }}</td>
-                <td class="px-4 py-2 whitespace-nowrap text-center font-mono text-red-600 font-semibold">{{ d.total_out }}</td>
-              </tr>
-              <tr v-if="!detailRows.length">
-                <td colspan="4" class="text-center py-6 text-gray-400">Tidak ada data</td>
-              </tr>
-            </tbody>
-          </table>
-          <div class="modal-detail-footer">
-            <button @click="closeDetail" class="modal-detail-btn">Tutup</button>
-          </div>
-          <button @click="closeDetail" class="modal-detail-close"><i class="fa fa-times"></i></button>
-        </div>
-      </div>
-      
-      <!-- Modal Shift - persis seperti Report Attendance -->
-      <div v-if="showShiftModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-30">
-        <div class="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md relative animate-fade-in">
-          <div class="flex items-center gap-2 mb-4">
-            <i class="fa fa-clock text-green-500"></i>
-            <span class="font-bold text-lg">Info Shift Karyawan</span>
-          </div>
-          <div v-if="shiftInfo && shiftInfo.shift_name">
-            <div class="mb-2"><b>Shift:</b> {{ shiftInfo.shift_name }}</div>
-            <div class="mb-2"><b>Jam Masuk:</b> {{ shiftInfo.time_start }}</div>
-            <div class="mb-2"><b>Jam Keluar:</b> {{ shiftInfo.time_end }}</div>
-          </div>
-          <div v-else class="text-gray-500">Tidak ada data shift untuk hari ini.</div>
-          <div class="flex justify-end mt-6">
-            <button @click="closeShiftModal" class="px-4 py-2 rounded bg-gray-200 hover:bg-gray-300">Tutup</button>
-          </div>
-          <button @click="closeShiftModal" class="absolute top-3 right-3 text-gray-400 hover:text-red-500"><i class="fa fa-times"></i></button>
-        </div>
-      </div>
     </div>
   </AppLayout>
 </template>
 
 <style scoped>
-/* Animation untuk modal */
-.animate-fade-in {
-  animation: fadeIn 0.4s cubic-bezier(.4,0,.2,1);
-}
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(30px); }
-  to { opacity: 1; transform: none; }
-}
-
-/* Modal detail styling - persis seperti Report Attendance */
-.modal-detail-header {
-  font-size: 1.25rem;
-  font-weight: 700;
-  color: #2563eb;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 0.5rem;
-}
-.modal-detail-table th {
-  background: #e0e7ff;
-  color: #1e293b;
-  font-weight: 700;
-  font-size: 0.95rem;
-  letter-spacing: 1px;
-}
-.modal-detail-table td {
-  font-size: 1rem;
-  padding-top: 0.5rem;
-  padding-bottom: 0.5rem;
-}
-.modal-detail-table tr:nth-child(even) {
-  background: #f1f5f9;
-}
-.modal-detail-user {
-  font-weight: 600;
-  color: #334155;
-  margin-bottom: 0.5rem;
-}
-.modal-detail-footer {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 1.5rem;
-}
-.modal-detail-close {
-  position: absolute;
-  top: 1.2rem;
-  right: 1.2rem;
-  color: #94a3b8;
-  font-size: 1.3rem;
-  cursor: pointer;
-  transition: color 0.2s;
-}
-.modal-detail-close:hover {
-  color: #ef4444;
-}
-.modal-detail-btn {
-  background: #e5e7eb;
-  color: #334155;
-  border-radius: 0.5rem;
-  padding: 0.5rem 1.5rem;
-  font-weight: 600;
-  font-size: 1rem;
-  transition: background 0.2s;
-}
-.modal-detail-btn:hover {
-  background: #cbd5e1;
-}
-
 /* Responsive table */
 @media (max-width: 768px) {
   table {
@@ -744,5 +501,10 @@ tbody tr:hover {
 
 .overflow-x-auto::-webkit-scrollbar-thumb:hover {
   background: #a8a8a8;
+}
+
+/* Animation for expandable rows */
+tr {
+  transition: all 0.3s ease;
 }
 </style>

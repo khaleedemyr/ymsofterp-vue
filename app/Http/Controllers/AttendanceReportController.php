@@ -1268,6 +1268,7 @@ class AttendanceReportController extends Controller
 
     /**
      * Calculate off days (days without shift) for a user in a period
+     * Logika sama dengan my attendance: off = tidak ada shift DAN tidak ada attendance
      */
     private function calculateOffDays($userId, $outletId, $startDate, $endDate)
     {
@@ -1284,20 +1285,61 @@ class AttendanceReportController extends Controller
         $shifts = DB::table('user_shifts as us')
             ->leftJoin('shifts as s', 'us.shift_id', '=', 's.id')
             ->where('us.user_id', $userId)
-            ->where('us.outlet_id', $outletId)
             ->whereIn('us.tanggal', $period)
             ->select('us.tanggal', 's.shift_name', 'us.shift_id')
             ->get()
             ->keyBy('tanggal');
         
-        // Count days without shift (or with 'off' shift)
+        // Get attendance data for this user in this period - SAMA dengan report attendance
+        $attendance = DB::table('att_log as a')
+            ->join('tbl_data_outlet as o', 'a.sn', '=', 'o.sn')
+            ->join('user_pins as up', function($q) {
+                $q->on('a.pin', '=', 'up.pin')->on('o.id_outlet', '=', 'up.outlet_id');
+            })
+            ->where('up.user_id', $userId)
+            ->whereIn(DB::raw('DATE(a.scan_date)'), $period)
+            ->selectRaw('DATE(a.scan_date) as tanggal')
+            ->distinct()
+            ->pluck('tanggal')
+            ->toArray();
+        
+        // Count off days: tidak ada shift DAN tidak ada attendance (sama dengan my attendance)
         $offDays = 0;
+        $today = date('Y-m-d');
+        $offDates = [];
+        
         foreach ($period as $date) {
             $shift = $shifts->get($date);
-            if (!$shift || is_null($shift->shift_id) || strtolower($shift->shift_name ?? '') === 'off') {
+            $hasAttendance = in_array($date, $attendance);
+            $isPastOrToday = $date <= $today; // Hanya hitung hari yang sudah lewat
+            
+            // Off day criteria (berdasarkan report attendance):
+            // 1. Tidak ada shift (TIDAK ada jadwal shift) ATAU
+            // 2. Ada shift tapi tidak ada attendance (shift tapi tidak hadir)
+            // 3. Hari sudah lewat atau hari ini (bukan masa depan)
+            $hasShift = $shift && $shift->shift_id;
+            $isOff = (!$hasShift || ($hasShift && !$hasAttendance)) && $isPastOrToday;
+            
+            if ($isOff) {
                 $offDays++;
+                $offDates[] = $date;
             }
         }
+        
+        // Debug logging untuk troubleshooting
+        \Log::info('Off Days Calculation (Fixed)', [
+            'user_id' => $userId,
+            'start_date' => $startDate,
+            'end_date' => $endDate,
+            'today' => $today,
+            'total_period_days' => count($period),
+            'shifts_count' => $shifts->count(),
+            'attendance_count' => count($attendance),
+            'off_days' => $offDays,
+            'off_dates' => $offDates,
+            'period' => $period,
+            'logic' => 'tidak ada shift DAN tidak ada attendance (sama dengan my attendance)'
+        ]);
         
         return $offDays;
     }
@@ -1589,6 +1631,17 @@ class AttendanceReportController extends Controller
         $bulan = $request->input('bulan');
         $tahun = $request->input('tahun');
 
+        // ✅ VALIDASI: Jika user bukan dari outlet 1 (head office), paksa outlet_id sesuai outlet user
+        $user = auth()->user();
+        if ($user && $user->id_outlet && $user->id_outlet != 1) {
+            $outletId = $user->id_outlet;
+            \Log::info('User outlet restriction applied', [
+                'user_id' => $user->id,
+                'user_outlet' => $user->id_outlet,
+                'forced_outlet_id' => $outletId
+            ]);
+        }
+
         // Log filter values for debugging
         \Log::info('Employee Summary Filter Values', [
             'outlet_id' => $outletId,
@@ -1826,27 +1879,28 @@ class AttendanceReportController extends Controller
                         $shiftStart = $shiftData->time_start ?? '08:00:00';
                         $shiftEnd = $shiftData->time_end ?? '17:00:00';
                         
-                        // Buat datetime untuk shift end
-                        $shiftEndDateTime = date('Y-m-d', strtotime($row['jam_masuk'])) . ' ' . $shiftEnd;
+                        // ✅ FIX: Untuk cross-day, shift end tetap di hari yang sama (bukan hari berikutnya)
+                        // Karena jam_keluar sudah berisi tanggal lengkap (termasuk hari berikutnya jika cross-day)
+                        $shiftEndDateTime = date('Y-m-d', strtotime($row['tanggal'])) . ' ' . $shiftEnd;
                         $scanOutDateTime = $row['jam_keluar'];
-                        
-                        // Untuk cross-day, shift end tetap di hari yang sama (bukan hari berikutnya)
-                        // karena jam keluar sudah di hari berikutnya, jadi perhitungan lembur tetap benar
                         
                         // Hitung selisih waktu
                         $shiftEndTime = strtotime($shiftEndDateTime);
                         $scanOutTime = strtotime($scanOutDateTime);
                         
-                        // Debug log untuk Agit Rasya Megantara - sebelum perhitungan
-                        if (strpos($row['nama_lengkap'], 'Agit') !== false) {
-                            \Log::info('Agit Cross-Day Overtime Calculation (Fixed)', [
+                        // Debug log untuk Agit Rasya Megantara dan Agung yudistira - sebelum perhitungan
+                        if (strpos($row['nama_lengkap'], 'Agit') !== false || strpos($row['nama_lengkap'], 'Agung') !== false) {
+                            \Log::info('Cross-Day Overtime Calculation (Fixed v2)', [
+                                'nama_lengkap' => $row['nama_lengkap'],
                                 'tanggal' => $row['tanggal'],
                                 'jam_masuk' => $row['jam_masuk'],
                                 'jam_keluar_raw' => $row['jam_keluar'],
                                 'scanOutDateTime' => $scanOutDateTime,
                                 'shiftEndDateTime' => $shiftEndDateTime,
                                 'shiftEndTime' => $shiftEndTime,
+                                'shiftEndTime_readable' => date('Y-m-d H:i:s', $shiftEndTime),
                                 'scanOutTime' => $scanOutTime,
+                                'scanOutTime_readable' => date('Y-m-d H:i:s', $scanOutTime),
                                 'diff_seconds' => $scanOutTime - $shiftEndTime,
                                 'scanOutTime > shiftEndTime' => $scanOutTime > $shiftEndTime,
                                 'is_cross_day' => $row['is_cross_day']
@@ -1858,9 +1912,9 @@ class AttendanceReportController extends Controller
                             $row['lembur'] = $lemburHours;
                             $overtimeCount++;
                             
-                            // Debug log untuk Agit Rasya Megantara
-                            if (strpos($row['nama_lengkap'], 'Agit') !== false) {
-                                \Log::info('Agit Overtime Calculation Debug (Fixed)', [
+                            // Debug log untuk Agit Rasya Megantara dan Agung yudistira
+                            if (strpos($row['nama_lengkap'], 'Agit') !== false || strpos($row['nama_lengkap'], 'Agung') !== false) {
+                                \Log::info('Overtime Calculation Result (Fixed v2)', [
                                     'tanggal' => $row['tanggal'],
                                     'nama_lengkap' => $row['nama_lengkap'],
                                     'jam_masuk' => $row['jam_masuk'],
@@ -1967,14 +2021,10 @@ class AttendanceReportController extends Controller
                             $telat = $diff > 0 ? round($diff/60) : 0;
                         }
                         if ($shift->time_end && $jam_keluar) {
-                            // REFACTOR: Gunakan logika yang sama dengan Report Attendance (Perhitungan Kedua)
-                            $shiftEndDateTime = date('Y-m-d', strtotime($row['jam_masuk'])) . ' ' . $shift->time_end;
+                            // ✅ FIX: Untuk cross-day, shift end tetap di hari yang sama (bukan hari berikutnya)
+                            // Karena jam_keluar sudah berisi tanggal lengkap (termasuk hari berikutnya jika cross-day)
+                            $shiftEndDateTime = date('Y-m-d', strtotime($row['tanggal'])) . ' ' . $shift->time_end;
                             $scanOutDateTime = $row['jam_keluar'];
-                            
-                            // Jika cross-day, shift end harus di hari berikutnya
-                            if ($row['is_cross_day']) {
-                                $shiftEndDateTime = date('Y-m-d', strtotime($row['jam_masuk'] . ' +1 day')) . ' ' . $shift->time_end;
-                            }
                             
                             $shiftEndTime = strtotime($shiftEndDateTime);
                             $keluarTime = strtotime($scanOutDateTime);
@@ -1983,9 +2033,9 @@ class AttendanceReportController extends Controller
                         }
                     }
 
-                    // ✅ DEBUG: Log data untuk Agit Rasya Megantara
-                    if (strpos($row['nama_lengkap'], 'Agit') !== false) {
-                        \Log::info('Agit Employee Summary Debug', [
+                    // ✅ DEBUG: Log data untuk Agit Rasya Megantara dan Agung yudistira
+                    if (strpos($row['nama_lengkap'], 'Agit') !== false || strpos($row['nama_lengkap'], 'Agung') !== false) {
+                        \Log::info('Employee Summary Debug (Final Calculation)', [
                             'tanggal' => $row['tanggal'],
                             'nama_lengkap' => $row['nama_lengkap'],
                             'jam_masuk' => $jam_masuk,
@@ -1995,6 +2045,8 @@ class AttendanceReportController extends Controller
                             'is_cross_day' => $row['is_cross_day'],
                             'shift_start' => $shift->time_start ?? 'null',
                             'shift_end' => $shift->time_end ?? 'null',
+                            'shiftEndDateTime' => $shiftEndDateTime ?? 'null',
+                            'scanOutDateTime' => $scanOutDateTime ?? 'null',
                         ]);
                     }
 
@@ -2003,13 +2055,15 @@ class AttendanceReportController extends Controller
                         'user_id' => $row['user_id'],
                         'nama_lengkap' => $row['nama_lengkap'],
                         'division_id' => $row['division_id'],
-                        'jam_masuk' => $jam_masuk,
-                        'jam_keluar' => $jam_keluar,
+                        'jam_masuk' => $row['jam_masuk'], // Kirim datetime lengkap, bukan format time
+                        'jam_keluar' => $row['jam_keluar'], // Kirim datetime lengkap, bukan format time
                         'total_masuk' => $row['total_masuk'],
                         'total_keluar' => $row['total_keluar'],
                         'telat' => $telat,
                         'lembur' => $lembur,
                         'is_cross_day' => $row['is_cross_day'],
+                        'shift_start' => $shift->time_start ?? null,
+                        'shift_end' => $shift->time_end ?? null,
                     ]);
                 }
                 
@@ -2262,6 +2316,17 @@ class AttendanceReportController extends Controller
         $bulan = $request->input('bulan');
         $tahun = $request->input('tahun');
 
+        // ✅ VALIDASI: Jika user bukan dari outlet 1 (head office), paksa outlet_id sesuai outlet user
+        $user = auth()->user();
+        if ($user && $user->id_outlet && $user->id_outlet != 1) {
+            $outletId = $user->id_outlet;
+            \Log::info('User outlet restriction applied for export', [
+                'user_id' => $user->id,
+                'user_outlet' => $user->id_outlet,
+                'forced_outlet_id' => $outletId
+            ]);
+        }
+
         // Set timeout untuk mencegah loading terlalu lama
         set_time_limit(300); // 5 menit
         
@@ -2399,11 +2464,10 @@ class AttendanceReportController extends Controller
                         $shiftStart = $shiftData->time_start ?? '08:00:00';
                         $shiftEnd = $shiftData->time_end ?? '17:00:00';
                         
-                        $shiftEndDateTime = date('Y-m-d', strtotime($row['jam_masuk'])) . ' ' . $shiftEnd;
+                        // ✅ FIX: Untuk cross-day, shift end tetap di hari yang sama (bukan hari berikutnya)
+                        // Karena jam_keluar sudah berisi tanggal lengkap (termasuk hari berikutnya jika cross-day)
+                        $shiftEndDateTime = date('Y-m-d', strtotime($row['tanggal'])) . ' ' . $shiftEnd;
                         $scanOutDateTime = $row['jam_keluar'];
-                        
-                        // Untuk cross-day, shift end tetap di hari yang sama (bukan hari berikutnya)
-                        // karena jam keluar sudah di hari berikutnya, jadi perhitungan lembur tetap benar
                         
                         $shiftEndTime = strtotime($shiftEndDateTime);
                         $scanOutTime = strtotime($scanOutDateTime);
@@ -2460,6 +2524,8 @@ class AttendanceReportController extends Controller
                             $telat = $diff > 0 ? round($diff/60) : 0;
                         }
                         if ($shift->time_end && $jam_keluar) {
+                            // ✅ FIX: Untuk cross-day, shift end tetap di hari yang sama (bukan hari berikutnya)
+                            // Karena jam_keluar sudah berisi tanggal lengkap (termasuk hari berikutnya jika cross-day)
                             $shiftEndDateTime = date('Y-m-d', strtotime($row['tanggal'])) . ' ' . $shift->time_end;
                             $scanOutDateTime = $row['jam_keluar'];
                             $shiftEndTime = strtotime($shiftEndDateTime);
@@ -2484,11 +2550,13 @@ class AttendanceReportController extends Controller
                         'user_id' => $row['user_id'],
                         'nama_lengkap' => $row['nama_lengkap'],
                         'division_id' => $row['division_id'],
-                        'jam_masuk' => $jam_masuk,
-                        'jam_keluar' => $jam_keluar,
+                        'jam_masuk' => $row['jam_masuk'], // Kirim datetime lengkap, bukan format time
+                        'jam_keluar' => $row['jam_keluar'], // Kirim datetime lengkap, bukan format time
                         'telat' => $telat,
                         'lembur' => $lembur,
                         'is_cross_day' => $row['is_cross_day'] ?? false,
+                        'shift_start' => $shift->time_start ?? null,
+                        'shift_end' => $shift->time_end ?? null,
                     ]);
                 }
 
@@ -2523,6 +2591,23 @@ class AttendanceReportController extends Controller
                     // Calculate alpa days (days with shift but no attendance and no absent request)
                     $alpaDays = $this->calculateAlpaDays($firstRow->user_id, null, $start, $end);
                     
+                    // Siapkan data detail absensi harian untuk expandable table
+                    $dailyAttendance = $employeeRows->map(function($row) {
+                        return [
+                            'tanggal' => $row->tanggal,
+                            'jam_masuk' => $row->jam_masuk,
+                            'jam_keluar' => $row->jam_keluar,
+                            'telat' => $row->telat,
+                            'lembur' => $row->lembur,
+                            'is_cross_day' => $row->is_cross_day ?? false,
+                            'is_off' => $row->is_off ?? false,
+                            'is_holiday' => $row->is_holiday ?? false,
+                            'holiday_name' => $row->holiday_name ?? null,
+                            'shift_start' => $row->shift_start ?? null,
+                            'shift_end' => $row->shift_end ?? null,
+                        ];
+                    })->sortBy('tanggal')->values();
+
                     $result = (object)[
                         'user_id' => $firstRow->user_id,
                         'nik' => $userData->nik ?? '-',
@@ -2542,6 +2627,8 @@ class AttendanceReportController extends Controller
                         'total_telat' => $employeeRows->sum('telat'),
                         'total_lembur' => $employeeRows->sum('lembur'),
                         'total_days' => $this->calculateTotalDaysInPeriod($start, $end), // Total hari dalam periode
+                        // Data detail untuk expandable table
+                        'daily_attendance' => $dailyAttendance,
                     ];
                     
                     $employeeSummary->push($result);
@@ -2646,5 +2733,120 @@ class AttendanceReportController extends Controller
         }
         
         return $groupedAbsents;
+    }
+
+    // Method untuk employee summary attendance detail
+    public function employeeSummaryAttendance(Request $request)
+    {
+        $outletId = $request->input('outlet_id');
+        $divisionId = $request->input('division_id');
+        $bulan = $request->input('bulan');
+        $tahun = $request->input('tahun');
+        $userId = $request->input('user_id');
+
+        // ✅ VALIDASI: Jika user bukan dari outlet 1 (head office), paksa outlet_id sesuai outlet user
+        $user = auth()->user();
+        if ($user && $user->id_outlet && $user->id_outlet != 1) {
+            $outletId = $user->id_outlet;
+            \Log::info('User outlet restriction applied for employee summary attendance', [
+                'user_id' => $user->id,
+                'user_outlet' => $user->id_outlet,
+                'forced_outlet_id' => $outletId
+            ]);
+        }
+
+        // Set timeout untuk mencegah loading terlalu lama
+        set_time_limit(300); // 5 menit
+        
+        \Log::info('=== EMPLOYEE SUMMARY ATTENDANCE START ===');
+        \Log::info('Request received at: ' . now());
+
+        if (!empty($outletId) || !empty($divisionId) || !empty($bulan) || !empty($tahun) || !empty($userId)) {
+            $bulan = $bulan ?: date('m');
+            $tahun = $tahun ?: date('Y');
+            $start = date('Y-m-d', strtotime("$tahun-$bulan-26 -1 month"));
+            $end = date('Y-m-d', strtotime("$tahun-$bulan-25"));
+
+            // Ambil data attendance untuk user tertentu
+            $attendanceData = $this->getAttendanceDataForUser($userId, $start, $end);
+            
+            // Get dropdown data
+            $outlets = DB::table('tbl_data_outlet')->select('id_outlet as id', 'nama_outlet as name')->orderBy('nama_outlet')->get();
+            $divisions = DB::table('tbl_data_divisi')->select('id', 'nama_divisi as name')->orderBy('nama_divisi')->get();
+
+            return Inertia::render('AttendanceReport/EmployeeSummaryAttendance', [
+                'attendanceData' => $attendanceData,
+                'outlets' => $outlets,
+                'divisions' => $divisions,
+                'filter' => [
+                    'outlet_id' => $outletId,
+                    'division_id' => $divisionId,
+                    'bulan' => $bulan,
+                    'tahun' => $tahun,
+                    'user_id' => $userId,
+                ],
+                'period' => ['start' => $start, 'end' => $end],
+                'user' => auth()->user(),
+            ]);
+        }
+
+        // Return empty data if no filters
+        $outlets = DB::table('tbl_data_outlet')->select('id_outlet as id', 'nama_outlet as name')->orderBy('nama_outlet')->get();
+        $divisions = DB::table('tbl_data_divisi')->select('id', 'nama_divisi as name')->orderBy('nama_divisi')->get();
+
+        return Inertia::render('AttendanceReport/EmployeeSummaryAttendance', [
+            'attendanceData' => [],
+            'outlets' => $outlets,
+            'divisions' => $divisions,
+            'filter' => [
+                'outlet_id' => $outletId,
+                'division_id' => $divisionId,
+                'bulan' => $bulan,
+                'tahun' => $tahun,
+                'user_id' => $userId,
+            ],
+            'period' => null,
+            'user' => auth()->user(),
+        ]);
+    }
+
+    // Helper method untuk mengambil data attendance user tertentu
+    private function getAttendanceDataForUser($userId, $start, $end)
+    {
+        // Implementation untuk mengambil data attendance detail user
+        // Ini bisa diimplementasikan sesuai kebutuhan
+        return [];
+    }
+
+    // Export Excel untuk Employee Summary Attendance
+    public function exportEmployeeSummaryAttendance(Request $request)
+    {
+        $outletId = $request->input('outlet_id');
+        $divisionId = $request->input('division_id');
+        $bulan = $request->input('bulan');
+        $tahun = $request->input('tahun');
+        $userId = $request->input('user_id');
+
+        // ✅ VALIDASI: Jika user bukan dari outlet 1 (head office), paksa outlet_id sesuai outlet user
+        $user = auth()->user();
+        if ($user && $user->id_outlet && $user->id_outlet != 1) {
+            $outletId = $user->id_outlet;
+            \Log::info('User outlet restriction applied for export employee summary attendance', [
+                'user_id' => $user->id,
+                'user_outlet' => $user->id_outlet,
+                'forced_outlet_id' => $outletId
+            ]);
+        }
+
+        // Set timeout untuk mencegah loading terlalu lama
+        set_time_limit(300); // 5 menit
+        
+        \Log::info('=== EXPORT EMPLOYEE SUMMARY ATTENDANCE START ===');
+        \Log::info('Export request received at: ' . now());
+
+        // Implementation untuk export Excel
+        // Ini bisa diimplementasikan sesuai kebutuhan
+        
+        return response()->json(['message' => 'Export functionality not implemented yet']);
     }
 } 

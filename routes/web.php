@@ -1559,6 +1559,8 @@ Route::get('/api/attendance-report/employees', [\App\Http\Controllers\Attendance
 Route::get('attendance-report/export', [App\Http\Controllers\AttendanceReportController::class, 'exportExcel'])->name('attendance-report.export');
 Route::get('attendance-report/employee-summary', [App\Http\Controllers\AttendanceReportController::class, 'employeeSummary'])->name('attendance-report.employee-summary');
 Route::get('attendance-report/employee-summary/export', [App\Http\Controllers\AttendanceReportController::class, 'exportEmployeeSummary'])->name('attendance-report.employee-summary.export');
+Route::get('attendance-report/employee-summary-attendance', [App\Http\Controllers\AttendanceReportController::class, 'employeeSummaryAttendance'])->name('attendance-report.employee-summary-attendance');
+Route::post('attendance-report/employee-summary-attendance/export', [App\Http\Controllers\AttendanceReportController::class, 'exportEmployeeSummaryAttendance'])->name('attendance-report.employee-summary-attendance.export');
 
 Route::get('/report/sales-simple/export-order-detail', [\App\Http\Controllers\ReportController::class, 'exportOrderDetail'])->name('report.sales-simple.export-order-detail');
 
