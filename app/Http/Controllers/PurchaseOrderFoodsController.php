@@ -922,8 +922,11 @@ class PurchaseOrderFoodsController extends Controller
         ]);
 
         if ($request->approved) {
-            // Notifikasi ke GM Finance
-            $gmFinances = \DB::table('users')->where('id_jabatan', 152)->where('status', 'A')->pluck('id');
+            // Notifikasi ke GM Finance (id_jabatan=152) dan Senior Manager (id_jabatan=381)
+            $gmFinances = \DB::table('users')
+                ->whereIn('id_jabatan', [152, 381])
+                ->where('status', 'A')
+                ->pluck('id');
             $this->sendNotification(
                 $gmFinances,
                 'po_approval',

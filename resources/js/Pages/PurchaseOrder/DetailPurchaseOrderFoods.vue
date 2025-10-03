@@ -192,7 +192,7 @@ const canApprovePurchasingManager = computed(() =>
   && !props.po.purchasing_manager_approved_at
 )
 const canApproveGMFinance = computed(() =>
-  ((props.user.id_jabatan === 152 && props.user.status === 'A') || isSuperadmin.value)
+  (((props.user.id_jabatan === 152 || props.user.id_jabatan === 381) && props.user.status === 'A') || isSuperadmin.value)
   && props.po.status === 'draft'
   && props.po.purchasing_manager_approved_at
   && !props.po.gm_finance_approved_at

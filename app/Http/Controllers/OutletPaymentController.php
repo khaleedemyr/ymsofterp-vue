@@ -13,35 +13,60 @@ class OutletPaymentController extends Controller
 {
     public function index(Request $request)
     {
-        // SIMPLE APPROACH: Get payments first, then load related data
-        $query = OutletPayment::when($request->outlet, function ($q) use ($request) {
-                return $q->where('outlet_id', $request->outlet);
-            })
-            ->when($request->status, function ($q) use ($request) {
-                return $q->where('status', $request->status);
-            })
-            ->when($request->date, function ($q) use ($request) {
-                return $q->whereDate('date', $request->date);
-            });
+        // Get filter parameters
+        $outlet = $request->input('outlet');
+        $status = $request->input('status');
+        $date = $request->input('date');
+        $search = $request->input('search');
+        $perPage = $request->input('per_page', 10);
 
-        $payments = $query->latest('date')->paginate(10)->withQueryString();
+        // Build query with search and filters
+        $query = OutletPayment::query()
+            ->leftJoin('tbl_data_outlet as o', 'outlet_payments.outlet_id', '=', 'o.id_outlet')
+            ->leftJoin('users as u', 'outlet_payments.created_by', '=', 'u.id')
+            ->leftJoin('outlet_food_good_receives as gr', 'outlet_payments.gr_id', '=', 'gr.id')
+            ->leftJoin('retail_warehouse_sales as rws', 'outlet_payments.retail_sales_id', '=', 'rws.id')
+            ->select(
+                'outlet_payments.*',
+                'o.nama_outlet as outlet_name',
+                'u.nama_lengkap as creator_name',
+                'gr.number as gr_number',
+                'rws.number as retail_number'
+            );
+
+        // Apply filters
+        if ($outlet) {
+            $query->where('outlet_payments.outlet_id', $outlet);
+        }
         
-        // Load outlet and GR data separately for each payment
+        if ($status) {
+            $query->where('outlet_payments.status', $status);
+        }
+        
+        if ($date) {
+            $query->whereDate('outlet_payments.date', $date);
+        }
+
+        // Apply search
+        if ($search) {
+            $query->where(function($q) use ($search) {
+                $q->where('outlet_payments.payment_number', 'like', "%{$search}%")
+                  ->orWhere('o.nama_outlet', 'like', "%{$search}%")
+                  ->orWhere('u.nama_lengkap', 'like', "%{$search}%")
+                  ->orWhere('gr.number', 'like', "%{$search}%")
+                  ->orWhere('rws.number', 'like', "%{$search}%");
+            });
+        }
+
+        $payments = $query->latest('outlet_payments.date')->paginate($perPage)->withQueryString();
+        
+        // Add payment type to each payment
         $payments->getCollection()->transform(function($payment) {
-            // Get outlet name
-            $outlet = DB::table('tbl_data_outlet')
-                ->where('id_outlet', $payment->outlet_id)
-                ->first();
-            $payment->outlet_name = $outlet ? $outlet->nama_outlet : 'Outlet Not Found';
-            
-            // Get GR number
-            $gr = DB::table('outlet_food_good_receives')
-                ->where('id', $payment->gr_id)
-                ->whereNull('deleted_at')
-                ->first();
-            $payment->gr_number = $gr ? $gr->number : 'GR Not Found';
-            
-            
+            if ($payment->gr_id) {
+                $payment->payment_type = 'GR';
+            } else {
+                $payment->payment_type = 'Retail';
+            }
             return $payment;
         });
 
@@ -134,7 +159,7 @@ class OutletPaymentController extends Controller
             'payments' => $payments,
             'outlets' => $outlets,
             'grGroups' => $grGroupsPaginated,
-            'filters' => $request->only(['outlet', 'status', 'date'])
+            'filters' => $request->only(['outlet', 'status', 'date', 'search', 'per_page'])
         ]);
     }
 

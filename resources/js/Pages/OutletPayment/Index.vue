@@ -19,6 +19,18 @@
         </div>
       </div>
       <div class="flex flex-wrap gap-3 mb-4 items-center">
+        <!-- Search Box -->
+        <div class="flex-1 min-w-64">
+          <input 
+            type="text" 
+            v-model="filters.search" 
+            @input="onSearchChange"
+            placeholder="Cari payment number, outlet, creator, GR/Retail number..." 
+            class="w-full px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition"
+          />
+        </div>
+        
+        <!-- Filters -->
         <select v-model="filters.outlet" @change="onFilterChange" class="px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition">
           <option value="">Semua Outlet</option>
           <option v-for="outlet in outlets" :key="outlet.id" :value="outlet.id">{{ outlet.name }}</option>
@@ -30,6 +42,14 @@
           <option value="cancelled">Cancelled</option>
         </select>
         <input type="date" v-model="filters.date" @change="onFilterChange" class="px-2 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition" placeholder="Tanggal" />
+        
+        <!-- Per Page Selector -->
+        <select v-model="filters.per_page" @change="onFilterChange" class="px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition">
+          <option value="10">10 per halaman</option>
+          <option value="25">25 per halaman</option>
+          <option value="50">50 per halaman</option>
+          <option value="100">100 per halaman</option>
+        </select>
       </div>
       <div class="bg-white rounded-2xl shadow-2xl overflow-x-auto transition-all">
         <table class="w-full min-w-full divide-y divide-gray-200">
@@ -46,7 +66,8 @@
               <th class="px-6 py-3 text-left text-xs font-bold text-yellow-700 uppercase tracking-wider">No. Payment</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-yellow-700 uppercase tracking-wider">Tanggal</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-yellow-700 uppercase tracking-wider">Outlet</th>
-              <th class="px-6 py-3 text-left text-xs font-bold text-yellow-700 uppercase tracking-wider">No. GR</th>
+              <th class="px-6 py-3 text-left text-xs font-bold text-yellow-700 uppercase tracking-wider">No. GR/Retail</th>
+              <th class="px-6 py-3 text-left text-xs font-bold text-yellow-700 uppercase tracking-wider">Creator</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-yellow-700 uppercase tracking-wider">Total Amount</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-yellow-700 uppercase tracking-wider">Status</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-yellow-700 uppercase tracking-wider rounded-tr-2xl">Aksi</th>
@@ -54,7 +75,7 @@
           </thead>
           <tbody>
             <tr v-if="!payments.data || !payments.data.length">
-              <td colspan="8" class="text-center py-10 text-gray-400">Belum ada data Payment.</td>
+              <td colspan="9" class="text-center py-10 text-gray-400">Belum ada data Payment.</td>
             </tr>
             <tr v-for="payment in payments.data" :key="payment.id" class="hover:bg-yellow-50 transition shadow-sm">
               <td class="px-6 py-3">
@@ -69,7 +90,26 @@
               <td class="px-6 py-3 font-mono font-semibold text-yellow-700">{{ payment.payment_number }}</td>
               <td class="px-6 py-3">{{ formatDate(payment.date) }}</td>
               <td class="px-6 py-3">{{ payment.outlet_name || '-' }}</td>
-              <td class="px-6 py-3">{{ payment.gr_number || '-' }}</td>
+              <td class="px-6 py-3">
+                <div v-if="payment.payment_type === 'GR'">
+                  <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                    <i class="fa fa-box mr-1"></i> {{ payment.gr_number || '-' }}
+                  </span>
+                </div>
+                <div v-else-if="payment.payment_type === 'Retail'">
+                  <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                    <i class="fa fa-shopping-cart mr-1"></i> {{ payment.retail_number || '-' }}
+                  </span>
+                </div>
+                <div v-else>
+                  <span class="text-gray-400">-</span>
+                </div>
+              </td>
+              <td class="px-6 py-3">
+                <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                  <i class="fa fa-user mr-1"></i> {{ payment.creator_name || '-' }}
+                </span>
+              </td>
               <td class="px-6 py-3 text-right">{{ formatCurrency(payment.total_amount) }}</td>
               <td class="px-6 py-3">
                 <span :class="getStatusClass(payment.status)" class="px-2 py-1 rounded-full text-xs font-semibold shadow">
@@ -94,19 +134,24 @@
         </table>
       </div>
       <!-- Pagination -->
-      <div class="flex justify-end mt-4 gap-2">
-        <button
-          v-for="link in payments.links"
-          :key="link.label"
-          :disabled="!link.url"
-          @click="goToPage(link.url)"
-          v-html="link.label"
-          class="px-3 py-1 rounded-lg border text-sm font-semibold"
-          :class="[
-            link.active ? 'bg-yellow-600 text-white shadow-lg' : 'bg-white text-yellow-700 hover:bg-yellow-50',
-            !link.url ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
-          ]"
-        />
+      <div class="flex justify-between items-center mt-4">
+        <div class="text-sm text-gray-600">
+          Menampilkan {{ payments.from || 0 }} - {{ payments.to || 0 }} dari {{ payments.total || 0 }} data
+        </div>
+        <div class="flex gap-2">
+          <button
+            v-for="link in payments.links"
+            :key="link.label"
+            :disabled="!link.url"
+            @click="goToPage(link.url)"
+            v-html="link.label"
+            class="px-3 py-1 rounded-lg border text-sm font-semibold"
+            :class="[
+              link.active ? 'bg-yellow-600 text-white shadow-lg' : 'bg-white text-yellow-700 hover:bg-yellow-50',
+              !link.url ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
+            ]"
+          />
+        </div>
       </div>
     </div>
   </AppLayout>
@@ -127,7 +172,9 @@ const props = defineProps({
 const filters = ref({
   outlet: props.filters?.outlet || '',
   status: props.filters?.status || '',
-  date: props.filters?.date || ''
+  date: props.filters?.date || '',
+  search: props.filters?.search || '',
+  per_page: props.filters?.per_page || '10'
 });
 
 // Bulk selection
@@ -178,6 +225,15 @@ function goToPage(url) {
 
 function onFilterChange() {
   router.get('/outlet-payments', { ...filters.value }, { preserveState: true, replace: true });
+}
+
+// Search with debounce
+let searchTimeout = null;
+function onSearchChange() {
+  clearTimeout(searchTimeout);
+  searchTimeout = setTimeout(() => {
+    router.get('/outlet-payments', { ...filters.value }, { preserveState: true, replace: true });
+  }, 500); // 500ms debounce
 }
 
 function goToCreatePage() {
