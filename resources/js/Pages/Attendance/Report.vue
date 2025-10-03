@@ -62,10 +62,11 @@
                                     </label>
                                     <select
                                         v-model="filters.outlet_id"
-                                        class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+                                        :disabled="props.user?.id_outlet && props.user.id_outlet !== 1"
+                                        class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white disabled:bg-gray-100 disabled:cursor-not-allowed"
                                     >
                                         <option value="">Semua Outlet</option>
-                                        <option v-for="outlet in outlets" :key="outlet.id_outlet" :value="outlet.id_outlet">
+                                        <option v-for="outlet in availableOutlets" :key="outlet.id_outlet" :value="outlet.id_outlet">
                                             {{ outlet.nama_outlet }}
                                         </option>
                                     </select>
@@ -188,7 +189,7 @@
                                                 {{ item.employee_name || '-' }}
                                             </td>
                                             <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                                                {{ item.nama_outlet || '-' }}
+                                                {{ item.outlet_name || '-' }}
                                             </td>
                                             <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                                                 {{ item.nama_divisi || '-' }}
@@ -386,7 +387,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, computed } from 'vue';
 import { Head } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import VueEasyLightbox from 'vue-easy-lightbox';
@@ -395,6 +396,7 @@ import axios from 'axios';
 const props = defineProps({
     outlets: Array,
     divisions: Array,
+    user: Object,
     filters: Object
 });
 
@@ -422,6 +424,16 @@ const filters = ref({
     outlet_id: props.filters.outlet_id || '',
     division_id: props.filters.division_id || '',
     employee_name: props.filters.employee_name || ''
+});
+
+// ✅ VALIDASI: Filter outlet berdasarkan user
+const availableOutlets = computed(() => {
+    if (props.user?.id_outlet && props.user.id_outlet !== 1) {
+        // Jika user bukan dari outlet 1, hanya tampilkan outlet mereka
+        return props.outlets.filter(outlet => outlet.id_outlet === props.user.id_outlet);
+    }
+    // Jika user dari outlet 1 (head office), tampilkan semua outlet
+    return props.outlets;
 });
 
 const loadData = async (page = 1) => {

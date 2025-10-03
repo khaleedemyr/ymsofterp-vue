@@ -975,11 +975,15 @@ class ScheduleAttendanceCorrectionController extends Controller
      */
     public function report()
     {
+        $user = auth()->user();
+        
+        // Get outlets for filter
         $outlets = DB::table('tbl_data_outlet')
             ->where('status', 'A')
             ->orderBy('nama_outlet')
             ->get();
             
+        // Get divisions for filter
         $divisions = DB::table('tbl_data_divisi')
             ->where('status', 'A')
             ->orderBy('nama_divisi')
@@ -988,6 +992,7 @@ class ScheduleAttendanceCorrectionController extends Controller
         return Inertia::render('ScheduleAttendanceCorrection/Report', [
             'outlets' => $outlets,
             'divisions' => $divisions,
+            'user' => $user,
         ]);
     }
     
@@ -1004,6 +1009,20 @@ class ScheduleAttendanceCorrectionController extends Controller
         $status = $request->input('status'); // pending, approved, rejected
         $type = $request->input('type'); // schedule, attendance
         
+        // ✅ VALIDASI: Jika user bukan dari outlet 1 (head office), paksa outlet_id sesuai outlet user
+        $user = auth()->user();
+        if ($user && $user->id_outlet && $user->id_outlet != 1) {
+            $outletId = $user->id_outlet;
+            \Log::info('User outlet restriction applied for schedule attendance correction report', [
+                'user_id' => $user->id,
+                'user_outlet' => $user->id_outlet,
+                'forced_outlet_id' => $outletId
+            ]);
+        }
+        
+        // Get pagination parameters
+        $perPage = (int) $request->get('per_page', 15);
+        $page = (int) $request->get('page', 1);
         
         // First, let's get the base data without joins to debug
         $baseQuery = DB::table('schedule_attendance_correction_approvals as saca');
@@ -1033,12 +1052,11 @@ class ScheduleAttendanceCorrectionController extends Controller
             $baseQuery->where('saca.type', $type);
         }
         
-        // Get base data first
-        $baseData = $baseQuery->orderBy('saca.created_at', 'desc')->get();
+        // Get paginated data
+        $data = $baseQuery->orderBy('saca.created_at', 'desc')->paginate($perPage, ['*'], 'page', $page);
         
-        
-        // For now, let's use the base data and manually add the related information
-        $data = $baseData->map(function($item) {
+        // Process each item to add related information
+        $data->getCollection()->transform(function($item) {
             // Get related data manually
             $requester = DB::table('users')->where('id', $item->requested_by)->first();
             $employee = DB::table('users')->where('id', $item->user_id)->first();
@@ -1072,20 +1090,58 @@ class ScheduleAttendanceCorrectionController extends Controller
             ];
         });
         
-        // Get summary statistics
+        // Get summary statistics from all data (not just current page)
+        $summaryQuery = DB::table('schedule_attendance_correction_approvals as saca');
+        
+        // Apply same filters for summary
+        if ($startDate && $endDate) {
+            $summaryQuery->whereBetween('saca.tanggal', [$startDate, $endDate]);
+        } elseif ($startDate) {
+            $summaryQuery->where('saca.tanggal', '>=', $startDate);
+        } elseif ($endDate) {
+            $summaryQuery->where('saca.tanggal', '<=', $endDate);
+        }
+        
+        if ($outletId) {
+            $summaryQuery->where('saca.outlet_id', $outletId);
+        }
+        
+        if ($divisionId) {
+            $summaryQuery->where('saca.division_id', $divisionId);
+        }
+        
+        if ($status) {
+            $summaryQuery->where('saca.status', $status);
+        }
+        
+        if ($type) {
+            $summaryQuery->where('saca.type', $type);
+        }
+        
+        $allData = $summaryQuery->get();
+        
         $summary = [
-            'total' => $data->count(),
-            'pending' => $data->where('status', 'pending')->count(),
-            'approved' => $data->where('status', 'approved')->count(),
-            'rejected' => $data->where('status', 'rejected')->count(),
-            'schedule' => $data->where('type', 'schedule')->count(),
-            'attendance' => $data->where('type', 'attendance')->count(),
+            'total' => $allData->count(),
+            'pending' => $allData->where('status', 'pending')->count(),
+            'approved' => $allData->where('status', 'approved')->count(),
+            'rejected' => $allData->where('status', 'rejected')->count(),
+            'schedule' => $allData->where('type', 'schedule')->count(),
+            'attendance' => $allData->where('type', 'attendance')->count(),
         ];
         
         return response()->json([
             'success' => true,
-            'data' => $data,
-            'summary' => $summary
+            'data' => $data->items(),
+            'summary' => $summary,
+            'pagination' => [
+                'current_page' => $data->currentPage(),
+                'last_page' => $data->lastPage(),
+                'per_page' => $data->perPage(),
+                'total' => $data->total(),
+                'from' => $data->firstItem(),
+                'to' => $data->lastItem(),
+                'has_more_pages' => $data->hasMorePages()
+            ]
         ]);
     }
     

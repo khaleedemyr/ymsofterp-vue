@@ -844,6 +844,16 @@ class AttendanceController extends Controller
         $divisionId = $request->get('division_id');
         $employeeName = $request->get('employee_name');
         
+        // ✅ VALIDASI: Jika user bukan dari outlet 1 (head office), paksa outlet_id sesuai outlet user
+        if ($user && $user->id_outlet && $user->id_outlet != 1) {
+            $outletId = $user->id_outlet;
+            \Log::info('User outlet restriction applied for absent report page', [
+                'user_id' => $user->id,
+                'user_outlet' => $user->id_outlet,
+                'forced_outlet_id' => $outletId
+            ]);
+        }
+        
         // Get outlets for filter
         $outlets = DB::table('tbl_data_outlet')
             ->where('status', 'A')
@@ -858,6 +868,7 @@ class AttendanceController extends Controller
         return Inertia::render('Attendance/Report', [
             'outlets' => $outlets,
             'divisions' => $divisions,
+            'user' => $user,
             'filters' => [
                 'start_date' => $startDate,
                 'end_date' => $endDate,
@@ -880,6 +891,17 @@ class AttendanceController extends Controller
         $outletId = $request->get('outlet_id');
         $divisionId = $request->get('division_id');
         $employeeName = $request->get('employee_name');
+        
+        // ✅ VALIDASI: Jika user bukan dari outlet 1 (head office), paksa outlet_id sesuai outlet user
+        $user = auth()->user();
+        if ($user && $user->id_outlet && $user->id_outlet != 1) {
+            $outletId = $user->id_outlet;
+            \Log::info('User outlet restriction applied for absent report', [
+                'user_id' => $user->id,
+                'user_outlet' => $user->id_outlet,
+                'forced_outlet_id' => $outletId
+            ]);
+        }
         
         
         $query = DB::table('absent_requests')
@@ -904,6 +926,7 @@ class AttendanceController extends Controller
                 'users.nama_lengkap as employee_name',
                 'users.id as user_id',
                 'leave_types.name as leave_type_name',
+                'tbl_data_outlet.nama_outlet as outlet_name',
                 'tbl_data_divisi.nama_divisi',
                 'approvers.nama_lengkap as approver_name',
                 'hrd_approvers.nama_lengkap as hrd_approver_name'
@@ -977,6 +1000,17 @@ class AttendanceController extends Controller
         $outletId = $request->get('outlet_id');
         $divisionId = $request->get('division_id');
         
+        // ✅ VALIDASI: Jika user bukan dari outlet 1 (head office), paksa outlet_id sesuai outlet user
+        $user = auth()->user();
+        if ($user && $user->id_outlet && $user->id_outlet != 1) {
+            $outletId = $user->id_outlet;
+            \Log::info('User outlet restriction applied for absent report export', [
+                'user_id' => $user->id,
+                'user_outlet' => $user->id_outlet,
+                'forced_outlet_id' => $outletId
+            ]);
+        }
+        
         $query = DB::table('absent_requests')
             ->leftJoin('users', 'absent_requests.user_id', '=', 'users.id')
             ->leftJoin('leave_types', 'absent_requests.leave_type_id', '=', 'leave_types.id')
@@ -996,6 +1030,7 @@ class AttendanceController extends Controller
                 'absent_requests.rejection_reason',
                 'users.nama_lengkap as employee_name',
                 'leave_types.name as leave_type_name',
+                'tbl_data_outlet.nama_outlet as outlet_name',
                 'tbl_data_divisi.nama_divisi',
                 'approvers.nama_lengkap as approver_name',
                 'hrd_approvers.nama_lengkap as hrd_approver_name'

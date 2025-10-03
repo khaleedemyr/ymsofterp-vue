@@ -39,9 +39,10 @@
                             <div>
                                 <label class="block text-sm font-medium text-gray-700 mb-1">Outlet</label>
                                 <select v-model="filters.outletId" 
-                                        class="w-full border-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                        :disabled="props.user?.id_outlet && props.user.id_outlet !== 1"
+                                        class="w-full border-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500 disabled:bg-gray-100 disabled:cursor-not-allowed">
                                     <option value="">Semua Outlet</option>
-                                    <option v-for="outlet in props.outlets" :key="outlet.id_outlet" :value="outlet.id_outlet">
+                                    <option v-for="outlet in availableOutlets" :key="outlet.id_outlet" :value="outlet.id_outlet">
                                         {{ outlet.nama_outlet }}
                                     </option>
                                 </select>
@@ -234,6 +235,93 @@
                                 </tbody>
                             </table>
                         </div>
+                        
+                        <!-- Pagination -->
+                        <div v-if="pagination && pagination.total > 0" class="px-4 py-3 border-t border-gray-200 bg-white">
+                            <div class="flex items-center justify-between">
+                                <div class="flex items-center gap-4">
+                                    <div class="text-sm text-gray-700">
+                                        Menampilkan {{ pagination?.from || 0 }} sampai {{ pagination?.to || 0 }} dari {{ pagination?.total || 0 }} data
+                                    </div>
+                                    <div class="flex items-center gap-2">
+                                        <label class="text-sm text-gray-700">Per halaman:</label>
+                                        <select 
+                                            v-model="pagination.per_page" 
+                                            @change="changePerPage(pagination.per_page)"
+                                            class="px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        >
+                                            <option value="10">10</option>
+                                            <option value="15">15</option>
+                                            <option value="25">25</option>
+                                            <option value="50">50</option>
+                                            <option value="100">100</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                
+                                <div class="flex items-center gap-2">
+                                    <!-- Previous Button -->
+                                    <button
+                                        @click="changePage((pagination?.current_page || 1) - 1)"
+                                        :disabled="(pagination?.current_page || 1) <= 1"
+                                        class="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
+                                        <i class="fa-solid fa-chevron-left"></i>
+                                    </button>
+                                    
+                                    <!-- Page Numbers -->
+                                    <div class="flex items-center gap-1">
+                                        <!-- First page -->
+                                        <button
+                                            v-if="(pagination?.current_page || 1) > 3"
+                                            @click="changePage(1)"
+                                            class="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50"
+                                        >
+                                            1
+                                        </button>
+                                        
+                                        <!-- Ellipsis -->
+                                        <span v-if="(pagination?.current_page || 1) > 4" class="px-2 text-gray-500">...</span>
+                                        
+                                        <!-- Pages around current page -->
+                                        <button
+                                            v-for="page in getVisiblePages()"
+                                            :key="page"
+                                            @click="changePage(page)"
+                                            :class="[
+                                                'px-3 py-1 text-sm border rounded',
+                                                page === (pagination?.current_page || 1)
+                                                    ? 'bg-blue-600 text-white border-blue-600'
+                                                    : 'border-gray-300 hover:bg-gray-50'
+                                            ]"
+                                        >
+                                            {{ page }}
+                                        </button>
+                                        
+                                        <!-- Ellipsis -->
+                                        <span v-if="(pagination?.current_page || 1) < (pagination?.last_page || 1) - 3" class="px-2 text-gray-500">...</span>
+                                        
+                                        <!-- Last page -->
+                                        <button
+                                            v-if="(pagination?.current_page || 1) < (pagination?.last_page || 1) - 2"
+                                            @click="changePage(pagination?.last_page || 1)"
+                                            class="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50"
+                                        >
+                                            {{ pagination?.last_page || 1 }}
+                                        </button>
+                                    </div>
+                                    
+                                    <!-- Next Button -->
+                                    <button
+                                        @click="changePage((pagination?.current_page || 1) + 1)"
+                                        :disabled="!pagination?.has_more_pages"
+                                        class="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
+                                        <i class="fa-solid fa-chevron-right"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -242,7 +330,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, computed } from 'vue';
 import { router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import axios from 'axios';
@@ -250,12 +338,22 @@ import axios from 'axios';
 const props = defineProps({
     outlets: Array,
     divisions: Array,
+    user: Object,
 });
 
 // Reactive data
 const loading = ref(false);
 const reportData = ref([]);
 const summary = ref(null);
+const pagination = ref({
+    current_page: 1,
+    last_page: 1,
+    per_page: 15,
+    total: 0,
+    from: 0,
+    to: 0,
+    has_more_pages: false
+});
 
 // Filters
 const filters = ref({
@@ -267,8 +365,22 @@ const filters = ref({
     type: ''
 });
 
+// ✅ VALIDASI: Filter outlet berdasarkan user
+const availableOutlets = computed(() => {
+    if (!props.outlets || !Array.isArray(props.outlets)) {
+        return [];
+    }
+    
+    if (props.user?.id_outlet && props.user.id_outlet !== 1) {
+        // Jika user bukan dari outlet 1, hanya tampilkan outlet mereka
+        return props.outlets.filter(outlet => outlet.id_outlet === props.user.id_outlet);
+    }
+    // Jika user dari outlet 1 (head office), tampilkan semua outlet
+    return props.outlets;
+});
+
 // Methods
-function loadReportData() {
+function loadReportData(page = 1) {
     loading.value = true;
     
     const params = new URLSearchParams();
@@ -278,16 +390,38 @@ function loadReportData() {
     if (filters.value.divisionId) params.append('division_id', filters.value.divisionId);
     if (filters.value.status) params.append('status', filters.value.status);
     if (filters.value.type) params.append('type', filters.value.type);
+    params.append('page', page);
+    params.append('per_page', pagination.value?.per_page || 15);
     
     axios.get(`/api/schedule-attendance-correction/report-data?${params.toString()}`)
         .then(response => {
-            if (response.data.success) {
-                reportData.value = response.data.data;
-                summary.value = response.data.summary;
+            if (response.data && response.data.success) {
+                reportData.value = response.data.data || [];
+                summary.value = response.data.summary || null;
+                pagination.value = response.data.pagination || {
+                    current_page: 1,
+                    last_page: 1,
+                    per_page: 15,
+                    total: 0,
+                    from: 0,
+                    to: 0,
+                    has_more_pages: false
+                };
             }
         })
         .catch(error => {
             console.error('Error loading report data:', error);
+            reportData.value = [];
+            summary.value = null;
+            pagination.value = {
+                current_page: 1,
+                last_page: 1,
+                per_page: 15,
+                total: 0,
+                from: 0,
+                to: 0,
+                has_more_pages: false
+            };
         })
         .finally(() => {
             loading.value = false;
@@ -305,6 +439,24 @@ function resetFilters() {
     };
     reportData.value = [];
     summary.value = null;
+    pagination.value = {
+        current_page: 1,
+        last_page: 1,
+        per_page: 15,
+        total: 0,
+        from: 0,
+        to: 0,
+        has_more_pages: false
+    };
+}
+
+function changePage(page) {
+    loadReportData(page);
+}
+
+function changePerPage(perPage) {
+    pagination.value.per_page = perPage;
+    loadReportData(1);
 }
 
 function exportReport() {
@@ -375,10 +527,35 @@ function formatCorrectionValue(item, type) {
     return value;
 }
 
+const getVisiblePages = () => {
+    if (!pagination.value || !pagination.value.current_page || !pagination.value.last_page) {
+        return [];
+    }
+    
+    const current = pagination.value.current_page;
+    const last = pagination.value.last_page;
+    const pages = [];
+    
+    // Show 2 pages before and after current page
+    const start = Math.max(1, current - 2);
+    const end = Math.min(last, current + 2);
+    
+    for (let i = start; i <= end; i++) {
+        pages.push(i);
+    }
+    
+    return pages;
+};
+
 onMounted(() => {
     // Set default date range to September 2025 to show existing data
     filters.value.startDate = '2025-09-01';
     filters.value.endDate = '2025-09-30';
+    
+    // ✅ VALIDASI: Set outlet default berdasarkan user
+    if (props.user?.id_outlet && props.user.id_outlet !== 1) {
+        filters.value.outletId = props.user.id_outlet;
+    }
     
     loadReportData();
 });
