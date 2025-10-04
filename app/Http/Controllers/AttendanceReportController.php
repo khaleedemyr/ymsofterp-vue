@@ -313,6 +313,21 @@ class AttendanceReportController extends Controller
                                     $diff = $masuk - $start;
                                     $telat = $diff > 0 ? round($diff/60) : 0;
                                 }
+                                
+                                // Tambahkan telat jika checkout terakhir kurang dari jam pulang/end shift
+                                if ($shift && $shift->time_end && $jam_keluar) {
+                                    $shiftEndDateTime = date('Y-m-d', strtotime($tanggal)) . ' ' . $shift->time_end;
+                                    $scanOutDateTime = $row->jam_keluar;
+                                    
+                                    $end = strtotime($shiftEndDateTime);
+                                    $keluar = strtotime($scanOutDateTime);
+                                    $diff = $end - $keluar; // Selisih waktu shift end - scan out
+                                    
+                                    // Jika checkout lebih awal dari shift end, tambahkan ke telat
+                                    if ($diff > 0) {
+                                        $telat += round($diff/60); // Konversi detik ke menit
+                                    }
+                                }
                                 if ($shift && $shift->time_end && $jam_keluar) {
                                     // Perbaikan perhitungan lembur untuk cross-day
                                     // Buat datetime lengkap untuk shift end
@@ -885,6 +900,22 @@ class AttendanceReportController extends Controller
                                     $diff = $masuk - $start;
                                     $telat = $diff > 0 ? round($diff/60) : 0;
                                 }
+                                
+                                // Tambahkan telat jika checkout terakhir kurang dari jam pulang/end shift
+                                if ($shift && $shift->time_end && $jam_keluar) {
+                                    $shiftEndDateTime = date('Y-m-d', strtotime($tanggal)) . ' ' . $shift->time_end;
+                                    $scanOutDateTime = $row->jam_keluar;
+                                    
+                                    $end = strtotime($shiftEndDateTime);
+                                    $keluar = strtotime($scanOutDateTime);
+                                    $diff = $end - $keluar; // Selisih waktu shift end - scan out
+                                    
+                                    // Jika checkout lebih awal dari shift end, tambahkan ke telat
+                                    if ($diff > 0) {
+                                        $telat += round($diff/60); // Konversi detik ke menit
+                                    }
+                                }
+                                
                                 if ($shift && $shift->time_end && $jam_keluar) {
                                     // Perbaikan perhitungan lembur untuk cross-day
                                     // Buat datetime lengkap untuk shift end
@@ -2035,6 +2066,21 @@ class AttendanceReportController extends Controller
                             $masukTime = strtotime($jam_masuk);
                             $diff = $masukTime - $shiftStartTime;
                             $telat = $diff > 0 ? round($diff/60) : 0;
+                        }
+                        
+                        // Tambahkan telat jika checkout terakhir kurang dari jam pulang/end shift
+                        if ($shift->time_end && $jam_keluar) {
+                            $shiftEndDateTime = date('Y-m-d', strtotime($row['tanggal'])) . ' ' . $shift->time_end;
+                            $scanOutDateTime = $row['jam_keluar'];
+                            
+                            $shiftEndTime = strtotime($shiftEndDateTime);
+                            $keluarTime = strtotime($scanOutDateTime);
+                            $diff = $shiftEndTime - $keluarTime; // Selisih waktu shift end - scan out
+                            
+                            // Jika checkout lebih awal dari shift end, tambahkan ke telat
+                            if ($diff > 0) {
+                                $telat += round($diff/60); // Konversi detik ke menit
+                            }
                         }
                         if ($shift->time_end && $jam_keluar) {
                             // ✅ FIX: Untuk cross-day, shift end tetap di hari yang sama (bukan hari berikutnya)
