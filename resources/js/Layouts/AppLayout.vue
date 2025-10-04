@@ -26,28 +26,28 @@ const menuGroups = [
             //{ name: () => 'Dashboard Outlet', icon: 'fa-solid fa-map-location-dot', route: '/dashboard-outlet', code: 'dashboard_outlet' },
         ],
     },
-    {
-        title: () => 'Dokumen Bersama',
-        icon: 'fa-solid fa-file-alt',
-        collapsible: true,
-        open: ref(false),
-        menus: [
-            { name: () => 'Daftar Dokumen', icon: 'fa-solid fa-list', route: '/shared-documents', code: 'shared_documents_list' },
-            { name: () => 'Upload Dokumen', icon: 'fa-solid fa-upload', route: '/shared-documents/create', code: 'shared_documents_create' },
-        ],
-    },
-    {
-        title: () => t('sidebar.maintenance'),
-        icon: 'fa-solid fa-screwdriver-wrench',
-        collapsible: true,
-        open: ref(false),
-        menus: [
-            { name: () => 'MT Dashboard', icon: 'fa-solid fa-gauge', route: route('dashboard.maintenance'), code: 'mt_dashboard' },
-            { name: () => 'Maintenance Order', icon: 'fa-solid fa-clipboard-check', route: '/maintenance-order', code: 'maintenance_order' },
-            { name: () => 'Maintenance Order List', icon: 'fa-solid fa-list', route: '/maintenance-order/list', code: 'maintenance_order_list' },
-            { name: () => 'Kalender Jadwal', icon: 'fa-solid fa-calendar-alt', route: '/maintenance-order/schedule-calendar', code: 'maintenance_schedule_calendar' },
-        ],
-    },
+    //{
+    //    title: () => 'Dokumen Bersama',
+    //    icon: 'fa-solid fa-file-alt',
+    //    collapsible: true,
+    //    open: ref(false),
+    //    menus: [
+        //        { name: () => 'Daftar Dokumen', icon: 'fa-solid fa-list', route: '/shared-documents', code: 'shared_documents_list' },
+        //        { name: () => 'Upload Dokumen', icon: 'fa-solid fa-upload', route: '/shared-documents/create', code: 'shared_documents_create' },
+    //    ],
+    //  },
+    //{
+    //    title: () => t('sidebar.maintenance'),
+    //    icon: 'fa-solid fa-screwdriver-wrench',
+    //    collapsible: true,
+    //    open: ref(false),
+    //    menus: [
+    //        { name: () => 'MT Dashboard', icon: 'fa-solid fa-gauge', route: route('dashboard.maintenance'), code: 'mt_dashboard' },
+    //        { name: () => 'Maintenance Order', icon: 'fa-solid fa-clipboard-check', route: '/maintenance-order', code: 'maintenance_order' },
+    //        { name: () => 'Maintenance Order List', icon: 'fa-solid fa-list', route: '/maintenance-order/list', code: 'maintenance_order_list' },
+    //        { name: () => 'Kalender Jadwal', icon: 'fa-solid fa-calendar-alt', route: '/maintenance-order/schedule-calendar', code: 'maintenance_schedule_calendar' },
+    //    ],
+    //},
     {
         title: () => 'Master Data',
         icon: 'fa-solid fa-database',
