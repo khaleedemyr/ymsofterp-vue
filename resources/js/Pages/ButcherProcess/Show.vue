@@ -529,6 +529,11 @@ const generateLabelsPDF = () => {
      
      const expireDateFormatted = formatDateForLabel(expireDate.toISOString().split('T')[0])
      doc.text(`EXP: ${expireDateFormatted}`, x + 5, currentY, { align: 'left' });
+     currentY += 2.5;
+     
+     // Ready To Sale (same as process date)
+     const readyToSaleDate = formatDateForLabel(labelData.value.processDate)
+     doc.text(`READY TO SALE: ${readyToSaleDate}`, x + 5, currentY, { align: 'left' });
     
     // Move to next position
     x += labelWidth + gap;
