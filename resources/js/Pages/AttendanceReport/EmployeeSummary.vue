@@ -202,15 +202,6 @@ function getLeaveDays(row, leaveTypeName) {
         </div>
       </div>
       
-      <!-- Navigation Links -->
-      <div class="flex gap-2 mb-4">
-        <a href="/attendance-report" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-xl shadow flex items-center gap-2">
-          <i class="fa fa-calendar"></i> Detail Report
-        </a>
-        <a href="/attendance-report/outlet-summary" class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-xl shadow flex items-center gap-2">
-          <i class="fa fa-building"></i> Outlet Summary
-        </a>
-      </div>
 
       <!-- Filter Section -->
       <div class="bg-white rounded-2xl shadow-lg p-6 mb-6">
