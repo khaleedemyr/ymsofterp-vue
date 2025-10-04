@@ -232,6 +232,7 @@ const menuGroups = [
             { name: () => 'Internal Use & Waste', icon: 'fa-solid fa-recycle', route: '/internal-use-waste', code: 'internal_use_waste' },
             { name: () => 'Penjualan Antar Gudang', icon: 'fas fa-exchange-alt', route: '/warehouse-sales', code: 'warehouse_sales' },
             { name: () => 'Outlet Rejection', icon: 'fas fa-undo', route: '/outlet-rejections', code: 'outlet_rejection' },
+            { name: () => 'Purchase Order Ops', icon: 'fa-solid fa-file-invoice', route: '/po-ops', code: 'purchase_order_ops' },
             { name: () => 'Kelola Return Outlet', icon: 'fa-solid fa-building', route: '/head-office-return', code: 'head_office_return' },
         ],
     },

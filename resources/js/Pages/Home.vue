@@ -38,6 +38,13 @@ const showPrApprovalModal = ref(false);
 const selectedPrApproval = ref(null);
 const prApprovalBudgetInfo = ref(null);
 
+// Purchase Order Ops approvals
+const pendingPoOpsApprovals = ref([]);
+const loadingPoOpsApprovals = ref(false);
+const showPoOpsApprovalModal = ref(false);
+const selectedPoOpsApproval = ref(null);
+const poOpsApprovalBudgetInfo = ref(null);
+
 // General notifications
 const leaveNotifications = ref([]);
 const loadingNotifications = ref(false);
@@ -186,6 +193,10 @@ const prApprovalCount = computed(() => {
     return pendingPrApprovals.value.length;
 });
 
+const poOpsApprovalCount = computed(() => {
+    return pendingPoOpsApprovals.value.length;
+});
+
 const availableTrainingsStats = computed(() => {
     const total = availableTrainings.value.length;
     const completed = availableTrainings.value.filter(t => t.is_completed).length;
@@ -292,6 +303,21 @@ async function loadPendingPrApprovals() {
         console.error('Error loading pending PR approvals:', error);
     } finally {
         loadingPrApprovals.value = false;
+    }
+}
+
+// Load Purchase Order Ops approvals
+async function loadPendingPoOpsApprovals() {
+    loadingPoOpsApprovals.value = true;
+    try {
+        const response = await axios.get('/po-ops/pending-approvals');
+        if (response.data.success) {
+            pendingPoOpsApprovals.value = response.data.data;
+        }
+    } catch (error) {
+        console.error('Error loading pending PO Ops approvals:', error);
+    } finally {
+        loadingPoOpsApprovals.value = false;
     }
 }
 
@@ -484,6 +510,112 @@ function showRejectPrModal(prId) {
     }).then((result) => {
         if (result.isConfirmed) {
             rejectPr(prId, result.value);
+        }
+    });
+}
+
+// Get status color for PO Ops
+function getStatusColor(status) {
+    const colors = {
+        'draft': 'bg-gray-100 text-gray-800',
+        'submitted': 'bg-yellow-100 text-yellow-800',
+        'approved': 'bg-green-100 text-green-800',
+        'rejected': 'bg-red-100 text-red-800',
+        'received': 'bg-blue-100 text-blue-800',
+        'cancelled': 'bg-gray-100 text-gray-800',
+    };
+    return colors[status] || 'bg-gray-100 text-gray-800';
+}
+
+// Show PO Ops approval details
+async function showPoOpsApprovalDetails(poId) {
+    console.log('showPoOpsApprovalDetails called with poId:', poId);
+    try {
+        const response = await axios.get(`/po-ops/${poId}`);
+        console.log('PO Ops response:', response.data);
+        if (response.data) {
+            selectedPoOpsApproval.value = response.data.po;
+            
+            // Load budget info if PO has source PR
+            if (response.data.po.source_type === 'purchase_requisition_ops' && response.data.po.source_id) {
+                try {
+                    const budgetResponse = await axios.get(`/api/purchase-requisitions/${response.data.po.source_id}/approval-details`);
+                    if (budgetResponse.data.success && budgetResponse.data.budget_info) {
+                        poOpsApprovalBudgetInfo.value = budgetResponse.data.budget_info;
+                    }
+                } catch (budgetError) {
+                    console.log('No budget info available:', budgetError);
+                }
+            }
+            
+            showPoOpsApprovalModal.value = true;
+            console.log('Modal should be visible now');
+        }
+    } catch (error) {
+        console.error('Error loading PO Ops approval details:', error);
+        Swal.fire('Error', 'Gagal memuat detail Purchase Order Ops', 'error');
+    }
+}
+
+// Approve PO Ops
+async function approvePoOps(poId) {
+    try {
+        const response = await axios.post(`/po-ops/${poId}/approve`, {
+            approved: true,
+            comments: ''
+        });
+        if (response.data.success) {
+            Swal.fire('Success', 'Purchase Order Ops berhasil disetujui', 'success');
+            showPoOpsApprovalModal.value = false;
+            loadPendingPoOpsApprovals(); // Reload the list
+        }
+    } catch (error) {
+        console.error('Error approving PO Ops:', error);
+        Swal.fire('Error', 'Gagal menyetujui Purchase Order Ops', 'error');
+    }
+}
+
+// Reject PO Ops
+async function rejectPoOps(poId, reason) {
+    try {
+        const response = await axios.post(`/po-ops/${poId}/approve`, {
+            approved: false,
+            comments: reason
+        });
+        if (response.data.success) {
+            Swal.fire('Success', 'Purchase Order Ops berhasil ditolak', 'success');
+            showPoOpsApprovalModal.value = false;
+            loadPendingPoOpsApprovals(); // Reload the list
+        }
+    } catch (error) {
+        console.error('Error rejecting PO Ops:', error);
+        Swal.fire('Error', 'Gagal menolak Purchase Order Ops', 'error');
+    }
+}
+
+// Show reject PO Ops modal
+function showRejectPoOpsModal(poId) {
+    Swal.fire({
+        title: 'Tolak Purchase Order Ops',
+        input: 'textarea',
+        inputLabel: 'Alasan Penolakan',
+        inputPlaceholder: 'Masukkan alasan penolakan...',
+        inputAttributes: {
+            'aria-label': 'Masukkan alasan penolakan'
+        },
+        showCancelButton: true,
+        confirmButtonText: 'Tolak',
+        cancelButtonText: 'Batal',
+        confirmButtonColor: '#EF4444',
+        cancelButtonColor: '#6B7280',
+        inputValidator: (value) => {
+            if (!value) {
+                return 'Alasan penolakan harus diisi!'
+            }
+        }
+    }).then((result) => {
+        if (result.isConfirmed) {
+            rejectPoOps(poId, result.value);
         }
     });
 }
@@ -2543,6 +2675,7 @@ onMounted(() => {
     fetchWeather();
     loadPendingApprovals();
     loadPendingPrApprovals();
+    loadPendingPoOpsApprovals();
     loadLeaveNotifications();
     loadPendingHrdApprovals();
     loadPendingCorrectionApprovals();
@@ -2994,6 +3127,65 @@ watch(locale, () => {
                     </div>
                 </div>
 
+                <!-- Purchase Order Ops Approval Section -->
+                <div v-if="poOpsApprovalCount > 0" class="flex-shrink-0 mb-4">
+                    <div class="backdrop-blur-md rounded-2xl shadow-2xl border p-4 transition-all duration-500 animate-fade-in hover:shadow-3xl"
+                        :class="isNight ? 'bg-slate-800/90 border-slate-600/50' : 'bg-white/90 border-white/20'">
+                        <div class="flex items-center justify-between mb-3">
+                            <div class="flex items-center gap-2">
+                                <div class="w-3 h-3 rounded-full bg-orange-500 animate-pulse"></div>
+                                <h3 class="text-lg font-bold" :class="isNight ? 'text-white' : 'text-slate-800'">
+                                    <i class="fa fa-file-invoice mr-2 text-orange-500"></i>
+                                    Purchase Order Ops Approval
+                                </h3>
+                            </div>
+                            <div class="bg-orange-500 text-white text-xs font-bold px-2 py-1 rounded-full">
+                                {{ poOpsApprovalCount }}
+                            </div>
+                        </div>
+                        
+                        <div v-if="loadingPoOpsApprovals" class="text-center py-4">
+                            <div class="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-orange-500"></div>
+                            <p class="text-sm mt-2" :class="isNight ? 'text-slate-300' : 'text-slate-600'">Memuat data...</p>
+                        </div>
+                        
+                        <div v-else class="space-y-2">
+                            <!-- Purchase Order Ops Approvals -->
+                            <div v-for="po in pendingPoOpsApprovals.slice(0, 3)" :key="'po-ops-approval-' + po.id"
+                                @click="showPoOpsApprovalDetails(po.id)"
+                                class="p-3 rounded-lg cursor-pointer transition-all duration-200 hover:scale-105"
+                                :class="isNight ? 'bg-slate-700/50 hover:bg-slate-600/50' : 'bg-orange-50 hover:bg-orange-100'">
+                                <div class="flex items-center justify-between">
+                                    <div class="flex-1">
+                                        <div class="font-semibold text-sm" :class="isNight ? 'text-white' : 'text-slate-800'">
+                                            {{ po.number }}
+                                        </div>
+                                        <div class="text-xs" :class="isNight ? 'text-slate-300' : 'text-slate-600'">
+                                            {{ po.supplier?.name || 'Unknown Supplier' }}
+                                        </div>
+                                        <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
+                                            Rp {{ new Intl.NumberFormat('id-ID').format(po.grand_total) }}
+                                        </div>
+                                        <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
+                                            <i class="fa fa-user mr-1 text-blue-500"></i>{{ po.creator?.nama_lengkap }}
+                                        </div>
+                                    </div>
+                                    <div class="text-xs text-orange-500 font-medium">
+                                        <i class="fa fa-file-invoice mr-1"></i>PO Ops
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Show more button if there are more than 3 PO Ops -->
+                            <div v-if="pendingPoOpsApprovals.length > 3" class="text-center pt-2">
+                                <button class="text-sm text-orange-500 hover:text-orange-700 font-medium">
+                                    Lihat {{ pendingPoOpsApprovals.length - 3 }} PO Ops lainnya...
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Bottom Section: Clock, Weather, Calendar, Notes, Birthday, and Announcements -->
                 <div class="flex-1 grid grid-cols-1 lg:grid-cols-6 gap-4 min-h-0 mb-6 items-stretch px-4 md:px-6">
                     <!-- Left: Clock and Weather -->
@@ -3420,6 +3612,177 @@ watch(locale, () => {
                         <i class="fa fa-check mr-2"></i>Approve
                     </button>
                     <button @click="showRejectPrModal(selectedPrApproval.id)" 
+                            class="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors">
+                        <i class="fa fa-times mr-2"></i>Reject
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Purchase Order Ops Approval Detail Modal -->
+        <div v-if="showPoOpsApprovalModal && selectedPoOpsApproval" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click="showPoOpsApprovalModal = false">
+            <div class="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-4xl mx-4 max-h-[90vh] overflow-y-auto" @click.stop>
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-lg font-medium text-gray-900 dark:text-white">
+                        <i class="fa fa-file-invoice mr-2 text-orange-500"></i>
+                        Detail Purchase Order Ops
+                    </h3>
+                    <button @click="showPoOpsApprovalModal = false" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                        <i class="fa-solid fa-times text-xl"></i>
+                    </button>
+                </div>
+
+                <div class="space-y-6">
+                    <!-- Basic Information -->
+                    <div class="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
+                        <h4 class="text-md font-semibold text-gray-900 dark:text-white mb-3">Informasi Dasar</h4>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="text-sm font-medium text-gray-600 dark:text-gray-400">PO Number</label>
+                                <p class="text-gray-900 dark:text-white font-semibold">{{ selectedPoOpsApproval.number }}</p>
+                            </div>
+                            <div>
+                                <label class="text-sm font-medium text-gray-600 dark:text-gray-400">Date</label>
+                                <p class="text-gray-900 dark:text-white">{{ new Date(selectedPoOpsApproval.date).toLocaleDateString('id-ID') }}</p>
+                            </div>
+                            <div>
+                                <label class="text-sm font-medium text-gray-600 dark:text-gray-400">Supplier</label>
+                                <p class="text-gray-900 dark:text-white">{{ selectedPoOpsApproval.supplier?.name || 'Unknown' }}</p>
+                            </div>
+                            <div>
+                                <label class="text-sm font-medium text-gray-600 dark:text-gray-400">Status</label>
+                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
+                                      :class="getStatusColor(selectedPoOpsApproval.status)">
+                                    {{ selectedPoOpsApproval.status.toUpperCase() }}
+                                </span>
+                            </div>
+                            <div>
+                                <label class="text-sm font-medium text-gray-600 dark:text-gray-400">Grand Total</label>
+                                <p class="text-gray-900 dark:text-white font-semibold text-lg">
+                                    Rp {{ new Intl.NumberFormat('id-ID').format(selectedPoOpsApproval.grand_total) }}
+                                </p>
+                            </div>
+                            <div>
+                                <label class="text-sm font-medium text-gray-600 dark:text-gray-400">Created By</label>
+                                <p class="text-gray-900 dark:text-white">{{ selectedPoOpsApproval.creator?.nama_lengkap || 'Unknown' }}</p>
+                            </div>
+                        </div>
+                        <div v-if="selectedPoOpsApproval.notes" class="mt-4">
+                            <label class="text-sm font-medium text-gray-600 dark:text-gray-400">Notes</label>
+                            <p class="text-gray-900 dark:text-white">{{ selectedPoOpsApproval.notes }}</p>
+                        </div>
+                    </div>
+
+                    <!-- Budget Information -->
+                    <div v-if="poOpsApprovalBudgetInfo" class="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
+                        <h4 class="text-md font-semibold text-gray-900 dark:text-white mb-3">
+                            <i class="fa fa-chart-pie mr-2 text-blue-500"></i>
+                            Informasi Budget - {{ getMonthName(poOpsApprovalBudgetInfo.current_month) }} {{ poOpsApprovalBudgetInfo.current_year }}
+                        </h4>
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div class="bg-white dark:bg-gray-800 p-3 rounded-lg">
+                                <div class="text-sm font-medium text-blue-600">Total Budget</div>
+                                <div class="text-lg font-bold text-blue-800">
+                                    Rp {{ new Intl.NumberFormat('id-ID').format(poOpsApprovalBudgetInfo.category_budget) }}
+                                </div>
+                            </div>
+                            <div class="bg-white dark:bg-gray-800 p-3 rounded-lg">
+                                <div class="text-sm font-medium text-orange-600">Used This Month</div>
+                                <div class="text-lg font-bold text-orange-800">
+                                    Rp {{ new Intl.NumberFormat('id-ID').format(poOpsApprovalBudgetInfo.category_used_amount) }}
+                                </div>
+                            </div>
+                            <div class="bg-white dark:bg-gray-800 p-3 rounded-lg">
+                                <div class="text-sm font-medium text-green-600">Remaining Budget</div>
+                                <div class="text-lg font-bold" :class="poOpsApprovalBudgetInfo.category_remaining_amount < 0 ? 'text-red-800' : 'text-green-800'">
+                                    Rp {{ new Intl.NumberFormat('id-ID').format(poOpsApprovalBudgetInfo.category_remaining_amount) }}
+                                </div>
+                            </div>
+                        </div>
+                        <div class="mt-4">
+                            <div class="flex justify-between text-sm text-gray-600 mb-2">
+                                <span>Budget Usage</span>
+                                <span>{{ Math.round((poOpsApprovalBudgetInfo.category_used_amount / poOpsApprovalBudgetInfo.category_budget) * 100) }}%</span>
+                            </div>
+                            <div class="w-full bg-gray-200 rounded-full h-3">
+                                <div class="h-3 rounded-full transition-all duration-300"
+                                     :class="getBudgetProgressColor(poOpsApprovalBudgetInfo.category_used_amount, poOpsApprovalBudgetInfo.category_budget)"
+                                     :style="{ width: Math.min((poOpsApprovalBudgetInfo.category_used_amount / poOpsApprovalBudgetInfo.category_budget) * 100, 100) + '%' }">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Items -->
+                    <div class="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
+                        <h4 class="text-md font-semibold text-gray-900 dark:text-white mb-3">Items</h4>
+                        <div class="overflow-x-auto">
+                            <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-600">
+                                <thead class="bg-gray-100 dark:bg-gray-600">
+                                    <tr>
+                                        <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Item</th>
+                                        <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Qty</th>
+                                        <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Unit</th>
+                                        <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Price</th>
+                                        <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Total</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="bg-white dark:bg-gray-700 divide-y divide-gray-200 dark:divide-gray-600">
+                                    <tr v-for="item in selectedPoOpsApproval.items" :key="item.id">
+                                        <td class="px-3 py-2 text-sm text-gray-900 dark:text-white">{{ item.item_name }}</td>
+                                        <td class="px-3 py-2 text-sm text-gray-900 dark:text-white">{{ item.quantity }}</td>
+                                        <td class="px-3 py-2 text-sm text-gray-900 dark:text-white">{{ item.unit }}</td>
+                                        <td class="px-3 py-2 text-sm text-gray-900 dark:text-white">Rp {{ new Intl.NumberFormat('id-ID').format(item.price) }}</td>
+                                        <td class="px-3 py-2 text-sm text-gray-900 dark:text-white font-semibold">Rp {{ new Intl.NumberFormat('id-ID').format(item.total) }}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Approval Flow -->
+                    <div v-if="selectedPoOpsApproval.approval_flows && selectedPoOpsApproval.approval_flows.length > 0" class="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
+                        <h4 class="text-md font-semibold text-gray-900 dark:text-white mb-3">Approval Flow</h4>
+                        <div class="space-y-3">
+                            <div v-for="flow in selectedPoOpsApproval.approval_flows" :key="flow.id" 
+                                 class="flex items-center justify-between p-3 bg-white dark:bg-gray-600 rounded-lg border border-gray-200 dark:border-gray-500">
+                                <div class="flex items-center space-x-3">
+                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
+                                        Level {{ flow.approval_level }}
+                                    </span>
+                                    <div>
+                                        <div class="font-medium text-gray-900 dark:text-white">{{ flow.approver?.nama_lengkap || flow.approver?.name }}</div>
+                                        <div class="text-sm text-gray-600 dark:text-gray-400">{{ flow.approver?.email }}</div>
+                                        <div v-if="flow.approver?.jabatan?.nama_jabatan" class="text-xs text-blue-600 font-medium">{{ flow.approver.jabatan.nama_jabatan }}</div>
+                                    </div>
+                                </div>
+                                <div class="text-right">
+                                    <div class="text-sm font-medium" :class="getApprovalStatusTextClass(flow.status)">
+                                        {{ flow.status }}
+                                    </div>
+                                    <div v-if="flow.approved_at" class="text-xs text-gray-500">
+                                        Approved: {{ new Date(flow.approved_at).toLocaleDateString('id-ID') }}
+                                    </div>
+                                    <div v-if="flow.rejected_at" class="text-xs text-gray-500">
+                                        Rejected: {{ new Date(flow.rejected_at).toLocaleDateString('id-ID') }}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="flex justify-end gap-3 mt-6 pt-4 border-t border-gray-200 dark:border-gray-600">
+                    <button @click="showPoOpsApprovalModal = false" 
+                            class="px-4 py-2 text-gray-600 dark:text-gray-400 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                        Tutup
+                    </button>
+                    <button @click="approvePoOps(selectedPoOpsApproval.id)" 
+                            class="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors">
+                        <i class="fa fa-check mr-2"></i>Approve
+                    </button>
+                    <button @click="showRejectPoOpsModal(selectedPoOpsApproval.id)" 
                             class="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors">
                         <i class="fa fa-times mr-2"></i>Reject
                     </button>

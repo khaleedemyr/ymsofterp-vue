@@ -35,6 +35,9 @@ use App\Http\Controllers\ReportMonthlyFbRevenuePerformanceController;
 use App\Http\Controllers\OutletController;
 
 
+// Test route for approvers
+Route::get('/test-po-ops-approvers', [\App\Http\Controllers\PurchaseOrderOpsController::class, 'getApprovers']);
+
 // Endpoint API untuk Kanban Maintenance Order
 Route::get('/maintenance-outlet', [MaintenanceOrderController::class, 'getOutlets']);
 Route::get('/ruko', [MaintenanceOrderController::class, 'getRukos']);
@@ -338,6 +341,9 @@ Route::delete('/outlet/{id}', [OutletController::class, 'destroy']);
 // PR Foods routes
 Route::get('/pr-foods/available', [PurchaseOrderFoodsController::class, 'getAvailablePR']);
 Route::post('/pr-foods/items', [PurchaseOrderFoodsController::class, 'getPRItems']);
+
+// Purchase Order Ops API routes
+Route::get('/pr-ops/available', [\App\Http\Controllers\PurchaseOrderOpsController::class, 'getAvailablePR']);
 
 // Daily Report API routes
 Route::get('/daily-report/summary-rating', [\App\Http\Controllers\DailyReportController::class, 'getSummaryRating']);

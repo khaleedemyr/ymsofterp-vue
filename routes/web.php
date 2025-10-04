@@ -384,7 +384,36 @@ Route::get('/api/purchase-requisitions/{id}/approval-details', [\App\Http\Contro
     Route::post('/purchase-requisitions/{purchaseRequisition}/attachments', [\App\Http\Controllers\PurchaseRequisitionController::class, 'uploadAttachment'])->name('purchase-requisitions.attachments.store');
     Route::delete('/purchase-requisitions/attachments/{attachment}', [\App\Http\Controllers\PurchaseRequisitionController::class, 'deleteAttachment'])->name('purchase-requisitions.attachments.destroy');
 
-    // Sub Category resource route
+    // Purchase Order Ops routes
+    Route::get('/po-ops', [\App\Http\Controllers\PurchaseOrderOpsController::class, 'index'])->name('po-ops.index');
+      Route::get('/po-ops/approvers', [\App\Http\Controllers\PurchaseOrderOpsController::class, 'getApprovers'])->name('po-ops.approvers');
+    Route::get('/po-ops/create', [\App\Http\Controllers\PurchaseOrderOpsController::class, 'create'])->name('po-ops.create');
+    Route::post('/po-ops/generate', [\App\Http\Controllers\PurchaseOrderOpsController::class, 'generatePO'])->name('po-ops.generate');
+    Route::get('/po-ops/approvers', [\App\Http\Controllers\PurchaseOrderOpsController::class, 'getApprovers'])->name('po-ops.approvers');
+    Route::get('/po-ops/pending-approvals', [\App\Http\Controllers\PurchaseOrderOpsController::class, 'getPendingApprovals'])->name('po-ops.pending-approvals');
+    Route::get('/po-ops/pending-approvals/page', function() {
+        return inertia('PurchaseOrderOps/PendingApprovals');
+    })->name('po-ops.pending-approvals-page');
+    Route::get('/po-ops/{id}', [\App\Http\Controllers\PurchaseOrderOpsController::class, 'show'])->name('po-ops.show');
+    Route::get('/po-ops/{id}/edit', [\App\Http\Controllers\PurchaseOrderOpsController::class, 'edit'])->name('po-ops.edit');
+    Route::put('/po-ops/{id}', [\App\Http\Controllers\PurchaseOrderOpsController::class, 'update'])->name('po-ops.update');
+    Route::delete('/po-ops/{id}', [\App\Http\Controllers\PurchaseOrderOpsController::class, 'destroy'])->name('po-ops.destroy');
+    
+    // Purchase Order Ops Actions
+    Route::post('/po-ops/{id}/approve-pm', [\App\Http\Controllers\PurchaseOrderOpsController::class, 'approvePurchasingManager'])->name('po-ops.approve-pm');
+    Route::post('/po-ops/{id}/approve-gm', [\App\Http\Controllers\PurchaseOrderOpsController::class, 'approveGMFinance'])->name('po-ops.approve-gm');
+    Route::post('/po-ops/{id}/mark-printed', [\App\Http\Controllers\PurchaseOrderOpsController::class, 'markPrinted'])->name('po-ops.mark-printed');
+    
+    // Purchase Order Ops Approval Flow
+    Route::post('/po-ops/{id}/submit-approval', [\App\Http\Controllers\PurchaseOrderOpsController::class, 'submitForApproval'])->name('po-ops.submit-approval');
+    Route::post('/po-ops/{id}/approve', [\App\Http\Controllers\PurchaseOrderOpsController::class, 'approve'])->name('po-ops.approve');
+
+});
+
+// Test route outside middleware
+Route::get('/test-approvers', [\App\Http\Controllers\PurchaseOrderOpsController::class, 'getApprovers'])->name('test-approvers');
+
+// Sub Category resource route
     Route::resource('sub-categories', SubCategoryController::class);
     Route::put('/sub-categories/{id}', [SubCategoryController::class, 'update']);
     Route::patch('/sub-categories/{id}', [SubCategoryController::class, 'update']);
@@ -542,7 +571,6 @@ Route::get('/api/regions', [App\Http\Controllers\ReportController::class, 'apiRe
     Route::post('/food-payments/{id}/approve', [\App\Http\Controllers\FoodPaymentController::class, 'approve'])->name('food-payments.approve');
     Route::get('/api/food-payments/contra-bon-unpaid', [\App\Http\Controllers\FoodPaymentController::class, 'getContraBonUnpaid']);
     Route::delete('/food-payments/{id}', [\App\Http\Controllers\FoodPaymentController::class, 'destroy'])->name('food-payments.destroy');
-});
 
 Route::get('/items/import/template', [ItemController::class, 'downloadImportTemplate'])->name('items.import.template');
 Route::get('/api/items/for-modifier-bom', [App\Http\Controllers\ItemController::class, 'apiForModifierBom']);
