@@ -875,6 +875,7 @@ Route::middleware(['auth'])->group(function () {
 
 Route::get('/user-roles', [\App\Http\Controllers\UserRoleController::class, 'index']);
 Route::put('/user-roles/{id}', [\App\Http\Controllers\UserRoleController::class, 'update']);
+Route::post('/user-roles/bulk-assign', [\App\Http\Controllers\UserRoleController::class, 'bulkAssign']);
 
 Route::resource('food-inventory-adjustment', \App\Http\Controllers\FoodInventoryAdjustmentController::class);
 Route::post('/food-inventory-adjustment/{id}/approve', [\App\Http\Controllers\FoodInventoryAdjustmentController::class, 'approve'])->name('food-inventory-adjustment.approve');
