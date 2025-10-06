@@ -236,18 +236,18 @@ class AttendanceReportController extends Controller
 
             // Hitung lembur untuk setiap baris
             foreach ($dataRows as $row) {
-                if ($row->jam_masuk && $row->jam_keluar && $shiftData) {
+                if ($row['jam_masuk'] && $row['jam_keluar'] && $shiftData) {
                     // Ambil jam shift dari shift data
                     $shiftStart = $shiftData->time_start ?? '08:00:00'; // Default jika tidak ada
                     $shiftEnd = $shiftData->time_end ?? '17:00:00'; // Default jika tidak ada
                     
                     // Buat datetime untuk shift end
-                    $shiftEndDateTime = date('Y-m-d', strtotime($row->jam_masuk)) . ' ' . $shiftEnd;
-                    $scanOutDateTime = $row->jam_keluar;
+                    $shiftEndDateTime = date('Y-m-d', strtotime($row['jam_masuk'])) . ' ' . $shiftEnd;
+                    $scanOutDateTime = $row['jam_keluar'];
                     
                     // Jika cross-day, shift end harus di hari berikutnya
-                    if ($row->is_cross_day) {
-                        $shiftEndDateTime = date('Y-m-d', strtotime($row->jam_masuk . ' +1 day')) . ' ' . $shiftEnd;
+                    if ($row['is_cross_day']) {
+                        $shiftEndDateTime = date('Y-m-d', strtotime($row['jam_masuk'] . ' +1 day')) . ' ' . $shiftEnd;
                     }
                     
                     // Hitung selisih waktu
@@ -265,7 +265,7 @@ class AttendanceReportController extends Controller
                 }
                 
                 // Set is_off jika tidak ada scan
-                $row->is_off = !$row->jam_masuk && !$row->jam_keluar;
+                $row->is_off = !$row['jam_masuk'] && !$row['jam_keluar'];
             }
 
             // Ambil semua tanggal libur dalam periode
@@ -282,10 +282,10 @@ class AttendanceReportController extends Controller
                 if ($dayData->count() > 0) {
                     // Ada data absensi untuk tanggal ini
                     foreach ($dayData as $row) {
-                        $jam_masuk = $row->jam_masuk ? date('H:i:s', strtotime($row->jam_masuk)) : null;
-                        $jam_keluar = $row->jam_keluar ? date('H:i:s', strtotime($row->jam_keluar)) : null;
-                        $rowUserId = $row->user_id;
-                        $rowNama = $row->nama_lengkap;
+                        $jam_masuk = $row['jam_masuk'] ? date('H:i:s', strtotime($row['jam_masuk'])) : null;
+                        $jam_keluar = $row['jam_keluar'] ? date('H:i:s', strtotime($row['jam_keluar'])) : null;
+                        $rowUserId = $row['user_id'];
+                        $rowNama = $row['nama_lengkap'];
                         $telat = 0;
                         $lembur = 0;
                         $is_off = false;
@@ -317,7 +317,7 @@ class AttendanceReportController extends Controller
                                 // Tambahkan telat jika checkout terakhir kurang dari jam pulang/end shift
                                 if ($shift && $shift->time_end && $jam_keluar) {
                                     $shiftEndDateTime = date('Y-m-d', strtotime($tanggal)) . ' ' . $shift->time_end;
-                                    $scanOutDateTime = $row->jam_keluar;
+                                    $scanOutDateTime = $row['jam_keluar'];
                                     
                                     $end = strtotime($shiftEndDateTime);
                                     $keluar = strtotime($scanOutDateTime);
@@ -334,7 +334,7 @@ class AttendanceReportController extends Controller
                                     $shiftEndDateTime = date('Y-m-d', strtotime($tanggal)) . ' ' . $shift->time_end;
                                     
                                     // Gunakan scan keluar yang sudah dalam format datetime lengkap
-                                    $scanOutDateTime = $row->jam_keluar;
+                                    $scanOutDateTime = $row['jam_keluar'];
                                     
                                     // Hitung selisih waktu
                                     $end = strtotime($shiftEndDateTime);
@@ -350,7 +350,7 @@ class AttendanceReportController extends Controller
                                         'scan_out' => $scanOutDateTime,
                                         'diff_seconds' => $diff,
                                         'lembur_hours' => $lembur,
-                                        'is_cross_day' => $row->is_cross_day ?? false
+                                        'is_cross_day' => $row['is_cross_day'] ?? false
                                     ]);
                                 }
                             } else {
@@ -384,15 +384,15 @@ class AttendanceReportController extends Controller
                             'nama_lengkap' => $rowNama,
                             'jam_masuk' => $jam_masuk,
                             'jam_keluar' => $jam_keluar,
-                            'total_masuk' => $row->total_masuk,
-                            'total_keluar' => $row->total_keluar,
+                            'total_masuk' => $row['total_masuk'],
+                            'total_keluar' => $row['total_keluar'],
                             'telat' => $telat,
                             'lembur' => $lembur,
                             'is_off' => $is_off,
                             'shift_name' => $shift_name,
                             'is_holiday' => $is_holiday,
                             'holiday_name' => $holiday_name,
-                            'is_cross_day' => $row->is_cross_day ?? false,
+                            'is_cross_day' => $row['is_cross_day'] ?? false,
                             'approved_absent' => $approvedAbsent,
                             'is_approved_absent' => $is_approved_absent,
                             'approved_absent_name' => $approved_absent_name,
@@ -762,7 +762,8 @@ class AttendanceReportController extends Controller
                     'jam_keluar' => $jamKeluar,
                     'total_masuk' => $totalMasuk,
                     'total_keluar' => $totalKeluar,
-                    'is_cross_day' => $isCrossDay
+                    'is_cross_day' => $isCrossDay,
+                    'id_outlet' => $outletId ?? 1 // Default outlet jika tidak ada filter
                 ];
             }
             
@@ -771,7 +772,7 @@ class AttendanceReportController extends Controller
             $dataByTanggalOutlet = [];
             foreach ($dataRows as $row) {
                 $key = $row['tanggal'] . '_' . $row['id_outlet'];
-                $dataByTanggalOutlet[$key] = (object) $row;
+                $dataByTanggalOutlet[$key] = $row;
             }
 
             // Ambil semua tanggal dalam periode
@@ -802,8 +803,8 @@ class AttendanceReportController extends Controller
             $namaKaryawan = null;
             $userId = null;
             if (count($dataRows) > 0) {
-                $namaKaryawan = $dataRows[0]->nama_lengkap;
-                $userId = $dataRows[0]->user_id;
+                $namaKaryawan = $dataRows[0]['nama_lengkap'];
+                $userId = $dataRows[0]['user_id'];
             } elseif (!empty($search)) {
                 // Cari user_id dari nama
                 $user = DB::table('users')->where('nama_lengkap', $search)->first();
@@ -818,19 +819,19 @@ class AttendanceReportController extends Controller
                 ->first();
 
             // Hitung lembur untuk setiap baris
-            foreach ($dataRows as $row) {
-                if ($row->jam_masuk && $row->jam_keluar && $shiftData) {
+            $dataRows = $dataRows->map(function ($row) use ($shiftData) {
+                if ($row['jam_masuk'] && $row['jam_keluar'] && $shiftData) {
                     // Ambil jam shift dari shift data - gunakan kolom yang benar
                     $shiftStart = $shiftData->time_start ?? '08:00:00'; // Default jika tidak ada
                     $shiftEnd = $shiftData->time_end ?? '17:00:00'; // Default jika tidak ada
                     
                     // Buat datetime untuk shift end
-                    $shiftEndDateTime = date('Y-m-d', strtotime($row->jam_masuk)) . ' ' . $shiftEnd;
-                    $scanOutDateTime = $row->jam_keluar;
+                    $shiftEndDateTime = date('Y-m-d', strtotime($row['jam_masuk'])) . ' ' . $shiftEnd;
+                    $scanOutDateTime = $row['jam_keluar'];
                     
                     // Jika cross-day, shift end harus di hari berikutnya
-                    if ($row->is_cross_day) {
-                        $shiftEndDateTime = date('Y-m-d', strtotime($row->jam_masuk . ' +1 day')) . ' ' . $shiftEnd;
+                    if ($row['is_cross_day']) {
+                        $shiftEndDateTime = date('Y-m-d', strtotime($row['jam_masuk'] . ' +1 day')) . ' ' . $shiftEnd;
                     }
                     
                     // Hitung selisih waktu
@@ -839,17 +840,19 @@ class AttendanceReportController extends Controller
                     
                     if ($scanOutTime > $shiftEndTime) {
                         $lemburHours = floor(($scanOutTime - $shiftEndTime) / 3600);
-                        $row->lembur = $lemburHours;
+                        $row['lembur'] = $lemburHours;
                     } else {
-                        $row->lembur = 0;
+                        $row['lembur'] = 0;
                     }
                 } else {
-                    $row->lembur = 0;
+                    $row['lembur'] = 0;
                 }
                 
                 // Set is_off jika tidak ada scan
-                $row->is_off = !$row->jam_masuk && !$row->jam_keluar;
-            }
+                $row['is_off'] = !$row['jam_masuk'] && !$row['jam_keluar'];
+                
+                return $row;
+            });
 
             // Ambil semua tanggal libur dalam periode
             $holidays = DB::table('tbl_kalender_perusahaan')
@@ -863,10 +866,10 @@ class AttendanceReportController extends Controller
                 if ($dayData->count() > 0) {
                     // Ada data absensi untuk tanggal ini
                     foreach ($dayData as $row) {
-                        $jam_masuk = $row->jam_masuk ? date('H:i:s', strtotime($row->jam_masuk)) : null;
-                        $jam_keluar = $row->jam_keluar ? date('H:i:s', strtotime($row->jam_keluar)) : null;
-                        $rowUserId = $row->user_id;
-                        $rowNama = $row->nama_lengkap;
+                        $jam_masuk = $row['jam_masuk'] ? date('H:i:s', strtotime($row['jam_masuk'])) : null;
+                        $jam_keluar = $row['jam_keluar'] ? date('H:i:s', strtotime($row['jam_keluar'])) : null;
+                        $rowUserId = $row['user_id'];
+                        $rowNama = $row['nama_lengkap'];
                         $telat = 0;
                         $lembur = 0;
                         $is_off = false;
@@ -904,7 +907,7 @@ class AttendanceReportController extends Controller
                                 // Tambahkan telat jika checkout terakhir kurang dari jam pulang/end shift
                                 if ($shift && $shift->time_end && $jam_keluar) {
                                     $shiftEndDateTime = date('Y-m-d', strtotime($tanggal)) . ' ' . $shift->time_end;
-                                    $scanOutDateTime = $row->jam_keluar;
+                                    $scanOutDateTime = $row['jam_keluar'];
                                     
                                     $end = strtotime($shiftEndDateTime);
                                     $keluar = strtotime($scanOutDateTime);
@@ -922,7 +925,7 @@ class AttendanceReportController extends Controller
                                     $shiftEndDateTime = date('Y-m-d', strtotime($tanggal)) . ' ' . $shift->time_end;
                                     
                                     // Gunakan scan keluar yang sudah dalam format datetime lengkap
-                                    $scanOutDateTime = $row->jam_keluar;
+                                    $scanOutDateTime = $row['jam_keluar'];
                                     
                                     // Hitung selisih waktu
                                     $end = strtotime($shiftEndDateTime);
@@ -938,7 +941,7 @@ class AttendanceReportController extends Controller
                                         'scan_out' => $scanOutDateTime,
                                         'diff_seconds' => $diff,
                                         'lembur_hours' => $lembur,
-                                        'is_cross_day' => $row->is_cross_day ?? false
+                                        'is_cross_day' => $row['is_cross_day'] ?? false
                                     ]);
                                 }
                             } else {
@@ -949,7 +952,7 @@ class AttendanceReportController extends Controller
                             }
                             // Detail sudah ada dari query utama
                             $detail = ($jam_masuk ?? '-') . ' - ' . ($jam_keluar ?? '-') . 
-                                     ' (IN: ' . $row->total_masuk . ', OUT: ' . $row->total_keluar . ')';
+                                     ' (IN: ' . $row['total_masuk'] . ', OUT: ' . $row['total_keluar'] . ')';
                         }
                         if ($holidays->has($tanggal)) {
                             $is_holiday = true;
@@ -961,8 +964,8 @@ class AttendanceReportController extends Controller
                             'nama_lengkap' => $rowNama,
                             'jam_masuk' => $jam_masuk,
                             'jam_keluar' => $jam_keluar,
-                            'total_masuk' => $row->total_masuk,
-                            'total_keluar' => $row->total_keluar,
+                            'total_masuk' => $row['total_masuk'],
+                            'total_keluar' => $row['total_keluar'],
                             'telat' => $telat,
                             'lembur' => $lembur,
                             'is_off' => $is_off,
@@ -972,7 +975,7 @@ class AttendanceReportController extends Controller
                             'is_holiday' => $is_holiday,
                             'holiday_name' => $holiday_name,
                             'detail' => $detail,
-                            'is_cross_day' => $row->is_cross_day ?? false,
+                            'is_cross_day' => $row['is_cross_day'] ?? false,
                         ]);
                     }
                 } else {
@@ -1201,12 +1204,12 @@ class AttendanceReportController extends Controller
             $dayData = $dataRows->where('tanggal', $tanggal);
             if ($dayData->count() > 0) {
                 foreach ($dayData as $row) {
-                    $jam_masuk = $row->jam_masuk ? date('H:i:s', strtotime($row->jam_masuk)) : null;
-                    $jam_keluar = $row->jam_keluar ? date('H:i:s', strtotime($row->jam_keluar)) : null;
+                    $jam_masuk = $row['jam_masuk'] ? date('H:i:s', strtotime($row['jam_masuk'])) : null;
+                    $jam_keluar = $row['jam_keluar'] ? date('H:i:s', strtotime($row['jam_keluar'])) : null;
                     $telat = 0; $lembur = 0; $is_off = false; $shift_name = null;
                     $shift = DB::table('user_shifts as us')
                         ->leftJoin('shifts as s', 'us.shift_id', '=', 's.id')
-                        ->where('us.user_id', $row->user_id)
+                        ->where('us.user_id', $row['user_id'])
                         ->where('us.tanggal', $tanggal)
                         ->select('s.time_start', 's.time_end', 's.shift_name', 'us.shift_id')
                         ->first();
@@ -1222,12 +1225,12 @@ class AttendanceReportController extends Controller
                         }
                         if ($shift && $shift->time_end && $jam_keluar) {
                             // ✅ FIX: Handle cross-day lembur calculation (sama seperti di employee summary)
-                            if ($row->is_cross_day) {
+                            if ($row['is_cross_day']) {
                                 $shiftEndDateTime = date('Y-m-d', strtotime($tanggal . ' +1 day')) . ' ' . $shift->time_end;
                             } else {
                                 $shiftEndDateTime = date('Y-m-d', strtotime($tanggal)) . ' ' . $shift->time_end;
                             }
-                            $scanOutDateTime = $row->jam_keluar;
+                            $scanOutDateTime = $row['jam_keluar'];
                             $endTs = strtotime($shiftEndDateTime); 
                             $outTs = strtotime($scanOutDateTime);
                             $diff = $outTs - $endTs; 
@@ -2223,7 +2226,7 @@ class AttendanceReportController extends Controller
                                         'tanggal' => $row->tanggal,
                                         'telat' => $row->telat,
                                         'lembur' => $row->lembur,
-                                        'is_cross_day' => $row->is_cross_day ?? false,
+                                        'is_cross_day' => $row['is_cross_day'] ?? false,
                                     ];
                                 })->toArray(),
                             ]);
@@ -2233,11 +2236,11 @@ class AttendanceReportController extends Controller
                         $dailyAttendance = $employeeRows->map(function($row) {
                             return [
                                 'tanggal' => $row->tanggal,
-                                'jam_masuk' => $row->jam_masuk,
-                                'jam_keluar' => $row->jam_keluar,
+                                'jam_masuk' => $row['jam_masuk'],
+                                'jam_keluar' => $row['jam_keluar'],
                                 'telat' => $row->telat,
                                 'lembur' => $row->lembur,
-                                'is_cross_day' => $row->is_cross_day ?? false,
+                                'is_cross_day' => $row['is_cross_day'] ?? false,
                                 'is_off' => $row->is_off ?? false,
                                 'is_holiday' => $row->is_holiday ?? false,
                                 'holiday_name' => $row->holiday_name ?? null,
@@ -2678,11 +2681,11 @@ class AttendanceReportController extends Controller
                     $dailyAttendance = $employeeRows->map(function($row) {
                         return [
                             'tanggal' => $row->tanggal,
-                            'jam_masuk' => $row->jam_masuk,
-                            'jam_keluar' => $row->jam_keluar,
+                            'jam_masuk' => $row['jam_masuk'],
+                            'jam_keluar' => $row['jam_keluar'],
                             'telat' => $row->telat,
                             'lembur' => $row->lembur,
-                            'is_cross_day' => $row->is_cross_day ?? false,
+                            'is_cross_day' => $row['is_cross_day'] ?? false,
                             'is_off' => $row->is_off ?? false,
                             'is_holiday' => $row->is_holiday ?? false,
                             'holiday_name' => $row->holiday_name ?? null,
