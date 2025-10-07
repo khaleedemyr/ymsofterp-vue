@@ -332,4 +332,102 @@ class EmployeeSurveyController extends Controller
         return redirect()->route('employee-survey.index')
             ->with('success', 'Survey berhasil dihapus!');
     }
+
+    public function report(Request $request)
+    {
+        // Get date range filters
+        $dateFrom = $request->get('date_from');
+        $dateTo = $request->get('date_to');
+        
+        // Base query for surveys
+        $query = EmployeeSurvey::with(['responses'])
+            ->where('status', 'submitted');
+            
+        // Apply date filters
+        if ($dateFrom) {
+            $query->whereDate('survey_date', '>=', $dateFrom);
+        }
+        if ($dateTo) {
+            $query->whereDate('survey_date', '<=', $dateTo);
+        }
+        
+        $surveys = $query->get();
+        
+        // Get all unique categories and questions
+        $categories = [];
+        $questions = [];
+        
+        foreach ($surveys as $survey) {
+            foreach ($survey->responses as $response) {
+                $category = $response->question_category;
+                $question = $response->question_text;
+                
+                if (!isset($categories[$category])) {
+                    $categories[$category] = [
+                        'name' => $category,
+                        'total_surveys' => 0,
+                        'total_responses' => 0,
+                        'total_score' => 0,
+                        'average_score' => 0,
+                        'percentage' => 0,
+                        'questions' => []
+                    ];
+                }
+                
+                if (!isset($questions[$category][$question])) {
+                    $questions[$category][$question] = [
+                        'text' => $question,
+                        'total_responses' => 0,
+                        'total_score' => 0,
+                        'average_score' => 0,
+                        'percentage' => 0,
+                        'score_distribution' => [1 => 0, 2 => 0, 3 => 0, 4 => 0, 5 => 0]
+                    ];
+                }
+                
+                // Update category stats
+                $categories[$category]['total_responses']++;
+                $categories[$category]['total_score'] += $response->score;
+                
+                // Update question stats
+                $questions[$category][$question]['total_responses']++;
+                $questions[$category][$question]['total_score'] += $response->score;
+                $questions[$category][$question]['score_distribution'][$response->score]++;
+            }
+        }
+        
+        // Calculate averages and percentages
+        foreach ($categories as $categoryName => &$category) {
+            $category['total_surveys'] = $surveys->count();
+            if ($category['total_responses'] > 0) {
+                $category['average_score'] = round($category['total_score'] / $category['total_responses'], 2);
+                $category['percentage'] = round(($category['average_score'] / 5) * 100, 1);
+            }
+            
+            // Calculate question stats
+            foreach ($questions[$categoryName] as $questionText => &$question) {
+                if ($question['total_responses'] > 0) {
+                    $question['average_score'] = round($question['total_score'] / $question['total_responses'], 2);
+                    $question['percentage'] = round(($question['average_score'] / 5) * 100, 1);
+                }
+            }
+            
+            $category['questions'] = array_values($questions[$categoryName]);
+        }
+        
+        // Overall statistics
+        $totalSurveys = $surveys->count();
+        $totalResponses = collect($categories)->sum('total_responses');
+        $overallAverage = $totalResponses > 0 ? round(collect($categories)->sum('total_score') / $totalResponses, 2) : 0;
+        $overallPercentage = round(($overallAverage / 5) * 100, 1);
+        
+        return Inertia::render('EmployeeSurvey/Report', [
+            'categories' => array_values($categories),
+            'totalSurveys' => $totalSurveys,
+            'totalResponses' => $totalResponses,
+            'overallAverage' => $overallAverage,
+            'overallPercentage' => $overallPercentage,
+            'filters' => $request->only(['date_from', 'date_to'])
+        ]);
+    }
 }

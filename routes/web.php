@@ -1922,6 +1922,7 @@ Route::middleware(['auth'])->group(function () {
 // Employee Survey routes
 Route::middleware(['auth'])->group(function () {
     Route::resource('employee-survey', App\Http\Controllers\EmployeeSurveyController::class);
+    Route::get('/employee-survey-report', [App\Http\Controllers\EmployeeSurveyController::class, 'report'])->name('employee-survey.report');
 });
 
 require __DIR__.'/auth.php';

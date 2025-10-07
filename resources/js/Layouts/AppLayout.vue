@@ -134,6 +134,7 @@ const menuGroups = [
             { name: () => 'Outlet/HO Inspection', icon: 'fa-solid fa-clipboard-check', route: '/dynamic-inspections', code: 'dynamic_inspection' },
             { name: () => 'Coaching', icon: 'fa-solid fa-user-graduate', route: '/coaching', code: 'coaching' },
             { name: () => 'Employee Survey', icon: 'fa-solid fa-clipboard-list', route: '/employee-survey', code: 'employee_survey' },
+            { name: () => 'Employee Survey Report', icon: 'fa-solid fa-chart-bar', route: '/employee-survey-report', code: 'employee_survey_report' },
         ],
     },
     {
