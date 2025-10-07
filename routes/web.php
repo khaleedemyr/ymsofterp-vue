@@ -1185,6 +1185,35 @@ Route::get('/retail-warehouse-sale/{id}/print', [App\Http\Controllers\RetailWare
 Route::get('/sales-outlet-dashboard', [App\Http\Controllers\SalesOutletDashboardController::class, 'index'])->name('sales-outlet-dashboard.index');
 Route::get('/sales-outlet-dashboard/menu-region', [App\Http\Controllers\SalesOutletDashboardController::class, 'getMenuRegionData'])->name('sales-outlet-dashboard.menu-region');
 Route::get('/sales-outlet-dashboard/outlet-details', [App\Http\Controllers\SalesOutletDashboardController::class, 'getOutletDetailsByDate'])->name('sales-outlet-dashboard.outlet-details');
+
+// Master Soal Routes
+Route::middleware(['auth'])->group(function () {
+    Route::get('/master-soal', [App\Http\Controllers\MasterSoalController::class, 'index'])->name('master-soal.index');
+    Route::get('/master-soal/create', [App\Http\Controllers\MasterSoalController::class, 'create'])->name('master-soal.create');
+    Route::post('/master-soal', [App\Http\Controllers\MasterSoalController::class, 'store'])->name('master-soal.store');
+    Route::get('/master-soal/{masterSoal}', [App\Http\Controllers\MasterSoalController::class, 'show'])->name('master-soal.show');
+    Route::get('/master-soal/{masterSoal}/edit', [App\Http\Controllers\MasterSoalController::class, 'edit'])->name('master-soal.edit');
+    Route::put('/master-soal/{masterSoal}', [App\Http\Controllers\MasterSoalController::class, 'update'])->name('master-soal.update');
+    Route::delete('/master-soal/{masterSoal}', [App\Http\Controllers\MasterSoalController::class, 'destroy'])->name('master-soal.destroy');
+    Route::patch('/master-soal/{masterSoal}/toggle-status', [App\Http\Controllers\MasterSoalController::class, 'toggleStatus'])->name('master-soal.toggle-status');
+    
+    // Test route
+    Route::get('/master-soal-test', function () {
+        return inertia('MasterSoal/Test');
+    })->name('master-soal.test');
+});
+
+// Master Soal New Routes (Struktur yang benar)
+Route::middleware(['auth'])->group(function () {
+    Route::get('/master-soal-new', [App\Http\Controllers\MasterSoalNewController::class, 'index'])->name('master-soal-new.index');
+    Route::get('/master-soal-new/create', [App\Http\Controllers\MasterSoalNewController::class, 'create'])->name('master-soal-new.create');
+    Route::post('/master-soal-new', [App\Http\Controllers\MasterSoalNewController::class, 'store'])->name('master-soal-new.store');
+    Route::get('/master-soal-new/{masterSoal}', [App\Http\Controllers\MasterSoalNewController::class, 'show'])->name('master-soal-new.show');
+    Route::get('/master-soal-new/{masterSoal}/edit', [App\Http\Controllers\MasterSoalNewController::class, 'edit'])->name('master-soal-new.edit');
+    Route::put('/master-soal-new/{masterSoal}', [App\Http\Controllers\MasterSoalNewController::class, 'update'])->name('master-soal-new.update');
+    Route::delete('/master-soal-new/{masterSoal}', [App\Http\Controllers\MasterSoalNewController::class, 'destroy'])->name('master-soal-new.destroy');
+    Route::patch('/master-soal-new/{masterSoal}/toggle-status', [App\Http\Controllers\MasterSoalNewController::class, 'toggleStatus'])->name('master-soal-new.toggle-status');
+});
 Route::get('/sales-outlet-dashboard/outlet-daily-revenue', [App\Http\Controllers\SalesOutletDashboardController::class, 'getOutletDailyRevenue'])->name('sales-outlet-dashboard.outlet-daily-revenue');
 Route::get('/sales-outlet-dashboard/outlet-lunch-dinner-detail', [App\Http\Controllers\SalesOutletDashboardController::class, 'getOutletLunchDinnerDetail'])->name('sales-outlet-dashboard.outlet-lunch-dinner-detail');
 Route::get('/sales-outlet-dashboard/outlet-weekend-weekday-detail', [App\Http\Controllers\SalesOutletDashboardController::class, 'getOutletWeekendWeekdayDetail'])->name('sales-outlet-dashboard.outlet-weekend-weekday-detail');
