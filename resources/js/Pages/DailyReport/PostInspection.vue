@@ -348,16 +348,24 @@ onMounted(() => {
 
 <template>
   <AppLayout title="Post-Inspection Form">
+    <!-- Mobile Header -->
+    <div class="mobile-header" v-if="isMobile">
+      <button @click="toggleSidebar" class="menu-btn">
+        <i class="fa-solid fa-bars"></i>
+      </button>
+      <h1>Post Inspection</h1>
+      <div class="progress-indicator">
+        {{ sections.find(s => s.id === activeSection)?.name || 'Form' }}
+      </div>
+    </div>
+
     <div class="post-inspection-container">
 
       <!-- Sidebar (Section List) -->
       <aside :class="['sidebar', { 'sidebar-open': sidebarOpen }]">
         <div class="sidebar-header">
-          <button v-if="isMobile" @click="toggleSidebar" class="menu-btn">
-            <i class="fa-solid fa-bars"></i>
-          </button>
           <h3>Form Sections</h3>
-          <button v-if="isMobile" @click="toggleSidebar" class="close-btn">
+          <button @click="toggleSidebar" class="close-btn" v-if="isMobile">
             <i class="fa-solid fa-times"></i>
           </button>
         </div>
@@ -1192,21 +1200,60 @@ onMounted(() => {
   border-top: 1px solid #e5e7eb;
 }
 
+/* Mobile Header */
+.mobile-header {
+  display: none;
+}
+
 /* Mobile styles */
 @media (max-width: 768px) {
+  .mobile-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1rem;
+    background: white;
+    border-bottom: 1px solid #e5e7eb;
+    position: sticky;
+    top: 0;
+    z-index: 30;
+  }
+
+  .menu-btn {
+    padding: 0.5rem;
+    border-radius: 0.5rem;
+    background: #f3f4f6;
+    border: none;
+    cursor: pointer;
+  }
+
+  .progress-indicator {
+    font-size: 0.875rem;
+    color: #6b7280;
+  }
+
+  .close-btn {
+    padding: 0.5rem;
+    border-radius: 0.5rem;
+    background: #f3f4f6;
+    border: none;
+    cursor: pointer;
+  }
+
   .sidebar {
     transform: translateX(-100%);
     top: 0; /* Full height on mobile */
     left: 0; /* Start from left edge on mobile */
     z-index: 40; /* Higher than main app sidebar on mobile */
+    width: 100%; /* Full width on mobile */
   }
   
   .sidebar-open {
     transform: translateX(0);
   }
-  
+
   .main-content {
-    margin-left: 0;
+    margin-left: 0 !important; /* No margin on mobile */
     padding-top: 0;
   }
   
