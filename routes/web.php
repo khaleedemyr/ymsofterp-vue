@@ -1214,6 +1214,28 @@ Route::middleware(['auth'])->group(function () {
     Route::delete('/master-soal-new/{masterSoal}', [App\Http\Controllers\MasterSoalNewController::class, 'destroy'])->name('master-soal-new.destroy');
     Route::patch('/master-soal-new/{masterSoal}/toggle-status', [App\Http\Controllers\MasterSoalNewController::class, 'toggleStatus'])->name('master-soal-new.toggle-status');
 });
+
+// Enroll Test Routes
+Route::middleware(['auth'])->group(function () {
+    // Admin routes
+    Route::get('/enroll-test', [App\Http\Controllers\EnrollTestController::class, 'index'])->name('enroll-test.index');
+    Route::get('/enroll-test/create', [App\Http\Controllers\EnrollTestController::class, 'create'])->name('enroll-test.create');
+    Route::post('/enroll-test', [App\Http\Controllers\EnrollTestController::class, 'store'])->name('enroll-test.store');
+    Route::get('/enroll-test/{enrollTest}', [App\Http\Controllers\EnrollTestController::class, 'show'])->name('enroll-test.show');
+    Route::get('/enroll-test/{enrollTest}/edit', [App\Http\Controllers\EnrollTestController::class, 'edit'])->name('enroll-test.edit');
+    Route::put('/enroll-test/{enrollTest}', [App\Http\Controllers\EnrollTestController::class, 'update'])->name('enroll-test.update');
+    Route::delete('/enroll-test/{enrollTest}', [App\Http\Controllers\EnrollTestController::class, 'destroy'])->name('enroll-test.destroy');
+    Route::post('/enroll-test/{enrollTest}/cancel', [App\Http\Controllers\EnrollTestController::class, 'cancel'])->name('enroll-test.cancel');
+    Route::post('/enroll-test/{enrollTest}/expire', [App\Http\Controllers\EnrollTestController::class, 'expire'])->name('enroll-test.expire');
+    
+    // User routes
+    Route::get('/my-tests', [App\Http\Controllers\EnrollTestController::class, 'myTests'])->name('enroll-test.my-tests');
+    Route::post('/enroll-test/{enrollTest}/start', [App\Http\Controllers\EnrollTestController::class, 'startTest'])->name('enroll-test.start');
+           Route::get('/enroll-test/{enrollTest}/take', [App\Http\Controllers\EnrollTestController::class, 'takeTest'])->name('enroll-test.take');
+           Route::post('/enroll-test/{enrollTest}/next', [App\Http\Controllers\EnrollTestController::class, 'nextQuestion'])->name('enroll-test.next');
+           Route::post('/enroll-test/{enrollTest}/submit', [App\Http\Controllers\EnrollTestController::class, 'submitTest'])->name('enroll-test.submit');
+    Route::get('/test-result/{testResult}', [App\Http\Controllers\EnrollTestController::class, 'result'])->name('enroll-test.result');
+});
 Route::get('/sales-outlet-dashboard/outlet-daily-revenue', [App\Http\Controllers\SalesOutletDashboardController::class, 'getOutletDailyRevenue'])->name('sales-outlet-dashboard.outlet-daily-revenue');
 Route::get('/sales-outlet-dashboard/outlet-lunch-dinner-detail', [App\Http\Controllers\SalesOutletDashboardController::class, 'getOutletLunchDinnerDetail'])->name('sales-outlet-dashboard.outlet-lunch-dinner-detail');
 Route::get('/sales-outlet-dashboard/outlet-weekend-weekday-detail', [App\Http\Controllers\SalesOutletDashboardController::class, 'getOutletWeekendWeekdayDetail'])->name('sales-outlet-dashboard.outlet-weekend-weekday-detail');

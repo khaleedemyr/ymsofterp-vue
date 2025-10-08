@@ -136,6 +136,8 @@ const menuGroups = [
             { name: () => 'Employee Survey', icon: 'fa-solid fa-clipboard-list', route: '/employee-survey', code: 'employee_survey' },
             { name: () => 'Employee Survey Report', icon: 'fa-solid fa-chart-bar', route: '/employee-survey-report', code: 'employee_survey_report' },
             { name: () => 'Master Soal', icon: 'fa-solid fa-clipboard-question', route: '/master-soal-new', code: 'master_soal' },
+            { name: () => 'Enroll Test', icon: 'fa-solid fa-user-graduate', route: '/enroll-test', code: 'enroll_test' },
+            { name: () => 'My Tests', icon: 'fa-solid fa-clipboard-check', route: '/my-tests', code: 'my_tests' },
         ],
     },
     {

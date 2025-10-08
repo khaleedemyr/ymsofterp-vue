@@ -134,7 +134,12 @@
                     </span>
                   </td>
                   <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {{ formatWaktu(soal.waktu_total_detik) }}
+                    <span v-if="soal.pertanyaans && soal.pertanyaans.length > 0">
+                      {{ formatWaktu(getTotalWaktu(soal)) }}
+                    </span>
+                    <span v-else class="text-gray-400 italic">
+                      Belum ada pertanyaan
+                    </span>
                   </td>
                   <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                     {{ soal.skor_total }}
@@ -330,6 +335,18 @@ const formatWaktu = (detik) => {
     return `${menit} menit`;
   }
   return `${menit}m ${sisaDetik}s`;
+};
+
+const getTotalWaktu = (soal) => {
+  if (!soal.pertanyaans || !Array.isArray(soal.pertanyaans)) {
+    return 0;
+  }
+  
+  const totalWaktu = soal.pertanyaans.reduce((total, pertanyaan) => {
+    return total + (pertanyaan.waktu_detik || 0);
+  }, 0);
+  
+  return totalWaktu;
 };
 
 const toggleStatus = async (soal) => {
