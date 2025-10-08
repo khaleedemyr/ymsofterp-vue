@@ -356,6 +356,102 @@ class MasterSoalNewController extends Controller
         }
     }
 
+    public function duplicate(MasterSoal $masterSoal)
+    {
+        try {
+            DB::beginTransaction();
+
+            // Load pertanyaans with all data - use fresh query
+            $pertanyaans = SoalPertanyaan::where('master_soal_id', $masterSoal->id)->get();
+
+            // Create new master soal with duplicated data
+            $newMasterSoal = MasterSoal::create([
+                'judul' => $masterSoal->judul . ' (Copy)',
+                'deskripsi' => $masterSoal->deskripsi,
+                'status' => 'active', // Set as active by default
+                'created_by' => Auth::id(),
+                'updated_by' => Auth::id()
+            ]);
+
+            // Debug logging
+            \Log::info('Duplicating master soal', [
+                'original_id' => $masterSoal->id,
+                'new_id' => $newMasterSoal->id,
+                'pertanyaans_count' => $pertanyaans->count()
+            ]);
+
+            // Debug: Check original data
+            foreach ($pertanyaans as $originalPertanyaan) {
+                \Log::info('Original pertanyaan data', [
+                    'id' => $originalPertanyaan->id,
+                    'pertanyaan_gambar_raw' => $originalPertanyaan->pertanyaan_gambar,
+                    'pertanyaan_gambar_type' => gettype($originalPertanyaan->pertanyaan_gambar),
+                    'pilihan_a_gambar_raw' => $originalPertanyaan->pilihan_a_gambar,
+                    'pilihan_b_gambar_raw' => $originalPertanyaan->pilihan_b_gambar,
+                    'pilihan_c_gambar_raw' => $originalPertanyaan->pilihan_c_gambar,
+                    'pilihan_d_gambar_raw' => $originalPertanyaan->pilihan_d_gambar
+                ]);
+            }
+
+            // Duplicate all pertanyaans using raw SQL
+            foreach ($pertanyaans as $pertanyaan) {
+                // Use raw SQL to ensure data is copied exactly
+                $insertData = [
+                    'master_soal_id' => $newMasterSoal->id,
+                    'urutan' => $pertanyaan->urutan,
+                    'tipe_soal' => $pertanyaan->tipe_soal,
+                    'pertanyaan' => $pertanyaan->pertanyaan,
+                    'pertanyaan_gambar' => $pertanyaan->pertanyaan_gambar,
+                    'waktu_detik' => $pertanyaan->waktu_detik,
+                    'skor' => $pertanyaan->skor,
+                    'jawaban_benar' => $pertanyaan->jawaban_benar,
+                    'pilihan_a' => $pertanyaan->pilihan_a,
+                    'pilihan_a_gambar' => $pertanyaan->pilihan_a_gambar,
+                    'pilihan_b' => $pertanyaan->pilihan_b,
+                    'pilihan_b_gambar' => $pertanyaan->pilihan_b_gambar,
+                    'pilihan_c' => $pertanyaan->pilihan_c,
+                    'pilihan_c_gambar' => $pertanyaan->pilihan_c_gambar,
+                    'pilihan_d' => $pertanyaan->pilihan_d,
+                    'pilihan_d_gambar' => $pertanyaan->pilihan_d_gambar,
+                    'status' => 'active',
+                    'created_at' => now(),
+                    'updated_at' => now()
+                ];
+
+                // Debug: Log data before insert
+                \Log::info('Raw SQL insert data', [
+                    'original_id' => $pertanyaan->id,
+                    'insert_data' => $insertData
+                ]);
+
+                // Insert using raw SQL
+                $newPertanyaanId = DB::table('soal_pertanyaan')->insertGetId($insertData);
+
+                // Verify the inserted data
+                $insertedData = DB::table('soal_pertanyaan')->where('id', $newPertanyaanId)->first();
+                
+                \Log::info('Raw SQL insert result', [
+                    'new_id' => $newPertanyaanId,
+                    'inserted_pertanyaan_gambar' => $insertedData->pertanyaan_gambar,
+                    'inserted_pilihan_a_gambar' => $insertedData->pilihan_a_gambar,
+                    'inserted_pilihan_b_gambar' => $insertedData->pilihan_b_gambar,
+                    'inserted_pilihan_c_gambar' => $insertedData->pilihan_c_gambar,
+                    'inserted_pilihan_d_gambar' => $insertedData->pilihan_d_gambar
+                ]);
+            }
+
+            DB::commit();
+
+            return redirect()->route('master-soal-new.edit', $newMasterSoal->id)
+                ->with('success', 'Master soal berhasil diduplikasi! Anda dapat mengedit judul dan isi soal.');
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return redirect()->back()
+                ->with('error', 'Terjadi kesalahan: ' . $e->getMessage());
+        }
+    }
+
     public function destroy(MasterSoal $masterSoal)
     {
         try {

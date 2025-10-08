@@ -167,6 +167,13 @@
                         <i class="fa-solid fa-edit"></i>
                       </Link>
                       <button
+                        @click="duplicateSoal(soal)"
+                        class="text-purple-600 hover:text-purple-900"
+                        title="Duplicate"
+                      >
+                        <i class="fa-solid fa-copy"></i>
+                      </button>
+                      <button
                         @click="toggleStatus(soal)"
                         :class="soal.status === 'active' ? 'text-red-600 hover:text-red-900' : 'text-green-600 hover:text-green-900'"
                         :title="soal.status === 'active' ? 'Nonaktifkan' : 'Aktifkan'"
@@ -367,6 +374,23 @@ const toggleStatus = async (soal) => {
   }
 };
 
+const duplicateSoal = async (soal) => {
+  const result = await Swal.fire({
+    title: 'Duplicate Soal',
+    text: `Apakah Anda yakin ingin menduplikasi soal "${soal.judul}"?`,
+    icon: 'question',
+    showCancelButton: true,
+    confirmButtonColor: '#7c3aed',
+    cancelButtonColor: '#6b7280',
+    confirmButtonText: 'Ya, duplicate!',
+    cancelButtonText: 'Batal'
+  });
+
+  if (result.isConfirmed) {
+    window.location.href = `/master-soal-new/${soal.id}/duplicate`;
+  }
+};
+
 const deleteSoal = async (soal) => {
   const result = await Swal.fire({
     title: 'Apakah Anda yakin ingin menghapus soal ini?',
@@ -380,7 +404,15 @@ const deleteSoal = async (soal) => {
   });
 
   if (result.isConfirmed) {
-    window.location.href = `/master-soal-new/${soal.id}`;
+    // Use router.delete for proper DELETE request
+    router.delete(`/master-soal-new/${soal.id}`, {
+      onSuccess: () => {
+        Swal.fire('Berhasil!', 'Soal berhasil dihapus!', 'success');
+      },
+      onError: (errors) => {
+        Swal.fire('Error!', 'Gagal menghapus soal: ' + (errors.message || 'Unknown error'), 'error');
+      }
+    });
   }
 };
 </script>

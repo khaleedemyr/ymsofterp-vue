@@ -1213,6 +1213,7 @@ Route::middleware(['auth'])->group(function () {
     Route::put('/master-soal-new/{masterSoal}', [App\Http\Controllers\MasterSoalNewController::class, 'update'])->name('master-soal-new.update');
     Route::delete('/master-soal-new/{masterSoal}', [App\Http\Controllers\MasterSoalNewController::class, 'destroy'])->name('master-soal-new.destroy');
     Route::patch('/master-soal-new/{masterSoal}/toggle-status', [App\Http\Controllers\MasterSoalNewController::class, 'toggleStatus'])->name('master-soal-new.toggle-status');
+    Route::get('/master-soal-new/{masterSoal}/duplicate', [App\Http\Controllers\MasterSoalNewController::class, 'duplicate'])->name('master-soal-new.duplicate');
 });
 
 // Enroll Test Routes
