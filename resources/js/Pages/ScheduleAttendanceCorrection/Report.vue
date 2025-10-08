@@ -86,7 +86,7 @@
                         
                         <div class="flex gap-2 mt-4">
                             <button @click="loadReportData" 
-                                    :disabled="loading"
+                                    :disabled="loading || !hasValidFilters"
                                     class="bg-blue-500 hover:bg-blue-600 disabled:bg-gray-400 text-white px-4 py-2 rounded-lg flex items-center gap-2">
                                 <i class="fa-solid fa-search"></i>
                                 {{ loading ? 'Loading...' : 'Cari' }}
@@ -96,6 +96,12 @@
                                 <i class="fa-solid fa-refresh"></i>
                                 Reset
                             </button>
+                        </div>
+                        
+                        <!-- Validation message -->
+                        <div v-if="!hasValidFilters" class="mt-2 text-sm text-red-600">
+                            <i class="fa-solid fa-exclamation-triangle mr-1"></i>
+                            Silakan pilih minimal tanggal mulai dan tanggal selesai untuk melakukan pencarian.
                         </div>
                     </div>
                 </div>
@@ -330,7 +336,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from 'vue';
+import { ref, onMounted, computed, watch } from 'vue';
 import { router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import axios from 'axios';
@@ -379,9 +385,39 @@ const availableOutlets = computed(() => {
     return props.outlets;
 });
 
+// Validasi filter minimal
+const hasValidFilters = computed(() => {
+    return filters.value.startDate && filters.value.endDate;
+});
+
+// Watch for filter changes
+watch(filters, (newFilters, oldFilters) => {
+    console.log('Filter changed:', {
+        old: oldFilters,
+        new: newFilters
+    });
+    
+    // Specifically watch divisionId changes
+    if (oldFilters && newFilters.divisionId !== oldFilters.divisionId) {
+        console.log('Division ID changed from', oldFilters.divisionId, 'to', newFilters.divisionId);
+    }
+}, { deep: true });
+
+// Watch specifically for divisionId changes
+watch(() => filters.value.divisionId, (newVal, oldVal) => {
+    console.log('Division ID specifically changed:', {
+        from: oldVal,
+        to: newVal,
+        timestamp: new Date().toISOString()
+    });
+});
+
 // Methods
 function loadReportData(page = 1) {
     loading.value = true;
+    
+    // Update pagination current page
+    pagination.value.current_page = page;
     
     const params = new URLSearchParams();
     if (filters.value.startDate) params.append('start_date', filters.value.startDate);
@@ -392,6 +428,19 @@ function loadReportData(page = 1) {
     if (filters.value.type) params.append('type', filters.value.type);
     params.append('page', page);
     params.append('per_page', pagination.value?.per_page || 15);
+    
+    console.log('Loading report data with filters:', {
+        startDate: filters.value.startDate,
+        endDate: filters.value.endDate,
+        outletId: filters.value.outletId,
+        divisionId: filters.value.divisionId,
+        status: filters.value.status,
+        type: filters.value.type,
+        page: page,
+        per_page: pagination.value?.per_page
+    });
+    
+    console.log('Current filter state:', JSON.stringify(filters.value, null, 2));
     
     axios.get(`/api/schedule-attendance-correction/report-data?${params.toString()}`)
         .then(response => {
@@ -429,14 +478,21 @@ function loadReportData(page = 1) {
 }
 
 function resetFilters() {
+    // Reset filters to default values
+    const now = new Date();
+    const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+    const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    
     filters.value = {
-        startDate: '',
-        endDate: '',
-        outletId: '',
+        startDate: firstDay.toISOString().split('T')[0],
+        endDate: lastDay.toISOString().split('T')[0],
+        outletId: props.user?.id_outlet && props.user.id_outlet !== 1 ? props.user.id_outlet : '',
         divisionId: '',
         status: '',
         type: ''
     };
+    
+    // Clear data
     reportData.value = [];
     summary.value = null;
     pagination.value = {
@@ -451,11 +507,13 @@ function resetFilters() {
 }
 
 function changePage(page) {
-    loadReportData(page);
+    if (page >= 1 && page <= (pagination.value?.last_page || 1)) {
+        loadReportData(page);
+    }
 }
 
 function changePerPage(perPage) {
-    pagination.value.per_page = perPage;
+    pagination.value.per_page = parseInt(perPage);
     loadReportData(1);
 }
 
@@ -548,15 +606,27 @@ const getVisiblePages = () => {
 };
 
 onMounted(() => {
-    // Set default date range to September 2025 to show existing data
-    filters.value.startDate = '2025-09-01';
-    filters.value.endDate = '2025-09-30';
+    // Debug props data
+    console.log('Report component mounted with props:', {
+        divisions: props.divisions,
+        outlets: props.outlets,
+        user: props.user
+    });
+    
+    // Set default date range to current month
+    const now = new Date();
+    const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+    const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    
+    filters.value.startDate = firstDay.toISOString().split('T')[0];
+    filters.value.endDate = lastDay.toISOString().split('T')[0];
     
     // ✅ VALIDASI: Set outlet default berdasarkan user
     if (props.user?.id_outlet && props.user.id_outlet !== 1) {
         filters.value.outletId = props.user.id_outlet;
     }
     
-    loadReportData();
+    // Don't auto-load data on mount, let user set filters first
+    // loadReportData();
 });
 </script>

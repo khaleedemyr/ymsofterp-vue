@@ -986,6 +986,7 @@ class ScheduleAttendanceCorrectionController extends Controller
         // Get divisions for filter
         $divisions = DB::table('tbl_data_divisi')
             ->where('status', 'A')
+            ->select('id as id_divisi', 'nama_divisi')
             ->orderBy('nama_divisi')
             ->get();
             
@@ -1008,6 +1009,17 @@ class ScheduleAttendanceCorrectionController extends Controller
         $divisionId = $request->input('division_id');
         $status = $request->input('status'); // pending, approved, rejected
         $type = $request->input('type'); // schedule, attendance
+        
+        // Debug logging
+        \Log::info('Schedule Attendance Correction Report Data Request', [
+            'start_date' => $startDate,
+            'end_date' => $endDate,
+            'outlet_id' => $outletId,
+            'division_id' => $divisionId,
+            'status' => $status,
+            'type' => $type,
+            'all_inputs' => $request->all()
+        ]);
         
         // ✅ VALIDASI: Jika user bukan dari outlet 1 (head office), paksa outlet_id sesuai outlet user
         $user = auth()->user();
