@@ -138,6 +138,7 @@ const menuGroups = [
             { name: () => 'Master Soal', icon: 'fa-solid fa-clipboard-question', route: '/master-soal-new', code: 'master_soal' },
             { name: () => 'Enroll Test', icon: 'fa-solid fa-user-graduate', route: '/enroll-test', code: 'enroll_test' },
             { name: () => 'My Tests', icon: 'fa-solid fa-clipboard-check', route: '/my-tests', code: 'my_tests' },
+            { name: () => 'Report Hasil Test', icon: 'fa-solid fa-chart-line', route: '/enroll-test-report', code: 'enroll_test_report' },
         ],
     },
     {

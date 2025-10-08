@@ -250,6 +250,7 @@
 import { ref, reactive, computed, onMounted, onUnmounted } from 'vue';
 import { router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
+import Swal from 'sweetalert2';
 
 const props = defineProps({
   enrollTest: Object,
@@ -457,7 +458,12 @@ function nextQuestion(isAutoNext = false) {
     },
     onError: (errors) => {
       console.error('Error:', errors);
-      alert('Terjadi kesalahan: ' + (errors.message || 'Unknown error'));
+      Swal.fire({
+        icon: 'error',
+        title: 'Error',
+        text: 'Terjadi kesalahan: ' + (errors.message || 'Unknown error'),
+        confirmButtonText: 'OK'
+      });
       loading.value = false;
     },
     onFinish: () => {

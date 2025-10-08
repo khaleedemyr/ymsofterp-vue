@@ -501,6 +501,144 @@ class EnrollTestController extends Controller
         ]);
     }
 
+    public function report(Request $request)
+    {
+        $query = TestResult::with([
+            'enrollTest.masterSoal',
+            'enrollTest.user.jabatan',
+            'enrollTest.user.divisi', 
+            'enrollTest.user.outlet',
+            'testAnswers.soalPertanyaan'
+        ])
+        ->where('status', 'completed')
+        ->orderBy('completed_at', 'desc');
+
+        // Apply filters
+        if ($request->filled('search')) {
+            $query->whereHas('enrollTest.user', function($q) use ($request) {
+                $q->where('nama_lengkap', 'like', "%{$request->search}%")
+                  ->orWhere('email', 'like', "%{$request->search}%")
+                  ->orWhereHas('jabatan', function($subQ) use ($request) {
+                      $subQ->where('nama_jabatan', 'like', "%{$request->search}%");
+                  })
+                  ->orWhereHas('outlet', function($subQ) use ($request) {
+                      $subQ->where('nama_outlet', 'like', "%{$request->search}%");
+                  })
+                  ->orWhereHas('divisi', function($subQ) use ($request) {
+                      $subQ->where('nama_divisi', 'like', "%{$request->search}%");
+                  });
+            });
+        }
+
+        if ($request->filled('master_soal_id')) {
+            $query->whereHas('enrollTest.masterSoal', function($q) use ($request) {
+                $q->where('id', $request->master_soal_id);
+            });
+        }
+
+        if ($request->filled('date_from')) {
+            $query->whereDate('completed_at', '>=', $request->date_from);
+        }
+
+        if ($request->filled('date_to')) {
+            $query->whereDate('completed_at', '<=', $request->date_to);
+        }
+
+        // Per page
+        $perPage = $request->get('per_page', 10);
+        $perPage = in_array($perPage, [5, 10, 15, 25, 50]) ? $perPage : 10;
+
+        $testResults = $query->paginate($perPage)->withQueryString();
+
+        // Recalculate scores untuk semua test result yang ditampilkan
+        foreach ($testResults->items() as $testResult) {
+            $this->recalculateTestResultScore($testResult->id);
+        }
+
+        // Get filter options
+        $masterSoals = MasterSoal::where('status', 'active')
+            ->orderBy('judul')
+            ->get(['id', 'judul']);
+
+        return Inertia::render('EnrollTest/Report', [
+            'testResults' => $testResults,
+            'masterSoals' => $masterSoals,
+            'filters' => $request->only(['search', 'master_soal_id', 'date_from', 'date_to', 'per_page'])
+        ]);
+    }
+
+    public function updateEssayScore(Request $request, TestAnswer $testAnswer)
+    {
+        $validated = $request->validate([
+            'score' => 'required|numeric|min:1|max:4'
+        ]);
+
+        try {
+            $testAnswer->update([
+                'score' => $validated['score']
+                // Essay tidak ada is_correct karena manual scoring
+            ]);
+
+            // Recalculate test result total score
+            $this->recalculateTestResultScore($testAnswer->test_result_id);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Score berhasil diupdate'
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal update score: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    private function recalculateTestResultScore($testResultId)
+    {
+        $testResult = TestResult::find($testResultId);
+        if (!$testResult) return;
+
+        // Recalculate score berdasarkan is_correct, bukan score yang ada di database
+        $testAnswers = TestAnswer::where('test_result_id', $testResultId)->get();
+        $totalScore = 0;
+        
+        foreach ($testAnswers as $testAnswer) {
+            // Ambil data soal untuk cek tipe
+            $pertanyaan = DB::table('soal_pertanyaan')
+                ->where('id', $testAnswer->soal_pertanyaan_id)
+                ->first();
+                
+            if (!$pertanyaan) continue;
+            
+            if ($pertanyaan->tipe_soal === 'pilihan_ganda' || $pertanyaan->tipe_soal === 'yes_no') {
+                // PG dan Yes/No: tidak diisi=0, salah=1, benar=4
+                if (empty($testAnswer->user_answer)) {
+                    $score = 0;
+                } else {
+                    $isCorrect = strtolower($testAnswer->user_answer) === strtolower($pertanyaan->jawaban_benar);
+                    $score = $isCorrect ? 4 : 1;
+                }
+            } elseif ($pertanyaan->tipe_soal === 'essay') {
+                // Essay: gunakan score yang sudah diinput admin (1-4) - manual scoring
+                $score = $testAnswer->score ?? 0;
+            }
+            
+            $totalScore += $score;
+        }
+        
+        $answerCount = $testAnswers->count();
+        $maxScore = $answerCount * 4; // Max score per soal adalah 4
+        $percentage = $maxScore > 0 ? ($totalScore / $maxScore) * 100 : 0;
+
+        $testResult->update([
+            'total_score' => $totalScore,
+            'max_score' => $maxScore,
+            'percentage' => $percentage
+        ]);
+    }
+
     private function sendEnrollmentNotifications($enrollTests, $validated)
     {
         try {
@@ -627,18 +765,31 @@ class EnrollTestController extends Controller
 
                 if (!$pertanyaan) continue;
 
-                $maxScore += $pertanyaan->skor;
+                $maxScore += 4; // Max score per soal adalah 4
 
-                // Hitung skor berdasarkan tipe soal
+                // Hitung skor berdasarkan tipe soal dan jawaban
                 $score = 0;
                 $isCorrect = false;
 
                 if ($pertanyaan->tipe_soal === 'pilihan_ganda' || $pertanyaan->tipe_soal === 'yes_no') {
-                    $isCorrect = strtolower($testAnswer->user_answer) === strtolower($pertanyaan->jawaban_benar);
-                    $score = $isCorrect ? $pertanyaan->skor : 0;
+                    // PG dan Yes/No: tidak diisi=0, salah=1, benar=4
+                    if (empty($testAnswer->user_answer)) {
+                        $score = 0;
+                        $isCorrect = false;
+                    } else {
+                        $isCorrect = strtolower($testAnswer->user_answer) === strtolower($pertanyaan->jawaban_benar);
+                        $score = $isCorrect ? 4 : 1;
+                    }
                 } elseif ($pertanyaan->tipe_soal === 'essay') {
-                    // Essay answers need manual checking
-                    $score = 0; // Will be updated manually later
+                    // Essay: tidak diisi=0, diisi=admin input 1-4 (manual scoring)
+                    if (empty($testAnswer->user_answer)) {
+                        $score = 0;
+                        $isCorrect = null; // Essay tidak ada is_correct
+                    } else {
+                        // Essay score akan diupdate manual oleh admin
+                        $score = $testAnswer->score ?? 0;
+                        $isCorrect = null; // Essay tidak ada is_correct
+                    }
                 }
 
                 $totalScore += $score;
@@ -647,7 +798,17 @@ class EnrollTestController extends Controller
                 $testAnswer->update([
                     'is_correct' => $isCorrect,
                     'score' => $score,
-                    'max_score' => $pertanyaan->skor
+                    'max_score' => 4 // Max score per soal adalah 4
+                ]);
+                
+                // Log untuk debugging
+                \Log::info('Score calculated', [
+                    'test_answer_id' => $testAnswer->id,
+                    'tipe_soal' => $pertanyaan->tipe_soal,
+                    'user_answer' => $testAnswer->user_answer,
+                    'jawaban_benar' => $pertanyaan->jawaban_benar,
+                    'is_correct' => $isCorrect,
+                    'score' => $score
                 ]);
             }
 

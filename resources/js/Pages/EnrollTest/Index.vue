@@ -226,6 +226,7 @@
 import { ref, computed } from 'vue';
 import { router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
+import Swal from 'sweetalert2';
 
 const props = defineProps({
   enrollTests: Object,
@@ -300,15 +301,37 @@ function editEnrollTest(enrollTest) {
 }
 
 function cancelEnrollTest(enrollTest) {
-  if (confirm('Apakah Anda yakin ingin membatalkan enrollment ini?')) {
-    router.delete(route('enroll-test.cancel', enrollTest.id));
-  }
+  Swal.fire({
+    title: 'Konfirmasi',
+    text: 'Apakah Anda yakin ingin membatalkan enrollment ini?',
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonColor: '#d33',
+    cancelButtonColor: '#3085d6',
+    confirmButtonText: 'Ya, Batalkan!',
+    cancelButtonText: 'Batal'
+  }).then((result) => {
+    if (result.isConfirmed) {
+      router.delete(route('enroll-test.cancel', enrollTest.id));
+    }
+  });
 }
 
 function deleteEnrollTest(enrollTest) {
-  if (confirm('Apakah Anda yakin ingin menghapus enrollment ini?')) {
-    router.delete(route('enroll-test.destroy', enrollTest.id));
-  }
+  Swal.fire({
+    title: 'Konfirmasi',
+    text: 'Apakah Anda yakin ingin menghapus enrollment ini?',
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonColor: '#d33',
+    cancelButtonColor: '#3085d6',
+    confirmButtonText: 'Ya, Hapus!',
+    cancelButtonText: 'Batal'
+  }).then((result) => {
+    if (result.isConfirmed) {
+      router.delete(route('enroll-test.destroy', enrollTest.id));
+    }
+  });
 }
 
 function getStatusText(status) {

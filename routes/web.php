@@ -1235,6 +1235,10 @@ Route::middleware(['auth'])->group(function () {
            Route::post('/enroll-test/{enrollTest}/next', [App\Http\Controllers\EnrollTestController::class, 'nextQuestion'])->name('enroll-test.next');
            Route::post('/enroll-test/{enrollTest}/submit', [App\Http\Controllers\EnrollTestController::class, 'submitTest'])->name('enroll-test.submit');
     Route::get('/test-result/{testResult}', [App\Http\Controllers\EnrollTestController::class, 'result'])->name('enroll-test.result');
+    
+    // Report routes
+    Route::get('/enroll-test-report', [App\Http\Controllers\EnrollTestController::class, 'report'])->name('enroll-test.report');
+    Route::post('/test-answer/{testAnswer}/update-essay-score', [App\Http\Controllers\EnrollTestController::class, 'updateEssayScore'])->name('enroll-test.update-essay-score');
 });
 Route::get('/sales-outlet-dashboard/outlet-daily-revenue', [App\Http\Controllers\SalesOutletDashboardController::class, 'getOutletDailyRevenue'])->name('sales-outlet-dashboard.outlet-daily-revenue');
 Route::get('/sales-outlet-dashboard/outlet-lunch-dinner-detail', [App\Http\Controllers\SalesOutletDashboardController::class, 'getOutletLunchDinnerDetail'])->name('sales-outlet-dashboard.outlet-lunch-dinner-detail');
