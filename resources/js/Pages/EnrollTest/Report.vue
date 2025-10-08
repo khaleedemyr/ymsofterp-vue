@@ -81,8 +81,8 @@
                   <div class="flex justify-between items-center">
                     <div class="flex items-center space-x-4">
                       <!-- Avatar -->
-                      <div v-if="userGroup.user.avatar" class="w-12 h-12 rounded-full overflow-hidden border-2 border-blue-200 shadow-md">
-                        <img :src="getImageUrl(userGroup.user.avatar)" :alt="userGroup.user.nama_lengkap" class="w-full h-full object-cover" />
+                      <div v-if="userGroup.user.avatar" class="w-12 h-12 rounded-full overflow-hidden border-2 border-blue-200 shadow-md cursor-pointer hover:shadow-lg transition-all" @click="openImageModal(getImageUrl(userGroup.user.avatar))">
+                        <img :src="getImageUrl(userGroup.user.avatar)" :alt="userGroup.user.nama_lengkap" class="w-full h-full object-cover hover:scale-105 transition-transform" />
                       </div>
                       <div v-else class="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-sm font-bold border-2 border-blue-200 shadow-md">
                         {{ getInitials(userGroup.user.nama_lengkap) }}
@@ -285,6 +285,43 @@
         </div>
       </div>
     </div>
+
+    <!-- Lightbox Modal -->
+    <div v-if="lightboxVisible" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50" @click="closeImageModal">
+      <div class="relative max-w-4xl max-h-full p-4" @click.stop>
+        <!-- Close Button -->
+        <button @click="closeImageModal" 
+                class="absolute top-2 right-2 text-white bg-black bg-opacity-50 hover:bg-opacity-75 rounded-full p-2 z-10">
+          <i class="fa-solid fa-times text-xl"></i>
+        </button>
+        
+        <!-- Navigation Buttons -->
+        <button v-if="lightboxImages.length > 1" 
+                @click="previousImage" 
+                :disabled="lightboxIndex === 0"
+                class="absolute left-2 top-1/2 transform -translate-y-1/2 text-white bg-black bg-opacity-50 hover:bg-opacity-75 rounded-full p-2 z-10 disabled:opacity-50 disabled:cursor-not-allowed">
+          <i class="fa-solid fa-chevron-left text-xl"></i>
+        </button>
+        
+        <button v-if="lightboxImages.length > 1" 
+                @click="nextImage" 
+                :disabled="lightboxIndex === lightboxImages.length - 1"
+                class="absolute right-2 top-1/2 transform -translate-y-1/2 text-white bg-black bg-opacity-50 hover:bg-opacity-75 rounded-full p-2 z-10 disabled:opacity-50 disabled:cursor-not-allowed">
+          <i class="fa-solid fa-chevron-right text-xl"></i>
+        </button>
+        
+        <!-- Image -->
+        <img :src="lightboxImages[lightboxIndex]" 
+             :alt="'Avatar'" 
+             class="max-w-full max-h-full object-contain rounded-lg shadow-2xl">
+        
+        <!-- Image Counter -->
+        <div v-if="lightboxImages.length > 1" 
+             class="absolute bottom-2 left-1/2 transform -translate-x-1/2 text-white bg-black bg-opacity-50 px-3 py-1 rounded-full text-sm">
+          {{ lightboxIndex + 1 }} / {{ lightboxImages.length }}
+        </div>
+      </div>
+    </div>
   </AppLayout>
 </template>
 
@@ -314,6 +351,11 @@ const expandedUsers = ref([]);
 const expandedTestResults = ref([]);
 const essayScores = ref({});
 const loadingScores = ref({});
+
+// Lightbox variables
+const lightboxVisible = ref(false);
+const lightboxImages = ref([]);
+const lightboxIndex = ref(0);
 
 // Computed
 const groupedResults = computed(() => {
@@ -545,6 +587,33 @@ function getImageUrl(imagePath) {
   } catch (error) {
     console.error('Error processing image:', error);
     return null;
+  }
+}
+
+// Lightbox functions
+function openImageModal(imageUrl) {
+  if (!imageUrl) return;
+  
+  lightboxImages.value = [imageUrl];
+  lightboxIndex.value = 0;
+  lightboxVisible.value = true;
+}
+
+function closeImageModal() {
+  lightboxVisible.value = false;
+  lightboxImages.value = [];
+  lightboxIndex.value = 0;
+}
+
+function previousImage() {
+  if (lightboxIndex.value > 0) {
+    lightboxIndex.value--;
+  }
+}
+
+function nextImage() {
+  if (lightboxIndex.value < lightboxImages.value.length - 1) {
+    lightboxIndex.value++;
   }
 }
 
