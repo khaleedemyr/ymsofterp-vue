@@ -278,6 +278,143 @@ const markPrinted = async () => {
     Swal.fire('Error', 'Failed to mark as printed', 'error');
   }
 };
+
+// Attachment handling
+const uploading = ref(false);
+
+// File handling functions
+const isImageFile = (fileName) => {
+  if (!fileName) return false;
+  const imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'];
+  const extension = fileName.split('.').pop().toLowerCase();
+  return imageExtensions.includes(extension);
+};
+
+const getFileIcon = (fileName) => {
+  if (!fileName) return 'fa-file';
+  const extension = fileName.split('.').pop().toLowerCase();
+  const iconMap = {
+    'pdf': 'fa-file-pdf text-red-500',
+    'doc': 'fa-file-word text-blue-500',
+    'docx': 'fa-file-word text-blue-500',
+    'xls': 'fa-file-excel text-green-500',
+    'xlsx': 'fa-file-excel text-green-500',
+    'ppt': 'fa-file-powerpoint text-orange-500',
+    'pptx': 'fa-file-powerpoint text-orange-500',
+    'jpg': 'fa-file-image text-purple-500',
+    'jpeg': 'fa-file-image text-purple-500',
+    'png': 'fa-file-image text-purple-500',
+    'gif': 'fa-file-image text-purple-500',
+    'txt': 'fa-file-alt text-gray-500',
+    'zip': 'fa-file-archive text-yellow-500',
+    'rar': 'fa-file-archive text-yellow-500',
+    'webp': 'fa-file-image text-purple-500',
+    'bmp': 'fa-file-image text-purple-500',
+  };
+  return iconMap[extension] || 'fa-file text-gray-500';
+};
+
+const formatFileSize = (bytes) => {
+  if (!bytes) return '0 Bytes';
+  const k = 1024;
+  const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+};
+
+const downloadFile = (attachment) => {
+  window.open(`/po-ops/attachments/${attachment.id}/download`, '_blank');
+};
+
+const downloadPrFile = (attachment) => {
+  window.open(`/purchase-requisitions/attachments/${attachment.id}/download`, '_blank');
+};
+
+// Lightbox state
+const showLightbox = ref(false);
+const lightboxImage = ref(null);
+const lightboxType = ref('po'); // 'po' or 'pr'
+
+const openLightbox = (attachment, type = 'po') => {
+  if (isImageFile(attachment.file_name)) {
+    lightboxImage.value = attachment;
+    lightboxType.value = type;
+    showLightbox.value = true;
+  }
+};
+
+const closeLightbox = () => {
+  showLightbox.value = false;
+  lightboxImage.value = null;
+};
+
+// Upload file
+const handleFileUpload = async (event) => {
+  const files = event.target.files;
+  if (!files || files.length === 0) return;
+
+  uploading.value = true;
+
+  try {
+    for (const file of files) {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const response = await axios.post(`/po-ops/${props.po.id}/attachments`, formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        }
+      });
+
+      if (response.data.success) {
+        // Reload the page to show new attachment
+        router.reload();
+      } else {
+        Swal.fire('Error', response.data.message || 'Failed to upload file', 'error');
+      }
+    }
+  } catch (error) {
+    console.error('Upload error:', error);
+    Swal.fire('Error', error.response?.data?.message || 'Failed to upload file', 'error');
+  } finally {
+    uploading.value = false;
+    // Reset file input
+    event.target.value = '';
+  }
+};
+
+// Delete attachment
+const deleteAttachment = async (attachment) => {
+  const result = await Swal.fire({
+    title: 'Are you sure?',
+    text: `Do you want to delete "${attachment.file_name}"?`,
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonColor: '#d33',
+    cancelButtonColor: '#3085d6',
+    confirmButtonText: 'Yes, delete it!'
+  });
+
+  if (result.isConfirmed) {
+    try {
+      const response = await axios.delete(`/po-ops/attachments/${attachment.id}`);
+      if (response.data.success) {
+        Swal.fire('Deleted!', 'File has been deleted.', 'success');
+        router.reload();
+      } else {
+        Swal.fire('Error', response.data.message || 'Failed to delete file', 'error');
+      }
+    } catch (error) {
+      console.error('Delete error:', error);
+      Swal.fire('Error', error.response?.data?.message || 'Failed to delete file', 'error');
+    }
+  }
+};
+
+// Check if user can delete attachment
+const canDeleteAttachment = (attachment) => {
+  return attachment.uploaded_by === props.user.id || props.user.id_role === 1; // Admin or uploader
+};
 </script>
 
 <template>
@@ -479,6 +616,176 @@ const markPrinted = async () => {
                   </tr>
                 </tbody>
               </table>
+            </div>
+          </div>
+
+          <!-- Purchase Requisition Attachments Section -->
+          <div v-if="po.source_pr && po.source_pr.attachments && po.source_pr.attachments.length > 0" class="bg-white rounded-xl shadow-lg p-6">
+            <h2 class="text-lg font-semibold text-gray-800 mb-4 flex items-center">
+              <i class="fa fa-paperclip mr-2 text-green-500"></i>
+              Purchase Requisition Attachments
+              <span class="ml-2 bg-green-100 text-green-800 text-xs font-medium px-2.5 py-0.5 rounded-full">
+                {{ po.source_pr.attachments.length }}
+              </span>
+            </h2>
+            
+            <div class="space-y-3">
+              <div
+                v-for="attachment in po.source_pr.attachments"
+                :key="attachment.id"
+                class="flex items-center justify-between p-3 bg-green-50 border border-green-200 rounded-lg hover:bg-green-100 transition-colors"
+              >
+                <div class="flex items-center space-x-3">
+                  <!-- Image Thumbnail -->
+                  <div v-if="isImageFile(attachment.file_name)" class="relative">
+                    <img
+                      :src="`/purchase-requisitions/attachments/${attachment.id}/view`"
+                      :alt="attachment.file_name"
+                      class="w-12 h-12 object-cover rounded-lg border border-gray-300 cursor-pointer hover:opacity-80 transition-opacity"
+                      @click="openLightbox(attachment, 'pr')"
+                      @error="$event.target.style.display='none'; $event.target.nextElementSibling.style.display='block'"
+                    />
+                    <i :class="getFileIcon(attachment.file_name)" class="text-lg absolute inset-0 flex items-center justify-center bg-gray-100 rounded-lg" style="display: none;"></i>
+                  </div>
+                  <!-- File Icon for non-images -->
+                  <i v-else :class="getFileIcon(attachment.file_name)" class="text-lg"></i>
+                  
+                  <div>
+                    <p class="text-sm font-medium text-gray-900">{{ attachment.file_name }}</p>
+                    <div class="flex items-center space-x-4 text-xs text-gray-500">
+                      <span>{{ formatFileSize(attachment.file_size) }}</span>
+                      <span>•</span>
+                      <span>Uploaded by {{ attachment.uploader?.nama_lengkap || 'Unknown User' }}</span>
+                      <span>•</span>
+                      <span>{{ formatDate(attachment.created_at) }}</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="flex items-center space-x-2">
+                  <button
+                    v-if="isImageFile(attachment.file_name)"
+                    @click="openLightbox(attachment, 'pr')"
+                    class="p-2 text-green-600 hover:text-green-800 hover:bg-green-100 rounded-md transition-colors"
+                    title="View Image"
+                  >
+                    <i class="fa fa-eye"></i>
+                  </button>
+                  <button
+                    @click="downloadPrFile(attachment)"
+                    class="p-2 text-blue-600 hover:text-blue-800 hover:bg-blue-100 rounded-md transition-colors"
+                    title="Download"
+                  >
+                    <i class="fa fa-download"></i>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- PO Ops Attachments Section -->
+          <div class="bg-white rounded-xl shadow-lg p-6">
+            <h2 class="text-lg font-semibold text-gray-800 mb-4 flex items-center">
+              <i class="fa fa-paperclip mr-2 text-blue-500"></i>
+              Purchase Order Attachments
+              <span v-if="po.attachments && po.attachments.length > 0" class="ml-2 bg-blue-100 text-blue-800 text-xs font-medium px-2.5 py-0.5 rounded-full">
+                {{ po.attachments.length }}
+              </span>
+            </h2>
+
+            <!-- Upload Section -->
+            <div class="mb-6">
+              <div class="border-2 border-dashed border-gray-300 rounded-lg p-6">
+                <div class="text-center">
+                  <input
+                    ref="fileInput"
+                    type="file"
+                    multiple
+                    @change="handleFileUpload"
+                    class="hidden"
+                    accept="*/*"
+                  />
+                  <button
+                    type="button"
+                    @click="$refs.fileInput.click()"
+                    class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                    :disabled="uploading"
+                  >
+                    <i v-if="uploading" class="fas fa-spinner fa-spin mr-2"></i>
+                    <i v-else class="fa fa-upload mr-2"></i>
+                    {{ uploading ? 'Uploading...' : 'Upload Files' }}
+                  </button>
+                  <p class="mt-2 text-sm text-gray-500">
+                    Upload any file type (Max 10MB per file)
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Attachments List -->
+            <div v-if="po.attachments && po.attachments.length > 0" class="space-y-3">
+              <div
+                v-for="attachment in po.attachments"
+                :key="attachment.id"
+                class="flex items-center justify-between p-3 bg-gray-50 border border-gray-200 rounded-lg hover:bg-gray-100 transition-colors"
+              >
+                <div class="flex items-center space-x-3">
+                  <!-- Image Thumbnail -->
+                  <div v-if="isImageFile(attachment.file_name)" class="relative">
+                    <img
+                      :src="`/po-ops/attachments/${attachment.id}/view`"
+                      :alt="attachment.file_name"
+                      class="w-12 h-12 object-cover rounded-lg border border-gray-300 cursor-pointer hover:opacity-80 transition-opacity"
+                      @click="openLightbox(attachment)"
+                      @error="$event.target.style.display='none'; $event.target.nextElementSibling.style.display='block'"
+                    />
+                    <i :class="getFileIcon(attachment.file_name)" class="text-lg absolute inset-0 flex items-center justify-center bg-gray-100 rounded-lg" style="display: none;"></i>
+                  </div>
+                  <!-- File Icon for non-images -->
+                  <i v-else :class="getFileIcon(attachment.file_name)" class="text-lg"></i>
+                  
+                  <div>
+                    <p class="text-sm font-medium text-gray-900">{{ attachment.file_name }}</p>
+                    <div class="flex items-center space-x-4 text-xs text-gray-500">
+                      <span>{{ formatFileSize(attachment.file_size) }}</span>
+                      <span>•</span>
+                      <span>Uploaded by {{ attachment.uploader?.nama_lengkap || 'Unknown User' }}</span>
+                      <span>•</span>
+                      <span>{{ formatDate(attachment.created_at) }}</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="flex items-center space-x-2">
+                  <button
+                    v-if="isImageFile(attachment.file_name)"
+                    @click="openLightbox(attachment)"
+                    class="p-2 text-green-600 hover:text-green-800 hover:bg-green-100 rounded-md transition-colors"
+                    title="View Image"
+                  >
+                    <i class="fa fa-eye"></i>
+                  </button>
+                  <button
+                    @click="downloadFile(attachment)"
+                    class="p-2 text-blue-600 hover:text-blue-800 hover:bg-blue-100 rounded-md transition-colors"
+                    title="Download"
+                  >
+                    <i class="fa fa-download"></i>
+                  </button>
+                  <button
+                    v-if="canDeleteAttachment(attachment)"
+                    @click="deleteAttachment(attachment)"
+                    class="p-2 text-red-600 hover:text-red-800 hover:bg-red-100 rounded-md transition-colors"
+                    title="Delete"
+                  >
+                    <i class="fa fa-trash"></i>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- No attachments message -->
+            <div v-else class="text-center py-8 text-gray-500">
+              <i class="fa fa-paperclip text-4xl mb-2"></i>
+              <p>No attachments uploaded yet</p>
             </div>
           </div>
         </div>
@@ -688,5 +995,28 @@ const markPrinted = async () => {
       :po="po"
       @close="showPreview = false"
     />
+
+    <!-- Lightbox Modal for Images -->
+    <div v-if="showLightbox" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-75" @click="closeLightbox">
+      <div class="relative max-w-4xl max-h-full p-4" @click.stop>
+        <button
+          @click="closeLightbox"
+          class="absolute top-2 right-2 z-10 p-2 text-white bg-black bg-opacity-50 rounded-full hover:bg-opacity-75 transition-colors"
+        >
+          <i class="fa fa-times text-xl"></i>
+        </button>
+        <img
+          v-if="lightboxImage"
+          :src="lightboxType === 'pr' ? `/purchase-requisitions/attachments/${lightboxImage.id}/view` : `/po-ops/attachments/${lightboxImage.id}/view`"
+          :alt="lightboxImage.file_name"
+          class="max-w-full max-h-full object-contain rounded-lg"
+        />
+        <div class="absolute bottom-4 left-4 right-4 text-center">
+          <p class="text-white bg-black bg-opacity-50 px-3 py-1 rounded-lg text-sm">
+            {{ lightboxImage?.file_name }}
+          </p>
+        </div>
+      </div>
+    </div>
   </AppLayout>
 </template>

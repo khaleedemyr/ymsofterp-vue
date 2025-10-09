@@ -181,6 +181,66 @@ const submitForm = async () => {
     }
 };
 
+// File handling functions
+const isImageFile = (fileName) => {
+    if (!fileName) return false;
+    const imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'];
+    const extension = fileName.split('.').pop().toLowerCase();
+    return imageExtensions.includes(extension);
+};
+
+const getFileIcon = (fileName) => {
+    if (!fileName) return 'fa-file';
+    const extension = fileName.split('.').pop().toLowerCase();
+    const iconMap = {
+        'pdf': 'fa-file-pdf text-red-500',
+        'doc': 'fa-file-word text-blue-500',
+        'docx': 'fa-file-word text-blue-500',
+        'xls': 'fa-file-excel text-green-500',
+        'xlsx': 'fa-file-excel text-green-500',
+        'ppt': 'fa-file-powerpoint text-orange-500',
+        'pptx': 'fa-file-powerpoint text-orange-500',
+        'jpg': 'fa-file-image text-purple-500',
+        'jpeg': 'fa-file-image text-purple-500',
+        'png': 'fa-file-image text-purple-500',
+        'gif': 'fa-file-image text-purple-500',
+        'txt': 'fa-file-alt text-gray-500',
+        'zip': 'fa-file-archive text-yellow-500',
+        'rar': 'fa-file-archive text-yellow-500',
+        'webp': 'fa-file-image text-purple-500',
+        'bmp': 'fa-file-image text-purple-500',
+    };
+    return iconMap[extension] || 'fa-file text-gray-500';
+};
+
+const formatFileSize = (bytes) => {
+    if (!bytes) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+};
+
+const downloadFile = (attachment) => {
+    window.open(`/purchase-requisitions/attachments/${attachment.id}/download`, '_blank');
+};
+
+// Lightbox state
+const showLightbox = ref(false);
+const lightboxImage = ref(null);
+
+const openLightbox = (attachment) => {
+    if (isImageFile(attachment.file_name)) {
+        lightboxImage.value = attachment;
+        showLightbox.value = true;
+    }
+};
+
+const closeLightbox = () => {
+    showLightbox.value = false;
+    lightboxImage.value = null;
+};
+
 onMounted(() => {
     fetchPRList();
     fetchSuppliers();
@@ -270,6 +330,67 @@ onMounted(() => {
 
             <!-- PR Items -->
             <div v-if="expandedPRs[pr.id]" class="p-4">
+              <!-- Attachments Section -->
+              <div v-if="pr.attachments && pr.attachments.length > 0" class="mb-6 p-4 bg-blue-50 rounded-lg">
+                <h4 class="text-md font-semibold text-gray-900 mb-3 flex items-center">
+                  <i class="fa fa-paperclip mr-2 text-blue-500"></i>
+                  Purchase Requisition Attachments
+                  <span class="ml-2 bg-blue-100 text-blue-800 text-xs font-medium px-2.5 py-0.5 rounded-full">
+                    {{ pr.attachments.length }}
+                  </span>
+                </h4>
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                  <div
+                    v-for="attachment in pr.attachments"
+                    :key="attachment.id"
+                    class="flex items-center p-3 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+                  >
+                    <div class="flex items-center space-x-3 flex-1">
+                      <!-- Image Thumbnail -->
+                      <div v-if="isImageFile(attachment.file_name)" class="relative">
+                        <img
+                          :src="`/purchase-requisitions/attachments/${attachment.id}/view`"
+                          :alt="attachment.file_name"
+                          class="w-10 h-10 object-cover rounded border border-gray-300 cursor-pointer hover:opacity-80 transition-opacity"
+                          @click="openLightbox(attachment)"
+                          @error="$event.target.style.display='none'; $event.target.nextElementSibling.style.display='block'"
+                        />
+                        <i :class="getFileIcon(attachment.file_name)" class="text-sm absolute inset-0 flex items-center justify-center bg-gray-100 rounded" style="display: none;"></i>
+                      </div>
+                      <!-- File Icon for non-images -->
+                      <i v-else :class="getFileIcon(attachment.file_name)" class="text-lg text-gray-500"></i>
+                      
+                      <div class="flex-1 min-w-0">
+                        <p class="text-sm font-medium text-gray-900 truncate">{{ attachment.file_name }}</p>
+                        <div class="flex items-center space-x-2 text-xs text-gray-500">
+                          <span>{{ formatFileSize(attachment.file_size) }}</span>
+                          <span>•</span>
+                          <span>{{ attachment.uploader?.nama_lengkap || 'Unknown' }}</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="flex items-center space-x-1">
+                      <button
+                        v-if="isImageFile(attachment.file_name)"
+                        @click="openLightbox(attachment)"
+                        class="p-1 text-green-600 hover:text-green-800 hover:bg-green-100 rounded transition-colors"
+                        title="View Image"
+                      >
+                        <i class="fa fa-eye text-xs"></i>
+                      </button>
+                      <button
+                        @click="downloadFile(attachment)"
+                        class="p-1 text-blue-600 hover:text-blue-800 hover:bg-blue-100 rounded transition-colors"
+                        title="Download"
+                      >
+                        <i class="fa fa-download text-xs"></i>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               <div class="space-y-4">
                 <div v-for="item in pr.items" :key="item.id" class="border border-gray-200 rounded-lg p-4">
                   <div class="flex items-center justify-between mb-3">
@@ -376,6 +497,29 @@ onMounted(() => {
             <i v-else class="fas fa-plus mr-2"></i>
             {{ generatingPO ? 'Generating...' : 'Generate Purchase Orders' }}
           </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Lightbox Modal for Images -->
+    <div v-if="showLightbox" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-75" @click="closeLightbox">
+      <div class="relative max-w-4xl max-h-full p-4" @click.stop>
+        <button
+          @click="closeLightbox"
+          class="absolute top-2 right-2 z-10 p-2 text-white bg-black bg-opacity-50 rounded-full hover:bg-opacity-75 transition-colors"
+        >
+          <i class="fa fa-times text-xl"></i>
+        </button>
+        <img
+          v-if="lightboxImage"
+          :src="`/purchase-requisitions/attachments/${lightboxImage.id}/view`"
+          :alt="lightboxImage.file_name"
+          class="max-w-full max-h-full object-contain rounded-lg"
+        />
+        <div class="absolute bottom-4 left-4 right-4 text-center">
+          <p class="text-white bg-black bg-opacity-50 px-3 py-1 rounded-lg text-sm">
+            {{ lightboxImage?.file_name }}
+          </p>
         </div>
       </div>
     </div>

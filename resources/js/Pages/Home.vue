@@ -37,6 +37,9 @@ const loadingPrApprovals = ref(false);
 const showPrApprovalModal = ref(false);
 const selectedPrApproval = ref(null);
 const prApprovalBudgetInfo = ref(null);
+const showLightbox = ref(false);
+const lightboxImage = ref(null);
+const lightboxType = ref('pr'); // 'pr' or 'po'
 
 // Purchase Order Ops approvals
 const pendingPoOpsApprovals = ref([]);
@@ -487,6 +490,90 @@ async function rejectPr(prId, reason) {
     }
 }
 
+// File operations for attachments
+function isImageFile(fileName) {
+    const imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'];
+    const extension = fileName.split('.').pop().toLowerCase();
+    return imageExtensions.includes(extension);
+}
+
+function getFileIcon(fileName) {
+    const extension = fileName.split('.').pop().toLowerCase();
+    
+    const iconMap = {
+        'pdf': 'fa-file-pdf text-red-500',
+        'doc': 'fa-file-word text-blue-500',
+        'docx': 'fa-file-word text-blue-500',
+        'xls': 'fa-file-excel text-green-500',
+        'xlsx': 'fa-file-excel text-green-500',
+        'ppt': 'fa-file-powerpoint text-orange-500',
+        'pptx': 'fa-file-powerpoint text-orange-500',
+        'jpg': 'fa-file-image text-purple-500',
+        'jpeg': 'fa-file-image text-purple-500',
+        'png': 'fa-file-image text-purple-500',
+        'gif': 'fa-file-image text-purple-500',
+        'webp': 'fa-file-image text-purple-500',
+        'bmp': 'fa-file-image text-purple-500',
+        'txt': 'fa-file-alt text-gray-500',
+        'zip': 'fa-file-archive text-yellow-500',
+        'rar': 'fa-file-archive text-yellow-500',
+    };
+    
+    return iconMap[extension] || 'fa-file text-gray-500';
+}
+
+function formatFileSize(bytes) {
+    if (bytes === 0) return '0 Bytes';
+    
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
+
+function formatDate(date) {
+    if (!date) return '-';
+    return new Date(date).toLocaleDateString('id-ID', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+    });
+}
+
+function downloadFile(attachment) {
+    // Create download link for PR attachments
+    const link = document.createElement('a');
+    link.href = `/purchase-requisitions/attachments/${attachment.id}/download`;
+    link.download = attachment.file_name;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+
+function downloadPoFile(attachment) {
+    // Create download link for PO attachments
+    const link = document.createElement('a');
+    link.href = `/po-ops/attachments/${attachment.id}/download`;
+    link.download = attachment.file_name;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+
+function openLightbox(attachment, type = 'pr') {
+    lightboxImage.value = attachment;
+    lightboxType.value = type;
+    showLightbox.value = true;
+}
+
+function closeLightbox() {
+    showLightbox.value = false;
+    lightboxImage.value = null;
+}
+
 // Show reject PR modal
 function showRejectPrModal(prId) {
     Swal.fire({
@@ -630,7 +717,7 @@ function getMonthName(monthNumber) {
 }
 
 // Helper functions for sanctions
-function formatDate(dateString) {
+function formatSanctionDate(dateString) {
     if (!dateString) return 'N/A';
     const date = new Date(dateString);
     return date.toLocaleDateString('id-ID', {
@@ -2511,7 +2598,7 @@ const lightboxVisible = ref(false);
 const lightboxImages = ref([]);
 const lightboxIndex = ref(0);
 
-function isImageFile(filePath) {
+function isImageFileForLightbox(filePath) {
     if (!filePath) return false;
     const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp'];
     const extension = filePath.toLowerCase().substring(filePath.lastIndexOf('.'));
@@ -2796,7 +2883,7 @@ watch(locale, () => {
                                         
                                         <!-- Violation Date -->
                                         <div class="text-xs" :class="isNight ? 'text-red-300' : 'text-red-600'">
-                                            <span class="font-medium">Tanggal Pelanggaran:</span> {{ formatDate(sanction.violation_date) }}
+                                            <span class="font-medium">Tanggal Pelanggaran:</span> {{ formatSanctionDate(sanction.violation_date) }}
                                         </div>
                                         
                                         <!-- Violation Location -->
@@ -2811,12 +2898,12 @@ watch(locale, () => {
                                         
                                         <!-- Effective Date -->
                                         <div class="text-xs" :class="isNight ? 'text-red-300' : 'text-red-600'">
-                                            <span class="font-medium">Tanggal Berlaku:</span> {{ formatDate(action.effective_date) }}
+                                            <span class="font-medium">Tanggal Berlaku:</span> {{ formatSanctionDate(action.effective_date) }}
                                         </div>
                                         
                                         <!-- End Date -->
                                         <div class="text-xs" :class="isNight ? 'text-red-300' : 'text-red-600'">
-                                            <span class="font-medium">Tanggal Berakhir:</span> {{ formatDate(action.end_date) }}
+                                            <span class="font-medium">Tanggal Berakhir:</span> {{ formatSanctionDate(action.end_date) }}
                                         </div>
                                         
                                         <!-- Remarks -->
@@ -3034,7 +3121,7 @@ watch(locale, () => {
                                         <div class="text-xs space-y-1 mb-3" :class="isNight ? 'text-slate-300' : 'text-slate-600'">
                                             <div class="flex justify-between">
                                                 <span>Tanggal Pelanggaran:</span>
-                                                <span>{{ formatDate(approval.violation_date) }}</span>
+                                                <span>{{ formatSanctionDate(approval.violation_date) }}</span>
                                             </div>
                                             <div class="flex justify-between">
                                                 <span>Supervisor:</span>
@@ -3308,7 +3395,7 @@ watch(locale, () => {
                                     class="relative group"
                                 >
                                     <!-- Check if it's an image -->
-                                    <div v-if="isImageFile(docPath)" class="relative cursor-pointer" @click="openImageModal(`/storage/${docPath}`, selectedApproval.document_paths)">
+                                    <div v-if="isImageFileForLightbox(docPath)" class="relative cursor-pointer" @click="openImageModal(`/storage/${docPath}`, selectedApproval.document_paths)">
                                         <img 
                                             :src="`/storage/${docPath}`" 
                                             :alt="`Document ${index + 1}`"
@@ -3568,6 +3655,69 @@ watch(locale, () => {
                         </div>
                     </div>
 
+                    <!-- Attachments -->
+                    <div v-if="selectedPrApproval.attachments && selectedPrApproval.attachments.length > 0" class="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
+                        <h4 class="text-md font-semibold text-gray-900 dark:text-white mb-3 flex items-center">
+                            <i class="fa fa-paperclip mr-2 text-blue-500"></i>
+                            Attachments
+                            <span class="ml-2 bg-blue-100 text-blue-800 text-xs font-medium px-2.5 py-0.5 rounded-full">
+                                {{ selectedPrApproval.attachments.length }}
+                            </span>
+                        </h4>
+                        
+                        <div class="space-y-3">
+                            <div
+                                v-for="attachment in selectedPrApproval.attachments"
+                                :key="attachment.id"
+                                class="flex items-center justify-between p-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                            >
+                                <div class="flex items-center space-x-3">
+                                    <!-- Image Thumbnail -->
+                                    <div v-if="isImageFile(attachment.file_name)" class="relative">
+                                        <img
+                                            :src="`/purchase-requisitions/attachments/${attachment.id}/view`"
+                                            :alt="attachment.file_name"
+                                            class="w-12 h-12 object-cover rounded-lg border border-gray-300 dark:border-gray-600 cursor-pointer hover:opacity-80 transition-opacity"
+                                            @click="openLightbox(attachment)"
+                                            @error="$event.target.style.display='none'; $event.target.nextElementSibling.style.display='block'"
+                                        />
+                                        <i :class="getFileIcon(attachment.file_name)" class="text-lg absolute inset-0 flex items-center justify-center bg-gray-100 dark:bg-gray-700 rounded-lg" style="display: none;"></i>
+                                    </div>
+                                    <!-- File Icon for non-images -->
+                                    <i v-else :class="getFileIcon(attachment.file_name)" class="text-lg"></i>
+                                    
+                                    <div>
+                                        <p class="text-sm font-medium text-gray-900 dark:text-white">{{ attachment.file_name }}</p>
+                                        <div class="flex items-center space-x-4 text-xs text-gray-500 dark:text-gray-400">
+                                            <span>{{ formatFileSize(attachment.file_size) }}</span>
+                                            <span>•</span>
+                                            <span>Uploaded by {{ attachment.uploader?.nama_lengkap || 'Unknown User' }}</span>
+                                            <span>•</span>
+                                            <span>{{ formatDate(attachment.created_at) }}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="flex items-center space-x-2">
+                                    <button
+                                        v-if="isImageFile(attachment.file_name)"
+                                        @click="openLightbox(attachment)"
+                                        class="p-2 text-green-600 hover:text-green-800 hover:bg-green-100 dark:hover:bg-green-900 rounded-md transition-colors"
+                                        title="View Image"
+                                    >
+                                        <i class="fa fa-eye"></i>
+                                    </button>
+                                    <button
+                                        @click="downloadFile(attachment)"
+                                        class="p-2 text-blue-600 hover:text-blue-800 hover:bg-blue-100 dark:hover:bg-blue-900 rounded-md transition-colors"
+                                        title="Download"
+                                    >
+                                        <i class="fa fa-download"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- Approval Flow -->
                     <div v-if="selectedPrApproval.approval_flows && selectedPrApproval.approval_flows.length > 0" class="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
                         <h4 class="text-md font-semibold text-gray-900 dark:text-white mb-3">Approval Flow</h4>
@@ -3615,6 +3765,29 @@ watch(locale, () => {
                             class="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors">
                         <i class="fa fa-times mr-2"></i>Reject
                     </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Lightbox Modal for Images -->
+        <div v-if="showLightbox" class="fixed inset-0 z-[9999] flex items-center justify-center bg-black bg-opacity-75" @click="closeLightbox">
+            <div class="relative max-w-4xl max-h-full p-4" @click.stop>
+                <button
+                    @click="closeLightbox"
+                    class="absolute top-2 right-2 z-[10000] p-2 text-white bg-black bg-opacity-50 rounded-full hover:bg-opacity-75 transition-colors"
+                >
+                    <i class="fa fa-times text-xl"></i>
+                </button>
+                <img
+                    v-if="lightboxImage"
+                    :src="lightboxType === 'po' ? `/po-ops/attachments/${lightboxImage.id}/view` : `/purchase-requisitions/attachments/${lightboxImage.id}/view`"
+                    :alt="lightboxImage.file_name"
+                    class="max-w-full max-h-full object-contain rounded-lg"
+                />
+                <div class="absolute bottom-4 left-4 right-4 text-center z-[10000]">
+                    <p class="text-white bg-black bg-opacity-50 px-3 py-1 rounded-lg text-sm">
+                        {{ lightboxImage?.file_name }}
+                    </p>
                 </div>
             </div>
         </div>
@@ -3737,6 +3910,132 @@ watch(locale, () => {
                                     </tr>
                                 </tbody>
                             </table>
+                        </div>
+                    </div>
+
+                    <!-- Purchase Requisition Attachments -->
+                    <div v-if="selectedPoOpsApproval.purchase_requisition && selectedPoOpsApproval.purchase_requisition.attachments && selectedPoOpsApproval.purchase_requisition.attachments.length > 0" class="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
+                        <h4 class="text-md font-semibold text-gray-900 dark:text-white mb-3 flex items-center">
+                            <i class="fa fa-paperclip mr-2 text-blue-500"></i>
+                            Purchase Requisition Attachments
+                            <span class="ml-2 bg-blue-100 text-blue-800 text-xs font-medium px-2.5 py-0.5 rounded-full">
+                                {{ selectedPoOpsApproval.purchase_requisition.attachments.length }}
+                            </span>
+                        </h4>
+                        
+                        <div class="space-y-3">
+                            <div
+                                v-for="attachment in selectedPoOpsApproval.purchase_requisition.attachments"
+                                :key="attachment.id"
+                                class="flex items-center justify-between p-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                            >
+                                <div class="flex items-center space-x-3">
+                                    <!-- Image Thumbnail -->
+                                    <div v-if="isImageFile(attachment.file_name)" class="relative">
+                                        <img
+                                            :src="`/purchase-requisitions/attachments/${attachment.id}/view`"
+                                            :alt="attachment.file_name"
+                                            class="w-12 h-12 object-cover rounded-lg border border-gray-300 dark:border-gray-600 cursor-pointer hover:opacity-80 transition-opacity"
+                                            @click="openLightbox(attachment)"
+                                            @error="$event.target.style.display='none'; $event.target.nextElementSibling.style.display='block'"
+                                        />
+                                        <i :class="getFileIcon(attachment.file_name)" class="text-lg absolute inset-0 flex items-center justify-center bg-gray-100 dark:bg-gray-700 rounded-lg" style="display: none;"></i>
+                                    </div>
+                                    <!-- File Icon for non-images -->
+                                    <i v-else :class="getFileIcon(attachment.file_name)" class="text-lg"></i>
+                                    
+                                    <div>
+                                        <p class="text-sm font-medium text-gray-900 dark:text-white">{{ attachment.file_name }}</p>
+                                        <div class="flex items-center space-x-4 text-xs text-gray-500 dark:text-gray-400">
+                                            <span>{{ formatFileSize(attachment.file_size) }}</span>
+                                            <span>•</span>
+                                            <span>Uploaded by {{ attachment.uploader?.nama_lengkap || 'Unknown User' }}</span>
+                                            <span>•</span>
+                                            <span>{{ formatDate(attachment.created_at) }}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="flex items-center space-x-2">
+                                    <button
+                                        v-if="isImageFile(attachment.file_name)"
+                                        @click="openLightbox(attachment)"
+                                        class="p-2 text-green-600 hover:text-green-800 hover:bg-green-100 dark:hover:bg-green-900 rounded-md transition-colors"
+                                        title="View Image"
+                                    >
+                                        <i class="fa fa-eye"></i>
+                                    </button>
+                                    <button
+                                        @click="downloadFile(attachment)"
+                                        class="p-2 text-blue-600 hover:text-blue-800 hover:bg-blue-100 dark:hover:bg-blue-900 rounded-md transition-colors"
+                                        title="Download"
+                                    >
+                                        <i class="fa fa-download"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Purchase Order Ops Attachments -->
+                    <div v-if="selectedPoOpsApproval.attachments && selectedPoOpsApproval.attachments.length > 0" class="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
+                        <h4 class="text-md font-semibold text-gray-900 dark:text-white mb-3 flex items-center">
+                            <i class="fa fa-paperclip mr-2 text-orange-500"></i>
+                            Purchase Order Attachments
+                            <span class="ml-2 bg-orange-100 text-orange-800 text-xs font-medium px-2.5 py-0.5 rounded-full">
+                                {{ selectedPoOpsApproval.attachments.length }}
+                            </span>
+                        </h4>
+                        
+                        <div class="space-y-3">
+                            <div
+                                v-for="attachment in selectedPoOpsApproval.attachments"
+                                :key="attachment.id"
+                                class="flex items-center justify-between p-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                            >
+                                <div class="flex items-center space-x-3">
+                                    <!-- Image Thumbnail -->
+                                    <div v-if="isImageFile(attachment.file_name)" class="relative">
+                                        <img
+                                            :src="`/po-ops/attachments/${attachment.id}/view`"
+                                            :alt="attachment.file_name"
+                                            class="w-12 h-12 object-cover rounded-lg border border-gray-300 dark:border-gray-600 cursor-pointer hover:opacity-80 transition-opacity"
+                                            @click="openLightbox(attachment, 'po')"
+                                            @error="$event.target.style.display='none'; $event.target.nextElementSibling.style.display='block'"
+                                        />
+                                        <i :class="getFileIcon(attachment.file_name)" class="text-lg absolute inset-0 flex items-center justify-center bg-gray-100 dark:bg-gray-700 rounded-lg" style="display: none;"></i>
+                                    </div>
+                                    <!-- File Icon for non-images -->
+                                    <i v-else :class="getFileIcon(attachment.file_name)" class="text-lg"></i>
+                                    
+                                    <div>
+                                        <p class="text-sm font-medium text-gray-900 dark:text-white">{{ attachment.file_name }}</p>
+                                        <div class="flex items-center space-x-4 text-xs text-gray-500 dark:text-gray-400">
+                                            <span>{{ formatFileSize(attachment.file_size) }}</span>
+                                            <span>•</span>
+                                            <span>Uploaded by {{ attachment.uploader?.nama_lengkap || 'Unknown User' }}</span>
+                                            <span>•</span>
+                                            <span>{{ formatDate(attachment.created_at) }}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="flex items-center space-x-2">
+                                    <button
+                                        v-if="isImageFile(attachment.file_name)"
+                                        @click="openLightbox(attachment, 'po')"
+                                        class="p-2 text-green-600 hover:text-green-800 hover:bg-green-100 dark:hover:bg-green-900 rounded-md transition-colors"
+                                        title="View Image"
+                                    >
+                                        <i class="fa fa-eye"></i>
+                                    </button>
+                                    <button
+                                        @click="downloadPoFile(attachment)"
+                                        class="p-2 text-blue-600 hover:text-blue-800 hover:bg-blue-100 dark:hover:bg-blue-900 rounded-md transition-colors"
+                                        title="Download"
+                                    >
+                                        <i class="fa fa-download"></i>
+                                    </button>
+                                </div>
+                            </div>
                         </div>
                     </div>
 

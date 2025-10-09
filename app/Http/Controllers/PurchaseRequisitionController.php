@@ -6,6 +6,7 @@ use App\Models\PurchaseRequisition;
 use App\Models\PurchaseRequisitionCategory;
 use App\Models\PurchaseRequisitionItem;
 use App\Models\PurchaseRequisitionApprovalFlow;
+use App\Models\PurchaseRequisitionAttachment;
 use App\Models\DivisionBudget;
 use App\Models\Divisi;
 use App\Models\Outlet;
@@ -199,6 +200,15 @@ class PurchaseRequisitionController extends Controller
             // Send notification to the lowest level approver
             $this->sendNotificationToNextApprover($purchaseRequisition);
             
+            // Return JSON response for AJAX requests (for file upload)
+            if (request()->expectsJson()) {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Purchase Requisition created successfully!',
+                    'purchase_requisition' => $purchaseRequisition
+                ]);
+            }
+            
             return redirect()->route('purchase-requisitions.show', $purchaseRequisition)
                            ->with('success', 'Purchase Requisition created successfully!');
         } catch (\Exception $e) {
@@ -219,7 +229,7 @@ class PurchaseRequisitionController extends Controller
             'category',
             'creator',
             'comments.user',
-            'attachments',
+            'attachments.uploader',
             'history.user',
             'items',
             'approvalFlows.approver.jabatan'
@@ -278,7 +288,7 @@ class PurchaseRequisitionController extends Controller
         $divisions = Divisi::active()->orderBy('nama_divisi')->get();
 
         return Inertia::render('PurchaseRequisition/Edit', [
-            'purchaseRequisition' => $purchaseRequisition,
+            'purchaseRequisition' => $purchaseRequisition->load('attachments.uploader'),
             'categories' => $categories,
             'outlets' => $outlets,
             'tickets' => $tickets,
@@ -564,48 +574,6 @@ class PurchaseRequisitionController extends Controller
         }
     }
 
-    /**
-     * Upload attachment to purchase requisition
-     */
-    public function uploadAttachment(Request $request, PurchaseRequisition $purchaseRequisition)
-    {
-        $validated = $request->validate([
-            'file' => 'required|file|max:10240', // 10MB max
-        ]);
-
-        try {
-            $file = $request->file('file');
-            $fileName = time() . '_' . $file->getClientOriginalName();
-            $filePath = $file->storeAs('purchase_requisitions', $fileName, 'public');
-
-            $purchaseRequisition->attachments()->create([
-                'file_name' => $file->getClientOriginalName(),
-                'file_path' => $filePath,
-                'file_size' => $file->getSize(),
-                'mime_type' => $file->getMimeType(),
-                'uploaded_by' => auth()->id(),
-            ]);
-            
-            return back()->with('success', 'Attachment uploaded successfully!');
-        } catch (\Exception $e) {
-            return back()->withErrors(['error' => 'Failed to upload attachment: ' . $e->getMessage()]);
-        }
-    }
-
-    /**
-     * Delete attachment from purchase requisition
-     */
-    public function deleteAttachment($attachmentId)
-    {
-        try {
-            $attachment = \App\Models\PurchaseRequisitionAttachment::findOrFail($attachmentId);
-            $attachment->delete();
-            
-            return back()->with('success', 'Attachment deleted successfully!');
-        } catch (\Exception $e) {
-            return back()->withErrors(['error' => 'Failed to delete attachment: ' . $e->getMessage()]);
-        }
-    }
 
     /**
      * Get categories for API
@@ -854,6 +822,7 @@ class PurchaseRequisitionController extends Controller
                 'outlet',
                 'creator',
                 'items',
+                'attachments.uploader',
                 'approvalFlows.approver.jabatan'
             ])->findOrFail($id);
 
@@ -957,6 +926,148 @@ class PurchaseRequisitionController extends Controller
     }
 
     /**
+     * Upload attachment for purchase requisition
+     */
+    public function uploadAttachment(Request $request, PurchaseRequisition $purchaseRequisition)
+    {
+        $request->validate([
+            'file' => 'required|file|max:10240', // Max 10MB
+        ]);
+
+        try {
+            $file = $request->file('file');
+            $originalName = $file->getClientOriginalName();
+            $extension = $file->getClientOriginalExtension();
+            $fileName = time() . '_' . $originalName;
+            $filePath = $file->storeAs('purchase_requisitions/attachments', $fileName, 'public');
+            $fileSize = $file->getSize();
+            $mimeType = $file->getMimeType();
+
+            $attachment = PurchaseRequisitionAttachment::create([
+                'purchase_requisition_id' => $purchaseRequisition->id,
+                'file_name' => $originalName,
+                'file_path' => $filePath,
+                'file_size' => $fileSize,
+                'mime_type' => $mimeType,
+                'uploaded_by' => auth()->id(),
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'File uploaded successfully',
+                'attachment' => $attachment->load('uploader'),
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error('Upload attachment error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to upload file: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Delete attachment
+     */
+    public function deleteAttachment(PurchaseRequisitionAttachment $attachment)
+    {
+        try {
+            // Check if user has permission to delete (only uploader or admin)
+            if ($attachment->uploaded_by !== auth()->id() && !auth()->user()->hasRole('admin')) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'You are not authorized to delete this file',
+                ], 403);
+            }
+
+            // Delete file from storage
+            if (\Storage::disk('public')->exists($attachment->file_path)) {
+                \Storage::disk('public')->delete($attachment->file_path);
+            }
+
+            // Delete record from database
+            $attachment->delete();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'File deleted successfully',
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error('Delete attachment error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to delete file: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Download attachment
+     */
+    public function downloadAttachment(PurchaseRequisitionAttachment $attachment)
+    {
+        try {
+            if (!\Storage::disk('public')->exists($attachment->file_path)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'File not found',
+                ], 404);
+            }
+
+            return \Storage::disk('public')->download($attachment->file_path, $attachment->file_name);
+
+        } catch (\Exception $e) {
+            \Log::error('Download attachment error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to download file: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * View attachment (for images)
+     */
+    public function viewAttachment(PurchaseRequisitionAttachment $attachment)
+    {
+        try {
+            if (!\Storage::disk('public')->exists($attachment->file_path)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'File not found',
+                ], 404);
+            }
+
+            // Check if it's an image
+            $imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'];
+            $extension = strtolower(pathinfo($attachment->file_name, PATHINFO_EXTENSION));
+            
+            if (!in_array($extension, $imageExtensions)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'File is not an image',
+                ], 400);
+            }
+
+            $file = \Storage::disk('public')->get($attachment->file_path);
+            $mimeType = \Storage::disk('public')->mimeType($attachment->file_path);
+
+            return response($file, 200)
+                ->header('Content-Type', $mimeType)
+                ->header('Content-Disposition', 'inline; filename="' . $attachment->file_name . '"');
+
+        } catch (\Exception $e) {
+            \Log::error('View attachment error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to view file: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
      * Generate unique requisition number
      */
     private function generateRequisitionNumber()
@@ -972,5 +1083,90 @@ class PurchaseRequisitionController extends Controller
         $sequence = $lastPR ? (int) substr($lastPR->pr_number, -4) + 1 : 1;
         
         return "PR{$year}{$month}" . str_pad($sequence, 4, '0', STR_PAD_LEFT);
+    }
+
+    /**
+     * Get PR tracking report data
+     */
+    public function getPRTrackingReport(Request $request)
+    {
+        try {
+            $query = PurchaseRequisition::with([
+                'division',
+                'creator',
+                'approvalFlows.approver',
+                'purchaseOrders' => function($q) {
+                    $q->select('id', 'number', 'status', 'created_at', 'source_id')
+                      ->with(['approvalFlows.approver']);
+                },
+                'payments' => function($q) {
+                    $q->select('id', 'payment_number', 'amount', 'status', 'payment_date', 'purchase_requisition_id');
+                }
+            ]);
+
+            // Apply filters
+            if ($request->filled('search')) {
+                $search = $request->search;
+                $query->where(function($q) use ($search) {
+                    $q->where('pr_number', 'like', "%{$search}%")
+                      ->orWhere('title', 'like', "%{$search}%");
+                });
+            }
+
+            if ($request->filled('status')) {
+                $query->where('status', $request->status);
+            }
+
+            if ($request->filled('division')) {
+                $query->where('division_id', $request->division);
+            }
+
+            if ($request->filled('dateFrom')) {
+                $query->whereDate('created_at', '>=', $request->dateFrom);
+            }
+
+            if ($request->filled('dateTo')) {
+                $query->whereDate('created_at', '<=', $request->dateTo);
+            }
+
+            $prs = $query->orderBy('created_at', 'desc')->get();
+
+            return response()->json([
+                'success' => true,
+                'data' => $prs
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error('Error getting PR tracking report', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to get PR tracking report'
+            ], 500);
+        }
+    }
+
+    /**
+     * Get divisions for filter
+     */
+    public function getDivisions()
+    {
+        try {
+            $divisions = \App\Models\Divisi::select('id', 'nama_divisi')
+                ->orderBy('nama_divisi')
+                ->get();
+
+            return response()->json($divisions);
+        } catch (\Exception $e) {
+            \Log::error('Error getting divisions', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([], 500);
+        }
     }
 }

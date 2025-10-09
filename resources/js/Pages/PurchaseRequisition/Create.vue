@@ -51,14 +51,36 @@
               <label class="block text-sm font-medium text-gray-700 mb-2">Category</label>
               <select
                 v-model="form.category_id"
-                @change="loadBudgetInfo"
+                @change="onCategoryChange"
                 class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="">Select Category</option>
                 <option v-for="category in categories" :key="category.id" :value="category.id">
-                  {{ category.name }}
+                  [{{ category.division }}] {{ category.name }}
                 </option>
               </select>
+              
+              <!-- Category Details -->
+              <div v-if="selectedCategoryDetails" class="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                <div class="space-y-2">
+                  <div>
+                    <span class="text-sm font-medium text-blue-800">Division:</span>
+                    <span class="text-sm text-blue-700 ml-2">{{ selectedCategoryDetails.division }}</span>
+                  </div>
+                  <div>
+                    <span class="text-sm font-medium text-blue-800">Subcategory:</span>
+                    <span class="text-sm text-blue-700 ml-2">{{ selectedCategoryDetails.subcategory }}</span>
+                  </div>
+                  <div>
+                    <span class="text-sm font-medium text-blue-800">Budget Limit:</span>
+                    <span class="text-sm text-blue-700 ml-2">{{ formatCurrency(selectedCategoryDetails.budget_limit) }}</span>
+                  </div>
+                  <div v-if="selectedCategoryDetails.description">
+                    <span class="text-sm font-medium text-blue-800">Description:</span>
+                    <p class="text-sm text-blue-700 mt-1">{{ selectedCategoryDetails.description }}</p>
+                  </div>
+                </div>
+              </div>
             </div>
 
             <!-- Outlet -->
@@ -213,6 +235,72 @@
               class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               placeholder="Enter description..."
             ></textarea>
+          </div>
+
+          <!-- Attachments Section -->
+          <div class="mb-6">
+            <label class="block text-sm font-medium text-gray-700 mb-2">Attachments</label>
+            <div class="border-2 border-dashed border-gray-300 rounded-lg p-6">
+              <div class="text-center">
+                <input
+                  ref="fileInput"
+                  type="file"
+                  multiple
+                  @change="handleFileUpload"
+                  class="hidden"
+                  accept="*/*"
+                />
+                <button
+                  type="button"
+                  @click="$refs.fileInput.click()"
+                  class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                >
+                  <i class="fa fa-upload mr-2"></i>
+                  Upload Files
+                </button>
+                <p class="mt-2 text-sm text-gray-500">
+                  Upload any file type (Max 10MB per file)
+                </p>
+              </div>
+            </div>
+
+            <!-- Uploaded Files List -->
+            <div v-if="attachments.length > 0" class="mt-4">
+              <h4 class="text-sm font-medium text-gray-700 mb-2">Uploaded Files:</h4>
+              <div class="space-y-2">
+                <div
+                  v-for="(attachment, index) in attachments"
+                  :key="index"
+                  class="flex items-center justify-between p-3 bg-gray-50 border border-gray-200 rounded-md"
+                >
+                  <div class="flex items-center space-x-3">
+                    <i :class="getFileIcon(attachment.file_name)" class="text-lg"></i>
+                    <div>
+                      <p class="text-sm font-medium text-gray-900">{{ attachment.file_name }}</p>
+                      <p class="text-xs text-gray-500">{{ formatFileSize(attachment.file_size) }}</p>
+                    </div>
+                  </div>
+                  <div class="flex items-center space-x-2">
+                    <button
+                      type="button"
+                      @click="downloadFile(attachment)"
+                      class="text-blue-600 hover:text-blue-800"
+                      title="Download"
+                    >
+                      <i class="fa fa-download"></i>
+                    </button>
+                    <button
+                      type="button"
+                      @click="removeAttachment(index)"
+                      class="text-red-600 hover:text-red-800"
+                      title="Remove"
+                    >
+                      <i class="fa fa-trash"></i>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
 
           <!-- Approval Flow Section -->
@@ -393,6 +481,9 @@ const budgetInfo = ref(null)
 const approverSearch = ref('')
 const approverResults = ref([])
 const showApproverDropdown = ref(false)
+const selectedCategoryDetails = ref(null)
+const attachments = ref([])
+const uploading = ref(false)
 
 function newItem() {
   return {
@@ -442,6 +533,33 @@ function removeItem(idx) {
 function calculateSubtotal(idx) {
   const item = form.items[idx]
   item.subtotal = (item.qty || 0) * (item.unit_price || 0)
+}
+
+const onCategoryChange = () => {
+  // Load category details
+  loadCategoryDetails()
+  // Load budget info
+  loadBudgetInfo()
+}
+
+const loadCategoryDetails = () => {
+  if (!form.category_id) {
+    selectedCategoryDetails.value = null
+    return
+  }
+  
+  // Find category from props
+  const category = props.categories.find(cat => cat.id == form.category_id)
+  if (category) {
+    selectedCategoryDetails.value = {
+      division: category.division,
+      subcategory: category.subcategory,
+      budget_limit: category.budget_limit,
+      description: category.description
+    }
+  } else {
+    selectedCategoryDetails.value = null
+  }
 }
 
 const loadBudgetInfo = async () => {
@@ -518,7 +636,7 @@ const reorderApprover = (fromIndex, toIndex) => {
   form.approvers.splice(toIndex, 0, approver)
 }
 
-const submitForm = () => {
+const submitForm = async () => {
   loading.value = true
   
   // Calculate total amount from items
@@ -530,14 +648,44 @@ const submitForm = () => {
     approvers: form.approvers.map(approver => approver.id)
   }
   
-  router.post('/purchase-requisitions', formData, {
-    onFinish: () => {
-      loading.value = false
-    },
-    onError: (errors) => {
-      console.error('Form errors:', errors)
+  try {
+    // First, create the purchase requisition
+    const response = await axios.post('/purchase-requisitions', formData)
+    
+    // If PR created successfully and we have attachments, upload them
+    if (attachments.value.length > 0 && response.data?.purchase_requisition?.id) {
+      const prId = response.data.purchase_requisition.id
+      uploading.value = true
+      
+      // Upload each attachment
+      for (const attachment of attachments.value) {
+        if (attachment.file) {
+          const formData = new FormData()
+          formData.append('file', attachment.file)
+          
+          try {
+            await axios.post(`/purchase-requisitions/${prId}/attachments`, formData, {
+              headers: {
+                'Content-Type': 'multipart/form-data',
+              }
+            })
+          } catch (error) {
+            console.error('Failed to upload attachment:', error)
+            // Continue with other attachments even if one fails
+          }
+        }
+      }
+      
+      uploading.value = false
     }
-  })
+    
+    // Redirect to the created PR
+    router.visit(`/purchase-requisitions/${response.data.purchase_requisition.id}`)
+    
+  } catch (error) {
+    loading.value = false
+    console.error('Form errors:', error.response?.data || error.message)
+  }
 }
 
 const formatCurrency = (amount) => {
@@ -547,6 +695,84 @@ const formatCurrency = (amount) => {
     currency: 'IDR',
     minimumFractionDigits: 0,
   }).format(amount)
+}
+
+// File upload functions
+const handleFileUpload = async (event) => {
+  const files = Array.from(event.target.files)
+  
+  for (const file of files) {
+    if (file.size > 10 * 1024 * 1024) { // 10MB limit
+      alert(`File ${file.name} is too large. Maximum size is 10MB.`)
+      continue
+    }
+    
+    // Add to attachments list (will be uploaded after PR is created)
+    attachments.value.push({
+      file_name: file.name,
+      file_size: file.size,
+      file: file,
+      mime_type: file.type,
+      temp_id: Date.now() + Math.random() // Temporary ID for frontend
+    })
+  }
+  
+  // Clear the input
+  event.target.value = ''
+}
+
+const removeAttachment = (index) => {
+  attachments.value.splice(index, 1)
+}
+
+const getFileIcon = (fileName) => {
+  const extension = fileName.split('.').pop().toLowerCase()
+  
+  const iconMap = {
+    'pdf': 'fa-file-pdf text-red-500',
+    'doc': 'fa-file-word text-blue-500',
+    'docx': 'fa-file-word text-blue-500',
+    'xls': 'fa-file-excel text-green-500',
+    'xlsx': 'fa-file-excel text-green-500',
+    'ppt': 'fa-file-powerpoint text-orange-500',
+    'pptx': 'fa-file-powerpoint text-orange-500',
+    'jpg': 'fa-file-image text-purple-500',
+    'jpeg': 'fa-file-image text-purple-500',
+    'png': 'fa-file-image text-purple-500',
+    'gif': 'fa-file-image text-purple-500',
+    'txt': 'fa-file-alt text-gray-500',
+    'zip': 'fa-file-archive text-yellow-500',
+    'rar': 'fa-file-archive text-yellow-500',
+  }
+  
+  return iconMap[extension] || 'fa-file text-gray-500'
+}
+
+const formatFileSize = (bytes) => {
+  if (bytes === 0) return '0 Bytes'
+  
+  const k = 1024
+  const sizes = ['Bytes', 'KB', 'MB', 'GB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
+}
+
+const downloadFile = (attachment) => {
+  // For temporary files, we can't download them yet
+  // This will be available after the PR is created
+  if (attachment.temp_id) {
+    alert('File will be available for download after the purchase requisition is created.')
+    return
+  }
+  
+  // For uploaded files, create download link
+  const link = document.createElement('a')
+  link.href = `/purchase-requisitions/attachments/${attachment.id}/download`
+  link.download = attachment.file_name
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
 }
 
 // Watch approver search

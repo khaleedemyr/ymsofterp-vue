@@ -59,14 +59,36 @@
               <label class="block text-sm font-medium text-gray-700 mb-2">Category</label>
               <select
                 v-model="form.category_id"
-                @change="loadBudgetInfo"
+                @change="onCategoryChange"
                 class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="">Select Category</option>
                 <option v-for="category in categories" :key="category.id" :value="category.id">
-                  {{ category.name }}
+                  [{{ category.division }}] {{ category.name }}
                 </option>
               </select>
+              
+              <!-- Category Details -->
+              <div v-if="selectedCategoryDetails" class="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                <div class="space-y-2">
+                  <div>
+                    <span class="text-sm font-medium text-blue-800">Division:</span>
+                    <span class="text-sm text-blue-700 ml-2">{{ selectedCategoryDetails.division }}</span>
+                  </div>
+                  <div>
+                    <span class="text-sm font-medium text-blue-800">Subcategory:</span>
+                    <span class="text-sm text-blue-700 ml-2">{{ selectedCategoryDetails.subcategory }}</span>
+                  </div>
+                  <div>
+                    <span class="text-sm font-medium text-blue-800">Budget Limit:</span>
+                    <span class="text-sm text-blue-700 ml-2">{{ formatCurrency(selectedCategoryDetails.budget_limit) }}</span>
+                  </div>
+                  <div v-if="selectedCategoryDetails.description">
+                    <span class="text-sm font-medium text-blue-800">Description:</span>
+                    <p class="text-sm text-blue-700 mt-1">{{ selectedCategoryDetails.description }}</p>
+                  </div>
+                </div>
+              </div>
             </div>
 
             <!-- Outlet -->
@@ -148,6 +170,96 @@
               ></textarea>
             </div>
 
+            <!-- Attachments Section -->
+            <div class="md:col-span-2">
+              <label class="block text-sm font-medium text-gray-700 mb-2">Attachments</label>
+              <div class="border-2 border-dashed border-gray-300 rounded-lg p-6">
+                <div class="text-center">
+                  <input
+                    ref="fileInput"
+                    type="file"
+                    multiple
+                    @change="handleFileUpload"
+                    class="hidden"
+                    accept="*/*"
+                  />
+                  <button
+                    type="button"
+                    @click="$refs.fileInput.click()"
+                    class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                  >
+                    <i class="fa fa-upload mr-2"></i>
+                    Upload Files
+                  </button>
+                  <p class="mt-2 text-sm text-gray-500">
+                    Upload any file type (Max 10MB per file)
+                  </p>
+                </div>
+              </div>
+
+              <!-- Uploaded Files List -->
+              <div v-if="attachments.length > 0" class="mt-4">
+                <h4 class="text-sm font-medium text-gray-700 mb-2">Uploaded Files:</h4>
+                <div class="space-y-2">
+                <div
+                  v-for="(attachment, index) in attachments"
+                  :key="attachment.id || attachment.temp_id"
+                  class="flex items-center justify-between p-3 bg-gray-50 border border-gray-200 rounded-md"
+                >
+                  <div class="flex items-center space-x-3">
+                    <!-- Image Thumbnail -->
+                    <div v-if="isImageFile(attachment.file_name) && attachment.id" class="relative">
+                      <img
+                        :src="`/purchase-requisitions/attachments/${attachment.id}/view`"
+                        :alt="attachment.file_name"
+                        class="w-12 h-12 object-cover rounded-lg border border-gray-300 cursor-pointer hover:opacity-80 transition-opacity"
+                        @click="openLightbox(attachment)"
+                        @error="$event.target.style.display='none'; $event.target.nextElementSibling.style.display='block'"
+                      />
+                      <i :class="getFileIcon(attachment.file_name)" class="text-lg absolute inset-0 flex items-center justify-center bg-gray-100 rounded-lg" style="display: none;"></i>
+                    </div>
+                    <!-- File Icon for non-images or temp files -->
+                    <i v-else :class="getFileIcon(attachment.file_name)" class="text-lg"></i>
+                    
+                    <div>
+                      <p class="text-sm font-medium text-gray-900">{{ attachment.file_name }}</p>
+                      <p class="text-xs text-gray-500">{{ formatFileSize(attachment.file_size) }}</p>
+                      <p v-if="attachment.uploader" class="text-xs text-gray-400">Uploaded by {{ attachment.uploader.nama_lengkap || attachment.uploader.name }}</p>
+                    </div>
+                  </div>
+                  <div class="flex items-center space-x-2">
+                    <button
+                      v-if="isImageFile(attachment.file_name) && attachment.id"
+                      type="button"
+                      @click="openLightbox(attachment)"
+                      class="text-green-600 hover:text-green-800"
+                      title="View Image"
+                    >
+                      <i class="fa fa-eye"></i>
+                    </button>
+                    <button
+                      type="button"
+                      @click="downloadFile(attachment)"
+                      class="text-blue-600 hover:text-blue-800"
+                      title="Download"
+                    >
+                      <i class="fa fa-download"></i>
+                    </button>
+                    <button
+                      v-if="canDeleteAttachment(attachment)"
+                      type="button"
+                      @click="deleteAttachment(attachment, index)"
+                      class="text-red-600 hover:text-red-800"
+                      title="Delete"
+                    >
+                      <i class="fa fa-trash"></i>
+                    </button>
+                  </div>
+                </div>
+                </div>
+              </div>
+            </div>
+
             <!-- Budget Info -->
             <div v-if="budgetInfo" class="md:col-span-2">
               <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
@@ -224,6 +336,29 @@
         </form>
       </div>
     </div>
+
+    <!-- Lightbox Modal -->
+    <div v-if="showLightbox" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-75" @click="closeLightbox">
+      <div class="relative max-w-4xl max-h-full p-4" @click.stop>
+        <button
+          @click="closeLightbox"
+          class="absolute top-2 right-2 z-10 p-2 text-white bg-black bg-opacity-50 rounded-full hover:bg-opacity-75 transition-colors"
+        >
+          <i class="fa fa-times text-xl"></i>
+        </button>
+        <img
+          v-if="lightboxImage"
+          :src="`/purchase-requisitions/attachments/${lightboxImage.id}/view`"
+          :alt="lightboxImage.file_name"
+          class="max-w-full max-h-full object-contain rounded-lg"
+        />
+        <div class="absolute bottom-4 left-4 right-4 text-center">
+          <p class="text-white bg-black bg-opacity-50 px-3 py-1 rounded-lg text-sm">
+            {{ lightboxImage?.file_name }}
+          </p>
+        </div>
+      </div>
+    </div>
   </AppLayout>
 </template>
 
@@ -244,6 +379,11 @@ const props = defineProps({
 
 const loading = ref(false)
 const budgetInfo = ref(null)
+const selectedCategoryDetails = ref(null)
+const attachments = ref([])
+const uploading = ref(false)
+const showLightbox = ref(false)
+const lightboxImage = ref(null)
 
 const form = reactive({
   title: props.purchaseRequisition.title || '',
@@ -268,6 +408,33 @@ watch(totalAmount, (newTotal) => {
     loadBudgetInfo()
   }
 })
+
+const onCategoryChange = () => {
+  // Load category details
+  loadCategoryDetails()
+  // Load budget info
+  loadBudgetInfo()
+}
+
+const loadCategoryDetails = () => {
+  if (!form.category_id) {
+    selectedCategoryDetails.value = null
+    return
+  }
+  
+  // Find category from props
+  const category = props.categories.find(cat => cat.id == form.category_id)
+  if (category) {
+    selectedCategoryDetails.value = {
+      division: category.division,
+      subcategory: category.subcategory,
+      budget_limit: category.budget_limit,
+      description: category.description
+    }
+  } else {
+    selectedCategoryDetails.value = null
+  }
+}
 
 const loadBudgetInfo = async () => {
   if (!form.category_id) {
@@ -327,10 +494,136 @@ const formatCurrency = (amount) => {
   }).format(amount)
 }
 
-// Load budget info on mount if division is selected
+// File upload functions
+const handleFileUpload = async (event) => {
+  const files = Array.from(event.target.files)
+  
+  for (const file of files) {
+    if (file.size > 10 * 1024 * 1024) { // 10MB limit
+      alert(`File ${file.name} is too large. Maximum size is 10MB.`)
+      continue
+    }
+    
+    // Upload file immediately for edit form
+    uploading.value = true
+    const formData = new FormData()
+    formData.append('file', file)
+    
+    try {
+      const response = await axios.post(`/purchase-requisitions/${props.purchaseRequisition.id}/attachments`, formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        }
+      })
+      
+      if (response.data.success) {
+        attachments.value.push(response.data.attachment)
+      }
+    } catch (error) {
+      console.error('Failed to upload attachment:', error)
+      alert(`Failed to upload ${file.name}: ${error.response?.data?.message || error.message}`)
+    }
+    
+    uploading.value = false
+  }
+  
+  // Clear the input
+  event.target.value = ''
+}
+
+const deleteAttachment = async (attachment, index) => {
+  if (!confirm('Are you sure you want to delete this file?')) {
+    return
+  }
+  
+  try {
+    const response = await axios.delete(`/purchase-requisitions/attachments/${attachment.id}`)
+    
+    if (response.data.success) {
+      attachments.value.splice(index, 1)
+    }
+  } catch (error) {
+    console.error('Failed to delete attachment:', error)
+    alert(`Failed to delete file: ${error.response?.data?.message || error.message}`)
+  }
+}
+
+const canDeleteAttachment = (attachment) => {
+  // Only allow deletion if user is the uploader or admin
+  return attachment.uploaded_by === window.authUser?.id || window.authUser?.roles?.includes('admin')
+}
+
+const getFileIcon = (fileName) => {
+  const extension = fileName.split('.').pop().toLowerCase()
+  
+  const iconMap = {
+    'pdf': 'fa-file-pdf text-red-500',
+    'doc': 'fa-file-word text-blue-500',
+    'docx': 'fa-file-word text-blue-500',
+    'xls': 'fa-file-excel text-green-500',
+    'xlsx': 'fa-file-excel text-green-500',
+    'ppt': 'fa-file-powerpoint text-orange-500',
+    'pptx': 'fa-file-powerpoint text-orange-500',
+    'jpg': 'fa-file-image text-purple-500',
+    'jpeg': 'fa-file-image text-purple-500',
+    'png': 'fa-file-image text-purple-500',
+    'gif': 'fa-file-image text-purple-500',
+    'webp': 'fa-file-image text-purple-500',
+    'bmp': 'fa-file-image text-purple-500',
+    'txt': 'fa-file-alt text-gray-500',
+    'zip': 'fa-file-archive text-yellow-500',
+    'rar': 'fa-file-archive text-yellow-500',
+  }
+  
+  return iconMap[extension] || 'fa-file text-gray-500'
+}
+
+const isImageFile = (fileName) => {
+  const imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp']
+  const extension = fileName.split('.').pop().toLowerCase()
+  return imageExtensions.includes(extension)
+}
+
+const formatFileSize = (bytes) => {
+  if (bytes === 0) return '0 Bytes'
+  
+  const k = 1024
+  const sizes = ['Bytes', 'KB', 'MB', 'GB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
+}
+
+const downloadFile = (attachment) => {
+  // Create download link
+  const link = document.createElement('a')
+  link.href = `/purchase-requisitions/attachments/${attachment.id}/download`
+  link.download = attachment.file_name
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+}
+
+const openLightbox = (attachment) => {
+  lightboxImage.value = attachment
+  showLightbox.value = true
+}
+
+const closeLightbox = () => {
+  showLightbox.value = false
+  lightboxImage.value = null
+}
+
+// Load budget info and category details on mount if category is selected
 onMounted(() => {
-  if (form.division_id) {
+  if (form.category_id) {
+    loadCategoryDetails()
     loadBudgetInfo()
+  }
+  
+  // Load existing attachments
+  if (props.purchaseRequisition.attachments) {
+    attachments.value = props.purchaseRequisition.attachments
   }
 })
 </script>

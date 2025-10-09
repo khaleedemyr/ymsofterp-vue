@@ -160,6 +160,35 @@ class PurchaseOrderOpsController extends Controller
             ->groupBy('id')
             ->map(function ($group) {
                 $first = $group->first();
+                
+                // Get attachments for this PR
+                $attachments = DB::table('purchase_requisition_attachments as pra')
+                    ->leftJoin('users as u', 'pra.uploaded_by', '=', 'u.id')
+                    ->where('pra.purchase_requisition_id', $first->id)
+                    ->select(
+                        'pra.id',
+                        'pra.file_name',
+                        'pra.file_path',
+                        'pra.file_size',
+                        'pra.mime_type',
+                        'pra.created_at',
+                        'u.nama_lengkap as uploader_name'
+                    )
+                    ->get()
+                    ->map(function ($attachment) {
+                        return [
+                            'id' => $attachment->id,
+                            'file_name' => $attachment->file_name,
+                            'file_path' => $attachment->file_path,
+                            'file_size' => $attachment->file_size,
+                            'mime_type' => $attachment->mime_type,
+                            'created_at' => $attachment->created_at,
+                            'uploader' => [
+                                'nama_lengkap' => $attachment->uploader_name
+                            ]
+                        ];
+                    });
+                
                 return [
                     'id' => $first->id,
                     'number' => $first->pr_number,
@@ -169,6 +198,7 @@ class PurchaseOrderOpsController extends Controller
                     'title' => $first->title,
                     'description' => $first->description,
                     'amount' => $first->amount,
+                    'attachments' => $attachments,
                     'items' => $group->map(function ($item) use ($first) {
                         return [
                             'id' => $item->item_id,
@@ -390,8 +420,9 @@ class PurchaseOrderOpsController extends Controller
             'items',
             'purchasing_manager',
             'gm_finance',
-            'source_pr',
-            'approvalFlows.approver'
+            'source_pr.attachments.uploader',
+            'approvalFlows.approver',
+            'attachments.uploader'
         ])->findOrFail($id);
 
         // Debug logging for items
@@ -1007,11 +1038,159 @@ class PurchaseOrderOpsController extends Controller
             $query->where('approver_id', $userId)
                   ->where('status', 'PENDING');
         })
-        ->with(['supplier', 'creator', 'approvalFlows' => function($query) use ($userId) {
-            $query->where('approver_id', $userId);
-        }])
+        ->with([
+            'supplier', 
+            'creator', 
+            'source_pr.attachments.uploader',
+            'attachments.uploader',
+            'approvalFlows' => function($query) use ($userId) {
+                $query->where('approver_id', $userId);
+            }
+        ])
         ->get();
 
         return response()->json(['success' => true, 'data' => $pendingPOs]);
+    }
+
+    /**
+     * Upload attachment for Purchase Order Ops
+     */
+    public function uploadAttachment(Request $request, PurchaseOrderOps $purchaseOrderOps)
+    {
+        $request->validate([
+            'file' => 'required|file|max:10240', // Max 10MB
+        ]);
+
+        try {
+            $file = $request->file('file');
+            $originalName = $file->getClientOriginalName();
+            $extension = $file->getClientOriginalExtension();
+            $fileName = time() . '_' . $originalName;
+            $filePath = $file->storeAs('purchase_order_ops/attachments', $fileName, 'public');
+            $fileSize = $file->getSize();
+            $mimeType = $file->getMimeType();
+
+            $attachment = \App\Models\PurchaseOrderOpsAttachment::create([
+                'purchase_order_ops_id' => $purchaseOrderOps->id,
+                'file_name' => $originalName,
+                'file_path' => $filePath,
+                'file_size' => $fileSize,
+                'mime_type' => $mimeType,
+                'uploaded_by' => auth()->id(),
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'File uploaded successfully',
+                'attachment' => $attachment->load('uploader'),
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error('Upload attachment error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to upload file: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Delete attachment
+     */
+    public function deleteAttachment(\App\Models\PurchaseOrderOpsAttachment $attachment)
+    {
+        try {
+            // Check if user can delete this attachment
+            if ($attachment->uploaded_by !== auth()->id() && !auth()->user()->hasRole('admin')) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'You are not authorized to delete this file',
+                ], 403);
+            }
+
+            // Delete file from storage
+            if (\Storage::disk('public')->exists($attachment->file_path)) {
+                \Storage::disk('public')->delete($attachment->file_path);
+            }
+
+            // Delete database record
+            $attachment->delete();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'File deleted successfully',
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error('Delete attachment error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to delete file: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Download attachment
+     */
+    public function downloadAttachment(\App\Models\PurchaseOrderOpsAttachment $attachment)
+    {
+        try {
+            if (!\Storage::disk('public')->exists($attachment->file_path)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'File not found',
+                ], 404);
+            }
+
+            return \Storage::disk('public')->download($attachment->file_path, $attachment->file_name);
+
+        } catch (\Exception $e) {
+            \Log::error('Download attachment error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to download file: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * View attachment (for images)
+     */
+    public function viewAttachment(\App\Models\PurchaseOrderOpsAttachment $attachment)
+    {
+        try {
+            if (!\Storage::disk('public')->exists($attachment->file_path)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'File not found',
+                ], 404);
+            }
+
+            // Check if it's an image
+            $imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'];
+            $extension = strtolower(pathinfo($attachment->file_name, PATHINFO_EXTENSION));
+            
+            if (!in_array($extension, $imageExtensions)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'File is not an image',
+                ], 400);
+            }
+
+            $file = \Storage::disk('public')->get($attachment->file_path);
+            $mimeType = \Storage::disk('public')->mimeType($attachment->file_path);
+
+            return response($file, 200)
+                ->header('Content-Type', $mimeType)
+                ->header('Content-Disposition', 'inline; filename="' . $attachment->file_name . '"');
+
+        } catch (\Exception $e) {
+            \Log::error('View attachment error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to view file: ' . $e->getMessage(),
+            ], 500);
+        }
     }
 }

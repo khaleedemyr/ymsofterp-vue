@@ -9,8 +9,6 @@ class PurchaseRequisitionAttachment extends Model
 {
     use HasFactory;
 
-    protected $table = 'purchase_requisition_attachments';
-
     protected $fillable = [
         'purchase_requisition_id',
         'file_name',
@@ -48,13 +46,32 @@ class PurchaseRequisitionAttachment extends Model
         return round($bytes, 2) . ' ' . $units[$i];
     }
 
-    public function getFileUrlAttribute()
+    public function getFileExtensionAttribute()
     {
-        return asset('storage/' . $this->file_path);
+        return pathinfo($this->file_name, PATHINFO_EXTENSION);
     }
 
-    public function isImage()
+    public function getFileIconAttribute()
     {
-        return str_starts_with($this->mime_type, 'image/');
+        $extension = strtolower($this->file_extension);
+        
+        $iconMap = [
+            'pdf' => 'fa-file-pdf text-red-500',
+            'doc' => 'fa-file-word text-blue-500',
+            'docx' => 'fa-file-word text-blue-500',
+            'xls' => 'fa-file-excel text-green-500',
+            'xlsx' => 'fa-file-excel text-green-500',
+            'ppt' => 'fa-file-powerpoint text-orange-500',
+            'pptx' => 'fa-file-powerpoint text-orange-500',
+            'jpg' => 'fa-file-image text-purple-500',
+            'jpeg' => 'fa-file-image text-purple-500',
+            'png' => 'fa-file-image text-purple-500',
+            'gif' => 'fa-file-image text-purple-500',
+            'txt' => 'fa-file-alt text-gray-500',
+            'zip' => 'fa-file-archive text-yellow-500',
+            'rar' => 'fa-file-archive text-yellow-500',
+        ];
+        
+        return $iconMap[$extension] ?? 'fa-file text-gray-500';
     }
 }

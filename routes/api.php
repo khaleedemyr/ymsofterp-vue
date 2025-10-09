@@ -345,6 +345,12 @@ Route::post('/pr-foods/items', [PurchaseOrderFoodsController::class, 'getPRItems
 // Purchase Order Ops API routes
 Route::get('/pr-ops/available', [\App\Http\Controllers\PurchaseOrderOpsController::class, 'getAvailablePR']);
 
+// PR Tracking Report API
+Route::get('/pr-tracking-report', [\App\Http\Controllers\PurchaseRequisitionController::class, 'getPRTrackingReport']);
+Route::get('/divisions', [\App\Http\Controllers\PurchaseRequisitionController::class, 'getDivisions']);
+
+// Payment API routes
+
 // Daily Report API routes
 Route::get('/daily-report/summary-rating', [\App\Http\Controllers\DailyReportController::class, 'getSummaryRating']);
 Route::get('/daily-report/regions', [\App\Http\Controllers\DailyReportController::class, 'getRegions']);

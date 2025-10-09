@@ -98,6 +98,16 @@ class PurchaseRequisition extends Model
         return $this->hasMany(PurchaseRequisitionAttachment::class);
     }
 
+    public function purchaseOrders()
+    {
+        return $this->hasMany(\App\Models\PurchaseOrderOps::class, 'source_id');
+    }
+
+    public function payments()
+    {
+        return $this->hasMany(\App\Models\Payment::class, 'purchase_requisition_id');
+    }
+
     public function comments()
     {
         return $this->hasMany(PurchaseRequisitionComment::class);

@@ -77,9 +77,24 @@ class PurchaseOrderOps extends Model
         return $this->belongsTo(PurchaseRequisition::class, 'source_id');
     }
 
+    public function purchase_requisition()
+    {
+        return $this->belongsTo(PurchaseRequisition::class, 'source_id');
+    }
+
     public function approvalFlows()
     {
         return $this->hasMany(PurchaseOrderOpsApprovalFlow::class, 'purchase_order_ops_id');
+    }
+
+    public function attachments()
+    {
+        return $this->hasMany(PurchaseOrderOpsAttachment::class);
+    }
+
+    public function payments()
+    {
+        return $this->hasMany(\App\Models\Payment::class, 'purchase_order_id');
     }
 
     // Scopes

@@ -102,6 +102,7 @@ const menuGroups = [
             { name: () => 'Daily Report', icon: 'fa-solid fa-clipboard-list', route: '/daily-report', code: 'daily_report' },
             { name: () => 'Ticketing System', icon: 'fa-solid fa-ticket-alt', route: '/tickets', code: 'tickets' },
             { name: () => 'Purchase Requisition Ops', icon: 'fa-solid fa-shopping-cart', route: '/purchase-requisitions', code: 'purchase_requisition_ops' },
+            { name: () => 'PR Tracking Report', icon: 'fa-solid fa-timeline', route: '/purchase-requisitions/tracking-report', code: 'pr_tracking_report' },
           ],
         },
     {
@@ -195,6 +196,7 @@ const menuGroups = [
             { name: () => 'MT PO Payment', icon: 'fa-solid fa-money-bill-wave', route: route('mt-po-payment.index'), code: 'mt_po_payment' },
             { name: () => 'Outlet Payments', icon: 'fa-solid fa-money-bill', route: route('outlet-payments.index'), code: 'outlet_payments' },
             { name: () => 'Outlet Payment Supplier', icon: 'fa-solid fa-money-bill', route: route('outlet-payment-suppliers.index'), code: 'outlet_payment_suppliers' },
+            { name: () => 'PR Payment', icon: 'fa-solid fa-credit-card', route: '/payments', code: 'pr_payment' },
             {
                 name: () => 'Report Penjualan Pivot per Outlet per Sub Kategori',
                 icon: 'fa-solid fa-table-columns',

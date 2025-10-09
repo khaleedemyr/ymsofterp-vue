@@ -360,6 +360,11 @@ Route::middleware(['auth'])->group(function () {
 Route::get('/api/purchase-requisitions/pending-approvals', [\App\Http\Controllers\PurchaseRequisitionController::class, 'getPendingApprovals'])->name('purchase-requisitions.pending-approvals')->middleware('auth');
 Route::get('/api/purchase-requisitions/{id}/approval-details', [\App\Http\Controllers\PurchaseRequisitionController::class, 'getApprovalDetails'])->name('purchase-requisitions.approval-details')->middleware('auth');
 
+    // PR Tracking Report (must be before resource routes)
+    Route::get('/purchase-requisitions/tracking-report', function() {
+        return inertia('PurchaseRequisition/PRTrackingReport');
+    })->name('purchase-requisitions.tracking-report');
+
     // Purchase Requisition Ops routes
     Route::get('/purchase-requisitions', [\App\Http\Controllers\PurchaseRequisitionController::class, 'index'])->name('purchase-requisitions.index');
     Route::get('/purchase-requisitions/create', [\App\Http\Controllers\PurchaseRequisitionController::class, 'create'])->name('purchase-requisitions.create');
@@ -383,6 +388,17 @@ Route::get('/api/purchase-requisitions/{id}/approval-details', [\App\Http\Contro
     // Purchase Requisition Attachments
     Route::post('/purchase-requisitions/{purchaseRequisition}/attachments', [\App\Http\Controllers\PurchaseRequisitionController::class, 'uploadAttachment'])->name('purchase-requisitions.attachments.store');
     Route::delete('/purchase-requisitions/attachments/{attachment}', [\App\Http\Controllers\PurchaseRequisitionController::class, 'deleteAttachment'])->name('purchase-requisitions.attachments.destroy');
+    Route::get('/purchase-requisitions/attachments/{attachment}/download', [\App\Http\Controllers\PurchaseRequisitionController::class, 'downloadAttachment'])->name('purchase-requisitions.attachments.download');
+    Route::get('/purchase-requisitions/attachments/{attachment}/view', [\App\Http\Controllers\PurchaseRequisitionController::class, 'viewAttachment'])->name('purchase-requisitions.attachments.view');
+
+    // Payment routes
+    Route::resource('payments', \App\Http\Controllers\PaymentController::class);
+    
+    // Payment Attachments
+    Route::post('/payments/{payment}/attachments', [\App\Http\Controllers\PaymentController::class, 'uploadAttachment'])->name('payments.attachments.store');
+    Route::delete('/payments/attachments/{attachment}', [\App\Http\Controllers\PaymentController::class, 'deleteAttachment'])->name('payments.attachments.destroy');
+    Route::get('/payments/attachments/{attachment}/download', [\App\Http\Controllers\PaymentController::class, 'downloadAttachment'])->name('payments.attachments.download');
+    Route::get('/payments/attachments/{attachment}/view', [\App\Http\Controllers\PaymentController::class, 'viewAttachment'])->name('payments.attachments.view');
 
     // Purchase Order Ops routes
     Route::get('/po-ops', [\App\Http\Controllers\PurchaseOrderOpsController::class, 'index'])->name('po-ops.index');
@@ -402,6 +418,12 @@ Route::get('/api/purchase-requisitions/{id}/approval-details', [\App\Http\Contro
     // Purchase Order Ops Actions
     Route::post('/po-ops/{id}/approve-pm', [\App\Http\Controllers\PurchaseOrderOpsController::class, 'approvePurchasingManager'])->name('po-ops.approve-pm');
     Route::post('/po-ops/{id}/approve-gm', [\App\Http\Controllers\PurchaseOrderOpsController::class, 'approveGMFinance'])->name('po-ops.approve-gm');
+    
+    // Purchase Order Ops Attachments
+    Route::post('/po-ops/{purchaseOrderOps}/attachments', [\App\Http\Controllers\PurchaseOrderOpsController::class, 'uploadAttachment'])->name('po-ops.attachments.store');
+    Route::delete('/po-ops/attachments/{attachment}', [\App\Http\Controllers\PurchaseOrderOpsController::class, 'deleteAttachment'])->name('po-ops.attachments.destroy');
+    Route::get('/po-ops/attachments/{attachment}/download', [\App\Http\Controllers\PurchaseOrderOpsController::class, 'downloadAttachment'])->name('po-ops.attachments.download');
+    Route::get('/po-ops/attachments/{attachment}/view', [\App\Http\Controllers\PurchaseOrderOpsController::class, 'viewAttachment'])->name('po-ops.attachments.view');
     Route::post('/po-ops/{id}/mark-printed', [\App\Http\Controllers\PurchaseOrderOpsController::class, 'markPrinted'])->name('po-ops.mark-printed');
     
     // Purchase Order Ops Approval Flow
