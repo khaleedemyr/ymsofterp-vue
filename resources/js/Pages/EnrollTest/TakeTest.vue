@@ -247,7 +247,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, onUnmounted } from 'vue';
+import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue';
 import { router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import Swal from 'sweetalert2';
@@ -391,8 +391,18 @@ function getPlaceholder() {
 }
 
 function startTimer() {
+  // Clear timer yang mungkin masih berjalan
+  if (timer.value) {
+    clearInterval(timer.value);
+    timer.value = null;
+  }
+  
+  // Reset state timer
   timeLeft.value = props.currentQuestion.waktu_detik || 180; // Default 3 menit
   startTime.value = Date.now();
+  showWarning.value = false;
+  
+  console.log(`Starting timer for question ${props.currentIndex + 1}: ${timeLeft.value} seconds`);
   
   timer.value = setInterval(() => {
     timeLeft.value--;
@@ -400,11 +410,14 @@ function startTimer() {
     // Warning pada 30 detik terakhir
     if (timeLeft.value === 30 && !showWarning.value) {
       showWarning.value = true;
+      console.log('Timer warning: 30 seconds left');
     }
     
     // Auto next ketika waktu habis
     if (timeLeft.value <= 0) {
       clearInterval(timer.value);
+      timer.value = null;
+      console.log('Timer expired, auto moving to next question');
       // Auto save dan next
       saveAnswer();
       nextQuestion(true); // Auto next
@@ -425,10 +438,16 @@ function nextQuestion(isAutoNext = false) {
   // Hitung waktu yang digunakan
   const timeUsed = startTime.value ? Math.floor((Date.now() - startTime.value) / 1000) : 0;
   
-  // Clear timer
+  // Clear timer dan reset state
   if (timer.value) {
     clearInterval(timer.value);
+    timer.value = null;
   }
+  
+  // Reset timer state
+  timeLeft.value = 0;
+  showWarning.value = false;
+  startTime.value = null;
   
   const data = {
     answer: currentAnswer.value,
@@ -510,8 +529,27 @@ function clearAllTestData() {
   });
 }
 
+// Watchers untuk reset timer saat soal berubah
+watch(() => props.currentQuestion, (newQuestion, oldQuestion) => {
+  if (newQuestion && newQuestion.id !== oldQuestion?.id) {
+    console.log('Question changed, restarting timer');
+    startTimer();
+    loadSavedAnswer();
+  }
+}, { immediate: false });
+
+watch(() => props.currentIndex, (newIndex, oldIndex) => {
+  if (newIndex !== oldIndex) {
+    console.log('Question index changed, restarting timer');
+    startTimer();
+    loadSavedAnswer();
+  }
+}, { immediate: false });
+
 // Lifecycle
 onMounted(() => {
+  console.log('TakeTest component mounted for question:', props.currentIndex + 1);
+  
   loadSavedAnswer();
   startTimer();
   preventBackNavigation();
@@ -521,8 +559,11 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
+  console.log('TakeTest component unmounting, clearing timer');
+  
   if (timer.value) {
     clearInterval(timer.value);
+    timer.value = null;
   }
   
   // Clear localStorage saat component di-unmount (test selesai)

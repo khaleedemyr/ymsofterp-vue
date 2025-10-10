@@ -229,16 +229,25 @@
                                        step="1"
                                        class="w-24 border-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                                 <span class="text-sm text-gray-500">/ 4</span>
-                                <button @click="updateEssayScore(answer.id)" 
-                                        :disabled="loadingScores[answer.id]"
-                                        class="bg-blue-500 hover:bg-blue-600 disabled:bg-gray-400 text-white px-3 py-1 rounded text-sm">
-                                  <i v-if="loadingScores[answer.id]" class="fa-solid fa-spinner fa-spin"></i>
-                                  <i v-else class="fa-solid fa-save"></i>
-                                  Update
-                                </button>
                               </div>
                             </div>
                           </div>
+                        </div>
+                      </div>
+                      
+                      <!-- Bulk Update Button for this Test Result -->
+                      <div v-if="getTestResultEssayAnswers(testResult).length > 0" class="mt-4 pt-4 border-t border-gray-200">
+                        <div class="flex items-center justify-between">
+                          <div class="text-sm text-gray-500">
+                            {{ getTestResultEssayAnswers(testResult).length }} essay dalam test ini
+                          </div>
+                          <button @click="bulkUpdateTestResultEssayScores(testResult.id)" 
+                                  :disabled="isBulkUpdating || !hasValidTestResultScores(testResult.id)"
+                                  class="bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg flex items-center gap-2 text-sm font-semibold">
+                            <i v-if="isBulkUpdating" class="fa-solid fa-spinner fa-spin"></i>
+                            <i v-else class="fa-solid fa-save"></i>
+                            Update Semua Essay Test Ini
+                          </button>
                         </div>
                       </div>
                     </div>
@@ -284,6 +293,7 @@
           </div>
         </div>
       </div>
+
     </div>
 
     <!-- Lightbox Modal -->
@@ -352,6 +362,9 @@ const expandedTestResults = ref([]);
 const essayScores = ref({});
 const loadingScores = ref({});
 
+// Bulk update variables
+const isBulkUpdating = ref(false);
+
 // Lightbox variables
 const lightboxVisible = ref(false);
 const lightboxImages = ref([]);
@@ -374,6 +387,25 @@ const groupedResults = computed(() => {
   
   return Object.values(groups);
 });
+
+// Get essay answers for a specific test result
+function getTestResultEssayAnswers(testResult) {
+  return testResult.test_answers?.filter(answer => 
+    answer.soal_pertanyaan.tipe_soal === 'essay'
+  ) || [];
+}
+
+// Check if there are valid scores for a specific test result
+function hasValidTestResultScores(testResultId) {
+  const testResult = props.testResults.data.find(tr => tr.id === testResultId);
+  if (!testResult) return false;
+  
+  const essayAnswers = getTestResultEssayAnswers(testResult);
+  return essayAnswers.some(answer => {
+    const score = essayScores.value[answer.id];
+    return score && score >= 1 && score <= 4;
+  });
+}
 
 // Initialize essay scores
 const initializeEssayScores = () => {
@@ -509,6 +541,90 @@ async function updateEssayScore(answerId) {
   }
 }
 
+// Bulk update essay scores for a specific test result
+async function bulkUpdateTestResultEssayScores(testResultId) {
+  if (isBulkUpdating.value) return;
+  
+  const testResult = props.testResults.data.find(tr => tr.id === testResultId);
+  if (!testResult) return;
+  
+  const essayAnswers = getTestResultEssayAnswers(testResult);
+  if (essayAnswers.length === 0) return;
+  
+  // Validate scores for this test result
+  const validScores = [];
+  const invalidScores = [];
+  
+  essayAnswers.forEach(answer => {
+    const score = essayScores.value[answer.id];
+    if (score && score >= 1 && score <= 4) {
+      validScores.push({
+        answer_id: answer.id,
+        score: parseInt(score)
+      });
+    } else if (score && (score < 1 || score > 4)) {
+      invalidScores.push(answer.id);
+    }
+  });
+  
+  if (invalidScores.length > 0) {
+    Swal.fire({
+      icon: 'warning',
+      title: 'Peringatan',
+      text: 'Beberapa nilai tidak valid. Pastikan semua nilai antara 1-4.',
+      confirmButtonText: 'OK'
+    });
+    return;
+  }
+  
+  if (validScores.length === 0) {
+    Swal.fire({
+      icon: 'warning',
+      title: 'Peringatan',
+      text: 'Tidak ada nilai yang valid untuk diupdate.',
+      confirmButtonText: 'OK'
+    });
+    return;
+  }
+  
+  isBulkUpdating.value = true;
+  
+  try {
+    const response = await axios.post(route('enroll-test.bulk-update-essay-scores'), {
+      scores: validScores
+    });
+    
+    if (response.data.success) {
+      Swal.fire({
+        icon: 'success',
+        title: 'Berhasil',
+        text: response.data.message,
+        confirmButtonText: 'OK'
+      }).then(() => {
+        // Reload page to get updated data
+        router.reload();
+      });
+    } else {
+      Swal.fire({
+        icon: 'error',
+        title: 'Gagal',
+        text: 'Gagal update scores: ' + response.data.message,
+        confirmButtonText: 'OK'
+      });
+    }
+  } catch (error) {
+    console.error('Error bulk updating essay scores:', error);
+    Swal.fire({
+      icon: 'error',
+      title: 'Error',
+      text: 'Terjadi kesalahan saat update scores',
+      confirmButtonText: 'OK'
+    });
+  } finally {
+    isBulkUpdating.value = false;
+  }
+}
+
 function getTipeSoalText(tipeSoal) {
   const types = {
     'essay': 'Essay',
@@ -627,3 +743,4 @@ onMounted(() => {
   initializeEssayScores();
 });
 </script>
+

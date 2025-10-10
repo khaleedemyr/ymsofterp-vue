@@ -595,6 +595,58 @@ class EnrollTestController extends Controller
         }
     }
 
+    public function bulkUpdateEssayScores(Request $request)
+    {
+        $validated = $request->validate([
+            'scores' => 'required|array',
+            'scores.*.answer_id' => 'required|exists:test_answers,id',
+            'scores.*.score' => 'required|numeric|min:1|max:4'
+        ]);
+
+        DB::beginTransaction();
+        try {
+            $updatedCount = 0;
+            $testResultIds = [];
+
+            foreach ($validated['scores'] as $scoreData) {
+                $testAnswer = TestAnswer::find($scoreData['answer_id']);
+                
+                if ($testAnswer && $testAnswer->soalPertanyaan->tipe_soal === 'essay') {
+                    $testAnswer->update([
+                        'score' => $scoreData['score']
+                    ]);
+                    
+                    $updatedCount++;
+                    
+                    // Collect test result IDs for recalculation
+                    if (!in_array($testAnswer->test_result_id, $testResultIds)) {
+                        $testResultIds[] = $testAnswer->test_result_id;
+                    }
+                }
+            }
+
+            // Recalculate scores for all affected test results
+            foreach ($testResultIds as $testResultId) {
+                $this->recalculateTestResultScore($testResultId);
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => "Berhasil update {$updatedCount} nilai essay",
+                'updated_count' => $updatedCount
+            ]);
+
+        } catch (\Exception $e) {
+            DB::rollback();
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal update scores: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
     private function recalculateTestResultScore($testResultId)
     {
         $testResult = TestResult::find($testResultId);

@@ -9,7 +9,6 @@
               <i class="fa-solid fa-clipboard-question text-blue-600"></i>
               Master Data Soal
             </h1>
-            <p class="text-gray-600 mt-1">Kelola judul soal dan pertanyaan</p>
           </div>
           <Link
             href="/master-soal-new/create"
