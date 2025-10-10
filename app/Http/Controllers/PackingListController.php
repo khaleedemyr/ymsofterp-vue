@@ -32,14 +32,15 @@ class PackingListController extends Controller
         $user = auth()->user()->load('outlet');
         
         // Simpan filter di session untuk persist
-        if ($request->hasAny(['search', 'date_from', 'date_to', 'status', 'load_data'])) {
+        if ($request->hasAny(['search', 'date_from', 'date_to', 'status', 'load_data', 'per_page'])) {
             session([
                 'packing_list_filters' => [
                     'search' => $request->search,
                     'date_from' => $request->date_from,
                     'date_to' => $request->date_to,
                     'status' => $request->status,
-                    'load_data' => $request->load_data
+                    'load_data' => $request->load_data,
+                    'per_page' => $request->per_page
                 ]
             ]);
         }
@@ -51,6 +52,7 @@ class PackingListController extends Controller
         $dateTo = $request->date_to ?? $filters['date_to'] ?? '';
         $status = $request->status ?? $filters['status'] ?? '';
         $loadData = $request->load_data ?? $filters['load_data'] ?? '';
+        $perPage = $request->per_page ?? $filters['per_page'] ?? 15;
         
         // OPTIMIZED: Tidak load data otomatis, hanya load jika ada filter
         $packingLists = null;
@@ -96,7 +98,7 @@ class PackingListController extends Controller
                 $query->where('status', $status);
             }
             
-            $packingLists = $query->orderByDesc('created_at')->paginate(15)->withQueryString();
+            $packingLists = $query->orderByDesc('created_at')->paginate($perPage)->withQueryString();
         }
 
         return inertia('PackingList/Index', [
@@ -107,7 +109,8 @@ class PackingListController extends Controller
                 'date_from' => $dateFrom,
                 'date_to' => $dateTo,
                 'status' => $status,
-                'load_data' => $loadData
+                'load_data' => $loadData,
+                'per_page' => $perPage
             ],
         ]);
     }

@@ -17,6 +17,7 @@ const selectedStatus = ref(props.filters?.status || '');
 const from = ref(props.filters?.date_from || '');
 const to = ref(props.filters?.date_to || '');
 const loadData = ref(props.filters?.load_data || '');
+const perPage = ref(props.filters?.per_page || 15);
 
 const showSummaryModal = ref(false);
 const summaryDate = ref(dayjs().format('YYYY-MM-DD'));
@@ -56,6 +57,7 @@ watch(
     from.value = filters?.date_from || '';
     to.value = filters?.date_to || '';
     loadData.value = filters?.load_data || '';
+    perPage.value = filters?.per_page || 15;
   },
   { immediate: true }
 );
@@ -66,11 +68,19 @@ function loadDataWithFilters() {
     status: selectedStatus.value, 
     date_from: from.value, 
     date_to: to.value,
-    load_data: '1'
+    load_data: '1',
+    per_page: perPage.value
   }, { preserveState: true, replace: true });
 }
 
 function clearFilters() {
+  search.value = '';
+  selectedStatus.value = '';
+  from.value = '';
+  to.value = '';
+  loadData.value = '';
+  perPage.value = 15;
+  
   // Call backend method to clear session filters
   router.get('/packing-list/clear-filters', {}, { 
     preserveState: false, 
@@ -78,8 +88,30 @@ function clearFilters() {
   });
 }
 function goToPage(url) {
-  if (url) router.visit(url, { preserveState: true, replace: true });
+  if (url) {
+    // Extract page number from URL
+    const urlParams = new URLSearchParams(url.split('?')[1]);
+    const page = urlParams.get('page') || 1;
+    
+    router.get('/packing-list', {
+      search: search.value,
+      status: selectedStatus.value,
+      date_from: from.value,
+      date_to: to.value,
+      load_data: loadData.value, // FIXED: Add load_data parameter
+      per_page: perPage.value,   // FIXED: Add per_page parameter
+      page
+    }, { preserveState: true, replace: true });
+  }
 }
+
+// Watch per_page changes to reload data
+watch(perPage, (newPerPage) => {
+  if (loadData.value === '1') {
+    loadDataWithFilters();
+  }
+});
+
 function openCreate() {
   window.location.href = '/packing-list/create';
 }
@@ -410,7 +442,7 @@ function closeMatrixModal() {
           <i class="fa fa-filter text-blue-500"></i>
           Filter Data
         </h3>
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-4">
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-2">Search</label>
             <input
@@ -435,6 +467,19 @@ function closeMatrixModal() {
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-2">Sampai Tanggal</label>
             <input type="date" v-model="to" class="w-full px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition" />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">Per Page</label>
+            <select 
+              v-model="perPage" 
+              class="w-full px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition"
+            >
+              <option value="10">10</option>
+              <option value="15">15</option>
+              <option value="25">25</option>
+              <option value="50">50</option>
+              <option value="100">100</option>
+            </select>
           </div>
         </div>
         <div class="flex gap-3">

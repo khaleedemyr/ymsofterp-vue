@@ -29,13 +29,14 @@ class DeliveryOrderController extends Controller
     public function index(Request $request)
     {
         // Simpan filter di session untuk persist
-        if ($request->hasAny(['search', 'dateFrom', 'dateTo', 'load_data'])) {
+        if ($request->hasAny(['search', 'dateFrom', 'dateTo', 'load_data', 'per_page'])) {
             session([
                 'delivery_order_filters' => [
                     'search' => $request->search,
                     'dateFrom' => $request->dateFrom,
                     'dateTo' => $request->dateTo,
-                    'load_data' => $request->load_data
+                    'load_data' => $request->load_data,
+                    'per_page' => $request->per_page
                 ]
             ]);
         }
@@ -46,6 +47,7 @@ class DeliveryOrderController extends Controller
         $dateFrom = $request->dateFrom ?? $filters['dateFrom'] ?? '';
         $dateTo = $request->dateTo ?? $filters['dateTo'] ?? '';
         $loadData = $request->load_data ?? $filters['load_data'] ?? '';
+        $perPage = $request->per_page ?? $filters['per_page'] ?? 15;
         
         // OPTIMIZED: Tidak load data otomatis, hanya load jika ada filter
         $orders = null;
@@ -120,7 +122,7 @@ class DeliveryOrderController extends Controller
             // OPTIMIZED: Union queries instead of complex JOIN
             $orders = $packingListQuery->union($roSupplierQuery)
                 ->orderByDesc('created_at')
-                ->paginate(15)
+                ->paginate($perPage)
                 ->withQueryString();
         }
 
@@ -130,7 +132,8 @@ class DeliveryOrderController extends Controller
                 'search' => $search,
                 'dateFrom' => $dateFrom,
                 'dateTo' => $dateTo,
-                'load_data' => $loadData
+                'load_data' => $loadData,
+                'per_page' => $perPage
             ],
         ]);
     }

@@ -32,7 +32,7 @@
           <i class="fa fa-filter text-blue-500"></i>
           Filter Data
         </h3>
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-2">Search</label>
             <input 
@@ -57,6 +57,19 @@
               type="date" 
               class="w-full px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition" 
             />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">Per Page</label>
+            <select 
+              v-model="perPage" 
+              class="w-full px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition"
+            >
+              <option value="10">10</option>
+              <option value="15">15</option>
+              <option value="25">25</option>
+              <option value="50">50</option>
+              <option value="100">100</option>
+            </select>
           </div>
         </div>
         <div class="flex gap-3">
@@ -246,6 +259,7 @@ const search = ref(props.filters?.search || '');
 const dateFrom = ref(props.filters?.dateFrom || '');
 const dateTo = ref(props.filters?.dateTo || '');
 const loadData = ref(props.filters?.load_data || '');
+const perPage = ref(props.filters?.per_page || 15);
 
 // Computed property untuk halaman yang ditampilkan
 const visiblePages = computed(() => {
@@ -272,6 +286,13 @@ const visiblePages = computed(() => {
   }
   
   return pages;
+});
+
+// Watch per_page changes to reload data
+watch(perPage, (newPerPage) => {
+  if (loadData.value === '1') {
+    loadDataWithFilters();
+  }
 });
 
 function formatDate(date) {
@@ -339,11 +360,18 @@ function loadDataWithFilters() {
     search: search.value,
     dateFrom: dateFrom.value,
     dateTo: dateTo.value,
-    load_data: '1'
+    load_data: '1',
+    per_page: perPage.value
   }, { preserveState: true });
 }
 
 function clearFilters() {
+  search.value = '';
+  dateFrom.value = '';
+  dateTo.value = '';
+  loadData.value = '';
+  perPage.value = 15;
+  
   // Call backend method to clear session filters
   router.get(route('delivery-order.clear-filters'), {}, { 
     preserveState: false, 
@@ -356,6 +384,8 @@ function goToPage(page) {
     search: search.value,
     dateFrom: dateFrom.value,
     dateTo: dateTo.value,
+    load_data: loadData.value, // FIXED: Add load_data parameter
+    per_page: perPage.value,   // FIXED: Add per_page parameter
     page
   }, { preserveState: true });
 }
