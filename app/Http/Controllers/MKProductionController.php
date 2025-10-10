@@ -80,17 +80,12 @@ class MKProductionController extends Controller
 
     public function getBomAndStock(Request $request)
     {
-        Log::info('[MKProduction] BOM request', $request->all());
-        
         $item_id = $request->input('item_id');
         $qty = $request->input('qty', 1);
         $warehouse_id = $request->input('warehouse_id');
         
-        Log::info('[MKProduction] BOM params', ['item_id' => $item_id, 'qty' => $qty, 'warehouse_id' => $warehouse_id]);
-        
         // Validasi input
         if (!$item_id || !$qty || !$warehouse_id) {
-            Log::warning('[MKProduction] Missing required parameters', ['item_id' => $item_id, 'qty' => $qty, 'warehouse_id' => $warehouse_id]);
             return response()->json([]);
         }
         
@@ -102,11 +97,8 @@ class MKProductionController extends Controller
             ->first();
             
         if (!$item) {
-            Log::warning('[MKProduction] Item not found or not composed', ['item_id' => $item_id]);
             return response()->json([]);
         }
-        
-        Log::info('[MKProduction] Item found', ['item' => $item]);
         
         // Ambil BOM untuk item tersebut
         $bom = DB::table('item_bom')
@@ -120,10 +112,7 @@ class MKProductionController extends Controller
             )
             ->get();
             
-        Log::info('[MKProduction] BOM query result', ['bom_count' => $bom->count(), 'bom' => $bom->toArray()]);
-        
         if ($bom->isEmpty()) {
-            Log::warning('[MKProduction] No BOM found for item', ['item_id' => $item_id, 'item_name' => $item->name]);
             return response()->json([
                 'error' => 'Item tidak memiliki BOM (Bill of Materials). Silakan pilih item lain atau tambahkan BOM untuk item ini.',
                 'item_name' => $item->name
@@ -135,16 +124,12 @@ class MKProductionController extends Controller
             ->whereIn('item_id', $bom->pluck('material_item_id'))
             ->pluck('id', 'item_id');
             
-        Log::info('[MKProduction] Inventory items', ['inventory_items' => $inventoryItems->toArray()]);
-        
         // Ambil stok untuk bahan baku
         $stocks = DB::table('food_inventory_stocks')
             ->whereIn('inventory_item_id', $inventoryItems->values())
             ->where('warehouse_id', $warehouse_id)
             ->pluck('qty_small', 'inventory_item_id');
             
-        Log::info('[MKProduction] Stocks', ['stocks' => $stocks->toArray()]);
-        
         // Mapping stok berdasarkan item_id
         $stok = [];
         foreach ($inventoryItems as $item_id => $inventory_item_id) {
@@ -166,14 +151,11 @@ class MKProductionController extends Controller
             ];
         });
         
-        Log::info('[MKProduction] BOM response', ['bom_data' => $bomData->toArray()]);
-        
         return response()->json($bomData);
     }
 
     public function store(Request $request)
     {
-        Log::info('[MKProduction] Payload request', $request->all());
         $item_id = $request->input('item_id');
         $qty_produksi = $request->input('qty');
         $qty_jadi = $request->input('qty_jadi');
@@ -183,7 +165,6 @@ class MKProductionController extends Controller
         $notes = $request->input('notes');
         $unit_id = $request->input('unit_id');
         $bom = DB::table('item_bom')->where('item_id', $item_id)->get();
-        Log::info('[MKProduction] BOM', ['bom' => $bom]);
         // Validasi stok cukup
         foreach ($bom as $b) {
             $bomInventory = DB::table('food_inventory_items')->where('item_id', $b->material_item_id)->first();
@@ -196,9 +177,7 @@ class MKProductionController extends Controller
                 ->value('qty_small');
             }
             $qty_total = $b->qty * $qty_produksi;
-            Log::info('[MKProduction] Validasi stok', ['material_item_id' => $b->material_item_id, 'stok' => $stok, 'qty_total' => $qty_total]);
             if ($stok < $qty_total) {
-                Log::warning('[MKProduction] Stok bahan tidak cukup', ['material_item_id' => $b->material_item_id]);
                 return back()->with('error', "Stok bahan {$b->material_item_id} tidak cukup");
             }
         }
@@ -307,7 +286,6 @@ class MKProductionController extends Controller
                     'created_at' => now(),
                     'updated_at' => now(),
                 ]);
-                Log::info('[MKProduction] Insert kartu stok OUT bahan baku', ['inventory_item_id' => $bomInventoryId, 'qty_small' => $qty_small, 'qty_medium' => $qty_medium, 'qty_large' => $qty_large]);
             }
             // Ambil/insert inventory_item_id hasil produksi
             $prodInventory = DB::table('food_inventory_items')->where('item_id', $item_id)->first();
@@ -318,7 +296,6 @@ class MKProductionController extends Controller
                     'created_at' => now(),
                     'updated_at' => now(),
                 ]);
-                Log::info('[MKProduction] Insert food_inventory_items hasil produksi', ['item_id' => $item_id, 'inventory_item_id' => $prodInventoryId]);
             } else {
                 $prodInventoryId = $prodInventory->id;
             }
@@ -389,7 +366,6 @@ class MKProductionController extends Controller
                         'last_cost_large' => $last_cost_large,
                         'value' => $nilai_baru,
                     ]);
-                Log::info('[MKProduction] Update stok hasil produksi', ['inventory_item_id' => $prodInventoryId, 'qty_small' => $qty_baru_small, 'qty_medium' => $qty_baru_medium, 'qty_large' => $qty_baru_large, 'mac' => $mac, 'value' => $nilai_baru]);
             } else {
                 DB::table('food_inventory_stocks')->insert([
                     'inventory_item_id' => $prodInventoryId,
@@ -404,7 +380,6 @@ class MKProductionController extends Controller
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);
-                Log::info('[MKProduction] Insert stok hasil produksi', ['inventory_item_id' => $prodInventoryId, 'qty_small' => $qty_small, 'qty_medium' => $qty_medium, 'qty_large' => $qty_large, 'mac' => $last_cost_small]);
             }
             // Insert mk_productions dan ambil ID-nya
             $productionId = DB::table('mk_productions')->insertGetId([
@@ -420,7 +395,6 @@ class MKProductionController extends Controller
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);
-            Log::info('[MKProduction] Insert mk_productions', ['item_id' => $item_id, 'qty' => $qty_jadi, 'id' => $productionId]);
             // Insert kartu stok IN hasil produksi
             DB::table('food_inventory_cards')->insert([
                 'inventory_item_id' => $prodInventoryId,
@@ -443,7 +417,6 @@ class MKProductionController extends Controller
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);
-            Log::info('[MKProduction] Insert kartu stok IN hasil produksi', ['inventory_item_id' => $prodInventoryId, 'qty_small' => $qty_small, 'qty_medium' => $qty_medium, 'qty_large' => $qty_large]);
             // Activity log CREATE
             DB::table('activity_logs')->insert([
                 'user_id' => Auth::id(),
@@ -458,11 +431,9 @@ class MKProductionController extends Controller
                 'updated_at' => now(),
             ]);
             DB::commit();
-            Log::info('[MKProduction] Commit transaksi sukses');
             return redirect()->route('mk-production.index')->with('success', 'Produksi berhasil dicatat');
         } catch (\Exception $e) {
             DB::rollBack();
-            Log::error('[MKProduction] ERROR', ['error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
             return back()->with('error', $e->getMessage());
         }
     }
@@ -483,8 +454,6 @@ class MKProductionController extends Controller
             )
             ->get();
             
-        Log::info('[MKProduction] Create page items', ['items_count' => $items->count(), 'items' => $items->toArray()]);
-        
         // Cari item yang memiliki BOM
         $itemsWithBom = DB::table('items')
             ->join('item_bom', 'items.id', '=', 'item_bom.item_id')
@@ -494,14 +463,10 @@ class MKProductionController extends Controller
             ->distinct()
             ->get();
             
-        Log::info('[MKProduction] Items with BOM', ['items_with_bom_count' => $itemsWithBom->count()]);
-        
         $warehouses = DB::table('warehouses')
             ->where('status', 'active')
             ->get();
             
-        Log::info('[MKProduction] Create page warehouses', ['warehouses_count' => $warehouses->count(), 'warehouses' => $warehouses->toArray()]);
-        
         return inertia('MKProduction/Create', [
             'items' => $items,
             'warehouses' => $warehouses,
@@ -714,8 +679,6 @@ class MKProductionController extends Controller
             ->select('id', 'name', 'composition_type')
             ->get();
             
-        Log::info('[MKProduction] Test - Composed items', ['items' => $composedItems->toArray()]);
-        
         // Test 2: Cek data BOM
         $bomData = DB::table('item_bom')
             ->join('items as parent', 'item_bom.item_id', '=', 'parent.id')
@@ -730,16 +693,12 @@ class MKProductionController extends Controller
             )
             ->get();
             
-        Log::info('[MKProduction] Test - BOM data', ['bom_data' => $bomData->toArray()]);
-        
         // Test 3: Cek warehouse
         $warehouses = DB::table('warehouses')
             ->where('status', 'active')
             ->select('id', 'name', 'status')
             ->get();
             
-        Log::info('[MKProduction] Test - Warehouses', ['warehouses' => $warehouses->toArray()]);
-        
         return response()->json([
             'composed_items_count' => $composedItems->count(),
             'bom_data_count' => $bomData->count(),

@@ -39,7 +39,6 @@ function onItemChange() {
   const item = props.items.find(i => i.id == form.value.item_id)
   form.value.unit_id = item?.small_unit_id || ''
   unitName.value = item?.small_unit_id ? (item.small_unit_name || 'Small') : ''
-  console.log('Item dipilih:', form.value.item_id)
   fetchBom()
 }
 function fetchBom() {
@@ -50,7 +49,6 @@ function fetchBom() {
   loading.value = true
   axios.post('/mk-production/bom', { item_id: form.value.item_id, qty: form.value.qty })
     .then(res => {
-      console.log('Response BOM:', res.data)
       bom.value = res.data
     })
     .finally(() => loading.value = false)

@@ -11,30 +11,127 @@ use Maatwebsite\Excel\Facades\Excel;
 
 class PackingListController extends Controller
 {
-    public function index()
+    /**
+     * Helper method untuk membuat pagination default
+     */
+    private function getEmptyPagination()
+    {
+        return [
+            'data' => [],
+            'current_page' => 1,
+            'last_page' => 1,
+            'per_page' => 15,
+            'total' => 0,
+            'from' => null,
+            'to' => null,
+            'links' => []
+        ];
+    }
+    public function index(Request $request)
     {
         $user = auth()->user()->load('outlet');
-        $packingLists = FoodPackingList::with([
-            'warehouseDivision',
-            'floorOrder.outlet',
-            'floorOrder.requester',
-            'items',
-            'creator',
-        ])->orderByDesc('created_at')->paginate(10);
+        
+        // Simpan filter di session untuk persist
+        if ($request->hasAny(['search', 'date_from', 'date_to', 'status', 'load_data'])) {
+            session([
+                'packing_list_filters' => [
+                    'search' => $request->search,
+                    'date_from' => $request->date_from,
+                    'date_to' => $request->date_to,
+                    'status' => $request->status,
+                    'load_data' => $request->load_data
+                ]
+            ]);
+        }
+        
+        // Ambil filter dari session jika ada
+        $filters = session('packing_list_filters', []);
+        $search = $request->search ?? $filters['search'] ?? '';
+        $dateFrom = $request->date_from ?? $filters['date_from'] ?? '';
+        $dateTo = $request->date_to ?? $filters['date_to'] ?? '';
+        $status = $request->status ?? $filters['status'] ?? '';
+        $loadData = $request->load_data ?? $filters['load_data'] ?? '';
+        
+        // OPTIMIZED: Tidak load data otomatis, hanya load jika ada filter
+        $packingLists = null;
+        
+        if ($loadData === '1') {
+            $query = FoodPackingList::with([
+                'warehouseDivision',
+                'floorOrder.outlet',
+                'floorOrder.requester',
+                'items',
+                'creator',
+            ]);
+            
+            // Apply filters if provided
+            if (!empty($search)) {
+                $searchTerm = '%' . $search . '%';
+                $query->where(function($q) use ($searchTerm) {
+                    $q->where('packing_number', 'like', $searchTerm)
+                      ->orWhereHas('floorOrder', function($subQ) use ($searchTerm) {
+                          $subQ->where('order_number', 'like', $searchTerm);
+                      })
+                      ->orWhereHas('creator', function($subQ) use ($searchTerm) {
+                          $subQ->where('nama_lengkap', 'like', $searchTerm);
+                      })
+                      ->orWhereHas('warehouseDivision', function($subQ) use ($searchTerm) {
+                          $subQ->where('name', 'like', $searchTerm);
+                      })
+                      ->orWhereHas('floorOrder.outlet', function($subQ) use ($searchTerm) {
+                          $subQ->where('nama_outlet', 'like', $searchTerm);
+                      });
+                });
+            }
+            
+            if (!empty($dateFrom)) {
+                $query->whereDate('created_at', '>=', $dateFrom);
+            }
+            
+            if (!empty($dateTo)) {
+                $query->whereDate('created_at', '<=', $dateTo);
+            }
+            
+            if (!empty($status)) {
+                $query->where('status', $status);
+            }
+            
+            $packingLists = $query->orderByDesc('created_at')->paginate(15)->withQueryString();
+        }
 
         return inertia('PackingList/Index', [
             'user' => $user,
-            'packingLists' => $packingLists,
+            'packingLists' => $packingLists ?: $this->getEmptyPagination(),
+            'filters' => [
+                'search' => $search,
+                'date_from' => $dateFrom,
+                'date_to' => $dateTo,
+                'status' => $status,
+                'load_data' => $loadData
+            ],
         ]);
+    }
+
+    public function clearFilters()
+    {
+        session()->forget('packing_list_filters');
+        return redirect()->route('packing-list.index');
     }
 
     public function create(Request $request)
     {
-        // Ambil semua FO yang approved atau packing (karena setelah delete packing list, status bisa kembali ke approved)
-        // Exclude RO Supplier dari pilihan packing list
+        // OPTIMIZED: Ambil semua FO yang approved atau packing dengan eager loading
         $query = FoodFloorOrder::whereIn('food_floor_orders.status', ['approved', 'packing'])
-            ->where('food_floor_orders.fo_mode', '!=', 'RO Supplier') // Filter out RO Supplier
-            ->with(['outlet', 'user', 'items.item.smallUnit', 'items.item.mediumUnit', 'items.item.largeUnit', 'warehouseDivisions', 'warehouseOutlet'])
+            ->where('food_floor_orders.fo_mode', '!=', 'RO Supplier')
+            ->with([
+                'outlet', 
+                'user', 
+                'items.item.smallUnit', 
+                'items.item.mediumUnit', 
+                'items.item.largeUnit', 
+                'warehouseDivisions', 
+                'warehouseOutlet'
+            ])
             ->join('tbl_data_outlet', 'food_floor_orders.id_outlet', '=', 'tbl_data_outlet.id_outlet');
 
         // Filter berdasarkan tanggal kedatangan jika ada
@@ -46,29 +143,27 @@ class PackingListController extends Controller
             ->orderBy('tbl_data_outlet.nama_outlet')
             ->get();
 
+        // OPTIMIZED: Batch query untuk cek packed items (mengurangi N+1 queries)
+        $floorOrderIds = $floorOrders->pluck('id')->toArray();
+        $packedItems = $this->getPackedItemsBatch($floorOrderIds);
+
         // Filter FO yang masih memiliki item yang belum di-packing untuk setiap warehouse division
-        $floorOrders = $floorOrders->filter(function($fo) {
-            // Ambil semua warehouse division yang terkait dengan FO
+        $floorOrders = $floorOrders->filter(function($fo) use ($packedItems) {
             $foDivisions = $fo->warehouseDivisions->pluck('id')->toArray();
             
-            // Untuk setiap warehouse division, cek apakah masih ada item yang belum di-packing
             foreach ($foDivisions as $divisionId) {
-                // Ambil item yang sesuai dengan warehouse division ini
                 $itemsInDivision = $fo->items->filter(function($item) use ($divisionId) {
                     return $item->item && $item->item->warehouse_division_id == $divisionId;
                 });
                 
                 if ($itemsInDivision->count() > 0) {
-                    // Cek apakah semua item di division ini sudah di-packing
-                    // Hanya cek packing list yang masih aktif (status = 'packing')
-                    $packedItems = FoodPackingListItem::whereHas('packingList', function($q) use ($fo, $divisionId) {
-                        $q->where('food_floor_order_id', $fo->id)
-                          ->where('warehouse_division_id', $divisionId)
-                          ->where('status', 'packing'); // Hanya packing list yang masih aktif
-                    })->pluck('food_floor_order_item_id')->toArray();
+                    // OPTIMIZED: Gunakan data yang sudah di-batch query
+                    $packedItemIds = $packedItems->where('food_floor_order_id', $fo->id)
+                        ->where('warehouse_division_id', $divisionId)
+                        ->pluck('food_floor_order_item_id')
+                        ->toArray();
                     
-                    // Jika masih ada item yang belum di-packing, FO ini masih valid
-                    if ($itemsInDivision->whereNotIn('id', $packedItems)->count() > 0) {
+                    if ($itemsInDivision->whereNotIn('id', $packedItemIds)->count() > 0) {
                         return true;
                     }
                 }
@@ -82,6 +177,27 @@ class PackingListController extends Controller
             'floorOrders' => $floorOrders,
             'warehouseDivisions' => $warehouseDivisions,
         ]);
+    }
+
+    /**
+     * OPTIMIZED: Batch query untuk mendapatkan packed items
+     * Menggantikan N+1 queries dengan 1 query
+     */
+    private function getPackedItemsBatch($floorOrderIds)
+    {
+        return FoodPackingListItem::whereHas('packingList', function($q) use ($floorOrderIds) {
+            $q->whereIn('food_floor_order_id', $floorOrderIds)
+              ->where('status', 'packing');
+        })
+        ->with('packingList:id,food_floor_order_id,warehouse_division_id')
+        ->get()
+        ->map(function($item) {
+            return [
+                'food_floor_order_id' => $item->packingList->food_floor_order_id,
+                'warehouse_division_id' => $item->packingList->warehouse_division_id,
+                'food_floor_order_item_id' => $item->food_floor_order_item_id
+            ];
+        });
     }
 
     public function store(Request $request)
@@ -140,7 +256,7 @@ class PackingListController extends Controller
                 'status' => 'packing',
             ]);
             foreach ($data['items'] as $item) {
-                \Log::info('PackingListItem reason', ['item' => $item]);
+                // Log removed for performance
                 $packingList->items()->create([
                     'food_floor_order_item_id' => $item['food_floor_order_item_id'],
                     'qty' => $item['qty'],
@@ -282,57 +398,72 @@ class PackingListController extends Controller
         $divisionId = $request->input('division_id');
         $division = \App\Models\WarehouseDivision::find($divisionId);
         $warehouse_id = $division ? $division->warehouse_id : null;
-        // Ambil semua item FO yang sesuai division
+        
+        // OPTIMIZED: Single query untuk semua data dengan eager loading
         $foItems = \App\Models\FoodFloorOrderItem::where('floor_order_id', $foId)
             ->whereHas('item', function($q) use ($divisionId) {
                 $q->where('warehouse_division_id', $divisionId);
             })
             ->with(['item.smallUnit', 'item.mediumUnit', 'item.largeUnit', 'item.category'])
             ->get();
-        // Item yang sudah pernah di-packing (qty berapapun)
-        // Hanya cek packing list yang masih aktif (status = 'packing')
+            
+        // OPTIMIZED: Single query untuk packed items
         $packedItemIds = \App\Models\FoodPackingListItem::whereHas('packingList', function($q) use ($foId, $divisionId) {
             $q->where('food_floor_order_id', $foId)
               ->where('warehouse_division_id', $divisionId)
-              ->where('status', 'packing'); // Hanya packing list yang masih aktif
+              ->where('status', 'packing');
         })->pluck('food_floor_order_item_id');
+        
         // Filter hanya item yang belum pernah di-packing
         $itemsToPack = $foItems->whereNotIn('id', $packedItemIds)->values();
-        // Ambil stock untuk setiap item sesuai unit yang dipakai
+        
+        // OPTIMIZED: Batch query untuk stock data
         $itemStocks = [];
-        if ($warehouse_id) {
+        if ($warehouse_id && $itemsToPack->count() > 0) {
             $itemIds = $itemsToPack->pluck('item_id')->unique()->values();
+            
+            // Single query untuk inventory items
             $inventoryItems = \DB::table('food_inventory_items')
                 ->whereIn('item_id', $itemIds)
                 ->get()->keyBy('item_id');
-            $inventoryItemIds = $inventoryItems->pluck('id')->unique()->values();
-            $stocks = \DB::table('food_inventory_stocks')
-                ->whereIn('inventory_item_id', $inventoryItemIds)
-                ->where('warehouse_id', $warehouse_id)
-                ->get()->keyBy('inventory_item_id');
-            foreach ($itemsToPack as $foItem) {
-                $item = $foItem->item;
-                $inv = $inventoryItems[$item->id] ?? null;
-                $stock = $inv ? $stocks[$inv->id] ?? null : null;
-                $unit = $foItem->unit;
-                $stockQty = null;
-                if ($stock) {
-                    if ($unit == $item->smallUnit?->name) {
-                        $stockQty = $stock->qty_small;
-                    } elseif ($unit == $item->mediumUnit?->name) {
-                        $stockQty = $stock->qty_medium;
-                    } elseif ($unit == $item->largeUnit?->name) {
-                        $stockQty = $stock->qty_large;
+                
+            if ($inventoryItems->count() > 0) {
+                $inventoryItemIds = $inventoryItems->pluck('id')->unique()->values();
+                
+                // Single query untuk stocks
+                $stocks = \DB::table('food_inventory_stocks')
+                    ->whereIn('inventory_item_id', $inventoryItemIds)
+                    ->where('warehouse_id', $warehouse_id)
+                    ->get()->keyBy('inventory_item_id');
+                
+                // Process stock data
+                foreach ($itemsToPack as $foItem) {
+                    $item = $foItem->item;
+                    $inv = $inventoryItems[$item->id] ?? null;
+                    $stock = $inv ? $stocks[$inv->id] ?? null : null;
+                    $unit = $foItem->unit;
+                    $stockQty = null;
+                    
+                    if ($stock) {
+                        if ($unit == $item->smallUnit?->name) {
+                            $stockQty = $stock->qty_small;
+                        } elseif ($unit == $item->mediumUnit?->name) {
+                            $stockQty = $stock->qty_medium;
+                        } elseif ($unit == $item->largeUnit?->name) {
+                            $stockQty = $stock->qty_large;
+                        }
                     }
+                    $itemStocks[$foItem->id] = $stockQty !== null ? (float)$stockQty : 0;
                 }
-                $itemStocks[$foItem->id] = $stockQty !== null ? (float)$stockQty : 0;
             }
         }
+        
         $result = $itemsToPack->map(function($foItem) use ($itemStocks) {
             $arr = $foItem->toArray();
             $arr['stock'] = $itemStocks[$foItem->id] ?? 0;
             return $arr;
         });
+        
         return response()->json(['items' => $result]);
     }
 
@@ -367,68 +498,43 @@ class PackingListController extends Controller
             'tanggal' => 'required|date',
         ]);
 
-        // Get all floor orders that are approved or packing but not yet fully packed
-        $floorOrders = FoodFloorOrder::whereIn('status', ['approved', 'packing'])
-            ->whereDate('tanggal', $request->tanggal)
-            ->with(['items.item', 'items.item.smallUnit', 'items.item.mediumUnit', 'items.item.largeUnit', 'items.item.warehouseDivision'])
-            ->get();
+        // OPTIMIZED: Gunakan raw query untuk performa maksimal
+        $summaryData = \DB::select("
+            SELECT 
+                wd.name as warehouse_division_name,
+                i.id as item_id,
+                i.name as item_name,
+                foi.unit,
+                SUM(foi.qty) as total_qty
+            FROM food_floor_orders fo
+            JOIN food_floor_order_items foi ON fo.id = foi.floor_order_id
+            JOIN items i ON foi.item_id = i.id
+            JOIN warehouse_division wd ON i.warehouse_division_id = wd.id
+            LEFT JOIN food_packing_list_items pli ON foi.id = pli.food_floor_order_item_id
+            LEFT JOIN food_packing_lists pl ON pli.packing_list_id = pl.id AND pl.status = 'packing'
+            WHERE fo.status IN ('approved', 'packing')
+            AND DATE(fo.tanggal) = ?
+            AND pli.id IS NULL
+            GROUP BY wd.name, i.id, i.name, foi.unit
+            ORDER BY wd.name, i.name
+        ", [$request->tanggal]);
 
+        // Group by division
         $summaryByDivision = [];
-        foreach ($floorOrders as $fo) {
-            foreach ($fo->items as $foItem) {
-                $item = $foItem->item;
-                if (!$item) continue;
-
-                // Check if this item has been packed
-                $isPacked = FoodPackingListItem::whereHas('packingList', function($q) use ($fo) {
-                    $q->where('food_floor_order_id', $fo->id)
-                      ->where('status', 'packing'); // Hanya packing list yang masih aktif
-                })->where('food_floor_order_item_id', $foItem->id)->exists();
-
-                if (!$isPacked) {
-                    $divisionName = $item->warehouseDivision ? $item->warehouseDivision->name : 'Default';
-                    
-                    if (!isset($summaryByDivision[$divisionName])) {
-                        $summaryByDivision[$divisionName] = [
-                            'warehouse_division_name' => $divisionName,
-                            'items' => []
-                        ];
-                    }
-
-                    // Check if item already exists in this division
-                    $itemKey = $item->id;
-                    $existingItemIndex = null;
-                    
-                    // Find existing item by index
-                    if (isset($summaryByDivision[$divisionName]['items']) && is_array($summaryByDivision[$divisionName]['items'])) {
-                        foreach ($summaryByDivision[$divisionName]['items'] as $index => $existingItemData) {
-                            if (isset($existingItemData['item_id']) && $existingItemData['item_id'] == $itemKey && 
-                                isset($existingItemData['unit']) && $existingItemData['unit'] == $foItem->unit) {
-                                $existingItemIndex = $index;
-                                break;
-                            }
-                        }
-                    }
-
-                    if ($existingItemIndex !== null) {
-                        // Add to existing item
-                        if (isset($summaryByDivision[$divisionName]['items'][$existingItemIndex])) {
-                            $summaryByDivision[$divisionName]['items'][$existingItemIndex]['total_qty'] += $foItem->qty;
-                        }
-                    } else {
-                        // Create new item entry
-                        if (!isset($summaryByDivision[$divisionName]['items'])) {
-                            $summaryByDivision[$divisionName]['items'] = [];
-                        }
-                        $summaryByDivision[$divisionName]['items'][] = [
-                            'item_id' => $item->id,
-                            'item_name' => $item->name,
-                            'total_qty' => $foItem->qty,
-                            'unit' => $foItem->unit,
-                        ];
-                    }
-                }
+        foreach ($summaryData as $row) {
+            if (!isset($summaryByDivision[$row->warehouse_division_name])) {
+                $summaryByDivision[$row->warehouse_division_name] = [
+                    'warehouse_division_name' => $row->warehouse_division_name,
+                    'items' => []
+                ];
             }
+            
+            $summaryByDivision[$row->warehouse_division_name]['items'][] = [
+                'item_id' => $row->item_id,
+                'item_name' => $row->item_name,
+                'total_qty' => $row->total_qty,
+                'unit' => $row->unit,
+            ];
         }
 
         return response()->json([
@@ -685,8 +791,7 @@ class PackingListController extends Controller
                 }
             }
 
-            // Debug: Log the export data count
-            \Log::info('Export data count: ' . count($exportData));
+            // Debug log removed for performance
             if (empty($exportData)) {
                 return response()->json(['error' => 'Tidak ada data untuk di-export'], 404);
             }
@@ -948,10 +1053,7 @@ class PackingListController extends Controller
                 ])
                 ->get();
 
-            // Debug logging
-            \Log::info('Matrix Export Debug - Total Floor Orders: ' . $floorOrders->count());
-            \Log::info('Matrix Export Debug - Date: ' . $tanggal);
-            \Log::info('Matrix Export Debug - Total Outlets (All): ' . $outlets->count());
+            // Debug logging removed for performance
 
             // Bentuk data seperti report good receive outlet
             $data = [];
@@ -980,7 +1082,7 @@ class PackingListController extends Controller
                 }
             }
 
-            \Log::info('Matrix Export Debug - Total Data: ' . count($data));
+            // Debug log removed for performance
 
             // Bentuk pivot seperti report good receive outlet
             $pivot = [];
@@ -1019,9 +1121,7 @@ class PackingListController extends Controller
                 $exportData[] = $row;
             }
 
-            // Debug logging
-            \Log::info('Matrix Export Debug - Export Data Count: ' . count($exportData));
-            \Log::info('Matrix Export Debug - Export Data Sample: ' . json_encode(array_slice($exportData, 0, 2)));
+            // Debug logging removed for performance
 
             // Generate filename based on filters
             $filename = 'Matrix_Packing_List_Arrival_Date_' . date('Y-m-d', strtotime($tanggal));

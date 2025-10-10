@@ -218,8 +218,6 @@ const props = defineProps({
   filters: Object
 });
 
-// Debug log
-console.log('MK Production Props:', props);
 
 const showForm = ref(false);
 const search = ref(props.filters?.search || '');

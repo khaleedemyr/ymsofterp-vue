@@ -117,29 +117,6 @@ const props = defineProps({
   itemsWithBom: Array,
 })
 
-// Debug props
-console.log('MKProduction Form props:', { 
-  items: props.items, 
-  warehouses: props.warehouses,
-  itemsWithBom: props.itemsWithBom 
-})
-
-// Debug items data
-if (props.items && props.items.length > 0) {
-  console.log('Sample items data:')
-  props.items.slice(0, 3).forEach((item, index) => {
-    console.log(`Item ${index + 1}:`, {
-      id: item.id,
-      name: item.name,
-      small_unit_id: item.small_unit_id,
-      small_unit_name: item.small_unit_name,
-      medium_unit_id: item.medium_unit_id,
-      medium_unit_name: item.medium_unit_name,
-      large_unit_id: item.large_unit_id,
-      large_unit_name: item.large_unit_name
-    })
-  })
-}
 const emit = defineEmits(['submitted', 'cancel'])
 
 const form = ref({
@@ -158,8 +135,6 @@ const unitName = ref('')
 const loading = ref(false)
 const unitOptions = computed(() => {
   // Debug form.item_id
-  console.log('unitOptions computed - form.item_id:', form.value.item_id)
-  console.log('unitOptions computed - form.item_id type:', typeof form.value.item_id)
   
   // Extract item ID dengan cara yang lebih aman
   let itemId = null
@@ -171,22 +146,14 @@ const unitOptions = computed(() => {
     }
   }
   
-  console.log('unitOptions computed - extracted itemId:', itemId)
-  
   if (!itemId) {
-    console.log('unitOptions computed - no valid itemId, returning empty array')
     return []
   }
   
   // Cari item berdasarkan ID yang sudah diextract
   const item = props.items.find(i => i.id === itemId)
   
-  console.log('unitOptions computed - found item:', item)
-  console.log('unitOptions computed - props.items length:', props.items.length)
-  console.log('unitOptions computed - props.items IDs:', props.items.slice(0, 5).map(i => i.id))
-  
   if (!item) {
-    console.log('unitOptions computed - no item found, returning empty array')
     return []
   }
   
@@ -215,12 +182,10 @@ const unitOptions = computed(() => {
     })
   }
   
-  console.log('unitOptions computed - final options:', opts)
   return opts
 })
 
 const onItemChange = (selectedItem) => {
-  console.log('onItemChange called with:', selectedItem)
   
   if (!selectedItem) {
     form.value.item_id = null
@@ -238,14 +203,6 @@ const onItemChange = (selectedItem) => {
   form.value.unit_jadi = selectedItem.small_unit_id || ''
   unitName.value = selectedItem.small_unit_name || ''
   
-  console.log('Form after item change:', {
-    item_id: form.value.item_id,
-    item_id_type: typeof form.value.item_id,
-    unit_id: form.value.unit_id,
-    unit_jadi: form.value.unit_jadi,
-    unitName: unitName.value,
-    selectedItem: selectedItem
-  })
   
   fetchBom()
 }
@@ -256,15 +213,7 @@ function onQtyChange() {
 
 function fetchBom() {
   const itemId = form.value.item_id?.id || form.value.item_id
-  console.log('Fetching BOM for:', { itemId, qty: form.value.qty, warehouse_id: form.value.warehouse_id })
-  console.log('Form value item_id:', form.value.item_id)
-  console.log('Selected item object:', form.value.item_id)
-  
   if (!itemId || !form.value.qty || !form.value.warehouse_id) {
-    console.log('Missing required data for BOM fetch')
-    console.log('itemId:', itemId)
-    console.log('qty:', form.value.qty)
-    console.log('warehouse_id:', form.value.warehouse_id)
     bom.value = []
     return
   }
@@ -275,7 +224,6 @@ function fetchBom() {
     warehouse_id: form.value.warehouse_id 
   }
   
-  console.log('Request data to send:', requestData)
   
   loading.value = true
   axios.post('/mk-production/bom', requestData, {
@@ -284,12 +232,9 @@ function fetchBom() {
     }
   })
     .then(res => {
-      console.log('BOM response:', res.data)
-      console.log('Response status:', res.status)
       
       // Cek apakah ada error message
       if (res.data.error) {
-        console.error('BOM Error:', res.data.error)
         Swal.fire({
           icon: 'warning',
           title: 'Item Tidak Memiliki BOM',
@@ -303,9 +248,6 @@ function fetchBom() {
       bom.value = res.data
     })
     .catch(error => {
-      console.error('Error fetching BOM:', error)
-      console.error('Error response:', error.response?.data)
-      console.error('Error status:', error.response?.status)
       bom.value = []
     })
     .finally(() => loading.value = false)

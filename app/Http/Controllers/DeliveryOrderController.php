@@ -10,54 +10,135 @@ use Illuminate\Support\Facades\Log;
 
 class DeliveryOrderController extends Controller
 {
+    /**
+     * Helper method untuk membuat pagination default
+     */
+    private function getEmptyPagination()
+    {
+        return [
+            'data' => [],
+            'current_page' => 1,
+            'last_page' => 1,
+            'per_page' => 15,
+            'total' => 0,
+            'from' => null,
+            'to' => null,
+            'links' => []
+        ];
+    }
     public function index(Request $request)
     {
-        $query = DB::table('delivery_orders as do')
-            ->leftJoin('food_packing_lists as pl', 'do.packing_list_id', '=', 'pl.id')
-            ->leftJoin('food_floor_orders as fo', 'pl.food_floor_order_id', '=', 'fo.id')
-            ->leftJoin('users as u', 'do.created_by', '=', 'u.id')
-            ->leftJoin('tbl_data_outlet as o', 'fo.id_outlet', '=', 'o.id_outlet')
-            ->leftJoin('warehouse_outlets as wo', 'fo.warehouse_outlet_id', '=', 'wo.id')
-            // Join untuk RO Supplier GR
-            ->leftJoin('food_good_receives as gr', 'do.ro_supplier_gr_id', '=', 'gr.id')
-            ->leftJoin('purchase_order_foods as po', 'gr.po_id', '=', 'po.id')
-            ->leftJoin('food_floor_orders as fo_gr', 'po.source_id', '=', 'fo_gr.id')
-            ->leftJoin('tbl_data_outlet as o_gr', 'fo_gr.id_outlet', '=', 'o_gr.id_outlet')
-            ->leftJoin('warehouse_outlets as wo_gr', 'fo_gr.warehouse_outlet_id', '=', 'wo_gr.id')
-            ->select(
-                'do.*',
-                'u.nama_lengkap as created_by_name',
-                // Gunakan COALESCE untuk mengambil data dari packing list atau RO Supplier GR
-                DB::raw('COALESCE(pl.packing_number, gr.gr_number) as packing_number'),
-                DB::raw('COALESCE(fo.order_number, fo_gr.order_number) as floor_order_number'),
-                DB::raw('COALESCE(o.nama_outlet, o_gr.nama_outlet) as nama_outlet'),
-                DB::raw('COALESCE(wo.name, wo_gr.name) as warehouse_outlet_name')
-            );
+        // Simpan filter di session untuk persist
+        if ($request->hasAny(['search', 'dateFrom', 'dateTo', 'load_data'])) {
+            session([
+                'delivery_order_filters' => [
+                    'search' => $request->search,
+                    'dateFrom' => $request->dateFrom,
+                    'dateTo' => $request->dateTo,
+                    'load_data' => $request->load_data
+                ]
+            ]);
+        }
+        
+        // Ambil filter dari session jika ada
+        $filters = session('delivery_order_filters', []);
+        $search = $request->search ?? $filters['search'] ?? '';
+        $dateFrom = $request->dateFrom ?? $filters['dateFrom'] ?? '';
+        $dateTo = $request->dateTo ?? $filters['dateTo'] ?? '';
+        $loadData = $request->load_data ?? $filters['load_data'] ?? '';
+        
+        // OPTIMIZED: Tidak load data otomatis, hanya load jika ada filter
+        $orders = null;
+        
+        if ($loadData === '1') {
+            // OPTIMIZED: Pisahkan query untuk packing list dan RO Supplier GR untuk performa lebih baik
+            $packingListQuery = DB::table('delivery_orders as do')
+                ->leftJoin('food_packing_lists as pl', 'do.packing_list_id', '=', 'pl.id')
+                ->leftJoin('food_floor_orders as fo', 'pl.food_floor_order_id', '=', 'fo.id')
+                ->leftJoin('users as u', 'do.created_by', '=', 'u.id')
+                ->leftJoin('tbl_data_outlet as o', 'fo.id_outlet', '=', 'o.id_outlet')
+                ->leftJoin('warehouse_outlets as wo', 'fo.warehouse_outlet_id', '=', 'wo.id')
+                ->whereNotNull('do.packing_list_id')
+                ->select(
+                    'do.*',
+                    'u.nama_lengkap as created_by_name',
+                    'pl.packing_number',
+                    'fo.order_number as floor_order_number',
+                    'o.nama_outlet',
+                    'wo.name as warehouse_outlet_name'
+                );
 
-        if ($request->filled('search')) {
-            $search = '%' . $request->search . '%';
-            $query->where(function($q) use ($search) {
-                $q->where('pl.packing_number', 'like', $search)
-                  ->orWhere('fo.order_number', 'like', $search)
-                  ->orWhere('u.nama_lengkap', 'like', $search)
-                  ->orWhere('o.nama_outlet', 'like', $search)
-                  ->orWhere('wo.name', 'like', $search);
-            });
-        }
-        if ($request->filled('dateFrom')) {
-            $query->whereDate('do.created_at', '>=', $request->dateFrom);
-        }
-        if ($request->filled('dateTo')) {
-            $query->whereDate('do.created_at', '<=', $request->dateTo);
+            $roSupplierQuery = DB::table('delivery_orders as do')
+                ->leftJoin('food_good_receives as gr', 'do.ro_supplier_gr_id', '=', 'gr.id')
+                ->leftJoin('purchase_order_foods as po', 'gr.po_id', '=', 'po.id')
+                ->leftJoin('food_floor_orders as fo', 'po.source_id', '=', 'fo.id')
+                ->leftJoin('users as u', 'do.created_by', '=', 'u.id')
+                ->leftJoin('tbl_data_outlet as o', 'fo.id_outlet', '=', 'o.id_outlet')
+                ->leftJoin('warehouse_outlets as wo', 'fo.warehouse_outlet_id', '=', 'wo.id')
+                ->whereNotNull('do.ro_supplier_gr_id')
+                ->select(
+                    'do.*',
+                    'u.nama_lengkap as created_by_name',
+                    'gr.gr_number as packing_number',
+                    'fo.order_number as floor_order_number',
+                    'o.nama_outlet',
+                    'wo.name as warehouse_outlet_name'
+                );
+
+            // Apply filters to both queries
+            if (!empty($search)) {
+                $searchTerm = '%' . $search . '%';
+                $packingListQuery->where(function($q) use ($searchTerm) {
+                    $q->where('pl.packing_number', 'like', $searchTerm)
+                      ->orWhere('fo.order_number', 'like', $searchTerm)
+                      ->orWhere('u.nama_lengkap', 'like', $searchTerm)
+                      ->orWhere('o.nama_outlet', 'like', $searchTerm)
+                      ->orWhere('wo.name', 'like', $searchTerm)
+                      ->orWhere('do.number', 'like', $searchTerm);
+                });
+                
+                $roSupplierQuery->where(function($q) use ($searchTerm) {
+                    $q->where('gr.gr_number', 'like', $searchTerm)
+                      ->orWhere('fo.order_number', 'like', $searchTerm)
+                      ->orWhere('u.nama_lengkap', 'like', $searchTerm)
+                      ->orWhere('o.nama_outlet', 'like', $searchTerm)
+                      ->orWhere('wo.name', 'like', $searchTerm)
+                      ->orWhere('do.number', 'like', $searchTerm);
+                });
+            }
+
+            if (!empty($dateFrom)) {
+                $packingListQuery->whereDate('do.created_at', '>=', $dateFrom);
+                $roSupplierQuery->whereDate('do.created_at', '>=', $dateFrom);
+            }
+
+            if (!empty($dateTo)) {
+                $packingListQuery->whereDate('do.created_at', '<=', $dateTo);
+                $roSupplierQuery->whereDate('do.created_at', '<=', $dateTo);
+            }
+
+            // OPTIMIZED: Union queries instead of complex JOIN
+            $orders = $packingListQuery->union($roSupplierQuery)
+                ->orderByDesc('created_at')
+                ->paginate(15)
+                ->withQueryString();
         }
 
-        $orders = $query->orderByDesc('do.created_at')->paginate(15)->withQueryString();
         return Inertia::render('DeliveryOrder/Index', [
-            'orders' => $orders,
-            'search' => $request->search,
-            'dateFrom' => $request->dateFrom,
-            'dateTo' => $request->dateTo,
+            'orders' => $orders ?: $this->getEmptyPagination(),
+            'filters' => [
+                'search' => $search,
+                'dateFrom' => $dateFrom,
+                'dateTo' => $dateTo,
+                'load_data' => $loadData
+            ],
         ]);
+    }
+
+    public function clearFilters()
+    {
+        session()->forget('delivery_order_filters');
+        return redirect()->route('delivery-order.index');
     }
 
     public function create(Request $request)
@@ -93,7 +174,7 @@ class DeliveryOrderController extends Controller
         ->orderByDesc('pl.created_at')
         ->get();
 
-        Log::info('Packing lists found', ['count' => $packingLists->count(), 'packingLists' => $packingLists->toArray()]);
+        // Log removed for performance
         
         // Convert to array to ensure proper JSON serialization
         $packingLists = $packingLists->toArray();
@@ -130,7 +211,7 @@ class DeliveryOrderController extends Controller
             ->orderByDesc('gr.receive_date')
             ->get();
 
-        Log::info('RO Supplier GRs found', ['count' => $roSupplierGRs->count(), 'roSupplierGRs' => $roSupplierGRs->toArray()]);
+        // Log removed for performance
         
         // Convert to array to ensure proper JSON serialization
         $roSupplierGRs = $roSupplierGRs->toArray();
@@ -204,7 +285,7 @@ class DeliveryOrderController extends Controller
 
     public function store(Request $request)
     {
-        Log::info('Mulai proses store Delivery Order', $request->all());
+        // Log removed for performance
         
         // Cek apakah ini adalah RO Supplier GR atau Packing List biasa
         $isROSupplierGR = false;
@@ -233,11 +314,7 @@ class DeliveryOrderController extends Controller
             $warehouseDivisionId = 1; // Perishable
             $warehouseId = 1; // Warehouse 1
             
-            Log::info('RO Supplier GR warehouse info', [
-                'gr_id' => $grId,
-                'warehouse_id' => $warehouseId,
-                'warehouse_division_id' => $warehouseDivisionId
-            ]);
+            // Log removed for performance
         } else {
             // Ini adalah Packing List biasa
             $packingList = DB::table('food_packing_lists')->where('id', $request->packing_list_id)->first();
@@ -249,7 +326,7 @@ class DeliveryOrderController extends Controller
         }
         DB::beginTransaction();
         try {
-            Log::info('Insert delivery_orders', ['packing_list_id' => $request->packing_list_id, 'isROSupplierGR' => $isROSupplierGR]);
+            // Log removed for performance
             
             $insertData = [
                 'number' => $this->generateDONumber(),
@@ -271,7 +348,7 @@ class DeliveryOrderController extends Controller
             }
             
             $doId = DB::table('delivery_orders')->insertGetId($insertData);
-            Log::info('DO ID: ' . $doId);
+            // Log removed for performance
             foreach ($request->items as $item) {
                 // Ambil item_id berdasarkan jenis source
                 $realItemId = null;
@@ -532,22 +609,19 @@ class DeliveryOrderController extends Controller
 
     public function getPackingListItems($id)
     {
-        Log::info('=== getPackingListItems START ===');
-        Log::info('getPackingListItems called', ['id' => $id, 'type' => gettype($id)]);
+        // Log removed for performance
         
         // Cek apakah ini adalah RO Supplier GR atau Packing List biasa
         if (strpos($id, 'gr_') === 0) {
             // Ini adalah RO Supplier GR
             $grId = substr($id, 3); // Hapus prefix 'gr_'
-            Log::info('Processing RO Supplier GR', ['grId' => $grId]);
+            // Log removed for performance
             $result = $this->getROSupplierGRItems($grId);
-            Log::info('=== getPackingListItems END (RO Supplier GR) ===');
             return $result;
         } else {
             // Ini adalah Packing List biasa
-            Log::info('Processing regular Packing List', ['id' => $id]);
+            // Log removed for performance
             $result = $this->getPackingListItemsRegular($id);
-            Log::info('=== getPackingListItems END (Regular Packing List) ===');
             return $result;
         }
     }
@@ -607,15 +681,11 @@ class DeliveryOrderController extends Controller
 
     private function getPackingListItemsRegular($id)
     {
-        Log::info('=== getPackingListItemsRegular START ===');
-        Log::info('getPackingListItemsRegular called', ['id' => $id]);
+        // Log removed for performance
         
         // Ambil packing list untuk dapat warehouse_division_id
         $packingList = DB::table('food_packing_lists')->where('id', $id)->first();
-        Log::info('Packing list found', ['packingList' => $packingList]);
-        
         if (!$packingList) {
-            Log::error('Packing list not found', ['id' => $id]);
             return response()->json(['items' => []]);
         }
         
@@ -624,8 +694,6 @@ class DeliveryOrderController extends Controller
         if ($warehouse_division_id) {
             $warehouse_id = DB::table('warehouse_division')->where('id', $warehouse_division_id)->value('warehouse_id');
         }
-        
-        Log::info('Warehouse info', ['warehouse_division_id' => $warehouse_division_id, 'warehouse_id' => $warehouse_id]);
         
         // Ambil items dari food_packing_list_items (bukan dari GR)
         $items = DB::table('food_packing_list_items as fpli')
@@ -637,10 +705,9 @@ class DeliveryOrderController extends Controller
             ->orderBy('items.name')
             ->get();
         
-        Log::info('Items found', ['count' => $items->count(), 'items' => $items->toArray()]);
+        // Log removed for performance
         
         if ($items->count() == 0) {
-            Log::warning('No items found for packing list', ['packing_list_id' => $id]);
             return response()->json(['items' => []]);
         }
         // Ambil semua barcode untuk setiap item
@@ -675,17 +742,7 @@ class DeliveryOrderController extends Controller
                     $unitNameMedium = DB::table('units')->where('id', $inv->medium_unit_id)->value('name');
                     $unitNameLarge = DB::table('units')->where('id', $inv->large_unit_id)->value('name');
                     
-                    Log::info('Stock calculation debug', [
-                        'item_id' => $item->item_id,
-                        'item_name' => $item->name,
-                        'unit' => $unit,
-                        'unitNameSmall' => $unitNameSmall,
-                        'unitNameMedium' => $unitNameMedium,
-                        'unitNameLarge' => $unitNameLarge,
-                        'qty_small' => $stock->qty_small,
-                        'qty_medium' => $stock->qty_medium,
-                        'qty_large' => $stock->qty_large
-                    ]);
+                    // Log removed for performance
                     
                     if ($unit == $unitNameSmall) {
                         $stockQty = $stock->qty_small;
@@ -712,10 +769,8 @@ class DeliveryOrderController extends Controller
             return $item;
         });
         
-        Log::info('Final items before response', ['count' => $items->count(), 'items' => $items->toArray()]);
-        $response = response()->json(['items' => $items]);
-        Log::info('=== getPackingListItemsRegular END ===');
-        return $response;
+        // Log removed for performance
+        return response()->json(['items' => $items]);
     }
 
     public function destroy($id)

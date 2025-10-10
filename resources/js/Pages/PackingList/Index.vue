@@ -14,8 +14,9 @@ const props = defineProps({
 
 const search = ref(props.filters?.search || '');
 const selectedStatus = ref(props.filters?.status || '');
-const from = ref(props.filters?.from || '');
-const to = ref(props.filters?.to || '');
+const from = ref(props.filters?.date_from || '');
+const to = ref(props.filters?.date_to || '');
+const loadData = ref(props.filters?.load_data || '');
 
 const showSummaryModal = ref(false);
 const summaryDate = ref(dayjs().format('YYYY-MM-DD'));
@@ -52,31 +53,29 @@ watch(
   (filters) => {
     search.value = filters?.search || '';
     selectedStatus.value = filters?.status || '';
-    from.value = filters?.from || '';
-    to.value = filters?.to || '';
+    from.value = filters?.date_from || '';
+    to.value = filters?.date_to || '';
+    loadData.value = filters?.load_data || '';
   },
   { immediate: true }
 );
 
-function debouncedSearch() {
+function loadDataWithFilters() {
   router.get('/packing-list', { 
     search: search.value, 
     status: selectedStatus.value, 
-    from: from.value, 
-    to: to.value 
+    date_from: from.value, 
+    date_to: to.value,
+    load_data: '1'
   }, { preserveState: true, replace: true });
 }
 
-function onSearchInput() {
-  debouncedSearch();
-}
-
-function onStatusChange() {
-  debouncedSearch();
-}
-
-function onDateChange() {
-  debouncedSearch();
+function clearFilters() {
+  // Call backend method to clear session filters
+  router.get('/packing-list/clear-filters', {}, { 
+    preserveState: false, 
+    replace: true 
+  });
 }
 function goToPage(url) {
   if (url) router.visit(url, { preserveState: true, replace: true });
@@ -405,22 +404,55 @@ function closeMatrixModal() {
           </button>
         </div>
       </div>
-      <div class="flex flex-wrap gap-3 mb-4 items-center">
-        <input
-          v-model="search"
-          @input="onSearchInput"
-          type="text"
-          placeholder="Cari nomor Packing List..."
-          class="w-64 px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition"
-        />
-        <select v-model="selectedStatus" @change="onStatusChange" class="px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition">
-          <option value="">Semua Status</option>
-          <option value="draft">Draft</option>
-          <option value="approved">Approved</option>
-        </select>
-        <input type="date" v-model="from" @change="onDateChange" class="px-2 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition" placeholder="Dari tanggal" />
-        <span>-</span>
-        <input type="date" v-model="to" @change="onDateChange" class="px-2 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition" placeholder="Sampai tanggal" />
+      <!-- Filter Form -->
+      <div class="bg-white rounded-xl shadow-lg p-6 mb-6">
+        <h3 class="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+          <i class="fa fa-filter text-blue-500"></i>
+          Filter Data
+        </h3>
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">Search</label>
+            <input
+              v-model="search"
+              type="text"
+              placeholder="Cari nomor, divisi gudang, outlet..."
+              class="w-full px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition"
+            />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">Status</label>
+            <select v-model="selectedStatus" class="w-full px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition">
+              <option value="">Semua Status</option>
+              <option value="packing">Packing</option>
+              <option value="completed">Completed</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">Dari Tanggal</label>
+            <input type="date" v-model="from" class="w-full px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition" />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">Sampai Tanggal</label>
+            <input type="date" v-model="to" class="w-full px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition" />
+          </div>
+        </div>
+        <div class="flex gap-3">
+          <button 
+            @click="loadDataWithFilters" 
+            class="bg-gradient-to-r from-blue-500 to-blue-700 text-white px-6 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold flex items-center gap-2"
+          >
+            <i class="fa fa-search"></i>
+            Load Data
+          </button>
+          <button 
+            @click="clearFilters" 
+            class="bg-gradient-to-r from-gray-500 to-gray-700 text-white px-6 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold flex items-center gap-2"
+          >
+            <i class="fa fa-refresh"></i>
+            Clear Filter
+          </button>
+        </div>
       </div>
       <div class="bg-white rounded-2xl shadow-2xl overflow-x-auto transition-all">
         <table class="w-full min-w-full divide-y divide-gray-200">
@@ -437,8 +469,27 @@ function closeMatrixModal() {
             </tr>
           </thead>
           <tbody>
-            <tr v-if="props.packingLists.data.length === 0">
-              <td colspan="7" class="text-center py-10 text-gray-400">Tidak ada data Packing List.</td>
+            <tr v-if="!loadData">
+              <td colspan="8" class="text-center py-16">
+                <div class="flex flex-col items-center gap-4">
+                  <i class="fa fa-search text-6xl text-gray-300"></i>
+                  <div class="text-gray-500">
+                    <p class="text-lg font-semibold">Pilih filter dan klik "Load Data" untuk menampilkan data</p>
+                    <p class="text-sm">Anda bisa search berdasarkan nomor, divisi gudang, atau outlet tujuan</p>
+                  </div>
+                </div>
+              </td>
+            </tr>
+            <tr v-else-if="props.packingLists.data.length === 0">
+              <td colspan="8" class="text-center py-16">
+                <div class="flex flex-col items-center gap-4">
+                  <i class="fa fa-inbox text-6xl text-gray-300"></i>
+                  <div class="text-gray-500">
+                    <p class="text-lg font-semibold">Tidak ada data Packing List</p>
+                    <p class="text-sm">Coba ubah filter atau tanggal pencarian</p>
+                  </div>
+                </div>
+              </td>
             </tr>
             <tr v-for="list in props.packingLists.data" :key="list.id" class="hover:bg-blue-50 transition shadow-sm">
               <td class="px-6 py-3 font-mono font-semibold text-blue-700">{{ list.packing_number }}</td>
@@ -476,7 +527,7 @@ function closeMatrixModal() {
         </table>
       </div>
       <!-- Pagination -->
-      <div class="flex justify-end mt-4 gap-2">
+      <div v-if="loadData && props.packingLists.links && props.packingLists.links.length > 3" class="flex justify-end mt-4 gap-2">
         <button
           v-for="link in props.packingLists.links"
           :key="link.label"

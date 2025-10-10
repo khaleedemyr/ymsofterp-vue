@@ -26,13 +26,55 @@
           </Link>
         </div>
       </div>
-      <div class="flex flex-wrap gap-2 mb-4 items-center">
-        <input v-model="search" type="text" placeholder="Cari Packing List / Floor Order / User / Outlet / Warehouse Outlet" class="border rounded px-3 py-2 focus:ring-2 focus:ring-blue-200 min-w-[280px]" />
-        <input v-model="dateFrom" type="date" class="border rounded px-3 py-2 focus:ring-2 focus:ring-blue-200" />
-        <span class="mx-1">s/d</span>
-        <input v-model="dateTo" type="date" class="border rounded px-3 py-2 focus:ring-2 focus:ring-blue-200" />
-        <button @click="applyFilter" class="bg-blue-500 text-white px-4 py-2 rounded font-semibold hover:bg-blue-600 transition">Filter</button>
-        <button v-if="search || dateFrom || dateTo" @click="resetFilter" type="button" class="ml-2 bg-gray-200 text-gray-700 px-3 py-2 rounded hover:bg-gray-300 transition">Reset</button>
+      <!-- Filter Form -->
+      <div class="bg-white rounded-xl shadow-lg p-6 mb-6">
+        <h3 class="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+          <i class="fa fa-filter text-blue-500"></i>
+          Filter Data
+        </h3>
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">Search</label>
+            <input 
+              v-model="search" 
+              type="text" 
+              placeholder="Cari nomor, outlet, warehouse..." 
+              class="w-full px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition" 
+            />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">Dari Tanggal</label>
+            <input 
+              v-model="dateFrom" 
+              type="date" 
+              class="w-full px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition" 
+            />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">Sampai Tanggal</label>
+            <input 
+              v-model="dateTo" 
+              type="date" 
+              class="w-full px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition" 
+            />
+          </div>
+        </div>
+        <div class="flex gap-3">
+          <button 
+            @click="loadDataWithFilters" 
+            class="bg-gradient-to-r from-blue-500 to-blue-700 text-white px-6 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold flex items-center gap-2"
+          >
+            <i class="fa fa-search"></i>
+            Load Data
+          </button>
+          <button 
+            @click="clearFilters" 
+            class="bg-gradient-to-r from-gray-500 to-gray-700 text-white px-6 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold flex items-center gap-2"
+          >
+            <i class="fa fa-refresh"></i>
+            Clear Filter
+          </button>
+        </div>
       </div>
       <div class="bg-white rounded-2xl shadow-2xl overflow-x-auto transition-all">
         <table class="w-full min-w-full divide-y divide-gray-200">
@@ -50,8 +92,27 @@
             </tr>
           </thead>
           <tbody>
-            <tr v-if="!orders.data.length">
-              <td colspan="9" class="text-center py-10 text-blue-300">Tidak ada data Delivery Order.</td>
+            <tr v-if="!loadData">
+              <td colspan="9" class="text-center py-16">
+                <div class="flex flex-col items-center gap-4">
+                  <i class="fa fa-search text-6xl text-gray-300"></i>
+                  <div class="text-gray-500">
+                    <p class="text-lg font-semibold">Pilih filter dan klik "Load Data" untuk menampilkan data</p>
+                    <p class="text-sm">Anda bisa search berdasarkan nomor, outlet, atau warehouse</p>
+                  </div>
+                </div>
+              </td>
+            </tr>
+            <tr v-else-if="!orders.data.length">
+              <td colspan="9" class="text-center py-16">
+                <div class="flex flex-col items-center gap-4">
+                  <i class="fa fa-inbox text-6xl text-gray-300"></i>
+                  <div class="text-gray-500">
+                    <p class="text-lg font-semibold">Tidak ada data Delivery Order</p>
+                    <p class="text-sm">Coba ubah filter atau tanggal pencarian</p>
+                  </div>
+                </div>
+              </td>
             </tr>
             <tr v-for="(order, idx) in orders.data" :key="order.id" class="hover:bg-blue-50 transition shadow-sm">
               <td class="px-6 py-3">{{ (orders.current_page - 1) * orders.per_page + idx + 1 }}</td>
@@ -79,7 +140,7 @@
           </tbody>
         </table>
       </div>
-      <div v-if="orders.total > orders.per_page" class="flex flex-col items-center mt-6 space-y-4">
+      <div v-if="loadData && orders.total > orders.per_page" class="flex flex-col items-center mt-6 space-y-4">
         <nav class="flex items-center space-x-1 flex-wrap justify-center" aria-label="Pagination">
           <!-- Previous button -->
           <button 
@@ -170,7 +231,10 @@ import { generateStrukPDF } from './generateStrukPDF';
 import axios from 'axios';
 import { usePage } from '@inertiajs/vue3';
 
-const props = defineProps({ orders: Array });
+const props = defineProps({ 
+  orders: Array,
+  filters: Object
+});
 const loadingDeleteId = ref(null);
 const loadingReprintId = ref(null);
 const exporting = ref(false);
@@ -178,9 +242,10 @@ const exportingSummary = ref(false);
 const exportingDetail = ref(false);
 
 const page = usePage();
-const search = ref(page.props.search || '');
-const dateFrom = ref(page.props.dateFrom || '');
-const dateTo = ref(page.props.dateTo || '');
+const search = ref(props.filters?.search || '');
+const dateFrom = ref(props.filters?.dateFrom || '');
+const dateTo = ref(props.filters?.dateTo || '');
+const loadData = ref(props.filters?.load_data || '');
 
 // Computed property untuk halaman yang ditampilkan
 const visiblePages = computed(() => {
@@ -269,18 +334,21 @@ async function handleReprint(orderId) {
   }
 }
 
-function applyFilter() {
+function loadDataWithFilters() {
   router.get(route('delivery-order.index'), {
     search: search.value,
     dateFrom: dateFrom.value,
-    dateTo: dateTo.value
+    dateTo: dateTo.value,
+    load_data: '1'
   }, { preserveState: true });
 }
-function resetFilter() {
-  search.value = '';
-  dateFrom.value = '';
-  dateTo.value = '';
-  applyFilter();
+
+function clearFilters() {
+  // Call backend method to clear session filters
+  router.get(route('delivery-order.clear-filters'), {}, { 
+    preserveState: false, 
+    replace: true 
+  });
 }
 
 function goToPage(page) {

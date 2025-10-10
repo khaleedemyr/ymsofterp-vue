@@ -217,7 +217,6 @@ onMounted(async () => {
         selectedBarcode.value = barcodes.value[0].barcode
       }
     } catch (error) {
-      console.error('Error loading barcodes:', error)
     }
   }
   
@@ -229,12 +228,6 @@ onMounted(async () => {
   labelData.value.volumeUnit = props.item?.small_unit_name || ''
   
   // Calculate expired date: production date + expiry days from item
-  console.log('=== EXPIRED DATE CALCULATION DEBUG ===')
-  console.log('Production Date:', props.prod?.production_date)
-  console.log('Item Exp:', props.item?.exp)
-  console.log('Item Exp Type:', typeof props.item?.exp)
-  console.log('Full Item Object:', props.item)
-  
   if (props.prod?.production_date && props.item?.exp) {
     const productionDate = new Date(props.prod.production_date)
     const expiryDays = parseInt(props.item.exp) || 0
@@ -246,27 +239,13 @@ onMounted(async () => {
     const month = String(expiredDate.getMonth() + 1).padStart(2, '0')
     const year = expiredDate.getFullYear()
     labelData.value.expiredDate = `${day}-${month}-${year}`
-    
-    console.log('Production Date Object:', productionDate)
-    console.log('Expiry Days:', expiryDays)
-    console.log('Expired Date Object:', expiredDate)
-    console.log('Calculated Expired Date:', labelData.value.expiredDate)
   } else {
-    console.log('Missing data for expired date calculation')
-    console.log('Production date exists:', !!props.prod?.production_date)
-    console.log('Item exp exists:', !!props.item?.exp)
     labelData.value.expiredDate = 'Data tidak tersedia'
   }
-  console.log('=== END DEBUG ===')
 })
 
 // Watch for production date changes to auto-calculate expired date
 watch(() => labelData.value.productionDate, (newProductionDate) => {
-  console.log('=== WATCHER DEBUG ===')
-  console.log('Production date changed to:', newProductionDate)
-  console.log('Item exp:', props.item?.exp)
-  console.log('Item exp type:', typeof props.item?.exp)
-  
   if (newProductionDate && props.item?.exp) {
     const productionDate = new Date(newProductionDate)
     const expiryDays = parseInt(props.item.exp) || 0
@@ -278,16 +257,9 @@ watch(() => labelData.value.productionDate, (newProductionDate) => {
     const month = String(expiredDate.getMonth() + 1).padStart(2, '0')
     const year = expiredDate.getFullYear()
     labelData.value.expiredDate = `${day}-${month}-${year}`
-    
-    console.log('Watcher - Production Date Object:', productionDate)
-    console.log('Watcher - Expiry Days:', expiryDays)
-    console.log('Watcher - Expired Date Object:', expiredDate)
-    console.log('Updated expired date to:', labelData.value.expiredDate)
   } else {
-    console.log('Watcher - Missing data for calculation')
     labelData.value.expiredDate = 'Data tidak tersedia'
   }
-  console.log('=== END WATCHER DEBUG ===')
 })
 
 const formatDate = (date) => {

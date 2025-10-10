@@ -497,39 +497,33 @@ class PurchaseOrderFoodsController extends Controller
                     $price = floatval($itemData['price']);
                     $total = round($quantity * $price, 2); // Ensure proper decimal precision
 
-                    // Get unit ID
+                    // Get unit ID - FIXED: Preserve original unit from PR/RO instead of defaulting to small_unit_id
                     $unitId = null;
                     if ($unit) {
                         // Try to find unit by name first
                         $unitModel = Unit::where('name', $unit)->first();
                         if ($unitModel) {
                             $unitId = $unitModel->id;
+                            \Log::info('Unit found by name:', [
+                                'unit_name' => $unit,
+                                'unit_id' => $unitId
+                            ]);
                         } else {
-                            // If unit name not found, try to get default unit from item
-                            if ($itemId) {
-                                $itemModel = \App\Models\Item::find($itemId);
-                                if ($itemModel && $itemModel->small_unit_id) {
-                                    $unitId = $itemModel->small_unit_id;
-                                    \Log::info('Using default unit from item:', [
-                                        'item_id' => $itemId,
-                                        'default_unit_id' => $unitId,
-                                        'requested_unit' => $unit
-                                    ]);
-                                }
-                            }
+                            // If unit name not found, this is an error - don't fallback to small_unit_id
+                            \Log::error('Unit not found in database:', [
+                                'unit_name' => $unit,
+                                'item_id' => $itemId,
+                                'item_name' => $itemName
+                            ]);
+                            throw new \Exception("Unit '{$unit}' tidak ditemukan dalam database untuk item '{$itemName}'");
                         }
                     } else {
-                        // If no unit provided, try to get default unit from item
-                        if ($itemId) {
-                            $itemModel = \App\Models\Item::find($itemId);
-                            if ($itemModel && $itemModel->small_unit_id) {
-                                $unitId = $itemModel->small_unit_id;
-                                \Log::info('Using default unit from item (no unit provided):', [
-                                    'item_id' => $itemId,
-                                    'default_unit_id' => $unitId
-                                ]);
-                            }
-                        }
+                        // If no unit provided, this is also an error
+                        \Log::error('No unit provided for item:', [
+                            'item_id' => $itemId,
+                            'item_name' => $itemName
+                        ]);
+                        throw new \Exception("Unit tidak boleh kosong untuk item '{$itemName}'");
                     }
                     
                     // Debug logging for unit
@@ -603,7 +597,27 @@ class PurchaseOrderFoodsController extends Controller
                             'item_id' => $itemId,
                             'unit' => $unit
                         ]);
-                        continue;
+                        throw new \Exception("Unit ID tidak valid untuk item '{$itemName}' dengan unit '{$unit}'");
+                    }
+                    
+                    // Additional validation: Check if unit is valid for this item
+                    $itemModel = \App\Models\Item::find($itemId);
+                    if ($itemModel) {
+                        $validUnits = [
+                            $itemModel->small_unit_id,
+                            $itemModel->medium_unit_id,
+                            $itemModel->large_unit_id
+                        ];
+                        
+                        if (!in_array($unitId, array_filter($validUnits))) {
+                            \Log::warning('Unit may not be valid for item:', [
+                                'item_id' => $itemId,
+                                'item_name' => $itemName,
+                                'unit_id' => $unitId,
+                                'unit_name' => $unit,
+                                'valid_unit_ids' => array_filter($validUnits)
+                            ]);
+                        }
                     }
                     
                     // Debug logging before creating PO item
@@ -1138,13 +1152,40 @@ class PurchaseOrderFoodsController extends Controller
                     // Get item details
                     $item = Item::find($newItem['item']['id']);
                     
+                    // FIXED: Get unit_id from request or use appropriate unit, not always small_unit_id
+                    $unitId = null;
+                    if (isset($newItem['unit_id']) && $newItem['unit_id']) {
+                        $unitId = $newItem['unit_id'];
+                    } elseif (isset($newItem['unit']) && $newItem['unit']) {
+                        // Try to find unit by name
+                        $unitModel = Unit::where('name', $newItem['unit'])->first();
+                        if ($unitModel) {
+                            $unitId = $unitModel->id;
+                        } else {
+                            // If unit not found, use small_unit_id as fallback
+                            $unitId = $item->small_unit_id;
+                            \Log::warning('Unit not found, using small_unit_id as fallback:', [
+                                'requested_unit' => $newItem['unit'],
+                                'item_id' => $item->id,
+                                'fallback_unit_id' => $unitId
+                            ]);
+                        }
+                    } else {
+                        // If no unit specified, use small_unit_id as fallback
+                        $unitId = $item->small_unit_id;
+                        \Log::warning('No unit specified, using small_unit_id as fallback:', [
+                            'item_id' => $item->id,
+                            'fallback_unit_id' => $unitId
+                        ]);
+                    }
+                    
                     PurchaseOrderFoodItem::create([
                         'purchase_order_food_id' => $po->id,
                         'item_id' => $item->id,
                         'quantity' => $newItem['quantity'],
                         'price' => $newItem['price'],
                         'total' => round(floatval($newItem['quantity']) * floatval($newItem['price']), 2),
-                        'unit_id' => $item->small_unit_id,
+                        'unit_id' => $unitId, // FIXED: Use correct unit_id
                         'created_by' => auth()->id(),
                         'pr_food_item_id' => $newItem['pr_food_item_id'] ?? null, // Reference to PR item if available
                     ]);
