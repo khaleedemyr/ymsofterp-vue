@@ -821,7 +821,7 @@ class ReportController extends Controller
                 return response()->json(['error' => 'Rentang tanggal harus diisi'], 400);
             }
             
-            // Use the same logic as reportSalesPivotSpecial method
+            // Use EXACTLY the same logic as reportSalesPivotSpecial method
             $query = DB::table('outlet_food_good_receives as gr')
                 ->join('outlet_food_good_receive_items as i', 'gr.id', '=', 'i.outlet_food_good_receive_id')
                 ->join('items as it', 'i.item_id', '=', 'it.id')
@@ -853,19 +853,126 @@ class ReportController extends Controller
                 );
 
             if ($request->filled('from')) {
-                $query->whereDate('gr.receive_date', '>=', $from);
+                $query->whereDate('gr.receive_date', '>=', $request->from);
             }
             if ($request->filled('to')) {
-                $query->whereDate('gr.receive_date', '<=', $to);
+                $query->whereDate('gr.receive_date', '<=', $request->to);
             }
             
             // Filter GR yang belum dihapus
             $query->whereNull('gr.deleted_at');
 
-            $report = $query->groupBy('o.nama_outlet', 'o.is_outlet')
+            $report1 = $query->groupBy('o.nama_outlet', 'o.is_outlet')
                 ->orderBy('o.is_outlet', 'desc')
                 ->orderBy('o.nama_outlet')
                 ->get();
+
+            // Query untuk good_receive_outlet_suppliers (menggunakan relasi RO Supplier yang benar)
+            $query2 = DB::table('good_receive_outlet_suppliers as gr')
+                ->join('good_receive_outlet_supplier_items as i', 'gr.id', '=', 'i.good_receive_id')
+                ->join('items as it', 'i.item_id', '=', 'it.id')
+                ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
+                ->join('units as u', 'i.unit_id', '=', 'u.id')
+                ->leftJoin('warehouse_division as wd', 'it.warehouse_division_id', '=', 'wd.id') // Use item's warehouse_division_id
+                ->leftJoin('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
+                ->leftJoin('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
+                ->leftJoin('food_floor_order_items as fo', function($join) {
+                    $join->on('i.item_id', '=', 'fo.item_id')
+                         ->on('fo.floor_order_id', '=', 'do.floor_order_id'); // Use do.floor_order_id directly
+                })
+                ->join('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
+                ->select(
+                    'o.nama_outlet as customer',
+                    'o.is_outlet',
+                    DB::raw("SUM(CASE WHEN w.name IN ('MK1 Hot Kitchen', 'MK2 Cold Kitchen') THEN i.qty_received * COALESCE(fo.price, 0) ELSE 0 END) as main_kitchen"),
+                    DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name NOT IN ('Chemical', 'Stationary', 'Marketing') THEN i.qty_received * COALESCE(fo.price, 0) ELSE 0 END) as main_store"),
+                    DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Chemical' THEN i.qty_received * COALESCE(fo.price, 0) ELSE 0 END) as chemical"),
+                    DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Stationary' THEN i.qty_received * COALESCE(fo.price, 0) ELSE 0 END) as stationary"),
+                    DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Marketing' THEN i.qty_received * COALESCE(fo.price, 0) ELSE 0 END) as marketing"),
+                    DB::raw("(
+                        SUM(CASE WHEN w.name IN ('MK1 Hot Kitchen', 'MK2 Cold Kitchen') THEN i.qty_received * COALESCE(fo.price, 0) ELSE 0 END) +
+                        SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name NOT IN ('Chemical', 'Stationary', 'Marketing') THEN i.qty_received * COALESCE(fo.price, 0) ELSE 0 END) +
+                        SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Chemical' THEN i.qty_received * COALESCE(fo.price, 0) ELSE 0 END) +
+                        SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Stationary' THEN i.qty_received * COALESCE(fo.price, 0) ELSE 0 END) +
+                        SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Marketing' THEN i.qty_received * COALESCE(fo.price, 0) ELSE 0 END)
+                    ) as line_total")
+                );
+
+            if ($request->filled('from')) {
+                $query2->whereDate('gr.receive_date', '>=', $request->from);
+            }
+            if ($request->filled('to')) {
+                $query2->whereDate('gr.receive_date', '<=', $request->to);
+            }
+
+            $report2 = $query2->groupBy('o.nama_outlet', 'o.is_outlet')
+                ->orderBy('o.is_outlet', 'desc')
+                ->orderBy('o.nama_outlet')
+                ->get();
+
+            // Gabungkan kedua report dan group by outlet
+            $combinedReport = collect();
+            $outletData = [];
+            
+            // Process report1 (outlet_food_good_receives)
+            foreach ($report1 as $row) {
+                $key = $row->customer;
+                if (!isset($outletData[$key])) {
+                    $outletData[$key] = [
+                        'customer' => $row->customer,
+                        'is_outlet' => $row->is_outlet,
+                        'main_kitchen' => 0,
+                        'main_store' => 0,
+                        'chemical' => 0,
+                        'stationary' => 0,
+                        'marketing' => 0,
+                        'line_total' => 0
+                    ];
+                }
+                $outletData[$key]['main_kitchen'] += $row->main_kitchen;
+                $outletData[$key]['main_store'] += $row->main_store;
+                $outletData[$key]['chemical'] += $row->chemical;
+                $outletData[$key]['stationary'] += $row->stationary;
+                $outletData[$key]['marketing'] += $row->marketing;
+                $outletData[$key]['line_total'] += $row->line_total;
+            }
+            
+            // Process report2 (good_receive_outlet_suppliers)
+            foreach ($report2 as $row) {
+                $key = $row->customer;
+                if (!isset($outletData[$key])) {
+                    $outletData[$key] = [
+                        'customer' => $row->customer,
+                        'is_outlet' => $row->is_outlet,
+                        'main_kitchen' => 0,
+                        'main_store' => 0,
+                        'chemical' => 0,
+                        'stationary' => 0,
+                        'marketing' => 0,
+                        'line_total' => 0
+                    ];
+                }
+                $outletData[$key]['main_kitchen'] += $row->main_kitchen;
+                $outletData[$key]['main_store'] += $row->main_store;
+                $outletData[$key]['chemical'] += $row->chemical;
+                $outletData[$key]['stationary'] += $row->stationary;
+                $outletData[$key]['marketing'] += $row->marketing;
+                $outletData[$key]['line_total'] += $row->line_total;
+            }
+            
+            // Convert to objects
+            foreach ($outletData as $outlet) {
+                $obj = new \stdClass();
+                $obj->customer = $outlet['customer'];
+                $obj->is_outlet = $outlet['is_outlet'];
+                $obj->main_kitchen = $outlet['main_kitchen'];
+                $obj->main_store = $outlet['main_store'];
+                $obj->chemical = $outlet['chemical'];
+                $obj->stationary = $outlet['stationary'];
+                $obj->marketing = $outlet['marketing'];
+                $obj->line_total = $outlet['line_total'];
+                $combinedReport->push($obj);
+            }
 
             // Get all active outlets (status='A' and is_outlet=1)
             $allActiveOutlets = DB::table('tbl_data_outlet')
@@ -879,7 +986,7 @@ class ReportController extends Controller
             $mergedReport = collect();
             
             // Group data outlet
-            $outletData = $report->keyBy('customer');
+            $outletData = $combinedReport->keyBy('customer');
             
             // Process all active outlets
             foreach ($allActiveOutlets as $outlet) {
@@ -927,10 +1034,10 @@ class ReportController extends Controller
                 );
 
             if ($request->filled('from')) {
-                $retailQuery->whereDate('rws.created_at', '>=', $from);
+                $retailQuery->whereDate('rws.created_at', '>=', $request->from);
             }
             if ($request->filled('to')) {
-                $retailQuery->whereDate('rws.created_at', '<=', $to);
+                $retailQuery->whereDate('rws.created_at', '<=', $request->to);
             }
 
             $retailReport = $retailQuery->groupBy('c.name')
@@ -962,10 +1069,10 @@ class ReportController extends Controller
                 );
 
             if ($request->filled('from')) {
-                $warehouseQuery->whereDate('ws.date', '>=', $from);
+                $warehouseQuery->whereDate('ws.date', '>=', $request->from);
             }
             if ($request->filled('to')) {
-                $warehouseQuery->whereDate('ws.date', '<=', $to);
+                $warehouseQuery->whereDate('ws.date', '<=', $request->to);
             }
 
             $warehouseReport = $warehouseQuery->groupBy('w.name')
