@@ -439,6 +439,10 @@ Route::get('/api/purchase-requisitions/{id}/approval-details', [\App\Http\Contro
     Route::get('/po-ops/pending-approvals/page', function() {
         return inertia('PurchaseOrderOps/PendingApprovals');
     })->name('po-ops.pending-approvals-page');
+    
+    // Purchase Order Ops Print (must be before {id} routes)
+    Route::get('/po-ops/print-preview', [\App\Http\Controllers\PurchaseOrderOpsController::class, 'printPreview'])->name('po-ops.print-preview')->middleware('auth');
+    
     Route::get('/po-ops/{id}', [\App\Http\Controllers\PurchaseOrderOpsController::class, 'show'])->name('po-ops.show');
     Route::get('/po-ops/{id}/edit', [\App\Http\Controllers\PurchaseOrderOpsController::class, 'edit'])->name('po-ops.edit');
     Route::put('/po-ops/{id}', [\App\Http\Controllers\PurchaseOrderOpsController::class, 'update'])->name('po-ops.update');

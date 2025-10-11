@@ -1312,4 +1312,82 @@ class PurchaseOrderOpsController extends Controller
             ], 500);
         }
     }
+
+    /**
+     * Print preview for Purchase Orders
+     */
+    public function printPreview(Request $request)
+    {
+        try {
+            // Debug logging
+            \Log::info('PO PrintPreview method called', [
+                'request_data' => $request->all(),
+                'ids' => $request->get('ids', ''),
+                'url' => $request->url(),
+                'method' => $request->method()
+            ]);
+            
+            $ids = $request->get('ids', '');
+            
+            if (empty($ids)) {
+                \Log::warning('No IDs provided in PO printPreview');
+                return response()->json(['error' => 'No IDs provided'], 400);
+            }
+
+            $poIds = explode(',', $ids);
+            \Log::info('PO IDs after explode', ['poIds' => $poIds]);
+            
+            // Validate that all IDs are numeric
+            foreach ($poIds as $id) {
+                if (!is_numeric($id)) {
+                    \Log::warning('Invalid PO ID format', ['id' => $id]);
+                    return response()->json(['error' => 'Invalid ID format: ' . $id], 400);
+                }
+            }
+            
+            $purchaseOrders = PurchaseOrderOps::with([
+                'supplier',
+                'creator',
+                'items',
+                'approvalFlows.approver.jabatan'
+            ])->whereIn('id', $poIds)->get();
+
+            \Log::info('About to return PO view', [
+                'purchase_orders_count' => $purchaseOrders->count(),
+                'approval_flows_debug' => $purchaseOrders->map(function($po) {
+                    return [
+                        'po_id' => $po->id,
+                        'approval_flows_count' => $po->approvalFlows ? $po->approvalFlows->count() : 0,
+                        'approval_flows' => $po->approvalFlows ? $po->approvalFlows->map(function($flow) {
+                            return [
+                                'id' => $flow->id,
+                                'level' => $flow->approval_level,
+                                'status' => $flow->status,
+                                'approver_name' => $flow->approver ? $flow->approver->nama_lengkap : 'No approver',
+                                'approver_position' => $flow->approver && $flow->approver->jabatan ? $flow->approver->jabatan->nama_jabatan : 'No position',
+                                'signature_path' => $flow->approver ? $flow->approver->signature_path : 'No signature',
+                                'approver_id' => $flow->approver_id,
+                                'approver_exists' => $flow->approver ? 'Yes' : 'No'
+                            ];
+                        }) : []
+                    ];
+                })
+            ]);
+            
+            return view('purchase-order-ops.print-preview', [
+                'purchaseOrders' => $purchaseOrders,
+            ]);
+            
+        } catch (\Exception $e) {
+            \Log::error('Error in PO printPreview method', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'ids' => $request->get('ids', '')
+            ]);
+            
+            return response()->json([
+                'error' => 'Failed to generate print preview: ' . $e->getMessage()
+            ], 500);
+        }
+    }
 }

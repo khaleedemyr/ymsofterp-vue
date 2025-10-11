@@ -19,6 +19,12 @@ const to = ref(props.filters?.to || '');
 const perPage = ref(props.filters?.perPage || 10);
 const deletingPO = ref(false);
 
+// Print functionality
+const showPrintModal = ref(false);
+const printData = ref([]);
+const previewUrl = ref('');
+const previewFrame = ref(null);
+
 const debouncedSearch = debounce(() => {
   // Simpan filter state ke sessionStorage
   const filterState = {
@@ -141,6 +147,36 @@ function deletePO(po) {
 
 function openCreate() {
   router.visit('/po-ops/create');
+}
+
+// Print functionality
+async function printSinglePO(po) {
+  try {
+    console.log('Printing single PO:', po);
+    printData.value = [po];
+    
+    // Generate preview URL
+    const poIds = po.id.toString();
+    console.log('PO ID for URL:', poIds);
+    previewUrl.value = `/po-ops/print-preview?ids=${encodeURIComponent(poIds)}`;
+    console.log('Preview URL:', previewUrl.value);
+    showPrintModal.value = true;
+  } catch (error) {
+    console.error('Error preparing print:', error);
+    Swal.fire('Error', 'Gagal mempersiapkan print', 'error');
+  }
+}
+
+function closePrintModal() {
+  showPrintModal.value = false;
+  previewUrl.value = '';
+  printData.value = [];
+}
+
+function printPreview() {
+  if (previewFrame.value) {
+    previewFrame.value.contentWindow.print();
+  }
 }
 
 // Load filter state from sessionStorage on mount
@@ -275,6 +311,14 @@ onMounted(() => {
                       Detail
                     </Link>
                     <button
+                      @click="printSinglePO(po)"
+                      class="inline-flex items-center px-2 py-1 bg-purple-100 text-purple-800 text-xs font-medium rounded hover:bg-purple-200 transition-colors"
+                      title="Print PDF"
+                    >
+                      <i class="fas fa-print mr-1"></i>
+                      Print
+                    </button>
+                    <button
                       v-if="po.status === 'draft' || po.status === 'approved'"
                       @click="deletePO(po)"
                       :disabled="deletingPO"
@@ -341,6 +385,34 @@ onMounted(() => {
               </nav>
             </div>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Print Preview Modal -->
+    <div v-if="showPrintModal" class="fixed inset-0 z-[100000] flex items-center justify-center bg-black/40">
+      <div class="bg-white rounded-xl shadow-lg w-full max-w-6xl p-6 relative">
+        <button @click="closePrintModal" class="absolute top-3 right-3 text-gray-400 hover:text-gray-600">
+          <i class="fas fa-times text-lg"></i>
+        </button>
+        <div class="flex justify-between items-center mb-4">
+          <h3 class="text-lg font-medium">Preview Purchase Order</h3>
+          <div class="flex gap-2">
+            <button 
+              @click="printPreview"
+              class="px-3 py-1 text-sm bg-blue-100 text-blue-600 rounded hover:bg-blue-200 flex items-center gap-1"
+            >
+              <i class="fas fa-print"></i>
+              Print
+            </button>
+          </div>
+        </div>
+        <div class="p-4" style="height: 80vh;">
+          <iframe 
+            :src="previewUrl" 
+            class="w-full h-full border-0" 
+            ref="previewFrame"
+          ></iframe>
         </div>
       </div>
     </div>
