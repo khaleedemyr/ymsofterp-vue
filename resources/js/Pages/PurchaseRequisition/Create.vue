@@ -88,6 +88,7 @@
               <label class="block text-sm font-medium text-gray-700 mb-2">Outlet</label>
               <select
                 v-model="form.outlet_id"
+                @change="onOutletChange"
                 class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="">Select Outlet</option>
@@ -95,6 +96,9 @@
                   {{ outlet.nama_outlet }}
                 </option>
               </select>
+              <p v-if="selectedCategoryDetails && selectedCategoryDetails.budget_type === 'PER_OUTLET'" class="mt-1 text-xs text-gray-500">
+                Outlet selection is required for per-outlet budget categories
+              </p>
             </div>
 
             <!-- Ticket -->
@@ -387,10 +391,15 @@
           <!-- Budget Info -->
           <div v-if="budgetInfo" class="mb-6">
             <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
-              <h3 class="text-lg font-medium text-blue-800 mb-2">Category Budget Information</h3>
+              <h3 class="text-lg font-medium text-blue-800 mb-2">
+                {{ budgetInfo.budget_type === 'PER_OUTLET' ? 'Outlet Budget Information' : 'Category Budget Information' }}
+                <span class="text-sm font-normal text-blue-600 ml-2">
+                  ({{ budgetInfo.budget_type === 'PER_OUTLET' ? 'Per Outlet' : 'Global' }})
+                </span>
+              </h3>
               
-              <!-- Category Budget -->
-              <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+              <!-- Global Budget Info -->
+              <div v-if="budgetInfo.budget_type === 'GLOBAL'" class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
                 <div>
                   <p class="text-sm text-blue-600">Category Budget</p>
                   <p class="text-lg font-semibold text-blue-800">{{ formatCurrency(budgetInfo.category_budget) }}</p>
@@ -410,12 +419,37 @@
                   </p>
                 </div>
               </div>
+
+              <!-- Per Outlet Budget Info -->
+              <div v-else-if="budgetInfo.budget_type === 'PER_OUTLET'" class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+                <div>
+                  <p class="text-sm text-blue-600">Outlet Budget</p>
+                  <p class="text-lg font-semibold text-blue-800">{{ formatCurrency(budgetInfo.outlet_budget) }}</p>
+                  <p class="text-xs text-gray-500">{{ budgetInfo.outlet_info?.name || 'Unknown Outlet' }}</p>
+                </div>
+                <div>
+                  <p class="text-sm text-blue-600">Used This Month</p>
+                  <p class="text-lg font-semibold text-blue-800">{{ formatCurrency(budgetInfo.outlet_used_amount) }}</p>
+                </div>
+                <div>
+                  <p class="text-sm text-blue-600">Current Input</p>
+                  <p class="text-lg font-semibold text-green-800">{{ formatCurrency(budgetInfo.current_amount) }}</p>
+                </div>
+                <div>
+                  <p class="text-sm text-blue-600">Total After Input</p>
+                  <p class="text-lg font-semibold" :class="budgetInfo.exceeds_budget ? 'text-red-800' : 'text-blue-800'">
+                    {{ formatCurrency(budgetInfo.total_with_current) }}
+                  </p>
+                </div>
+              </div>
               
               <!-- Remaining Budget -->
               <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <p class="text-sm text-blue-600">Remaining Before Input</p>
-                  <p class="text-lg font-semibold text-blue-800">{{ formatCurrency(budgetInfo.category_remaining_amount) }}</p>
+                  <p class="text-lg font-semibold text-blue-800">
+                    {{ formatCurrency(budgetInfo.budget_type === 'PER_OUTLET' ? budgetInfo.outlet_remaining_amount : budgetInfo.category_remaining_amount) }}
+                  </p>
                 </div>
                 <div>
                   <p class="text-sm text-blue-600">Remaining After Input</p>
@@ -428,12 +462,32 @@
               <!-- Warning Messages -->
               <div v-if="budgetInfo.exceeds_budget" class="mt-4 p-3 bg-red-100 border border-red-300 rounded text-red-800 text-sm">
                 <i class="fa fa-exclamation-triangle mr-2"></i>
-                <strong>Budget Exceeded!</strong> Total amount ({{ formatCurrency(budgetInfo.total_with_current) }}) exceeds category budget limit ({{ formatCurrency(budgetInfo.category_budget) }}) for this month. You cannot save this purchase requisition.
+                <strong>Budget Exceeded!</strong> 
+                <span v-if="budgetInfo.budget_type === 'PER_OUTLET'">
+                  Total amount ({{ formatCurrency(budgetInfo.total_with_current) }}) exceeds outlet budget limit ({{ formatCurrency(budgetInfo.outlet_budget) }}) for this month.
+                </span>
+                <span v-else>
+                  Total amount ({{ formatCurrency(budgetInfo.total_with_current) }}) exceeds category budget limit ({{ formatCurrency(budgetInfo.category_budget) }}) for this month.
+                </span>
+                You cannot save this purchase requisition.
               </div>
-              <div v-else-if="budgetInfo.remaining_after_current < (budgetInfo.category_budget * 0.1)" class="mt-4 p-3 bg-yellow-100 border border-yellow-300 rounded text-yellow-800 text-sm">
+              <div v-else-if="budgetInfo.remaining_after_current < ((budgetInfo.budget_type === 'PER_OUTLET' ? budgetInfo.outlet_budget : budgetInfo.category_budget) * 0.1)" class="mt-4 p-3 bg-yellow-100 border border-yellow-300 rounded text-yellow-800 text-sm">
                 <i class="fa fa-exclamation-circle mr-2"></i>
                 <strong>Budget Warning!</strong> Only {{ formatCurrency(budgetInfo.remaining_after_current) }} remaining after this input.
               </div>
+            </div>
+          </div>
+
+          <!-- Budget Info Message for PER_OUTLET without outlet selection -->
+          <div v-if="!budgetInfo && selectedCategoryDetails && selectedCategoryDetails.budget_type === 'PER_OUTLET' && !form.outlet_id" class="mb-6">
+            <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+              <h3 class="text-lg font-medium text-yellow-800 mb-2">
+                <i class="fa fa-info-circle mr-2"></i>
+                Outlet Selection Required
+              </h3>
+              <p class="text-yellow-700">
+                This category uses per-outlet budget allocation. Please select an outlet above to view the budget information.
+              </p>
             </div>
           </div>
 
@@ -447,12 +501,13 @@
             </Link>
             <button
               type="submit"
-              :disabled="loading || (budgetInfo && budgetInfo.exceeds_budget)"
+              :disabled="loading || (budgetInfo && budgetInfo.exceeds_budget) || (selectedCategoryDetails && selectedCategoryDetails.budget_type === 'PER_OUTLET' && !form.outlet_id)"
               class="px-4 py-2 text-white rounded-md disabled:opacity-50"
-              :class="(budgetInfo && budgetInfo.exceeds_budget) ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-600 hover:bg-blue-700'"
+              :class="(budgetInfo && budgetInfo.exceeds_budget) ? 'bg-red-600 hover:bg-red-700' : (selectedCategoryDetails && selectedCategoryDetails.budget_type === 'PER_OUTLET' && !form.outlet_id) ? 'bg-gray-400' : 'bg-blue-600 hover:bg-blue-700'"
             >
               <span v-if="loading">Creating...</span>
               <span v-else-if="budgetInfo && budgetInfo.exceeds_budget">Budget Exceeded - Cannot Save</span>
+              <span v-else-if="selectedCategoryDetails && selectedCategoryDetails.budget_type === 'PER_OUTLET' && !form.outlet_id">Select Outlet First</span>
               <span v-else>Create Purchase Requisition</span>
             </button>
           </div>
@@ -542,6 +597,13 @@ const onCategoryChange = () => {
   loadBudgetInfo()
 }
 
+const onOutletChange = () => {
+  // Load budget info when outlet changes
+  if (form.category_id) {
+    loadBudgetInfo()
+  }
+}
+
 const loadCategoryDetails = () => {
   if (!form.category_id) {
     selectedCategoryDetails.value = null
@@ -555,6 +617,7 @@ const loadCategoryDetails = () => {
       division: category.division,
       subcategory: category.subcategory,
       budget_limit: category.budget_limit,
+      budget_type: category.budget_type,
       description: category.description
     }
   } else {
@@ -568,11 +631,17 @@ const loadBudgetInfo = async () => {
     return
   }
   
+  // For PER_OUTLET budget type, require outlet selection
+  if (selectedCategoryDetails.value && selectedCategoryDetails.value.budget_type === 'PER_OUTLET' && !form.outlet_id) {
+    budgetInfo.value = null
+    return
+  }
+  
   try {
-    console.log('Loading budget info for category:', form.category_id, 'current amount:', totalAmount.value)
     const response = await axios.get('/purchase-requisitions/budget-info', {
       params: {
         category_id: form.category_id,
+        outlet_id: form.outlet_id,
         current_amount: totalAmount.value,
         year: new Date().getFullYear(),
         month: new Date().getMonth() + 1
@@ -583,17 +652,12 @@ const loadBudgetInfo = async () => {
       }
     })
     
-    console.log('Budget info response:', response.data)
-    
     if (response.data.success) {
       budgetInfo.value = response.data
     } else {
-      console.error('Budget info API returned error:', response.data.message)
       budgetInfo.value = null
     }
   } catch (error) {
-    console.error('Failed to load budget info:', error)
-    console.error('Error details:', error.response?.data)
     budgetInfo.value = null
   }
 }

@@ -8,6 +8,7 @@ import Swal from 'sweetalert2';
 const props = defineProps({
   po: Object,
   suppliers: Array,
+  budgetInfo: Object,
 });
 
 const form = useForm({
@@ -114,6 +115,51 @@ const submitForm = async () => {
     Swal.fire('Error', error.response?.data?.message || 'Failed to update PO', 'error');
   }
 };
+
+// Helper functions for budget calculations
+function getTotalBudget() {
+  if (!props.budgetInfo) return 0
+  return props.budgetInfo.budget_type === 'PER_OUTLET' 
+    ? props.budgetInfo.outlet_budget 
+    : props.budgetInfo.category_budget
+}
+
+function getUsedAmount() {
+  if (!props.budgetInfo) return 0
+  return props.budgetInfo.budget_type === 'PER_OUTLET' 
+    ? props.budgetInfo.outlet_used_amount 
+    : props.budgetInfo.category_used_amount
+}
+
+function getRemainingAmount() {
+  if (!props.budgetInfo) return 0
+  return props.budgetInfo.budget_type === 'PER_OUTLET' 
+    ? props.budgetInfo.outlet_remaining_amount 
+    : props.budgetInfo.category_remaining_amount
+}
+
+function getUsagePercentage() {
+  const used = getUsedAmount()
+  const total = getTotalBudget()
+  if (total === 0) return 0
+  return (used / total) * 100
+}
+
+function getBudgetProgressColor(usedAmount, totalBudget) {
+  const percentage = (usedAmount / totalBudget) * 100
+  if (percentage >= 100) return 'bg-red-500'
+  if (percentage >= 80) return 'bg-yellow-500'
+  if (percentage >= 60) return 'bg-orange-500'
+  return 'bg-green-500'
+}
+
+function getMonthName(monthNumber) {
+  const months = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+  ]
+  return months[monthNumber - 1] || 'Unknown'
+}
 </script>
 
 <template>
@@ -146,6 +192,63 @@ const submitForm = async () => {
               />
               <span class="ml-2 text-sm text-gray-700">Enable PPN (11%)</span>
             </label>
+          </div>
+
+          <!-- Budget Information -->
+          <div v-if="budgetInfo" class="mb-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <h3 class="text-lg font-semibold text-gray-800 mb-3 flex items-center">
+              <i class="fa fa-chart-pie mr-2 text-blue-500"></i>
+              {{ budgetInfo.budget_type === 'PER_OUTLET' ? 'Informasi Budget Outlet' : 'Informasi Budget Category' }} - {{ getMonthName(budgetInfo.current_month) }} {{ budgetInfo.current_year }}
+              <span class="ml-2 text-sm font-normal text-gray-600">
+                ({{ budgetInfo.budget_type === 'PER_OUTLET' ? 'Per Outlet' : 'Global' }})
+              </span>
+            </h3>
+            
+            <!-- Outlet Info for PER_OUTLET -->
+            <div v-if="budgetInfo.budget_type === 'PER_OUTLET' && budgetInfo.outlet_info" class="mb-4 p-3 bg-blue-100 border border-blue-200 rounded-lg">
+              <p class="text-sm text-blue-600">
+                <i class="fa fa-store mr-2"></i>
+                <strong>Outlet:</strong> {{ budgetInfo.outlet_info.name }}
+              </p>
+            </div>
+            
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div class="bg-white p-3 rounded-lg border border-blue-200">
+                <div class="text-sm font-medium text-blue-600">
+                  {{ budgetInfo.budget_type === 'PER_OUTLET' ? 'Outlet Budget' : 'Total Budget' }}
+                </div>
+                <div class="text-lg font-bold text-blue-800">
+                  {{ formatCurrency(budgetInfo.budget_type === 'PER_OUTLET' ? budgetInfo.outlet_budget : budgetInfo.category_budget) }}
+                </div>
+                <div v-if="budgetInfo.budget_type === 'PER_OUTLET'" class="text-xs text-gray-500 mt-1">
+                  Global: {{ formatCurrency(budgetInfo.category_budget) }}
+                </div>
+              </div>
+              <div class="bg-white p-3 rounded-lg border border-orange-200">
+                <div class="text-sm font-medium text-orange-600">Used This Month</div>
+                <div class="text-lg font-bold text-orange-800">
+                  {{ formatCurrency(budgetInfo.budget_type === 'PER_OUTLET' ? budgetInfo.outlet_used_amount : budgetInfo.category_used_amount) }}
+                </div>
+              </div>
+              <div class="bg-white p-3 rounded-lg border border-green-200">
+                <div class="text-sm font-medium text-green-600">Remaining Budget</div>
+                <div class="text-lg font-bold" :class="getRemainingAmount() < 0 ? 'text-red-800' : 'text-green-800'">
+                  {{ formatCurrency(getRemainingAmount()) }}
+                </div>
+              </div>
+            </div>
+            <div class="mt-4">
+              <div class="flex justify-between text-sm text-gray-600 mb-2">
+                <span>Budget Usage</span>
+                <span>{{ Math.round(getUsagePercentage()) }}%</span>
+              </div>
+              <div class="w-full bg-gray-200 rounded-full h-3">
+                <div class="h-3 rounded-full transition-all duration-300"
+                     :class="getBudgetProgressColor(getUsedAmount(), getTotalBudget())"
+                     :style="{ width: Math.min(getUsagePercentage(), 100) + '%' }">
+                </div>
+              </div>
+            </div>
           </div>
 
           <!-- Notes -->

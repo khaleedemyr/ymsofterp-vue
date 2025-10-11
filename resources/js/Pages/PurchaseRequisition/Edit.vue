@@ -96,6 +96,7 @@
               <label class="block text-sm font-medium text-gray-700 mb-2">Outlet</label>
               <select
                 v-model="form.outlet_id"
+                @change="onOutletChange"
                 class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="">Select Outlet</option>
@@ -103,6 +104,9 @@
                   {{ outlet.nama_outlet }}
                 </option>
               </select>
+              <p v-if="selectedCategoryDetails && selectedCategoryDetails.budget_type === 'PER_OUTLET'" class="mt-1 text-xs text-gray-500">
+                Outlet selection is required for per-outlet budget categories
+              </p>
             </div>
 
             <!-- Ticket -->
@@ -314,6 +318,19 @@
             </div>
           </div>
 
+          <!-- Budget Info Message for PER_OUTLET without outlet selection -->
+          <div v-if="!budgetInfo && selectedCategoryDetails && selectedCategoryDetails.budget_type === 'PER_OUTLET' && !form.outlet_id" class="mb-6">
+            <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+              <h3 class="text-lg font-medium text-yellow-800 mb-2">
+                <i class="fa fa-info-circle mr-2"></i>
+                Outlet Selection Required
+              </h3>
+              <p class="text-yellow-700">
+                This category uses per-outlet budget allocation. Please select an outlet above to view the budget information.
+              </p>
+            </div>
+          </div>
+
           <!-- Submit Button -->
           <div class="mt-6 flex justify-end space-x-3">
             <Link
@@ -324,12 +341,13 @@
             </Link>
             <button
               type="submit"
-              :disabled="loading || (budgetInfo && budgetInfo.exceeds_budget)"
+              :disabled="loading || (budgetInfo && budgetInfo.exceeds_budget) || (selectedCategoryDetails && selectedCategoryDetails.budget_type === 'PER_OUTLET' && !form.outlet_id)"
               class="px-4 py-2 text-white rounded-md disabled:opacity-50"
-              :class="(budgetInfo && budgetInfo.exceeds_budget) ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-600 hover:bg-blue-700'"
+              :class="(budgetInfo && budgetInfo.exceeds_budget) ? 'bg-red-600 hover:bg-red-700' : (selectedCategoryDetails && selectedCategoryDetails.budget_type === 'PER_OUTLET' && !form.outlet_id) ? 'bg-gray-400' : 'bg-blue-600 hover:bg-blue-700'"
             >
               <span v-if="loading">Updating...</span>
               <span v-else-if="budgetInfo && budgetInfo.exceeds_budget">Budget Exceeded - Cannot Save</span>
+              <span v-else-if="selectedCategoryDetails && selectedCategoryDetails.budget_type === 'PER_OUTLET' && !form.outlet_id">Select Outlet First</span>
               <span v-else>Update Purchase Requisition</span>
             </button>
           </div>
@@ -416,6 +434,13 @@ const onCategoryChange = () => {
   loadBudgetInfo()
 }
 
+const onOutletChange = () => {
+  // Load budget info when outlet changes
+  if (form.category_id) {
+    loadBudgetInfo()
+  }
+}
+
 const loadCategoryDetails = () => {
   if (!form.category_id) {
     selectedCategoryDetails.value = null
@@ -429,6 +454,7 @@ const loadCategoryDetails = () => {
       division: category.division,
       subcategory: category.subcategory,
       budget_limit: category.budget_limit,
+      budget_type: category.budget_type,
       description: category.description
     }
   } else {
@@ -442,11 +468,17 @@ const loadBudgetInfo = async () => {
     return
   }
   
+  // For PER_OUTLET budget type, require outlet selection
+  if (selectedCategoryDetails.value && selectedCategoryDetails.value.budget_type === 'PER_OUTLET' && !form.outlet_id) {
+    budgetInfo.value = null
+    return
+  }
+  
   try {
-    console.log('Loading budget info for category:', form.category_id, 'current amount:', totalAmount.value)
     const response = await axios.get('/purchase-requisitions/budget-info', {
       params: {
         category_id: form.category_id,
+        outlet_id: form.outlet_id,
         current_amount: totalAmount.value,
         year: new Date().getFullYear(),
         month: new Date().getMonth() + 1
@@ -457,17 +489,12 @@ const loadBudgetInfo = async () => {
       }
     })
     
-    console.log('Budget info response:', response.data)
-    
     if (response.data.success) {
       budgetInfo.value = response.data
     } else {
-      console.error('Budget info API returned error:', response.data.message)
       budgetInfo.value = null
     }
   } catch (error) {
-    console.error('Failed to load budget info:', error)
-    console.error('Error details:', error.response?.data)
     budgetInfo.value = null
   }
 }

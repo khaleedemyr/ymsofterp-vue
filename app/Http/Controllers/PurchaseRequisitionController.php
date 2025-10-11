@@ -7,6 +7,7 @@ use App\Models\PurchaseRequisitionCategory;
 use App\Models\PurchaseRequisitionItem;
 use App\Models\PurchaseRequisitionApprovalFlow;
 use App\Models\PurchaseRequisitionAttachment;
+use App\Models\PurchaseRequisitionOutletBudget;
 use App\Models\DivisionBudget;
 use App\Models\Divisi;
 use App\Models\Outlet;
@@ -135,24 +136,11 @@ class PurchaseRequisitionController extends Controller
 
         // Check budget limit before saving
         if ($validated['category_id']) {
-            $category = PurchaseRequisitionCategory::find($validated['category_id']);
-            if ($category) {
-                $currentMonth = date('m');
-                $currentYear = date('Y');
-                
-                $usedAmount = PurchaseRequisition::where('category_id', $validated['category_id'])
-                    ->whereYear('created_at', $currentYear)
-                    ->whereMonth('created_at', $currentMonth)
-                    ->whereIn('status', ['SUBMITTED', 'APPROVED', 'PROCESSED', 'COMPLETED'])
-                    ->sum('amount');
-                
-                $totalWithCurrent = $usedAmount + $validated['amount'];
-                
-                if ($totalWithCurrent > $category->budget_limit) {
-                    return back()->withErrors([
-                        'budget_exceeded' => "Total amount (Rp " . number_format($totalWithCurrent, 0, ',', '.') . ") exceeds category budget limit (Rp " . number_format($category->budget_limit, 0, ',', '.') . ") for this month."
-                    ]);
-                }
+            $budgetValidation = $this->validateBudgetLimit($validated['category_id'], $validated['outlet_id'] ?? null, $validated['amount']);
+            if (!$budgetValidation['valid']) {
+                return back()->withErrors([
+                    'budget_exceeded' => $budgetValidation['message']
+                ]);
             }
         }
 
@@ -243,19 +231,52 @@ class PurchaseRequisitionController extends Controller
                 $currentMonth = date('m');
                 $currentYear = date('Y');
                 
-                $usedAmount = PurchaseRequisition::where('category_id', $purchaseRequisition->category_id)
-                    ->whereYear('created_at', $currentYear)
-                    ->whereMonth('created_at', $currentMonth)
-                    ->whereIn('status', ['SUBMITTED', 'APPROVED', 'PROCESSED', 'COMPLETED'])
-                    ->sum('amount');
-                
-                $budgetInfo = [
-                    'category_budget' => $category->budget_limit,
-                    'category_used_amount' => $usedAmount,
-                    'category_remaining_amount' => $category->budget_limit - $usedAmount,
-                    'current_month' => $currentMonth,
-                    'current_year' => $currentYear,
-                ];
+                if ($category->isGlobalBudget()) {
+                    // GLOBAL BUDGET: Calculate across all outlets
+                    $usedAmount = PurchaseRequisition::where('category_id', $purchaseRequisition->category_id)
+                        ->whereYear('created_at', $currentYear)
+                        ->whereMonth('created_at', $currentMonth)
+                        ->whereIn('status', ['SUBMITTED', 'APPROVED', 'PROCESSED', 'COMPLETED'])
+                        ->sum('amount');
+                    
+                    $budgetInfo = [
+                        'budget_type' => 'GLOBAL',
+                        'category_budget' => $category->budget_limit,
+                        'category_used_amount' => $usedAmount,
+                        'category_remaining_amount' => $category->budget_limit - $usedAmount,
+                        'current_month' => $currentMonth,
+                        'current_year' => $currentYear,
+                    ];
+                } else if ($category->isPerOutletBudget() && $purchaseRequisition->outlet_id) {
+                    // PER_OUTLET BUDGET: Calculate per specific outlet
+                    $outletBudget = PurchaseRequisitionOutletBudget::where('category_id', $purchaseRequisition->category_id)
+                        ->where('outlet_id', $purchaseRequisition->outlet_id)
+                        ->with('outlet')
+                        ->first();
+                    
+                    if ($outletBudget) {
+                        $outletUsedAmount = PurchaseRequisition::where('category_id', $purchaseRequisition->category_id)
+                            ->where('outlet_id', $purchaseRequisition->outlet_id)
+                            ->whereYear('created_at', $currentYear)
+                            ->whereMonth('created_at', $currentMonth)
+                            ->whereIn('status', ['SUBMITTED', 'APPROVED', 'PROCESSED', 'COMPLETED'])
+                            ->sum('amount');
+                        
+                        $budgetInfo = [
+                            'budget_type' => 'PER_OUTLET',
+                            'category_budget' => $category->budget_limit, // Global budget for reference
+                            'outlet_budget' => $outletBudget->allocated_budget,
+                            'outlet_used_amount' => $outletUsedAmount,
+                            'outlet_remaining_amount' => $outletBudget->allocated_budget - $outletUsedAmount,
+                            'current_month' => $currentMonth,
+                            'current_year' => $currentYear,
+                            'outlet_info' => [
+                                'id' => $outletBudget->outlet_id,
+                                'name' => $outletBudget->outlet->nama_outlet ?? 'Unknown Outlet',
+                            ],
+                        ];
+                    }
+                }
             }
         }
 
@@ -319,25 +340,11 @@ class PurchaseRequisitionController extends Controller
 
         // Check budget limit before updating (exclude current record from calculation)
         if ($validated['category_id']) {
-            $category = PurchaseRequisitionCategory::find($validated['category_id']);
-            if ($category) {
-                $currentMonth = date('m');
-                $currentYear = date('Y');
-                
-                $usedAmount = PurchaseRequisition::where('category_id', $validated['category_id'])
-                    ->where('id', '!=', $purchaseRequisition->id) // Exclude current record
-                    ->whereYear('created_at', $currentYear)
-                    ->whereMonth('created_at', $currentMonth)
-                    ->whereIn('status', ['SUBMITTED', 'APPROVED', 'PROCESSED', 'COMPLETED'])
-                    ->sum('amount');
-                
-                $totalWithCurrent = $usedAmount + $validated['amount'];
-                
-                if ($totalWithCurrent > $category->budget_limit) {
-                    return back()->withErrors([
-                        'budget_exceeded' => "Total amount (Rp " . number_format($totalWithCurrent, 0, ',', '.') . ") exceeds category budget limit (Rp " . number_format($category->budget_limit, 0, ',', '.') . ") for this month."
-                    ]);
-                }
+            $budgetValidation = $this->validateBudgetLimit($validated['category_id'], $validated['outlet_id'] ?? null, $validated['amount'], $purchaseRequisition->id);
+            if (!$budgetValidation['valid']) {
+                return back()->withErrors([
+                    'budget_exceeded' => $budgetValidation['message']
+                ]);
             }
         }
 
@@ -831,22 +838,55 @@ class PurchaseRequisitionController extends Controller
             if ($purchaseRequisition->category_id) {
                 $category = $purchaseRequisition->category;
                 if ($category) {
-                    $currentMonth = date('m');
-                    $currentYear = date('Y');
+                    $currentMonth = now()->month;
+                    $currentYear = now()->year;
                     
-                    $usedAmount = PurchaseRequisition::where('category_id', $purchaseRequisition->category_id)
-                        ->whereYear('created_at', $currentYear)
-                        ->whereMonth('created_at', $currentMonth)
-                        ->whereIn('status', ['SUBMITTED', 'APPROVED', 'PROCESSED', 'COMPLETED'])
-                        ->sum('amount');
-                    
-                    $budgetInfo = [
-                        'category_budget' => $category->budget_limit,
-                        'category_used_amount' => $usedAmount,
-                        'category_remaining_amount' => $category->budget_limit - $usedAmount,
-                        'current_month' => $currentMonth,
-                        'current_year' => $currentYear,
-                    ];
+                    if ($category->isGlobalBudget()) {
+                        // GLOBAL BUDGET: Calculate across all outlets
+                        $usedAmount = PurchaseRequisition::where('category_id', $purchaseRequisition->category_id)
+                            ->whereYear('created_at', $currentYear)
+                            ->whereMonth('created_at', $currentMonth)
+                            ->whereIn('status', ['SUBMITTED', 'APPROVED', 'PROCESSED', 'COMPLETED'])
+                            ->sum('amount');
+                        
+                        $budgetInfo = [
+                            'budget_type' => 'GLOBAL',
+                            'category_budget' => $category->budget_limit,
+                            'category_used_amount' => $usedAmount,
+                            'category_remaining_amount' => $category->budget_limit - $usedAmount,
+                            'current_month' => $currentMonth,
+                            'current_year' => $currentYear,
+                        ];
+                    } else if ($category->isPerOutletBudget() && $purchaseRequisition->outlet_id) {
+                        // PER_OUTLET BUDGET: Calculate per specific outlet
+                        $outletBudget = PurchaseRequisitionOutletBudget::where('category_id', $purchaseRequisition->category_id)
+                            ->where('outlet_id', $purchaseRequisition->outlet_id)
+                            ->with('outlet')
+                            ->first();
+                        
+                        if ($outletBudget) {
+                            $outletUsedAmount = PurchaseRequisition::where('category_id', $purchaseRequisition->category_id)
+                                ->where('outlet_id', $purchaseRequisition->outlet_id)
+                                ->whereYear('created_at', $currentYear)
+                                ->whereMonth('created_at', $currentMonth)
+                                ->whereIn('status', ['SUBMITTED', 'APPROVED', 'PROCESSED', 'COMPLETED'])
+                                ->sum('amount');
+                            
+                            $budgetInfo = [
+                                'budget_type' => 'PER_OUTLET',
+                                'category_budget' => $category->budget_limit, // Global budget for reference
+                                'outlet_budget' => $outletBudget->allocated_budget,
+                                'outlet_used_amount' => $outletUsedAmount,
+                                'outlet_remaining_amount' => $outletBudget->allocated_budget - $outletUsedAmount,
+                                'current_month' => $currentMonth,
+                                'current_year' => $currentYear,
+                                'outlet_info' => [
+                                    'id' => $outletBudget->outlet_id,
+                                    'name' => $outletBudget->outlet->nama_outlet ?? 'Unknown Outlet',
+                                ],
+                            ];
+                        }
+                    }
                 }
             }
 
@@ -879,6 +919,162 @@ class PurchaseRequisitionController extends Controller
         }
     }
 
+    /**
+     * Print preview for multiple purchase requisitions
+     */
+    public function printPreview(Request $request)
+    {
+        try {
+            // Debug logging
+            \Log::info('PrintPreview method called', [
+                'request_data' => $request->all(),
+                'ids' => $request->get('ids', ''),
+                'url' => $request->url(),
+                'method' => $request->method()
+            ]);
+            
+            $ids = $request->get('ids', '');
+            
+            if (empty($ids)) {
+                \Log::warning('No IDs provided in printPreview');
+                return response()->json(['error' => 'No IDs provided'], 400);
+            }
+
+            $prIds = explode(',', $ids);
+            \Log::info('PR IDs after explode', ['prIds' => $prIds]);
+            
+            // Validate that all IDs are numeric
+            foreach ($prIds as $id) {
+                if (!is_numeric($id)) {
+                    \Log::warning('Invalid ID format', ['id' => $id]);
+                    return response()->json(['error' => 'Invalid ID format: ' . $id], 400);
+                }
+            }
+            
+                $purchaseRequisitions = PurchaseRequisition::with([
+                    'division',
+                    'outlet',
+                    'ticket',
+                    'category',
+                    'creator',
+                    'items',
+                    'attachments.uploader',
+                    'approvalFlows.approver.jabatan'
+                ])->whereIn('id', $prIds)->get();
+
+        // Get budget information for each PR
+        $budgetInfos = [];
+        foreach ($purchaseRequisitions as $pr) {
+            $budgetInfo = null;
+            if ($pr->category_id) {
+                $category = $pr->category;
+                if ($category) {
+                    $currentMonth = now()->month;
+                    $currentYear = now()->year;
+                    
+                    if ($category->isGlobalBudget()) {
+                        // GLOBAL BUDGET: Calculate across all outlets
+                        $usedAmount = PurchaseRequisition::where('category_id', $pr->category_id)
+                            ->whereYear('created_at', $currentYear)
+                            ->whereMonth('created_at', $currentMonth)
+                            ->whereIn('status', ['SUBMITTED', 'APPROVED', 'PROCESSED', 'COMPLETED'])
+                            ->sum('amount');
+                        
+                        $budgetInfo = [
+                            'budget_type' => 'GLOBAL',
+                            'category_budget' => $category->budget_limit,
+                            'category_used_amount' => $usedAmount,
+                            'category_remaining_amount' => $category->budget_limit - $usedAmount,
+                            'current_month' => $currentMonth,
+                            'current_year' => $currentYear,
+                        ];
+                    } else if ($category->isPerOutletBudget() && $pr->outlet_id) {
+                        // PER_OUTLET BUDGET: Calculate per specific outlet
+                        $outletBudget = PurchaseRequisitionOutletBudget::where('category_id', $pr->category_id)
+                            ->where('outlet_id', $pr->outlet_id)
+                            ->with('outlet')
+                            ->first();
+                        
+                        if ($outletBudget) {
+                            $outletUsedAmount = PurchaseRequisition::where('category_id', $pr->category_id)
+                                ->where('outlet_id', $pr->outlet_id)
+                                ->whereYear('created_at', $currentYear)
+                                ->whereMonth('created_at', $currentMonth)
+                                ->whereIn('status', ['SUBMITTED', 'APPROVED', 'PROCESSED', 'COMPLETED'])
+                                ->sum('amount');
+                            
+                            $budgetInfo = [
+                                'budget_type' => 'PER_OUTLET',
+                                'category_budget' => $category->budget_limit, // Global budget for reference
+                                'outlet_budget' => $outletBudget->allocated_budget,
+                                'outlet_used_amount' => $outletUsedAmount,
+                                'outlet_remaining_amount' => $outletBudget->allocated_budget - $outletUsedAmount,
+                                'current_month' => $currentMonth,
+                                'current_year' => $currentYear,
+                                'outlet_info' => [
+                                    'id' => $outletBudget->outlet_id,
+                                    'name' => $outletBudget->outlet->nama_outlet ?? 'Unknown Outlet',
+                                ],
+                            ];
+                        }
+                    }
+                }
+            }
+            $budgetInfos[$pr->id] = $budgetInfo;
+        }
+
+            \Log::info('About to return view', [
+                'purchase_requisitions_count' => $purchaseRequisitions->count(),
+                'budget_infos_count' => count($budgetInfos),
+                'approval_flows_debug' => $purchaseRequisitions->map(function($pr) {
+                    return [
+                        'pr_id' => $pr->id,
+                        'approval_flows_count' => $pr->approvalFlows ? $pr->approvalFlows->count() : 0,
+                        'approval_flows' => $pr->approvalFlows ? $pr->approvalFlows->map(function($flow) {
+                            return [
+                                'id' => $flow->id,
+                                'level' => $flow->approval_level,
+                                'status' => $flow->status,
+                                'approver_name' => $flow->approver ? $flow->approver->nama_lengkap : 'No approver',
+                                'approver_position' => $flow->approver && $flow->approver->jabatan ? $flow->approver->jabatan->nama_jabatan : 'No position',
+                                'signature_path' => $flow->approver ? $flow->approver->signature_path : 'No signature',
+                                'approver_id' => $flow->approver_id,
+                                'approver_exists' => $flow->approver ? 'Yes' : 'No'
+                            ];
+                        }) : []
+                    ];
+                })
+            ]);
+            
+            return view('purchase-requisitions.print-preview', [
+                'purchaseRequisitions' => $purchaseRequisitions,
+                'budgetInfos' => $budgetInfos,
+            ]);
+            
+        } catch (\Exception $e) {
+            \Log::error('Error in printPreview method', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'ids' => $request->get('ids', '')
+            ]);
+            
+            return response()->json([
+                'error' => 'Failed to generate print preview: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Test method for debugging
+     */
+    public function testPrint(Request $request)
+    {
+        return response()->json([
+            'message' => 'Test method works',
+            'request_data' => $request->all(),
+            'ids' => $request->get('ids', ''),
+        ]);
+    }
 
     /**
      * Get budget info for API
@@ -886,9 +1082,10 @@ class PurchaseRequisitionController extends Controller
     public function getBudgetInfo(Request $request)
     {
         $categoryId = $request->get('category_id');
+        $outletId = $request->get('outlet_id');
         $currentAmount = $request->get('current_amount', 0); // Amount being input
-        $year = $request->get('year', date('Y'));
-        $month = $request->get('month', date('m'));
+        $year = $request->get('year', now()->year);
+        $month = $request->get('month', now()->month);
 
         if (!$categoryId) {
             return response()->json(['success' => false, 'message' => 'Category is required']);
@@ -900,28 +1097,78 @@ class PurchaseRequisitionController extends Controller
             return response()->json(['success' => false, 'message' => 'Category not found']);
         }
 
-        $categoryBudget = $category->budget_limit;
-        
-        // Calculate used amount for this category in current month (across all divisions)
-        $categoryUsedAmount = PurchaseRequisition::where('category_id', $categoryId)
-            ->whereYear('created_at', $year)
-            ->whereMonth('created_at', $month)
-            ->whereIn('status', ['SUBMITTED', 'APPROVED', 'PROCESSED', 'COMPLETED'])
-            ->sum('amount');
+        $budgetInfo = [];
 
-        // Add current amount being input to the calculation
-        $totalWithCurrent = $categoryUsedAmount + $currentAmount;
-        $remainingAfterCurrent = $categoryBudget - $totalWithCurrent;
+        if ($category->isGlobalBudget()) {
+            // GLOBAL BUDGET: Calculate across all outlets
+            $categoryBudget = $category->budget_limit;
+            
+            $categoryUsedAmount = PurchaseRequisition::where('category_id', $categoryId)
+                ->whereYear('created_at', $year)
+                ->whereMonth('created_at', $month)
+                ->whereIn('status', ['SUBMITTED', 'APPROVED', 'PROCESSED', 'COMPLETED'])
+                ->sum('amount');
+
+            $totalWithCurrent = $categoryUsedAmount + $currentAmount;
+            $remainingAfterCurrent = $categoryBudget - $totalWithCurrent;
+
+            $budgetInfo = [
+                'budget_type' => 'GLOBAL',
+                'category_budget' => $categoryBudget,
+                'category_used_amount' => $categoryUsedAmount,
+                'current_amount' => $currentAmount,
+                'total_with_current' => $totalWithCurrent,
+                'category_remaining_amount' => $categoryBudget - $categoryUsedAmount,
+                'remaining_after_current' => $remainingAfterCurrent,
+                'exceeds_budget' => $totalWithCurrent > $categoryBudget,
+            ];
+
+        } else if ($category->isPerOutletBudget()) {
+            // PER_OUTLET BUDGET: Calculate per specific outlet
+            if (!$outletId) {
+                return response()->json(['success' => false, 'message' => 'Outlet ID is required for per-outlet budget']);
+            }
+
+            // Get outlet budget allocation
+            $outletBudget = PurchaseRequisitionOutletBudget::where('category_id', $categoryId)
+                ->where('outlet_id', $outletId)
+                ->first();
+
+            if (!$outletBudget) {
+                return response()->json(['success' => false, 'message' => 'Outlet budget not configured for this category']);
+            }
+
+            // Calculate used amount for this specific outlet
+            $outletUsedAmount = PurchaseRequisition::where('category_id', $categoryId)
+                ->where('outlet_id', $outletId)
+                ->whereYear('created_at', $year)
+                ->whereMonth('created_at', $month)
+                ->whereIn('status', ['SUBMITTED', 'APPROVED', 'PROCESSED', 'COMPLETED'])
+                ->sum('amount');
+
+            $totalWithCurrent = $outletUsedAmount + $currentAmount;
+            $remainingAfterCurrent = $outletBudget->allocated_budget - $totalWithCurrent;
+
+            $budgetInfo = [
+                'budget_type' => 'PER_OUTLET',
+                'category_budget' => $category->budget_limit, // Global budget for reference
+                'outlet_budget' => $outletBudget->allocated_budget,
+                'outlet_used_amount' => $outletUsedAmount,
+                'current_amount' => $currentAmount,
+                'total_with_current' => $totalWithCurrent,
+                'outlet_remaining_amount' => $outletBudget->allocated_budget - $outletUsedAmount,
+                'remaining_after_current' => $remainingAfterCurrent,
+                'exceeds_budget' => $totalWithCurrent > $outletBudget->allocated_budget,
+                'outlet_info' => [
+                    'id' => $outletBudget->outlet_id,
+                    'name' => $outletBudget->outlet->nama_outlet ?? 'Unknown Outlet',
+                ],
+            ];
+        }
 
         return response()->json([
             'success' => true,
-            'category_budget' => $categoryBudget,
-            'category_used_amount' => $categoryUsedAmount,
-            'current_amount' => $currentAmount,
-            'total_with_current' => $totalWithCurrent,
-            'category_remaining_amount' => $categoryBudget - $categoryUsedAmount,
-            'remaining_after_current' => $remainingAfterCurrent,
-            'exceeds_budget' => $totalWithCurrent > $categoryBudget,
+            ...$budgetInfo
         ]);
     }
 
@@ -1072,8 +1319,8 @@ class PurchaseRequisitionController extends Controller
      */
     private function generateRequisitionNumber()
     {
-        $year = date('Y');
-        $month = date('m');
+        $year = now()->year;
+        $month = now()->month;
         
         $lastPR = PurchaseRequisition::whereYear('created_at', $year)
                                    ->whereMonth('created_at', $month)
@@ -1168,5 +1415,91 @@ class PurchaseRequisitionController extends Controller
 
             return response()->json([], 500);
         }
+    }
+
+    /**
+     * Validate budget limit for purchase requisition
+     */
+    private function validateBudgetLimit($categoryId, $outletId = null, $amount, $excludeId = null)
+    {
+        $category = PurchaseRequisitionCategory::find($categoryId);
+        if (!$category) {
+            return [
+                'valid' => false,
+                'message' => 'Category not found'
+            ];
+        }
+
+        $currentMonth = now()->month;
+        $currentYear = now()->year;
+
+        if ($category->isGlobalBudget()) {
+            // GLOBAL BUDGET: Calculate across all outlets
+            $query = PurchaseRequisition::where('category_id', $categoryId)
+                ->whereYear('created_at', $currentYear)
+                ->whereMonth('created_at', $currentMonth)
+                ->whereIn('status', ['SUBMITTED', 'APPROVED', 'PROCESSED', 'COMPLETED']);
+
+            if ($excludeId) {
+                $query->where('id', '!=', $excludeId);
+            }
+
+            $usedAmount = $query->sum('amount');
+            $totalWithCurrent = $usedAmount + $amount;
+
+            if ($totalWithCurrent > $category->budget_limit) {
+                return [
+                    'valid' => false,
+                    'message' => "Total amount (Rp " . number_format($totalWithCurrent, 0, ',', '.') . ") exceeds category budget limit (Rp " . number_format($category->budget_limit, 0, ',', '.') . ") for this month."
+                ];
+            }
+
+        } else if ($category->isPerOutletBudget()) {
+            // PER_OUTLET BUDGET: Calculate per specific outlet
+            if (!$outletId) {
+                return [
+                    'valid' => false,
+                    'message' => 'Outlet ID is required for per-outlet budget'
+                ];
+            }
+
+            // Get outlet budget allocation
+            $outletBudget = PurchaseRequisitionOutletBudget::where('category_id', $categoryId)
+                ->where('outlet_id', $outletId)
+                ->first();
+
+            if (!$outletBudget) {
+                return [
+                    'valid' => false,
+                    'message' => 'Outlet budget not configured for this category'
+                ];
+            }
+
+            // Calculate used amount for this specific outlet
+            $query = PurchaseRequisition::where('category_id', $categoryId)
+                ->where('outlet_id', $outletId)
+                ->whereYear('created_at', $currentYear)
+                ->whereMonth('created_at', $currentMonth)
+                ->whereIn('status', ['SUBMITTED', 'APPROVED', 'PROCESSED', 'COMPLETED']);
+
+            if ($excludeId) {
+                $query->where('id', '!=', $excludeId);
+            }
+
+            $usedAmount = $query->sum('amount');
+            $totalWithCurrent = $usedAmount + $amount;
+
+            if ($totalWithCurrent > $outletBudget->allocated_budget) {
+                return [
+                    'valid' => false,
+                    'message' => "Total amount (Rp " . number_format($totalWithCurrent, 0, ',', '.') . ") exceeds outlet budget limit (Rp " . number_format($outletBudget->allocated_budget, 0, ',', '.') . ") for this month."
+                ];
+            }
+        }
+
+        return [
+            'valid' => true,
+            'message' => 'Budget validation passed'
+        ];
     }
 }

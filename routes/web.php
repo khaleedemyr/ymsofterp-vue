@@ -357,6 +357,9 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/purchase-requisitions/tickets', [\App\Http\Controllers\PurchaseRequisitionController::class, 'getTickets'])->name('purchase-requisitions.tickets')->middleware('auth');
     Route::get('/purchase-requisitions/budget-info', [\App\Http\Controllers\PurchaseRequisitionController::class, 'getBudgetInfo'])->name('purchase-requisitions.budget-info')->middleware('auth');
     Route::get('/purchase-requisitions/approvers', [\App\Http\Controllers\PurchaseRequisitionController::class, 'getApprovers'])->name('purchase-requisitions.approvers')->middleware('auth');
+    
+    // Purchase Requisition Print (must be before resource routes)
+    Route::get('/purchase-requisitions/print-preview', [\App\Http\Controllers\PurchaseRequisitionController::class, 'printPreview'])->name('purchase-requisitions.print-preview')->middleware('auth');
 Route::get('/api/purchase-requisitions/pending-approvals', [\App\Http\Controllers\PurchaseRequisitionController::class, 'getPendingApprovals'])->name('purchase-requisitions.pending-approvals')->middleware('auth');
 Route::get('/api/purchase-requisitions/{id}/approval-details', [\App\Http\Controllers\PurchaseRequisitionController::class, 'getApprovalDetails'])->name('purchase-requisitions.approval-details')->middleware('auth');
 
@@ -369,6 +372,15 @@ Route::get('/api/purchase-requisitions/{id}/approval-details', [\App\Http\Contro
     Route::get('/purchase-requisitions', [\App\Http\Controllers\PurchaseRequisitionController::class, 'index'])->name('purchase-requisitions.index');
     Route::get('/purchase-requisitions/create', [\App\Http\Controllers\PurchaseRequisitionController::class, 'create'])->name('purchase-requisitions.create');
     Route::post('/purchase-requisitions', [\App\Http\Controllers\PurchaseRequisitionController::class, 'store'])->name('purchase-requisitions.store');
+    
+    // Test route for debugging
+    Route::get('/test-print', function() {
+        return response()->json(['message' => 'Test route works']);
+    });
+    
+    // Test print method
+    Route::get('/purchase-requisitions/test-print', [\App\Http\Controllers\PurchaseRequisitionController::class, 'testPrint'])->name('purchase-requisitions.test-print');
+    
     Route::get('/purchase-requisitions/{purchaseRequisition}', [\App\Http\Controllers\PurchaseRequisitionController::class, 'show'])->name('purchase-requisitions.show');
     Route::get('/purchase-requisitions/{purchaseRequisition}/edit', [\App\Http\Controllers\PurchaseRequisitionController::class, 'edit'])->name('purchase-requisitions.edit');
     Route::put('/purchase-requisitions/{purchaseRequisition}', [\App\Http\Controllers\PurchaseRequisitionController::class, 'update'])->name('purchase-requisitions.update');
@@ -390,6 +402,23 @@ Route::get('/api/purchase-requisitions/{id}/approval-details', [\App\Http\Contro
     Route::delete('/purchase-requisitions/attachments/{attachment}', [\App\Http\Controllers\PurchaseRequisitionController::class, 'deleteAttachment'])->name('purchase-requisitions.attachments.destroy');
     Route::get('/purchase-requisitions/attachments/{attachment}/download', [\App\Http\Controllers\PurchaseRequisitionController::class, 'downloadAttachment'])->name('purchase-requisitions.attachments.download');
     Route::get('/purchase-requisitions/attachments/{attachment}/view', [\App\Http\Controllers\PurchaseRequisitionController::class, 'viewAttachment'])->name('purchase-requisitions.attachments.view');
+
+    // Budget Management routes
+    Route::prefix('budget-management')->name('budget-management.')->group(function () {
+        Route::get('/', [\App\Http\Controllers\BudgetManagementController::class, 'index'])->name('index');
+        Route::get('/category/create', [\App\Http\Controllers\BudgetManagementController::class, 'createCategory'])->name('create-category');
+        Route::post('/category', [\App\Http\Controllers\BudgetManagementController::class, 'storeCategory'])->name('store-category');
+        Route::get('/category/{id}/edit', [\App\Http\Controllers\BudgetManagementController::class, 'editCategory'])->name('edit-category');
+        Route::put('/category/{id}', [\App\Http\Controllers\BudgetManagementController::class, 'updateCategory'])->name('update-category');
+        Route::delete('/category/{id}', [\App\Http\Controllers\BudgetManagementController::class, 'deleteCategory'])->name('delete-category');
+        Route::get('/category/delete', [\App\Http\Controllers\BudgetManagementController::class, 'deleteCategoryPage'])->name('delete-category-page');
+        Route::get('/category/{categoryId}/outlet-budgets', [\App\Http\Controllers\BudgetManagementController::class, 'manageOutletBudgets'])->name('manage-outlet-budgets');
+        Route::post('/category/{categoryId}/outlet-budgets', [\App\Http\Controllers\BudgetManagementController::class, 'storeOutletBudget'])->name('store-outlet-budget');
+        Route::put('/category/{categoryId}/outlet-budgets/{budgetId}', [\App\Http\Controllers\BudgetManagementController::class, 'updateOutletBudget'])->name('update-outlet-budget');
+        Route::delete('/category/{categoryId}/outlet-budgets/{budgetId}', [\App\Http\Controllers\BudgetManagementController::class, 'deleteOutletBudget'])->name('delete-outlet-budget');
+        Route::post('/category/{categoryId}/bulk-create', [\App\Http\Controllers\BudgetManagementController::class, 'bulkCreateOutletBudgets'])->name('bulk-create-outlet-budgets');
+        Route::get('/budget-summary', [\App\Http\Controllers\BudgetManagementController::class, 'getBudgetSummary'])->name('budget-summary');
+    });
 
     // Payment routes
     Route::resource('payments', \App\Http\Controllers\PaymentController::class);

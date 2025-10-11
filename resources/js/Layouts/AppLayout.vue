@@ -78,6 +78,7 @@ const menuGroups = [
             { name: () => 'Video Tutorial', icon: 'fa-solid fa-video', route: '/video-tutorials', code: 'master-data-video-tutorials' },
             { name: () => 'Group Video Tutorial', icon: 'fa-solid fa-folder', route: '/video-tutorial-groups', code: 'master-data-video-tutorial-groups' },
             { name: () => 'Locked Budget Food Categories', icon: 'fa-solid fa-lock', route: '/locked-budget-food-categories', code: 'locked_budget_food_categories' },
+            { name: () => 'Budget Management', icon: 'fa-solid fa-chart-pie', route: '/budget-management', code: 'budget_management' },
         ],
     },
     {

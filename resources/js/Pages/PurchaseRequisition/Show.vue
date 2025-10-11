@@ -168,14 +168,33 @@
           <div v-if="budgetInfo" class="bg-white rounded-xl shadow-lg p-6">
             <h2 class="text-lg font-semibold text-gray-800 mb-4 flex items-center">
               <i class="fa fa-chart-pie mr-2 text-green-500"></i>
-              Budget Information - {{ getMonthName(budgetInfo.current_month) }} {{ budgetInfo.current_year }}
+              {{ budgetInfo.budget_type === 'PER_OUTLET' ? 'Outlet Budget Information' : 'Category Budget Information' }} - {{ getMonthName(budgetInfo.current_month) }} {{ budgetInfo.current_year }}
+              <span class="ml-2 text-sm font-normal text-gray-600">
+                ({{ budgetInfo.budget_type === 'PER_OUTLET' ? 'Per Outlet' : 'Global' }})
+              </span>
             </h2>
+            
+            <!-- Outlet Info for PER_OUTLET -->
+            <div v-if="budgetInfo.budget_type === 'PER_OUTLET' && budgetInfo.outlet_info" class="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+              <p class="text-sm text-blue-600">
+                <i class="fa fa-store mr-2"></i>
+                <strong>Outlet:</strong> {{ budgetInfo.outlet_info.name }}
+              </p>
+            </div>
+            
             <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
                 <div class="flex items-center justify-between">
                   <div>
-                    <p class="text-sm font-medium text-blue-600">Total Budget</p>
-                    <p class="text-2xl font-bold text-blue-800">{{ formatCurrency(budgetInfo.category_budget) }}</p>
+                    <p class="text-sm font-medium text-blue-600">
+                      {{ budgetInfo.budget_type === 'PER_OUTLET' ? 'Outlet Budget' : 'Total Budget' }}
+                    </p>
+                    <p class="text-2xl font-bold text-blue-800">
+                      {{ formatCurrency(budgetInfo.budget_type === 'PER_OUTLET' ? budgetInfo.outlet_budget : budgetInfo.category_budget) }}
+                    </p>
+                    <p v-if="budgetInfo.budget_type === 'PER_OUTLET'" class="text-xs text-gray-500 mt-1">
+                      Global: {{ formatCurrency(budgetInfo.category_budget) }}
+                    </p>
                   </div>
                   <div class="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
                     <i class="fa fa-wallet text-blue-600 text-xl"></i>
@@ -187,7 +206,9 @@
                 <div class="flex items-center justify-between">
                   <div>
                     <p class="text-sm font-medium text-orange-600">Used This Month</p>
-                    <p class="text-2xl font-bold text-orange-800">{{ formatCurrency(budgetInfo.category_used_amount) }}</p>
+                    <p class="text-2xl font-bold text-orange-800">
+                      {{ formatCurrency(budgetInfo.budget_type === 'PER_OUTLET' ? budgetInfo.outlet_used_amount : budgetInfo.category_used_amount) }}
+                    </p>
                   </div>
                   <div class="w-12 h-12 bg-orange-100 rounded-full flex items-center justify-center">
                     <i class="fa fa-chart-line text-orange-600 text-xl"></i>
@@ -199,14 +220,14 @@
                 <div class="flex items-center justify-between">
                   <div>
                     <p class="text-sm font-medium text-green-600">Remaining Budget</p>
-                    <p class="text-2xl font-bold" :class="budgetInfo.category_remaining_amount < 0 ? 'text-red-800' : 'text-green-800'">
-                      {{ formatCurrency(budgetInfo.category_remaining_amount) }}
+                    <p class="text-2xl font-bold" :class="getRemainingAmount() < 0 ? 'text-red-800' : 'text-green-800'">
+                      {{ formatCurrency(getRemainingAmount()) }}
                     </p>
                   </div>
                   <div class="w-12 h-12 rounded-full flex items-center justify-center" 
-                       :class="budgetInfo.category_remaining_amount < 0 ? 'bg-red-100' : 'bg-green-100'">
+                       :class="getRemainingAmount() < 0 ? 'bg-red-100' : 'bg-green-100'">
                     <i class="fa fa-piggy-bank text-xl" 
-                       :class="budgetInfo.category_remaining_amount < 0 ? 'text-red-600' : 'text-green-600'"></i>
+                       :class="getRemainingAmount() < 0 ? 'text-red-600' : 'text-green-600'"></i>
                   </div>
                 </div>
               </div>
@@ -216,24 +237,30 @@
             <div class="mt-4">
               <div class="flex justify-between text-sm text-gray-600 mb-2">
                 <span>Budget Usage</span>
-                <span>{{ Math.round((budgetInfo.category_used_amount / budgetInfo.category_budget) * 100) }}%</span>
+                <span>{{ Math.round(getUsagePercentage()) }}%</span>
               </div>
               <div class="w-full bg-gray-200 rounded-full h-3">
                 <div class="h-3 rounded-full transition-all duration-300"
-                     :class="getBudgetProgressColor(budgetInfo.category_used_amount, budgetInfo.category_budget)"
-                     :style="{ width: Math.min((budgetInfo.category_used_amount / budgetInfo.category_budget) * 100, 100) + '%' }">
+                     :class="getBudgetProgressColor(getUsedAmount(), getTotalBudget())"
+                     :style="{ width: Math.min(getUsagePercentage(), 100) + '%' }">
                 </div>
               </div>
             </div>
             
             <!-- Warning Messages -->
-            <div v-if="budgetInfo.category_remaining_amount < 0" class="mt-4 p-3 bg-red-100 border border-red-300 rounded text-red-800 text-sm">
+            <div v-if="getRemainingAmount() < 0" class="mt-4 p-3 bg-red-100 border border-red-300 rounded text-red-800 text-sm">
               <i class="fa fa-exclamation-triangle mr-2"></i>
-              <strong>Budget Exceeded!</strong> This category has exceeded its monthly budget limit.
+              <strong>Budget Exceeded!</strong> 
+              <span v-if="budgetInfo.budget_type === 'PER_OUTLET'">
+                This outlet has exceeded its monthly budget limit.
+              </span>
+              <span v-else>
+                This category has exceeded its monthly budget limit.
+              </span>
             </div>
-            <div v-else-if="budgetInfo.category_remaining_amount < (budgetInfo.category_budget * 0.1)" class="mt-4 p-3 bg-yellow-100 border border-yellow-300 rounded text-yellow-800 text-sm">
+            <div v-else-if="getRemainingAmount() < (getTotalBudget() * 0.1)" class="mt-4 p-3 bg-yellow-100 border border-yellow-300 rounded text-yellow-800 text-sm">
               <i class="fa fa-exclamation-circle mr-2"></i>
-              <strong>Budget Warning!</strong> Only {{ formatCurrency(budgetInfo.category_remaining_amount) }} remaining in this category.
+              <strong>Budget Warning!</strong> Only {{ formatCurrency(getRemainingAmount()) }} remaining.
             </div>
           </div>
 
@@ -753,6 +780,35 @@ function getBudgetProgressColor(usedAmount, totalBudget) {
   if (percentage >= 80) return 'bg-yellow-500'
   if (percentage >= 60) return 'bg-orange-500'
   return 'bg-green-500'
+}
+
+// Helper functions for budget calculations
+function getTotalBudget() {
+  if (!props.budgetInfo) return 0
+  return props.budgetInfo.budget_type === 'PER_OUTLET' 
+    ? props.budgetInfo.outlet_budget 
+    : props.budgetInfo.category_budget
+}
+
+function getUsedAmount() {
+  if (!props.budgetInfo) return 0
+  return props.budgetInfo.budget_type === 'PER_OUTLET' 
+    ? props.budgetInfo.outlet_used_amount 
+    : props.budgetInfo.category_used_amount
+}
+
+function getRemainingAmount() {
+  if (!props.budgetInfo) return 0
+  return props.budgetInfo.budget_type === 'PER_OUTLET' 
+    ? props.budgetInfo.outlet_remaining_amount 
+    : props.budgetInfo.category_remaining_amount
+}
+
+function getUsagePercentage() {
+  const used = getUsedAmount()
+  const total = getTotalBudget()
+  if (total === 0) return 0
+  return (used / total) * 100
 }
 
 // Action methods

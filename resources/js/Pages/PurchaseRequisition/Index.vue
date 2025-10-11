@@ -5,9 +5,11 @@
         <h1 class="text-2xl font-bold text-gray-800 flex items-center gap-2">
           <i class="fa-solid fa-shopping-cart text-blue-500"></i> Purchase Requisition Ops
         </h1>
-        <button @click="openCreate" class="bg-gradient-to-r from-blue-500 to-blue-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold">
-          + Buat Purchase Requisition Baru
-        </button>
+        <div class="flex gap-3">
+          <button @click="openCreate" class="bg-gradient-to-r from-blue-500 to-blue-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold">
+            + Buat Purchase Requisition Baru
+          </button>
+        </div>
       </div>
 
       <!-- Statistics Cards -->
@@ -163,6 +165,13 @@
                       <i class="fas fa-edit"></i>
                     </button>
                     <button
+                      @click="printSinglePR(pr)"
+                      class="text-purple-600 hover:text-purple-900"
+                      title="Print PDF"
+                    >
+                      <i class="fas fa-print"></i>
+                    </button>
+                    <button
                       v-if="canDelete(pr)"
                       @click="deletePR(pr)"
                       class="text-red-600 hover:text-red-900"
@@ -269,6 +278,34 @@
         </nav>
       </div>
     </div>
+
+    <!-- Print Preview Modal -->
+    <div v-if="showPrintModal" class="fixed inset-0 z-[100000] flex items-center justify-center bg-black/40">
+      <div class="bg-white rounded-xl shadow-lg w-full max-w-6xl p-6 relative">
+        <button @click="closePrintModal" class="absolute top-3 right-3 text-gray-400 hover:text-gray-600">
+          <i class="fas fa-times text-lg"></i>
+        </button>
+        <div class="flex justify-between items-center mb-4">
+          <h3 class="text-lg font-medium">Preview Purchase Requisition</h3>
+          <div class="flex gap-2">
+            <button 
+              @click="printPreview"
+              class="px-3 py-1 text-sm bg-blue-100 text-blue-600 rounded hover:bg-blue-200 flex items-center gap-1"
+            >
+              <i class="fas fa-print"></i>
+              Print
+            </button>
+          </div>
+        </div>
+        <div class="p-4" style="height: 80vh;">
+          <iframe 
+            :src="previewUrl" 
+            class="w-full h-full border-0" 
+            ref="previewFrame"
+          ></iframe>
+        </div>
+      </div>
+    </div>
   </AppLayout>
 </template>
 
@@ -299,6 +336,12 @@ const search = ref(props.filters?.search || '');
 const status = ref(props.filters?.status || 'all');
 const division = ref(props.filters?.division || 'all');
 const perPage = ref(props.filters?.per_page || 15);
+
+// Print functionality
+const showPrintModal = ref(false);
+const printData = ref([]);
+const previewUrl = ref('');
+const previewFrame = ref(null);
 
 const debouncedSearch = debounce(() => {
   router.get('/purchase-requisitions', {
@@ -444,6 +487,36 @@ function formatDate(date) {
     month: 'short',
     day: 'numeric',
   });
+}
+
+// Print functionality
+async function printSinglePR(pr) {
+  try {
+    console.log('Printing single PR:', pr);
+    printData.value = [pr];
+    
+    // Generate preview URL
+    const prIds = pr.id.toString();
+    console.log('PR ID for URL:', prIds);
+    previewUrl.value = `/purchase-requisitions/print-preview?ids=${encodeURIComponent(prIds)}`;
+    console.log('Preview URL:', previewUrl.value);
+    showPrintModal.value = true;
+  } catch (error) {
+    console.error('Error preparing print:', error);
+    Swal.fire('Error', 'Gagal mempersiapkan print', 'error');
+  }
+}
+
+function closePrintModal() {
+  showPrintModal.value = false;
+  previewUrl.value = '';
+  printData.value = [];
+}
+
+function printPreview() {
+  if (previewFrame.value) {
+    previewFrame.value.contentWindow.print();
+  }
 }
 
 // Watch for changes

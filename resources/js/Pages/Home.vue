@@ -747,6 +747,64 @@ function getBudgetProgressColor(usedAmount, totalBudget) {
     return 'bg-green-500'
 }
 
+// Helper functions for PR budget calculations
+function getPrTotalBudget() {
+    if (!prApprovalBudgetInfo.value) return 0
+    return prApprovalBudgetInfo.value.budget_type === 'PER_OUTLET' 
+        ? prApprovalBudgetInfo.value.outlet_budget 
+        : prApprovalBudgetInfo.value.category_budget
+}
+
+function getPrUsedAmount() {
+    if (!prApprovalBudgetInfo.value) return 0
+    return prApprovalBudgetInfo.value.budget_type === 'PER_OUTLET' 
+        ? prApprovalBudgetInfo.value.outlet_used_amount 
+        : prApprovalBudgetInfo.value.category_used_amount
+}
+
+function getPrRemainingAmount() {
+    if (!prApprovalBudgetInfo.value) return 0
+    return prApprovalBudgetInfo.value.budget_type === 'PER_OUTLET' 
+        ? prApprovalBudgetInfo.value.outlet_remaining_amount 
+        : prApprovalBudgetInfo.value.category_remaining_amount
+}
+
+function getPrUsagePercentage() {
+    const used = getPrUsedAmount()
+    const total = getPrTotalBudget()
+    if (total === 0) return 0
+    return (used / total) * 100
+}
+
+// Helper functions for PO Ops budget calculations
+function getPoOpsTotalBudget() {
+    if (!poOpsApprovalBudgetInfo.value) return 0
+    return poOpsApprovalBudgetInfo.value.budget_type === 'PER_OUTLET' 
+        ? poOpsApprovalBudgetInfo.value.outlet_budget 
+        : poOpsApprovalBudgetInfo.value.category_budget
+}
+
+function getPoOpsUsedAmount() {
+    if (!poOpsApprovalBudgetInfo.value) return 0
+    return poOpsApprovalBudgetInfo.value.budget_type === 'PER_OUTLET' 
+        ? poOpsApprovalBudgetInfo.value.outlet_used_amount 
+        : poOpsApprovalBudgetInfo.value.category_used_amount
+}
+
+function getPoOpsRemainingAmount() {
+    if (!poOpsApprovalBudgetInfo.value) return 0
+    return poOpsApprovalBudgetInfo.value.budget_type === 'PER_OUTLET' 
+        ? poOpsApprovalBudgetInfo.value.outlet_remaining_amount 
+        : poOpsApprovalBudgetInfo.value.category_remaining_amount
+}
+
+function getPoOpsUsagePercentage() {
+    const used = getPoOpsUsedAmount()
+    const total = getPoOpsTotalBudget()
+    if (total === 0) return 0
+    return (used / total) * 100
+}
+
 function getApprovalFlowClass(status) {
     switch (status) {
         case 'APPROVED':
@@ -3592,37 +3650,54 @@ watch(locale, () => {
                     <div v-if="prApprovalBudgetInfo" class="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
                         <h4 class="text-md font-semibold text-gray-900 dark:text-white mb-3">
                             <i class="fa fa-chart-pie mr-2 text-blue-500"></i>
-                            Informasi Budget - {{ getMonthName(prApprovalBudgetInfo.current_month) }} {{ prApprovalBudgetInfo.current_year }}
+                            {{ prApprovalBudgetInfo.budget_type === 'PER_OUTLET' ? 'Informasi Budget Outlet' : 'Informasi Budget Category' }} - {{ getMonthName(prApprovalBudgetInfo.current_month) }} {{ prApprovalBudgetInfo.current_year }}
+                            <span class="ml-2 text-sm font-normal text-gray-600 dark:text-gray-400">
+                                ({{ prApprovalBudgetInfo.budget_type === 'PER_OUTLET' ? 'Per Outlet' : 'Global' }})
+                            </span>
                         </h4>
+                        
+                        <!-- Outlet Info for PER_OUTLET -->
+                        <div v-if="prApprovalBudgetInfo.budget_type === 'PER_OUTLET' && prApprovalBudgetInfo.outlet_info" class="mb-4 p-3 bg-blue-100 dark:bg-blue-800/30 border border-blue-200 dark:border-blue-700 rounded-lg">
+                            <p class="text-sm text-blue-600 dark:text-blue-400">
+                                <i class="fa fa-store mr-2"></i>
+                                <strong>Outlet:</strong> {{ prApprovalBudgetInfo.outlet_info.name }}
+                            </p>
+                        </div>
+                        
                         <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                             <div class="bg-white dark:bg-gray-800 p-3 rounded-lg">
-                                <div class="text-sm font-medium text-blue-600">Total Budget</div>
+                                <div class="text-sm font-medium text-blue-600">
+                                    {{ prApprovalBudgetInfo.budget_type === 'PER_OUTLET' ? 'Outlet Budget' : 'Total Budget' }}
+                                </div>
                                 <div class="text-lg font-bold text-blue-800">
-                                    Rp {{ new Intl.NumberFormat('id-ID').format(prApprovalBudgetInfo.category_budget) }}
+                                    Rp {{ new Intl.NumberFormat('id-ID').format(prApprovalBudgetInfo.budget_type === 'PER_OUTLET' ? prApprovalBudgetInfo.outlet_budget : prApprovalBudgetInfo.category_budget) }}
+                                </div>
+                                <div v-if="prApprovalBudgetInfo.budget_type === 'PER_OUTLET'" class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                    Global: Rp {{ new Intl.NumberFormat('id-ID').format(prApprovalBudgetInfo.category_budget) }}
                                 </div>
                             </div>
                             <div class="bg-white dark:bg-gray-800 p-3 rounded-lg">
                                 <div class="text-sm font-medium text-orange-600">Used This Month</div>
                                 <div class="text-lg font-bold text-orange-800">
-                                    Rp {{ new Intl.NumberFormat('id-ID').format(prApprovalBudgetInfo.category_used_amount) }}
+                                    Rp {{ new Intl.NumberFormat('id-ID').format(prApprovalBudgetInfo.budget_type === 'PER_OUTLET' ? prApprovalBudgetInfo.outlet_used_amount : prApprovalBudgetInfo.category_used_amount) }}
                                 </div>
                             </div>
                             <div class="bg-white dark:bg-gray-800 p-3 rounded-lg">
                                 <div class="text-sm font-medium text-green-600">Remaining Budget</div>
-                                <div class="text-lg font-bold" :class="prApprovalBudgetInfo.category_remaining_amount < 0 ? 'text-red-800' : 'text-green-800'">
-                                    Rp {{ new Intl.NumberFormat('id-ID').format(prApprovalBudgetInfo.category_remaining_amount) }}
+                                <div class="text-lg font-bold" :class="getPrRemainingAmount() < 0 ? 'text-red-800' : 'text-green-800'">
+                                    Rp {{ new Intl.NumberFormat('id-ID').format(getPrRemainingAmount()) }}
                                 </div>
                             </div>
                         </div>
                         <div class="mt-4">
-                            <div class="flex justify-between text-sm text-gray-600 mb-2">
+                            <div class="flex justify-between text-sm text-gray-600 dark:text-gray-400 mb-2">
                                 <span>Budget Usage</span>
-                                <span>{{ Math.round((prApprovalBudgetInfo.category_used_amount / prApprovalBudgetInfo.category_budget) * 100) }}%</span>
+                                <span>{{ Math.round(getPrUsagePercentage()) }}%</span>
                             </div>
-                            <div class="w-full bg-gray-200 rounded-full h-3">
+                            <div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3">
                                 <div class="h-3 rounded-full transition-all duration-300"
-                                     :class="getBudgetProgressColor(prApprovalBudgetInfo.category_used_amount, prApprovalBudgetInfo.category_budget)"
-                                     :style="{ width: Math.min((prApprovalBudgetInfo.category_used_amount / prApprovalBudgetInfo.category_budget) * 100, 100) + '%' }">
+                                     :class="getBudgetProgressColor(getPrUsedAmount(), getPrTotalBudget())"
+                                     :style="{ width: Math.min(getPrUsagePercentage(), 100) + '%' }">
                                 </div>
                             </div>
                         </div>
@@ -3850,39 +3925,72 @@ watch(locale, () => {
                     <div v-if="poOpsApprovalBudgetInfo" class="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
                         <h4 class="text-md font-semibold text-gray-900 dark:text-white mb-3">
                             <i class="fa fa-chart-pie mr-2 text-blue-500"></i>
-                            Informasi Budget - {{ getMonthName(poOpsApprovalBudgetInfo.current_month) }} {{ poOpsApprovalBudgetInfo.current_year }}
+                            {{ poOpsApprovalBudgetInfo.budget_type === 'PER_OUTLET' ? 'Informasi Budget Outlet' : 'Informasi Budget Category' }} - {{ getMonthName(poOpsApprovalBudgetInfo.current_month) }} {{ poOpsApprovalBudgetInfo.current_year }}
+                            <span class="ml-2 text-sm font-normal text-gray-600 dark:text-gray-400">
+                                ({{ poOpsApprovalBudgetInfo.budget_type === 'PER_OUTLET' ? 'Per Outlet' : 'Global' }})
+                            </span>
                         </h4>
+                        
+                        <!-- Outlet Info for PER_OUTLET -->
+                        <div v-if="poOpsApprovalBudgetInfo.budget_type === 'PER_OUTLET' && poOpsApprovalBudgetInfo.outlet_info" class="mb-4 p-3 bg-blue-100 dark:bg-blue-800/30 border border-blue-200 dark:border-blue-700 rounded-lg">
+                            <p class="text-sm text-blue-600 dark:text-blue-400">
+                                <i class="fa fa-store mr-2"></i>
+                                <strong>Outlet:</strong> {{ poOpsApprovalBudgetInfo.outlet_info.name }}
+                            </p>
+                        </div>
+                        
                         <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                             <div class="bg-white dark:bg-gray-800 p-3 rounded-lg">
-                                <div class="text-sm font-medium text-blue-600">Total Budget</div>
+                                <div class="text-sm font-medium text-blue-600">
+                                    {{ poOpsApprovalBudgetInfo.budget_type === 'PER_OUTLET' ? 'Outlet Budget' : 'Total Budget' }}
+                                </div>
                                 <div class="text-lg font-bold text-blue-800">
-                                    Rp {{ new Intl.NumberFormat('id-ID').format(poOpsApprovalBudgetInfo.category_budget) }}
+                                    Rp {{ new Intl.NumberFormat('id-ID').format(poOpsApprovalBudgetInfo.budget_type === 'PER_OUTLET' ? poOpsApprovalBudgetInfo.outlet_budget : poOpsApprovalBudgetInfo.category_budget) }}
+                                </div>
+                                <div v-if="poOpsApprovalBudgetInfo.budget_type === 'PER_OUTLET'" class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                    Global: Rp {{ new Intl.NumberFormat('id-ID').format(poOpsApprovalBudgetInfo.category_budget) }}
                                 </div>
                             </div>
                             <div class="bg-white dark:bg-gray-800 p-3 rounded-lg">
                                 <div class="text-sm font-medium text-orange-600">Used This Month</div>
                                 <div class="text-lg font-bold text-orange-800">
-                                    Rp {{ new Intl.NumberFormat('id-ID').format(poOpsApprovalBudgetInfo.category_used_amount) }}
+                                    Rp {{ new Intl.NumberFormat('id-ID').format(poOpsApprovalBudgetInfo.budget_type === 'PER_OUTLET' ? poOpsApprovalBudgetInfo.outlet_used_amount : poOpsApprovalBudgetInfo.category_used_amount) }}
                                 </div>
                             </div>
                             <div class="bg-white dark:bg-gray-800 p-3 rounded-lg">
                                 <div class="text-sm font-medium text-green-600">Remaining Budget</div>
-                                <div class="text-lg font-bold" :class="poOpsApprovalBudgetInfo.category_remaining_amount < 0 ? 'text-red-800' : 'text-green-800'">
-                                    Rp {{ new Intl.NumberFormat('id-ID').format(poOpsApprovalBudgetInfo.category_remaining_amount) }}
+                                <div class="text-lg font-bold" :class="getPoOpsRemainingAmount() < 0 ? 'text-red-800' : 'text-green-800'">
+                                    Rp {{ new Intl.NumberFormat('id-ID').format(getPoOpsRemainingAmount()) }}
                                 </div>
                             </div>
                         </div>
                         <div class="mt-4">
-                            <div class="flex justify-between text-sm text-gray-600 mb-2">
+                            <div class="flex justify-between text-sm text-gray-600 dark:text-gray-400 mb-2">
                                 <span>Budget Usage</span>
-                                <span>{{ Math.round((poOpsApprovalBudgetInfo.category_used_amount / poOpsApprovalBudgetInfo.category_budget) * 100) }}%</span>
+                                <span>{{ Math.round(getPoOpsUsagePercentage()) }}%</span>
                             </div>
-                            <div class="w-full bg-gray-200 rounded-full h-3">
+                            <div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3">
                                 <div class="h-3 rounded-full transition-all duration-300"
-                                     :class="getBudgetProgressColor(poOpsApprovalBudgetInfo.category_used_amount, poOpsApprovalBudgetInfo.category_budget)"
-                                     :style="{ width: Math.min((poOpsApprovalBudgetInfo.category_used_amount / poOpsApprovalBudgetInfo.category_budget) * 100, 100) + '%' }">
+                                     :class="getBudgetProgressColor(getPoOpsUsedAmount(), getPoOpsTotalBudget())"
+                                     :style="{ width: Math.min(getPoOpsUsagePercentage(), 100) + '%' }">
                                 </div>
                             </div>
+                        </div>
+                        
+                        <!-- Warning Messages -->
+                        <div v-if="getPoOpsRemainingAmount() < 0" class="mt-4 p-3 bg-red-100 dark:bg-red-900/20 border border-red-300 dark:border-red-700 rounded text-red-800 dark:text-red-400 text-sm">
+                            <i class="fa fa-exclamation-triangle mr-2"></i>
+                            <strong>Budget Exceeded!</strong> 
+                            <span v-if="poOpsApprovalBudgetInfo.budget_type === 'PER_OUTLET'">
+                                This outlet has exceeded its monthly budget limit.
+                            </span>
+                            <span v-else>
+                                This category has exceeded its monthly budget limit.
+                            </span>
+                        </div>
+                        <div v-else-if="getPoOpsRemainingAmount() < (getPoOpsTotalBudget() * 0.1)" class="mt-4 p-3 bg-yellow-100 dark:bg-yellow-900/20 border border-yellow-300 dark:border-yellow-700 rounded text-yellow-800 dark:text-yellow-400 text-sm">
+                            <i class="fa fa-exclamation-circle mr-2"></i>
+                            <strong>Budget Warning!</strong> Only Rp {{ new Intl.NumberFormat('id-ID').format(getPoOpsRemainingAmount()) }} remaining.
                         </div>
                     </div>
 
