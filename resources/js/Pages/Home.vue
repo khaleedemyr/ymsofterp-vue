@@ -2628,8 +2628,8 @@ function formatAnyCorrectionValue(oldValue, newValue, type = 'attendance') {
     } catch (error) {
         // If JSON parsing fails, try to extract time from string
         const timeRegex = /(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})/;
-        const oldMatch = oldValue.match(timeRegex);
-        const newMatch = newValue.match(timeRegex);
+        const oldMatch = oldValue && oldValue.match ? oldValue.match(timeRegex) : null;
+        const newMatch = newValue && newValue.match ? newValue.match(timeRegex) : null;
         
         if (oldMatch && newMatch) {
             const oldTime = new Date(oldMatch[1]).toLocaleTimeString('id-ID', {
