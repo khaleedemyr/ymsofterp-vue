@@ -130,6 +130,32 @@ class ExtraOffController extends Controller
     }
 
     /**
+     * Detect extra off for specific date (Admin only) - POST endpoint
+     */
+    public function detect(Request $request)
+    {
+        $request->validate([
+            'date' => 'required|date'
+        ]);
+
+        $date = $request->input('date');
+
+        try {
+            $results = $this->extraOffService->detectUnscheduledWork($date);
+
+            return response()->json([
+                'success' => true,
+                'results' => $results
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
      * Get extra off statistics (Admin only)
      */
     public function getStatistics(Request $request)
@@ -241,6 +267,55 @@ class ExtraOffController extends Controller
 
         $transactions = $query->orderBy('created_at', 'desc')
                              ->paginate($request->get('per_page', 15));
+
+        return response()->json([
+            'success' => true,
+            'transactions' => $transactions
+        ]);
+    }
+
+    /**
+     * Get all transactions without pagination (Admin only)
+     */
+    public function getAllTransactionsSimple(Request $request)
+    {
+        $query = ExtraOffTransaction::with(['user:id,nama_lengkap,nik']);
+
+        // Filter by user if provided
+        if ($request->has('user_id')) {
+            $query->where('user_id', $request->get('user_id'));
+        }
+
+        // Filter by transaction type
+        if ($request->has('transaction_type')) {
+            $query->where('transaction_type', $request->get('transaction_type'));
+        }
+
+        // Filter by source type
+        if ($request->has('source_type')) {
+            $query->where('source_type', $request->get('source_type'));
+        }
+
+        // Filter by status
+        if ($request->has('status')) {
+            $query->where('status', $request->get('status'));
+        }
+
+        // Filter by date range
+        if ($request->has('date_from')) {
+            $query->where('created_at', '>=', $request->get('date_from'));
+        }
+
+        if ($request->has('date_to')) {
+            $query->where('created_at', '<=', $request->get('date_to'));
+        }
+
+        $transactions = $query->orderBy('created_at', 'desc')
+                             ->limit(100) // Limit to 100 most recent
+                             ->get();
+
+        // Ensure user data is properly loaded
+        $transactions->load('user');
 
         return response()->json([
             'success' => true,

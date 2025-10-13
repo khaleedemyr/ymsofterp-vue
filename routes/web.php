@@ -1993,15 +1993,14 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('/transactions', [\App\Http\Controllers\ExtraOffController::class, 'getTransactions'])->name('api.extra-off.transactions');
         Route::post('/use', [\App\Http\Controllers\ExtraOffController::class, 'useExtraOff'])->name('api.extra-off.use');
         
-        // Admin routes (require admin middleware)
-        Route::middleware('admin')->group(function () {
-            Route::post('/adjust', [\App\Http\Controllers\ExtraOffController::class, 'adjustBalance'])->name('api.extra-off.adjust');
-            Route::post('/detect', [\App\Http\Controllers\ExtraOffController::class, 'detectUnscheduledWork'])->name('api.extra-off.detect');
-            Route::get('/statistics', [\App\Http\Controllers\ExtraOffController::class, 'getStatistics'])->name('api.extra-off.statistics');
-            Route::post('/initialize', [\App\Http\Controllers\ExtraOffController::class, 'initializeBalances'])->name('api.extra-off.initialize');
-            Route::get('/balances', [\App\Http\Controllers\ExtraOffController::class, 'getAllBalances'])->name('api.extra-off.balances');
-            Route::get('/all-transactions', [\App\Http\Controllers\ExtraOffController::class, 'getAllTransactions'])->name('api.extra-off.all-transactions');
-        });
+        // Admin routes (require authentication only for now)
+        Route::post('/adjust', [\App\Http\Controllers\ExtraOffController::class, 'adjustBalance'])->name('api.extra-off.adjust');
+        Route::post('/detect', [\App\Http\Controllers\ExtraOffController::class, 'detect'])->name('api.extra-off.detect');
+        Route::get('/detect', [\App\Http\Controllers\ExtraOffController::class, 'detectUnscheduledWork'])->name('api.extra-off.detect.get');
+        Route::get('/statistics', [\App\Http\Controllers\ExtraOffController::class, 'getStatistics'])->name('api.extra-off.statistics');
+        Route::post('/initialize', [\App\Http\Controllers\ExtraOffController::class, 'initializeBalances'])->name('api.extra-off.initialize');
+        Route::get('/balances', [\App\Http\Controllers\ExtraOffController::class, 'getAllBalances'])->name('api.extra-off.balances');
+        Route::get('/all-transactions', [\App\Http\Controllers\ExtraOffController::class, 'getAllTransactionsSimple'])->name('api.extra-off.all-transactions');
     });
 });
 

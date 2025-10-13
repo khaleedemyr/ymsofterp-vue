@@ -795,6 +795,9 @@ class ReportController extends Controller
         if ($request->filled('to')) {
             $warehouseQuery->whereDate('ws.date', '<=', $request->to);
         }
+        
+        // Filter warehouse sales yang belum dihapus
+        $warehouseQuery->whereNull('ws.deleted_at');
 
         $warehouseReport = $warehouseQuery->groupBy('w.name')
             ->orderBy('w.name')
@@ -1074,6 +1077,9 @@ class ReportController extends Controller
             if ($request->filled('to')) {
                 $warehouseQuery->whereDate('ws.date', '<=', $request->to);
             }
+            
+            // Filter warehouse sales yang belum dihapus
+            $warehouseQuery->whereNull('ws.deleted_at');
 
             $warehouseReport = $warehouseQuery->groupBy('w.name')
                 ->orderBy('w.name')
@@ -1388,6 +1394,7 @@ class ReportController extends Controller
             ->where('w.name', $request->customer)
             ->whereDate('ws.date', '>=', $request->from)
             ->whereDate('ws.date', '<=', $request->to)
+            ->whereNull('ws.deleted_at') // Filter warehouse sales yang belum dihapus
             ->select(
                 'sc.name as category',
                 'sc.name as sub_category',
@@ -2846,6 +2853,7 @@ class ReportController extends Controller
                 ->where('w.name', $customer)
                 ->whereDate('ws.date', '>=', $from)
                 ->whereDate('ws.date', '<=', $to)
+                ->whereNull('ws.deleted_at') // Filter warehouse sales yang belum dihapus
                 ->select(
                     'it.name as item_name',
                     DB::raw('COALESCE(sc.name, "Uncategorized") as category'),

@@ -12,8 +12,42 @@
 
     <div class="py-6">
       <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
-        <!-- Statistics Cards -->
-        <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
+        <!-- Tabs -->
+        <div class="mb-6">
+          <div class="border-b border-gray-200">
+            <nav class="-mb-px flex space-x-8">
+              <button
+                @click="activeTab = 'holiday'"
+                :class="[
+                  activeTab === 'holiday' 
+                    ? 'border-indigo-500 text-indigo-600' 
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300',
+                  'whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm'
+                ]"
+              >
+                <i class="fas fa-calendar-day mr-2"></i>
+                Holiday Attendance
+              </button>
+              <button
+                @click="activeTab = 'extra-off'"
+                :class="[
+                  activeTab === 'extra-off' 
+                    ? 'border-indigo-500 text-indigo-600' 
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300',
+                  'whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm'
+                ]"
+              >
+                <i class="fas fa-clock mr-2"></i>
+                Extra Off Detection
+              </button>
+            </nav>
+          </div>
+        </div>
+
+        <!-- Holiday Attendance Tab -->
+        <div v-if="activeTab === 'holiday'">
+          <!-- Statistics Cards -->
+          <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
           <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
             <div class="p-6">
               <div class="flex items-center">
@@ -291,6 +325,185 @@
             </div>
           </div>
         </div>
+        </div>
+
+        <!-- Extra Off Detection Tab -->
+        <div v-if="activeTab === 'extra-off'">
+          <!-- Extra Off Statistics Cards -->
+          <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
+            <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
+              <div class="p-6">
+                <div class="flex items-center">
+                  <div class="flex-shrink-0">
+                    <div class="w-8 h-8 bg-purple-500 rounded-full flex items-center justify-center">
+                      <i class="fas fa-clock text-white"></i>
+                    </div>
+                  </div>
+                  <div class="ml-4">
+                    <p class="text-sm font-medium text-gray-500">Total Extra Off</p>
+                    <p class="text-2xl font-semibold text-gray-900">
+                      <i v-if="loadingExtraOffStats" class="fas fa-spinner fa-spin text-purple-500"></i>
+                      <span v-else>{{ extraOffStats.total_extra_off || 0 }}</span>
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
+              <div class="p-6">
+                <div class="flex items-center">
+                  <div class="flex-shrink-0">
+                    <div class="w-8 h-8 bg-orange-500 rounded-full flex items-center justify-center">
+                      <i class="fas fa-hourglass-half text-white"></i>
+                    </div>
+                  </div>
+                  <div class="ml-4">
+                    <p class="text-sm font-medium text-gray-500">Total Overtime</p>
+                    <p class="text-2xl font-semibold text-gray-900">
+                      <i v-if="loadingExtraOffStats" class="fas fa-spinner fa-spin text-orange-500"></i>
+                      <span v-else>{{ extraOffStats.total_overtime || 0 }}</span>
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
+              <div class="p-6">
+                <div class="flex items-center">
+                  <div class="flex-shrink-0">
+                    <div class="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center">
+                      <i class="fas fa-users text-white"></i>
+                    </div>
+                  </div>
+                  <div class="ml-4">
+                    <p class="text-sm font-medium text-gray-500">Total Users</p>
+                    <p class="text-2xl font-semibold text-gray-900">
+                      <i v-if="loadingExtraOffStats" class="fas fa-spinner fa-spin text-green-500"></i>
+                      <span v-else>{{ extraOffStats.total_users || 0 }}</span>
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
+              <div class="p-6">
+                <div class="flex items-center">
+                  <div class="flex-shrink-0">
+                    <div class="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center">
+                      <i class="fas fa-chart-line text-white"></i>
+                    </div>
+                  </div>
+                  <div class="ml-4">
+                    <p class="text-sm font-medium text-gray-500">Total Balance</p>
+                    <p class="text-2xl font-semibold text-gray-900">
+                      <i v-if="loadingExtraOffStats" class="fas fa-spinner fa-spin text-blue-500"></i>
+                      <span v-else>{{ extraOffStats.total_balance || 0 }}</span>
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Process Extra Off Detection -->
+          <div class="bg-white shadow-sm sm:rounded-lg mb-6">
+            <div class="p-6">
+              <h3 class="text-lg font-medium text-gray-900 mb-4">Process Extra Off Detection</h3>
+              <div class="flex items-center space-x-4">
+                <div>
+                  <label class="block text-sm font-medium text-gray-700 mb-2">Select Date</label>
+                  <input
+                    v-model="extraOffForm.date"
+                    type="date"
+                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                  />
+                </div>
+                <div class="flex items-end">
+                  <button
+                    @click="processExtraOffDetection"
+                    :disabled="processingExtraOff"
+                    class="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-md disabled:opacity-50 flex items-center gap-2"
+                  >
+                    <i v-if="processingExtraOff" class="fas fa-spinner fa-spin"></i>
+                    <i v-else class="fas fa-search"></i>
+                    {{ processingExtraOff ? 'Processing...' : 'Detect Extra Off' }}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Extra Off Transactions Table -->
+          <div class="bg-white shadow-sm sm:rounded-lg">
+            <div class="px-6 py-4 border-b border-gray-200">
+              <h3 class="text-lg font-medium text-gray-900">Extra Off Transactions</h3>
+            </div>
+            <div class="overflow-x-auto">
+              <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                  <tr>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Employee</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Description</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                  </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-gray-200">
+                  <tr v-if="loadingExtraOffTransactions">
+                    <td colspan="6" class="px-6 py-4 text-center">
+                      <i class="fas fa-spinner fa-spin text-gray-400"></i>
+                      <span class="ml-2 text-gray-500">Loading...</span>
+                    </td>
+                  </tr>
+                  <tr v-else-if="extraOffTransactions.length === 0">
+                    <td colspan="6" class="px-6 py-4 text-center text-gray-500">
+                      No extra off transactions found
+                    </td>
+                  </tr>
+                  <tr v-else v-for="transaction in extraOffTransactions" :key="transaction.id">
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {{ formatDate(transaction.source_date) }}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {{ transaction.user ? transaction.user.nama_lengkap : 'Unknown User' }}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                      <span :class="[
+                        transaction.source_type === 'unscheduled_work' 
+                          ? 'bg-green-100 text-green-800' 
+                          : 'bg-orange-100 text-orange-800',
+                        'px-2 inline-flex text-xs leading-5 font-semibold rounded-full'
+                      ]">
+                        {{ transaction.source_type === 'unscheduled_work' ? 'Extra Off' : 'Overtime' }}
+                      </span>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {{ transaction.amount > 0 ? '+' + transaction.amount : transaction.amount }} hari
+                    </td>
+                    <td class="px-6 py-4 text-sm text-gray-900">
+                      {{ transaction.description }}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                      <span :class="[
+                        transaction.status === 'approved' 
+                          ? 'bg-green-100 text-green-800' 
+                          : 'bg-yellow-100 text-yellow-800',
+                        'px-2 inline-flex text-xs leading-5 font-semibold rounded-full'
+                      ]">
+                        {{ transaction.status }}
+                      </span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -401,6 +614,20 @@ const showUseModal = ref(false)
 const selectedCompensation = ref(null)
 const loadingStatistics = ref(false)
 const loadingFilters = ref(false)
+
+// Tab management
+const activeTab = ref('holiday')
+
+// Extra Off Detection variables
+const extraOffStats = ref({})
+const extraOffTransactions = ref([])
+const loadingExtraOffStats = ref(false)
+const loadingExtraOffTransactions = ref(false)
+const processingExtraOff = ref(false)
+
+const extraOffForm = ref({
+  date: ''
+})
 
 // Expandable table state
 const expandedOutlets = ref([])
@@ -769,9 +996,161 @@ const loadStatistics = async () => {
   }
 }
 
+// Extra Off Detection functions
+const processExtraOffDetection = async () => {
+  if (!extraOffForm.value.date) {
+    Swal.fire({
+      icon: 'warning',
+      title: 'Warning!',
+      text: 'Please select a date',
+      confirmButtonText: 'OK'
+    })
+    return
+  }
+
+  processingExtraOff.value = true
+  
+  try {
+    const response = await fetch('/api/extra-off/detect', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+        'Accept': 'application/json'
+      },
+      body: JSON.stringify({
+        date: extraOffForm.value.date
+      })
+    })
+    
+    // Check if response is ok
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`)
+    }
+    
+    // Check if response is JSON
+    const contentType = response.headers.get('content-type')
+    if (!contentType || !contentType.includes('application/json')) {
+      const text = await response.text()
+      throw new Error(`Expected JSON response but got: ${text.substring(0, 200)}...`)
+    }
+    
+    const result = await response.json()
+    
+    if (result.success) {
+      Swal.fire({
+        icon: 'success',
+        title: 'Success!',
+        html: `
+          <div class="text-left">
+            <p><strong>Extra Off Detection Results:</strong></p>
+            <ul class="mt-2 space-y-1">
+              <li>• Detected: ${result.results.detected} employees</li>
+              <li>• Extra Off Processed: ${result.results.processed} employees (>8 hours)</li>
+              <li>• Overtime Processed: ${result.results.overtime_processed} employees (≤8 hours)</li>
+              <li>• Errors: ${result.results.errors.length}</li>
+            </ul>
+          </div>
+        `,
+        confirmButtonText: 'OK'
+      })
+      
+      // Reload extra off data
+      loadExtraOffStats()
+      loadExtraOffTransactions()
+    } else {
+      Swal.fire({
+        icon: 'error',
+        title: 'Error!',
+        text: result.message || 'Terjadi kesalahan saat memproses extra off detection',
+        confirmButtonText: 'OK'
+      })
+    }
+  } catch (error) {
+    Swal.fire({
+      icon: 'error',
+      title: 'Error!',
+      text: 'Terjadi kesalahan saat memproses extra off detection: ' + error.message,
+      confirmButtonText: 'OK'
+    })
+  } finally {
+    processingExtraOff.value = false
+  }
+}
+
+const loadExtraOffStats = async () => {
+  loadingExtraOffStats.value = true
+  
+  try {
+    const response = await fetch('/api/extra-off/statistics', {
+      headers: {
+        'Accept': 'application/json'
+      }
+    })
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`)
+    }
+    
+    const contentType = response.headers.get('content-type')
+    if (!contentType || !contentType.includes('application/json')) {
+      const text = await response.text()
+      throw new Error(`Expected JSON response but got: ${text.substring(0, 200)}...`)
+    }
+    
+    const result = await response.json()
+    
+    if (result.success) {
+      extraOffStats.value = result.statistics
+    } else {
+      console.error('Error loading extra off stats:', result.message)
+    }
+  } catch (error) {
+    console.error('Error loading extra off stats:', error)
+  } finally {
+    loadingExtraOffStats.value = false
+  }
+}
+
+const loadExtraOffTransactions = async () => {
+  loadingExtraOffTransactions.value = true
+  
+  try {
+    const response = await fetch('/api/extra-off/all-transactions', {
+      headers: {
+        'Accept': 'application/json'
+      }
+    })
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`)
+    }
+    
+    const contentType = response.headers.get('content-type')
+    if (!contentType || !contentType.includes('application/json')) {
+      const text = await response.text()
+      throw new Error(`Expected JSON response but got: ${text.substring(0, 200)}...`)
+    }
+    
+    const result = await response.json()
+    
+    if (result.success) {
+      extraOffTransactions.value = result.transactions
+    } else {
+      console.error('Error loading extra off transactions:', result.message)
+    }
+  } catch (error) {
+    console.error('Error loading extra off transactions:', error)
+  } finally {
+    loadingExtraOffTransactions.value = false
+  }
+}
+
 onMounted(() => {
   console.log('Component mounted, props:', props)
   console.log('Compensations data:', props.compensations)
   loadStatistics()
+  loadExtraOffStats()
+  loadExtraOffTransactions()
 })
 </script>

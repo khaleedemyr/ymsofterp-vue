@@ -52,11 +52,13 @@ class ExtraOffService
             'date' => $date,
             'detected' => 0,
             'processed' => 0,
+            'overtime_processed' => 0,
             'errors' => []
         ];
 
         try {
             // Query to detect employees who worked without shift
+            // Kriteria: TIDAK ADA SHIFT tapi ADA ATTENDANCE
             $unscheduledWorkers = DB::select("
                 SELECT 
                     u.id as user_id,
@@ -65,21 +67,27 @@ class ExtraOffService
                     DATE(a.scan_date) as work_date,
                     COUNT(*) as attendance_count
                 FROM att_log a
-                INNER JOIN user_pins up ON a.pin = up.pin
+                INNER JOIN tbl_data_outlet o ON a.sn = o.sn
+                INNER JOIN user_pins up ON a.pin = up.pin AND o.id_outlet = up.outlet_id
                 INNER JOIN users u ON up.user_id = u.id
                 LEFT JOIN user_shifts us ON u.id = us.user_id 
                     AND DATE(a.scan_date) = DATE(us.tanggal)
                 WHERE 
                     a.inoutmode = 1
                     AND DATE(a.scan_date) = ?
-                    AND us.id IS NULL
+                    AND (us.id IS NULL OR us.shift_id IS NULL)  -- TIDAK ADA SHIFT atau SHIFT = NULL (OFF)
                     AND u.status = 'A'
                     AND NOT EXISTS (
                         SELECT 1 FROM extra_off_transactions eot 
                         WHERE eot.user_id = u.id 
                         AND eot.source_date = DATE(a.scan_date)
-                        AND eot.source_type = 'unscheduled_work'
+                        AND eot.source_type IN ('unscheduled_work', 'overtime_work')
                         AND eot.transaction_type = 'earned'
+                    )
+                    AND NOT EXISTS (
+                        SELECT 1 FROM holiday_attendance_compensations hac 
+                        WHERE hac.user_id = u.id 
+                        AND hac.holiday_date = DATE(a.scan_date)
                     )
                     AND NOT EXISTS (
                         SELECT 1 FROM tbl_kalender_perusahaan kp 
@@ -90,16 +98,39 @@ class ExtraOffService
             ", [$date]);
 
             $results['detected'] = count($unscheduledWorkers);
+            
+            // Log detection results for debugging
+            \Log::info('Extra Off Detection Results', [
+                'date' => $date,
+                'detected_count' => $results['detected'],
+                'detected_workers' => $unscheduledWorkers
+            ]);
 
             // Process each detected worker
             foreach ($unscheduledWorkers as $worker) {
                 try {
-                    $this->giveExtraOffForUnscheduledWork(
-                        $worker->user_id,
-                        $worker->work_date,
-                        $worker->nama_lengkap
-                    );
-                    $results['processed']++;
+                    // Calculate work hours for this employee on this date
+                    $workHours = $this->calculateWorkHours($worker->user_id, $worker->work_date);
+                    
+                    if ($workHours > 8) {
+                        // Extra off: work > 8 hours
+                        $this->giveExtraOffForUnscheduledWork(
+                            $worker->user_id,
+                            $worker->work_date,
+                            $worker->nama_lengkap,
+                            $workHours
+                        );
+                        $results['processed']++;
+                    } else if ($workHours > 0) {
+                        // Overtime: work <= 8 hours
+                        $this->giveOvertimeForUnscheduledWork(
+                            $worker->user_id,
+                            $worker->work_date,
+                            $worker->nama_lengkap,
+                            $workHours
+                        );
+                        $results['overtime_processed']++;
+                    }
                 } catch (\Exception $e) {
                     $results['errors'][] = [
                         'user_id' => $worker->user_id,
@@ -119,14 +150,102 @@ class ExtraOffService
     }
 
     /**
-     * Give extra off for unscheduled work
+     * Calculate work hours for an employee on a specific date
+     * Using the same logic as AttendanceReportController
+     * 
+     * @param int $userId
+     * @param string $workDate
+     * @return float Work hours (decimal)
+     */
+    public function calculateWorkHours($userId, $workDate)
+    {
+        // Get all attendance data for this user on this date
+        $attendanceData = DB::table('att_log as a')
+            ->join('tbl_data_outlet as o', 'a.sn', '=', 'o.sn')
+            ->join('user_pins as up', function($q) {
+                $q->on('a.pin', '=', 'up.pin')->on('o.id_outlet', '=', 'up.outlet_id');
+            })
+            ->where('up.user_id', $userId)
+            ->where(DB::raw('DATE(a.scan_date)'), $workDate)
+            ->select('a.scan_date', 'a.inoutmode')
+            ->orderBy('a.scan_date')
+            ->get();
+
+        if ($attendanceData->isEmpty()) {
+            return 0;
+        }
+
+        // Process scans to determine first checkin and last checkout
+        $scans = $attendanceData->sortBy('scan_date');
+        $inScans = $scans->where('inoutmode', 1);
+        $outScans = $scans->where('inoutmode', 2);
+
+        $firstCheckin = $inScans->first();
+        if (!$firstCheckin) {
+            return 0; // No checkin, no work hours
+        }
+
+        $lastCheckout = null;
+        $isCrossDay = false;
+
+        // Find last checkout on the same day
+        $sameDayOuts = $outScans->where('scan_date', '>', $firstCheckin->scan_date);
+        if ($sameDayOuts->isNotEmpty()) {
+            $lastCheckout = $sameDayOuts->last();
+            $isCrossDay = false;
+        } else {
+            // Check for checkout on next day (cross-day work)
+            $nextDay = date('Y-m-d', strtotime($workDate . ' +1 day'));
+            $nextDayAttendance = DB::table('att_log as a')
+                ->join('tbl_data_outlet as o', 'a.sn', '=', 'o.sn')
+                ->join('user_pins as up', function($q) {
+                    $q->on('a.pin', '=', 'up.pin')->on('o.id_outlet', '=', 'up.outlet_id');
+                })
+                ->where('up.user_id', $userId)
+                ->where(DB::raw('DATE(a.scan_date)'), $nextDay)
+                ->where('a.inoutmode', 2)
+                ->select('a.scan_date')
+                ->orderBy('a.scan_date')
+                ->first();
+
+            if ($nextDayAttendance) {
+                $lastCheckout = (object)['scan_date' => $nextDayAttendance->scan_date];
+                $isCrossDay = true;
+            }
+        }
+
+        if (!$lastCheckout) {
+            return 0; // No checkout, no work hours
+        }
+
+        // Calculate work hours
+        $checkinTime = strtotime($firstCheckin->scan_date);
+        $checkoutTime = strtotime($lastCheckout->scan_date);
+        $workSeconds = $checkoutTime - $checkinTime;
+        $workHours = $workSeconds / 3600; // Convert to hours
+
+        \Log::info('Work hours calculation', [
+            'user_id' => $userId,
+            'work_date' => $workDate,
+            'first_checkin' => $firstCheckin->scan_date,
+            'last_checkout' => $lastCheckout->scan_date,
+            'is_cross_day' => $isCrossDay,
+            'work_hours' => $workHours
+        ]);
+
+        return $workHours;
+    }
+
+    /**
+     * Give extra off for unscheduled work (>8 hours)
      * 
      * @param int $userId
      * @param string $workDate
      * @param string $employeeName
+     * @param float $workHours
      * @return void
      */
-    public function giveExtraOffForUnscheduledWork($userId, $workDate, $employeeName)
+    public function giveExtraOffForUnscheduledWork($userId, $workDate, $employeeName, $workHours = null)
     {
         // Create transaction record
         $transaction = ExtraOffTransaction::create([
@@ -135,7 +254,8 @@ class ExtraOffService
             'amount' => 1,
             'source_type' => 'unscheduled_work',
             'source_date' => $workDate,
-            'description' => "Extra off dari kerja tanpa shift di tanggal {$workDate}",
+            'description' => "Extra off dari kerja tanpa shift di tanggal {$workDate}" . 
+                           ($workHours ? " ({$workHours} jam)" : ""),
             'status' => 'approved'
         ]);
 
@@ -152,6 +272,39 @@ class ExtraOffService
             'user_id' => $userId,
             'employee_name' => $employeeName,
             'work_date' => $workDate,
+            'work_hours' => $workHours,
+            'transaction_id' => $transaction->id
+        ]);
+    }
+
+    /**
+     * Give overtime for unscheduled work (≤8 hours)
+     * 
+     * @param int $userId
+     * @param string $workDate
+     * @param string $employeeName
+     * @param float $workHours
+     * @return void
+     */
+    public function giveOvertimeForUnscheduledWork($userId, $workDate, $employeeName, $workHours)
+    {
+        // Create transaction record for overtime (not extra off)
+        $transaction = ExtraOffTransaction::create([
+            'user_id' => $userId,
+            'transaction_type' => 'earned',
+            'amount' => 0, // No extra off balance, just record the overtime
+            'source_type' => 'overtime_work',
+            'source_date' => $workDate,
+            'description' => "Lembur dari kerja tanpa shift di tanggal {$workDate} ({$workHours} jam)",
+            'status' => 'approved'
+        ]);
+
+        // Log the action
+        \Log::info("Overtime recorded for unscheduled work", [
+            'user_id' => $userId,
+            'employee_name' => $employeeName,
+            'work_date' => $workDate,
+            'work_hours' => $workHours,
             'transaction_id' => $transaction->id
         ]);
     }

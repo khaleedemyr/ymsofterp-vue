@@ -131,6 +131,23 @@ class HolidayAttendanceService
             return; // Skip if already processed
         }
 
+        // Check if already processed in Extra Off system
+        $alreadyProcessedExtraOff = DB::table('extra_off_transactions')
+            ->where('user_id', $employee->user_id)
+            ->where('source_date', $date)
+            ->whereIn('source_type', ['unscheduled_work', 'overtime_work'])
+            ->where('transaction_type', 'earned')
+            ->exists();
+
+        if ($alreadyProcessedExtraOff) {
+            \Log::info("Skipping holiday processing - already processed in Extra Off system", [
+                'user_id' => $employee->user_id,
+                'employee_name' => $employee->nama_lengkap,
+                'date' => $date
+            ]);
+            return; // Skip if already processed in Extra Off system
+        }
+
         $compensation = $this->getEmployeeCompensation($employee->id_jabatan);
 
         if ($compensation['type'] === 'extra_off') {

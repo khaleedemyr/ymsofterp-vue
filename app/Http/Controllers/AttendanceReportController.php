@@ -2243,13 +2243,18 @@ class AttendanceReportController extends Controller
                         }
 
                         // Siapkan data detail absensi harian untuk expandable table
-                        $dailyAttendance = $employeeRows->map(function($row) {
+                        $dailyAttendance = $employeeRows->map(function($row) use ($firstRow) {
+                            // Get Extra Off overtime for this specific date
+                            $extraOffOvertime = $this->getExtraOffOvertimeHours($firstRow->user_id, $row->tanggal, $row->tanggal);
+                            
                             return [
                                 'tanggal' => $row->tanggal,
                                 'jam_masuk' => $row->jam_masuk,
                                 'jam_keluar' => $row->jam_keluar,
                                 'telat' => $row->telat,
                                 'lembur' => $row->lembur,
+                                'extra_off_overtime' => $extraOffOvertime, // Overtime from Extra Off system
+                                'total_lembur' => $row->lembur + $extraOffOvertime, // Combined overtime
                                 'is_cross_day' => $row->is_cross_day ?? false,
                                 'is_off' => $row->is_off ?? false,
                                 'is_holiday' => $row->is_holiday ?? false,
@@ -2270,11 +2275,11 @@ class AttendanceReportController extends Controller
                             'off_days' => $offDays, // Jumlah hari tanpa shift
                             'ph_days' => $phData['days'], // Jumlah hari libur nasional dengan kompensasi
                             'ph_bonus' => $phData['bonus'], // Total bonus PH yang diterima
-                            'extra_off_days' => $leaveData['extra_off_days'], // Jumlah hari extra off
+                            'extra_off_days' => $leaveData['extra_off_days'] ?? 0, // Jumlah hari extra off
                             'alpa_days' => $alpaDays, // Jumlah hari alpa
-                            'ot_full_days' => $employeeRows->sum('lembur'), // Total lembur (OT Full)
+                            'ot_full_days' => $employeeRows->sum('lembur') + $this->getExtraOffOvertimeHours($firstRow->user_id, $start, $end), // Total lembur (OT Full) + Extra Off Overtime
                             'total_telat' => $employeeRows->sum('telat'),
-                            'total_lembur' => $employeeRows->sum('lembur'),
+                            'total_lembur' => $employeeRows->sum('lembur') + $this->getExtraOffOvertimeHours($firstRow->user_id, $start, $end),
                             'total_days' => $this->calculateTotalDaysInPeriod($start, $end), // Total hari dalam periode
                             // Data detail untuk expandable table
                             'daily_attendance' => $dailyAttendance,
@@ -2462,9 +2467,15 @@ class AttendanceReportController extends Controller
                     )
                     ->whereBetween(DB::raw('DATE(a.scan_date)'), [$start, $end]);
 
-                // Apply filters - Filter outlet hanya untuk dropdown karyawan, bukan untuk report
+                // Apply filters - SAMA PERSIS DENGAN METHOD employeeSummary
+                if (!empty($outletId)) {
+                    $sub->where('u.id_outlet', $outletId);
+                    \Log::info('Applied outlet filter: ' . $outletId);
+                }
+                
                 if (!empty($divisionId)) {
                     $sub->where('u.division_id', $divisionId);
+                    \Log::info('Applied division filter: ' . $divisionId);
                 }
 
                 $sub->orderBy('a.scan_date')->chunk($chunkSize, function($chunk) use (&$rawData) {
@@ -2642,7 +2653,7 @@ class AttendanceReportController extends Controller
                         'has_shift' => $shift ? true : false
                     ]);
 
-                    // Fix: Pastikan data jam selalu ada, meskipun kosong
+                    // Fix: Pastikan data jam selalu ada, meskipun kosong - SAMA PERSIS DENGAN METHOD employeeSummary
                     $rows->push((object)[
                         'tanggal' => $row->tanggal,
                         'user_id' => $row->user_id,
@@ -2650,6 +2661,8 @@ class AttendanceReportController extends Controller
                         'division_id' => $row->division_id,
                         'jam_masuk' => $row->jam_masuk, // Kirim datetime lengkap, bukan format time
                         'jam_keluar' => $row->jam_keluar, // Kirim datetime lengkap, bukan format time
+                        'total_masuk' => $row->total_masuk ?? 0,
+                        'total_keluar' => $row->total_keluar ?? 0,
                         'telat' => $telat,
                         'lembur' => $lembur,
                         'is_cross_day' => $row->is_cross_day ?? false,
@@ -2690,13 +2703,18 @@ class AttendanceReportController extends Controller
                     $alpaDays = $this->calculateAlpaDays($firstRow->user_id, null, $start, $end);
                     
                     // Siapkan data detail absensi harian untuk expandable table
-                    $dailyAttendance = $employeeRows->map(function($row) {
+                    $dailyAttendance = $employeeRows->map(function($row) use ($firstRow) {
+                        // Get Extra Off overtime for this specific date
+                        $extraOffOvertime = $this->getExtraOffOvertimeHours($firstRow->user_id, $row->tanggal, $row->tanggal);
+                        
                         return [
                             'tanggal' => $row->tanggal,
                             'jam_masuk' => $row->jam_masuk,
                             'jam_keluar' => $row->jam_keluar,
                             'telat' => $row->telat,
                             'lembur' => $row->lembur,
+                            'extra_off_overtime' => $extraOffOvertime, // Overtime from Extra Off system
+                            'total_lembur' => $row->lembur + $extraOffOvertime, // Combined overtime
                             'is_cross_day' => $row->is_cross_day ?? false,
                             'is_off' => $row->is_off ?? false,
                             'is_holiday' => $row->is_holiday ?? false,
@@ -2717,17 +2735,24 @@ class AttendanceReportController extends Controller
                         'off_days' => $offDays, // Jumlah hari tanpa shift
                         'ph_days' => $phData['days'], // Jumlah hari libur nasional dengan kompensasi
                         'ph_bonus' => $phData['bonus'], // Total bonus PH yang diterima
-                        'cuti_days' => $leaveData['cuti_days'], // Jumlah hari cuti
-                        'extra_off_days' => $leaveData['extra_off_days'], // Jumlah hari extra off
-                        'sakit_days' => $leaveData['sakit_days'], // Jumlah hari sakit
+                        'cuti_days' => $leaveData['annual_leave_days'] ?? 0, // Jumlah hari cuti (Annual Leave)
+                        'extra_off_days' => $leaveData['extra_off_days'] ?? 0, // Jumlah hari extra off
+                        'sakit_days' => $leaveData['sick_leave_days'] ?? 0, // Jumlah hari sakit (Sick Leave)
                         'alpa_days' => $alpaDays, // Jumlah hari alpa
-                        'ot_full_days' => $employeeRows->sum('lembur'), // Total lembur (OT Full)
+                        'ot_full_days' => $employeeRows->sum('lembur') + $this->getExtraOffOvertimeHours($firstRow->user_id, $start, $end), // Total lembur (OT Full) + Extra Off Overtime
                         'total_telat' => $employeeRows->sum('telat'),
-                        'total_lembur' => $employeeRows->sum('lembur'),
+                        'total_lembur' => $employeeRows->sum('lembur') + $this->getExtraOffOvertimeHours($firstRow->user_id, $start, $end),
                         'total_days' => $this->calculateTotalDaysInPeriod($start, $end), // Total hari dalam periode
                         // Data detail untuk expandable table
                         'daily_attendance' => $dailyAttendance,
                     ];
+                    
+                    // Add dynamic leave data - SAMA PERSIS DENGAN METHOD employeeSummary
+                    foreach ($leaveData as $key => $value) {
+                        if (strpos($key, '_days') !== false && $key !== 'extra_off_days') {
+                            $result->$key = $value;
+                        }
+                    }
                     
                     $employeeSummary->push($result);
                 }
@@ -2946,5 +2971,57 @@ class AttendanceReportController extends Controller
         // Ini bisa diimplementasikan sesuai kebutuhan
         
         return response()->json(['message' => 'Export functionality not implemented yet']);
+    }
+
+    /**
+     * Get overtime hours from Extra Off system for a specific user and date range
+     * 
+     * @param int $userId
+     * @param string $startDate
+     * @param string $endDate
+     * @return float Total overtime hours
+     */
+    private function getExtraOffOvertimeHours($userId, $startDate, $endDate)
+    {
+        try {
+            // Get overtime transactions from Extra Off system
+            $overtimeTransactions = DB::table('extra_off_transactions')
+                ->where('user_id', $userId)
+                ->where('source_type', 'overtime_work')
+                ->where('transaction_type', 'earned')
+                ->whereBetween('source_date', [$startDate, $endDate])
+                ->get();
+
+            $totalOvertimeHours = 0;
+
+            foreach ($overtimeTransactions as $transaction) {
+                // Extract work hours from description
+                // Format: "Lembur dari kerja tanpa shift di tanggal 2025-10-12 (10.45 jam)"
+                if (preg_match('/\(([0-9.]+)\s*jam\)/', $transaction->description, $matches)) {
+                    $workHours = (float) $matches[1];
+                    $totalOvertimeHours += $workHours;
+                }
+            }
+
+            \Log::info('Extra Off Overtime Hours calculated', [
+                'user_id' => $userId,
+                'start_date' => $startDate,
+                'end_date' => $endDate,
+                'transactions_count' => $overtimeTransactions->count(),
+                'total_overtime_hours' => $totalOvertimeHours
+            ]);
+
+            return $totalOvertimeHours;
+
+        } catch (\Exception $e) {
+            \Log::error('Error calculating Extra Off overtime hours', [
+                'user_id' => $userId,
+                'start_date' => $startDate,
+                'end_date' => $endDate,
+                'error' => $e->getMessage()
+            ]);
+            
+            return 0; // Return 0 if there's an error
+        }
     }
 } 

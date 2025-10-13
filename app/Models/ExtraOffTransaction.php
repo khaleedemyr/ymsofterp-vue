@@ -89,7 +89,8 @@ class ExtraOffTransaction extends Model
     public function getSourceTypeTextAttribute()
     {
         return match($this->source_type) {
-            'unscheduled_work' => 'Kerja Tanpa Shift',
+            'unscheduled_work' => 'Kerja Tanpa Shift (>8 jam)',
+            'overtime_work' => 'Lembur Kerja Tanpa Shift (≤8 jam)',
             'manual_adjustment' => 'Penyesuaian Manual',
             'holiday_work' => 'Kerja Hari Libur',
             default => 'Unknown'
