@@ -567,6 +567,30 @@ class EnrollTestController extends Controller
         ]);
     }
 
+    public function recalculateAllScores()
+    {
+        try {
+            $testResults = TestResult::where('status', 'completed')->get();
+            $count = 0;
+            
+            foreach ($testResults as $testResult) {
+                $this->recalculateTestResultScore($testResult->id);
+                $count++;
+            }
+            
+            return response()->json([
+                'success' => true,
+                'message' => "Berhasil recalculate {$count} test results dengan sistem bobot baru"
+            ]);
+            
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal recalculate: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
     public function updateEssayScore(Request $request, TestAnswer $testAnswer)
     {
         $validated = $request->validate([
@@ -652,9 +676,14 @@ class EnrollTestController extends Controller
         $testResult = TestResult::find($testResultId);
         if (!$testResult) return;
 
-        // Recalculate score berdasarkan is_correct, bukan score yang ada di database
+        // Recalculate score dengan sistem bobot
         $testAnswers = TestAnswer::where('test_result_id', $testResultId)->get();
-        $totalScore = 0;
+        
+        // Hitung skor per kategori
+        $essayScore = 0;
+        $essayMaxScore = 0;
+        $pgYesNoScore = 0;
+        $pgYesNoMaxScore = 0;
         
         foreach ($testAnswers as $testAnswer) {
             // Ambil data soal untuk cek tipe
@@ -672,22 +701,31 @@ class EnrollTestController extends Controller
                     $isCorrect = strtolower($testAnswer->user_answer) === strtolower($pertanyaan->jawaban_benar);
                     $score = $isCorrect ? 4 : 1;
                 }
+                $pgYesNoScore += $score;
+                $pgYesNoMaxScore += 4; // Max score per soal adalah 4
             } elseif ($pertanyaan->tipe_soal === 'essay') {
                 // Essay: gunakan score yang sudah diinput admin (1-4) - manual scoring
                 $score = $testAnswer->score ?? 0;
+                $essayScore += $score;
+                $essayMaxScore += 4; // Max score per soal adalah 4
             }
-            
-            $totalScore += $score;
         }
         
-        $answerCount = $testAnswers->count();
-        $maxScore = $answerCount * 4; // Max score per soal adalah 4
-        $percentage = $maxScore > 0 ? ($totalScore / $maxScore) * 100 : 0;
+        // Hitung persentase dengan bobot
+        $essayPercentage = $essayMaxScore > 0 ? ($essayScore / $essayMaxScore) * 100 : 0;
+        $pgYesNoPercentage = $pgYesNoMaxScore > 0 ? ($pgYesNoScore / $pgYesNoMaxScore) * 100 : 0;
+        
+        // Bobot: Essay 70%, PG+Yes/No 30%
+        $weightedPercentage = ($essayPercentage * 0.7) + ($pgYesNoPercentage * 0.3);
+        
+        // Total score untuk display (tanpa bobot)
+        $totalScore = $essayScore + $pgYesNoScore;
+        $maxScore = $essayMaxScore + $pgYesNoMaxScore;
 
         $testResult->update([
             'total_score' => $totalScore,
             'max_score' => $maxScore,
-            'percentage' => $percentage
+            'percentage' => $weightedPercentage
         ]);
     }
 
@@ -864,13 +902,40 @@ class EnrollTestController extends Controller
                 ]);
             }
 
-            // Update test_result dengan total skor
-            $percentage = $maxScore > 0 ? ($totalScore / $maxScore) * 100 : 0;
+            // Hitung skor per kategori untuk sistem bobot
+            $essayScore = 0;
+            $essayMaxScore = 0;
+            $pgYesNoScore = 0;
+            $pgYesNoMaxScore = 0;
             
+            foreach ($testAnswers as $testAnswer) {
+                $pertanyaan = DB::table('soal_pertanyaan')
+                    ->where('id', $testAnswer->soal_pertanyaan_id)
+                    ->first();
+                    
+                if (!$pertanyaan) continue;
+                
+                if ($pertanyaan->tipe_soal === 'pilihan_ganda' || $pertanyaan->tipe_soal === 'yes_no') {
+                    $pgYesNoScore += $testAnswer->score;
+                    $pgYesNoMaxScore += 4;
+                } elseif ($pertanyaan->tipe_soal === 'essay') {
+                    $essayScore += $testAnswer->score;
+                    $essayMaxScore += 4;
+                }
+            }
+            
+            // Hitung persentase dengan bobot
+            $essayPercentage = $essayMaxScore > 0 ? ($essayScore / $essayMaxScore) * 100 : 0;
+            $pgYesNoPercentage = $pgYesNoMaxScore > 0 ? ($pgYesNoScore / $pgYesNoMaxScore) * 100 : 0;
+            
+            // Bobot: Essay 70%, PG+Yes/No 30%
+            $weightedPercentage = ($essayPercentage * 0.7) + ($pgYesNoPercentage * 0.3);
+            
+            // Update test_result dengan total skor dan bobot
             $testResult->update([
                 'total_score' => $totalScore,
                 'max_score' => $maxScore,
-                'percentage' => $percentage
+                'percentage' => $weightedPercentage
             ]);
 
             \Log::info('Test score calculated and saved', [

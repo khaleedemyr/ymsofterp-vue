@@ -60,6 +60,13 @@
               <i class="fa-solid fa-refresh"></i>
               Reset
             </button>
+            <button @click="recalculateAllScores" 
+                    :disabled="isRecalculating"
+                    class="bg-green-500 hover:bg-green-600 disabled:bg-gray-400 text-white px-4 py-2 rounded-lg flex items-center gap-2">
+              <i v-if="isRecalculating" class="fa-solid fa-spinner fa-spin"></i>
+              <i v-else class="fa-solid fa-calculator"></i>
+              {{ isRecalculating ? 'Recalculating...' : 'Recalculate Semua Skor' }}
+            </button>
           </div>
         </div>
       </div>
@@ -164,6 +171,21 @@
                             <div class="font-semibold" :class="getStatusColor(testResult.status)">
                               {{ getStatusText(testResult.status) }}
                             </div>
+                          </div>
+                        </div>
+
+                        <!-- Bobot Information -->
+                        <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+                          <div class="flex items-center mb-2">
+                            <i class="fa-solid fa-info-circle text-blue-600 mr-2"></i>
+                            <h6 class="font-medium text-blue-900">Sistem Penilaian dengan Bobot</h6>
+                          </div>
+                          <div class="text-sm text-blue-800">
+                            <p class="mb-1">• <strong>Essay:</strong> 70% dari total nilai</p>
+                            <p class="mb-1">• <strong>Pilihan Ganda & Ya/Tidak:</strong> 30% dari total nilai</p>
+                            <p class="text-xs text-blue-600 mt-2">
+                              Persentase yang ditampilkan sudah menggunakan sistem bobot ini.
+                            </p>
                           </div>
                         </div>
 
@@ -364,6 +386,7 @@ const loadingScores = ref({});
 
 // Bulk update variables
 const isBulkUpdating = ref(false);
+const isRecalculating = ref(false);
 
 // Lightbox variables
 const lightboxVisible = ref(false);
@@ -625,6 +648,59 @@ async function bulkUpdateTestResultEssayScores(testResultId) {
     });
   } finally {
     isBulkUpdating.value = false;
+  }
+}
+
+// Recalculate all scores with new weighted system
+async function recalculateAllScores() {
+  if (isRecalculating.value) return;
+  
+  const result = await Swal.fire({
+    title: 'Konfirmasi',
+    text: 'Apakah Anda yakin ingin recalculate semua skor dengan sistem bobot baru? (Essay 70%, PG+Yes/No 30%)',
+    icon: 'question',
+    showCancelButton: true,
+    confirmButtonText: 'Ya, Recalculate',
+    cancelButtonText: 'Batal',
+    confirmButtonColor: '#10b981',
+    cancelButtonColor: '#6b7280'
+  });
+  
+  if (!result.isConfirmed) return;
+  
+  isRecalculating.value = true;
+  
+  try {
+    const response = await axios.post(route('enroll-test.recalculate-all-scores'));
+    
+    if (response.data.success) {
+      Swal.fire({
+        icon: 'success',
+        title: 'Berhasil',
+        text: response.data.message,
+        confirmButtonText: 'OK'
+      }).then(() => {
+        // Reload page to get updated data
+        router.reload();
+      });
+    } else {
+      Swal.fire({
+        icon: 'error',
+        title: 'Gagal',
+        text: 'Gagal recalculate: ' + response.data.message,
+        confirmButtonText: 'OK'
+      });
+    }
+  } catch (error) {
+    console.error('Error recalculating scores:', error);
+    Swal.fire({
+      icon: 'error',
+      title: 'Error',
+      text: 'Terjadi kesalahan saat recalculate scores',
+      confirmButtonText: 'OK'
+    });
+  } finally {
+    isRecalculating.value = false;
   }
 }
 

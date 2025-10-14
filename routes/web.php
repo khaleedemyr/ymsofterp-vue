@@ -1296,6 +1296,7 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/enroll-test-report', [App\Http\Controllers\EnrollTestController::class, 'report'])->name('enroll-test.report');
     Route::post('/test-answer/{testAnswer}/update-essay-score', [App\Http\Controllers\EnrollTestController::class, 'updateEssayScore'])->name('enroll-test.update-essay-score');
     Route::post('/enroll-test/bulk-update-essay-scores', [App\Http\Controllers\EnrollTestController::class, 'bulkUpdateEssayScores'])->name('enroll-test.bulk-update-essay-scores');
+    Route::post('/enroll-test/recalculate-all-scores', [App\Http\Controllers\EnrollTestController::class, 'recalculateAllScores'])->name('enroll-test.recalculate-all-scores');
 });
 Route::get('/sales-outlet-dashboard/outlet-daily-revenue', [App\Http\Controllers\SalesOutletDashboardController::class, 'getOutletDailyRevenue'])->name('sales-outlet-dashboard.outlet-daily-revenue');
 Route::get('/sales-outlet-dashboard/outlet-lunch-dinner-detail', [App\Http\Controllers\SalesOutletDashboardController::class, 'getOutletLunchDinnerDetail'])->name('sales-outlet-dashboard.outlet-lunch-dinner-detail');
