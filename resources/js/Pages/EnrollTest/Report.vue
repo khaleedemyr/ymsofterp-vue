@@ -118,7 +118,7 @@
                     <div class="bg-blue-50 p-3 border-b border-gray-200">
                       <div class="flex justify-between items-center">
                         <div>
-                          <h4 class="font-medium text-gray-900">{{ testResult.enroll_test.master_soal.judul }}</h4>
+                          <h4 class="font-medium text-gray-900">{{ testResult.enroll_test?.master_soal?.judul || 'Judul tidak tersedia' }}</h4>
                           <p class="text-sm text-gray-600">
                             Selesai: {{ formatDateTime(testResult.completed_at) }}
                           </p>
@@ -173,10 +173,10 @@
                         <div v-for="(answer, index) in testResult.test_answers" :key="answer.id" 
                              class="border border-gray-200 rounded-lg p-4">
                           <div class="flex justify-between items-start mb-3">
-                            <h6 class="font-medium text-gray-900">Soal {{ index + 1 }} - {{ getTipeSoalText(answer.soal_pertanyaan.tipe_soal) }}</h6>
+                            <h6 class="font-medium text-gray-900">Soal {{ index + 1 }} - {{ getTipeSoalText(answer.soal_pertanyaan?.tipe_soal) }}</h6>
                             <div class="flex items-center space-x-2">
                               <!-- Badge untuk PG dan Yes/No -->
-                              <template v-if="answer.soal_pertanyaan.tipe_soal !== 'essay'">
+                              <template v-if="answer.soal_pertanyaan?.tipe_soal !== 'essay'">
                                 <span v-if="answer.is_correct" class="px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs">
                                   <i class="fa-solid fa-check mr-1"></i>Benar
                                 </span>
@@ -202,7 +202,7 @@
                           <!-- Question -->
                           <div class="mb-3">
                             <div class="text-sm text-gray-500 mb-1">Pertanyaan:</div>
-                            <div class="text-gray-800 bg-gray-50 p-3 rounded">{{ answer.soal_pertanyaan.pertanyaan }}</div>
+                            <div class="text-gray-800 bg-gray-50 p-3 rounded">{{ answer.soal_pertanyaan?.pertanyaan || 'Pertanyaan tidak tersedia' }}</div>
                           </div>
 
                           <!-- User Answer -->
@@ -212,13 +212,13 @@
                           </div>
 
                           <!-- Correct Answer (for non-essay) -->
-                          <div v-if="answer.soal_pertanyaan.tipe_soal !== 'essay'" class="mb-3">
+                          <div v-if="answer.soal_pertanyaan?.tipe_soal !== 'essay'" class="mb-3">
                             <div class="text-sm text-gray-500 mb-1">Jawaban Benar:</div>
                             <div class="text-gray-800 bg-green-50 p-3 rounded">{{ getCorrectAnswerText(answer.soal_pertanyaan) }}</div>
                           </div>
 
                           <!-- Essay Score Input -->
-                          <div v-if="answer.soal_pertanyaan.tipe_soal === 'essay'" class="flex items-center space-x-4">
+                          <div v-if="answer.soal_pertanyaan?.tipe_soal === 'essay'" class="flex items-center space-x-4">
                             <div class="flex-1">
                               <label class="block text-sm font-medium text-gray-700 mb-1">Input Score Essay:</label>
                               <div class="flex items-center space-x-2">
@@ -375,14 +375,17 @@ const groupedResults = computed(() => {
   const groups = {};
   
   props.testResults.data.forEach(testResult => {
-    const userId = testResult.enroll_test.user.id;
-    if (!groups[userId]) {
-      groups[userId] = {
-        user: testResult.enroll_test.user,
-        testResults: []
-      };
+    // Check if enroll_test and user exist
+    if (testResult.enroll_test?.user?.id) {
+      const userId = testResult.enroll_test.user.id;
+      if (!groups[userId]) {
+        groups[userId] = {
+          user: testResult.enroll_test.user,
+          testResults: []
+        };
+      }
+      groups[userId].testResults.push(testResult);
     }
-    groups[userId].testResults.push(testResult);
   });
   
   return Object.values(groups);
@@ -391,7 +394,7 @@ const groupedResults = computed(() => {
 // Get essay answers for a specific test result
 function getTestResultEssayAnswers(testResult) {
   return testResult.test_answers?.filter(answer => 
-    answer.soal_pertanyaan.tipe_soal === 'essay'
+    answer.soal_pertanyaan?.tipe_soal === 'essay'
   ) || [];
 }
 
@@ -411,7 +414,7 @@ function hasValidTestResultScores(testResultId) {
 const initializeEssayScores = () => {
   props.testResults.data.forEach(testResult => {
     testResult.test_answers?.forEach(answer => {
-      if (answer.soal_pertanyaan.tipe_soal === 'essay') {
+      if (answer.soal_pertanyaan?.tipe_soal === 'essay') {
         essayScores.value[answer.id] = answer.score || 0;
       }
     });
@@ -635,6 +638,8 @@ function getTipeSoalText(tipeSoal) {
 }
 
 function getCorrectAnswerText(soal) {
+  if (!soal) return 'Data tidak tersedia';
+  
   if (soal.tipe_soal === 'yes_no') {
     return soal.jawaban_benar === 'yes' ? 'Ya' : 'Tidak';
   }
@@ -649,7 +654,7 @@ function getCorrectAnswerText(soal) {
     return pilihan[soal.jawaban_benar] || soal.jawaban_benar;
   }
   
-  return soal.jawaban_benar;
+  return soal.jawaban_benar || 'Data tidak tersedia';
 }
 
 function getScoreColor(percentage) {
