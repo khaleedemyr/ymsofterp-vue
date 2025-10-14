@@ -420,10 +420,6 @@ const loadData = () => {
     priceDecrease: filters.value.priceDecrease ? 'true' : 'false'
   };
   
-    hasPriceChange: filters.value.hasPriceChange,
-    priceIncrease: filters.value.priceIncrease,
-    priceDecrease: filters.value.priceDecrease
-  });
   
   router.visit('/po-report', {
     data: params,
