@@ -344,10 +344,8 @@ async function loadCoachingApprovals() {
     loadingCoachingApprovals.value = true;
     try {
         const response = await axios.get('/api/coaching/pending-approvals');
-        console.log('Coaching approvals response:', response.data);
         if (response.data.success) {
             pendingCoachingApprovals.value = response.data.pending_approvals;
-            console.log('Pending coaching approvals:', pendingCoachingApprovals.value);
         }
     } catch (error) {
         console.error('Error loading coaching approvals:', error);
@@ -446,9 +444,6 @@ async function showPrApprovalDetails(prId) {
             prApprovalBudgetInfo.value = response.data.budget_info;
             
             // Debug logging
-            console.log('PR Approval Details:', response.data.purchase_requisition);
-            console.log('Outlet data:', response.data.purchase_requisition.outlet);
-            console.log('Outlet name:', response.data.purchase_requisition.outlet?.nama_outlet);
             
             showPrApprovalModal.value = true;
         }
@@ -616,10 +611,8 @@ function getStatusColor(status) {
 
 // Show PO Ops approval details
 async function showPoOpsApprovalDetails(poId) {
-    console.log('showPoOpsApprovalDetails called with poId:', poId);
     try {
         const response = await axios.get(`/po-ops/${poId}`);
-        console.log('PO Ops response:', response.data);
         if (response.data) {
             selectedPoOpsApproval.value = response.data.po;
             
@@ -631,12 +624,10 @@ async function showPoOpsApprovalDetails(poId) {
                         poOpsApprovalBudgetInfo.value = budgetResponse.data.budget_info;
                     }
                 } catch (budgetError) {
-                    console.log('No budget info available:', budgetError);
                 }
             }
             
             showPoOpsApprovalModal.value = true;
-            console.log('Modal should be visible now');
         }
     } catch (error) {
         console.error('Error loading PO Ops approval details:', error);
@@ -729,13 +720,11 @@ function formatSanctionDate(dateString) {
 
 function isSanctionActive(sanction) {
     if (!sanction || !sanction.effective_date || !sanction.end_date) {
-        console.log('Sanction not active - missing data:', sanction);
         return false;
     }
     
     const currentDate = new Date().toISOString().split('T')[0];
     const isActive = sanction.effective_date <= currentDate && sanction.end_date >= currentDate;
-    console.log('Checking sanction:', sanction.name, 'from', sanction.effective_date, 'to', sanction.end_date, 'current:', currentDate, 'active:', isActive);
     return isActive;
 }
 
@@ -988,9 +977,7 @@ async function loadTrainingInvitations() {
 async function loadAvailableTrainings() {
     loadingAvailableTrainings.value = true;
     try {
-        console.log('Loading available trainings...');
         const response = await axios.get('/lms/available-trainings');
-        console.log('Available trainings response:', response.data);
         if (response.data.success) {
             availableTrainings.value = response.data.courses;
         } else {
@@ -1192,7 +1179,6 @@ function handleSessionItemClick(item, session) {
         return; // Don't do anything if item is not accessible
     }
 
-    console.log('Session item clicked:', item, session);
 
     // Handle different item types
     switch (item.item_type) {
@@ -1209,14 +1195,12 @@ function handleSessionItemClick(item, session) {
             handleQuestionnaireItemClick(item, session);
             break;
         default:
-            console.log('Unknown item type:', item.item_type);
     }
 }
 
 // Handle quiz item click
 async function handleQuizItemClick(item, session) {
     try {
-        console.log('Quiz item clicked:', item);
         
         // Check if quiz is already completed
         if (item.is_completed && item.completion_status) {
@@ -1236,26 +1220,16 @@ async function handleQuizItemClick(item, session) {
             return;
         }
         
-        console.log('Starting quiz attempt for item:', item);
         
         // Check if quiz data is available
         if (!item.quiz) {
             console.error('Quiz data not available for item:', item);
             
             // Try to start quiz attempt anyway using item_id
-            console.log('Attempting to start quiz with item_id:', item.item_id);
         }
 
         // Start quiz attempt - use correct quiz ID
         const quizId = item.quiz ? item.quiz.id : (item.quiz_id || item.item_id);
-        console.log('Using quiz ID:', quizId, 'from item:', item);
-        console.log('Item structure:', {
-            id: item.id,
-            item_type: item.item_type,
-            item_id: item.item_id,
-            quiz_id: item.quiz_id,
-            quiz: item.quiz
-        });
         
         const response = await axios.post('/api/quiz/start-attempt', {
             quiz_id: quizId,
@@ -1263,7 +1237,6 @@ async function handleQuizItemClick(item, session) {
         });
 
         if (response.data.attempt) {
-            console.log('Quiz attempt started:', response.data.attempt);
             
             // Open quiz in new tab or redirect
             const quizUrl = `/lms/quiz/${quizId}/attempt/${response.data.attempt.id}`;
@@ -1290,7 +1263,6 @@ async function handleQuizItemClick(item, session) {
 
 // Handle material item click
 async function handleMaterialItemClick(item, session) {
-    console.log('Material item clicked:', item);
     
     if (!item.material || !item.material.files || item.material.files.length === 0) {
         Swal.fire({
@@ -1313,7 +1285,6 @@ async function handleMaterialItemClick(item, session) {
         return;
     }
     
-    console.log('Primary file:', primaryFile);
     
     // Mark material as completed when user clicks on it
     await markMaterialAsCompleted(item, session);
@@ -1351,12 +1322,6 @@ async function handleMaterialItemClick(item, session) {
 // Mark material as completed
 async function markMaterialAsCompleted(item, session) {
     try {
-        console.log('Marking material as completed:', {
-            item_id: item.id,
-            material_id: item.material.id,
-            schedule_id: selectedTrainingDetail.value?.schedule_id,
-            session_id: session.id
-        });
 
         const response = await axios.post('/api/training/material/complete', {
             material_id: item.material.id,
@@ -1371,7 +1336,6 @@ async function markMaterialAsCompleted(item, session) {
         });
 
         if (response.data.success) {
-            console.log('Material marked as completed successfully:', response.data);
             
             // Update the item's completion status in the UI
             item.is_completed = true;
@@ -1384,11 +1348,6 @@ async function markMaterialAsCompleted(item, session) {
             await nextTick();
             
             // Force reactivity update
-            console.log('Updated item completion status:', {
-                item_id: item.id,
-                is_completed: item.is_completed,
-                completion_status: item.completion_status
-            });
             
             // Show success message
             Swal.fire({
@@ -1399,7 +1358,6 @@ async function markMaterialAsCompleted(item, session) {
                 showConfirmButton: false
             });
         } else {
-            console.error('Failed to mark material as completed:', response.data);
             Swal.fire({
                 icon: 'error',
                 title: 'Gagal',
@@ -1434,7 +1392,6 @@ async function markMaterialAsCompleted(item, session) {
 
 // PDF Viewer
 function openPdfViewer(file, material) {
-    console.log('Opening PDF viewer for:', file);
     
     // Show options for PDF viewing
     Swal.fire({
@@ -1493,7 +1450,6 @@ function openPdfViewer(file, material) {
 
 // Video Player
 function openVideoPlayer(file, material) {
-    console.log('Opening video player for:', file);
     
     // Create modal for video player
     Swal.fire({
@@ -1531,7 +1487,6 @@ function openVideoPlayer(file, material) {
 
 // Image Viewer
 function openImageViewer(file, material) {
-    console.log('Opening image viewer for:', file);
     
     // Use existing lightbox functionality with viewer_url
     const imageUrl = file.viewer_url || file.file_url;
@@ -1540,7 +1495,6 @@ function openImageViewer(file, material) {
 
 // Document Viewer
 function openDocumentViewer(file, material) {
-    console.log('Opening document viewer for:', file);
     
     // For documents, show info and provide download option
     Swal.fire({
@@ -1570,7 +1524,6 @@ function openDocumentViewer(file, material) {
         if (result.isConfirmed) {
             // Use viewer_url for proper routing through controller
             const url = file.viewer_url || file.file_url;
-            console.log('Opening document URL:', url);
             window.open(url, '_blank');
         }
     });
@@ -1578,7 +1531,6 @@ function openDocumentViewer(file, material) {
 
 // Link Handler
 function openLink(file, material) {
-    console.log('Opening link for:', file);
     
     // For links, show confirmation before opening
     Swal.fire({
@@ -1612,7 +1564,6 @@ function openLink(file, material) {
 
 // Handle activity item click
 function handleActivityItemClick(item, session) {
-    console.log('Activity item clicked:', item);
     // TODO: Implement activity handling
     Swal.fire({
         icon: 'info',
@@ -1623,7 +1574,6 @@ function handleActivityItemClick(item, session) {
 
 // Handle questionnaire item click
 function handleQuestionnaireItemClick(item, session) {
-    console.log('Questionnaire item clicked:', item);
     // TODO: Implement questionnaire handling
     Swal.fire({
         icon: 'info',
@@ -1653,7 +1603,6 @@ function closeTrainingCheckInModal() {
 // Function to open first session item after successful check-in
 function openFirstSessionItem() {
     if (!selectedTrainingDetail.value || !selectedTrainingDetail.value.sessions) {
-        console.log('No training detail or sessions available');
         return;
     }
 
@@ -1663,7 +1612,6 @@ function openFirstSessionItem() {
     );
 
     if (!firstSession) {
-        console.log('No sessions with items found');
         return;
     }
 
@@ -1671,11 +1619,9 @@ function openFirstSessionItem() {
     const firstItem = firstSession.items.find(item => item.can_access);
 
     if (!firstItem) {
-        console.log('No accessible items found in first session');
         return;
     }
 
-    console.log('Opening first session item:', firstItem, 'from session:', firstSession);
 
     // Make sure training detail modal is open
     if (!showTrainingDetailModal.value) {
@@ -1971,9 +1917,6 @@ async function processTrainingCheckIn() {
     checkInStatusMessage.value = 'Memproses check-in...';
 
     try {
-        console.log('Processing Training QR Code:', qrCodeInput.value);
-        console.log('Current user:', user);
-        console.log('Selected training detail:', selectedTrainingDetail.value);
 
         await router.post(route('lms.check-in'), {
             qr_code: qrCodeInput.value.trim()
@@ -1981,7 +1924,6 @@ async function processTrainingCheckIn() {
             preserveState: true,
             preserveScroll: true,
             onSuccess: (page) => {
-                console.log('Check-in success:', page);
                 
                 // Always close modal on success (regardless of data)
                 closeTrainingCheckInModal();
@@ -2000,7 +1942,6 @@ async function processTrainingCheckIn() {
 
                     // Update selected training detail with check-in response data
                     if (selectedTrainingDetail.value && page.props.flash?.training_sessions) {
-                        console.log('Updating training detail with check-in data:', page.props.flash.training_sessions);
                         selectedTrainingDetail.value.sessions = page.props.flash.training_sessions;
                     }
 
@@ -2049,7 +1990,6 @@ async function processTrainingCheckIn() {
                 }
             },
             onError: (errors) => {
-                console.log('Check-in error:', errors);
                 const errorMessage = Object.values(errors)[0] || 'Terjadi kesalahan saat check-in'
                 checkInStatusMessage.value = errorMessage;
                 
@@ -2089,9 +2029,6 @@ async function processTrainingCheckOut() {
     checkOutStatusMessage.value = 'Memproses check-out...';
 
     try {
-        console.log('Processing Training Check-out QR Code:', qrCodeCheckOutInput.value);
-        console.log('Current user:', user);
-        console.log('Selected training detail:', selectedTrainingDetail.value);
 
         await router.post(route('lms.check-out'), {
             qr_code: qrCodeCheckOutInput.value.trim()
@@ -2158,7 +2095,6 @@ async function processTrainingCheckOut() {
                 }
             },
             onError: (errors) => {
-                console.log('Check-out error:', errors);
                 const errorMessage = Object.values(errors)[0] || 'Terjadi kesalahan saat check-out'
                 checkOutStatusMessage.value = errorMessage;
                 
@@ -2675,20 +2611,13 @@ const getImageUrl = (imagePath) => {
 }
 
 function openImageModal(imageUrl, allImagePaths = []) {
-    console.log('=== OPENING LIGHTBOX ===');
-    console.log('imageUrl:', imageUrl);
-    console.log('allImagePaths:', allImagePaths);
-    console.log('allImagePaths type:', typeof allImagePaths);
-    console.log('allImagePaths length:', allImagePaths?.length);
     
     if (!allImagePaths || allImagePaths.length === 0) {
-        console.log('No image paths provided, using single image');
         lightboxImages.value = [imageUrl];
         lightboxIndex.value = 0;
     } else {
         // Convert all image paths to full URLs
         lightboxImages.value = allImagePaths.map(path => getImageUrl(path)).filter(url => url);
-        console.log('Converted lightboxImages:', lightboxImages.value);
         
         // Find current image index
         lightboxIndex.value = allImagePaths.findIndex(path => 
@@ -2702,12 +2631,6 @@ function openImageModal(imageUrl, allImagePaths = []) {
     
     lightboxVisible.value = true;
     
-    console.log('Final state:', { 
-        lightboxVisible: lightboxVisible.value,
-        lightboxImages: lightboxImages.value, 
-        lightboxIndex: lightboxIndex.value
-    });
-    console.log('=== LIGHTBOX OPENED ===');
 }
 
 

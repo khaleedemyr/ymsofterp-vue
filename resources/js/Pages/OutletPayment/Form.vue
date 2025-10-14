@@ -657,12 +657,8 @@ async function refreshRetailSalesList() {
       params.append('date_to', form.value.date_to);
     }
     
-    console.log('DEBUG: Fetching retail sales with params:', params.toString());
-    
     const response = await fetch(`/outlet-payments/retail-sales-list?${params.toString()}`);
     const data = await response.json();
-    
-    console.log('DEBUG: Retail sales response:', data);
     
     if (data.success) {
       // Update local Retail Sales list with fresh data
@@ -721,7 +717,6 @@ function formatQty(val) {
   return Number(val).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 async function submitForm() {
-  console.log('submitForm: dipanggil');
   const Swal = (await import('sweetalert2')).default;
   const confirm = await Swal.fire({
     title: isEditing.value ? 'Update Payment?' : 'Simpan Payment?',
@@ -731,9 +726,7 @@ async function submitForm() {
     confirmButtonText: isEditing.value ? 'Update' : 'Simpan',
     cancelButtonText: 'Batal',
   });
-  console.log('submitForm: hasil konfirmasi', confirm);
   if (!confirm.isConfirmed) {
-    console.log('submitForm: dibatalkan oleh user');
     return;
   }
   Swal.fire({
@@ -742,7 +735,6 @@ async function submitForm() {
     didOpen: () => { Swal.showLoading(); }
   });
   const onSuccess = () => {
-    console.log('submitForm: sukses simpan');
     Swal.fire({ icon: 'success', title: 'Berhasil', text: isEditing.value ? 'Payment berhasil diupdate' : 'Payment berhasil disimpan', timer: 1500, showConfirmButton: false });
     goBack();
   };
@@ -753,15 +745,12 @@ async function submitForm() {
     } else if (err && err.message) {
       msg = err.message;
     }
-    console.log('submitForm: error simpan', err);
     Swal.fire({ icon: 'error', title: 'Gagal', text: msg });
   };
   try {
     if (isEditing.value) {
-      console.log('submitForm: mode edit, PUT ke backend', form.value);
       await router.put(`/outlet-payments/${form.value.id}`, form.value, { onSuccess, onError });
     } else {
-      console.log('submitForm: mode create, POST ke backend', form.value);
       await router.post('/outlet-payments', form.value, { onSuccess, onError });
     }
   } catch (e) {

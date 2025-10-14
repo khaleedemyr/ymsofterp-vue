@@ -134,9 +134,7 @@ class FoodFloorOrderController extends Controller
                     'created_at' => now(),
                     'updated_at' => now()
                 ];
-                \Log::info('Mencoba insert ke food_floor_orders', $headerData);
                 $inserted = \DB::table('food_floor_orders')->insert($headerData);
-                \Log::info('Hasil insert header', ['success' => $inserted]);
                 $floorOrderId = \DB::getPdo()->lastInsertId();
             }
 
@@ -272,16 +270,10 @@ class FoodFloorOrderController extends Controller
     // Submit draft
     public function submit(Request $request, $id)
     {
-        \Log::info('SUBMIT FO DIPANGGIL', ['id' => $id]);
         $order = FoodFloorOrder::findOrFail($id);
         
         // Budget checking untuk RO yang akan di-approve (RO Utama/Tambahan)
         if ($order->fo_mode !== 'RO Khusus') {
-            \Log::info('FO_SUBMIT: Cek budget untuk RO yang akan di-approve', [
-                'order_id' => $order->id,
-                'fo_mode' => $order->fo_mode,
-                'outlet_id' => $order->id_outlet
-            ]);
             
             $budgetCheckResult = $this->checkBudgetForFloorOrder($order);
             if (!$budgetCheckResult['success']) {
@@ -295,10 +287,6 @@ class FoodFloorOrderController extends Controller
                 ], 422);
             }
             
-            \Log::info('FO_SUBMIT: Budget check passed', [
-                'order_id' => $order->id,
-                'budget_info' => $budgetCheckResult['budget_info']
-            ]);
         }
         
         $date = now()->format('Ymd');
@@ -309,7 +297,6 @@ class FoodFloorOrderController extends Controller
             'status' => $order->fo_mode === 'RO Khusus' ? 'submitted' : 'approved',
             'order_number' => $order_number,
         ]);
-        \Log::info('FO status & nomor diupdate', ['id' => $order->id, 'status' => $order->status, 'order_number' => $order_number]);
 
         // Kirim notifikasi jika RO Khusus
         if ($order->fo_mode === 'RO Khusus' && $order->status === 'submitted') {
@@ -394,11 +381,6 @@ class FoodFloorOrderController extends Controller
         }
 
         // Budget checking untuk RO Khusus yang akan di-approve
-        \Log::info('FO_APPROVE: Cek budget untuk RO Khusus', [
-            'order_id' => $order->id,
-            'fo_mode' => $order->fo_mode,
-            'outlet_id' => $order->id_outlet
-        ]);
         
         $budgetCheckResult = $this->checkBudgetForFloorOrder($order);
         if (!$budgetCheckResult['success']) {
@@ -409,10 +391,6 @@ class FoodFloorOrderController extends Controller
             return redirect()->back()->withErrors(['budget' => $budgetCheckResult['message']]);
         }
         
-        \Log::info('FO_APPROVE: Budget check passed', [
-            'order_id' => $order->id,
-            'budget_info' => $budgetCheckResult['budget_info']
-        ]);
 
         $order->update([
             'status' => 'approved',
@@ -546,11 +524,6 @@ class FoodFloorOrderController extends Controller
 
         // Load items untuk semua order
         $floorOrders->getCollection()->transform(function($order) {
-            \Log::info('DEBUG WAREHOUSE OUTLET', [
-                'order_id' => $order->id,
-                'warehouse_outlet_id' => $order->warehouse_outlet_id,
-                'warehouseOutlet' => $order->warehouseOutlet
-            ]);
           
             $order->loadMissing('items');
             $order->setRelation('outlet', $order->outlet);
@@ -607,44 +580,10 @@ class FoodFloorOrderController extends Controller
 
             // Debug: Cek unique outlet IDs
             $uniqueOutlets = $roSuppliers->pluck('id_outlet')->unique()->values();
-            \Log::info('Unique outlet IDs found:', [
-                'unique_outlets' => $uniqueOutlets->toArray(),
-                'total_ro_suppliers' => $roSuppliers->count()
-            ]);
 
             // Debug: Log RO Supplier yang difilter
-            \Log::info('RO Supplier filtering details:', [
-                'ro_suppliers_details' => $roSuppliers->map(function($ro) {
-                    $totalItems = \DB::table('food_floor_order_items')->where('floor_order_id', $ro->id)->count();
-                    $itemsInPO = \App\Models\PurchaseOrderFoodItem::where('ro_id', $ro->id)->count();
-                    return [
-                        'ro_id' => $ro->id,
-                        'ro_number' => $ro->order_number,
-                        'status' => $ro->status,
-                        'total_items' => $totalItems,
-                        'items_in_po' => $itemsInPO,
-                        'remaining_items' => $totalItems - $itemsInPO
-                    ];
-                })
-            ]);
 
             // Debug logging
-            \Log::info('RO Supplier Available API called', [
-                'user_id' => $user->id,
-                'user_outlet_id' => $user->id_outlet,
-                'is_superuser' => $user->id_outlet == 1,
-                'ro_suppliers_count' => $roSuppliers->count(),
-                'ro_suppliers' => $roSuppliers->map(function($ro) {
-                    return [
-                        'id' => $ro->id,
-                        'order_number' => $ro->order_number,
-                        'id_outlet' => $ro->id_outlet,
-                        'outlet_name' => $ro->outlet ? $ro->outlet->nama_outlet : 'Unknown',
-                        'status' => $ro->status,
-                        'items_count' => $ro->items->count()
-                    ];
-                })
-            ]);
 
             // Transform data untuk frontend
             $transformedData = $roSuppliers->map(function($ro) {
@@ -695,10 +634,6 @@ class FoodFloorOrderController extends Controller
     private function checkBudgetForFloorOrder($order)
     {
         try {
-            \Log::info('FO_BUDGET_CHECK: Mulai cek budget', [
-                'order_id' => $order->id,
-                'outlet_id' => $order->id_outlet
-            ]);
 
             $budgetViolations = [];
             $budgetInfo = [];
@@ -711,10 +646,6 @@ class FoodFloorOrderController extends Controller
                 $itemMaster = \DB::table('items')->where('id', $item->item_id)->first();
                 
                 if (!$itemMaster || !$itemMaster->sub_category_id) {
-                    \Log::info('FO_BUDGET_CHECK: Item tidak memiliki sub_category_id', [
-                        'item_id' => $item->item_id,
-                        'item_name' => $item->item_name
-                    ]);
                     continue;
                 }
 
@@ -725,10 +656,6 @@ class FoodFloorOrderController extends Controller
                     ->first();
 
                 if (!$lockedBudget) {
-                    \Log::info('FO_BUDGET_CHECK: Tidak ada budget lock', [
-                        'sub_category_id' => $itemMaster->sub_category_id,
-                        'outlet_id' => $order->id_outlet
-                    ]);
                     continue;
                 }
 
@@ -739,12 +666,6 @@ class FoodFloorOrderController extends Controller
                     ->select('sc.name as sub_category_name', 'c.name as category_name')
                     ->first();
 
-                \Log::info('FO_BUDGET_CHECK: Budget ditemukan', [
-                    'budget_id' => $lockedBudget->id,
-                    'budget_amount' => $lockedBudget->budget,
-                    'category_name' => $subCategoryInfo->category_name ?? 'N/A',
-                    'sub_category_name' => $subCategoryInfo->sub_category_name ?? 'N/A'
-                ]);
 
                 // Hitung total transaksi bulan berjalan
                 $currentMonth = date('Y-m');
@@ -779,14 +700,6 @@ class FoodFloorOrderController extends Controller
                 // Total setelah ditambah item baru
                 $totalAfterNewItem = $monthlyTotal + $newItemSubtotal;
 
-                \Log::info('FO_BUDGET_CHECK: Perhitungan budget', [
-                    'retail_food_total' => $retailFoodTotal,
-                    'food_floor_order_total' => $foodFloorOrderTotal,
-                    'monthly_total' => $monthlyTotal,
-                    'new_item_subtotal' => $newItemSubtotal,
-                    'total_after_new_item' => $totalAfterNewItem,
-                    'budget_limit' => $lockedBudget->budget
-                ]);
 
                 // Cek apakah melebihi budget
                 if ($totalAfterNewItem > $lockedBudget->budget) {

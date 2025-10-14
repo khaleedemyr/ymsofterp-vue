@@ -202,7 +202,6 @@ function onScanBarcode() {
   }
   const item = items.find(i => Array.isArray(i.barcodes) ? i.barcodes.includes(code) : i.barcode === code);
   if (item) {
-    console.log('DEBUG SCAN:', item.item_name, 'unit_type:', item.unit_type);
     const maxQty = Number(item.qty_packing_list);
     const currentScan = Number(item.qty_scan || 0);
     if (item.unit_type === 'kiloan') {
@@ -389,26 +388,7 @@ async function confirmSubmit() {
 async function submitGR() {
   loadingSubmit.value = true;
   try {
-    // Debug: Log current state
-    console.log('DEBUG: Current state:', {
-      selectedDOId: selectedDOId.value,
-      selectedDOIdType: typeof selectedDOId.value,
-      doDetail: doDetail.value,
-      items: items,
-      itemsLength: items.length
-    });
     
-    // Debug: Log sample item
-    if (items.length > 0) {
-      console.log('DEBUG: Sample item:', {
-        item_id: items[0].item_id,
-        item_id_type: typeof items[0].item_id,
-        unit_id: items[0].unit_id,
-        unit_id_type: typeof items[0].unit_id,
-        qty_scan: items[0].qty_scan,
-        qty_scan_type: typeof items[0].qty_scan
-      });
-    }
     
     // Siapkan payload sesuai backend
     const payload = {
@@ -424,7 +404,6 @@ async function submitGR() {
       }))
     };
     
-    console.log('DEBUG: Submitting payload:', payload);
     
     // Validasi payload sebelum kirim
     if (!payload.delivery_order_id) {
@@ -438,7 +417,6 @@ async function submitGR() {
     // Validasi setiap item
     for (let i = 0; i < payload.items.length; i++) {
       const item = payload.items[i];
-      console.log(`DEBUG: Validating item ${i + 1}:`, item);
       
       if (!item.item_id) {
         throw new Error(`Item ${i + 1}: Item ID tidak boleh kosong`);
@@ -462,12 +440,8 @@ async function submitGR() {
       }
     }
     
-    console.log('DEBUG: Payload validation passed, sending request...');
-    console.log('DEBUG: Request URL:', '/outlet-food-good-receives');
-    console.log('DEBUG: Request method:', 'POST');
     
     const res = await axios.post('/outlet-food-good-receives', payload);
-    console.log('DEBUG: Response received:', res);
     showConfirmModal.value = false;
     
     if (res.data && res.data.success) {
@@ -488,7 +462,6 @@ async function submitGR() {
       });
     }
   } catch (e) {
-    console.error('Submit GR Error:', e);
     
     let errorMessage = 'Terjadi kesalahan server. Silakan coba lagi.';
     let errorDetails = '';

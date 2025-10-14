@@ -152,14 +152,11 @@ function openCreate() {
 // Print functionality
 async function printSinglePO(po) {
   try {
-    console.log('Printing single PO:', po);
     printData.value = [po];
     
     // Generate preview URL
     const poIds = po.id.toString();
-    console.log('PO ID for URL:', poIds);
     previewUrl.value = `/po-ops/print-preview?ids=${encodeURIComponent(poIds)}`;
-    console.log('Preview URL:', previewUrl.value);
     showPrintModal.value = true;
   } catch (error) {
     console.error('Error preparing print:', error);

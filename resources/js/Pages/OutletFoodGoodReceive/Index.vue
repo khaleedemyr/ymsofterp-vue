@@ -143,7 +143,6 @@ function goEdit(id) {
 }
 
 function onDelete(id) {
-  console.log('DEBUG: onDelete called with id:', id)
   Swal.fire({
     title: 'Yakin hapus data ini?',
     text: 'Data akan dihapus permanen!',
@@ -154,14 +153,10 @@ function onDelete(id) {
     reverseButtons: true
   }).then(async (result) => {
     if (result.isConfirmed) {
-      console.log('DEBUG: User confirmed delete for id:', id)
       loadingId.value = id
       try {
-        console.log('DEBUG: Making DELETE request to:', `/outlet-food-good-receives/${id}`)
         const res = await axios.delete(`/outlet-food-good-receives/${id}`)
-        console.log('DEBUG: Delete response:', res.data)
         if (res.data && res.data.success) {
-          console.log('DEBUG: Delete successful, showing success message')
           Swal.fire({
             icon: 'success',
             title: 'Berhasil',
@@ -171,12 +166,9 @@ function onDelete(id) {
           })
           setTimeout(() => router.reload(), 1200)
         } else {
-          console.log('DEBUG: Delete failed - no success flag')
           throw new Error('Gagal menghapus data')
         }
       } catch (e) {
-        console.log('DEBUG: Delete error:', e)
-        console.log('DEBUG: Error response:', e.response?.data)
         Swal.fire({
           icon: 'error',
           title: 'Gagal',

@@ -420,8 +420,6 @@ const loadData = () => {
     priceDecrease: filters.value.priceDecrease ? 'true' : 'false'
   };
   
-  console.log('Sending filters:', params);
-  console.log('Filter values:', {
     hasPriceChange: filters.value.hasPriceChange,
     priceIncrease: filters.value.priceIncrease,
     priceDecrease: filters.value.priceDecrease

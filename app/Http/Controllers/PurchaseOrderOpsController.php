@@ -85,14 +85,6 @@ class PurchaseOrderOpsController extends Controller
             // Source PR information
             $po->source_pr_number = $po->source_pr_number;
             
-            // Debug logging for source PR
-            \Log::info('PO Source PR Debug:', [
-                'po_id' => $po->id,
-                'po_number' => $po->number,
-                'source_id' => $po->source_id,
-                'source_type' => $po->source_type,
-                'source_pr_number' => $po->source_pr_number
-            ]);
             
             return $po;
         });
@@ -221,13 +213,6 @@ class PurchaseOrderOpsController extends Controller
 
     public function generatePO(Request $request)
     {
-        // Debug logging
-        \Log::info('=== START GENERATE PO OPS ===');
-        \Log::info('Generate PO Request Data:', [
-            'items_by_supplier' => $request->items_by_supplier,
-            'ppn_enabled' => $request->ppn_enabled,
-            'notes' => $request->notes
-        ]);
 
         // Validate the request data - items_by_supplier is {itemId: [rows]}
         $request->validate([
@@ -253,7 +238,6 @@ class PurchaseOrderOpsController extends Controller
                 ->unique()
                 ->values();
 
-            \Log::info('PR IDs collected:', ['pr_ids' => $prIds->toArray()]);
 
             // Group items by supplier - frontend sends {itemId: [rows]}, we need to group by supplier
             $itemsBySupplier = [];
@@ -274,17 +258,14 @@ class PurchaseOrderOpsController extends Controller
                 }
             }
             
-            \Log::info('Items grouped by supplier:', ['items_by_supplier' => $itemsBySupplier]);
 
             $createdPOs = [];
 
             foreach ($itemsBySupplier as $supplierId => $items) {
                 if (empty($items)) {
-                    \Log::info('Skipping empty supplier items', ['supplier_id' => $supplierId]);
                     continue;
                 }
 
-                \Log::info('Processing supplier:', ['supplier_id' => $supplierId, 'items_count' => count($items)]);
 
                 // Generate PO number
                 $poNumber = $this->generatePONumber();
@@ -334,7 +315,6 @@ class PurchaseOrderOpsController extends Controller
                     ->pluck('id')  // Frontend sends 'id', not 'item_id'
                     ->filter();
                 
-                \Log::info('PR Item IDs for supplier ' . $supplierId . ':', ['pr_item_ids' => $prItemIds->toArray()]);
                 
                 $prItems = collect();
                 if ($prItemIds->isNotEmpty()) {
@@ -342,7 +322,6 @@ class PurchaseOrderOpsController extends Controller
                 }
 
                 foreach ($items as $itemData) {
-                    \Log::info('Processing item data:', ['item_data' => $itemData]);
                     
                     // Get PR item data
                     $prItem = $prItems->firstWhere('id', $itemData['id']);
@@ -369,7 +348,6 @@ class PurchaseOrderOpsController extends Controller
                         'source_id' => $prItem->purchase_requisition_id,
                     ];
 
-                    \Log::info('Creating PO item with data:', ['po_item_data' => $poItemData]);
                     PurchaseOrderOpsItem::create($poItemData);
                 }
 
@@ -426,13 +404,6 @@ class PurchaseOrderOpsController extends Controller
             'attachments.uploader'
         ])->findOrFail($id);
 
-        // Debug logging for items
-        \Log::info('PO Show Debug:', [
-            'po_id' => $po->id,
-            'po_number' => $po->number,
-            'items_count' => $po->items->count(),
-            'items' => $po->items->toArray()
-        ]);
 
         $user = auth()->user();
         $userData = [
@@ -873,7 +844,6 @@ class PurchaseOrderOpsController extends Controller
      */
     public function getApprovers(Request $request)
     {
-        \Log::info('getApprovers called', ['request' => $request->all()]);
         
         $search = $request->get('search', '');
         
@@ -890,7 +860,6 @@ class PurchaseOrderOpsController extends Controller
             ->limit(20)
             ->get();
         
-        \Log::info('getApprovers result', ['count' => $users->count(), 'users' => $users->toArray()]);
         
         return response()->json(['success' => true, 'users' => $users]);
     }
@@ -1319,13 +1288,6 @@ class PurchaseOrderOpsController extends Controller
     public function printPreview(Request $request)
     {
         try {
-            // Debug logging
-            \Log::info('PO PrintPreview method called', [
-                'request_data' => $request->all(),
-                'ids' => $request->get('ids', ''),
-                'url' => $request->url(),
-                'method' => $request->method()
-            ]);
             
             $ids = $request->get('ids', '');
             
@@ -1335,7 +1297,6 @@ class PurchaseOrderOpsController extends Controller
             }
 
             $poIds = explode(',', $ids);
-            \Log::info('PO IDs after explode', ['poIds' => $poIds]);
             
             // Validate that all IDs are numeric
             foreach ($poIds as $id) {
@@ -1352,27 +1313,6 @@ class PurchaseOrderOpsController extends Controller
                 'approvalFlows.approver.jabatan'
             ])->whereIn('id', $poIds)->get();
 
-            \Log::info('About to return PO view', [
-                'purchase_orders_count' => $purchaseOrders->count(),
-                'approval_flows_debug' => $purchaseOrders->map(function($po) {
-                    return [
-                        'po_id' => $po->id,
-                        'approval_flows_count' => $po->approvalFlows ? $po->approvalFlows->count() : 0,
-                        'approval_flows' => $po->approvalFlows ? $po->approvalFlows->map(function($flow) {
-                            return [
-                                'id' => $flow->id,
-                                'level' => $flow->approval_level,
-                                'status' => $flow->status,
-                                'approver_name' => $flow->approver ? $flow->approver->nama_lengkap : 'No approver',
-                                'approver_position' => $flow->approver && $flow->approver->jabatan ? $flow->approver->jabatan->nama_jabatan : 'No position',
-                                'signature_path' => $flow->approver ? $flow->approver->signature_path : 'No signature',
-                                'approver_id' => $flow->approver_id,
-                                'approver_exists' => $flow->approver ? 'Yes' : 'No'
-                            ];
-                        }) : []
-                    ];
-                })
-            ]);
             
             return view('purchase-order-ops.print-preview', [
                 'purchaseOrders' => $purchaseOrders,

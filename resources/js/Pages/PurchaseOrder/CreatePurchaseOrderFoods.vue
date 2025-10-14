@@ -297,7 +297,6 @@ const generatePO = async () => {
                 const itemData = roData?.items.find(item => item.id === Number(itemId.split('_')[2]));
                 
                 // Debug logging untuk RO Supplier
-                console.log('RO Supplier item data:', {
                     itemId: itemId,
                     splitItemId: Number(itemId.split('_')[2]),
                     roData: roData,
@@ -343,7 +342,6 @@ const generatePO = async () => {
         loading.value = true;
         
         // Debug logging untuk melihat data yang dikirim
-        console.log('Data yang dikirim ke backend:', {
             items_by_supplier: itemsBySupplier,
             notes: notes.value,
             ppn_enabled: poForm.ppn_enabled

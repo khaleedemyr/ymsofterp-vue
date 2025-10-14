@@ -241,12 +241,6 @@ class PurchaseOrderFoodsController extends Controller
     public function generatePO(Request $request)
     {
         // Debug logging
-        \Log::info('=== START GENERATE PO ===');
-        \Log::info('Generate PO Request Data:', [
-            'items_by_supplier' => $request->items_by_supplier,
-            'ppn_enabled' => $request->ppn_enabled,
-            'notes' => $request->notes
-        ]);
         
         $request->validate([
             'items_by_supplier' => 'required|array',
@@ -260,7 +254,6 @@ class PurchaseOrderFoodsController extends Controller
 
         try {
             DB::beginTransaction();
-            \Log::info('Database transaction started');
 
             // Collect all PR IDs that will be processed (only for PR Foods)
             $prIds = collect($request->items_by_supplier)
@@ -274,7 +267,6 @@ class PurchaseOrderFoodsController extends Controller
                 ->unique()
                 ->values();
 
-            \Log::info('PR IDs collected:', ['pr_ids' => $prIds->toArray()]);
 
             // Group items by supplier
             $itemsBySupplier = collect($request->items_by_supplier)
@@ -297,17 +289,14 @@ class PurchaseOrderFoodsController extends Controller
                     });
                 });
 
-            \Log::info('Items grouped by supplier:', ['items_by_supplier' => $itemsBySupplier->toArray()]);
 
             $createdPOs = [];
 
             foreach ($itemsBySupplier as $supplierId => $items) {
                 if (empty($items)) {
-                    \Log::info('Skipping empty supplier items', ['supplier_id' => $supplierId]);
                     continue;
                 }
 
-                \Log::info('Processing supplier:', ['supplier_id' => $supplierId, 'items_count' => count($items)]);
 
                 // Generate PO number
                 $prefix = 'POF';
@@ -324,7 +313,6 @@ class PurchaseOrderFoodsController extends Controller
                 }
 
                 $poNumber = $prefix . $date . str_pad($sequence, 4, '0', STR_PAD_LEFT);
-                \Log::info('Generated PO number:', ['po_number' => $poNumber]);
 
                 // Calculate subtotal for this PO
                 $subtotal = collect($items)->sum(function ($item) {
@@ -364,11 +352,6 @@ class PurchaseOrderFoodsController extends Controller
                 $poArrivalDate = $arrivalDates->isNotEmpty() ? $arrivalDates->first()->format('Y-m-d') : null;
                 
                 // Debug logging for arrival date
-                \Log::info('PO Arrival Date processing:', [
-                    'all_arrival_dates' => collect($items)->pluck('arrival_date')->toArray(),
-                    'filtered_arrival_dates' => $arrivalDates->toArray(),
-                    'selected_arrival_date' => $poArrivalDate
-                ]);
                 
                 // Create PO
                 $poData = [
@@ -387,10 +370,8 @@ class PurchaseOrderFoodsController extends Controller
                     'source_id' => $sourceId,
                 ];
 
-                \Log::info('Creating PO with data:', $poData);
 
                 $po = PurchaseOrderFood::create($poData);
-                \Log::info('PO created successfully:', ['po_id' => $po->id, 'po_number' => $po->number]);
 
                 $createdPOs[] = $po;
 
@@ -412,11 +393,9 @@ class PurchaseOrderFoodsController extends Controller
                         ->get();
                 }
 
-                \Log::info('Processing items for PO:', ['po_id' => $po->id, 'items_count' => count($items)]);
 
                 foreach ($items as $itemData) {
                     // Debug logging for each item
-                    \Log::info('Processing item:', $itemData);
                     
                     // Handle both PR Foods and RO Supplier items
                     if (isset($itemData['source']) && $itemData['source'] === 'ro_supplier') {
@@ -435,24 +414,8 @@ class PurchaseOrderFoodsController extends Controller
                                 ->first();
                             $prItemId = $floorOrderItem ? $floorOrderItem->id : null;
                             
-                            // Debug logging for floor order item search
-                            \Log::info('Searching for floor order item:', [
-                                'floor_order_id' => $itemData['ro_id'],
-                                'item_id' => $itemId,
-                                'found_floor_order_item' => $floorOrderItem ? (array) $floorOrderItem : null,
-                                'pr_item_id_result' => $prItemId
-                            ]);
                         }
                         
-                        // Debug logging for RO Supplier item
-                        \Log::info('RO Supplier item data:', [
-                            'item_id' => $itemId, // This should be the actual item_id (e.g., 53063)
-                            'item_name' => $itemName,
-                            'unit' => $unit,
-                            'arrival_date' => $arrivalDate,
-                            'ro_id' => $itemData['ro_id'] ?? null,
-                            'floor_order_item_id' => $prItemId // This should be the food_floor_order_items.id (e.g., 227881)
-                        ]);
                         
                         // Verify that item_id is correct
                         if ($itemId) {
@@ -463,10 +426,6 @@ class PurchaseOrderFoodsController extends Controller
                                     'ro_id' => $itemData['ro_id'] ?? null
                                 ]);
                             } else {
-                                \Log::info('Item found in items table:', [
-                                    'item_id' => $itemId,
-                                    'item_name' => $actualItem->name
-                                ]);
                             }
                         }
                     } else {
@@ -484,13 +443,6 @@ class PurchaseOrderFoodsController extends Controller
                         $arrivalDate = $prItem->arrival_date;
                         $prItemId = $prItem->id;
                         
-                        // Debug logging for PR item arrival date
-                        \Log::info('PR Foods item arrival date:', [
-                            'pr_item_id' => $prItem->id,
-                            'pr_item_arrival_date' => $prItem->arrival_date,
-                            'request_arrival_date' => $itemData['arrival_date'] ?? null,
-                            'final_arrival_date' => $arrivalDate
-                        ]);
                     }
 
                     $quantity = floatval($itemData['qty']);
@@ -504,10 +456,6 @@ class PurchaseOrderFoodsController extends Controller
                         $unitModel = Unit::where('name', $unit)->first();
                         if ($unitModel) {
                             $unitId = $unitModel->id;
-                            \Log::info('Unit found by name:', [
-                                'unit_name' => $unit,
-                                'unit_id' => $unitId
-                            ]);
                         } else {
                             // If unit name not found, this is an error - don't fallback to small_unit_id
                             \Log::error('Unit not found in database:', [
@@ -526,13 +474,6 @@ class PurchaseOrderFoodsController extends Controller
                         throw new \Exception("Unit tidak boleh kosong untuk item '{$itemName}'");
                     }
                     
-                    // Debug logging for unit
-                    \Log::info('Unit processing:', [
-                        'unit_name' => $unit,
-                        'unit_id' => $unitId,
-                        'item_name' => $itemName,
-                        'item_id' => $itemId
-                    ]);
 
                     // Check for price changes using the same logic as getLastPrice
                     $lastPrice = null;
@@ -620,8 +561,7 @@ class PurchaseOrderFoodsController extends Controller
                         }
                     }
                     
-                    // Debug logging before creating PO item
-                    \Log::info('Creating PO item:', [
+                    $poItemData = [
                         'purchase_order_food_id' => $po->id,
                         'pr_food_item_id' => $prItemId,
                         'item_id' => $itemId,
@@ -636,7 +576,7 @@ class PurchaseOrderFoodsController extends Controller
                         'ro_number' => $itemData['ro_number'] ?? null,
                         'is_ro_supplier' => isset($itemData['source']) && $itemData['source'] === 'ro_supplier',
                         'floor_order_item_id' => $prItemId // This should be the ID from food_floor_order_items for RO Supplier
-                    ]);
+                    ];
 
                     // Determine source_id based on source type
                     $sourceId = null;
@@ -664,22 +604,10 @@ class PurchaseOrderFoodsController extends Controller
                         'ro_number' => $itemData['ro_number'] ?? null,
                     ];
 
-                    \Log::info('Attempting to create PO item with data:', $poItemData);
 
                     try {
                         $poItem = PurchaseOrderFoodItem::create($poItemData);
                         
-                        // Debug logging after PO item created successfully
-                        \Log::info('PO item created successfully:', [
-                            'po_item_id' => $poItem->id,
-                            'pr_food_item_id' => $poItem->pr_food_item_id,
-                            'item_id' => $poItem->item_id,
-                            'source_type' => $poItem->source_type,
-                            'source_id' => $poItem->source_id,
-                            'ro_id' => $poItem->ro_id,
-                            'ro_number' => $poItem->ro_number,
-                            'is_ro_supplier' => isset($itemData['source']) && $itemData['source'] === 'ro_supplier'
-                        ]);
                     } catch (\Exception $e) {
                         \Log::error('Failed to create PO item:', [
                             'error' => $e->getMessage(),
@@ -728,11 +656,6 @@ class PurchaseOrderFoodsController extends Controller
                         if ($roItems->count() > 0 && $roItems->count() === $roItemsInPO->count()) {
                             \App\Models\FoodFloorOrder::where('id', $roId)->update(['status' => 'packing']);
                             
-                            \Log::info('RO Supplier status updated to packing:', [
-                                'ro_id' => $roId,
-                                'ro_items_count' => $roItems->count(),
-                                'ro_items_in_po_count' => $roItemsInPO->count()
-                            ]);
                         }
                     }
                 }
@@ -751,7 +674,6 @@ class PurchaseOrderFoodsController extends Controller
             }
 
             DB::commit();
-            \Log::info('=== PO GENERATION COMPLETED SUCCESSFULLY ===');
 
             return response()->json([
                 'success' => true,
@@ -794,7 +716,6 @@ class PurchaseOrderFoodsController extends Controller
             $item = \App\Models\Item::with(['smallUnit', 'mediumUnit', 'largeUnit'])->findOrFail($request->item_id);
 
             // Log item data untuk debugging
-            \Log::info('Item data:', ['item' => $item->toArray()]);
 
             // Cari harga dari PO sebelumnya berdasarkan item_id dan unit
             // Pertama, cari unit_id dari nama unit
@@ -811,17 +732,8 @@ class PurchaseOrderFoodsController extends Controller
                 $min = (clone $poQuery)->min('price');
                 $max = (clone $poQuery)->max('price');
 
-                \Log::info('PO data:', [
-                    'item_id' => $request->item_id,
-                    'unit' => $request->unit,
-                    'unit_id' => $unit->id,
-                    'last' => $last,
-                    'min' => $min,
-                    'max' => $max
-                ]);
             } else {
                 $last = $min = $max = null;
-                \Log::info('Unit not found:', ['unit' => $request->unit]);
             }
 
             // Jika tidak ada data PO, fallback ke cost histories
@@ -836,19 +748,7 @@ class PurchaseOrderFoodsController extends Controller
                 $min = (clone $query)->min('new_cost');
                 $max = (clone $query)->max('new_cost');
 
-                \Log::info('Fallback to cost histories:', [
-                    'last' => $last,
-                    'min' => $min,
-                    'max' => $max
-                ]);
             }
-
-            // Log cost data untuk debugging
-            \Log::info('Cost data:', [
-                'last' => $last,
-                'min' => $min,
-                'max' => $max
-            ]);
 
             // Ambil nama unit dari relasi
             $unitSmall = $item->smallUnit ? $item->smallUnit->name : null;
@@ -857,15 +757,6 @@ class PurchaseOrderFoodsController extends Controller
             $smallConv = $item->small_conversion_qty ?: 1;
             $mediumConv = $item->medium_conversion_qty ?: 1;
 
-            // Log unit data untuk debugging
-            \Log::info('Unit data:', [
-                'small' => $unitSmall,
-                'medium' => $unitMedium,
-                'large' => $unitLarge,
-                'small_conv' => $smallConv,
-                'medium_conv' => $mediumConv,
-                'requested_unit' => $request->unit
-            ]);
 
             // Konversi harga jika menggunakan cost histories
             $convertCost = function($cost) use ($request, $unitSmall, $unitMedium, $unitLarge, $smallConv, $mediumConv) {
@@ -895,7 +786,6 @@ class PurchaseOrderFoodsController extends Controller
                 ]
             ];
 
-            \Log::info('Response data:', $response);
 
             return response()->json($response);
         } catch (\Exception $e) {

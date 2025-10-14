@@ -73,7 +73,6 @@ class OutletFoodGoodReceiveController extends Controller
 
     public function store(Request $request)
     {
-        \Log::info('DEBUG STORE OUTLET GR', ['payload' => $request->all()]);
         try {
         $validated = $request->validate([
             'delivery_order_id' => 'required|exists:delivery_orders,id',
@@ -85,7 +84,6 @@ class OutletFoodGoodReceiveController extends Controller
                 'items.*.unit_id' => 'required|integer',
                 'items.*.received_qty' => 'required|numeric|min:0',
             ]);
-            \Log::info('DEBUG STORE OUTLET GR VALIDATED', ['validated' => $validated]);
             DB::beginTransaction();
             $user = auth()->user();
             $do = DB::table('delivery_orders')->where('id', $validated['delivery_order_id'])->first();
@@ -132,7 +130,6 @@ class OutletFoodGoodReceiveController extends Controller
             }
             
             $number = $prefix . str_pad($sequence, 4, '0', STR_PAD_LEFT);
-            \Log::info('DEBUG INSERT HEADER', compact('number', 'outletId', 'warehouseOutletId'));
             $grId = DB::table('outlet_food_good_receives')->insertGetId([
                 'number' => $number,
             'delivery_order_id' => $validated['delivery_order_id'],
@@ -145,9 +142,7 @@ class OutletFoodGoodReceiveController extends Controller
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);
-            \Log::info('DEBUG HEADER INSERTED', ['grId' => $grId]);
             foreach ($validated['items'] as $item) {
-                \Log::info('DEBUG INSERT DETAIL', $item);
                 
                 // Selalu insert ke outlet_food_good_receive_items
                 DB::table('outlet_food_good_receive_items')->insert([
@@ -164,7 +159,6 @@ class OutletFoodGoodReceiveController extends Controller
                 
                 // Jika received_qty = 0, skip proses inventory
                 if ($item['received_qty'] <= 0) {
-                    \Log::info('DEBUG SKIP INVENTORY - received_qty = 0', ['item_id' => $item['item_id']]);
                     continue;
                 }
                 
@@ -195,7 +189,6 @@ class OutletFoodGoodReceiveController extends Controller
                     $cost = $ffoi ? $ffoi->price : 0;
                 }
                 $itemMaster = DB::table('items')->where('id', $item['item_id'])->first();
-                \Log::info('DEBUG ITEM MASTER', ['itemMaster' => $itemMaster]);
                 $inventoryItem = DB::table('outlet_food_inventory_items')->where('item_id', $item['item_id'])->first();
                 if (!$inventoryItem) {
                     $inventoryItemId = DB::table('outlet_food_inventory_items')->insertGetId([
@@ -209,7 +202,6 @@ class OutletFoodGoodReceiveController extends Controller
                 } else {
                     $inventoryItemId = $inventoryItem->id;
                 }
-                \Log::info('DEBUG INVENTORY ITEM', ['inventoryItemId' => $inventoryItemId]);
                 $unitId = $item['unit_id'];
                 $qtyInput = $item['received_qty'];
                 $qty_small = 0; $qty_medium = 0; $qty_large = 0;
@@ -233,7 +225,6 @@ class OutletFoodGoodReceiveController extends Controller
                 } else {
                     $qty_small = $qtyInput;
                 }
-                \Log::info('DEBUG KONVERSI QTY', compact('qty_small','qty_medium','qty_large'));
                 // Konversi cost ke small/medium/large
                 $cost_small = $cost;
                 if ($unitId == $itemMaster->large_unit_id) {
@@ -303,7 +294,6 @@ class OutletFoodGoodReceiveController extends Controller
                         'updated_at' => now(),
                     ]);
                 }
-                \Log::info('DEBUG STOCK UPDATED/INSERTED');
                 // Insert kartu stok
                 $lastCard = DB::table('outlet_food_inventory_cards')
                     ->where('inventory_item_id', $inventoryItemId)
@@ -347,7 +337,6 @@ class OutletFoodGoodReceiveController extends Controller
                     'created_at' => now(),
                     'updated_at' => now(),
                 ]);
-                \Log::info('DEBUG KARTU STOK INSERTED');
                 // Insert cost history
                 $lastCostHistory = DB::table('outlet_food_inventory_cost_histories')
                     ->where('inventory_item_id', $inventoryItemId)
@@ -370,17 +359,14 @@ class OutletFoodGoodReceiveController extends Controller
                     'reference_id' => $grId,
                     'created_at' => now(),
                 ]);
-                \Log::info('DEBUG COST HISTORY INSERTED');
             }
             DB::commit();
-            \Log::info('DEBUG STORE OUTLET GR SUCCESS');
             
             // Update floor order status jika floorOrderId tersedia
             if ($floorOrderId) {
                 DB::table('food_floor_orders')
                     ->where('id', $floorOrderId)
                     ->update(['status' => 'received']);
-                \Log::info('DEBUG FLOOR ORDER STATUS UPDATED', ['floorOrderId' => $floorOrderId]);
             }
             
             return response()->json(['success' => true, 'message' => 'Good Receive Outlet berhasil disimpan']);
@@ -432,12 +418,6 @@ class OutletFoodGoodReceiveController extends Controller
                 ->first();
         }
         
-        \Log::info('DEBUG SHOW GR', [
-            'param_id' => $id,
-            'header' => $header,
-            'details' => $details,
-            'deliveryOrder' => $deliveryOrder,
-        ]);
         
         return Inertia::render('OutletFoodGoodReceive/Show', [
             'goodReceive' => $header,
@@ -448,9 +428,6 @@ class OutletFoodGoodReceiveController extends Controller
 
     public function destroy($id)
     {
-        \Log::info('DEBUG DESTROY START', [
-            'requested_id' => $id
-        ]);
         
         // Find the model manually to avoid route model binding issues
         $outletFoodGoodReceive = OutletFoodGoodReceive::withTrashed()->find($id);
@@ -462,38 +439,20 @@ class OutletFoodGoodReceiveController extends Controller
             return response()->json(['success' => false, 'message' => 'Good Receive tidak ditemukan'], 404);
         }
         
-        \Log::info('DEBUG DESTROY MODEL FOUND', [
-            'gr_id' => $outletFoodGoodReceive->id,
-            'gr_number' => $outletFoodGoodReceive->number,
-            'deleted_at' => $outletFoodGoodReceive->deleted_at,
-            'has_payment' => $outletFoodGoodReceive->outletPayment ? true : false,
-            'payment_status' => $outletFoodGoodReceive->outletPayment ? $outletFoodGoodReceive->outletPayment->status : null
-        ]);
         
         // Check if already deleted
         if ($outletFoodGoodReceive->trashed()) {
-            \Log::info('DEBUG DESTROY - ALREADY DELETED', [
-                'gr_id' => $outletFoodGoodReceive->id,
-                'deleted_at' => $outletFoodGoodReceive->deleted_at
-            ]);
             return response()->json(['success' => false, 'message' => 'Good Receive sudah dihapus'], 400);
         }
         
         // Check if GR has payment
         if ($outletFoodGoodReceive->outletPayment && $outletFoodGoodReceive->outletPayment->status !== 'cancelled') {
-            \Log::info('DEBUG DESTROY BLOCKED - HAS PAYMENT', [
-                'gr_id' => $outletFoodGoodReceive->id,
-                'payment_status' => $outletFoodGoodReceive->outletPayment->status
-            ]);
             return response()->json(['success' => false, 'message' => 'Tidak dapat menghapus GR yang sudah memiliki payment aktif'], 400);
         }
         
         // Test simple delete first
         try {
             $outletFoodGoodReceive->delete();
-            \Log::info('DEBUG DESTROY SIMPLE DELETE SUCCESS', [
-                'gr_id' => $outletFoodGoodReceive->id
-            ]);
             return response()->json(['success' => true, 'message' => 'Good Receive berhasil dihapus']);
         } catch (\Exception $e) {
             \Log::error('DEBUG DESTROY SIMPLE DELETE FAILED', [
@@ -587,9 +546,7 @@ class OutletFoodGoodReceiveController extends Controller
     public function validateDO(Request $request)
     {
         $number = $request->number;
-        \Log::info('validateDO called', ['number' => $number]);
         $do = \DB::table('delivery_orders')->where('number', $number)->first();
-        \Log::info('validateDO result', ['do' => $do]);
         if ($do) {
             return response()->json(['success' => true, 'delivery_order_id' => $do->id]);
         } else {
@@ -691,7 +648,7 @@ class OutletFoodGoodReceiveController extends Controller
             )
             ->limit(20)
             ->get();
-       // \Log::info('DEBUG DO OUTLET', [
+       // // \Log::info('DEBUG DO OUTLET', [
        //     'id_outlet' => $idOutlet,
        //     'result' => $dos,
        //     'query_sql' => $query->toSql(),

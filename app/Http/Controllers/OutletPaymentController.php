@@ -258,7 +258,6 @@ class OutletPaymentController extends Controller
 
     public function store(Request $request)
     {
-        \Log::info('DEBUG: OutletPaymentController@store terpanggil', $request->all());
         
         // Handle both single gr_id and multiple gr_ids
         $grIds = $request->input('gr_ids', []);
@@ -300,7 +299,6 @@ class OutletPaymentController extends Controller
             }
         }
 
-        \Log::info('DEBUG OUTLET PAYMENT STORE - REQUEST', $request->all());
         
         try {
             DB::beginTransaction();
@@ -332,7 +330,6 @@ class OutletPaymentController extends Controller
                     'status' => 'pending',
                 ];
                 
-                \Log::info('DEBUG: Creating payment for GR', $dataToInsert);
                 $created = OutletPayment::create($dataToInsert);
                 $createdPayments[] = $created;
             }
@@ -351,13 +348,11 @@ class OutletPaymentController extends Controller
                     'status' => 'pending',
                 ];
                 
-                \Log::info('DEBUG: Creating payment for Retail Sales', $dataToInsert);
                 $created = OutletPayment::create($dataToInsert);
                 $createdPayments[] = $created;
             }
             
             DB::commit();
-            \Log::info('DEBUG: Successfully created payments', ['count' => count($createdPayments)]);
             
         } catch (\Exception $e) {
             DB::rollback();
@@ -665,12 +660,6 @@ class OutletPaymentController extends Controller
         $dateFrom = $request->input('date_from');
         $dateTo = $request->input('date_to');
         $perPage = $request->input('per_page', 100); // Default 100, bisa disesuaikan
-        \Log::info('DEBUG: getRetailSalesList called', [
-            'outlet_id' => $outletId,
-            'date_from' => $dateFrom,
-            'date_to' => $dateTo,
-            'per_page' => $perPage
-        ]);
 
         // Debug: Check customers with id_outlet
         $customersWithOutlet = DB::table('customers')
@@ -678,11 +667,6 @@ class OutletPaymentController extends Controller
             ->select('id', 'name', 'id_outlet', 'type')
             ->get();
         
-        \Log::info('DEBUG: Customers with outlet_id', [
-            'outlet_id' => $outletId,
-            'customers_count' => $customersWithOutlet->count(),
-            'customers' => $customersWithOutlet->toArray()
-        ]);
 
         // Debug: Check ALL retail sales for this outlet and date range
         $allRetailSalesForOutlet = DB::table('retail_warehouse_sales as rws')
@@ -692,11 +676,6 @@ class OutletPaymentController extends Controller
             ->select('rws.id', 'rws.number', 'rws.customer_id', 'rws.sale_date', 'rws.status', 'c.name as customer_name', 'c.id_outlet')
             ->get();
         
-        \Log::info('DEBUG: All retail sales for outlet', [
-            'outlet_id' => $outletId,
-            'count' => $allRetailSalesForOutlet->count(),
-            'data' => $allRetailSalesForOutlet->toArray()
-        ]);
 
         // Debug: Check retail sales with date filter
         if ($dateFrom && $dateTo) {
@@ -709,13 +688,6 @@ class OutletPaymentController extends Controller
                 ->select('rws.id', 'rws.number', 'rws.customer_id', 'rws.sale_date', 'rws.status', 'c.name as customer_name', 'c.id_outlet')
                 ->get();
             
-            \Log::info('DEBUG: Retail sales with date filter', [
-                'outlet_id' => $outletId,
-                'date_from' => $dateFrom,
-                'date_to' => $dateTo,
-                'count' => $retailSalesWithDateFilter->count(),
-                'data' => $retailSalesWithDateFilter->toArray()
-            ]);
         }
 
         // Debug: Check if outlet exists in tbl_data_outlet
@@ -723,11 +695,6 @@ class OutletPaymentController extends Controller
             ->where('id_outlet', (string)$outletId)
             ->first();
         
-        \Log::info('DEBUG: Outlet exists check', [
-            'outlet_id' => $outletId,
-            'outlet_exists' => $outletExists ? true : false,
-            'outlet_data' => $outletExists
-        ]);
 
         // Debug: Check customers with outlet_id and their outlet mapping
         $customersWithOutletMapping = DB::table('customers as c')
@@ -736,11 +703,6 @@ class OutletPaymentController extends Controller
             ->select('c.id', 'c.name', 'c.id_outlet', 'c.type', 'o.id_outlet as outlet_id', 'o.nama_outlet')
             ->get();
         
-        \Log::info('DEBUG: Customers with outlet mapping', [
-            'outlet_id' => $outletId,
-            'count' => $customersWithOutletMapping->count(),
-            'data' => $customersWithOutletMapping->toArray()
-        ]);
 
         // Build query for Retail Sales list
         // NOTE: We only show sales to branch customers (where id_outlet matches)
@@ -786,22 +748,10 @@ class OutletPaymentController extends Controller
         $rawSql = $retailQuery->toSql();
         $rawBindings = $retailQuery->getBindings();
         
-        \Log::info('DEBUG: Raw SQL Query', [
-            'sql' => $rawSql,
-            'bindings' => $rawBindings
-        ]);
 
         $retailList = $retailQuery->orderBy('rws.sale_date', 'desc')
             ->paginate($perPage);
 
-        \Log::info('DEBUG: Retail Sales query result', [
-            'total' => $retailList->total(),
-            'per_page' => $retailList->perPage(),
-            'current_page' => $retailList->currentPage(),
-            'last_page' => $retailList->lastPage(),
-            'data_count' => $retailList->count(),
-            'raw_data' => $retailList->getCollection()->toArray()
-        ]);
 
         // Format data
         $formattedRetailList = $retailList->getCollection()->map(function($retail) {
@@ -823,16 +773,6 @@ class OutletPaymentController extends Controller
             ];
         });
 
-        \Log::info('DEBUG: Final retail sales response', [
-            'success' => true,
-            'count' => $formattedRetailList->count(),
-            'total' => $retailList->total(),
-            'pagination' => [
-                'current_page' => $retailList->currentPage(),
-                'last_page' => $retailList->lastPage(),
-                'per_page' => $retailList->perPage()
-            ]
-        ]);
 
         return response()->json([
             'success' => true,

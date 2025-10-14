@@ -492,14 +492,11 @@ function formatDate(date) {
 // Print functionality
 async function printSinglePR(pr) {
   try {
-    console.log('Printing single PR:', pr);
     printData.value = [pr];
     
     // Generate preview URL
     const prIds = pr.id.toString();
-    console.log('PR ID for URL:', prIds);
     previewUrl.value = `/purchase-requisitions/print-preview?ids=${encodeURIComponent(prIds)}`;
-    console.log('Preview URL:', previewUrl.value);
     showPrintModal.value = true;
   } catch (error) {
     console.error('Error preparing print:', error);

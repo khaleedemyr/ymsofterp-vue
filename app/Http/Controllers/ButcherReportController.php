@@ -12,7 +12,7 @@ class ButcherReportController extends Controller
 {
     public function index(Request $request)
     {
-        Log::info('ButcherReportController@index called', $request->all());
+        // Log::info('ButcherReportController@index called', $request->all());
         $query = DB::table('butcher_processes as bp')
             ->join('warehouses as w', 'bp.warehouse_id', '=', 'w.id')
             ->leftJoin('food_good_receives as gr', 'bp.good_receive_id', '=', 'gr.id')
@@ -103,10 +103,6 @@ class ButcherReportController extends Controller
 
         $warehouses = DB::table('warehouses')->select('id', 'name')->orderBy('name')->get();
 
-        Log::info('ButcherReportController@index returning', [
-            'processes_count' => $transformedData->count(),
-            'filters' => $request->only(['search', 'from', 'to', 'warehouse_id'])
-        ]);
         return Inertia::render('ButcherProcess/Report', [
             'processes' => $transformedData,
             'warehouses' => $warehouses,

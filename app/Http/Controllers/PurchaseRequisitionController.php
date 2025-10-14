@@ -682,11 +682,6 @@ class PurchaseRequisitionController extends Controller
                 'updated_at' => now()
             ]);
 
-            \Log::info('Notification sent to next approver', [
-                'purchase_requisition_id' => $purchaseRequisition->id,
-                'approver_id' => $approver->id,
-                'approval_level' => $nextApprover->approval_level
-            ]);
 
         } catch (\Exception $e) {
             \Log::error('Failed to send notification to next approver', [
@@ -751,11 +746,6 @@ class PurchaseRequisitionController extends Controller
                 'updated_at' => now()
             ]);
 
-            \Log::info('Notification sent to creator', [
-                'purchase_requisition_id' => $purchaseRequisition->id,
-                'creator_id' => $creator->id,
-                'status' => $status
-            ]);
 
         } catch (\Exception $e) {
             \Log::error('Failed to send notification to creator', [
@@ -890,14 +880,6 @@ class PurchaseRequisitionController extends Controller
                 }
             }
 
-            // Debug logging
-            \Log::info('PR Approval Details Response', [
-                'pr_id' => $purchaseRequisition->id,
-                'pr_number' => $purchaseRequisition->pr_number,
-                'outlet_id' => $purchaseRequisition->outlet_id,
-                'outlet_data' => $purchaseRequisition->outlet,
-                'outlet_name' => $purchaseRequisition->outlet?->nama_outlet
-            ]);
 
             return response()->json([
                 'success' => true,
@@ -925,13 +907,6 @@ class PurchaseRequisitionController extends Controller
     public function printPreview(Request $request)
     {
         try {
-            // Debug logging
-            \Log::info('PrintPreview method called', [
-                'request_data' => $request->all(),
-                'ids' => $request->get('ids', ''),
-                'url' => $request->url(),
-                'method' => $request->method()
-            ]);
             
             $ids = $request->get('ids', '');
             
@@ -941,7 +916,6 @@ class PurchaseRequisitionController extends Controller
             }
 
             $prIds = explode(',', $ids);
-            \Log::info('PR IDs after explode', ['prIds' => $prIds]);
             
             // Validate that all IDs are numeric
             foreach ($prIds as $id) {
@@ -1023,28 +997,6 @@ class PurchaseRequisitionController extends Controller
             $budgetInfos[$pr->id] = $budgetInfo;
         }
 
-            \Log::info('About to return view', [
-                'purchase_requisitions_count' => $purchaseRequisitions->count(),
-                'budget_infos_count' => count($budgetInfos),
-                'approval_flows_debug' => $purchaseRequisitions->map(function($pr) {
-                    return [
-                        'pr_id' => $pr->id,
-                        'approval_flows_count' => $pr->approvalFlows ? $pr->approvalFlows->count() : 0,
-                        'approval_flows' => $pr->approvalFlows ? $pr->approvalFlows->map(function($flow) {
-                            return [
-                                'id' => $flow->id,
-                                'level' => $flow->approval_level,
-                                'status' => $flow->status,
-                                'approver_name' => $flow->approver ? $flow->approver->nama_lengkap : 'No approver',
-                                'approver_position' => $flow->approver && $flow->approver->jabatan ? $flow->approver->jabatan->nama_jabatan : 'No position',
-                                'signature_path' => $flow->approver ? $flow->approver->signature_path : 'No signature',
-                                'approver_id' => $flow->approver_id,
-                                'approver_exists' => $flow->approver ? 'Yes' : 'No'
-                            ];
-                        }) : []
-                    ];
-                })
-            ]);
             
             return view('purchase-requisitions.print-preview', [
                 'purchaseRequisitions' => $purchaseRequisitions,

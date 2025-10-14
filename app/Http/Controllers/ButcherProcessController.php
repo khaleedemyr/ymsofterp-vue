@@ -192,7 +192,7 @@ class ButcherProcessController extends Controller
 
         try {
             DB::beginTransaction();
-            Log::info('BUTCHER STORE: Mulai simpan butcher process', $request->all());
+            // Log::info('BUTCHER STORE: Mulai simpan butcher process', $request->all());
 
             // Generate butcher number
             $lastButcher = ButcherProcess::latest()->first();
@@ -209,7 +209,6 @@ class ButcherProcessController extends Controller
                 'created_by' => auth()->id(),
                 'notes' => $request->notes
             ]);
-            Log::info('BUTCHER STORE: Butcher process created', ['butcherProcess' => $butcherProcess]);
 
             // 1. Hitung total cost butcher (MAC small cost x qty add to butcher dalam small unit)
             $itemMasterSample = null;
@@ -284,16 +283,6 @@ class ButcherProcessController extends Controller
                     $pcsSmallConv = $pcsItemModel ? ($pcsItemModel->small_conversion_qty ?: 1) : 1;
                     // Ambil mac_pcs dari request jika ada, fallback ke hasil hitung
                     $macPcs = isset($item['mac_pcs']) ? $item['mac_pcs'] : ($costPerGram * $pcsSmallConv);
-                    Log::info('DEBUG MAC_PCS BACKEND', [
-                        'idx' => $idx,
-                        'whole_item_id' => $item['whole_item_id'],
-                        'pcs_item_id' => $item['pcs_item_id'],
-                        'mac_pcs' => $macPcs,
-                        'costs_0' => $item['costs_0'] ?? null,
-                        'cost_per_gram' => $costPerGram,
-                        'pcs_small_conv' => $pcsSmallConv,
-                        'item' => $item
-                    ]);
                     $serialNumber = 'BTR-' . date('Ymd') . '-' . $butcherProcess->id . '-' . str_pad($idx+1, 3, '0', STR_PAD_LEFT);
                     $butcherItem = ButcherProcessItem::create([
                         'butcher_process_id' => $butcherProcess->id,
@@ -340,7 +329,6 @@ class ButcherProcessController extends Controller
                         ],
                         ['qty_small' => 0, 'qty_medium' => 0, 'qty_large' => 0]
                     );
-                    Log::info('BUTCHER STORE: Before update PCS stock', ['pcs_item_id' => $item['pcs_item_id'], 'inventory_item_id' => $pcsInventoryItem->id ?? null, 'pcsInventory' => $pcsInventory]);
                     $pcsInventory->update([
                         'qty_small' => $pcsInventory->qty_small + $item['pcs_qty'],
                         'qty_medium' => $pcsInventory->qty_medium + $item['pcs_qty'],
@@ -353,18 +341,6 @@ class ButcherProcessController extends Controller
                         + ($saldo_qty_medium_pcs * $macPcs)
                         + ($saldo_qty_large_pcs * $macPcs);
                     // Insert ke FoodInventoryCard (PCS)
-                    Log::info('BUTCHER STORE: FoodInventoryCard IN PCS', [
-                        'inventory_item_id' => $pcsInventoryItem->id ?? null,
-                        'warehouse_id' => $request->warehouse_id,
-                        'pcs_qty_small' => $item['pcs_qty'],
-                        'pcs_qty_medium' => $item['pcs_qty'],
-                        'pcs_qty_large' => $item['pcs_qty'],
-                        'saldo_qty_small' => $saldo_qty_small_pcs,
-                        'saldo_qty_medium' => $saldo_qty_medium_pcs,
-                        'saldo_qty_large' => $saldo_qty_large_pcs,
-                        'value_in' => $item['pcs_qty'] * $macPcs,
-                        'saldo_value' => $saldo_value_pcs,
-                    ]);
                     \App\Models\FoodInventoryCard::create([
                         'inventory_item_id' => $pcsInventoryItem->id ?? null,
                         'warehouse_id' => $request->warehouse_id,
@@ -398,23 +374,7 @@ class ButcherProcessController extends Controller
                         ]);
                     }
                     // Setelah insert detail
-                    Log::info('DEBUG DETAIL', [
-                        'butcher_process_item_id' => $butcherItem->id,
-                        'detail' => $item['costs_0'] ? $item['costs_0'] : null
-                    ]);
 
-                    Log::info('DEBUG STOCK', [
-                        'unitName_input' => $item['whole_unit'],
-                        'smallUnit' => optional($pcsInventoryItem->smallUnit)->name,
-                        'mediumUnit' => optional($pcsInventoryItem->mediumUnit)->name,
-                        'largeUnit' => optional($pcsInventoryItem->largeUnit)->name,
-                        'qty_small' => $pcsInventory->qty_small ?? null,
-                        'qty_medium' => $pcsInventory->qty_medium ?? null,
-                        'qty_large' => $pcsInventory->qty_large ?? null,
-                        'item_whole_qty' => $item['whole_qty'],
-                        'inventory_item_id' => $pcsInventoryItem->id ?? null,
-                        'warehouse_id' => $request->warehouse_id,
-                    ]);
                 } catch (\Exception $e) {
                     Log::error('BUTCHER STORE: ERROR proses item', ['idx' => $idx, 'item' => $item, 'error' => $e->getMessage()]);
                     throw $e;
@@ -447,7 +407,6 @@ class ButcherProcessController extends Controller
                 'new_data' => $butcherProcess->toArray(),
             ]);
 
-            Log::info('ButcherProcess created', ['butcherProcess' => $butcherProcess]);
 
             // Jika request expects JSON (AJAX/axios)
             if ($request->expectsJson() || $request->wantsJson() || $request->isJson() || $request->header('Accept') === 'application/json') {
@@ -480,26 +439,6 @@ class ButcherProcessController extends Controller
             'certificates'
         ])->findOrFail($id);
 
-        // Debug: Log the loaded data
-        \Log::info('ButcherProcess Show - Raw data', [
-            'butcher_process_id' => $butcherProcess->id,
-            'items_count' => $butcherProcess->items->count(),
-            'items_data' => $butcherProcess->items->map(function($item) {
-                return [
-                    'id' => $item->id,
-                    'pcs_item_id' => $item->pcs_item_id,
-                    'pcsItem' => $item->pcsItem ? [
-                        'id' => $item->pcsItem->id,
-                        'name' => $item->pcsItem->name
-                    ] : null,
-                    'whole_item_id' => $item->whole_item_id,
-                    'wholeItem' => $item->wholeItem ? [
-                        'id' => $item->wholeItem->id,
-                        'name' => $item->wholeItem->name
-                    ] : null
-                ];
-            })->toArray()
-        ]);
 
         // Mapping manual nama item agar selalu muncul di frontend
         $butcherProcess->items->transform(function ($item) {

@@ -74,7 +74,6 @@ class RetailWarehouseSaleController extends Controller
 
     public function store(Request $request)
     {
-        Log::info('Mulai proses store Retail Warehouse Sale', $request->all());
         
         // Validate request
         $request->validate([
@@ -142,7 +141,6 @@ class RetailWarehouseSaleController extends Controller
             ]);
 
             DB::commit();
-            Log::info('Sukses simpan Retail Warehouse Sale');
 
             return response()->json([
                 'success' => true,
@@ -314,12 +312,6 @@ class RetailWarehouseSaleController extends Controller
         }
         
         // Tambahkan log sebelum cek stok tersedia
-        Log::info('Cek stok inventory', [
-            'inventory_item_id' => $inventory_item_id,
-            'warehouse_id' => $warehouseId,
-            'item_id' => $item['item_id'],
-            'qty_small' => $qty_small,
-        ]);
         
         $stock = DB::table('food_inventory_stocks')
             ->where('inventory_item_id', $inventory_item_id)
@@ -335,11 +327,6 @@ class RetailWarehouseSaleController extends Controller
         }
         
         // Tambahkan log sebelum validasi qty
-        Log::info('Validasi qty vs stok', [
-            'qty_small' => $qty_small,
-            'stok_tersedia' => $stock->qty_small,
-            'unit' => $unitSmall
-        ]);
         
         if ($qty_small > $stock->qty_small) {
             Log::error('Qty melebihi stok yang tersedia', [
@@ -436,11 +423,6 @@ class RetailWarehouseSaleController extends Controller
                     'updated_at' => now(),
                 ]);
         } else {
-            \Log::warning('Rollback stok gagal: stok tidak ditemukan', [
-                'inventory_item_id' => $inventory_item_id,
-                'warehouse_id' => $warehouseId,
-                'item_id' => $realItemId
-            ]);
         }
         
         // Hapus kartu stok OUT
