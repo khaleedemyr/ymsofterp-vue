@@ -31,7 +31,10 @@ class OutletPaymentController extends Controller
                 'o.nama_outlet as outlet_name',
                 'u.nama_lengkap as creator_name',
                 'gr.number as gr_number',
-                'rws.number as retail_number'
+                'gr.receive_date as gr_date',
+                'rws.number as retail_number',
+                'rws.sale_date as rws_date',
+                'outlet_payments.created_at as payment_created_at'
             );
 
         // Apply filters

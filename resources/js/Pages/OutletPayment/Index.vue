@@ -64,7 +64,8 @@
                 />
               </th>
               <th class="px-6 py-3 text-left text-xs font-bold text-yellow-700 uppercase tracking-wider">No. Payment</th>
-              <th class="px-6 py-3 text-left text-xs font-bold text-yellow-700 uppercase tracking-wider">Tanggal</th>
+              <th class="px-6 py-3 text-left text-xs font-bold text-yellow-700 uppercase tracking-wider">Tanggal Transaksi</th>
+              <th class="px-6 py-3 text-left text-xs font-bold text-yellow-700 uppercase tracking-wider">Tanggal Payment</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-yellow-700 uppercase tracking-wider">Outlet</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-yellow-700 uppercase tracking-wider">No. GR/Retail</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-yellow-700 uppercase tracking-wider">Creator</th>
@@ -75,7 +76,7 @@
           </thead>
           <tbody>
             <tr v-if="!payments.data || !payments.data.length">
-              <td colspan="9" class="text-center py-10 text-gray-400">Belum ada data Payment.</td>
+              <td colspan="10" class="text-center py-10 text-gray-400">Belum ada data Payment.</td>
             </tr>
             <tr v-for="payment in payments.data" :key="payment.id" class="hover:bg-yellow-50 transition shadow-sm">
               <td class="px-6 py-3">
@@ -88,7 +89,23 @@
                 />
               </td>
               <td class="px-6 py-3 font-mono font-semibold text-yellow-700">{{ payment.payment_number }}</td>
-              <td class="px-6 py-3">{{ formatDate(payment.date) }}</td>
+              <td class="px-6 py-3">
+                <div v-if="payment.payment_type === 'GR'">
+                  <span class="text-blue-600 font-medium">{{ formatDate(payment.gr_date) }}</span>
+                  <div class="text-xs text-gray-500">GR Date</div>
+                </div>
+                <div v-else-if="payment.payment_type === 'Retail'">
+                  <span class="text-green-600 font-medium">{{ formatDate(payment.rws_date) }}</span>
+                  <div class="text-xs text-gray-500">RWS Date</div>
+                </div>
+                <div v-else>
+                  <span class="text-gray-400">{{ formatDate(payment.date) }}</span>
+                </div>
+              </td>
+              <td class="px-6 py-3">
+                <span class="text-purple-600 font-medium">{{ formatDate(payment.payment_created_at) }}</span>
+                <div class="text-xs text-gray-500">Created</div>
+              </td>
               <td class="px-6 py-3">{{ payment.outlet_name || '-' }}</td>
               <td class="px-6 py-3">
                 <div v-if="payment.payment_type === 'GR'">
