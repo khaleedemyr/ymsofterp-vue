@@ -79,8 +79,24 @@
             <tr v-for="item in packingListItems" :key="item.id" :class="statusClass(item)">
               <td class="px-4 py-2 text-base">
                 {{ item.name }}
-                <div class="text-xs text-gray-500 mt-1">
-                  Stok: <span :class="{'text-red-600 font-bold': item.stock === 0}">{{ item.stock }}</span> {{ item.unit }}
+                <div class="text-xs text-gray-500 mt-1 space-y-1">
+                  <div v-if="item.units && item.stock">
+                    <div v-if="item.units.small_unit && item.stock.small !== undefined">
+                      <span class="font-semibold">Small:</span> 
+                      <span :class="{'text-red-600 font-bold': item.stock.small === 0}">{{ item.stock.small }}</span> {{ item.units.small_unit }}
+                    </div>
+                    <div v-if="item.units.medium_unit && item.stock.medium !== undefined">
+                      <span class="font-semibold">Medium:</span> 
+                      <span :class="{'text-red-600 font-bold': item.stock.medium === 0}">{{ item.stock.medium }}</span> {{ item.units.medium_unit }}
+                    </div>
+                    <div v-if="item.units.large_unit && item.stock.large !== undefined">
+                      <span class="font-semibold">Large:</span> 
+                      <span :class="{'text-red-600 font-bold': item.stock.large === 0}">{{ item.stock.large }}</span> {{ item.units.large_unit }}
+                    </div>
+                  </div>
+                  <div v-else class="text-red-600 font-bold">
+                    Stok: Tidak tersedia
+                  </div>
                 </div>
               </td>
               <td class="px-4 py-2 text-right text-lg">{{ item.qty }}</td>
@@ -293,11 +309,30 @@ function onScanBarcode() {
   if (item) {
     const maxQty = Number(item.qty);
     const currentScan = Number(item.qty_scan || 0);
-    const stock = Number(item.stock ?? 0);
+    
+    // Cari stock yang sesuai dengan unit item
+    let stock = 0;
+    let stockUnit = '';
+    if (item.stock && item.units) {
+      if (item.unit === item.units.small_unit) {
+        stock = Number(item.stock.small ?? 0);
+        stockUnit = item.units.small_unit;
+      } else if (item.unit === item.units.medium_unit) {
+        stock = Number(item.stock.medium ?? 0);
+        stockUnit = item.units.medium_unit;
+      } else if (item.unit === item.units.large_unit) {
+        stock = Number(item.stock.large ?? 0);
+        stockUnit = item.units.large_unit;
+      } else {
+        // Fallback ke small unit jika unit tidak cocok
+        stock = Number(item.stock.small ?? 0);
+        stockUnit = item.units.small_unit || item.unit;
+      }
+    }
     
     // Validasi stock tersedia
     if (stock <= 0) {
-      scanFeedback.value = `❌ Stok tidak tersedia (${stock} ${item.unit})`;
+      scanFeedback.value = `❌ Stok tidak tersedia (${stock} ${stockUnit})`;
       scanFeedbackClass.value = 'text-red-600';
       barcodeInputVal.value = '';
       nextTick(() => barcodeInput.value?.focus());
@@ -306,7 +341,7 @@ function onScanBarcode() {
     
     // Validasi qty scan tidak melebihi stock yang tersedia
     if (currentScan + qty > stock) {
-      scanFeedback.value = `❌ Qty scan tidak boleh melebihi stock (${stock} ${item.unit})`;
+      scanFeedback.value = `❌ Qty scan tidak boleh melebihi stock (${stock} ${stockUnit})`;
       scanFeedbackClass.value = 'text-red-600';
       barcodeInputVal.value = '';
       nextTick(() => barcodeInput.value?.focus());
@@ -359,11 +394,30 @@ function confirmQtyModal() {
   const maxQty = Number(item.qty);
   const currentScan = Number(item.qty_scan || 0);
   const inputQty = Number(qtyModalValue.value);
-  const stock = Number(item.stock ?? 0);
+  
+  // Cari stock yang sesuai dengan unit item
+  let stock = 0;
+  let stockUnit = '';
+  if (item.stock && item.units) {
+    if (item.unit === item.units.small_unit) {
+      stock = Number(item.stock.small ?? 0);
+      stockUnit = item.units.small_unit;
+    } else if (item.unit === item.units.medium_unit) {
+      stock = Number(item.stock.medium ?? 0);
+      stockUnit = item.units.medium_unit;
+    } else if (item.unit === item.units.large_unit) {
+      stock = Number(item.stock.large ?? 0);
+      stockUnit = item.units.large_unit;
+    } else {
+      // Fallback ke small unit jika unit tidak cocok
+      stock = Number(item.stock.small ?? 0);
+      stockUnit = item.units.small_unit || item.unit;
+    }
+  }
   
   // Validasi stock tersedia
   if (stock <= 0) {
-    scanFeedback.value = `❌ Stok tidak tersedia (${stock} ${item.unit})`;
+    scanFeedback.value = `❌ Stok tidak tersedia (${stock} ${stockUnit})`;
     scanFeedbackClass.value = 'text-red-600';
     nextTick(() => document.getElementById('qty-modal-input')?.focus());
     return;
@@ -373,7 +427,7 @@ function confirmQtyModal() {
   if (currentScan + inputQty > stock) {
     const maxAllowed = stock - currentScan;
     qtyModalValue.value = Math.max(0.01, maxAllowed);
-    scanFeedback.value = `❌ Qty scan tidak boleh melebihi stock (sisa: ${maxAllowed} ${item.unit})`;
+    scanFeedback.value = `❌ Qty scan tidak boleh melebihi stock (sisa: ${maxAllowed} ${stockUnit})`;
     scanFeedbackClass.value = 'text-red-600';
     nextTick(() => document.getElementById('qty-modal-input')?.focus());
     return;

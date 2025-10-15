@@ -1164,6 +1164,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('non-food-payments/{nonFoodPayment}/reject', [\App\Http\Controllers\NonFoodPaymentController::class, 'reject'])->name('non-food-payments.reject');
     Route::post('non-food-payments/{nonFoodPayment}/mark-as-paid', [\App\Http\Controllers\NonFoodPaymentController::class, 'markAsPaid'])->name('non-food-payments.mark-as-paid');
     Route::post('non-food-payments/{nonFoodPayment}/cancel', [\App\Http\Controllers\NonFoodPaymentController::class, 'cancel'])->name('non-food-payments.cancel');
+    
+    // OPEX Report
+    Route::get('opex-report', [\App\Http\Controllers\OpexReportController::class, 'index'])->name('opex-report.index');
   
 });
 

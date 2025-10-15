@@ -238,6 +238,18 @@ class NonFoodPaymentController extends Controller
                 )
                 ->first();
 
+            // Get PO attachments
+            $poAttachments = [];
+            try {
+                $poAttachments = DB::table('purchase_order_ops_attachments')
+                    ->where('purchase_order_ops_id', $poId)
+                    ->select('id', 'file_name', 'file_path', 'file_type', 'file_size', 'created_at')
+                    ->get()
+                    ->toArray();
+            } catch (\Exception $e) {
+                // Table might not exist, continue without attachments
+            }
+
             if (!$po) {
                 return response()->json(['error' => 'Purchase Order not found'], 404);
             }
@@ -260,6 +272,17 @@ class NonFoodPaymentController extends Controller
                     $po->pr_title = $prInfo->pr_title;
                     $po->pr_description = $prInfo->pr_description;
                     $po->division_name = $prInfo->division_name;
+                    
+                    // Get PR attachments
+                    try {
+                        $prAttachments = DB::table('purchase_requisition_attachments')
+                            ->where('purchase_requisition_id', $prInfo->id)
+                            ->select('id', 'file_name', 'file_path', 'file_type', 'file_size', 'created_at')
+                            ->get()
+                            ->toArray();
+                    } catch (\Exception $e) {
+                        // Table might not exist, continue without attachments
+                    }
                 }
             } catch (\Exception $e) {
                 // PR table might not exist, continue without PR info
@@ -349,7 +372,9 @@ class NonFoodPaymentController extends Controller
             return response()->json([
                 'po' => $po,
                 'items_by_outlet' => $itemsByOutlet,
-                'total_amount' => $items->sum('total')
+                'total_amount' => $items->sum('total'),
+                'po_attachments' => $poAttachments,
+                'pr_attachments' => $prAttachments ?? []
             ]);
 
         } catch (\Exception $e) {
@@ -447,8 +472,54 @@ class NonFoodPaymentController extends Controller
             'attachments.uploader'
         ]);
 
+        // Get PO attachments if payment is for PO
+        $poAttachments = [];
+        if ($nonFoodPayment->purchase_order_ops_id) {
+            try {
+                $poAttachments = DB::table('purchase_order_ops_attachments')
+                    ->where('purchase_order_ops_id', $nonFoodPayment->purchase_order_ops_id)
+                    ->select('id', 'file_name', 'file_path', 'file_type', 'file_size', 'created_at')
+                    ->get()
+                    ->toArray();
+            } catch (\Exception $e) {
+                // Table might not exist, continue without attachments
+            }
+        }
+
+        // Get PR attachments if payment is for PR
+        $prAttachments = [];
+        if ($nonFoodPayment->purchase_requisition_id) {
+            try {
+                $prAttachments = DB::table('purchase_requisition_attachments')
+                    ->where('purchase_requisition_id', $nonFoodPayment->purchase_requisition_id)
+                    ->select('id', 'file_name', 'file_path', 'file_type', 'file_size', 'created_at')
+                    ->get()
+                    ->toArray();
+            } catch (\Exception $e) {
+                // Table might not exist, continue without attachments
+            }
+        }
+
+        // Get PR attachments from PO source if payment is for PO
+        if ($nonFoodPayment->purchase_order_ops_id && $nonFoodPayment->purchaseOrderOps) {
+            try {
+                $sourcePRId = $nonFoodPayment->purchaseOrderOps->source_id;
+                if ($sourcePRId) {
+                    $prAttachments = DB::table('purchase_requisition_attachments')
+                        ->where('purchase_requisition_id', $sourcePRId)
+                        ->select('id', 'file_name', 'file_path', 'file_type', 'file_size', 'created_at')
+                        ->get()
+                        ->toArray();
+                }
+            } catch (\Exception $e) {
+                // Table might not exist, continue without attachments
+            }
+        }
+
         return Inertia::render('NonFoodPayment/Show', [
-            'payment' => $nonFoodPayment
+            'payment' => $nonFoodPayment,
+            'po_attachments' => $poAttachments,
+            'pr_attachments' => $prAttachments
         ]);
     }
 

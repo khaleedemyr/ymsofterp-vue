@@ -658,24 +658,62 @@ class DeliveryOrderController extends Controller
                 return $rows->pluck('barcode')->values();
             });
 
-        // Ambil stock untuk setiap item (warehouse_id = 1 untuk RO Supplier)
+        // Ambil stock untuk setiap item dengan semua unit (warehouse_id = 1 untuk RO Supplier)
         $warehouse_id = 1;
         $itemStocks = [];
+        $itemUnits = [];
         if ($warehouse_id) {
+            $inventoryItems = DB::table('food_inventory_items')
+                ->whereIn('item_id', $itemIds)
+                ->get()->keyBy('item_id');
+            $inventoryItemIds = $inventoryItems->pluck('id')->unique()->values();
+            $stocks = DB::table('food_inventory_stocks')
+                ->whereIn('inventory_item_id', $inventoryItemIds)
+                ->where('warehouse_id', $warehouse_id)
+                ->get()->keyBy('inventory_item_id');
+            
             foreach ($items as $item) {
-                $stock = DB::table('food_inventory_stocks as fis')
-                    ->join('food_inventory_items as fii', 'fis.inventory_item_id', '=', 'fii.id')
-                    ->where('fis.warehouse_id', $warehouse_id)
-                    ->where('fii.item_id', $item->item_id)
-                    ->value('fis.qty_small') ?? 0;
-                $itemStocks[$item->item_id] = $stock;
+                $inv = $inventoryItems[$item->item_id] ?? null;
+                $stock = $inv ? $stocks[$inv->id] ?? null : null;
+                
+                if ($stock) {
+                    // Ambil nama unit dari tabel units
+                    $unitNameSmall = DB::table('units')->where('id', $inv->small_unit_id)->value('name');
+                    $unitNameMedium = DB::table('units')->where('id', $inv->medium_unit_id)->value('name');
+                    $unitNameLarge = DB::table('units')->where('id', $inv->large_unit_id)->value('name');
+                    
+                    // Simpan semua unit dan stock
+                    $itemUnits[$item->id] = [
+                        'small_unit' => $unitNameSmall,
+                        'medium_unit' => $unitNameMedium,
+                        'large_unit' => $unitNameLarge
+                    ];
+                    
+                    $itemStocks[$item->id] = [
+                        'small' => (float)$stock->qty_small,
+                        'medium' => (float)$stock->qty_medium,
+                        'large' => (float)$stock->qty_large
+                    ];
+                } else {
+                    $itemUnits[$item->id] = [
+                        'small_unit' => null,
+                        'medium_unit' => null,
+                        'large_unit' => null
+                    ];
+                    $itemStocks[$item->id] = [
+                        'small' => 0,
+                        'medium' => 0,
+                        'large' => 0
+                    ];
+                }
             }
         }
 
         // Tambahkan barcode dan stock ke setiap item
-        $items = $items->map(function($item) use ($barcodeMap, $itemStocks) {
+        $items = $items->map(function($item) use ($barcodeMap, $itemStocks, $itemUnits) {
             $item->barcodes = $barcodeMap->get($item->item_id, []);
-            $item->stock = $itemStocks[$item->item_id] ?? 0;
+            $item->stock = $itemStocks[$item->id] ?? ['small' => 0, 'medium' => 0, 'large' => 0];
+            $item->units = $itemUnits[$item->id] ?? ['small_unit' => null, 'medium_unit' => null, 'large_unit' => null];
             return $item;
         });
 
@@ -723,8 +761,9 @@ class DeliveryOrderController extends Controller
             ->map(function($rows) {
                 return $rows->pluck('barcode')->values();
             });
-        // Ambil stock untuk setiap item sesuai unit
+        // Ambil stock untuk setiap item dengan semua unit (small, medium, large)
         $itemStocks = [];
+        $itemUnits = [];
         if ($warehouse_id) {
             $inventoryItems = DB::table('food_inventory_items')
                 ->whereIn('item_id', $itemIds)
@@ -734,41 +773,48 @@ class DeliveryOrderController extends Controller
                 ->whereIn('inventory_item_id', $inventoryItemIds)
                 ->where('warehouse_id', $warehouse_id)
                 ->get()->keyBy('inventory_item_id');
+            
             foreach ($items as $item) {
                 $inv = $inventoryItems[$item->item_id] ?? null;
                 $stock = $inv ? $stocks[$inv->id] ?? null : null;
-                $unit = $item->unit;
-                $stockQty = null;
+                
                 if ($stock) {
                     // Ambil nama unit dari tabel units
                     $unitNameSmall = DB::table('units')->where('id', $inv->small_unit_id)->value('name');
                     $unitNameMedium = DB::table('units')->where('id', $inv->medium_unit_id)->value('name');
                     $unitNameLarge = DB::table('units')->where('id', $inv->large_unit_id)->value('name');
                     
-                    // Log removed for performance
+                    // Simpan semua unit dan stock
+                    $itemUnits[$item->id] = [
+                        'small_unit' => $unitNameSmall,
+                        'medium_unit' => $unitNameMedium,
+                        'large_unit' => $unitNameLarge
+                    ];
                     
-                    if ($unit == $unitNameSmall) {
-                        $stockQty = $stock->qty_small;
-                    } elseif ($unit == $unitNameMedium) {
-                        $stockQty = $stock->qty_medium;
-                    } elseif ($unit == $unitNameLarge) {
-                        $stockQty = $stock->qty_large;
-                    } else {
-                        // Jika unit tidak cocok, gunakan qty_small sebagai fallback
-                        $stockQty = $stock->qty_small;
-                        Log::warning('Unit tidak cocok, menggunakan qty_small sebagai fallback', [
-                            'item_id' => $item->item_id,
-                            'unit' => $unit,
-                            'fallback_qty_small' => $stock->qty_small
-                        ]);
-                    }
+                    $itemStocks[$item->id] = [
+                        'small' => (float)$stock->qty_small,
+                        'medium' => (float)$stock->qty_medium,
+                        'large' => (float)$stock->qty_large
+                    ];
+                } else {
+                    $itemUnits[$item->id] = [
+                        'small_unit' => null,
+                        'medium_unit' => null,
+                        'large_unit' => null
+                    ];
+                    $itemStocks[$item->id] = [
+                        'small' => 0,
+                        'medium' => 0,
+                        'large' => 0
+                    ];
                 }
-                $itemStocks[$item->id] = $stockQty !== null ? (float)$stockQty : 0;
             }
         }
-        $items = $items->map(function($item) use ($barcodeMap, $itemStocks) {
+        
+        $items = $items->map(function($item) use ($barcodeMap, $itemStocks, $itemUnits) {
             $item->barcodes = $barcodeMap[$item->item_id] ?? collect();
-            $item->stock = $itemStocks[$item->id] ?? 0;
+            $item->stock = $itemStocks[$item->id] ?? ['small' => 0, 'medium' => 0, 'large' => 0];
+            $item->units = $itemUnits[$item->id] ?? ['small_unit' => null, 'medium_unit' => null, 'large_unit' => null];
             return $item;
         });
         

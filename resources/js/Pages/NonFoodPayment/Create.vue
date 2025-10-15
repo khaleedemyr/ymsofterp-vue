@@ -109,6 +109,87 @@
               <label class="block text-sm font-medium text-gray-700">PR Title</label>
               <p class="mt-1 text-gray-900">{{ selectedPO.pr_title }}</p>
             </div>
+            <div v-if="selectedPO.pr_description">
+              <label class="block text-sm font-medium text-gray-700">PR Description</label>
+              <p class="mt-1 text-gray-900">{{ selectedPO.pr_description }}</p>
+            </div>
+          </div>
+
+          <!-- Attachments Section -->
+          <div v-if="(poAttachments && poAttachments.length > 0) || (prAttachments && prAttachments.length > 0)" class="bg-white rounded-2xl shadow-2xl p-6">
+            <h3 class="text-lg font-semibold text-gray-800 mb-4">Attachments</h3>
+            
+            <!-- PO Attachments -->
+            <div v-if="poAttachments && poAttachments.length > 0" class="mb-6">
+              <h4 class="text-md font-medium text-gray-700 mb-3">Purchase Order Attachments</h4>
+              <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div v-for="attachment in poAttachments" :key="`po-${attachment.id}`" class="border border-gray-200 rounded-lg p-3">
+                  <div class="flex items-center gap-3">
+                    <div class="flex-shrink-0">
+                      <i v-if="isImageFile(attachment.file_name)" class="fa fa-image text-blue-500 text-xl"></i>
+                      <i v-else class="fa fa-file text-gray-500 text-xl"></i>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                      <p class="text-sm font-medium text-gray-900 truncate">{{ attachment.file_name }}</p>
+                      <p class="text-xs text-gray-500">{{ formatFileSize(attachment.file_size) }}</p>
+                    </div>
+                    <div class="flex-shrink-0">
+                      <button 
+                        v-if="isImageFile(attachment.file_name)" 
+                        @click="openLightbox(attachment.file_path, attachment.file_name)"
+                        class="text-blue-600 hover:text-blue-800 text-sm"
+                      >
+                        <i class="fa fa-eye"></i>
+                      </button>
+                      <a 
+                        v-else 
+                        :href="attachment.file_path" 
+                        target="_blank" 
+                        class="text-blue-600 hover:text-blue-800 text-sm"
+                      >
+                        <i class="fa fa-download"></i>
+                      </a>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- PR Attachments -->
+            <div v-if="prAttachments && prAttachments.length > 0">
+              <h4 class="text-md font-medium text-gray-700 mb-3">Purchase Requisition Attachments</h4>
+              <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div v-for="attachment in prAttachments" :key="`pr-${attachment.id}`" class="border border-gray-200 rounded-lg p-3">
+                  <div class="flex items-center gap-3">
+                    <div class="flex-shrink-0">
+                      <i v-if="isImageFile(attachment.file_name)" class="fa fa-image text-green-500 text-xl"></i>
+                      <i v-else class="fa fa-file text-gray-500 text-xl"></i>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                      <p class="text-sm font-medium text-gray-900 truncate">{{ attachment.file_name }}</p>
+                      <p class="text-xs text-gray-500">{{ formatFileSize(attachment.file_size) }}</p>
+                    </div>
+                    <div class="flex-shrink-0">
+                      <button 
+                        v-if="isImageFile(attachment.file_name)" 
+                        @click="openLightbox(attachment.file_path, attachment.file_name)"
+                        class="text-green-600 hover:text-green-800 text-sm"
+                      >
+                        <i class="fa fa-eye"></i>
+                      </button>
+                      <a 
+                        v-else 
+                        :href="attachment.file_path" 
+                        target="_blank" 
+                        class="text-green-600 hover:text-green-800 text-sm"
+                      >
+                        <i class="fa fa-download"></i>
+                      </a>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
 
           <!-- PO Items Grouped by Outlet -->
@@ -272,6 +353,23 @@
         </div>
       </form>
     </div>
+
+    <!-- Lightbox Modal -->
+    <div v-if="lightboxVisible" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50" @click="closeLightbox">
+      <div class="relative max-w-4xl max-h-full p-4" @click.stop>
+        <button @click="closeLightbox" class="absolute top-2 right-2 text-white text-2xl hover:text-gray-300 z-10">
+          <i class="fa fa-times"></i>
+        </button>
+        <img 
+          :src="lightboxImage?.path" 
+          :alt="lightboxImage?.name"
+          class="max-w-full max-h-full object-contain rounded-lg"
+        />
+        <div class="text-center text-white mt-2">
+          <p class="text-sm">{{ lightboxImage?.name }}</p>
+        </div>
+      </div>
+    </div>
   </AppLayout>
 </template>
 
@@ -293,6 +391,10 @@ const selectedPO = ref(null);
 const poItems = ref([]);
 const itemsByOutlet = ref({});
 const loadingPOItems = ref(false);
+const poAttachments = ref([]);
+const prAttachments = ref([]);
+const lightboxImage = ref(null);
+const lightboxVisible = ref(false);
 
 const form = reactive({
   purchase_order_ops_id: null,
@@ -318,10 +420,40 @@ function formatCurrency(value) {
   return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(value);
 }
 
+function formatFileSize(bytes) {
+  if (!bytes) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
+
+function isImageFile(filename) {
+  if (!filename) return false;
+  const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.svg'];
+  const ext = filename.toLowerCase().substring(filename.lastIndexOf('.'));
+  return imageExtensions.includes(ext);
+}
+
+function openLightbox(imagePath, imageName) {
+  lightboxImage.value = {
+    path: imagePath,
+    name: imageName
+  };
+  lightboxVisible.value = true;
+}
+
+function closeLightbox() {
+  lightboxVisible.value = false;
+  lightboxImage.value = null;
+}
+
 function resetSelection() {
   selectedPO.value = null;
   poItems.value = [];
   itemsByOutlet.value = {};
+  poAttachments.value = [];
+  prAttachments.value = [];
   form.purchase_order_ops_id = null;
   form.purchase_requisition_id = null;
   form.supplier_id = '';
@@ -340,6 +472,8 @@ async function selectPO(po) {
     const response = await axios.get(`/non-food-payments/po-items/${po.id}`);
     poItems.value = response.data.items || [];
     itemsByOutlet.value = response.data.items_by_outlet || {};
+    poAttachments.value = response.data.po_attachments || [];
+    prAttachments.value = response.data.pr_attachments || [];
     
     // Update amount with total from API if available
     if (response.data.total_amount) {
