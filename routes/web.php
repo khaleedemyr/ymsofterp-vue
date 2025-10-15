@@ -70,6 +70,7 @@ use App\Http\Controllers\OutletFoodGoodReceiveController;
 use App\Http\Controllers\GoodReceiveOutletSupplierController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\OutletPaymentController;
+use App\Http\Controllers\NonFoodPaymentController;
 use App\Http\Controllers\OutletPaymentSupplierController;
 use App\Http\Controllers\PromoController;
 use App\Http\Controllers\InvestorController;
@@ -1153,6 +1154,16 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/outlet-payments/{outletPayment}', [OutletPaymentController::class, 'show'])->name('outlet-payments.show');
   
     Route::delete('/outlet-payments/{outletPayment}', [OutletPaymentController::class, 'destroy'])->name('outlet-payments.destroy');
+});
+
+// Non Food Payments
+Route::middleware(['auth', 'verified'])->group(function () {
+    Route::resource('non-food-payments', \App\Http\Controllers\NonFoodPaymentController::class);
+    Route::get('non-food-payments/po-items/{poId}', [\App\Http\Controllers\NonFoodPaymentController::class, 'getPOItems'])->name('non-food-payments.po-items');
+    Route::post('non-food-payments/{nonFoodPayment}/approve', [\App\Http\Controllers\NonFoodPaymentController::class, 'approve'])->name('non-food-payments.approve');
+    Route::post('non-food-payments/{nonFoodPayment}/reject', [\App\Http\Controllers\NonFoodPaymentController::class, 'reject'])->name('non-food-payments.reject');
+    Route::post('non-food-payments/{nonFoodPayment}/mark-as-paid', [\App\Http\Controllers\NonFoodPaymentController::class, 'markAsPaid'])->name('non-food-payments.mark-as-paid');
+    Route::post('non-food-payments/{nonFoodPayment}/cancel', [\App\Http\Controllers\NonFoodPaymentController::class, 'cancel'])->name('non-food-payments.cancel');
   
 });
 
