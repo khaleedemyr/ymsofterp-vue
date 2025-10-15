@@ -216,6 +216,7 @@
                     <div class="flex-1 min-w-0">
                       <p class="text-sm font-medium text-gray-900 truncate">{{ attachment.file_name }}</p>
                       <p class="text-xs text-gray-500">{{ formatFileSize(attachment.file_size) }}</p>
+                      <p v-if="attachment.pr_description" class="text-xs text-green-600 mt-1">{{ attachment.pr_description }}</p>
                     </div>
                     <div class="flex-shrink-0">
                       <button 

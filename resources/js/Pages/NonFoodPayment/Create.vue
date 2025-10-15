@@ -116,7 +116,7 @@
           </div>
 
           <!-- Attachments Section -->
-          <div v-if="(poAttachments && poAttachments.length > 0) || (prAttachments && prAttachments.length > 0)" class="bg-white rounded-2xl shadow-2xl p-6">
+          <div v-if="poAttachments && poAttachments.length > 0" class="bg-white rounded-2xl shadow-2xl p-6">
             <h3 class="text-lg font-semibold text-gray-800 mb-4">Attachments</h3>
             
             <!-- PO Attachments -->
@@ -155,41 +155,6 @@
               </div>
             </div>
 
-            <!-- PR Attachments -->
-            <div v-if="prAttachments && prAttachments.length > 0">
-              <h4 class="text-md font-medium text-gray-700 mb-3">Purchase Requisition Attachments</h4>
-              <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                <div v-for="attachment in prAttachments" :key="`pr-${attachment.id}`" class="border border-gray-200 rounded-lg p-3">
-                  <div class="flex items-center gap-3">
-                    <div class="flex-shrink-0">
-                      <i v-if="isImageFile(attachment.file_name)" class="fa fa-image text-green-500 text-xl"></i>
-                      <i v-else class="fa fa-file text-gray-500 text-xl"></i>
-                    </div>
-                    <div class="flex-1 min-w-0">
-                      <p class="text-sm font-medium text-gray-900 truncate">{{ attachment.file_name }}</p>
-                      <p class="text-xs text-gray-500">{{ formatFileSize(attachment.file_size) }}</p>
-                    </div>
-                    <div class="flex-shrink-0">
-                      <button 
-                        v-if="isImageFile(attachment.file_name)" 
-                        @click="openLightbox(attachment.file_path, attachment.file_name)"
-                        class="text-green-600 hover:text-green-800 text-sm"
-                      >
-                        <i class="fa fa-eye"></i>
-                      </button>
-                      <a 
-                        v-else 
-                        :href="attachment.file_path" 
-                        target="_blank" 
-                        class="text-green-600 hover:text-green-800 text-sm"
-                      >
-                        <i class="fa fa-download"></i>
-                      </a>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
           </div>
 
           <!-- PO Items Grouped by Outlet -->
@@ -219,6 +184,9 @@
                     <div class="text-xs text-gray-600 mt-1">
                       <span v-if="outletData.pr_number">PR: {{ outletData.pr_number }}</span>
                       <span v-if="outletData.pr_title" class="ml-2">{{ outletData.pr_title }}</span>
+                    </div>
+                    <div v-if="outletData.pr_description" class="text-xs text-gray-700 mt-2 bg-gray-100 p-2 rounded">
+                      <strong>Description:</strong> {{ outletData.pr_description }}
                     </div>
                   </div>
                   <div class="text-right">
@@ -250,6 +218,43 @@
                     </tr>
                   </tbody>
                 </table>
+              </div>
+              
+              <!-- PR Attachments for this outlet -->
+              <div v-if="outletData.pr_attachments && outletData.pr_attachments.length > 0" class="mt-4 bg-green-50 rounded-lg p-4">
+                <h5 class="text-sm font-semibold text-green-800 mb-3">PR Attachments</h5>
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                  <div v-for="attachment in outletData.pr_attachments" :key="`pr-${attachment.id}`" class="border border-green-200 rounded-lg p-3 bg-white">
+                    <div class="flex items-center gap-3">
+                      <div class="flex-shrink-0">
+                        <i v-if="isImageFile(attachment.file_name)" class="fa fa-image text-green-500 text-xl"></i>
+                        <i v-else class="fa fa-file text-gray-500 text-xl"></i>
+                      </div>
+                      <div class="flex-1 min-w-0">
+                        <p class="text-sm font-medium text-gray-900 truncate">{{ attachment.file_name }}</p>
+                        <p class="text-xs text-gray-500">{{ formatFileSize(attachment.file_size) }}</p>
+                        <p v-if="attachment.pr_description" class="text-xs text-green-600 mt-1">{{ attachment.pr_description }}</p>
+                      </div>
+                      <div class="flex-shrink-0">
+                        <button 
+                          v-if="isImageFile(attachment.file_name)" 
+                          @click="openLightbox(attachment.file_path, attachment.file_name)"
+                          class="text-green-600 hover:text-green-800 text-sm"
+                        >
+                          <i class="fa fa-eye"></i>
+                        </button>
+                        <a 
+                          v-else 
+                          :href="attachment.file_path" 
+                          target="_blank" 
+                          class="text-green-600 hover:text-green-800 text-sm"
+                        >
+                          <i class="fa fa-download"></i>
+                        </a>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -392,7 +397,6 @@ const poItems = ref([]);
 const itemsByOutlet = ref({});
 const loadingPOItems = ref(false);
 const poAttachments = ref([]);
-const prAttachments = ref([]);
 const lightboxImage = ref(null);
 const lightboxVisible = ref(false);
 
@@ -453,7 +457,6 @@ function resetSelection() {
   poItems.value = [];
   itemsByOutlet.value = {};
   poAttachments.value = [];
-  prAttachments.value = [];
   form.purchase_order_ops_id = null;
   form.purchase_requisition_id = null;
   form.supplier_id = '';
@@ -473,7 +476,6 @@ async function selectPO(po) {
     poItems.value = response.data.items || [];
     itemsByOutlet.value = response.data.items_by_outlet || {};
     poAttachments.value = response.data.po_attachments || [];
-    prAttachments.value = response.data.pr_attachments || [];
     
     // Update amount with total from API if available
     if (response.data.total_amount) {

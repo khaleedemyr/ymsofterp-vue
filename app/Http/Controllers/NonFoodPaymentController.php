@@ -238,12 +238,19 @@ class NonFoodPaymentController extends Controller
                 )
                 ->first();
 
-            // Get PO attachments
+            // Get PO attachments with description from purchase_order_ops
             $poAttachments = [];
             try {
-                $poAttachments = DB::table('purchase_order_ops_attachments')
-                    ->where('purchase_order_ops_id', $poId)
-                    ->select('id', 'file_name', 'file_path', 'file_type', 'file_size', 'created_at')
+                $poAttachments = DB::table('purchase_order_ops_attachments as pooa')
+                    ->where('pooa.purchase_order_ops_id', $poId)
+                    ->select(
+                        'pooa.id', 
+                        'pooa.file_name', 
+                        'pooa.file_path', 
+                        'pooa.mime_type as file_type', 
+                        'pooa.file_size', 
+                        'pooa.created_at'
+                    )
                     ->get()
                     ->toArray();
             } catch (\Exception $e) {
@@ -273,11 +280,20 @@ class NonFoodPaymentController extends Controller
                     $po->pr_description = $prInfo->pr_description;
                     $po->division_name = $prInfo->division_name;
                     
-                    // Get PR attachments
+                    // Get PR attachments with description from purchase_requisitions
                     try {
-                        $prAttachments = DB::table('purchase_requisition_attachments')
-                            ->where('purchase_requisition_id', $prInfo->id)
-                            ->select('id', 'file_name', 'file_path', 'file_type', 'file_size', 'created_at')
+                        $prAttachments = DB::table('purchase_requisition_attachments as pra')
+                            ->leftJoin('purchase_requisitions as pr', 'pra.purchase_requisition_id', '=', 'pr.id')
+                            ->where('pra.purchase_requisition_id', $po->source_id)
+                            ->select(
+                                'pra.id', 
+                                'pra.file_name', 
+                                'pra.file_path', 
+                                'pra.mime_type as file_type', 
+                                'pra.file_size', 
+                                'pra.created_at',
+                                'pr.description as pr_description'
+                            )
                             ->get()
                             ->toArray();
                     } catch (\Exception $e) {
@@ -302,6 +318,7 @@ class NonFoodPaymentController extends Controller
                         'poi.unit',
                         'poi.price',
                         'poi.total',
+                        'pr.id as pr_id',
                         'pr.outlet_id',
                         'o.nama_outlet as outlet_name',
                         'pr.category_id',
@@ -342,9 +359,42 @@ class NonFoodPaymentController extends Controller
                 });
             }
 
-            // Group items by outlet
+            // Group items by outlet and add PR attachments and description
             $itemsByOutlet = $items->groupBy('outlet_id')->map(function ($outletItems, $outletId) {
                 $firstItem = $outletItems->first();
+                $prId = $firstItem->pr_id ?? null;
+                
+                // Get PR attachments for this specific PR
+                $prAttachments = [];
+                $prDescription = null;
+                if ($prId) {
+                    try {
+                        $prAttachments = DB::table('purchase_requisition_attachments as pra')
+                            ->leftJoin('purchase_requisitions as pr', 'pra.purchase_requisition_id', '=', 'pr.id')
+                            ->where('pra.purchase_requisition_id', $prId)
+                            ->select(
+                                'pra.id', 
+                                'pra.file_name', 
+                                'pra.file_path', 
+                                'pra.mime_type as file_type', 
+                                'pra.file_size', 
+                                'pra.created_at',
+                                'pr.description as pr_description'
+                            )
+                            ->get()
+                            ->toArray();
+                        
+                        // Get PR description
+                        $prInfo = DB::table('purchase_requisitions')
+                            ->where('id', $prId)
+                            ->select('description')
+                            ->first();
+                        $prDescription = $prInfo ? $prInfo->description : null;
+                    } catch (\Exception $e) {
+                        // Continue without attachments if error
+                    }
+                }
+                
                 return [
                     'outlet_id' => $outletId,
                     'outlet_name' => $firstItem->outlet_name ?? 'Unknown Outlet',
@@ -355,6 +405,8 @@ class NonFoodPaymentController extends Controller
                     'category_budget_type' => $firstItem->category_budget_type ?? null,
                     'pr_number' => $firstItem->pr_number ?? null,
                     'pr_title' => $firstItem->pr_title ?? null,
+                    'pr_description' => $prDescription,
+                    'pr_attachments' => $prAttachments,
                     'items' => $outletItems->map(function ($item) {
                         return [
                             'id' => $item->id,
@@ -373,8 +425,7 @@ class NonFoodPaymentController extends Controller
                 'po' => $po,
                 'items_by_outlet' => $itemsByOutlet,
                 'total_amount' => $items->sum('total'),
-                'po_attachments' => $poAttachments,
-                'pr_attachments' => $prAttachments ?? []
+                'po_attachments' => $poAttachments
             ]);
 
         } catch (\Exception $e) {
@@ -454,7 +505,6 @@ class NonFoodPaymentController extends Controller
 
         } catch (\Exception $e) {
             DB::rollback();
-            \Log::error('Non Food Payment creation error: ' . $e->getMessage());
             return back()->with('error', 'Gagal membuat Non Food Payment: ' . $e->getMessage());
         }
     }
@@ -476,9 +526,16 @@ class NonFoodPaymentController extends Controller
         $poAttachments = [];
         if ($nonFoodPayment->purchase_order_ops_id) {
             try {
-                $poAttachments = DB::table('purchase_order_ops_attachments')
-                    ->where('purchase_order_ops_id', $nonFoodPayment->purchase_order_ops_id)
-                    ->select('id', 'file_name', 'file_path', 'file_type', 'file_size', 'created_at')
+                $poAttachments = DB::table('purchase_order_ops_attachments as pooa')
+                    ->where('pooa.purchase_order_ops_id', $nonFoodPayment->purchase_order_ops_id)
+                    ->select(
+                        'pooa.id', 
+                        'pooa.file_name', 
+                        'pooa.file_path', 
+                        'pooa.mime_type as file_type', 
+                        'pooa.file_size', 
+                        'pooa.created_at'
+                    )
                     ->get()
                     ->toArray();
             } catch (\Exception $e) {
@@ -490,9 +547,18 @@ class NonFoodPaymentController extends Controller
         $prAttachments = [];
         if ($nonFoodPayment->purchase_requisition_id) {
             try {
-                $prAttachments = DB::table('purchase_requisition_attachments')
-                    ->where('purchase_requisition_id', $nonFoodPayment->purchase_requisition_id)
-                    ->select('id', 'file_name', 'file_path', 'file_type', 'file_size', 'created_at')
+                $prAttachments = DB::table('purchase_requisition_attachments as pra')
+                    ->leftJoin('purchase_requisitions as pr', 'pra.purchase_requisition_id', '=', 'pr.id')
+                    ->where('pra.purchase_requisition_id', $nonFoodPayment->purchase_requisition_id)
+                    ->select(
+                        'pra.id', 
+                        'pra.file_name', 
+                        'pra.file_path', 
+                        'pra.mime_type as file_type', 
+                        'pra.file_size', 
+                        'pra.created_at',
+                        'pr.description as pr_description'
+                    )
                     ->get()
                     ->toArray();
             } catch (\Exception $e) {
@@ -505,9 +571,18 @@ class NonFoodPaymentController extends Controller
             try {
                 $sourcePRId = $nonFoodPayment->purchaseOrderOps->source_id;
                 if ($sourcePRId) {
-                    $prAttachments = DB::table('purchase_requisition_attachments')
-                        ->where('purchase_requisition_id', $sourcePRId)
-                        ->select('id', 'file_name', 'file_path', 'file_type', 'file_size', 'created_at')
+                    $prAttachments = DB::table('purchase_requisition_attachments as pra')
+                        ->leftJoin('purchase_requisitions as pr', 'pra.purchase_requisition_id', '=', 'pr.id')
+                        ->where('pra.purchase_requisition_id', $sourcePRId)
+                        ->select(
+                            'pra.id', 
+                            'pra.file_name', 
+                            'pra.file_path', 
+                            'pra.mime_type as file_type', 
+                            'pra.file_size', 
+                            'pra.created_at',
+                            'pr.description as pr_description'
+                        )
                         ->get()
                         ->toArray();
                 }
@@ -581,7 +656,6 @@ class NonFoodPaymentController extends Controller
                 ->with('success', 'Non Food Payment berhasil diperbarui.');
 
         } catch (\Exception $e) {
-            \Log::error('Non Food Payment update error: ' . $e->getMessage());
             return back()->with('error', 'Gagal memperbarui Non Food Payment: ' . $e->getMessage());
         }
     }
@@ -599,7 +673,6 @@ class NonFoodPaymentController extends Controller
                 ->with('success', 'Non Food Payment berhasil dihapus.');
 
         } catch (\Exception $e) {
-            \Log::error('Non Food Payment deletion error: ' . $e->getMessage());
             return back()->with('error', 'Gagal menghapus Non Food Payment: ' . $e->getMessage());
         }
     }
@@ -620,7 +693,6 @@ class NonFoodPaymentController extends Controller
             return back()->with('success', 'Non Food Payment berhasil disetujui.');
 
         } catch (\Exception $e) {
-            \Log::error('Non Food Payment approval error: ' . $e->getMessage());
             return back()->with('error', 'Gagal menyetujui Non Food Payment: ' . $e->getMessage());
         }
     }
@@ -641,7 +713,6 @@ class NonFoodPaymentController extends Controller
             return back()->with('success', 'Non Food Payment berhasil ditolak.');
 
         } catch (\Exception $e) {
-            \Log::error('Non Food Payment rejection error: ' . $e->getMessage());
             return back()->with('error', 'Gagal menolak Non Food Payment: ' . $e->getMessage());
         }
     }
@@ -660,7 +731,6 @@ class NonFoodPaymentController extends Controller
             return back()->with('success', 'Non Food Payment berhasil ditandai sebagai dibayar.');
 
         } catch (\Exception $e) {
-            \Log::error('Non Food Payment mark as paid error: ' . $e->getMessage());
             return back()->with('error', 'Gagal menandai Non Food Payment sebagai dibayar: ' . $e->getMessage());
         }
     }
@@ -679,7 +749,6 @@ class NonFoodPaymentController extends Controller
             return back()->with('success', 'Non Food Payment berhasil dibatalkan.');
 
         } catch (\Exception $e) {
-            \Log::error('Non Food Payment cancellation error: ' . $e->getMessage());
             return back()->with('error', 'Gagal membatalkan Non Food Payment: ' . $e->getMessage());
         }
     }

@@ -35,8 +35,9 @@
               <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Tgl Invoice</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Outlet</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Warehouse</th>
-              <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">No GR</th>
-              <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Tgl GR</th>
+              <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Tipe</th>
+              <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">No GR/RWS</th>
+              <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Tgl GR/RWS</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Total</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Status</th>
             </tr>
@@ -51,9 +52,14 @@
                   </button>
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">{{ row.payment_number }}</td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm">{{ formatDate(row.payment_date) }}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm">{{ formatDate(row.invoice_date) }}</td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm">{{ row.outlet_name }}</td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm">{{ formatWarehouse(row) }}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm">
+                  <span :class="row.transaction_type === 'GR' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'" class="px-2 py-1 rounded-full text-xs font-semibold">
+                    {{ row.transaction_type }}
+                  </span>
+                </td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm">{{ row.gr_number }}</td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm">{{ formatDate(row.gr_date) }}</td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-right">{{ formatRupiah(row.payment_total) }}</td>
