@@ -324,7 +324,21 @@ const submitRegister = () => {
             errorMessage += '<p class="text-xs text-gray-500 mt-3">Silakan perbaiki field yang bermasalah dan coba lagi.</p>';
             errorMessage += '</div>';
             
-            showModalAlert(`Gagal Mendaftar\n\n${errorMessage.replace(/<[^>]*>/g, '')}`, 'error');
+            // Create plain text version for modal alert
+            let plainErrorMessage = 'Gagal mendaftar akun. Periksa field berikut:\n\n';
+            Object.keys(errors).forEach(field => {
+                const fieldName = getFieldDisplayName(field);
+                if (Array.isArray(errors[field])) {
+                    errors[field].forEach(error => {
+                        plainErrorMessage += `• ${fieldName}: ${error}\n`;
+                    });
+                } else {
+                    plainErrorMessage += `• ${fieldName}: ${errors[field]}\n`;
+                }
+            });
+            plainErrorMessage += '\nSilakan perbaiki field yang bermasalah dan coba lagi.';
+            
+            showModalAlert(plainErrorMessage, 'error');
             
             // Set form errors for individual field display
             form.setError(errors);

@@ -30,50 +30,48 @@ class RegisteredUserController extends Controller
      */
     public function store(Request $request): RedirectResponse
     {
-        \Log::info('Register request data:', $request->all());
-        \Log::info('no_ktp value:', ['no_ktp' => $request->no_ktp]);
         
         $request->validate([
             // Personal Info
             'nama_lengkap' => 'required|string|max:255',
-            'nama_panggilan' => 'nullable|string|max:255',
+            'nama_panggilan' => 'required|string|max:255',
             'email' => 'required|string|lowercase|email|max:255|unique:'.User::class,
             'password' => ['required', 'confirmed', Rules\Password::defaults()],
-            'no_hp' => 'nullable|string|max:15',
-            'jenis_kelamin' => 'nullable|string|max:1',
-            'tempat_lahir' => 'nullable|string|max:255',
-            'tanggal_lahir' => 'nullable|date',
-            'suku' => 'nullable|string|max:50',
-            'agama' => 'nullable|string|max:50',
-            'status_pernikahan' => 'nullable|string|max:50',
-            'golongan_darah' => 'nullable|string|max:5',
+            'no_hp' => 'required|string|max:15',
+            'jenis_kelamin' => 'required|string|max:1',
+            'tempat_lahir' => 'required|string|max:255',
+            'tanggal_lahir' => 'required|date',
+            'suku' => 'required|string|max:50',
+            'agama' => 'required|string|max:50',
+            'status_pernikahan' => 'required|string|max:50',
+            'golongan_darah' => 'required|string|max:5',
             
             // Address
-            'alamat' => 'nullable|string',
-            'alamat_ktp' => 'nullable|string',
+            'alamat' => 'required|string',
+            'alamat_ktp' => 'required|string',
             
             // Work Info (without jabatan, outlet, divisi)
             
             // Financial
-            'nama_rekening' => 'nullable|string|max:255',
-            'no_rekening' => 'nullable|string|max:50',
-            'npwp_number' => 'nullable|string|max:100',
-            'bpjs_health_number' => 'nullable|string|max:100',
-            'bpjs_employment_number' => 'nullable|string|max:100',
+            'nama_rekening' => 'required|string|max:255',
+            'no_rekening' => 'required|string|max:50',
+            'npwp_number' => 'required|string|max:100',
+            'bpjs_health_number' => 'required|string|max:100',
+            'bpjs_employment_number' => 'required|string|max:100',
             
             // Education
-            'last_education' => 'nullable|string|max:100',
-            'name_school_college' => 'nullable|string|max:255',
-            'school_college_major' => 'nullable|string|max:255',
+            'last_education' => 'required|string|max:100',
+            'name_school_college' => 'required|string|max:255',
+            'school_college_major' => 'required|string|max:255',
             
             // Emergency Contact
-            'nama_kontak_darurat' => 'nullable|string|max:255',
-            'no_hp_kontak_darurat' => 'nullable|string|max:15',
-            'hubungan_kontak_darurat' => 'nullable|string|max:50',
+            'nama_kontak_darurat' => 'required|string|max:255',
+            'no_hp_kontak_darurat' => 'required|string|max:15',
+            'hubungan_kontak_darurat' => 'required|string|max:50',
             
             // Documents
-            'no_ktp' => 'nullable|string|max:50',
-            'nomor_kk' => 'nullable|string|max:50',
+            'no_ktp' => 'required|string|max:50',
+            'nomor_kk' => 'required|string|max:50',
             
             // Files
             'avatar' => 'nullable|image|max:2048',
@@ -117,9 +115,6 @@ class RegisteredUserController extends Controller
             'nomor_kk' => $request->nomor_kk,
             'status' => 'B', // New user status
         ];
-        
-        \Log::info('User data before create:', $userData);
-        \Log::info('no_ktp in userData:', ['no_ktp' => $userData['no_ktp']]);
 
         // Handle file uploads
         if ($request->hasFile('avatar')) {
@@ -136,9 +131,6 @@ class RegisteredUserController extends Controller
         }
 
         $user = User::create($userData);
-        
-        \Log::info('User created successfully:', $user->toArray());
-        \Log::info('no_ktp after create:', ['no_ktp' => $user->no_ktp]);
 
         event(new Registered($user));
 
