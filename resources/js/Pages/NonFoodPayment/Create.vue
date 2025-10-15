@@ -111,30 +111,65 @@
             </div>
           </div>
 
-          <!-- PO Items -->
-          <div v-if="poItems.length > 0">
-            <h3 class="text-lg font-semibold text-gray-800 mb-3">Items</h3>
-            <div class="overflow-x-auto">
-              <table class="min-w-full divide-y divide-gray-200">
-                <thead class="bg-gray-50">
-                  <tr>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Item</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Quantity</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Unit</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Price</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
-                  </tr>
-                </thead>
-                <tbody class="bg-white divide-y divide-gray-200">
-                  <tr v-for="item in poItems" :key="item.id">
-                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ item.item_name }}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ item.quantity }}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ item.unit }}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ formatCurrency(item.price) }}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">{{ formatCurrency(item.total) }}</td>
-                  </tr>
-                </tbody>
-              </table>
+          <!-- PO Items Grouped by Outlet -->
+          <div v-if="itemsByOutlet && Object.keys(itemsByOutlet).length > 0">
+            <h3 class="text-lg font-semibold text-gray-800 mb-4">Items per Outlet</h3>
+            
+            <div v-for="(outletData, outletId) in itemsByOutlet" :key="outletId" class="mb-6">
+              <!-- Outlet Header -->
+              <div class="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-4 mb-3">
+                <div class="flex justify-between items-start">
+                  <div>
+                    <h4 class="text-lg font-semibold text-blue-800">{{ outletData.outlet_name }}</h4>
+                    <div class="text-sm text-blue-600 mt-1">
+                      <span v-if="outletData.category_name" class="inline-block bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-xs mr-2">
+                        {{ outletData.category_name }}
+                      </span>
+                      <span v-if="outletData.category_division" class="inline-block bg-indigo-100 text-indigo-800 px-2 py-1 rounded-full text-xs mr-2">
+                        {{ outletData.category_division }}
+                      </span>
+                      <span v-if="outletData.category_subcategory" class="inline-block bg-purple-100 text-purple-800 px-2 py-1 rounded-full text-xs mr-2">
+                        {{ outletData.category_subcategory }}
+                      </span>
+                      <span v-if="outletData.category_budget_type" class="inline-block bg-green-100 text-green-800 px-2 py-1 rounded-full text-xs">
+                        {{ outletData.category_budget_type === 'GLOBAL' ? 'Global Budget' : 'Per Outlet Budget' }}
+                      </span>
+                    </div>
+                    <div class="text-xs text-gray-600 mt-1">
+                      <span v-if="outletData.pr_number">PR: {{ outletData.pr_number }}</span>
+                      <span v-if="outletData.pr_title" class="ml-2">{{ outletData.pr_title }}</span>
+                    </div>
+                  </div>
+                  <div class="text-right">
+                    <div class="text-lg font-bold text-green-600">{{ formatCurrency(outletData.subtotal) }}</div>
+                    <div class="text-xs text-gray-500">Subtotal</div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Items Table -->
+              <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-gray-200">
+                  <thead class="bg-gray-50">
+                    <tr>
+                      <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Item</th>
+                      <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Quantity</th>
+                      <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Unit</th>
+                      <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Price</th>
+                      <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody class="bg-white divide-y divide-gray-200">
+                    <tr v-for="item in outletData.items" :key="item.id">
+                      <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ item.item_name }}</td>
+                      <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ item.quantity }}</td>
+                      <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ item.unit }}</td>
+                      <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ formatCurrency(item.price) }}</td>
+                      <td class="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">{{ formatCurrency(item.total) }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         </div>
@@ -227,7 +262,7 @@
 
         <!-- Submit Button -->
         <div class="flex justify-end gap-4">
-          <button type="button" @click="selectedPO = null" class="bg-gray-500 text-white px-6 py-3 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold">
+          <button type="button" @click="resetSelection" class="bg-gray-500 text-white px-6 py-3 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold">
             Kembali ke Pilih PO
           </button>
           <button type="submit" :disabled="isSubmitting" class="bg-gradient-to-r from-green-500 to-green-700 text-white px-6 py-3 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold disabled:opacity-50">
@@ -256,6 +291,7 @@ const props = defineProps({
 const isSubmitting = ref(false);
 const selectedPO = ref(null);
 const poItems = ref([]);
+const itemsByOutlet = ref({});
 const loadingPOItems = ref(false);
 
 const form = reactive({
@@ -282,17 +318,33 @@ function formatCurrency(value) {
   return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(value);
 }
 
+function resetSelection() {
+  selectedPO.value = null;
+  poItems.value = [];
+  itemsByOutlet.value = {};
+  form.purchase_order_ops_id = null;
+  form.purchase_requisition_id = null;
+  form.supplier_id = '';
+  form.amount = '';
+}
+
 async function selectPO(po) {
   selectedPO.value = po;
   form.purchase_order_ops_id = po.id;
   form.supplier_id = po.supplier_id;
   form.amount = po.grand_total;
   
-  // Load PO items
+  // Load PO items grouped by outlet
   loadingPOItems.value = true;
   try {
     const response = await axios.get(`/non-food-payments/po-items/${po.id}`);
-    poItems.value = response.data.items;
+    poItems.value = response.data.items || [];
+    itemsByOutlet.value = response.data.items_by_outlet || {};
+    
+    // Update amount with total from API if available
+    if (response.data.total_amount) {
+      form.amount = response.data.total_amount;
+    }
   } catch (error) {
     console.error('Error loading PO items:', error);
     import('sweetalert2').then(({ default: Swal }) => {

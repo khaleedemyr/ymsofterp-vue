@@ -64,12 +64,61 @@ class NonFoodPaymentController extends Controller
 
         $payments = $query->latest('non_food_payments.payment_date')->paginate($perPage)->withQueryString();
         
-        // Add payment type to each payment
+        // Transform payments to show per outlet
         $payments->getCollection()->transform(function($payment) {
             if ($payment->purchase_order_ops_id) {
                 $payment->payment_type = 'PO';
+                
+                // Get outlet breakdown for PO payments
+                try {
+                    $outletBreakdown = DB::table('purchase_order_ops_items as poi')
+                        ->leftJoin('purchase_requisitions as pr', 'poi.source_id', '=', 'pr.id')
+                        ->leftJoin('tbl_data_outlet as o', 'pr.outlet_id', '=', 'o.id_outlet')
+                        ->leftJoin('purchase_requisition_categories as prc', 'pr.category_id', '=', 'prc.id')
+                        ->where('poi.purchase_order_ops_id', $payment->purchase_order_ops_id)
+                        ->select(
+                            'pr.outlet_id',
+                            'o.nama_outlet as outlet_name',
+                            'prc.name as category_name',
+                            'prc.division as category_division',
+                            'prc.subcategory as category_subcategory',
+                            'prc.budget_type as category_budget_type',
+                            'pr.pr_number',
+                            'pr.title as pr_title',
+                            DB::raw('SUM(poi.total) as outlet_total')
+                        )
+                        ->groupBy('pr.outlet_id', 'o.nama_outlet', 'prc.name', 'prc.division', 'prc.subcategory', 'prc.budget_type', 'pr.pr_number', 'pr.title')
+                        ->get();
+                    
+                    $payment->outlet_breakdown = $outletBreakdown;
+                } catch (\Exception $e) {
+                    // Fallback if outlet data not available
+                    $payment->outlet_breakdown = collect([[
+                        'outlet_id' => null,
+                        'outlet_name' => 'Unknown Outlet',
+                        'category_name' => null,
+                        'category_division' => null,
+                        'category_subcategory' => null,
+                        'category_budget_type' => null,
+                        'pr_number' => null,
+                        'pr_title' => null,
+                        'outlet_total' => $payment->amount
+                    ]]);
+                }
             } else {
                 $payment->payment_type = 'PR';
+                // For PR payments, show as single outlet
+                $payment->outlet_breakdown = collect([[
+                    'outlet_id' => null,
+                    'outlet_name' => 'Direct PR Payment',
+                    'category_name' => null,
+                    'category_division' => null,
+                    'category_subcategory' => null,
+                    'category_budget_type' => null,
+                    'pr_number' => $payment->pr_number,
+                    'pr_title' => null,
+                    'outlet_total' => $payment->amount
+                ]]);
             }
             return $payment;
         });
@@ -178,41 +227,136 @@ class NonFoodPaymentController extends Controller
 
     public function getPOItems($poId)
     {
-        $po = DB::table('purchase_order_ops as poo')
-            ->leftJoin('suppliers as s', 'poo.supplier_id', '=', 's.id')
-            ->leftJoin('purchase_requisitions as pr', 'poo.source_id', '=', 'pr.id')
-            ->leftJoin('divisis as d', 'pr.division_id', '=', 'd.id')
-            ->where('poo.id', $poId)
-            ->select(
-                'poo.*',
-                's.name as supplier_name',
-                'pr.pr_number as source_pr_number',
-                'pr.title as pr_title',
-                'pr.description as pr_description',
-                'd.nama_divisi as division_name'
-            )
-            ->first();
+        try {
+            // Get basic PO info first
+            $po = DB::table('purchase_order_ops as poo')
+                ->leftJoin('suppliers as s', 'poo.supplier_id', '=', 's.id')
+                ->where('poo.id', $poId)
+                ->select(
+                    'poo.*',
+                    's.name as supplier_name'
+                )
+                ->first();
 
-        if (!$po) {
-            return response()->json(['error' => 'Purchase Order not found'], 404);
+            if (!$po) {
+                return response()->json(['error' => 'Purchase Order not found'], 404);
+            }
+
+            // Try to get PR info if table exists
+            try {
+                $prInfo = DB::table('purchase_requisitions as pr')
+                    ->leftJoin('tbl_data_divisi as d', 'pr.division_id', '=', 'd.id')
+                    ->where('pr.id', $po->source_id)
+                    ->select(
+                        'pr.pr_number as source_pr_number',
+                        'pr.title as pr_title',
+                        'pr.description as pr_description',
+                        'd.nama_divisi as division_name'
+                    )
+                    ->first();
+                
+                if ($prInfo) {
+                    $po->source_pr_number = $prInfo->source_pr_number;
+                    $po->pr_title = $prInfo->pr_title;
+                    $po->pr_description = $prInfo->pr_description;
+                    $po->division_name = $prInfo->division_name;
+                }
+            } catch (\Exception $e) {
+                // PR table might not exist, continue without PR info
+            }
+
+            // Get items with outlet and category info
+            try {
+                $items = DB::table('purchase_order_ops_items as poi')
+                    ->leftJoin('purchase_requisitions as pr', 'poi.source_id', '=', 'pr.id')
+                    ->leftJoin('tbl_data_outlet as o', 'pr.outlet_id', '=', 'o.id_outlet')
+                    ->leftJoin('purchase_requisition_categories as prc', 'pr.category_id', '=', 'prc.id')
+                    ->where('poi.purchase_order_ops_id', $poId)
+                    ->select(
+                        'poi.id',
+                        'poi.item_name',
+                        'poi.quantity',
+                        'poi.unit',
+                        'poi.price',
+                        'poi.total',
+                        'pr.outlet_id',
+                        'o.nama_outlet as outlet_name',
+                        'pr.category_id',
+                        'prc.name as category_name',
+                        'prc.division as category_division',
+                        'prc.subcategory as category_subcategory',
+                        'prc.budget_type as category_budget_type',
+                        'pr.pr_number',
+                        'pr.title as pr_title'
+                    )
+                    ->get();
+            } catch (\Exception $e) {
+                // Fallback to basic items without outlet info
+                $items = DB::table('purchase_order_ops_items as poi')
+                    ->where('poi.purchase_order_ops_id', $poId)
+                    ->select(
+                        'poi.id',
+                        'poi.item_name',
+                        'poi.quantity',
+                        'poi.unit',
+                        'poi.price',
+                        'poi.total'
+                    )
+                    ->get();
+                
+                // Add default values for outlet info
+                $items = $items->map(function ($item) {
+                    $item->outlet_id = null;
+                    $item->outlet_name = 'Unknown Outlet';
+                    $item->category_id = null;
+                    $item->category_name = null;
+                    $item->category_division = null;
+                    $item->category_subcategory = null;
+                    $item->category_budget_type = null;
+                    $item->pr_number = null;
+                    $item->pr_title = null;
+                    return $item;
+                });
+            }
+
+            // Group items by outlet
+            $itemsByOutlet = $items->groupBy('outlet_id')->map(function ($outletItems, $outletId) {
+                $firstItem = $outletItems->first();
+                return [
+                    'outlet_id' => $outletId,
+                    'outlet_name' => $firstItem->outlet_name ?? 'Unknown Outlet',
+                    'category_id' => $firstItem->category_id ?? null,
+                    'category_name' => $firstItem->category_name ?? null,
+                    'category_division' => $firstItem->category_division ?? null,
+                    'category_subcategory' => $firstItem->category_subcategory ?? null,
+                    'category_budget_type' => $firstItem->category_budget_type ?? null,
+                    'pr_number' => $firstItem->pr_number ?? null,
+                    'pr_title' => $firstItem->pr_title ?? null,
+                    'items' => $outletItems->map(function ($item) {
+                        return [
+                            'id' => $item->id,
+                            'item_name' => $item->item_name,
+                            'quantity' => $item->quantity,
+                            'unit' => $item->unit,
+                            'price' => $item->price,
+                            'total' => $item->total,
+                        ];
+                    }),
+                    'subtotal' => $outletItems->sum('total')
+                ];
+            });
+
+            return response()->json([
+                'po' => $po,
+                'items_by_outlet' => $itemsByOutlet,
+                'total_amount' => $items->sum('total')
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'error' => 'Failed to load PO items: ' . $e->getMessage()
+            ], 500);
         }
-
-        $items = DB::table('purchase_order_ops_items as poi')
-            ->where('poi.purchase_order_ops_id', $poId)
-            ->select(
-                'poi.id',
-                'poi.item_name',
-                'poi.quantity',
-                'poi.unit',
-                'poi.price',
-                'poi.total'
-            )
-            ->get();
-
-        return response()->json([
-            'po' => $po,
-            'items' => $items
-        ]);
     }
 
     public function store(Request $request)

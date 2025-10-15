@@ -185,8 +185,6 @@ class ItemController extends Controller
             ->get();
         $modifiers = Modifier::with('options')->get();
         
-        \Log::info('CREATE BOM ITEMS COUNT', ['count' => $bomItems->count()]);
-        \Log::info('CREATE BOM ITEMS', $bomItems->pluck('name', 'id')->toArray());
         
         return Inertia::render('Items/Create', [
             'categories' => $categories,
@@ -203,11 +201,8 @@ class ItemController extends Controller
 
     public function store(Request $request)
     {
-        \Log::info('ItemController@store - Starting store method');
-        \Log::info('ItemController@store - request', $request->all());
         
         try {
-            \Log::info('ItemController@store - Starting validation');
             
             // Get allowed types from menu_type table
             $allowedTypes = \DB::table('menu_type')->pluck('type')->toArray();
@@ -243,18 +238,14 @@ class ItemController extends Controller
                 'availabilities.*.status' => 'required|in:available,unavailable',
                 'exp' => 'nullable|integer|min:0',
             ]);
-            \Log::info('ItemController@store - Validation passed', $validated);
 
             DB::beginTransaction();
-            \Log::info('ItemController@store - Transaction started');
 
-            \Log::info('ItemController@store - Creating item');
             $item = Item::create(array_merge($validated, [
                 'modifier_enabled' => $request->modifier_enabled ? 1 : 0,
                 'composition_type' => $request->composition_type,
                 'exp' => $request->exp ?? 0,
             ]));
-            \Log::info('ItemController@store - Item created', ['item_id' => $item->id]);
 
             // Generate barcode default jika kategori show_pos = '0' dan item belum punya barcode
             $category = \DB::table('categories')->where('id', $item->category_id)->first();
@@ -271,24 +262,19 @@ class ItemController extends Controller
 
             // Handle image uploads
             if ($request->hasFile('images')) {
-                \Log::info('ItemController@store - Processing images');
                 foreach ($request->file('images') as $image) {
                     $path = $image->store('items', 'public');
                     $item->images()->create(['path' => $path]);
                 }
-                \Log::info('ItemController@store - Images processed');
             }
 
             // Simpan relasi modifier_option jika enabled
             if ($item->modifier_enabled && $request->modifier_option_ids) {
-                \Log::info('ItemController@store - Processing modifier options');
                 $item->modifierOptions()->sync($request->modifier_option_ids);
-                \Log::info('ItemController@store - Modifier options processed');
             }
 
             // Simpan BOM jika composition_type = 'composed'
             if ($request->composition_type === 'composed' && $request->bom) {
-                \Log::info('ItemController@store - Processing BOM');
                 foreach ($request->bom as $bom) {
                     $item->boms()->create([
                         'material_item_id' => $bom['item_id'],
@@ -296,12 +282,10 @@ class ItemController extends Controller
                         'unit_id' => $bom['unit_id'],
                     ]);
                 }
-                \Log::info('ItemController@store - BOM processed');
             }
 
             // Simpan harga per region/outlet
             if ($request->prices) {
-                \Log::info('ItemController@store - Processing prices');
                 foreach ($request->prices as $price) {
                     $type = 'all';
                     if ($price['price_type'] === 'specific') {
@@ -318,12 +302,10 @@ class ItemController extends Controller
                         'availability_price_type' => $type,
                     ]);
                 }
-                \Log::info('ItemController@store - Prices processed');
             }
 
             // Simpan availability per region/outlet
             if ($request->availabilities) {
-                \Log::info('ItemController@store - Processing availabilities');
                 foreach ($request->availabilities as $availability) {
                     $type = 'all';
                     if (!empty($availability['region_id']) && empty($availability['outlet_id'])) {
@@ -337,11 +319,9 @@ class ItemController extends Controller
                         'availability_type' => $type,
                     ]);
                 }
-                \Log::info('ItemController@store - Availabilities processed');
             }
 
             // Log activity
-            \Log::info('ItemController@store - Creating activity log');
             ActivityLog::create([
                 'user_id' => Auth::id(),
                 'activity_type' => 'create',
@@ -352,10 +332,8 @@ class ItemController extends Controller
                 'old_data' => null,
                 'new_data' => $item->toArray()
             ]);
-            \Log::info('ItemController@store - Activity log created');
 
             DB::commit();
-            \Log::info('ItemController@store - Transaction committed');
             return redirect()->back()->with('success', 'Item berhasil ditambahkan!');
         } catch (\Exception $e) {
             DB::rollBack();
@@ -385,23 +363,7 @@ class ItemController extends Controller
             ->orderBy('name')
             ->get();
         $modifiers = Modifier::with('options')->get();
-        \Log::info('BOM ITEMS DETAIL', $bomItems->map(function($item) {
-            return [
-                'id' => $item->id,
-                'name' => $item->name,
-                'status' => $item->status,
-                'small_unit_id' => $item->small_unit_id,
-                'small_unit_name' => $item->smallUnit ? $item->smallUnit->name : null
-            ];
-        })->toArray());
         
-        // Debug: Cek apakah ada item yang tidak aktif
-        $allItems = \App\Models\Item::where('id', '!=', $item->id)->get();
-        $inactiveItems = $allItems->where('status', '!=', 'active');
-        \Log::info('INACTIVE ITEMS FOUND', [
-            'count' => $inactiveItems->count(),
-            'items' => $inactiveItems->pluck('name', 'id')->toArray()
-        ]);
 
 
         $item->load([
@@ -535,18 +497,11 @@ class ItemController extends Controller
             DB::beginTransaction();
 
             $oldData = $item->toArray();
-            \Log::info('ITEM UPDATE DEBUG - BEFORE', $item->toArray());
-            \Log::info('ITEM UPDATE DEBUG - PAYLOAD', array_merge($validated, [
-                'modifier_enabled' => $request->modifier_enabled ? 1 : 0,
-                'composition_type' => $request->composition_type,
-                'exp' => $request->exp ?? 0,
-            ]));
             $item->update(array_merge($validated, [
                 'modifier_enabled' => $request->modifier_enabled ? 1 : 0,
                 'composition_type' => $request->composition_type,
                 'exp' => $request->exp ?? 0,
             ]));
-            \Log::info('ITEM UPDATE DEBUG - AFTER', $item->fresh()->toArray());
 
             // Handle image uploads
             if ($request->hasFile('images')) {
@@ -569,9 +524,7 @@ class ItemController extends Controller
 
             // Update harga per region/outlet
             if ($request->has('prices')) {
-                \Log::info('ITEM UPDATE DEBUG - BEFORE PRICES', $item->prices->toArray());
                 $item->prices()->delete();
-                \Log::info('ITEM UPDATE DEBUG - AFTER DELETE PRICES', $item->prices->toArray());
                 if ($request->prices) {
                     foreach ($request->prices as $price) {
                         $type = 'all';
@@ -587,15 +540,12 @@ class ItemController extends Controller
                             'availability_price_type' => $type,
                         ]);
                     }
-                    \Log::info('ITEM UPDATE DEBUG - AFTER INSERT PRICES', $item->prices->toArray());
                 }
             }
 
             // Update availability per region/outlet
             if ($request->has('availabilities')) {
-                \Log::info('ITEM UPDATE DEBUG - BEFORE AVAIL', $item->availabilities->toArray());
                 $item->availabilities()->delete();
-                \Log::info('ITEM UPDATE DEBUG - AFTER DELETE AVAIL', $item->availabilities->toArray());
                 if ($request->availabilities) {
                     foreach ($request->availabilities as $availability) {
                         $type = 'all';
@@ -610,7 +560,6 @@ class ItemController extends Controller
                             'availability_type' => $type,
                         ]);
                     }
-                    \Log::info('ITEM UPDATE DEBUG - AFTER INSERT AVAIL', $item->availabilities->toArray());
                 }
             }
 
@@ -637,13 +586,11 @@ class ItemController extends Controller
 
             // Update modifier options
             if ($request->has('modifier_option_ids')) {
-                \Log::info('ITEM UPDATE DEBUG - BEFORE MODIFIER', $item->modifierOptions->toArray());
                 if ($item->modifier_enabled && $request->modifier_option_ids) {
                     $item->modifierOptions()->sync($request->modifier_option_ids);
                 } else {
                     $item->modifierOptions()->detach();
                 }
-                \Log::info('ITEM UPDATE DEBUG - AFTER MODIFIER', $item->modifierOptions->toArray());
             }
 
             // Log activity
@@ -698,7 +645,6 @@ class ItemController extends Controller
 
     public function show($id)
     {
-        \Log::info('=== MASUK SHOW ITEM ===', ['id' => $id]);
         $item = \App\Models\Item::with(['images', 'prices', 'availabilities', 'modifierOptions', 'boms', 'category', 'subCategory', 'smallUnit', 'mediumUnit', 'largeUnit', 'warehouseDivision'])->find($id);
 
         if (!$item) {
@@ -714,23 +660,7 @@ class ItemController extends Controller
             ->orderBy('name')
             ->get();
         $modifiers = Modifier::with('options')->get();
-        \Log::info('BOM ITEMS DETAIL', $bomItems->map(function($item) {
-            return [
-                'id' => $item->id,
-                'name' => $item->name,
-                'status' => $item->status,
-                'small_unit_id' => $item->small_unit_id,
-                'small_unit_name' => $item->smallUnit ? $item->smallUnit->name : null
-            ];
-        })->toArray());
         
-        // Debug: Cek apakah ada item yang tidak aktif
-        $allItems = \App\Models\Item::where('id', '!=', $item->id)->get();
-        $inactiveItems = $allItems->where('status', '!=', 'active');
-        \Log::info('INACTIVE ITEMS FOUND', [
-            'count' => $inactiveItems->count(),
-            'items' => $inactiveItems->pluck('name', 'id')->toArray()
-        ]);
         
         $mappedPrices = $item->prices->map(function($p) use ($regions, $outlets) {
             $regionId = $p->region_id !== null ? (int) $p->region_id : null;
@@ -759,7 +689,6 @@ class ItemController extends Controller
                 'price' => $p->price,
             ];
         })->toArray();
-        \Log::info('DEBUG $item->prices MAPPED', $mappedPrices);
         
         $itemData = [
             'id' => $item->id,
@@ -982,12 +911,6 @@ class ItemController extends Controller
 
     public function previewImport(Request $request)
     {
-        \Log::info('ItemController@previewImport - Starting preview');
-        \Log::info('ItemController@previewImport - File received', [
-            'original_name' => $request->file('file')->getClientOriginalName(),
-            'mime_type' => $request->file('file')->getMimeType(),
-            'size' => $request->file('file')->getSize()
-        ]);
 
         $request->validate([
             'file' => 'required|file|mimes:xlsx,xls',
@@ -996,19 +919,12 @@ class ItemController extends Controller
         $file = $request->file('file');
         try {
             $data = Excel::toArray([], $file);
-            \Log::info('ItemController@previewImport - Excel data loaded', [
-                'sheets_count' => count($data)
-            ]);
 
             // Cari sheet dengan header 'Name', 'Category', dst (sheet Items)
             $rows = [];
             foreach ($data as $sheetIndex => $sheet) {
                 if (isset($sheet[0]) && in_array('Name', $sheet[0]) && in_array('Category', $sheet[0])) {
                     $rows = $sheet;
-                    \Log::info('ItemController@previewImport - Found items sheet', [
-                        'sheet_index' => $sheetIndex,
-                        'rows_count' => count($sheet)
-                    ]);
                     break;
                 }
             }
@@ -1031,11 +947,6 @@ class ItemController extends Controller
                 $preview[] = $item;
             }
 
-            \Log::info('ItemController@previewImport - Preview generated', [
-                'header' => $header,
-                'preview_rows' => count($preview)
-            ]);
-
             return response()->json([
                 'header' => $header,
                 'preview' => $preview,
@@ -1055,13 +966,6 @@ class ItemController extends Controller
 
     public function importExcel(Request $request)
     {
-        \Log::info('MASUK FUNGSI IMPORT EXCEL');
-        \Log::info('ItemController@importExcel - Starting import');
-        \Log::info('ItemController@importExcel - File received', [
-            'original_name' => $request->file('file')->getClientOriginalName(),
-            'mime_type' => $request->file('file')->getMimeType(),
-            'size' => $request->file('file')->getSize()
-        ]);
 
         $request->validate([
             'file' => 'required|file|mimes:xlsx,xls',
@@ -1069,19 +973,12 @@ class ItemController extends Controller
 
         $file = $request->file('file');
         $data = Excel::toArray([], $file);
-        \Log::info('ItemController@importExcel - Excel data loaded', [
-            'sheets_count' => count($data)
-        ]);
 
         // Cari sheet dengan header 'Name', 'Category', dst (sheet Items)
         $rows = [];
         foreach ($data as $sheetIndex => $sheet) {
             if (isset($sheet[0]) && in_array('Name', $sheet[0]) && in_array('Category', $sheet[0])) {
                 $rows = $sheet;
-                \Log::info('ItemController@importExcel - Found items sheet', [
-                    'sheet_index' => $sheetIndex,
-                    'rows_count' => count($sheet)
-                ]);
                 break;
             }
         }
@@ -1100,10 +997,6 @@ class ItemController extends Controller
         DB::beginTransaction();
         try {
             foreach (array_slice($rows, 1) as $rowIdx => $row) {
-                \Log::info('ItemController@importExcel - Processing row', [
-                    'row_index' => $rowIdx + 2, // +2 karena index 0 adalah header dan array_slice dimulai dari 1
-                    'row_data' => $row
-                ]);
 
                 $itemData = [];
                 foreach ($header as $i => $col) {
@@ -1276,10 +1169,6 @@ class ItemController extends Controller
             }
 
             DB::commit();
-            \Log::info('ItemController@importExcel - Import completed successfully', [
-                'total_rows' => count(array_slice($rows, 1)),
-                'success_count' => count($results)
-            ]);
             
             return response()->json(['results' => $results]);
         } catch (\Exception $e) {
@@ -1340,7 +1229,6 @@ class ItemController extends Controller
 
     public function searchForWarehouseTransfer(Request $request)
     {
-      //  \Log::info('DEBUG: masuk method searchForWarehouseTransfer');
             $q = $request->input('q');
         // $warehouseId = $request->input('warehouse_id'); // Boleh ada, tapi tidak dipakai di query
 
@@ -1367,7 +1255,6 @@ class ItemController extends Controller
             ->limit(10)
             ->get();
 
-        //\Log::info('DEBUG: hasil items', ['items' => $items]);
             return response()->json($items);
     }
 
@@ -1454,11 +1341,6 @@ class ItemController extends Controller
      */
     public function getByFOSchedule($fo_schedule_id)
     {
-        \Log::info('DEBUG REQUEST region_id', [
-            'region_id_param' => request('region_id'),
-            'outlet_id_param' => request('outlet_id'),
-            'all_params' => request()->all()
-        ]);
         $region_id = request('region_id');
         $outlet_id = request('outlet_id');
         $exclude_supplier = request('exclude_supplier', false);
@@ -1486,11 +1368,6 @@ class ItemController extends Controller
             ->pluck('item_id')
             ->unique();
         // Log debug
-        \Log::info('FO getByFOSchedule availabilities', [
-            'region_id' => $region_id,
-            'outlet_id' => $outlet_id,
-            'availableItemIds' => $availableItemIds
-        ]);
         
         // Jika exclude_supplier true, kecualikan item yang ada di item_supplier
         if ($exclude_supplier) {
@@ -1498,10 +1375,6 @@ class ItemController extends Controller
                 ->pluck('item_id')
                 ->unique();
             $availableItemIds = $availableItemIds->diff($supplierItemIds);
-            \Log::info('FO getByFOSchedule exclude supplier', [
-                'supplierItemIds' => $supplierItemIds,
-                'availableItemIds_after_exclude' => $availableItemIds
-            ]);
         }
         
         $items = Item::whereIn('id', $availableItemIds)
@@ -1534,17 +1407,6 @@ class ItemController extends Controller
                 // Round up to nearest 100
                 $roundedPrice = ceil($finalPrice / 100) * 100;
                 
-                \Log::info('ItemController@getByFOSchedule - Item debug', [
-                    'item_id' => $item->id,
-                    'item_name' => $item->name,
-                    'price_found' => $price ? true : false,
-                    'final_price' => $finalPrice,
-                    'rounded_price' => $roundedPrice,
-                    'unit_medium' => $item->mediumUnit ? $item->mediumUnit->name : null,
-                    'unit_small' => $item->smallUnit ? $item->smallUnit->name : null,
-                    'unit_large' => $item->largeUnit ? $item->largeUnit->name : null
-                ]);
-                
                 return array_merge($item->toArray(), [
                     'category_name' => $item->category ? $item->category->name : '-',
                     'unit_medium_name' => $item->mediumUnit ? $item->mediumUnit->name : '-',
@@ -1555,10 +1417,6 @@ class ItemController extends Controller
                 ]);
             });
         // Log debug hasil akhir
-        \Log::info('FO getByFOSchedule items', [
-            'count' => $items->count(),
-            'item_ids' => $items->pluck('id')
-        ]);
         return response()->json([
             'items' => $items
         ]);
@@ -1569,7 +1427,6 @@ class ItemController extends Controller
      */
     public function getByFOKhusus(Request $request)
     {
-        \Log::info('MASUK getByFOKhusus');
         $region_id = $request->region_id;
         $outlet_id = $request->outlet_id;
         $exclude_supplier = $request->exclude_supplier ?? false;
@@ -1598,10 +1455,6 @@ class ItemController extends Controller
                 ->pluck('item_id')
                 ->unique();
             $itemIds = $itemIds->diff($supplierItemIds);
-            \Log::info('FO Khusus exclude supplier', [
-                'supplierItemIds' => $supplierItemIds,
-                'itemIds_after_exclude' => $itemIds
-            ]);
         }
         
         // Ambil item yang status=active dan punya warehouse_division
@@ -1666,7 +1519,6 @@ class ItemController extends Controller
 
     public function previewPriceUpdate(Request $request)
     {
-        \Log::info('ItemController@previewPriceUpdate - Starting preview');
         
         $request->validate([
             'file' => 'required|file|mimes:xlsx,xls'
@@ -1674,9 +1526,6 @@ class ItemController extends Controller
 
         try {
             $data = \Maatwebsite\Excel\Facades\Excel::toArray(new \App\Imports\PriceUpdateImport, $request->file('file'));
-            \Log::info('ItemController@previewPriceUpdate - Excel data loaded', [
-                'sheets_count' => count($data)
-            ]);
             
             $rows = $data[0] ?? [];
             if (empty($rows)) {
@@ -1691,12 +1540,6 @@ class ItemController extends Controller
             
             // Take first 5 rows for preview
             $preview = array_slice($rows, 0, 5);
-            
-            \Log::info('ItemController@previewPriceUpdate - Preview generated', [
-                'header_count' => count($headers),
-                'preview_count' => count($preview),
-                'headers' => $headers
-            ]);
             
             return response()->json([
                 'header' => $headers,
@@ -1713,7 +1556,6 @@ class ItemController extends Controller
 
     public function importPriceUpdate(Request $request)
     {
-        \Log::info('ItemController@importPriceUpdate - Starting price update import');
         
         $request->validate([
             'file' => 'required|file|mimes:xlsx,xls'
@@ -1722,11 +1564,6 @@ class ItemController extends Controller
         try {
             $import = new \App\Imports\PriceUpdateImport;
             \Maatwebsite\Excel\Facades\Excel::import($import, $request->file('file'));
-            
-            \Log::info('ItemController@importPriceUpdate - Import completed', [
-                'success_count' => $import->getSuccessCount(),
-                'error_count' => $import->getErrorCount()
-            ]);
             
             return response()->json([
                 'success' => true,
@@ -1750,7 +1587,6 @@ class ItemController extends Controller
 
     public function previewBomImport(Request $request)
     {
-        \Log::info('ItemController@previewBomImport - Starting BOM preview');
         
         $request->validate([
             'file' => 'required|file|mimes:xlsx,xls'
@@ -1758,10 +1594,6 @@ class ItemController extends Controller
 
         try {
             $data = \Maatwebsite\Excel\Facades\Excel::toArray(new \App\Imports\BomImport, $request->file('file'));
-            \Log::info('ItemController@previewBomImport - Excel data loaded', [
-                'sheets' => array_keys($data),
-                'bom_sheet_count' => count($data['BOM'] ?? [])
-            ]);
             
             $bomSheet = $data['BOM'] ?? [];
             if (empty($bomSheet)) {
@@ -1776,12 +1608,6 @@ class ItemController extends Controller
             
             // Take first 5 rows for preview
             $preview = array_slice($bomSheet, 0, 5);
-            
-            \Log::info('ItemController@previewBomImport - Preview generated', [
-                'header_count' => count($headers),
-                'preview_count' => count($preview),
-                'headers' => $headers
-            ]);
             
             return response()->json([
                 'header' => $headers,
@@ -1798,12 +1624,6 @@ class ItemController extends Controller
 
     public function importBom(Request $request)
     {
-        \Log::info('ItemController@importBom - Starting BOM import');
-        \Log::info('ItemController@importBom - File received', [
-            'original_name' => $request->file('file')->getClientOriginalName(),
-            'mime_type' => $request->file('file')->getMimeType(),
-            'size' => $request->file('file')->getSize()
-        ]);
 
         $request->validate([
             'file' => 'required|file|mimes:xlsx,xls'
@@ -1811,10 +1631,6 @@ class ItemController extends Controller
 
         try {
             $data = \Maatwebsite\Excel\Facades\Excel::toArray(new \App\Imports\BomImport, $request->file('file'));
-            \Log::info('ItemController@importBom - Excel data loaded', [
-                'sheets' => array_keys($data),
-                'bom_sheet_count' => count($data['BOM'] ?? [])
-            ]);
             
             $bomSheet = $data['BOM'] ?? [];
             if (empty($bomSheet)) {
@@ -1828,10 +1644,6 @@ class ItemController extends Controller
             
             try {
                 foreach ($bomSheet as $index => $row) {
-                    \Log::info('ItemController@importBom - Processing row', [
-                        'row_index' => $index + 1,
-                        'row_data' => $row
-                    ]);
                     
                     // Validasi minimal kolom BOM berdasarkan header
                     $parentItemName = $row['Parent Item'] ?? $row['parent_item'] ?? $row[0] ?? null;
@@ -1887,21 +1699,10 @@ class ItemController extends Controller
                         'status' => 'success',
                         'message' => 'Successfully imported'
                     ];
-                    
-                    \Log::info('ItemController@importBom - Row processed successfully', [
-                        'row_index' => $index + 1,
-                        'parent_item' => $parentItemName,
-                        'child_item' => $childItemName
-                    ]);
                 }
                 
                 // Jika semua baris berhasil, commit transaction
                 DB::commit();
-                
-                \Log::info('ItemController@importBom - Import completed successfully', [
-                    'total_rows' => count($bomSheet),
-                    'success_count' => count($results)
-                ]);
                 
                 return response()->json(['results' => $results]);
                 
@@ -2038,7 +1839,6 @@ class ItemController extends Controller
             ->limit(20)
             ->get();
 
-      //  \Log::info('searchForOutletTransfer', [
        //     'q' => $q,
        //     'warehouse_outlet_id' => $warehouse_outlet_id,
        //     'outlet_id' => $outlet_id,
@@ -2111,15 +1911,6 @@ class ItemController extends Controller
             ->limit(20)
             ->get();
 
-        \Log::info('searchForInternalWarehouseTransfer', [
-            'q' => $q,
-            'warehouse_outlet_id' => $warehouse_outlet_id,
-            'outlet_id' => $outlet_id,
-            'region_id' => $region_id,
-            'result_count' => $items->count(),
-            'first_item' => $items->first(),
-        ]);
-
         foreach ($items as $item) {
             $item->unit_small = optional(\DB::table('units')->where('id', $item->small_unit_id)->first())->name;
             $item->unit_medium = optional(\DB::table('units')->where('id', $item->medium_unit_id)->first())->name;
@@ -2144,11 +1935,6 @@ class ItemController extends Controller
         $supplierId = $request->get('supplier_id');
         $outletId = $request->get('outlet_id');
         
-        \Log::info('bySupplier called', [
-            'supplier_id' => $supplierId,
-            'outlet_id' => $outletId
-        ]);
-        
         // Ambil region_id dari outlet
         $region_id = null;
         if ($outletId) {
@@ -2157,7 +1943,6 @@ class ItemController extends Controller
                 ->value('region_id');
         }
         
-        \Log::info('Region ID found', ['region_id' => $region_id]);
         
         $items = DB::table('items')
             ->join('item_supplier', 'items.id', '=', 'item_supplier.item_id')
@@ -2181,11 +1966,6 @@ class ItemController extends Controller
                 'items.large_unit_id'
             )
             ->get();
-            
-        \Log::info('Raw items from database', [
-            'count' => $items->count(),
-            'first_item' => $items->first()
-        ]);
         
         $items = $items->map(function($item) use ($region_id, $outletId) {
             // Ambil harga dari item_prices dengan prioritas outlet > region > all (sama seperti RO utama)
@@ -2239,11 +2019,6 @@ class ItemController extends Controller
                 'large_unit_id' => $item->large_unit_id
             ];
         });
-        
-        \Log::info('Final items processed', [
-            'count' => $items->count(),
-            'first_item' => $items->first()
-        ]);
             
         return response()->json(['items' => $items]);
     }
@@ -2275,13 +2050,6 @@ class ItemController extends Controller
             $region_id = $request->get('region_id');
             $outlet_id = $request->get('outlet_id');
             
-            \Log::info('ItemController@search - Debug params', [
-                'q' => $q,
-                'outlet_id' => $outlet_id,
-                'region_id' => $region_id,
-                'exclude_supplier' => $excludeSupplier
-            ]);
-            
             $items = $query->limit(10)->get()->map(function($item) use ($region_id, $outlet_id) {
                 // Ambil harga medium (prioritas: outlet > region > all)
                 $price = \DB::table('item_prices')
@@ -2309,14 +2077,6 @@ class ItemController extends Controller
                 $finalPrice = $price ? $price->price : 0;
                 // Round up to nearest 100
                 $roundedPrice = ceil($finalPrice / 100) * 100;
-                
-                \Log::info('ItemController@search - Item price debug', [
-                    'item_id' => $item->id,
-                    'item_name' => $item->name,
-                    'price_found' => $price ? true : false,
-                    'final_price' => $finalPrice,
-                    'rounded_price' => $roundedPrice
-                ]);
                 
                 return [
                     'id' => $item->id,
@@ -2353,29 +2113,18 @@ class ItemController extends Controller
      */
     public function apiForModifierBom()
     {
-        \Log::info('=== MASUK SHOW ITEM ===', ['id' => 'for-modifier-bom']);
         
         // Cek dulu semua items active
         $allActiveItems = \DB::table('items')
             ->where('status', 'active')
             ->select('id', 'name', 'category_id')
             ->get();
-            
-        \Log::info('=== ALL ACTIVE ITEMS ===', [
-            'count' => $allActiveItems->count(),
-            'sample' => $allActiveItems->take(5)->toArray()
-        ]);
         
         // Cek categories dengan show_pos = 0
         $categoriesShowPos0 = \DB::table('categories')
             ->where('show_pos', '0')
             ->select('id', 'name', 'show_pos')
             ->get();
-            
-        \Log::info('=== CATEGORIES SHOW_POS 0 ===', [
-            'count' => $categoriesShowPos0->count(),
-            'categories' => $categoriesShowPos0->toArray()
-        ]);
         
         // Query final
         $items = \DB::table('items')
@@ -2385,12 +2134,6 @@ class ItemController extends Controller
             ->select('items.id', 'items.name')
             ->orderBy('items.name')
             ->get();
-            
-        \Log::info('=== HASIL QUERY FINAL ===', [
-            'count' => $items->count(),
-            'first_item' => $items->first(),
-            'all_items' => $items->toArray()
-        ]);
         
         return response()->json(['items' => $items]);
     }
@@ -2403,12 +2146,6 @@ class ItemController extends Controller
         $q = $request->input('q');
         $outlet_id = $request->input('outlet_id');
         $region_id = $request->input('region_id');
-
-        \Log::info('searchForOutletStockAdjustment called', [
-            'q' => $q,
-            'outlet_id' => $outlet_id,
-            'region_id' => $region_id
-        ]);
 
         if (!$q || !$outlet_id || !$region_id) {
             \Log::warning('Missing required parameters', [
@@ -2454,14 +2191,6 @@ class ItemController extends Controller
             ->orderBy('items.name')
             ->limit(20)
             ->get();
-
-        \Log::info('searchForOutletStockAdjustment result', [
-            'q' => $q,
-            'outlet_id' => $outlet_id,
-            'region_id' => $region_id,
-            'result_count' => $items->count(),
-            'first_item' => $items->first(),
-        ]);
 
         return response()->json($items);
     }

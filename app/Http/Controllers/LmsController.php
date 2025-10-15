@@ -80,11 +80,6 @@ class LmsController extends Controller
 
     public function courses(Request $request)
     {
-        \Log::info('=== LMS COURSES METHOD START ===', [
-            'user_id' => auth()->id(),
-            'user_name' => auth()->user()->nama_lengkap ?? 'Unknown',
-            'timestamp' => now()->toISOString()
-        ]);
         
         $startTime = microtime(true);
         
@@ -98,24 +93,10 @@ class LmsController extends Controller
             $canSeeAllCourses = true;
         }
 
-        // DEBUG: Log user data for troubleshooting
-        \Log::info('User data for course filtering:', [
-            'user_id' => $user->id,
-            'user_name' => $user->nama_lengkap,
-            'division_id' => $user->division_id,
-            'id_jabatan' => $user->id_jabatan,
-            'id_outlet' => $user->id_outlet,
-            'canSeeAllCourses' => $canSeeAllCourses,
-            'id_role' => $user->id_role,
-            'status' => $user->status
-        ]);
 
         $query = LmsCourse::with(['category', 'instructor.jabatan.divisi', 'instructor.jabatan.level', 'instructor.divisi', 'targetDivisions', 'competencies'])
             ->where('status', 'published');
 
-        // DEBUG: Log total courses before filtering
-        $totalCoursesBeforeFilter = LmsCourse::where('status', 'published')->count();
-        \Log::info('Total published courses before filtering:', ['count' => $totalCoursesBeforeFilter]);
 
         // If user is not admin/manager, filter courses based on user's data
         if (!$canSeeAllCourses) {
@@ -149,9 +130,6 @@ class LmsController extends Controller
             });
         }
 
-        // DEBUG: Log total courses after filtering
-        $totalCoursesAfterFilter = $query->count();
-        \Log::info('Total courses after filtering:', ['count' => $totalCoursesAfterFilter]);
 
         $query->when($request->search, function ($query, $search) {
                 $query->where(function ($q) use ($search) {
@@ -175,7 +153,6 @@ class LmsController extends Controller
 
         // Optimize courses query with pagination and timeout
         try {
-            \Log::info('Starting courses query with timeout protection...');
             
             $courses = $query->orderBy('created_at', 'desc')
                 ->with(['category:id,name', 'instructor:id,nama_lengkap'])
@@ -186,21 +163,10 @@ class LmsController extends Controller
                 $course->instructor_name = $course->instructor ? $course->instructor->nama_lengkap : 'Tidak ada';
                 return $course;
             });
-                
-            \Log::info('Courses query completed successfully');
         } catch (\Exception $e) {
-            \Log::error('Courses query failed:', [
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
-            ]);
             throw $e;
         }
 
-        \Log::info('Courses query completed', [
-            'total_courses' => $courses->total(),
-            'current_page' => $courses->currentPage(),
-            'per_page' => $courses->perPage()
-        ]);
 
         // Optimize categories query
         $categories = LmsCategory::active()
@@ -208,7 +174,6 @@ class LmsController extends Controller
             ->orderBy('name')
             ->get();
 
-        \Log::info('Categories query completed', ['count' => $categories->count()]);
 
         // Optimize divisions query
         $divisions = Divisi::active()
@@ -216,7 +181,6 @@ class LmsController extends Controller
             ->orderBy('nama_divisi')
             ->get();
 
-        \Log::info('Divisions query completed', ['count' => $divisions->count()]);
 
         // Optimize jabatans query with limited fields
         $jabatans = Jabatan::active()
@@ -226,7 +190,6 @@ class LmsController extends Controller
             ->limit(100) // Limit to prevent memory issues
             ->get();
 
-        \Log::info('Jabatans query completed', ['count' => $jabatans->count()]);
 
         // Optimize outlets query
         $outlets = DataOutlet::where('status', 'A')
@@ -235,7 +198,6 @@ class LmsController extends Controller
             ->limit(100) // Limit to prevent memory issues
             ->get();
 
-        \Log::info('Outlets query completed', ['count' => $outlets->count()]);
 
         // Get internal trainers (users with specific jabatan that can be trainers)
         $internalTrainers = User::where('status', 'A')
@@ -245,18 +207,7 @@ class LmsController extends Controller
             ->orderBy('nama_lengkap')
             ->get(); // Removed limit to show all available trainers
 
-        \Log::info('Internal trainers query completed', ['count' => $internalTrainers->count()]);
         
-        // Debug log for trainers
-        \Log::info('Available internal trainers:', [
-            'trainers' => $internalTrainers->map(function($trainer) {
-                return [
-                    'id' => $trainer->id,
-                    'nama' => $trainer->nama_lengkap,
-                    'jabatan' => $trainer->jabatan->nama_jabatan ?? 'N/A'
-                ];
-            })->toArray()
-        ]);
 
         // Optimize quizzes query
         $availableQuizzes = \App\Models\LmsQuiz::where('status', 'published')
@@ -266,7 +217,6 @@ class LmsController extends Controller
             ->limit(50) // Limit to prevent memory issues
             ->get();
             
-        \Log::info('Available quizzes query completed', ['count' => $availableQuizzes->count()]);
 
         // Optimize questionnaires query
         $availableQuestionnaires = \App\Models\LmsQuestionnaire::where('status', 'published')
@@ -276,22 +226,7 @@ class LmsController extends Controller
             ->limit(50) // Limit to prevent memory issues
             ->get();
 
-        \Log::info('Available questionnaires query completed', ['count' => $availableQuestionnaires->count()]);
 
-        $endTime = microtime(true);
-        $executionTime = round(($endTime - $startTime) * 1000, 2); // Convert to milliseconds
-        
-        \Log::info('=== LMS COURSES METHOD COMPLETED ===', [
-            'execution_time_ms' => $executionTime,
-            'total_courses' => $courses->total(),
-            'categories_count' => $categories->count(),
-            'divisions_count' => $divisions->count(),
-            'jabatans_count' => $jabatans->count(),
-            'outlets_count' => $outlets->count(),
-            'trainers_count' => $internalTrainers->count(),
-            'quizzes_count' => $availableQuizzes->count(),
-            'questionnaires_count' => $availableQuestionnaires->count()
-        ]);
 
         // Get all competencies for the form
         $competencies = \App\Models\Competency::active()->orderBy('category')->orderBy('name')->get();
@@ -402,51 +337,7 @@ class LmsController extends Controller
     {
         $startTime = microtime(true);
         
-        // Debug logging untuk request yang masuk
-        \Log::info('=== STORE COURSE START ===');
-        \Log::info('Request data:', [
-            'all' => $request->all(),
-            'files' => $request->allFiles(),
-            'user_id' => auth()->id(),
-            'user_name' => auth()->user()->nama_lengkap ?? 'Unknown',
-            'timestamp' => now()->toISOString()
-        ]);
         
-        // Debug: Check for material files specifically
-        if ($request->has('sessions')) {
-            foreach ($request->input('sessions', []) as $sessionIndex => $session) {
-                if (isset($session['items'])) {
-                    foreach ($session['items'] as $itemIndex => $item) {
-                        if (isset($item['item_type']) && $item['item_type'] === 'material') {
-                            \Log::info('Material item found:', [
-                                'session_index' => $sessionIndex,
-                                'item_index' => $itemIndex,
-                                'item_data' => $item,
-                                'has_material_files' => isset($item['material_files']),
-                                'material_files_count' => isset($item['material_files']) ? count($item['material_files']) : 0,
-                                'material_files_data' => $item['material_files'] ?? 'N/A'
-                            ]);
-                        } elseif (isset($item['item_type']) && $item['item_type'] === 'quiz') {
-                            \Log::info('Quiz item found:', [
-                                'session_index' => $sessionIndex,
-                                'item_index' => $itemIndex,
-                                'item_data' => $item,
-                                'quiz_id' => $item['quiz_id'] ?? 'NOT SET',
-                                'quiz_id_type' => gettype($item['quiz_id'] ?? null)
-                            ]);
-                        } elseif (isset($item['item_type']) && $item['item_type'] === 'questionnaire') {
-                            \Log::info('Questionnaire item found:', [
-                                'session_index' => $sessionIndex,
-                                'item_index' => $itemIndex,
-                                'item_data' => $item,
-                                'questionnaire_id' => $item['questionnaire_id'] ?? 'NOT SET',
-                                'questionnaire_id_type' => gettype($item['questionnaire_id'] ?? null)
-                            ]);
-                        }
-                    }
-                }
-            }
-        }
         
         // CRITICAL FIX: Get material files from request before validation
         // Laravel validation removes files from input data, so we need to extract them first
@@ -484,13 +375,7 @@ class LmsController extends Controller
             }
         }
         
-        \Log::info('Material files extracted:', [
-            'total_material_files' => count($materialFiles),
-            'files_keys' => array_keys($materialFiles)
-        ]);
         
-        \Log::info('=== REQUEST VALIDATION START ===');
-        \Log::info('Starting validation process...');
         
         try {
             $validated = $request->validate([
@@ -536,170 +421,65 @@ class LmsController extends Controller
                 'new_competencies.*.name' => 'required|string|max:255'
             ]);
             
-            \Log::info('=== VALIDATION COMPLETED SUCCESSFULLY ===');
         } catch (\Illuminate\Validation\ValidationException $e) {
-            \Log::error('=== VALIDATION FAILED ===');
-            \Log::error('Validation errors:', $e->errors());
-            \Log::error('Failed input data:', $request->all());
             throw $e;
         }
         
-        \Log::info('Validated data structure:', [
-            'has_title' => !empty($validated['title']),
-            'has_category' => !empty($validated['category_id']),
-            'has_sessions' => !empty($validated['sessions']),
-            'sessions_count' => count($validated['sessions'] ?? []),
-            'total_items' => array_sum(array_map(function($session) {
-                return count($session['items'] ?? []);
-            }, $validated['sessions'] ?? []))
-        ]);
 
         // Set default values
-        \Log::info('=== SETTING DEFAULT VALUES ===');
         $validated['created_by'] = auth()->id();
         $validated['updated_by'] = auth()->id();
-        
-        \Log::info('Default values set:', [
-            'created_by' => $validated['created_by'],
-            'updated_by' => $validated['updated_by']
-        ]);
-        
-        \Log::info('Validated data after setting defaults:', $validated);
 
 
         // Create slug from title
-        \Log::info('=== GENERATING SLUG ===');
         $validated['slug'] = Str::slug($validated['title']);
-        \Log::info('Slug generated:', [
-            'original_title' => $validated['title'],
-            'generated_slug' => $validated['slug']
-        ]);
 
         // Handle thumbnail upload
-        \Log::info('=== HANDLING THUMBNAIL UPLOAD ===');
         if ($request->hasFile('thumbnail')) {
-            \Log::info('Thumbnail file detected:', [
-                'file_name' => $request->file('thumbnail')->getClientOriginalName(),
-                'file_size' => $request->file('thumbnail')->getSize(),
-                'mime_type' => $request->file('thumbnail')->getMimeType()
-            ]);
-            
             $thumbnailPath = $request->file('thumbnail')->store('lms/thumbnails', 'public');
             $validated['thumbnail'] = $thumbnailPath;
-            \Log::info('Thumbnail uploaded successfully:', [
-                'path' => $thumbnailPath,
-                'full_url' => asset('storage/' . $thumbnailPath)
-            ]);
-        } else {
-            \Log::info('No thumbnail file uploaded - skipping thumbnail processing');
         }
 
         // Handle target divisions based on target_type
-        \Log::info('=== PROCESSING TARGET DIVISIONS ===');
         $targetDivisions = $request->input('target_divisions', []);
-        \Log::info('Target divisions input:', [
-            'target_type' => $validated['target_type'],
-            'target_divisions_input' => $targetDivisions,
-            'target_division_id' => $validated['target_division_id'] ?? null
-        ]);
         
         if ($validated['target_type'] === 'all') {
             $validated['target_division_id'] = null;
             $validated['target_divisions'] = null;
-            \Log::info('Target type "all" - clearing division targeting');
         } elseif ($validated['target_type'] === 'single') {
             $validated['target_divisions'] = null;
-            \Log::info('Target type "single" - using single division ID');
         } elseif ($validated['target_type'] === 'multiple') {
             $validated['target_division_id'] = null;
             $validated['target_divisions'] = $targetDivisions;
-            \Log::info('Target type "multiple" - using multiple divisions array');
         }
-        
-        \Log::info('Target divisions after processing:', [
-            'target_division_id' => $validated['target_division_id'] ?? null,
-            'target_divisions' => $validated['target_divisions'] ?? null,
-            'target_type' => $validated['target_type'] ?? null
-        ]);
 
         // Filter out empty learning objectives and requirements
-        \Log::info('=== FILTERING EMPTY DATA ===');
-        
         if (isset($validated['learning_objectives'])) {
-            $originalCount = count($validated['learning_objectives']);
             $validated['learning_objectives'] = array_filter($validated['learning_objectives'], function($objective) {
                 return !empty(trim($objective));
             });
-            $filteredCount = count($validated['learning_objectives']);
-            \Log::info('Learning objectives filtered:', [
-                'original_count' => $originalCount,
-                'filtered_count' => $filteredCount,
-                'removed_count' => $originalCount - $filteredCount,
-                'filtered_data' => $validated['learning_objectives']
-            ]);
         }
         
         if (isset($validated['requirements'])) {
-            $originalCount = count($validated['requirements']);
             $validated['requirements'] = array_filter($validated['requirements'], function($requirement) {
                 return !empty(trim($requirement));
             });
-            $filteredCount = count($validated['requirements']);
-            \Log::info('Requirements filtered:', [
-                'original_count' => $originalCount,
-                'filtered_count' => $filteredCount,
-                'removed_count' => $originalCount - $filteredCount,
-                'filtered_data' => $validated['requirements']
-            ]);
         }
 
         // Filter out empty target arrays
         if (isset($validated['target_jabatan_ids'])) {
-            $originalCount = count($validated['target_jabatan_ids']);
             $validated['target_jabatan_ids'] = array_filter($validated['target_jabatan_ids'], function($id) {
                 return !empty($id);
             });
-            $filteredCount = count($validated['target_jabatan_ids']);
-            \Log::info('Target jabatan IDs filtered:', [
-                'original_count' => $originalCount,
-                'filtered_count' => $filteredCount,
-                'removed_count' => $originalCount - $filteredCount,
-                'filtered_data' => $validated['target_jabatan_ids']
-            ]);
         }
         
         if (isset($validated['target_outlet_ids'])) {
-            $originalCount = count($validated['target_outlet_ids']);
             $validated['target_outlet_ids'] = array_filter($validated['target_outlet_ids'], function($id) {
                 return !empty($id);
             });
-            $filteredCount = count($validated['target_outlet_ids']);
-            \Log::info('Target outlet IDs filtered:', [
-                'original_count' => $originalCount,
-                'filtered_count' => $filteredCount,
-                'removed_count' => $originalCount - $filteredCount,
-                'filtered_data' => $validated['target_outlet_ids']
-            ]);
         }
 
         // Final data yang akan disimpan
-        \Log::info('=== FINAL DATA SUMMARY ===');
-        \Log::info('Final data structure summary:', [
-            'title' => $validated['title'] ?? 'NOT SET',
-            'category_id' => $validated['category_id'] ?? 'NOT SET',
-            'target_type' => $validated['target_type'] ?? 'NOT SET',
-            'has_thumbnail' => !empty($validated['thumbnail']),
-            'learning_objectives_count' => count($validated['learning_objectives'] ?? []),
-            'requirements_count' => count($validated['requirements'] ?? []),
-            'sessions_count' => count($validated['sessions'] ?? []),
-            'total_session_items' => array_sum(array_map(function($session) {
-                return count($session['items'] ?? []);
-            }, $validated['sessions'] ?? [])),
-            'data_size_bytes' => strlen(serialize($validated))
-        ]);
-        
-        \Log::info('=== FINAL DATA TO SAVE ===');
-        \Log::info('Final validated data:', $validated);
         
         // Custom validation: At least one target must be selected
         $hasDivision = !empty($validated['target_division_id']) || 
@@ -717,11 +497,6 @@ class LmsController extends Controller
         try {
             DB::beginTransaction();
             // Create the course
-            \Log::info('Attempting to create course...');
-            \Log::info('Database operation start:', [
-                'operation' => 'create_course',
-                'timestamp' => now()->toISOString()
-            ]);
             
             $course = LmsCourse::create([
                 'title' => $validated['title'],
@@ -745,11 +520,6 @@ class LmsController extends Controller
                 'updated_by' => auth()->id()
             ]);
             
-            \Log::info('Course created successfully!', [
-                'course_id' => $course->id,
-                'course_title' => $course->title,
-                'course_data' => $course->toArray()
-            ]);
 
             // Create requirements if any - REMOVED - requirements field removed
             // if (isset($validated['requirements']) && !empty($validated['requirements'])) {
@@ -765,26 +535,22 @@ class LmsController extends Controller
 
             // Sync target divisions for many-to-many relationship
             if ($validated['target_type'] === 'multiple' && !empty($targetDivisions)) {
-                \Log::info('Syncing target divisions:', $targetDivisions);
                 $course->targetDivisions()->sync($targetDivisions);
             }
 
             // Sync target jabatans for many-to-many relationship
             if (isset($validated['target_jabatan_ids']) && !empty($validated['target_jabatan_ids'])) {
-                \Log::info('Syncing target jabatans:', $validated['target_jabatan_ids']);
                 $course->targetJabatans()->sync($validated['target_jabatan_ids']);
             }
 
             // Sync target outlets for many-to-many relationship
             if (isset($validated['target_outlet_ids']) && !empty($validated['target_outlet_ids'])) {
-                \Log::info('Syncing target outlets:', $validated['target_outlet_ids']);
                 $course->targetOutlets()->sync($validated['target_outlet_ids']);
             }
 
             // Handle new competencies first
             $newCompetencyIds = [];
             if (isset($validated['new_competencies']) && !empty($validated['new_competencies'])) {
-                \Log::info('Creating new competencies:', $validated['new_competencies']);
                 foreach ($validated['new_competencies'] as $newCompetency) {
                     $competency = \App\Models\Competency::create([
                         'name' => $newCompetency['name'],
@@ -802,7 +568,6 @@ class LmsController extends Controller
             
             // Add existing competencies
             if (isset($validated['competencies']) && !empty($validated['competencies'])) {
-                \Log::info('Syncing existing competencies:', $validated['competencies']);
                 foreach ($validated['competencies'] as $competency) {
                     $competencyData[$competency['competency_id']] = [];
                 }

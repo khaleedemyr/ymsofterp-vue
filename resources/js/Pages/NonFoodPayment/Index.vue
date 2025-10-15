@@ -56,8 +56,10 @@
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Tanggal Payment</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Supplier</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">No. PO/PR</th>
+              <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Outlet</th>
+              <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Kategori</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Creator</th>
-              <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Total Amount</th>
+              <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Amount</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Payment Method</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Status</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider rounded-tr-2xl">Aksi</th>
@@ -65,66 +67,102 @@
           </thead>
           <tbody>
             <tr v-if="!payments.data || !payments.data.length">
-              <td colspan="9" class="text-center py-10 text-gray-400">Belum ada data Non Food Payment.</td>
+              <td colspan="11" class="text-center py-10 text-gray-400">Belum ada data Non Food Payment.</td>
             </tr>
-            <tr v-for="payment in payments.data" :key="payment.id" class="hover:bg-blue-50 transition shadow-sm">
-              <td class="px-6 py-3 font-mono font-semibold text-blue-700">{{ payment.payment_number }}</td>
-              <td class="px-6 py-3">
-                <span class="text-blue-600 font-medium">{{ formatDate(payment.payment_date) }}</span>
-                <div class="text-xs text-gray-500">Payment Date</div>
-              </td>
-              <td class="px-6 py-3">{{ payment.supplier_name || '-' }}</td>
-              <td class="px-6 py-3">
-                <div v-if="payment.payment_type === 'PO'">
-                  <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                    <i class="fa fa-file-invoice mr-1"></i> {{ payment.po_number || '-' }}
+            <template v-for="payment in payments.data" :key="payment.id">
+              <tr v-for="(outlet, index) in payment.outlet_breakdown" :key="`${payment.id}-${outlet.outlet_id || index}`" 
+                  class="hover:bg-blue-50 transition shadow-sm"
+                  :class="{ 'border-t-2 border-blue-200': index > 0 }">
+                <!-- Payment Number (only show on first row) -->
+                <td v-if="index === 0" class="px-6 py-3 font-mono font-semibold text-blue-700" :rowspan="payment.outlet_breakdown.length">
+                  {{ payment.payment_number }}
+                </td>
+                <!-- Payment Date (only show on first row) -->
+                <td v-if="index === 0" class="px-6 py-3" :rowspan="payment.outlet_breakdown.length">
+                  <span class="text-blue-600 font-medium">{{ formatDate(payment.payment_date) }}</span>
+                  <div class="text-xs text-gray-500">Payment Date</div>
+                </td>
+                <!-- Supplier (only show on first row) -->
+                <td v-if="index === 0" class="px-6 py-3" :rowspan="payment.outlet_breakdown.length">
+                  {{ payment.supplier_name || '-' }}
+                </td>
+                <!-- PO/PR Number (only show on first row) -->
+                <td v-if="index === 0" class="px-6 py-3" :rowspan="payment.outlet_breakdown.length">
+                  <div v-if="payment.payment_type === 'PO'">
+                    <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                      <i class="fa fa-file-invoice mr-1"></i> {{ payment.po_number || '-' }}
+                    </span>
+                  </div>
+                  <div v-else-if="payment.payment_type === 'PR'">
+                    <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                      <i class="fa fa-clipboard-list mr-1"></i> {{ payment.pr_number || '-' }}
+                    </span>
+                  </div>
+                  <div v-else>
+                    <span class="text-gray-400">-</span>
+                  </div>
+                </td>
+                <!-- Outlet -->
+                <td class="px-6 py-3">
+                  <div class="font-medium text-gray-900">{{ outlet.outlet_name || '-' }}</div>
+                  <div v-if="outlet.pr_number" class="text-xs text-gray-500">PR: {{ outlet.pr_number }}</div>
+                </td>
+                <!-- Category -->
+                <td class="px-6 py-3">
+                  <div v-if="outlet.category_name" class="space-y-1">
+                    <span class="inline-block bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-xs">{{ outlet.category_name }}</span>
+                    <div v-if="outlet.category_division" class="text-xs text-gray-600">{{ outlet.category_division }}</div>
+                    <div v-if="outlet.category_subcategory" class="text-xs text-gray-600">{{ outlet.category_subcategory }}</div>
+                  </div>
+                  <div v-else class="text-gray-400">-</div>
+                </td>
+                <!-- Creator (only show on first row) -->
+                <td v-if="index === 0" class="px-6 py-3" :rowspan="payment.outlet_breakdown.length">
+                  <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                    <i class="fa fa-user mr-1"></i> {{ payment.creator_name || '-' }}
                   </span>
-                </div>
-                <div v-else-if="payment.payment_type === 'PR'">
-                  <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                    <i class="fa fa-clipboard-list mr-1"></i> {{ payment.pr_number || '-' }}
+                </td>
+                <!-- Amount -->
+                <td class="px-6 py-3 text-right">
+                  <div class="font-semibold text-gray-900">{{ formatCurrency(outlet.outlet_total) }}</div>
+                  <div v-if="payment.outlet_breakdown.length > 1" class="text-xs text-gray-500">
+                    dari {{ formatCurrency(payment.amount) }}
+                  </div>
+                </td>
+                <!-- Payment Method (only show on first row) -->
+                <td v-if="index === 0" class="px-6 py-3" :rowspan="payment.outlet_breakdown.length">
+                  <span :class="getPaymentMethodClass(payment.payment_method)" class="px-2 py-1 rounded-full text-xs font-semibold shadow">
+                    {{ getPaymentMethodText(payment.payment_method) }}
                   </span>
-                </div>
-                <div v-else>
-                  <span class="text-gray-400">-</span>
-                </div>
-              </td>
-              <td class="px-6 py-3">
-                <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
-                  <i class="fa fa-user mr-1"></i> {{ payment.creator_name || '-' }}
-                </span>
-              </td>
-              <td class="px-6 py-3 text-right">{{ formatCurrency(payment.amount) }}</td>
-              <td class="px-6 py-3">
-                <span :class="getPaymentMethodClass(payment.payment_method)" class="px-2 py-1 rounded-full text-xs font-semibold shadow">
-                  {{ getPaymentMethodText(payment.payment_method) }}
-                </span>
-              </td>
-              <td class="px-6 py-3">
-                <span :class="getStatusClass(payment.status)" class="px-2 py-1 rounded-full text-xs font-semibold shadow">
-                  {{ getStatusText(payment.status) }}
-                </span>
-              </td>
-              <td class="px-6 py-3">
-                <div class="flex gap-2">
-                  <button @click="viewPayment(payment)" class="inline-flex items-center btn btn-xs bg-blue-100 text-blue-800 hover:bg-blue-200 rounded px-2 py-1 font-semibold transition">
-                    <i class="fa fa-eye mr-1"></i> Detail
-                  </button>
-                  <button v-if="payment.status === 'pending'" @click="editPayment(payment)" class="inline-flex items-center btn btn-xs bg-yellow-100 text-yellow-800 hover:bg-yellow-200 rounded px-2 py-1 font-semibold transition">
-                    <i class="fa fa-pencil-alt mr-1"></i> Edit
-                  </button>
-                  <button v-if="payment.status === 'pending'" @click="deletePayment(payment)" class="inline-flex items-center btn btn-xs bg-red-100 text-red-700 hover:bg-red-200 rounded px-2 py-1 font-semibold transition">
-                    <i class="fa fa-trash mr-1"></i> Hapus
-                  </button>
-                  <button v-if="payment.status === 'pending'" @click="approvePayment(payment)" class="inline-flex items-center btn btn-xs bg-green-100 text-green-800 hover:bg-green-200 rounded px-2 py-1 font-semibold transition">
-                    <i class="fa fa-check mr-1"></i> Approve
-                  </button>
-                  <button v-if="payment.status === 'approved'" @click="markAsPaid(payment)" class="inline-flex items-center btn btn-xs bg-blue-100 text-blue-800 hover:bg-blue-200 rounded px-2 py-1 font-semibold transition">
-                    <i class="fa fa-money-bill-wave mr-1"></i> Paid
-                  </button>
-                </div>
-              </td>
-            </tr>
+                </td>
+                <!-- Status (only show on first row) -->
+                <td v-if="index === 0" class="px-6 py-3" :rowspan="payment.outlet_breakdown.length">
+                  <span :class="getStatusClass(payment.status)" class="px-2 py-1 rounded-full text-xs font-semibold shadow">
+                    {{ getStatusText(payment.status) }}
+                  </span>
+                </td>
+                <!-- Actions (only show on first row) -->
+                <td v-if="index === 0" class="px-6 py-3" :rowspan="payment.outlet_breakdown.length">
+                  <div class="flex gap-2">
+                    <button @click="viewPayment(payment)" class="inline-flex items-center btn btn-xs bg-blue-100 text-blue-800 hover:bg-blue-200 rounded px-2 py-1 font-semibold transition">
+                      <i class="fa fa-eye mr-1"></i> Detail
+                    </button>
+                    <button v-if="payment.status === 'pending'" @click="editPayment(payment)" class="inline-flex items-center btn btn-xs bg-yellow-100 text-yellow-800 hover:bg-yellow-200 rounded px-2 py-1 font-semibold transition">
+                      <i class="fa fa-pencil-alt mr-1"></i> Edit
+                    </button>
+                    <button v-if="payment.status === 'pending'" @click="deletePayment(payment)" class="inline-flex items-center btn btn-xs bg-red-100 text-red-700 hover:bg-red-200 rounded px-2 py-1 font-semibold transition">
+                      <i class="fa fa-trash mr-1"></i> Hapus
+                    </button>
+                    <button v-if="payment.status === 'pending'" @click="approvePayment(payment)" class="inline-flex items-center btn btn-xs bg-green-100 text-green-800 hover:bg-green-200 rounded px-2 py-1 font-semibold transition">
+                      <i class="fa fa-check mr-1"></i> Approve
+                    </button>
+                    <button v-if="payment.status === 'approved'" @click="markAsPaid(payment)" class="inline-flex items-center btn btn-xs bg-blue-100 text-blue-800 hover:bg-blue-200 rounded px-2 py-1 font-semibold transition">
+                      <i class="fa fa-money-bill-wave mr-1"></i> Paid
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            </template>
           </tbody>
         </table>
       </div>

@@ -28,12 +28,10 @@ class InternalWarehouseTransferController extends Controller
 
         DB::beginTransaction();
         try {
-            Log::info('Start simpan internal warehouse transfer', $validated);
             // Generate transfer number
             $dateStr = date('Ymd', strtotime($validated['transfer_date']));
             $countToday = InternalWarehouseTransfer::whereDate('transfer_date', $validated['transfer_date'])->count() + 1;
             $transferNumber = 'IWT-' . $dateStr . '-' . str_pad($countToday, 4, '0', STR_PAD_LEFT);
-            Log::info('Generated transfer number', ['transferNumber' => $transferNumber]);
 
             // Validasi warehouse outlet belongs to selected outlet
             $warehouseFrom = DB::table('warehouse_outlets')->where('id', $validated['warehouse_outlet_from_id'])->first();
@@ -62,17 +60,12 @@ class InternalWarehouseTransferController extends Controller
                 'notes' => $validated['notes'] ?? null,
                 'created_by' => Auth::id(),
             ]);
-            Log::info('Header transfer saved', ['transfer' => $transfer]);
 
             foreach ($validated['items'] as $item) {
-                Log::info('Proses item', $item);
-
                 // Cari inventory_item_id dari outlet_food_inventory_items
                 $inventoryItem = DB::table('outlet_food_inventory_items')->where('item_id', $item['item_id'])->first();
-                Log::info('InventoryItem', ['inventoryItem' => $inventoryItem]);
 
                 if (!$inventoryItem) {
-                    Log::error('Inventory item not found for item_id: ' . $item['item_id']);
                     throw new \Exception('Inventory item not found for item_id: ' . $item['item_id']);
                 }
                 $inventory_item_id = $inventoryItem->id;
@@ -108,18 +101,6 @@ class InternalWarehouseTransferController extends Controller
                     // fallback: treat as small
                     $qty_small = $qty_input;
                 }
-                Log::info('Konversi qty', [
-                    'input_qty' => $qty_input,
-                    'input_unit' => $unit,
-                    'qty_small' => $qty_small,
-                    'qty_medium' => $qty_medium,
-                    'qty_large' => $qty_large,
-                    'unitSmall' => $unitSmall,
-                    'unitMedium' => $unitMedium,
-                    'unitLarge' => $unitLarge,
-                    'smallConv' => $smallConv,
-                    'mediumConv' => $mediumConv,
-                ]);
 
                 // Simpan detail transfer
                 InternalWarehouseTransferItem::create([
@@ -132,7 +113,6 @@ class InternalWarehouseTransferController extends Controller
                     'qty_large' => $qty_large,
                     'note' => $item['note'] ?? null,
                 ]);
-                Log::info('Detail transfer saved', ['item_id' => $item['item_id']]);
 
                 // Update stok di warehouse outlet asal (kurangi)
                 $stockFrom = DB::table('outlet_food_inventory_stocks')
@@ -140,13 +120,10 @@ class InternalWarehouseTransferController extends Controller
                     ->where('id_outlet', $validated['outlet_id'])
                     ->where('warehouse_outlet_id', $validated['warehouse_outlet_from_id'])
                     ->first();
-                Log::info('StockFrom', ['stockFrom' => $stockFrom]);
 
                 if (!$stockFrom) {
-                    Log::error('Stok tidak ditemukan di warehouse outlet asal');
                     throw new \Exception('Stok tidak ditemukan di warehouse outlet asal');
                 }
-                Log::info('Sebelum update stok warehouse outlet asal', ['qty_small' => $stockFrom->qty_small]);
                 DB::table('outlet_food_inventory_stocks')
                     ->where('id', $stockFrom->id)
                     ->update([
@@ -155,7 +132,6 @@ class InternalWarehouseTransferController extends Controller
                         'qty_large' => $stockFrom->qty_large - $qty_large,
                         'updated_at' => now(),
                     ]);
-                Log::info('Sesudah update stok warehouse outlet asal');
 
                 // Update stok di warehouse outlet tujuan (tambah)
                 $stockTo = DB::table('outlet_food_inventory_stocks')
@@ -219,7 +195,6 @@ class InternalWarehouseTransferController extends Controller
                         'last_cost_medium' => $mac * $smallConv,
                         'last_cost_large' => $mac * $smallConv * $mediumConv,
                     ]);
-                Log::info('Sesudah update stok warehouse outlet tujuan', ['qty_small' => $stockTo->qty_small]);
 
                 // Insert kartu stok OUT di warehouse outlet asal
                 DB::table('outlet_food_inventory_cards')->insert([
@@ -243,7 +218,6 @@ class InternalWarehouseTransferController extends Controller
                     'description' => 'Stock Out - Internal Warehouse Transfer',
                     'created_at' => now(),
                 ]);
-                Log::info('Sesudah insert kartu stok OUT');
 
                 // Insert kartu stok IN di warehouse outlet tujuan
                 DB::table('outlet_food_inventory_cards')->insert([
@@ -291,7 +265,6 @@ class InternalWarehouseTransferController extends Controller
                     'reference_id' => $transfer->id,
                     'created_at' => now(),
                 ]);
-                Log::info('Sesudah insert kartu stok IN');
             }
 
             DB::commit();
@@ -306,11 +279,9 @@ class InternalWarehouseTransferController extends Controller
                 'new_data' => json_encode($transfer->toArray()),
                 'created_at' => now(),
             ]);
-            Log::info('Selesai proses simpan internal warehouse transfer');
             return redirect()->route('internal-warehouse-transfer.index')->with('success', 'Internal Warehouse Transfer berhasil disimpan!');
         } catch (\Exception $e) {
             DB::rollBack();
-            Log::error('Error saat simpan internal warehouse transfer', ['error' => $e->getMessage()]);
             return redirect()->back()->with('error', 'Gagal menyimpan data: ' . $e->getMessage());
         }
     }

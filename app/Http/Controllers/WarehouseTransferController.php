@@ -30,7 +30,6 @@ class WarehouseTransferController extends Controller
 
         DB::beginTransaction();
         try {
-            Log::info('Start simpan transfer', $validated);
             // Generate transfer number using timestamp-based approach
             $dateStr = date('Ymd', strtotime($validated['transfer_date']));
             $transferNumber = null;
@@ -72,7 +71,6 @@ class WarehouseTransferController extends Controller
                 $transferNumber = 'WT-' . $dateStr . '-' . substr($timestamp, -4);
             }
             
-            Log::info('Generated transfer number', ['transferNumber' => $transferNumber, 'attempts' => $attempts]);
 
             // Simpan header transfer
             $transfer = WarehouseTransfer::create([
@@ -83,21 +81,16 @@ class WarehouseTransferController extends Controller
                 'notes' => $validated['notes'] ?? null,
                 'created_by' => Auth::id(),
             ]);
-            Log::info('Header transfer saved', ['transfer' => $transfer]);
 
             // Ambil nama warehouse asal & tujuan
             $warehouseFromName = \DB::table('warehouses')->where('id', $validated['warehouse_from_id'])->value('name');
             $warehouseToName = \DB::table('warehouses')->where('id', $validated['warehouse_to_id'])->value('name');
 
             foreach ($validated['items'] as $item) {
-                Log::info('Proses item', $item);
-
                 // Cari inventory_item_id dari food_inventory_items
                 $inventoryItem = FoodInventoryItem::where('item_id', $item['item_id'])->first();
-                Log::info('InventoryItem', ['inventoryItem' => $inventoryItem]);
 
                 if (!$inventoryItem) {
-                    Log::error('Inventory item not found for item_id: ' . $item['item_id']);
                     throw new \Exception('Inventory item not found for item_id: ' . $item['item_id']);
                 }
                 $inventory_item_id = $inventoryItem->id;
@@ -133,18 +126,6 @@ class WarehouseTransferController extends Controller
                     // fallback: treat as small
                     $qty_small = $qty_input;
                 }
-                Log::info('Konversi qty', [
-                    'input_qty' => $qty_input,
-                    'input_unit' => $unit,
-                    'qty_small' => $qty_small,
-                    'qty_medium' => $qty_medium,
-                    'qty_large' => $qty_large,
-                    'unitSmall' => $unitSmall,
-                    'unitMedium' => $unitMedium,
-                    'unitLarge' => $unitLarge,
-                    'smallConv' => $smallConv,
-                    'mediumConv' => $mediumConv,
-                ]);
 
                 // Simpan detail transfer
                 WarehouseTransferItem::create([
@@ -157,23 +138,18 @@ class WarehouseTransferController extends Controller
                     'qty_large' => $qty_large,
                     'note' => $item['note'] ?? null,
                 ]);
-                Log::info('Detail transfer saved', ['item_id' => $item['item_id']]);
 
                 // Update stok di warehouse asal (kurangi)
                 $stockFrom = FoodInventoryStock::where('inventory_item_id', $inventory_item_id)
                     ->where('warehouse_id', $validated['warehouse_from_id'])->first();
-                Log::info('StockFrom', ['stockFrom' => $stockFrom]);
 
                 if (!$stockFrom) {
-                    Log::error('Stok tidak ditemukan di gudang asal');
                     throw new \Exception('Stok tidak ditemukan di gudang asal');
                 }
-                Log::info('Sebelum update stok gudang asal', ['qty_small' => $stockFrom->qty_small]);
                 $stockFrom->qty_small -= $qty_small;
                 $stockFrom->qty_medium -= $qty_medium;
                 $stockFrom->qty_large -= $qty_large;
                 $stockFrom->save();
-                Log::info('Sesudah update stok gudang asal', ['qty_small' => $stockFrom->qty_small]);
 
                 // Update stok di warehouse tujuan (tambah) dengan MAC jika ada penambahan stok
                 $stockTo = FoodInventoryStock::firstOrCreate(
@@ -207,28 +183,8 @@ class WarehouseTransferController extends Controller
                 $stockTo->last_cost_large = $stockFrom->last_cost_large;
                 $stockTo->value = $total_nilai;
                 $stockTo->save();
-                Log::info('Sesudah update stok gudang tujuan', ['qty_small' => $stockTo->qty_small]);
 
                 // Insert kartu stok OUT (gudang asal)
-                Log::info('Sebelum insert kartu stok OUT', [
-                    'inventory_item_id' => $inventory_item_id,
-                    'warehouse_id' => $validated['warehouse_from_id'],
-                    'date' => $validated['transfer_date'],
-                    'reference_type' => 'warehouse_transfer',
-                    'reference_id' => $transfer->id,
-                    'out_qty_small' => $qty_small,
-                    'out_qty_medium' => $qty_medium,
-                    'out_qty_large' => $qty_large,
-                    'cost_per_small' => $stockFrom->last_cost_small,
-                    'cost_per_medium' => $stockFrom->last_cost_medium,
-                    'cost_per_large' => $stockFrom->last_cost_large,
-                    'value_out' => $qty_small * $stockFrom->last_cost_small,
-                    'saldo_qty_small' => $stockFrom->qty_small,
-                    'saldo_qty_medium' => $stockFrom->qty_medium,
-                    'saldo_qty_large' => $stockFrom->qty_large,
-                    'saldo_value' => $stockFrom->qty_small * $stockFrom->last_cost_small,
-                    'description' => 'Transfer ke Gudang ' . $warehouseToName,
-                ]);
                 FoodInventoryCard::create([
                     'inventory_item_id' => $inventory_item_id,
                     'warehouse_id' => $validated['warehouse_from_id'],
@@ -248,28 +204,8 @@ class WarehouseTransferController extends Controller
                     'saldo_value' => $stockFrom->qty_small * $stockFrom->last_cost_small,
                     'description' => 'Transfer ke Gudang ' . $warehouseToName,
                 ]);
-                Log::info('Sesudah insert kartu stok OUT');
 
                 // Insert kartu stok IN (gudang tujuan)
-                Log::info('Sebelum insert kartu stok IN', [
-                    'inventory_item_id' => $inventory_item_id,
-                    'warehouse_id' => $validated['warehouse_to_id'],
-                    'date' => $validated['transfer_date'],
-                    'reference_type' => 'warehouse_transfer',
-                    'reference_id' => $transfer->id,
-                    'in_qty_small' => $qty_small,
-                    'in_qty_medium' => $qty_medium,
-                    'in_qty_large' => $qty_large,
-                    'cost_per_small' => $stockFrom->last_cost_small,
-                    'cost_per_medium' => $stockFrom->last_cost_medium,
-                    'cost_per_large' => $stockFrom->last_cost_large,
-                    'value_in' => $qty_small * $stockFrom->last_cost_small,
-                    'saldo_qty_small' => $stockTo->qty_small,
-                    'saldo_qty_medium' => $stockTo->qty_medium,
-                    'saldo_qty_large' => $stockTo->qty_large,
-                    'saldo_value' => $stockTo->qty_small * $stockFrom->last_cost_small,
-                    'description' => 'Transfer dari Gudang ' . $warehouseFromName,
-                ]);
                 FoodInventoryCard::create([
                     'inventory_item_id' => $inventory_item_id,
                     'warehouse_id' => $validated['warehouse_to_id'],
@@ -309,7 +245,6 @@ class WarehouseTransferController extends Controller
                     'reference_id' => $transfer->id,
                     'created_at' => now(),
                 ]);
-                Log::info('Sesudah insert kartu stok IN');
             }
 
             DB::commit();
@@ -323,11 +258,9 @@ class WarehouseTransferController extends Controller
                 'old_data' => null,
                 'new_data' => $transfer->toArray(),
             ]);
-            Log::info('Selesai proses simpan warehouse transfer');
             return redirect()->route('warehouse-transfer.index')->with('success', 'Pindah Gudang berhasil disimpan!');
         } catch (\Exception $e) {
             DB::rollBack();
-            Log::error('Error saat simpan warehouse transfer', ['error' => $e->getMessage()]);
             return redirect()->back()->with('error', 'Gagal menyimpan data: ' . $e->getMessage());
         }
     }
