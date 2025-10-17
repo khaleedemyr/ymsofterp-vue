@@ -1410,6 +1410,13 @@ Route::resource('users', UserController::class);
 Route::patch('users/{user}/toggle-status', [UserController::class, 'toggleStatus'])->name('users.toggle-status');
 Route::post('users/{user}/activate', [UserController::class, 'activate'])->name('users.activate');
 
+// API routes for user saldo management
+Route::middleware(['auth'])->group(function () {
+    Route::post('/api/users/{userId}/update-saldo', [UserController::class, 'updateSaldo'])->name('api.users.update-saldo');
+    Route::get('/api/users/{userId}/extra-off-balance', [UserController::class, 'getExtraOffBalance'])->name('api.users.extra-off-balance');
+    Route::get('/api/users/{userId}/public-holiday-balance', [UserController::class, 'getPublicHolidayBalance'])->name('api.users.public-holiday-balance');
+});
+
 // QA Categories Routes
 Route::resource('qa-categories', \App\Http\Controllers\QaCategoryController::class);
 Route::patch('qa-categories/{qaCategory}/toggle-status', [\App\Http\Controllers\QaCategoryController::class, 'toggleStatus'])->name('qa-categories.toggle-status');

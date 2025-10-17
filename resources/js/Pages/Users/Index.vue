@@ -8,6 +8,7 @@ import UserFormModal from './UserFormModal.vue';
 import axios from 'axios';
 import PinManagementModal from './PinManagementModal.vue';
 import ActivationModal from './ActivationModal.vue';
+import SaldoModal from './SaldoModal.vue';
 import VueEasyLightbox from 'vue-easy-lightbox';
 
 const props = defineProps({
@@ -38,6 +39,8 @@ const pinUserId = ref(null);
 const pinUserName = ref('');
 const showActivationModal = ref(false);
 const selectedUserForActivation = ref(null);
+const showSaldoModal = ref(false);
+const selectedUserForSaldo = ref(null);
 const outletId = ref(props.filters?.outlet_id || '');
 const divisionId = ref(props.filters?.division_id || '');
 const status = ref(props.filters?.status || 'A');
@@ -198,7 +201,22 @@ function closeActivationModal() {
   selectedUserForActivation.value = null;
 }
 
+function openSaldoModal(user) {
+  selectedUserForSaldo.value = user;
+  showSaldoModal.value = true;
+}
+
+function closeSaldoModal() {
+  showSaldoModal.value = false;
+  selectedUserForSaldo.value = null;
+}
+
 function onActivationSuccess(message) {
+  Swal.fire('Berhasil', message, 'success');
+  reload();
+}
+
+function onSaldoSuccess(message) {
   Swal.fire('Berhasil', message, 'success');
   reload();
 }
@@ -687,6 +705,9 @@ function downloadTemplate() {
                 <button @click="openPinModal(user)" class="px-2 py-1 rounded bg-green-100 text-green-700 hover:bg-green-200 transition" title="Kelola PIN">
                   <i class="fa-solid fa-key"></i>
                 </button>
+                <button @click="openSaldoModal(user)" class="px-2 py-1 rounded bg-purple-100 text-purple-700 hover:bg-purple-200 transition" title="Input Saldo">
+                  <i class="fa-solid fa-coins"></i>
+                </button>
               </td>
             </tr>
             <tr v-if="users.data.length === 0">
@@ -763,6 +784,9 @@ function downloadTemplate() {
               <button @click="openPinModal(user)" class="px-3 py-2 rounded-lg bg-green-100 text-green-700 hover:bg-green-200 transition text-sm" title="Kelola PIN">
                 <i class="fa-solid fa-key"></i>
               </button>
+              <button @click="openSaldoModal(user)" class="px-3 py-2 rounded-lg bg-purple-100 text-purple-700 hover:bg-purple-200 transition text-sm" title="Input Saldo">
+                <i class="fa-solid fa-coins"></i>
+              </button>
             </div>
           </div>
         </div>
@@ -797,6 +821,12 @@ function downloadTemplate() {
       :outlets="outlets" 
       @close="closeActivationModal" 
       @success="onActivationSuccess" 
+    />
+    <SaldoModal 
+      :show="showSaldoModal" 
+      :user="selectedUserForSaldo" 
+      @close="closeSaldoModal" 
+      @success="onSaldoSuccess" 
     />
     
     <!-- Lightbox for Avatar Images -->

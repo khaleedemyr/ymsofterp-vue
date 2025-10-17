@@ -456,6 +456,162 @@ class UserController extends Controller
         ]);
     }
 
+    public function updateSaldo(Request $request, $userId)
+    {
+        $request->validate([
+            'cuti' => 'nullable|numeric|min:0',
+            'public_holiday' => 'nullable|numeric|min:0',
+            'extra_off' => 'nullable|numeric|min:0',
+            'notes' => 'nullable|string|max:255'
+        ]);
+
+        $user = User::findOrFail($userId);
+        
+        try {
+            DB::beginTransaction();
+            
+            $updated = [];
+            
+            // Update saldo cuti
+            if ($request->has('cuti') && $request->cuti !== '') {
+                $user->update(['cuti' => $request->cuti]);
+                $updated[] = "Saldo cuti: {$request->cuti} hari";
+            }
+            
+            // Update saldo public holiday
+            if ($request->has('public_holiday') && $request->public_holiday !== '') {
+                $this->updatePublicHolidayBalance($userId, $request->public_holiday, $request->notes);
+                $updated[] = "Saldo public holiday: {$request->public_holiday} hari";
+            }
+            
+            // Update saldo extra off
+            if ($request->has('extra_off') && $request->extra_off !== '') {
+                $this->updateExtraOffBalance($userId, $request->extra_off, $request->notes);
+                $updated[] = "Saldo extra off: {$request->extra_off} hari";
+            }
+            
+            if (empty($updated)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Tidak ada data yang diupdate'
+                ], 400);
+            }
+            
+            DB::commit();
+            
+            return response()->json([
+                'success' => true,
+                'message' => 'Saldo berhasil diupdate: ' . implode(', ', $updated)
+            ]);
+            
+        } catch (\Exception $e) {
+            DB::rollback();
+            \Log::error('Error updating saldo: ' . $e->getMessage());
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal mengupdate saldo: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+    
+    private function updatePublicHolidayBalance($userId, $amount, $notes = null)
+    {
+        // Check if user has existing public holiday balance record
+        $existingBalance = DB::table('holiday_attendance_compensations')
+            ->where('user_id', $userId)
+            ->where('compensation_type', 'bonus')
+            ->where('status', 'pending')
+            ->sum('compensation_amount');
+            
+        $currentBalance = $existingBalance ?: 0;
+        $difference = $amount - $currentBalance;
+        
+        if ($difference != 0) {
+            // Create adjustment transaction
+            DB::table('holiday_attendance_compensations')->insert([
+                'user_id' => $userId,
+                'holiday_date' => now()->toDateString(),
+                'compensation_type' => 'bonus',
+                'compensation_amount' => $difference,
+                'compensation_description' => $notes ?: 'Manual adjustment - Public Holiday Balance',
+                'status' => 'approved',
+                'created_at' => now(),
+                'updated_at' => now()
+            ]);
+        }
+    }
+    
+    private function updateExtraOffBalance($userId, $amount, $notes = null)
+    {
+        // Get or create extra off balance record
+        $balance = DB::table('extra_off_balance')
+            ->where('user_id', $userId)
+            ->first();
+            
+        if (!$balance) {
+            // Create new balance record
+            DB::table('extra_off_balance')->insert([
+                'user_id' => $userId,
+                'balance' => $amount,
+                'created_at' => now(),
+                'updated_at' => now()
+            ]);
+        } else {
+            // Update existing balance
+            $currentBalance = $balance->balance;
+            $difference = $amount - $currentBalance;
+            
+            DB::table('extra_off_balance')
+                ->where('user_id', $userId)
+                ->update([
+                    'balance' => $amount,
+                    'updated_at' => now()
+                ]);
+                
+            // Create transaction record for the adjustment
+            if ($difference != 0) {
+                DB::table('extra_off_transactions')->insert([
+                    'user_id' => $userId,
+                    'transaction_type' => $difference > 0 ? 'earned' : 'used',
+                    'amount' => abs($difference),
+                    'source_type' => 'manual_adjustment',
+                    'description' => $notes ?: 'Manual adjustment - Extra Off Balance',
+                    'status' => 'approved',
+                    'approved_by' => auth()->id(),
+                    'created_at' => now(),
+                    'updated_at' => now()
+                ]);
+            }
+        }
+    }
+    
+    public function getExtraOffBalance($userId)
+    {
+        $balance = DB::table('extra_off_balance')
+            ->where('user_id', $userId)
+            ->first();
+            
+        return response()->json([
+            'success' => true,
+            'balance' => $balance ? $balance->balance : 0
+        ]);
+    }
+    
+    public function getPublicHolidayBalance($userId)
+    {
+        $balance = DB::table('holiday_attendance_compensations')
+            ->where('user_id', $userId)
+            ->where('compensation_type', 'bonus')
+            ->where('status', 'pending')
+            ->sum('compensation_amount');
+            
+        return response()->json([
+            'success' => true,
+            'balance' => $balance ?: 0
+        ]);
+    }
+
     public function create()
     {
         return Inertia::render('Users/Create', [
