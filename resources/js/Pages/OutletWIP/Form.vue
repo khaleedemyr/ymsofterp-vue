@@ -148,6 +148,7 @@ import { useForm } from '@inertiajs/vue3'
 import axios from 'axios'
 import Multiselect from 'vue-multiselect'
 import 'vue-multiselect/dist/vue-multiselect.min.css'
+import Swal from 'sweetalert2'
 
 const props = defineProps({
   items: Array,
@@ -256,10 +257,52 @@ async function fetchBom() {
       outlet_id: form.outlet_id,
       warehouse_outlet_id: form.warehouse_outlet_id
     })
+    
+    // Cek apakah item memiliki BOM
+    if (response.data.length === 0) {
+      const selectedItemName = selectedItemData.value?.name || 'Item yang dipilih'
+      
+      await Swal.fire({
+        icon: 'warning',
+        title: 'Item Tidak Memiliki BOM',
+        html: `
+          <div class="text-left">
+            <p class="mb-3"><strong>${selectedItemName}</strong> tidak memiliki Bill of Materials (BOM).</p>
+            <p class="text-sm text-gray-600 mb-3">Untuk melakukan produksi, item harus memiliki komposisi bahan yang telah didefinisikan.</p>
+            <div class="bg-blue-50 border border-blue-200 rounded-lg p-3">
+              <p class="text-sm text-blue-800 font-medium">
+                <i class="fas fa-info-circle mr-2"></i>
+                Segera hubungi Cost Control untuk konfirmasi Bill of Material
+              </p>
+            </div>
+          </div>
+        `,
+        confirmButtonText: 'OK',
+        confirmButtonColor: '#3b82f6',
+        customClass: {
+          popup: 'text-sm'
+        }
+      })
+      
+      // Reset form item selection
+      form.item_id = ''
+      form.unit_id = ''
+      selectedItem.value = null
+    }
+    
     bom.value = response.data
   } catch (error) {
     console.error('Error fetching BOM:', error)
     bom.value = []
+    
+    // Tampilkan error jika ada masalah dengan request
+    await Swal.fire({
+      icon: 'error',
+      title: 'Error',
+      text: 'Terjadi kesalahan saat mengambil data BOM. Silakan coba lagi.',
+      confirmButtonText: 'OK',
+      confirmButtonColor: '#ef4444'
+    })
   }
 }
 
