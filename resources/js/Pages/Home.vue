@@ -2842,7 +2842,7 @@ watch(locale, () => {
     <AppLayout>
         <Head title="Home" />
         <div :class="[
-            'min-h-screen w-full transition-all duration-700 relative',
+            'min-h-screen w-full transition-all duration-700 relative overflow-x-hidden',
             isNight ? 'bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900' : 'bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50'
         ]">
             <!-- Animasi bintang jika malam -->
@@ -2860,9 +2860,9 @@ watch(locale, () => {
             </div>
             
             <!-- Main Content Grid -->
-            <div class="relative z-10 w-full h-screen flex flex-col">
+            <div class="relative z-10 w-full min-h-screen flex flex-col overflow-x-hidden">
                 <!-- Top Section: Welcome Card -->
-                <div class="flex-shrink-0 mb-4 px-4 md:px-6">
+                <div class="flex-shrink-0 mb-4 px-4 md:px-6 max-w-full">
                     <div class="backdrop-blur-md rounded-2xl shadow-2xl border transition-all duration-500 animate-fade-in hover:shadow-3xl overflow-hidden"
                         :class="isNight ? 'bg-slate-800/90 border-slate-600/50' : 'bg-white/90 border-white/20'">
                         
@@ -2905,38 +2905,38 @@ watch(locale, () => {
                         <div class="px-6 pb-6">
                             <!-- Greeting and Name -->
                             <div class="text-center mb-6">
-                                <div class="text-2xl md:text-3xl font-extrabold" :class="isNight ? 'text-white' : 'text-slate-800'">{{ greeting }},</div>
-                                <div class="text-lg md:text-xl font-bold" :class="isNight ? 'text-indigo-200' : 'text-indigo-700'">{{ user.nama_lengkap }}</div>
+                                <div class="text-xl sm:text-2xl md:text-3xl font-extrabold" :class="isNight ? 'text-white' : 'text-slate-800'">{{ greeting }},</div>
+                                <div class="text-base sm:text-lg md:text-xl font-bold" :class="isNight ? 'text-indigo-200' : 'text-indigo-700'">{{ user.nama_lengkap }}</div>
                             </div>
                             
                             <!-- User Information Cards -->
-                            <div class="grid grid-cols-2 gap-3">
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                 <!-- Outlet -->
                                 <div class="flex items-center gap-2 p-3 rounded-lg" :class="isNight ? 'bg-slate-700/50' : 'bg-blue-50'">
                                     <div class="w-2 h-2 rounded-full bg-blue-500"></div>
-                                    <div class="text-xs font-medium" :class="isNight ? 'text-blue-300' : 'text-blue-700'">Outlet:</div>
-                                    <div class="text-xs font-semibold" :class="isNight ? 'text-white' : 'text-slate-800'">{{ userOutlet }}</div>
+                                    <div class="text-xs sm:text-sm font-medium" :class="isNight ? 'text-blue-300' : 'text-blue-700'">Outlet:</div>
+                                    <div class="text-xs sm:text-sm font-semibold" :class="isNight ? 'text-white' : 'text-slate-800'">{{ userOutlet }}</div>
                                 </div>
                                 
                                 <!-- Divisi -->
                                 <div class="flex items-center gap-2 p-3 rounded-lg" :class="isNight ? 'bg-slate-700/50' : 'bg-green-50'">
                                     <div class="w-2 h-2 rounded-full bg-green-500"></div>
-                                    <div class="text-xs font-medium" :class="isNight ? 'text-green-300' : 'text-green-700'">Divisi:</div>
-                                    <div class="text-xs font-semibold" :class="isNight ? 'text-white' : 'text-slate-800'">{{ userDivisi }}</div>
+                                    <div class="text-xs sm:text-sm font-medium" :class="isNight ? 'text-green-300' : 'text-green-700'">Divisi:</div>
+                                    <div class="text-xs sm:text-sm font-semibold" :class="isNight ? 'text-white' : 'text-slate-800'">{{ userDivisi }}</div>
                                 </div>
                                 
                                 <!-- Level -->
                                 <div class="flex items-center gap-2 p-3 rounded-lg" :class="isNight ? 'bg-slate-700/50' : 'bg-purple-50'">
                                     <div class="w-2 h-2 rounded-full bg-purple-500"></div>
-                                    <div class="text-xs font-medium" :class="isNight ? 'text-purple-300' : 'text-purple-700'">Level:</div>
-                                    <div class="text-xs font-semibold" :class="isNight ? 'text-white' : 'text-slate-800'">{{ userLevel }}</div>
+                                    <div class="text-xs sm:text-sm font-medium" :class="isNight ? 'text-purple-300' : 'text-purple-700'">Level:</div>
+                                    <div class="text-xs sm:text-sm font-semibold" :class="isNight ? 'text-white' : 'text-slate-800'">{{ userLevel }}</div>
                                 </div>
                                 
                                 <!-- Jabatan -->
                                 <div class="flex items-center gap-2 p-3 rounded-lg" :class="isNight ? 'bg-slate-700/50' : 'bg-orange-50'">
                                     <div class="w-2 h-2 rounded-full bg-orange-500"></div>
-                                    <div class="text-xs font-medium" :class="isNight ? 'text-orange-300' : 'text-orange-700'">Jabatan:</div>
-                                    <div class="text-xs font-semibold" :class="isNight ? 'text-white' : 'text-slate-800'">{{ userJabatan }}</div>
+                                    <div class="text-xs sm:text-sm font-medium" :class="isNight ? 'text-orange-300' : 'text-orange-700'">Jabatan:</div>
+                                    <div class="text-xs sm:text-sm font-semibold" :class="isNight ? 'text-white' : 'text-slate-800'">{{ userJabatan }}</div>
                                 </div>
                             </div>
                             
@@ -3025,7 +3025,7 @@ watch(locale, () => {
 
 
                 <!-- Notifications Section -->
-                <div v-if="totalNotificationsCount > 0" class="flex-shrink-0 mb-4">
+                <div v-if="totalNotificationsCount > 0" class="flex-shrink-0 mb-4 px-4 md:px-6 max-w-full">
                     <div class="backdrop-blur-md rounded-2xl shadow-2xl border p-4 transition-all duration-500 animate-fade-in hover:shadow-3xl"
                         :class="isNight ? 'bg-slate-800/90 border-slate-600/50' : 'bg-white/90 border-white/20'">
                         <div class="flex items-center justify-between mb-3">
@@ -3364,9 +3364,9 @@ watch(locale, () => {
                 </div>
 
                 <!-- Bottom Section: Clock, Weather, Calendar, Notes, Birthday, and Announcements -->
-                <div class="flex-1 grid grid-cols-1 lg:grid-cols-6 gap-4 min-h-0 mb-6 items-stretch px-4 md:px-6">
+                <div class="flex-1 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 gap-4 mb-6 items-start px-4 md:px-6">
                     <!-- Left: Clock and Weather -->
-                    <div class="lg:col-span-1 flex flex-col gap-4">
+                    <div class="sm:col-span-2 lg:col-span-1 xl:col-span-1 flex flex-col gap-4">
                         <!-- Clock Card -->
                         <div class="backdrop-blur-md rounded-2xl shadow-2xl border p-4 transition-all duration-500 hover:shadow-3xl flex-shrink-0"
                             :class="isNight ? 'bg-slate-800/90 border-slate-600/50' : 'bg-white/90 border-white/20'">
@@ -3376,41 +3376,41 @@ watch(locale, () => {
                         </div>
                         
                         <!-- Weather Card -->
-                        <div v-if="weather.city && weather.code" class="backdrop-blur-md rounded-2xl shadow-2xl border p-4 transition-all duration-500 animate-fade-in hover:shadow-3xl flex-1 flex items-center justify-center"
+                        <div v-if="weather.city && weather.code" class="backdrop-blur-md rounded-2xl shadow-2xl border p-4 transition-all duration-500 animate-fade-in hover:shadow-3xl flex-shrink-0"
                             :class="isNight ? 'bg-slate-800/90 border-slate-600/50' : 'bg-white/90 border-white/20'">
                             <div class="flex flex-col items-center gap-2">
                                 <div class="flex items-center gap-2">
                                     <WeatherIcon :code="weather.code" />
                                 </div>
-                                <div class="text-lg font-semibold" :class="isNight ? 'text-white' : 'text-slate-800'">{{ weather.city }}</div>
-                                <div class="text-sm" :class="isNight ? 'text-slate-300' : 'text-slate-600'">{{ weather.temp }} - {{ weather.desc }}</div>
+                                <div class="text-base sm:text-lg font-semibold" :class="isNight ? 'text-white' : 'text-slate-800'">{{ weather.city }}</div>
+                                <div class="text-xs sm:text-sm" :class="isNight ? 'text-slate-300' : 'text-slate-600'">{{ weather.temp }} - {{ weather.desc }}</div>
                             </div>
                         </div>
                     </div>
 
                     <!-- Calendar Widget -->
-                    <div class="lg:col-span-1 flex">
+                    <div class="sm:col-span-1 lg:col-span-1 xl:col-span-1 flex">
                         <div class="transition-all duration-500 hover:shadow-3xl w-full">
                             <CalendarWidget :is-night="isNight" />
                         </div>
                     </div>
 
                     <!-- Notes Widget -->
-                    <div class="lg:col-span-1 flex">
+                    <div class="sm:col-span-1 lg:col-span-1 xl:col-span-1 flex">
                         <div class="w-full">
                             <NotesWidget :is-night="isNight" />
                         </div>
                     </div>
 
                     <!-- Birthday Widget -->
-                    <div class="lg:col-span-1 flex">
+                    <div class="sm:col-span-1 lg:col-span-1 xl:col-span-1 flex">
                         <div class="w-full">
                             <BirthdayWidget :is-night="isNight" />
                         </div>
                     </div>
 
                     <!-- Right: Announcements -->
-                    <div class="lg:col-span-2 flex">
+                    <div class="sm:col-span-2 lg:col-span-2 xl:col-span-2 flex">
                         <div class="backdrop-blur-md rounded-2xl shadow-2xl border p-4 w-full overflow-y-auto transition-all duration-500 hover:shadow-3xl"
                             :class="isNight ? 'bg-slate-800/90 border-slate-600/50' : 'bg-white/90 border-white/20'">
                             <AnnouncementList :is-night="isNight" @show-all="showAllAnnouncements" />
