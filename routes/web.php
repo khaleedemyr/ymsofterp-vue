@@ -761,6 +761,8 @@ Route::middleware(['auth'])->group(function () {
     Route::delete('/outlet-transfer/{id}', [\App\Http\Controllers\OutletTransferController::class, 'destroy'])->name('outlet-transfer.destroy');
     Route::get('/outlet-transfer/{id}/edit', [\App\Http\Controllers\OutletTransferController::class, 'edit'])->name('outlet-transfer.edit');
     Route::put('/outlet-transfer/{id}', [\App\Http\Controllers\OutletTransferController::class, 'update'])->name('outlet-transfer.update');
+    Route::post('/outlet-transfer/{id}/submit', [\App\Http\Controllers\OutletTransferController::class, 'submit'])->name('outlet-transfer.submit');
+    Route::post('/outlet-transfer/{id}/approve', [\App\Http\Controllers\OutletTransferController::class, 'approve'])->name('outlet-transfer.approve');
     
     // Internal Warehouse Transfer Routes
     Route::get('/internal-warehouse-transfer', [\App\Http\Controllers\InternalWarehouseTransferController::class, 'index'])->name('internal-warehouse-transfer.index');

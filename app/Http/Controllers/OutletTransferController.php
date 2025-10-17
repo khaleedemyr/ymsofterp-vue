@@ -53,7 +53,7 @@ class OutletTransferController extends Controller
                 throw new \Exception('Warehouse outlet tujuan tidak sesuai dengan outlet tujuan yang dipilih');
             }
 
-            // Simpan header transfer
+            // Simpan header transfer dengan status draft
             $transfer = OutletTransfer::create([
                 'transfer_number' => $transferNumber,
                 'transfer_date' => $validated['transfer_date'],
@@ -61,10 +61,12 @@ class OutletTransferController extends Controller
                 'warehouse_outlet_to_id' => $validated['warehouse_outlet_to_id'],
                 'outlet_id' => $validated['outlet_to_id'], // Gunakan outlet tujuan sebagai outlet_id
                 'notes' => $validated['notes'] ?? null,
+                'status' => 'draft', // Set status draft untuk approval
                 'created_by' => Auth::id(),
             ]);
             Log::info('Header transfer saved', ['transfer' => $transfer]);
 
+            // Simpan detail transfer tanpa memproses stock (draft mode)
             foreach ($validated['items'] as $item) {
                 Log::info('Proses item', $item);
 
@@ -122,7 +124,7 @@ class OutletTransferController extends Controller
                     'mediumConv' => $mediumConv,
                 ]);
 
-                // Simpan detail transfer
+                // Simpan detail transfer (draft mode - tidak memproses stock)
                 OutletTransferItem::create([
                     'outlet_transfer_id' => $transfer->id,
                     'item_id' => $item['item_id'],
@@ -133,166 +135,7 @@ class OutletTransferController extends Controller
                     'qty_large' => $qty_large,
                     'note' => $item['note'] ?? null,
                 ]);
-                Log::info('Detail transfer saved', ['item_id' => $item['item_id']]);
-
-                // Update stok di warehouse outlet asal (kurangi)
-                $stockFrom = DB::table('outlet_food_inventory_stocks')
-                    ->where('inventory_item_id', $inventory_item_id)
-                    ->where('id_outlet', $warehouseFrom->outlet_id)
-                    ->where('warehouse_outlet_id', $validated['warehouse_outlet_from_id'])
-                    ->first();
-                Log::info('StockFrom', ['stockFrom' => $stockFrom]);
-
-                if (!$stockFrom) {
-                    Log::error('Stok tidak ditemukan di warehouse outlet asal');
-                    throw new \Exception('Stok tidak ditemukan di warehouse outlet asal');
-                }
-                Log::info('Sebelum update stok warehouse outlet asal', ['qty_small' => $stockFrom->qty_small]);
-                DB::table('outlet_food_inventory_stocks')
-                    ->where('id', $stockFrom->id)
-                    ->update([
-                        'qty_small' => $stockFrom->qty_small - $qty_small,
-                        'qty_medium' => $stockFrom->qty_medium - $qty_medium,
-                        'qty_large' => $stockFrom->qty_large - $qty_large,
-                        'updated_at' => now(),
-                    ]);
-                Log::info('Sesudah update stok warehouse outlet asal');
-
-                // Update stok di warehouse outlet tujuan (tambah)
-                $stockTo = DB::table('outlet_food_inventory_stocks')
-                    ->where('inventory_item_id', $inventory_item_id)
-                    ->where('id_outlet', $warehouseTo->outlet_id)
-                    ->where('warehouse_outlet_id', $validated['warehouse_outlet_to_id'])
-                    ->first();
-
-                if (!$stockTo) {
-                    // Buat stok baru jika belum ada
-                    DB::table('outlet_food_inventory_stocks')->insert([
-                        'inventory_item_id' => $inventory_item_id,
-                        'id_outlet' => $warehouseTo->outlet_id,
-                        'warehouse_outlet_id' => $validated['warehouse_outlet_to_id'],
-                        'qty_small' => $qty_small,
-                        'qty_medium' => $qty_medium,
-                        'qty_large' => $qty_large,
-                        'value' => $qty_small * $stockFrom->last_cost_small,
-                        'last_cost_small' => $stockFrom->last_cost_small,
-                        'last_cost_medium' => $stockFrom->last_cost_medium,
-                        'last_cost_large' => $stockFrom->last_cost_large,
-                        'created_at' => now(),
-                        'updated_at' => now(),
-                    ]);
-                    $stockTo = (object) [
-                        'qty_small' => 0,
-                        'qty_medium' => 0,
-                        'qty_large' => 0,
-                        'last_cost_small' => $stockFrom->last_cost_small,
-                        'last_cost_medium' => $stockFrom->last_cost_medium,
-                        'last_cost_large' => $stockFrom->last_cost_large,
-                    ];
-                } else {
-                    // Update stok yang sudah ada
-                    DB::table('outlet_food_inventory_stocks')
-                        ->where('id', $stockTo->id)
-                        ->update([
-                            'qty_small' => $stockTo->qty_small + $qty_small,
-                            'qty_medium' => $stockTo->qty_medium + $qty_medium,
-                            'qty_large' => $stockTo->qty_large + $qty_large,
-                            'updated_at' => now(),
-                        ]);
-                }
-
-                // Hitung MAC (Moving Average Cost) untuk warehouse outlet tujuan
-                $qty_lama = $stockTo->qty_small;
-                $nilai_lama = $stockTo->qty_small * $stockTo->last_cost_small;
-                $qty_baru = $qty_small;
-                $nilai_baru = $qty_small * $stockFrom->last_cost_small;
-                $total_qty = $qty_lama + $qty_baru;
-                $total_nilai = $nilai_lama + $nilai_baru;
-                $mac = $total_qty > 0 ? $total_nilai / $total_qty : $stockFrom->last_cost_small;
-
-                // Update MAC di stok warehouse outlet tujuan
-                DB::table('outlet_food_inventory_stocks')
-                    ->where('inventory_item_id', $inventory_item_id)
-                    ->where('id_outlet', $warehouseTo->outlet_id)
-                    ->where('warehouse_outlet_id', $validated['warehouse_outlet_to_id'])
-                    ->update([
-                        'last_cost_small' => $mac,
-                        'last_cost_medium' => $mac * $smallConv,
-                        'last_cost_large' => $mac * $smallConv * $mediumConv,
-                    ]);
-                Log::info('Sesudah update stok warehouse outlet tujuan', ['qty_small' => $stockTo->qty_small]);
-
-                // Insert kartu stok OUT di warehouse outlet asal
-                DB::table('outlet_food_inventory_cards')->insert([
-                    'inventory_item_id' => $inventory_item_id,
-                    'id_outlet' => $warehouseFrom->outlet_id,
-                    'warehouse_outlet_id' => $validated['warehouse_outlet_from_id'],
-                    'date' => $validated['transfer_date'],
-                    'reference_type' => 'outlet_transfer',
-                    'reference_id' => $transfer->id,
-                    'out_qty_small' => $qty_small,
-                    'out_qty_medium' => $qty_medium,
-                    'out_qty_large' => $qty_large,
-                    'cost_per_small' => $stockFrom->last_cost_small,
-                    'cost_per_medium' => $stockFrom->last_cost_medium,
-                    'cost_per_large' => $stockFrom->last_cost_large,
-                    'value_out' => $qty_small * $stockFrom->last_cost_small,
-                    'saldo_qty_small' => $stockFrom->qty_small - $qty_small,
-                    'saldo_qty_medium' => $stockFrom->qty_medium - $qty_medium,
-                    'saldo_qty_large' => $stockFrom->qty_large - $qty_large,
-                    'saldo_value' => ($stockFrom->qty_small - $qty_small) * $stockFrom->last_cost_small,
-                    'description' => 'Stock Out - Outlet Transfer',
-                    'created_at' => now(),
-                ]);
-                Log::info('Sesudah insert kartu stok OUT');
-
-                // Insert kartu stok IN di warehouse outlet tujuan
-                DB::table('outlet_food_inventory_cards')->insert([
-                    'inventory_item_id' => $inventory_item_id,
-                    'id_outlet' => $warehouseTo->outlet_id,
-                    'warehouse_outlet_id' => $validated['warehouse_outlet_to_id'],
-                    'date' => $validated['transfer_date'],
-                    'reference_type' => 'outlet_transfer',
-                    'reference_id' => $transfer->id,
-                    'in_qty_small' => $qty_small,
-                    'in_qty_medium' => $qty_medium,
-                    'in_qty_large' => $qty_large,
-                    'cost_per_small' => $stockFrom->last_cost_small,
-                    'cost_per_medium' => $stockFrom->last_cost_medium,
-                    'cost_per_large' => $stockFrom->last_cost_large,
-                    'value_in' => $qty_small * $stockFrom->last_cost_small,
-                    'saldo_qty_small' => $stockTo->qty_small + $qty_small,
-                    'saldo_qty_medium' => $stockTo->qty_medium + $qty_medium,
-                    'saldo_qty_large' => $stockTo->qty_large + $qty_large,
-                    'saldo_value' => ($stockTo->qty_small + $qty_small) * $mac,
-                    'description' => 'Stock In - Outlet Transfer',
-                    'created_at' => now(),
-                ]);
-
-                // Insert cost history untuk warehouse outlet tujuan
-                $lastCostHistory = DB::table('outlet_food_inventory_cost_histories')
-                    ->where('inventory_item_id', $inventory_item_id)
-                    ->where('id_outlet', $warehouseTo->outlet_id)
-                    ->where('warehouse_outlet_id', $validated['warehouse_outlet_to_id'])
-                    ->orderByDesc('date')
-                    ->orderByDesc('created_at')
-                    ->first();
-                $old_cost = $lastCostHistory ? $lastCostHistory->new_cost : 0;
-
-                DB::table('outlet_food_inventory_cost_histories')->insert([
-                    'inventory_item_id' => $inventory_item_id,
-                    'id_outlet' => $warehouseTo->outlet_id,
-                    'warehouse_outlet_id' => $validated['warehouse_outlet_to_id'],
-                    'date' => $validated['transfer_date'],
-                    'old_cost' => $old_cost,
-                    'new_cost' => $stockFrom->last_cost_small,
-                    'mac' => $mac,
-                    'type' => 'outlet_transfer',
-                    'reference_type' => 'outlet_transfer',
-                    'reference_id' => $transfer->id,
-                    'created_at' => now(),
-                ]);
-                Log::info('Sesudah insert kartu stok IN');
+                Log::info('Detail transfer saved (draft mode)', ['item_id' => $item['item_id']]);
             }
 
             DB::commit();
@@ -307,8 +150,8 @@ class OutletTransferController extends Controller
                 'new_data' => json_encode($transfer->toArray()),
                 'created_at' => now(),
             ]);
-            Log::info('Selesai proses simpan outlet transfer');
-            return redirect()->route('outlet-transfer.index')->with('success', 'Pindah Outlet berhasil disimpan!');
+            Log::info('Selesai proses simpan outlet transfer (draft mode)');
+            return redirect()->route('outlet-transfer.index')->with('success', 'Pindah Outlet berhasil disimpan dalam status draft!');
         } catch (\Exception $e) {
             DB::rollBack();
             Log::error('Error saat simpan outlet transfer', ['error' => $e->getMessage()]);
@@ -316,10 +159,353 @@ class OutletTransferController extends Controller
         }
     }
 
+    // Submit draft untuk approval
+    public function submit(Request $request, $id)
+    {
+        $transfer = OutletTransfer::findOrFail($id);
+        
+        if ($transfer->status !== 'draft') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Transfer hanya bisa di-submit dari status draft'
+            ], 422);
+        }
+
+        $transfer->update([
+            'status' => 'submitted'
+        ]);
+
+        // Kirim notifikasi berdasarkan warehouse outlet tujuan
+        $this->sendNotificationByWarehouse($transfer->warehouse_outlet_to_id, $transfer->id, $transfer->transfer_number);
+
+        DB::table('activity_logs')->insert([
+            'user_id' => Auth::id(),
+            'activity_type' => 'submit',
+            'module' => 'outlet_transfer',
+            'description' => 'Submit transfer outlet untuk approval: ' . $transfer->transfer_number,
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+            'old_data' => json_encode(['status' => 'draft']),
+            'new_data' => json_encode(['status' => 'submitted']),
+            'created_at' => now(),
+        ]);
+
+        return response()->json(['success' => true]);
+    }
+
+    // Approve transfer
+    public function approve(Request $request, $id)
+    {
+        $user = Auth::user();
+        $transfer = OutletTransfer::findOrFail($id);
+
+        // Cek hak akses berdasarkan warehouse outlet tujuan
+        $isSuperadmin = $user->id_role === '5af56935b011a' && $user->status === 'A';
+        $canApprove = $this->canUserApproveByWarehouse($user, $transfer->warehouse_outlet_to_id);
+        
+        if (!($isSuperadmin || $canApprove)) {
+            abort(403, 'Unauthorized - Anda tidak memiliki hak untuk approve transfer untuk warehouse outlet ini');
+        }
+
+        if ($transfer->status !== 'submitted') {
+            abort(400, 'Tidak bisa approve transfer ini');
+        }
+
+        DB::beginTransaction();
+        try {
+            // Update status transfer
+            $transfer->update([
+                'status' => 'approved',
+                'approval_by' => $user->id,
+                'approval_at' => now(),
+                'approval_notes' => $request->notes,
+            ]);
+
+            // Proses stock transfer
+            $this->processStockTransfer($transfer);
+
+            DB::table('activity_logs')->insert([
+                'user_id' => $user->id,
+                'activity_type' => 'approve',
+                'module' => 'outlet_transfer',
+                'description' => 'Approve transfer outlet: ' . $transfer->transfer_number,
+                'ip_address' => $request->ip(),
+                'user_agent' => $request->userAgent(),
+                'old_data' => null,
+                'new_data' => $transfer->fresh()->toArray(),
+                'created_at' => now(),
+            ]);
+
+            DB::commit();
+            return redirect()->back()->with('success', 'Transfer outlet berhasil di-approve');
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Error saat approve transfer outlet', ['error' => $e->getMessage()]);
+            return redirect()->back()->with('error', 'Gagal approve transfer: ' . $e->getMessage());
+        }
+    }
+
+    // Method untuk mengecek apakah user bisa approve berdasarkan warehouse outlet
+    private function canUserApproveByWarehouse($user, $warehouseOutletId)
+    {
+        // Ambil warehouse outlet
+        $warehouseOutlet = DB::table('warehouse_outlets')->where('id', $warehouseOutletId)->first();
+        if (!$warehouseOutlet) {
+            return false;
+        }
+
+        $warehouseName = $warehouseOutlet->name;
+        $userJabatan = $user->id_jabatan;
+        $userStatus = $user->status;
+
+        // Cek berdasarkan nama warehouse outlet (sama dengan RO Khusus)
+        switch ($warehouseName) {
+            case 'Kitchen':
+                return in_array($userJabatan, [163, 174, 180, 345, 346, 347, 348, 349]) && $userStatus === 'A';
+            case 'Bar':
+                return in_array($userJabatan, [175, 182, 323]) && $userStatus === 'A';
+            case 'Service':
+                return in_array($userJabatan, [176, 322, 164, 321]) && $userStatus === 'A';
+            default:
+                return false;
+        }
+    }
+
+    // Method untuk mengirim notifikasi berdasarkan warehouse outlet
+    private function sendNotificationByWarehouse($warehouseOutletId, $transferId, $transferNumber)
+    {
+        // Ambil warehouse outlet
+        $warehouseOutlet = DB::table('warehouse_outlets')->where('id', $warehouseOutletId)->first();
+        if (!$warehouseOutlet) {
+            return;
+        }
+
+        $warehouseName = $warehouseOutlet->name;
+        $jabatanIds = [];
+
+        // Tentukan jabatan berdasarkan nama warehouse outlet (sama dengan RO Khusus)
+        switch ($warehouseName) {
+            case 'Kitchen':
+                $jabatanIds = [163, 174, 180, 345, 346, 347, 348, 349];
+                break;
+            case 'Bar':
+                $jabatanIds = [175, 182, 323];
+                break;
+            case 'Service':
+                $jabatanIds = [176, 322, 164, 321];
+                break;
+            default:
+                return; // Tidak ada notifikasi untuk warehouse outlet lain
+        }
+
+        // Ambil user yang memiliki jabatan tersebut dan status aktif
+        $users = DB::table('users')
+            ->whereIn('id_jabatan', $jabatanIds)
+            ->where('status', 'A')
+            ->pluck('id')
+            ->toArray();
+
+        if (empty($users)) {
+            return;
+        }
+
+        // Kirim notifikasi
+        $now = now();
+        $data = [];
+        foreach ($users as $userId) {
+            $data[] = [
+                'user_id' => $userId,
+                'type' => 'outlet_transfer_approval',
+                'title' => 'Approval Outlet Transfer',
+                'message' => "Outlet Transfer {$transferNumber} ke warehouse {$warehouseName} menunggu approval Anda.",
+                'url' => route('outlet-transfer.show', $transferId),
+                'is_read' => 0,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ];
+        }
+        DB::table('notifications')->insert($data);
+    }
+
+    // Method untuk memproses stock transfer setelah approval
+    private function processStockTransfer($transfer)
+    {
+        $warehouseFrom = DB::table('warehouse_outlets')->where('id', $transfer->warehouse_outlet_from_id)->first();
+        $warehouseTo = DB::table('warehouse_outlets')->where('id', $transfer->warehouse_outlet_to_id)->first();
+
+        foreach ($transfer->items as $item) {
+            $inventoryItem = DB::table('outlet_food_inventory_items')->where('item_id', $item->item_id)->first();
+            if (!$inventoryItem) continue;
+            
+            $inventory_item_id = $inventoryItem->id;
+            $qty_small = $item->qty_small ?? 0;
+            $qty_medium = $item->qty_medium ?? 0;
+            $qty_large = $item->qty_large ?? 0;
+
+            // Update stok di warehouse outlet asal (kurangi)
+            $stockFrom = DB::table('outlet_food_inventory_stocks')
+                ->where('inventory_item_id', $inventory_item_id)
+                ->where('id_outlet', $warehouseFrom->outlet_id)
+                ->where('warehouse_outlet_id', $transfer->warehouse_outlet_from_id)
+                ->first();
+
+            if (!$stockFrom) {
+                throw new \Exception('Stok tidak ditemukan di warehouse outlet asal');
+            }
+
+            DB::table('outlet_food_inventory_stocks')
+                ->where('id', $stockFrom->id)
+                ->update([
+                    'qty_small' => $stockFrom->qty_small - $qty_small,
+                    'qty_medium' => $stockFrom->qty_medium - $qty_medium,
+                    'qty_large' => $stockFrom->qty_large - $qty_large,
+                    'updated_at' => now(),
+                ]);
+
+            // Update stok di warehouse outlet tujuan (tambah)
+            $stockTo = DB::table('outlet_food_inventory_stocks')
+                ->where('inventory_item_id', $inventory_item_id)
+                ->where('id_outlet', $warehouseTo->outlet_id)
+                ->where('warehouse_outlet_id', $transfer->warehouse_outlet_to_id)
+                ->first();
+
+            if (!$stockTo) {
+                // Buat stok baru jika belum ada
+                DB::table('outlet_food_inventory_stocks')->insert([
+                    'inventory_item_id' => $inventory_item_id,
+                    'id_outlet' => $warehouseTo->outlet_id,
+                    'warehouse_outlet_id' => $transfer->warehouse_outlet_to_id,
+                    'qty_small' => $qty_small,
+                    'qty_medium' => $qty_medium,
+                    'qty_large' => $qty_large,
+                    'value' => $qty_small * $stockFrom->last_cost_small,
+                    'last_cost_small' => $stockFrom->last_cost_small,
+                    'last_cost_medium' => $stockFrom->last_cost_medium,
+                    'last_cost_large' => $stockFrom->last_cost_large,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+                $stockTo = (object) [
+                    'qty_small' => 0,
+                    'qty_medium' => 0,
+                    'qty_large' => 0,
+                    'last_cost_small' => $stockFrom->last_cost_small,
+                    'last_cost_medium' => $stockFrom->last_cost_medium,
+                    'last_cost_large' => $stockFrom->last_cost_large,
+                ];
+            } else {
+                // Update stok yang sudah ada
+                DB::table('outlet_food_inventory_stocks')
+                    ->where('id', $stockTo->id)
+                    ->update([
+                        'qty_small' => $stockTo->qty_small + $qty_small,
+                        'qty_medium' => $stockTo->qty_medium + $qty_medium,
+                        'qty_large' => $stockTo->qty_large + $qty_large,
+                        'updated_at' => now(),
+                    ]);
+            }
+
+            // Hitung MAC (Moving Average Cost) untuk warehouse outlet tujuan
+            $qty_lama = $stockTo->qty_small;
+            $nilai_lama = $stockTo->qty_small * $stockTo->last_cost_small;
+            $qty_baru = $qty_small;
+            $nilai_baru = $qty_small * $stockFrom->last_cost_small;
+            $total_qty = $qty_lama + $qty_baru;
+            $total_nilai = $nilai_lama + $nilai_baru;
+            $mac = $total_qty > 0 ? $total_nilai / $total_qty : $stockFrom->last_cost_small;
+
+            // Ambil data konversi dari tabel items
+            $itemMaster = DB::table('items')->where('id', $item->item_id)->first();
+            $smallConv = $itemMaster->small_conversion_qty ?: 1;
+            $mediumConv = $itemMaster->medium_conversion_qty ?: 1;
+
+            // Update MAC di stok warehouse outlet tujuan
+            DB::table('outlet_food_inventory_stocks')
+                ->where('inventory_item_id', $inventory_item_id)
+                ->where('id_outlet', $warehouseTo->outlet_id)
+                ->where('warehouse_outlet_id', $transfer->warehouse_outlet_to_id)
+                ->update([
+                    'last_cost_small' => $mac,
+                    'last_cost_medium' => $mac * $smallConv,
+                    'last_cost_large' => $mac * $smallConv * $mediumConv,
+                ]);
+
+            // Insert kartu stok OUT di warehouse outlet asal
+            DB::table('outlet_food_inventory_cards')->insert([
+                'inventory_item_id' => $inventory_item_id,
+                'id_outlet' => $warehouseFrom->outlet_id,
+                'warehouse_outlet_id' => $transfer->warehouse_outlet_from_id,
+                'date' => $transfer->transfer_date,
+                'reference_type' => 'outlet_transfer',
+                'reference_id' => $transfer->id,
+                'out_qty_small' => $qty_small,
+                'out_qty_medium' => $qty_medium,
+                'out_qty_large' => $qty_large,
+                'cost_per_small' => $stockFrom->last_cost_small,
+                'cost_per_medium' => $stockFrom->last_cost_medium,
+                'cost_per_large' => $stockFrom->last_cost_large,
+                'value_out' => $qty_small * $stockFrom->last_cost_small,
+                'saldo_qty_small' => $stockFrom->qty_small - $qty_small,
+                'saldo_qty_medium' => $stockFrom->qty_medium - $qty_medium,
+                'saldo_qty_large' => $stockFrom->qty_large - $qty_large,
+                'saldo_value' => ($stockFrom->qty_small - $qty_small) * $stockFrom->last_cost_small,
+                'description' => 'Stock Out - Outlet Transfer',
+                'created_at' => now(),
+            ]);
+
+            // Insert kartu stok IN di warehouse outlet tujuan
+            DB::table('outlet_food_inventory_cards')->insert([
+                'inventory_item_id' => $inventory_item_id,
+                'id_outlet' => $warehouseTo->outlet_id,
+                'warehouse_outlet_id' => $transfer->warehouse_outlet_to_id,
+                'date' => $transfer->transfer_date,
+                'reference_type' => 'outlet_transfer',
+                'reference_id' => $transfer->id,
+                'in_qty_small' => $qty_small,
+                'in_qty_medium' => $qty_medium,
+                'in_qty_large' => $qty_large,
+                'cost_per_small' => $stockFrom->last_cost_small,
+                'cost_per_medium' => $stockFrom->last_cost_medium,
+                'cost_per_large' => $stockFrom->last_cost_large,
+                'value_in' => $qty_small * $stockFrom->last_cost_small,
+                'saldo_qty_small' => $stockTo->qty_small + $qty_small,
+                'saldo_qty_medium' => $stockTo->qty_medium + $qty_medium,
+                'saldo_qty_large' => $stockTo->qty_large + $qty_large,
+                'saldo_value' => ($stockTo->qty_small + $qty_small) * $mac,
+                'description' => 'Stock In - Outlet Transfer',
+                'created_at' => now(),
+            ]);
+
+            // Insert cost history untuk warehouse outlet tujuan
+            $lastCostHistory = DB::table('outlet_food_inventory_cost_histories')
+                ->where('inventory_item_id', $inventory_item_id)
+                ->where('id_outlet', $warehouseTo->outlet_id)
+                ->where('warehouse_outlet_id', $transfer->warehouse_outlet_to_id)
+                ->orderByDesc('date')
+                ->orderByDesc('created_at')
+                ->first();
+            $old_cost = $lastCostHistory ? $lastCostHistory->new_cost : 0;
+
+            DB::table('outlet_food_inventory_cost_histories')->insert([
+                'inventory_item_id' => $inventory_item_id,
+                'id_outlet' => $warehouseTo->outlet_id,
+                'warehouse_outlet_id' => $transfer->warehouse_outlet_to_id,
+                'date' => $transfer->transfer_date,
+                'old_cost' => $old_cost,
+                'new_cost' => $stockFrom->last_cost_small,
+                'mac' => $mac,
+                'type' => 'outlet_transfer',
+                'reference_type' => 'outlet_transfer',
+                'reference_id' => $transfer->id,
+                'created_at' => now(),
+            ]);
+        }
+    }
+
     public function index(Request $request)
     {
         $user = auth()->user();
-        $query = OutletTransfer::with(['warehouseOutletFrom', 'warehouseOutletTo', 'creator', 'outlet']);
+        $query = OutletTransfer::with(['warehouseOutletFrom', 'warehouseOutletTo', 'creator', 'outlet', 'approver']);
 
         // Filter berdasarkan outlet user
         if ($user->id_outlet != 1) {
@@ -360,6 +546,7 @@ class OutletTransferController extends Controller
             'transfers' => $transfers,
             'filters' => $request->only(['search', 'from', 'to']),
             'outlets' => $outlets,
+            'user' => $user,
         ]);
     }
 
@@ -427,7 +614,7 @@ class OutletTransferController extends Controller
 
     public function show($id)
     {
-        $transfer = OutletTransfer::with(['items.item', 'items.unit', 'warehouseOutletFrom', 'warehouseOutletTo', 'creator', 'outlet'])->findOrFail($id);
+        $transfer = OutletTransfer::with(['items.item', 'items.unit', 'warehouseOutletFrom', 'warehouseOutletTo', 'creator', 'outlet', 'approver'])->findOrFail($id);
         
         // Ambil data outlet untuk mapping
         $outlets = \App\Models\Outlet::where('status', 'A')
@@ -438,6 +625,7 @@ class OutletTransferController extends Controller
         return inertia('OutletTransfer/Show', [
             'transfer' => $transfer,
             'outlets' => $outlets,
+            'user' => auth()->user(),
         ]);
     }
 

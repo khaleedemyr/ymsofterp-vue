@@ -33,4 +33,9 @@ class OutletTransfer extends Model
     {
         return $this->belongsTo(Outlet::class, 'outlet_id');
     }
+
+    public function approver()
+    {
+        return $this->belongsTo(User::class, 'approval_by');
+    }
 }

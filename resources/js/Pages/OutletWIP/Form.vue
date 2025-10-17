@@ -34,10 +34,45 @@
         </div>
         <div class="md:col-span-2">
           <label class="block text-sm font-medium text-gray-700 mb-1">Item Hasil Produksi</label>
-          <select v-model="form.item_id" @change="onItemChange" class="input input-bordered w-full" required :disabled="!form.warehouse_outlet_id">
-            <option value="" disabled>Pilih Item</option>
-            <option v-for="item in items" :key="item.id" :value="item.id">{{ item.name }}</option>
-          </select>
+          <multiselect
+            v-model="selectedItem"
+            :options="items"
+            :searchable="true"
+            :close-on-select="true"
+            :show-labels="false"
+            placeholder="Cari dan pilih item..."
+            label="name"
+            track-by="id"
+            :disabled="!form.warehouse_outlet_id"
+            @select="onItemSelect"
+            @remove="onItemRemove"
+            class="multiselect-custom"
+          >
+            <template #option="{ option }">
+              <div class="flex items-center justify-between">
+                <div>
+                  <div class="font-medium text-gray-900">{{ option.name }}</div>
+                  <div class="text-sm text-gray-500">
+                    <span v-if="option.small_unit_name">Small: {{ option.small_unit_name }}</span>
+                    <span v-if="option.medium_unit_name"> | Medium: {{ option.medium_unit_name }}</span>
+                    <span v-if="option.large_unit_name"> | Large: {{ option.large_unit_name }}</span>
+                  </div>
+                </div>
+              </div>
+            </template>
+            <template #noResult>
+              <div class="text-center py-2 text-gray-500">
+                <i class="fa-solid fa-search mr-2"></i>
+                Tidak ada item yang ditemukan
+              </div>
+            </template>
+            <template #noOptions>
+              <div class="text-center py-2 text-gray-500">
+                <i class="fa-solid fa-box mr-2"></i>
+                Tidak ada item tersedia
+              </div>
+            </template>
+          </multiselect>
         </div>
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1">Qty Produksi</label>
@@ -52,9 +87,9 @@
             <label class="block text-sm font-medium text-gray-700 mb-1">Unit</label>
             <select v-model="form.unit_id" class="input input-bordered w-full" required :disabled="!form.warehouse_outlet_id || !form.item_id">
               <option value="" disabled>Pilih Unit</option>
-              <option v-if="selectedItem?.small_unit_id" :value="selectedItem.small_unit_id">{{ selectedItem.small_unit_name }}</option>
-              <option v-if="selectedItem?.medium_unit_id" :value="selectedItem.medium_unit_id">{{ selectedItem.medium_unit_name }}</option>
-              <option v-if="selectedItem?.large_unit_id" :value="selectedItem.large_unit_id">{{ selectedItem.large_unit_name }}</option>
+              <option v-if="selectedItemData?.small_unit_id" :value="selectedItemData.small_unit_id">{{ selectedItemData.small_unit_name }}</option>
+              <option v-if="selectedItemData?.medium_unit_id" :value="selectedItemData.medium_unit_id">{{ selectedItemData.medium_unit_name }}</option>
+              <option v-if="selectedItemData?.large_unit_id" :value="selectedItemData.large_unit_id">{{ selectedItemData.large_unit_name }}</option>
             </select>
           </div>
         </div>
@@ -111,6 +146,8 @@
 import { ref, computed, watch } from 'vue'
 import { useForm } from '@inertiajs/vue3'
 import axios from 'axios'
+import Multiselect from 'vue-multiselect'
+import 'vue-multiselect/dist/vue-multiselect.min.css'
 
 const props = defineProps({
   items: Array,
@@ -135,7 +172,8 @@ const form = useForm({
 
 const bom = ref([])
 const isSubmitting = ref(false)
-const selectedItem = computed(() => props.items.find(item => item.id == form.item_id))
+const selectedItem = ref(null)
+const selectedItemData = computed(() => props.items.find(item => item.id == form.item_id))
 
 // Filter warehouse outlets based on selected outlet
 const filteredWarehouseOutlets = computed(() => {
@@ -171,6 +209,22 @@ function onWarehouseChange() {
   form.item_id = ''
   form.unit_id = ''
   bom.value = []
+}
+
+function onItemSelect(item) {
+  form.item_id = item.id
+  form.unit_id = ''
+  bom.value = []
+  if (form.item_id && form.qty > 0) {
+    fetchBom()
+  }
+}
+
+function onItemRemove() {
+  form.item_id = ''
+  form.unit_id = ''
+  bom.value = []
+  selectedItem.value = null
 }
 
 function onItemChange() {
@@ -243,6 +297,24 @@ watch(() => form.outlet_id, (newValue) => {
     }
   }
 })
+
+// Watch for changes in form.item_id to update selectedItem
+watch(() => form.item_id, (newValue) => {
+  if (newValue) {
+    selectedItem.value = props.items.find(item => item.id == newValue) || null
+  } else {
+    selectedItem.value = null
+  }
+})
+
+// Watch for changes in selectedItem to update form.item_id
+watch(selectedItem, (newValue) => {
+  if (newValue) {
+    form.item_id = newValue.id
+  } else {
+    form.item_id = ''
+  }
+})
 </script>
 
 <style scoped>
@@ -264,5 +336,74 @@ watch(() => form.outlet_id, (newValue) => {
 
 .loading {
   @apply animate-spin;
+}
+
+/* Custom multiselect styling */
+.multiselect-custom {
+  min-height: 42px;
+}
+
+.multiselect-custom .multiselect__tags {
+  @apply border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500;
+  min-height: 42px;
+  padding: 8px 12px;
+}
+
+.multiselect-custom .multiselect__placeholder {
+  @apply text-gray-500;
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+
+.multiselect-custom .multiselect__single {
+  @apply text-gray-900;
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+
+.multiselect-custom .multiselect__input {
+  @apply text-gray-900;
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+
+.multiselect-custom .multiselect__input::placeholder {
+  @apply text-gray-500;
+}
+
+.multiselect-custom .multiselect__content-wrapper {
+  @apply border border-gray-300 rounded-md shadow-lg;
+  border-top: none;
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+
+.multiselect-custom .multiselect__option {
+  @apply text-gray-900;
+  padding: 12px 16px;
+}
+
+.multiselect-custom .multiselect__option--highlight {
+  @apply bg-blue-50 text-blue-900;
+}
+
+.multiselect-custom .multiselect__option--selected {
+  @apply bg-blue-100 text-blue-900;
+}
+
+.multiselect-custom .multiselect__clear {
+  @apply text-gray-400;
+}
+
+.multiselect-custom .multiselect__clear:hover {
+  @apply text-gray-600;
+}
+
+.multiselect-custom.multiselect--disabled .multiselect__tags {
+  @apply bg-gray-100 border-gray-200;
+}
+
+.multiselect-custom.multiselect--disabled .multiselect__placeholder {
+  @apply text-gray-400;
 }
 </style>
