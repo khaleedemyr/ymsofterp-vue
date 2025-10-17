@@ -9,10 +9,29 @@ class QuoteController extends Controller
 {
     public function getQuoteByDay($dayOfYear)
     {
-        $quote = DB::table('quotes')
+        // Pastikan dayOfYear dalam range 1-365
+        $dayOfYear = (($dayOfYear - 1) % 365) + 1;
+        
+        $quote = DB::table('db_justus_quotes')
             ->where('day_of_year', $dayOfYear)
             ->select('quote', 'author')
             ->first();
+
+        // Jika tidak ditemukan berdasarkan day_of_year, coba berdasarkan ID
+        if (!$quote) {
+            $quote = DB::table('db_justus_quotes')
+                ->where('id', $dayOfYear)
+                ->select('quote', 'author')
+                ->first();
+        }
+
+        // Jika masih tidak ditemukan, ambil quote random
+        if (!$quote) {
+            $quote = DB::table('db_justus_quotes')
+                ->inRandomOrder()
+                ->select('quote', 'author')
+                ->first();
+        }
 
         if (!$quote) {
             return response()->json([
@@ -28,10 +47,30 @@ class QuoteController extends Controller
     public function getQuoteByDayOfYear()
     {
         $dayOfYear = now()->setTimezone('Asia/Jakarta')->dayOfYear;
-        $quote = DB::table('quotes')
+        
+        // Pastikan dayOfYear dalam range 1-365
+        $dayOfYear = (($dayOfYear - 1) % 365) + 1;
+        
+        $quote = DB::table('db_justus_quotes')
             ->where('day_of_year', $dayOfYear)
             ->select('quote', 'author')
             ->first();
+
+        // Jika tidak ditemukan berdasarkan day_of_year, coba berdasarkan ID
+        if (!$quote) {
+            $quote = DB::table('db_justus_quotes')
+                ->where('id', $dayOfYear)
+                ->select('quote', 'author')
+                ->first();
+        }
+
+        // Jika masih tidak ditemukan, ambil quote random
+        if (!$quote) {
+            $quote = DB::table('db_justus_quotes')
+                ->inRandomOrder()
+                ->select('quote', 'author')
+                ->first();
+        }
 
         if (!$quote) {
             return response()->json([
