@@ -219,6 +219,7 @@
                           <div class="sm:hidden flex items-center gap-1">
                             <i class="fa-solid fa-check text-green-400"></i>
                             <span class="text-green-400">{{ schedule.first_in }}</span>
+                            <span v-if="schedule.has_no_checkout" class="ml-1 text-red-500 font-bold text-xs">⚠️</span>
                           </div>
                           
                           <!-- Desktop: Show all details -->
@@ -230,6 +231,10 @@
                             <div v-if="schedule.last_out" class="flex items-center gap-1 mt-0.5">
                               <i class="fa-solid fa-sign-out-alt text-red-400"></i>
                               <span class="text-red-400">{{ schedule.last_out }}</span>
+                            </div>
+                            <div v-else-if="schedule.has_no_checkout" class="flex items-center gap-1 mt-0.5">
+                              <i class="fa-solid fa-exclamation-triangle text-red-500"></i>
+                              <span class="text-red-500 font-bold">TIDAK CHECKOUT</span>
                             </div>
                             
                             <!-- Telat and Lembur -->
@@ -342,7 +347,10 @@
                   <div class="flex items-center gap-2">
                     <i class="fa-solid fa-sign-out-alt text-red-500"></i>
                     <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Jam Keluar:</span>
-                    <span class="text-sm text-gray-900 dark:text-gray-100">
+                    <span v-if="detail.has_no_checkout" class="text-sm text-red-600 font-bold">
+                      <i class="fa-solid fa-exclamation-triangle mr-1"></i>TIDAK CHECKOUT
+                    </span>
+                    <span v-else class="text-sm text-gray-900 dark:text-gray-100">
                       {{ detail.jam_out || '-' }}
                     </span>
                   </div>

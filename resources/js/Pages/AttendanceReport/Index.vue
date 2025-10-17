@@ -144,6 +144,19 @@ const exportExcel = () => {
   setTimeout(() => { isExporting.value = false; }, 2000);
   window.location.href = `/attendance-report/export?${params.toString()}`;
 };
+
+const getRowTooltip = (row) => {
+  if (row.is_holiday) {
+    return row.holiday_name;
+  }
+  if (row.is_approved_absent) {
+    return row.approved_absent_name;
+  }
+  if (row.has_no_checkout) {
+    return 'Karyawan tidak melakukan checkout pada hari ini';
+  }
+  return '';
+};
 </script>
 
 <template>
@@ -249,12 +262,14 @@ const exportExcel = () => {
                 row.is_holiday ? 'bg-red-100 text-red-700 font-bold' : '',
                 !row.is_holiday && row.is_approved_absent ? 'bg-green-100 text-green-700 font-bold' : '',
                 !row.is_holiday && !row.is_approved_absent && row.is_off ? 'bg-gray-200 text-gray-500 font-bold italic' : '',
-                !row.is_holiday && !row.is_approved_absent && !row.is_off && idx % 2 === 1 ? 'bg-blue-50' : ''
+                !row.is_holiday && !row.is_approved_absent && !row.is_off && row.has_no_checkout ? 'bg-red-200 text-red-800 font-semibold' : '',
+                !row.is_holiday && !row.is_approved_absent && !row.is_off && !row.has_no_checkout && idx % 2 === 1 ? 'bg-blue-50' : ''
               ]">
-              <td class="px-4 py-2 whitespace-nowrap font-mono" :title="row.is_holiday ? row.holiday_name : (row.is_approved_absent ? row.approved_absent_name : '')">
+              <td class="px-4 py-2 whitespace-nowrap font-mono" :title="getRowTooltip(row)">
                 {{ row.tanggal }}
                 <span v-if="row.is_holiday && row.holiday_name" class="ml-1 text-xs font-semibold">({{ row.holiday_name }})</span>
                 <span v-if="!row.is_holiday && row.is_approved_absent && row.approved_absent_name" class="ml-1 text-xs font-semibold">({{ row.approved_absent_name }})</span>
+                <span v-if="row.has_no_checkout" class="ml-1 text-xs font-semibold text-red-600">(TIDAK CHECKOUT)</span>
               </td>
               <td class="px-4 py-2 whitespace-nowrap">{{ row.nama_lengkap }}</td>
               <td class="px-4 py-2 whitespace-nowrap text-center font-mono">
@@ -268,6 +283,9 @@ const exportExcel = () => {
                 <span v-if="row.is_off">OFF</span>
                 <span v-else-if="row.approved_absent" class="text-green-600 font-semibold">
                   <i class="fa-solid fa-check-circle mr-1"></i>{{ row.approved_absent.leave_type_name }}
+                </span>
+                <span v-else-if="row.has_no_checkout" class="text-red-600 font-bold">
+                  <i class="fa-solid fa-exclamation-triangle mr-1"></i>TIDAK CHECKOUT
                 </span>
                 <span v-else>{{ row.jam_keluar || '-' }}</span>
               </td>

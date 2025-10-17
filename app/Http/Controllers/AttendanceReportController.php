@@ -295,6 +295,12 @@ class AttendanceReportController extends Controller
                             $approved_absent_name = $approvedAbsent['leave_type_name'];
                         }
                         
+                        // Deteksi attendance tanpa checkout
+                        $has_no_checkout = false;
+                        if (!$is_off && !$is_holiday && !$is_approved_absent && $jam_masuk && !$jam_keluar) {
+                            $has_no_checkout = true;
+                        }
+                        
                         $rows->push((object)[
                             'tanggal' => $tanggal,
                             'user_id' => $rowUserId,
@@ -313,6 +319,7 @@ class AttendanceReportController extends Controller
                             'approved_absent' => $approvedAbsent,
                             'is_approved_absent' => $is_approved_absent,
                             'approved_absent_name' => $approved_absent_name,
+                            'has_no_checkout' => $has_no_checkout,
                         ]);
                     }
                 } else {
@@ -376,6 +383,7 @@ class AttendanceReportController extends Controller
                         'approved_absent' => $approvedAbsent,
                         'is_approved_absent' => $is_approved_absent,
                         'approved_absent_name' => $approved_absent_name,
+                        'has_no_checkout' => false, // Tidak ada data attendance sama sekali
                     ]);
                 }
             }
@@ -493,6 +501,12 @@ class AttendanceReportController extends Controller
                     }
                 }
                 
+                // Deteksi attendance tanpa checkout
+                $has_no_checkout = false;
+                if ($jamIn && !$jamOut) {
+                    $has_no_checkout = true;
+                }
+                
                 $result[] = [
                     'id_outlet' => $data['id_outlet'],
                     'nama_outlet' => $data['nama_outlet'],
@@ -500,6 +514,7 @@ class AttendanceReportController extends Controller
                     'jam_out' => $jamOut ? date('H:i:s', strtotime($jamOut)) : null,
                     'total_in' => $totalIn,
                     'total_out' => $totalOut,
+                    'has_no_checkout' => $has_no_checkout,
                 ];
             }
         }
@@ -794,6 +809,12 @@ class AttendanceReportController extends Controller
                             $is_holiday = true;
                             $holiday_name = $holidays[$tanggal];
                         }
+                        // Deteksi attendance tanpa checkout
+                        $has_no_checkout = false;
+                        if (!$is_off && !$is_holiday && $jam_masuk && !$jam_keluar) {
+                            $has_no_checkout = true;
+                        }
+                        
                         $rows->push((object)[
                             'tanggal' => $tanggal,
                             'user_id' => $rowUserId,
@@ -812,6 +833,7 @@ class AttendanceReportController extends Controller
                             'holiday_name' => $holiday_name,
                             'detail' => $detail,
                             'is_cross_day' => $row->is_cross_day ?? false,
+                            'has_no_checkout' => $has_no_checkout,
                         ]);
                     }
                 } else {
@@ -867,6 +889,7 @@ class AttendanceReportController extends Controller
                         'holiday_name' => $holiday_name,
                         'detail' => $detail,
                         'is_cross_day' => false,
+                        'has_no_checkout' => false, // Tidak ada data attendance sama sekali
                     ]);
                 }
             }
@@ -1038,6 +1061,12 @@ class AttendanceReportController extends Controller
                         }
                     } else { $jam_masuk = null; $jam_keluar = null; $telat = 0; $lembur = 0; }
 
+                    // Deteksi attendance tanpa checkout
+                    $has_no_checkout = false;
+                    if (!$is_off && !$holidays->has($tanggal) && $jam_masuk && !$jam_keluar) {
+                        $has_no_checkout = true;
+                    }
+                    
                     $rows->push((object) [
                         'tanggal' => $tanggal,
                         'outlet_id' => $row->outlet_id, // ✅ FIX: Include user's outlet
@@ -1046,6 +1075,7 @@ class AttendanceReportController extends Controller
                         'lembur' => $lembur,
                         'is_off' => $is_off,
                         'is_holiday' => $holidays->has($tanggal),
+                        'has_no_checkout' => $has_no_checkout,
                     ]);
                 }
             }
@@ -1777,6 +1807,12 @@ class AttendanceReportController extends Controller
                     }
 
 
+                    // Deteksi attendance tanpa checkout
+                    $has_no_checkout = false;
+                    if ($row->jam_masuk && !$row->jam_keluar) {
+                        $has_no_checkout = true;
+                    }
+                    
                     $rows->push((object)[
                         'tanggal' => $row->tanggal,
                         'user_id' => $row->user_id,
@@ -1791,6 +1827,7 @@ class AttendanceReportController extends Controller
                         'is_cross_day' => $row->is_cross_day,
                         'shift_start' => $shift->time_start ?? null,
                         'shift_end' => $shift->time_end ?? null,
+                        'has_no_checkout' => $has_no_checkout,
                     ]);
                 }
                 
@@ -2218,6 +2255,12 @@ class AttendanceReportController extends Controller
                     }
 
 
+                    // Deteksi attendance tanpa checkout
+                    $has_no_checkout = false;
+                    if ($row->jam_masuk && !$row->jam_keluar) {
+                        $has_no_checkout = true;
+                    }
+                    
                     // Fix: Pastikan data jam selalu ada, meskipun kosong - SAMA PERSIS DENGAN METHOD employeeSummary
                     $rows->push((object)[
                         'tanggal' => $row->tanggal,
@@ -2233,6 +2276,7 @@ class AttendanceReportController extends Controller
                         'is_cross_day' => $row->is_cross_day ?? false,
                         'shift_start' => $shift->time_start ?? null,
                         'shift_end' => $shift->time_end ?? null,
+                        'has_no_checkout' => $has_no_checkout,
                     ]);
                 }
 

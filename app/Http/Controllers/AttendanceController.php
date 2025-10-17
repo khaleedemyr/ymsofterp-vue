@@ -50,6 +50,7 @@ class AttendanceController extends Controller
                 'telat' => $attendanceInfo['telat'] ?? 0,
                 'lembur' => $attendanceInfo['lembur'] ?? 0,
                 'has_attendance' => $attendanceInfo ? true : false,
+                'has_no_checkout' => $attendanceInfo['has_no_checkout'] ?? false,
             ];
         }
         
@@ -211,6 +212,12 @@ class AttendanceController extends Controller
                 $workDurationMinutes = (strtotime($lastOut) - strtotime($firstIn)) / 60;
             }
             
+            // Deteksi attendance tanpa checkout
+            $has_no_checkout = false;
+            if ($firstIn && !$lastOut) {
+                $has_no_checkout = true;
+            }
+            
             $attendance[] = (object) [
                 'attendance_date' => $data['tanggal'],
                 'check_in_time' => $firstIn,
@@ -220,7 +227,8 @@ class AttendanceController extends Controller
                 'end_time' => $shift->time_end ?? null,
                 'shift_id' => $shift->shift_id ?? null,
                 'work_duration_minutes' => $workDurationMinutes,
-                'is_cross_day' => $isCrossDay
+                'is_cross_day' => $isCrossDay,
+                'has_no_checkout' => $has_no_checkout
             ];
         }
         
@@ -412,7 +420,8 @@ class AttendanceController extends Controller
                 'end_time' => $schedule->end_time,
                 'check_in_time' => $attendanceInfo->check_in_time ?? null,
                 'check_out_time' => $attendanceInfo->check_out_time ?? null,
-                'attendance_status' => $attendanceInfo ? 'present' : 'absent'
+                'attendance_status' => $attendanceInfo ? 'present' : 'absent',
+                'has_no_checkout' => $attendanceInfo->has_no_checkout ?? false
             ];
         }
         
@@ -575,12 +584,19 @@ class AttendanceController extends Controller
                 }
             }
             
+            // Deteksi attendance tanpa checkout
+            $has_no_checkout = false;
+            if (!$is_off && $firstIn && !$lastOut) {
+                $has_no_checkout = true;
+            }
+            
             $attendanceData[$data['tanggal']] = [
                 'first_in' => $firstIn ? date('H:i', strtotime($firstIn)) : null,
                 'last_out' => $lastOut ? date('H:i', strtotime($lastOut)) : null,
                 'is_cross_day' => $isCrossDay,
                 'telat' => $telat,
-                'lembur' => $lembur
+                'lembur' => $lembur,
+                'has_no_checkout' => $has_no_checkout
             ];
         }
         
