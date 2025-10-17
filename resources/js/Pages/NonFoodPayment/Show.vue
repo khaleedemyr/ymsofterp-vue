@@ -172,25 +172,38 @@
               <h3 class="text-lg font-semibold text-gray-700 mb-3">Purchase Order Attachments</h3>
               <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 <div v-for="attachment in po_attachments" :key="`po-${attachment.id}`" class="border border-gray-200 rounded-lg p-3">
-                  <div class="flex items-center gap-3">
+                  <!-- Image Thumbnail -->
+                  <div v-if="isImageFile(attachment.file_name)" class="relative group cursor-pointer" @click="openLightbox(attachment.file_path, attachment.file_name)">
+                    <div class="aspect-square bg-gray-100 border border-gray-200 rounded-lg overflow-hidden hover:shadow-lg transition-all duration-200">
+                      <img
+                        :src="attachment.file_path.startsWith('/storage/') ? attachment.file_path : `/storage/${attachment.file_path}`"
+                        :alt="attachment.file_name"
+                        class="w-full h-full object-cover hover:scale-105 transition-transform duration-200"
+                        @click.stop="openLightbox(attachment.file_path, attachment.file_name)"
+                      />
+                    </div>
+                    <div class="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-all duration-200 flex items-center justify-center">
+                      <div class="opacity-0 group-hover:opacity-100 bg-white bg-opacity-90 text-gray-800 px-3 py-1 rounded-full text-sm transition-all duration-200 flex items-center gap-2">
+                        <i class="fas fa-search-plus"></i>
+                        <span>View</span>
+                      </div>
+                    </div>
+                    <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black to-transparent text-white p-2">
+                      <p class="text-xs truncate font-medium">{{ attachment.file_name }}</p>
+                    </div>
+                  </div>
+                  
+                  <!-- Non-Image Files -->
+                  <div v-else class="flex items-center gap-3">
                     <div class="flex-shrink-0">
-                      <i v-if="isImageFile(attachment.file_name)" class="fa fa-image text-blue-500 text-xl"></i>
-                      <i v-else class="fa fa-file text-gray-500 text-xl"></i>
+                      <i class="fa fa-file text-gray-500 text-xl"></i>
                     </div>
                     <div class="flex-1 min-w-0">
                       <p class="text-sm font-medium text-gray-900 truncate">{{ attachment.file_name }}</p>
                       <p class="text-xs text-gray-500">{{ formatFileSize(attachment.file_size) }}</p>
                     </div>
                     <div class="flex-shrink-0">
-                      <button 
-                        v-if="isImageFile(attachment.file_name)" 
-                        @click="openLightbox(attachment.file_path, attachment.file_name)"
-                        class="text-blue-600 hover:text-blue-800 text-sm"
-                      >
-                        <i class="fa fa-eye"></i>
-                      </button>
                       <a 
-                        v-else 
                         :href="attachment.file_path" 
                         target="_blank" 
                         class="text-blue-600 hover:text-blue-800 text-sm"
@@ -208,10 +221,32 @@
               <h3 class="text-lg font-semibold text-gray-700 mb-3">Purchase Requisition Attachments</h3>
               <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 <div v-for="attachment in pr_attachments" :key="`pr-${attachment.id}`" class="border border-gray-200 rounded-lg p-3">
-                  <div class="flex items-center gap-3">
+                  <!-- Image Thumbnail -->
+                  <div v-if="isImageFile(attachment.file_name)" class="relative group cursor-pointer" @click="openLightbox(attachment.file_path, attachment.file_name)">
+                    <div class="aspect-square bg-gray-100 border border-gray-200 rounded-lg overflow-hidden hover:shadow-lg transition-all duration-200">
+                      <img
+                        :src="attachment.file_path.startsWith('/storage/') ? attachment.file_path : `/storage/${attachment.file_path}`"
+                        :alt="attachment.file_name"
+                        class="w-full h-full object-cover hover:scale-105 transition-transform duration-200"
+                        @click.stop="openLightbox(attachment.file_path, attachment.file_name)"
+                      />
+                    </div>
+                    <div class="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-all duration-200 flex items-center justify-center">
+                      <div class="opacity-0 group-hover:opacity-100 bg-white bg-opacity-90 text-gray-800 px-3 py-1 rounded-full text-sm transition-all duration-200 flex items-center gap-2">
+                        <i class="fas fa-search-plus"></i>
+                        <span>View</span>
+                      </div>
+                    </div>
+                    <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black to-transparent text-white p-2">
+                      <p class="text-xs truncate font-medium">{{ attachment.file_name }}</p>
+                      <p v-if="attachment.pr_description" class="text-xs text-green-300">{{ attachment.pr_description }}</p>
+                    </div>
+                  </div>
+                  
+                  <!-- Non-Image Files -->
+                  <div v-else class="flex items-center gap-3">
                     <div class="flex-shrink-0">
-                      <i v-if="isImageFile(attachment.file_name)" class="fa fa-image text-green-500 text-xl"></i>
-                      <i v-else class="fa fa-file text-gray-500 text-xl"></i>
+                      <i class="fa fa-file text-gray-500 text-xl"></i>
                     </div>
                     <div class="flex-1 min-w-0">
                       <p class="text-sm font-medium text-gray-900 truncate">{{ attachment.file_name }}</p>
@@ -219,15 +254,7 @@
                       <p v-if="attachment.pr_description" class="text-xs text-green-600 mt-1">{{ attachment.pr_description }}</p>
                     </div>
                     <div class="flex-shrink-0">
-                      <button 
-                        v-if="isImageFile(attachment.file_name)" 
-                        @click="openLightbox(attachment.file_path, attachment.file_name)"
-                        class="text-green-600 hover:text-green-800 text-sm"
-                      >
-                        <i class="fa fa-eye"></i>
-                      </button>
                       <a 
-                        v-else 
                         :href="attachment.file_path" 
                         target="_blank" 
                         class="text-green-600 hover:text-green-800 text-sm"

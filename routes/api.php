@@ -356,3 +356,9 @@ Route::get('/daily-report/summary-rating', [\App\Http\Controllers\DailyReportCon
 Route::get('/daily-report/regions', [\App\Http\Controllers\DailyReportController::class, 'getRegions']);
 Route::get('/daily-report/department-ratings', [\App\Http\Controllers\DailyReportController::class, 'getDepartmentRatings']);
 
+// User Profile Upload Routes
+Route::middleware(['auth'])->group(function () {
+    Route::post('/user/upload-avatar', [\App\Http\Controllers\UserController::class, 'uploadAvatar'])->name('api.user.upload-avatar');
+    Route::post('/user/upload-banner', [\App\Http\Controllers\UserController::class, 'uploadBanner'])->name('api.user.upload-banner');
+});
+

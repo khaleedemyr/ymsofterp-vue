@@ -2735,6 +2735,79 @@ function viewAnnouncement(id) {
     window.open(`/announcement/${id}`, '_blank');
 }
 
+// Upload Avatar Function
+function uploadAvatar() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.onchange = async (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            const formData = new FormData();
+            formData.append('avatar', file);
+            
+            try {
+                const response = await fetch('/api/user/upload-avatar', {
+                    method: 'POST',
+                    body: formData,
+                    headers: {
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+                    }
+                });
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    // Update user avatar in the UI
+                    user.avatar = result.avatar_path;
+                    Swal.fire('Berhasil!', 'Avatar berhasil diupload.', 'success');
+                } else {
+                    Swal.fire('Error!', 'Gagal mengupload avatar.', 'error');
+                }
+            } catch (error) {
+                console.error('Error uploading avatar:', error);
+                Swal.fire('Error!', 'Terjadi kesalahan saat mengupload avatar.', 'error');
+            }
+        }
+    };
+    input.click();
+}
+
+// Upload Banner Function
+function uploadBanner() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.onchange = async (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            const formData = new FormData();
+            formData.append('banner', file);
+            
+            try {
+                const response = await fetch('/api/user/upload-banner', {
+                    method: 'POST',
+                    body: formData,
+                    headers: {
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+                    }
+                });
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    // Update banner in the UI
+                    user.banner = result.banner_path;
+                    Swal.fire('Berhasil!', 'Banner berhasil diupload.', 'success');
+                } else {
+                    Swal.fire('Error!', 'Gagal mengupload banner.', 'error');
+                }
+            } catch (error) {
+                console.error('Error uploading banner:', error);
+                Swal.fire('Error!', 'Terjadi kesalahan saat mengupload banner.', 'error');
+            }
+        }
+    };
+    input.click();
+}
 
 onMounted(() => {
     updateGreeting();
@@ -2784,132 +2857,161 @@ watch(locale, () => {
             <div class="relative z-10 w-full h-screen flex flex-col">
                 <!-- Top Section: Welcome Card -->
                 <div class="flex-shrink-0 mb-4 px-4 md:px-6">
-                    <div class="backdrop-blur-md rounded-2xl shadow-2xl border p-4 md:p-6 transition-all duration-500 animate-fade-in hover:shadow-3xl"
+                    <div class="backdrop-blur-md rounded-2xl shadow-2xl border transition-all duration-500 animate-fade-in hover:shadow-3xl overflow-hidden"
                         :class="isNight ? 'bg-slate-800/90 border-slate-600/50' : 'bg-white/90 border-white/20'">
-                        <!-- Avatar user -->
-                        <div class="flex items-center gap-4 mb-4">
-                            <div v-if="user.avatar" class="w-24 h-24 rounded-full overflow-hidden border-4 border-white shadow-xl cursor-pointer hover:shadow-2xl transition-all" @click="openImageModal(`/storage/${user.avatar}`)">
-                                <img :src="user.avatar ? `/storage/${user.avatar}` : '/images/avatar-default.png'" alt="Avatar" class="w-full h-full object-cover hover:scale-105 transition-transform" />
+                        
+                        <!-- Banner Section (Optional) -->
+                        <div class="relative h-48 overflow-hidden">
+                            <!-- Custom Banner or Default Gradient -->
+                            <div v-if="user.banner" class="w-full h-full">
+                                <img :src="`/storage/${user.banner}`" 
+                                     alt="Banner" 
+                                     class="w-full h-full object-cover" />
                             </div>
-                            <div v-else class="w-24 h-24 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-3xl font-bold border-4 border-white shadow-xl">
+                            <div v-else 
+                                 class="w-full h-full bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500">
+                            </div>
+                            
+                            <!-- Banner Upload Button (Optional) -->
+                            <button @click="uploadBanner" class="absolute top-3 right-3 bg-black/20 hover:bg-black/30 text-white p-2 rounded-full transition-all">
+                                <i class="fa-solid fa-camera text-sm"></i>
+                            </button>
+                        </div>
+                        
+                        <!-- Avatar Section - Centered -->
+                        <div class="relative -mt-20 mb-6 flex flex-col items-center">
+                            <!-- Avatar - Larger and Centered -->
+                            <div v-if="user.avatar" class="w-32 h-32 rounded-full overflow-hidden border-4 border-white shadow-2xl cursor-pointer hover:shadow-3xl transition-all hover:scale-105" @click="openImageModal(`/storage/${user.avatar}`)">
+                                <img :src="user.avatar ? `/storage/${user.avatar}` : '/images/avatar-default.png'" alt="Avatar" class="w-full h-full object-cover" />
+                            </div>
+                            <div v-else class="w-32 h-32 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-4xl font-bold border-4 border-white shadow-2xl">
                                 {{ getInitials(user.nama_lengkap) }}
                             </div>
-                            <div class="flex-1">
+                            
+                            <!-- Avatar Upload Button -->
+                            <button @click="uploadAvatar" class="absolute -bottom-2 right-1/2 transform translate-x-8 bg-indigo-500 hover:bg-indigo-600 text-white p-2 rounded-full shadow-lg transition-all">
+                                <i class="fa-solid fa-camera text-sm"></i>
+                            </button>
+                        </div>
+                        
+                        <!-- User Info Section -->
+                        <div class="px-6 pb-6">
+                            <!-- Greeting and Name -->
+                            <div class="text-center mb-6">
                                 <div class="text-2xl md:text-3xl font-extrabold" :class="isNight ? 'text-white' : 'text-slate-800'">{{ greeting }},</div>
                                 <div class="text-lg md:text-xl font-bold" :class="isNight ? 'text-indigo-200' : 'text-indigo-700'">{{ user.nama_lengkap }}</div>
+                            </div>
+                            
+                            <!-- User Information Cards -->
+                            <div class="grid grid-cols-2 gap-3">
+                                <!-- Outlet -->
+                                <div class="flex items-center gap-2 p-3 rounded-lg" :class="isNight ? 'bg-slate-700/50' : 'bg-blue-50'">
+                                    <div class="w-2 h-2 rounded-full bg-blue-500"></div>
+                                    <div class="text-xs font-medium" :class="isNight ? 'text-blue-300' : 'text-blue-700'">Outlet:</div>
+                                    <div class="text-xs font-semibold" :class="isNight ? 'text-white' : 'text-slate-800'">{{ userOutlet }}</div>
+                                </div>
                                 
-                                <!-- User Information Cards -->
-                                <div class="mt-3 grid grid-cols-2 gap-2">
-                                    <!-- Outlet -->
-                                    <div class="flex items-center gap-2 p-2 rounded-lg" :class="isNight ? 'bg-slate-700/50' : 'bg-blue-50'">
-                                        <div class="w-2 h-2 rounded-full bg-blue-500"></div>
-                                        <div class="text-xs font-medium" :class="isNight ? 'text-blue-300' : 'text-blue-700'">Outlet:</div>
-                                        <div class="text-xs font-semibold" :class="isNight ? 'text-white' : 'text-slate-800'">{{ userOutlet }}</div>
-                                    </div>
-                                    
-                                    <!-- Divisi -->
-                                    <div class="flex items-center gap-2 p-2 rounded-lg" :class="isNight ? 'bg-slate-700/50' : 'bg-green-50'">
-                                        <div class="w-2 h-2 rounded-full bg-green-500"></div>
-                                        <div class="text-xs font-medium" :class="isNight ? 'text-green-300' : 'text-green-700'">Divisi:</div>
-                                        <div class="text-xs font-semibold" :class="isNight ? 'text-white' : 'text-slate-800'">{{ userDivisi }}</div>
-                                    </div>
-                                    
-                                    <!-- Level -->
-                                    <div class="flex items-center gap-2 p-2 rounded-lg" :class="isNight ? 'bg-slate-700/50' : 'bg-purple-50'">
-                                        <div class="w-2 h-2 rounded-full bg-purple-500"></div>
-                                        <div class="text-xs font-medium" :class="isNight ? 'text-purple-300' : 'text-purple-700'">Level:</div>
-                                        <div class="text-xs font-semibold" :class="isNight ? 'text-white' : 'text-slate-800'">{{ userLevel }}</div>
-                                    </div>
-                                    
-                                    <!-- Jabatan -->
-                                    <div class="flex items-center gap-2 p-2 rounded-lg" :class="isNight ? 'bg-slate-700/50' : 'bg-orange-50'">
-                                        <div class="w-2 h-2 rounded-full bg-orange-500"></div>
-                                        <div class="text-xs font-medium" :class="isNight ? 'text-orange-300' : 'text-orange-700'">Jabatan:</div>
-                                        <div class="text-xs font-semibold" :class="isNight ? 'text-white' : 'text-slate-800'">{{ userJabatan }}</div>
-                                    </div>
+                                <!-- Divisi -->
+                                <div class="flex items-center gap-2 p-3 rounded-lg" :class="isNight ? 'bg-slate-700/50' : 'bg-green-50'">
+                                    <div class="w-2 h-2 rounded-full bg-green-500"></div>
+                                    <div class="text-xs font-medium" :class="isNight ? 'text-green-300' : 'text-green-700'">Divisi:</div>
+                                    <div class="text-xs font-semibold" :class="isNight ? 'text-white' : 'text-slate-800'">{{ userDivisi }}</div>
+                                </div>
+                                
+                                <!-- Level -->
+                                <div class="flex items-center gap-2 p-3 rounded-lg" :class="isNight ? 'bg-slate-700/50' : 'bg-purple-50'">
+                                    <div class="w-2 h-2 rounded-full bg-purple-500"></div>
+                                    <div class="text-xs font-medium" :class="isNight ? 'text-purple-300' : 'text-purple-700'">Level:</div>
+                                    <div class="text-xs font-semibold" :class="isNight ? 'text-white' : 'text-slate-800'">{{ userLevel }}</div>
+                                </div>
+                                
+                                <!-- Jabatan -->
+                                <div class="flex items-center gap-2 p-3 rounded-lg" :class="isNight ? 'bg-slate-700/50' : 'bg-orange-50'">
+                                    <div class="w-2 h-2 rounded-full bg-orange-500"></div>
+                                    <div class="text-xs font-medium" :class="isNight ? 'text-orange-300' : 'text-orange-700'">Jabatan:</div>
+                                    <div class="text-xs font-semibold" :class="isNight ? 'text-white' : 'text-slate-800'">{{ userJabatan }}</div>
                                 </div>
                             </div>
-                        </div>
-                        
-                        <!-- Active Sanctions Badge -->
-                        <div v-if="activeSanctions.length > 0" class="mt-4 p-4 rounded-xl border shadow-lg animate-fade-in"
-                            :class="[
-                                isNight ? 'bg-red-900/80 text-white border-red-600' : 'bg-gradient-to-r from-red-50 to-orange-50 text-red-800 border-red-200'
-                            ]">
-                            <div class="flex items-center gap-2 mb-3">
-                                <i class="fa-solid fa-gavel text-lg" :class="isNight ? 'text-red-300' : 'text-red-600'"></i>
-                                <span class="font-semibold text-sm" :class="isNight ? 'text-red-300' : 'text-red-600'">Sanksi Aktif</span>
-                            </div>
-                            <!-- Debug info -->
-                            <div class="text-xs mb-2" :class="isNight ? 'text-red-300' : 'text-red-600'">
-                                Debug: {{ activeSanctions.length }} sanctions found
-                            </div>
-                            <div v-for="sanction in activeSanctions" :key="sanction.id" class="mb-3 last:mb-0">
-                                <div v-for="(action, index) in sanction.sanctions" :key="index" 
-                                     class="p-3 rounded-lg border mb-2" 
-                                     :class="isNight ? 'bg-red-800/50 border-red-700' : 'bg-white/80 border-red-200'"
-                                     v-show="action && isSanctionActive(action)">
-                                    <!-- Sanction Details -->
-                                    <div class="space-y-2">
-                                        <!-- Sanction Name -->
-                                        <div class="flex items-center justify-between mb-2">
-                                            <div class="font-semibold text-sm" :class="isNight ? 'text-white' : 'text-red-800'">
-                                                {{ action.name }}
+                            
+                            <!-- Active Sanctions Badge -->
+                            <div v-if="activeSanctions.length > 0" class="mt-4 p-4 rounded-xl border shadow-lg animate-fade-in"
+                                :class="[
+                                    isNight ? 'bg-red-900/80 text-white border-red-600' : 'bg-gradient-to-r from-red-50 to-orange-50 text-red-800 border-red-200'
+                                ]">
+                                <div class="flex items-center gap-2 mb-3">
+                                    <i class="fa-solid fa-gavel text-lg" :class="isNight ? 'text-red-300' : 'text-red-600'"></i>
+                                    <span class="font-semibold text-sm" :class="isNight ? 'text-red-300' : 'text-red-600'">Sanksi Aktif</span>
+                                </div>
+                                <!-- Debug info -->
+                                <div class="text-xs mb-2" :class="isNight ? 'text-red-300' : 'text-red-600'">
+                                    Debug: {{ activeSanctions.length }} sanctions found
+                                </div>
+                                <div v-for="sanction in activeSanctions" :key="sanction.id" class="mb-3 last:mb-0">
+                                    <div v-for="(action, index) in sanction.sanctions" :key="index" 
+                                         class="p-3 rounded-lg border mb-2" 
+                                         :class="isNight ? 'bg-red-800/50 border-red-700' : 'bg-white/80 border-red-200'"
+                                         v-show="action && isSanctionActive(action)">
+                                        <!-- Sanction Details -->
+                                        <div class="space-y-2">
+                                            <!-- Sanction Name -->
+                                            <div class="flex items-center justify-between mb-2">
+                                                <div class="font-semibold text-sm" :class="isNight ? 'text-white' : 'text-red-800'">
+                                                    {{ action.name }}
+                                                </div>
+                                                <div class="text-xs px-2 py-1 rounded-full" 
+                                                     :class="isNight ? 'bg-red-700 text-red-200' : 'bg-red-100 text-red-700'">
+                                                    Aktif
+                                                </div>
                                             </div>
-                                            <div class="text-xs px-2 py-1 rounded-full" 
-                                                 :class="isNight ? 'bg-red-700 text-red-200' : 'bg-red-100 text-red-700'">
-                                                Aktif
+                                            
+                                            <!-- Violation Date -->
+                                            <div class="text-xs" :class="isNight ? 'text-red-300' : 'text-red-600'">
+                                                <span class="font-medium">Tanggal Pelanggaran:</span> {{ formatSanctionDate(sanction.violation_date) }}
                                             </div>
-                                        </div>
-                                        
-                                        <!-- Violation Date -->
-                                        <div class="text-xs" :class="isNight ? 'text-red-300' : 'text-red-600'">
-                                            <span class="font-medium">Tanggal Pelanggaran:</span> {{ formatSanctionDate(sanction.violation_date) }}
-                                        </div>
-                                        
-                                        <!-- Violation Location -->
-                                        <div class="text-xs" :class="isNight ? 'text-red-300' : 'text-red-600'">
-                                            <span class="font-medium">Tempat Terjadi Pelanggaran:</span> {{ sanction.location }}
-                                        </div>
-                                        
-                                        <!-- Violation Details -->
-                                        <div class="text-xs" :class="isNight ? 'text-red-300' : 'text-red-600'">
-                                            <span class="font-medium">Detail Pelanggaran:</span> {{ sanction.violation_details }}
-                                        </div>
-                                        
-                                        <!-- Effective Date -->
-                                        <div class="text-xs" :class="isNight ? 'text-red-300' : 'text-red-600'">
-                                            <span class="font-medium">Tanggal Berlaku:</span> {{ formatSanctionDate(action.effective_date) }}
-                                        </div>
-                                        
-                                        <!-- End Date -->
-                                        <div class="text-xs" :class="isNight ? 'text-red-300' : 'text-red-600'">
-                                            <span class="font-medium">Tanggal Berakhir:</span> {{ formatSanctionDate(action.end_date) }}
-                                        </div>
-                                        
-                                        <!-- Remarks -->
-                                        <div v-if="action.remarks" class="text-xs" :class="isNight ? 'text-red-300' : 'text-red-600'">
-                                            <span class="font-medium">Keterangan:</span> {{ action.remarks }}
+                                            
+                                            <!-- Violation Location -->
+                                            <div class="text-xs" :class="isNight ? 'text-red-300' : 'text-red-600'">
+                                                <span class="font-medium">Tempat Terjadi Pelanggaran:</span> {{ sanction.location }}
+                                            </div>
+                                            
+                                            <!-- Violation Details -->
+                                            <div class="text-xs" :class="isNight ? 'text-red-300' : 'text-red-600'">
+                                                <span class="font-medium">Detail Pelanggaran:</span> {{ sanction.violation_details }}
+                                            </div>
+                                            
+                                            <!-- Effective Date -->
+                                            <div class="text-xs" :class="isNight ? 'text-red-300' : 'text-red-600'">
+                                                <span class="font-medium">Tanggal Berlaku:</span> {{ formatSanctionDate(action.effective_date) }}
+                                            </div>
+                                            
+                                            <!-- End Date -->
+                                            <div class="text-xs" :class="isNight ? 'text-red-300' : 'text-red-600'">
+                                                <span class="font-medium">Tanggal Berakhir:</span> {{ formatSanctionDate(action.end_date) }}
+                                            </div>
+                                            
+                                            <!-- Remarks -->
+                                            <div v-if="action.remarks" class="text-xs" :class="isNight ? 'text-red-300' : 'text-red-600'">
+                                                <span class="font-medium">Keterangan:</span> {{ action.remarks }}
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
                             </div>
-                        </div>
 
-                        
-                        <!-- Quote Section -->
-                        <div class="p-4 rounded-xl border shadow-lg animate-fade-in"
-                            :class="[
-                                isNight ? 'bg-slate-700/80 text-white border-slate-600' : 'bg-gradient-to-r from-indigo-50 to-purple-50 text-slate-800 border-indigo-200'
-                            ]">
-                            <div class="flex items-center gap-2 mb-2">
-                                <span class="font-semibold text-sm" :class="isNight ? 'text-indigo-300' : 'text-indigo-600'">{{ t('home.quote_of_the_day') }}</span>
+                            <!-- Quote Section -->
+                            <div class="mt-4 p-4 rounded-xl border shadow-lg animate-fade-in"
+                                :class="[
+                                    isNight ? 'bg-slate-700/80 text-white border-slate-600' : 'bg-gradient-to-r from-indigo-50 to-purple-50 text-slate-800 border-indigo-200'
+                                ]">
+                                <div class="flex items-center gap-2 mb-2">
+                                    <span class="font-semibold text-sm" :class="isNight ? 'text-indigo-300' : 'text-indigo-600'">{{ t('home.quote_of_the_day') }}</span>
+                                </div>
+                                <div v-if="loadingQuote" class="italic text-sm" :class="isNight ? 'text-slate-300' : 'text-slate-500'">{{ t('home.loading_quote') }}</div>
+                                <template v-else>
+                                    <div class="italic text-sm md:text-base" :class="isNight ? 'text-slate-200' : 'text-slate-700'">"{{ quote.text }}"</div>
+                                    <div class="mt-1 text-right font-semibold text-xs" :class="isNight ? 'text-indigo-300' : 'text-indigo-600'">- {{ quote.author }}</div>
+                                </template>
                             </div>
-                            <div v-if="loadingQuote" class="italic text-sm" :class="isNight ? 'text-slate-300' : 'text-slate-500'">{{ t('home.loading_quote') }}</div>
-                            <template v-else>
-                                <div class="italic text-sm md:text-base" :class="isNight ? 'text-slate-200' : 'text-slate-700'">"{{ quote.text }}"</div>
-                                <div class="mt-1 text-right font-semibold text-xs" :class="isNight ? 'text-indigo-300' : 'text-indigo-600'">- {{ quote.author }}</div>
-                            </template>
                         </div>
                     </div>
                 </div>

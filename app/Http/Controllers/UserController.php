@@ -705,4 +705,82 @@ class UserController extends Controller
             ], 500);
         }
     }
+
+    /**
+     * Upload avatar for authenticated user
+     */
+    public function uploadAvatar(Request $request)
+    {
+        $request->validate([
+            'avatar' => 'required|image|mimes:jpeg,png,jpg,gif|max:2048'
+        ]);
+
+        try {
+            $user = auth()->user();
+            
+            // Delete old avatar if exists
+            if ($user->avatar && \Storage::disk('public')->exists($user->avatar)) {
+                \Storage::disk('public')->delete($user->avatar);
+            }
+
+            // Store new avatar
+            $avatarPath = $request->file('avatar')->store('avatars', 'public');
+            
+            // Update user record
+            $user->update(['avatar' => $avatarPath]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Avatar berhasil diupload',
+                'avatar_path' => $avatarPath
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error('Error uploading avatar: ' . $e->getMessage());
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal mengupload avatar: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Upload banner for authenticated user
+     */
+    public function uploadBanner(Request $request)
+    {
+        $request->validate([
+            'banner' => 'required|image|mimes:jpeg,png,jpg,gif|max:5120' // 5MB max
+        ]);
+
+        try {
+            $user = auth()->user();
+            
+            // Delete old banner if exists
+            if ($user->banner && \Storage::disk('public')->exists($user->banner)) {
+                \Storage::disk('public')->delete($user->banner);
+            }
+
+            // Store new banner
+            $bannerPath = $request->file('banner')->store('banners', 'public');
+            
+            // Update user record
+            $user->update(['banner' => $bannerPath]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Banner berhasil diupload',
+                'banner_path' => $bannerPath
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error('Error uploading banner: ' . $e->getMessage());
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal mengupload banner: ' . $e->getMessage()
+            ], 500);
+        }
+    }
 } 

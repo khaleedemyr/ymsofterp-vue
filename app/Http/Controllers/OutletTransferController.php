@@ -342,163 +342,163 @@ class OutletTransferController extends Controller
             $qty_medium = $item->qty_medium ?? 0;
             $qty_large = $item->qty_large ?? 0;
 
-            // Update stok di warehouse outlet asal (kurangi)
-            $stockFrom = DB::table('outlet_food_inventory_stocks')
-                ->where('inventory_item_id', $inventory_item_id)
-                ->where('id_outlet', $warehouseFrom->outlet_id)
+                // Update stok di warehouse outlet asal (kurangi)
+                $stockFrom = DB::table('outlet_food_inventory_stocks')
+                    ->where('inventory_item_id', $inventory_item_id)
+                    ->where('id_outlet', $warehouseFrom->outlet_id)
                 ->where('warehouse_outlet_id', $transfer->warehouse_outlet_from_id)
-                ->first();
+                    ->first();
 
-            if (!$stockFrom) {
-                throw new \Exception('Stok tidak ditemukan di warehouse outlet asal');
-            }
+                if (!$stockFrom) {
+                    throw new \Exception('Stok tidak ditemukan di warehouse outlet asal');
+                }
 
-            DB::table('outlet_food_inventory_stocks')
-                ->where('id', $stockFrom->id)
-                ->update([
-                    'qty_small' => $stockFrom->qty_small - $qty_small,
-                    'qty_medium' => $stockFrom->qty_medium - $qty_medium,
-                    'qty_large' => $stockFrom->qty_large - $qty_large,
-                    'updated_at' => now(),
-                ]);
-
-            // Update stok di warehouse outlet tujuan (tambah)
-            $stockTo = DB::table('outlet_food_inventory_stocks')
-                ->where('inventory_item_id', $inventory_item_id)
-                ->where('id_outlet', $warehouseTo->outlet_id)
-                ->where('warehouse_outlet_id', $transfer->warehouse_outlet_to_id)
-                ->first();
-
-            if (!$stockTo) {
-                // Buat stok baru jika belum ada
-                DB::table('outlet_food_inventory_stocks')->insert([
-                    'inventory_item_id' => $inventory_item_id,
-                    'id_outlet' => $warehouseTo->outlet_id,
-                    'warehouse_outlet_id' => $transfer->warehouse_outlet_to_id,
-                    'qty_small' => $qty_small,
-                    'qty_medium' => $qty_medium,
-                    'qty_large' => $qty_large,
-                    'value' => $qty_small * $stockFrom->last_cost_small,
-                    'last_cost_small' => $stockFrom->last_cost_small,
-                    'last_cost_medium' => $stockFrom->last_cost_medium,
-                    'last_cost_large' => $stockFrom->last_cost_large,
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ]);
-                $stockTo = (object) [
-                    'qty_small' => 0,
-                    'qty_medium' => 0,
-                    'qty_large' => 0,
-                    'last_cost_small' => $stockFrom->last_cost_small,
-                    'last_cost_medium' => $stockFrom->last_cost_medium,
-                    'last_cost_large' => $stockFrom->last_cost_large,
-                ];
-            } else {
-                // Update stok yang sudah ada
                 DB::table('outlet_food_inventory_stocks')
-                    ->where('id', $stockTo->id)
+                    ->where('id', $stockFrom->id)
                     ->update([
-                        'qty_small' => $stockTo->qty_small + $qty_small,
-                        'qty_medium' => $stockTo->qty_medium + $qty_medium,
-                        'qty_large' => $stockTo->qty_large + $qty_large,
+                        'qty_small' => $stockFrom->qty_small - $qty_small,
+                        'qty_medium' => $stockFrom->qty_medium - $qty_medium,
+                        'qty_large' => $stockFrom->qty_large - $qty_large,
                         'updated_at' => now(),
                     ]);
-            }
 
-            // Hitung MAC (Moving Average Cost) untuk warehouse outlet tujuan
-            $qty_lama = $stockTo->qty_small;
-            $nilai_lama = $stockTo->qty_small * $stockTo->last_cost_small;
-            $qty_baru = $qty_small;
-            $nilai_baru = $qty_small * $stockFrom->last_cost_small;
-            $total_qty = $qty_lama + $qty_baru;
-            $total_nilai = $nilai_lama + $nilai_baru;
-            $mac = $total_qty > 0 ? $total_nilai / $total_qty : $stockFrom->last_cost_small;
+                // Update stok di warehouse outlet tujuan (tambah)
+                $stockTo = DB::table('outlet_food_inventory_stocks')
+                    ->where('inventory_item_id', $inventory_item_id)
+                    ->where('id_outlet', $warehouseTo->outlet_id)
+                ->where('warehouse_outlet_id', $transfer->warehouse_outlet_to_id)
+                    ->first();
+
+                if (!$stockTo) {
+                    // Buat stok baru jika belum ada
+                    DB::table('outlet_food_inventory_stocks')->insert([
+                        'inventory_item_id' => $inventory_item_id,
+                        'id_outlet' => $warehouseTo->outlet_id,
+                    'warehouse_outlet_id' => $transfer->warehouse_outlet_to_id,
+                        'qty_small' => $qty_small,
+                        'qty_medium' => $qty_medium,
+                        'qty_large' => $qty_large,
+                        'value' => $qty_small * $stockFrom->last_cost_small,
+                        'last_cost_small' => $stockFrom->last_cost_small,
+                        'last_cost_medium' => $stockFrom->last_cost_medium,
+                        'last_cost_large' => $stockFrom->last_cost_large,
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+                    $stockTo = (object) [
+                        'qty_small' => 0,
+                        'qty_medium' => 0,
+                        'qty_large' => 0,
+                        'last_cost_small' => $stockFrom->last_cost_small,
+                        'last_cost_medium' => $stockFrom->last_cost_medium,
+                        'last_cost_large' => $stockFrom->last_cost_large,
+                    ];
+                } else {
+                    // Update stok yang sudah ada
+                    DB::table('outlet_food_inventory_stocks')
+                        ->where('id', $stockTo->id)
+                        ->update([
+                            'qty_small' => $stockTo->qty_small + $qty_small,
+                            'qty_medium' => $stockTo->qty_medium + $qty_medium,
+                            'qty_large' => $stockTo->qty_large + $qty_large,
+                            'updated_at' => now(),
+                        ]);
+                }
+
+                // Hitung MAC (Moving Average Cost) untuk warehouse outlet tujuan
+                $qty_lama = $stockTo->qty_small;
+                $nilai_lama = $stockTo->qty_small * $stockTo->last_cost_small;
+                $qty_baru = $qty_small;
+                $nilai_baru = $qty_small * $stockFrom->last_cost_small;
+                $total_qty = $qty_lama + $qty_baru;
+                $total_nilai = $nilai_lama + $nilai_baru;
+                $mac = $total_qty > 0 ? $total_nilai / $total_qty : $stockFrom->last_cost_small;
 
             // Ambil data konversi dari tabel items
             $itemMaster = DB::table('items')->where('id', $item->item_id)->first();
             $smallConv = $itemMaster->small_conversion_qty ?: 1;
             $mediumConv = $itemMaster->medium_conversion_qty ?: 1;
 
-            // Update MAC di stok warehouse outlet tujuan
-            DB::table('outlet_food_inventory_stocks')
-                ->where('inventory_item_id', $inventory_item_id)
-                ->where('id_outlet', $warehouseTo->outlet_id)
+                // Update MAC di stok warehouse outlet tujuan
+                DB::table('outlet_food_inventory_stocks')
+                    ->where('inventory_item_id', $inventory_item_id)
+                    ->where('id_outlet', $warehouseTo->outlet_id)
                 ->where('warehouse_outlet_id', $transfer->warehouse_outlet_to_id)
-                ->update([
-                    'last_cost_small' => $mac,
-                    'last_cost_medium' => $mac * $smallConv,
-                    'last_cost_large' => $mac * $smallConv * $mediumConv,
-                ]);
+                    ->update([
+                        'last_cost_small' => $mac,
+                        'last_cost_medium' => $mac * $smallConv,
+                        'last_cost_large' => $mac * $smallConv * $mediumConv,
+                    ]);
 
-            // Insert kartu stok OUT di warehouse outlet asal
-            DB::table('outlet_food_inventory_cards')->insert([
-                'inventory_item_id' => $inventory_item_id,
-                'id_outlet' => $warehouseFrom->outlet_id,
+                // Insert kartu stok OUT di warehouse outlet asal
+                DB::table('outlet_food_inventory_cards')->insert([
+                    'inventory_item_id' => $inventory_item_id,
+                    'id_outlet' => $warehouseFrom->outlet_id,
                 'warehouse_outlet_id' => $transfer->warehouse_outlet_from_id,
                 'date' => $transfer->transfer_date,
-                'reference_type' => 'outlet_transfer',
-                'reference_id' => $transfer->id,
-                'out_qty_small' => $qty_small,
-                'out_qty_medium' => $qty_medium,
-                'out_qty_large' => $qty_large,
-                'cost_per_small' => $stockFrom->last_cost_small,
-                'cost_per_medium' => $stockFrom->last_cost_medium,
-                'cost_per_large' => $stockFrom->last_cost_large,
-                'value_out' => $qty_small * $stockFrom->last_cost_small,
-                'saldo_qty_small' => $stockFrom->qty_small - $qty_small,
-                'saldo_qty_medium' => $stockFrom->qty_medium - $qty_medium,
-                'saldo_qty_large' => $stockFrom->qty_large - $qty_large,
-                'saldo_value' => ($stockFrom->qty_small - $qty_small) * $stockFrom->last_cost_small,
-                'description' => 'Stock Out - Outlet Transfer',
-                'created_at' => now(),
-            ]);
+                    'reference_type' => 'outlet_transfer',
+                    'reference_id' => $transfer->id,
+                    'out_qty_small' => $qty_small,
+                    'out_qty_medium' => $qty_medium,
+                    'out_qty_large' => $qty_large,
+                    'cost_per_small' => $stockFrom->last_cost_small,
+                    'cost_per_medium' => $stockFrom->last_cost_medium,
+                    'cost_per_large' => $stockFrom->last_cost_large,
+                    'value_out' => $qty_small * $stockFrom->last_cost_small,
+                    'saldo_qty_small' => $stockFrom->qty_small - $qty_small,
+                    'saldo_qty_medium' => $stockFrom->qty_medium - $qty_medium,
+                    'saldo_qty_large' => $stockFrom->qty_large - $qty_large,
+                    'saldo_value' => ($stockFrom->qty_small - $qty_small) * $stockFrom->last_cost_small,
+                    'description' => 'Stock Out - Outlet Transfer',
+                    'created_at' => now(),
+                ]);
 
-            // Insert kartu stok IN di warehouse outlet tujuan
-            DB::table('outlet_food_inventory_cards')->insert([
-                'inventory_item_id' => $inventory_item_id,
-                'id_outlet' => $warehouseTo->outlet_id,
+                // Insert kartu stok IN di warehouse outlet tujuan
+                DB::table('outlet_food_inventory_cards')->insert([
+                    'inventory_item_id' => $inventory_item_id,
+                    'id_outlet' => $warehouseTo->outlet_id,
                 'warehouse_outlet_id' => $transfer->warehouse_outlet_to_id,
                 'date' => $transfer->transfer_date,
-                'reference_type' => 'outlet_transfer',
-                'reference_id' => $transfer->id,
-                'in_qty_small' => $qty_small,
-                'in_qty_medium' => $qty_medium,
-                'in_qty_large' => $qty_large,
-                'cost_per_small' => $stockFrom->last_cost_small,
-                'cost_per_medium' => $stockFrom->last_cost_medium,
-                'cost_per_large' => $stockFrom->last_cost_large,
-                'value_in' => $qty_small * $stockFrom->last_cost_small,
-                'saldo_qty_small' => $stockTo->qty_small + $qty_small,
-                'saldo_qty_medium' => $stockTo->qty_medium + $qty_medium,
-                'saldo_qty_large' => $stockTo->qty_large + $qty_large,
-                'saldo_value' => ($stockTo->qty_small + $qty_small) * $mac,
-                'description' => 'Stock In - Outlet Transfer',
-                'created_at' => now(),
-            ]);
+                    'reference_type' => 'outlet_transfer',
+                    'reference_id' => $transfer->id,
+                    'in_qty_small' => $qty_small,
+                    'in_qty_medium' => $qty_medium,
+                    'in_qty_large' => $qty_large,
+                    'cost_per_small' => $stockFrom->last_cost_small,
+                    'cost_per_medium' => $stockFrom->last_cost_medium,
+                    'cost_per_large' => $stockFrom->last_cost_large,
+                    'value_in' => $qty_small * $stockFrom->last_cost_small,
+                    'saldo_qty_small' => $stockTo->qty_small + $qty_small,
+                    'saldo_qty_medium' => $stockTo->qty_medium + $qty_medium,
+                    'saldo_qty_large' => $stockTo->qty_large + $qty_large,
+                    'saldo_value' => ($stockTo->qty_small + $qty_small) * $mac,
+                    'description' => 'Stock In - Outlet Transfer',
+                    'created_at' => now(),
+                ]);
 
-            // Insert cost history untuk warehouse outlet tujuan
-            $lastCostHistory = DB::table('outlet_food_inventory_cost_histories')
-                ->where('inventory_item_id', $inventory_item_id)
-                ->where('id_outlet', $warehouseTo->outlet_id)
+                // Insert cost history untuk warehouse outlet tujuan
+                $lastCostHistory = DB::table('outlet_food_inventory_cost_histories')
+                    ->where('inventory_item_id', $inventory_item_id)
+                    ->where('id_outlet', $warehouseTo->outlet_id)
                 ->where('warehouse_outlet_id', $transfer->warehouse_outlet_to_id)
-                ->orderByDesc('date')
-                ->orderByDesc('created_at')
-                ->first();
-            $old_cost = $lastCostHistory ? $lastCostHistory->new_cost : 0;
+                    ->orderByDesc('date')
+                    ->orderByDesc('created_at')
+                    ->first();
+                $old_cost = $lastCostHistory ? $lastCostHistory->new_cost : 0;
 
-            DB::table('outlet_food_inventory_cost_histories')->insert([
-                'inventory_item_id' => $inventory_item_id,
-                'id_outlet' => $warehouseTo->outlet_id,
+                DB::table('outlet_food_inventory_cost_histories')->insert([
+                    'inventory_item_id' => $inventory_item_id,
+                    'id_outlet' => $warehouseTo->outlet_id,
                 'warehouse_outlet_id' => $transfer->warehouse_outlet_to_id,
                 'date' => $transfer->transfer_date,
-                'old_cost' => $old_cost,
-                'new_cost' => $stockFrom->last_cost_small,
-                'mac' => $mac,
-                'type' => 'outlet_transfer',
-                'reference_type' => 'outlet_transfer',
-                'reference_id' => $transfer->id,
-                'created_at' => now(),
-            ]);
+                    'old_cost' => $old_cost,
+                    'new_cost' => $stockFrom->last_cost_small,
+                    'mac' => $mac,
+                    'type' => 'outlet_transfer',
+                    'reference_type' => 'outlet_transfer',
+                    'reference_id' => $transfer->id,
+                    'created_at' => now(),
+                ]);
         }
     }
 
