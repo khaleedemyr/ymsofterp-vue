@@ -2,6 +2,20 @@
   <AppLayout>
     <div class="w-full min-h-screen py-8 px-2 md:px-6">
       <h1 class="text-2xl font-bold mb-6">Laporan Invoice Outlet</h1>
+      
+      <!-- Info Box -->
+      <div v-if="!props.hasFilters" class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+        <div class="flex items-start">
+          <i class="fas fa-info-circle text-blue-500 mt-1 mr-3"></i>
+          <div>
+            <h3 class="text-blue-800 font-semibold mb-1">Cara menggunakan laporan ini:</h3>
+            <p class="text-blue-700 text-sm">
+              Isi minimal satu filter di bawah ini (pencarian, tanggal, atau outlet) kemudian klik tombol "Load Data" untuk melihat data laporan invoice outlet.
+            </p>
+          </div>
+        </div>
+      </div>
+      
       <!-- Filter & Searchbar -->
       <form @submit.prevent="applyFilter" class="flex flex-wrap gap-2 mb-4 items-end">
         <div v-if="isSuperuser" class="flex items-center gap-2">
@@ -23,7 +37,10 @@
           <label class="block text-xs font-bold mb-1">Tanggal Sampai</label>
           <input v-model="filterTo" type="date" class="form-input rounded border px-2 py-1" />
         </div>
-        <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded font-bold">Terapkan</button>
+        <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded font-bold flex items-center gap-2">
+          <i class="fas fa-search"></i>
+          Load Data
+        </button>
       </form>
       <!-- Report Table -->
       <div class="overflow-x-auto bg-white rounded-xl shadow-lg">
@@ -102,8 +119,19 @@
                 </tr>
               </transition>
             </template>
-            <tr v-if="!props.data.length">
-              <td colspan="8" class="text-center py-8 text-gray-400">Tidak ada data.</td>
+            <tr v-if="!props.hasFilters">
+              <td colspan="8" class="text-center py-12">
+                <div class="flex flex-col items-center space-y-4">
+                  <div class="text-gray-500 text-lg">
+                    <i class="fas fa-filter text-4xl mb-4"></i>
+                    <p class="font-semibold">Silakan isi filter terlebih dahulu</p>
+                    <p class="text-sm">Pilih outlet, tanggal, atau masukkan kata kunci pencarian untuk melihat data laporan invoice outlet.</p>
+                  </div>
+                </div>
+              </td>
+            </tr>
+            <tr v-else-if="!props.data.length">
+              <td colspan="8" class="text-center py-8 text-gray-400">Tidak ada data yang sesuai dengan filter yang dipilih.</td>
             </tr>
           </tbody>
         </table>
@@ -122,7 +150,8 @@ const props = defineProps({
   details: Object,
   outlets: Array,
   filters: Object,
-  user_id_outlet: Number
+  user_id_outlet: Number,
+  hasFilters: Boolean
 });
 
 const page = usePage();
@@ -140,6 +169,15 @@ function toggleExpand(id) {
 }
 
 function applyFilter() {
+  // Validasi minimal ada satu filter yang diisi
+  const hasAnyFilter = filterSearch.value || filterFrom.value || filterTo.value || 
+                      (isSuperuser.value && filterOutlet.value);
+  
+  if (!hasAnyFilter) {
+    alert('Silakan isi minimal satu filter (pencarian, tanggal, atau outlet) untuk melihat data.');
+    return;
+  }
+  
   router.get(route('report-invoice-outlet'), {
     outlet_id: isSuperuser.value ? filterOutlet.value : undefined,
     search: filterSearch.value || undefined,

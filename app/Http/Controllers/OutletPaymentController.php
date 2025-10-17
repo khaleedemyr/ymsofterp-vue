@@ -1012,6 +1012,26 @@ class OutletPaymentController extends Controller
     {
         $user = auth()->user();
         
+        // Ambil daftar outlet untuk filter
+        $outlets = DB::table('tbl_data_outlet')->select('id_outlet as id', 'nama_outlet as name')->orderBy('nama_outlet')->get();
+        
+        // Cek apakah ada filter yang diterapkan
+        $hasFilters = $request->filled('search') || $request->filled('from') || $request->filled('to') || 
+                      ($user->id_outlet == 1 && $request->filled('outlet_id')) ||
+                      ($user->id_outlet != 1);
+        
+        // Jika tidak ada filter, return dengan data kosong
+        if (!$hasFilters) {
+            return Inertia::render('OutletPayment/ReportInvoiceOutlet', [
+                'data' => collect([]),
+                'details' => [],
+                'outlets' => $outlets,
+                'filters' => $request->only(['search', 'from', 'to', 'outlet_id']),
+                'user_id_outlet' => $user->id_outlet,
+                'hasFilters' => false,
+            ]);
+        }
+        
         // Query untuk GR (Good Receive)
         $grQuery = DB::table('outlet_payments as pay')
             ->join('tbl_data_outlet as o', 'pay.outlet_id', '=', 'o.id_outlet')
@@ -1171,14 +1191,14 @@ class OutletPaymentController extends Controller
                 $details[$row->gr_id][] = $row;
             }
         }
-        // Ambil daftar outlet untuk filter
-        $outlets = DB::table('tbl_data_outlet')->select('id_outlet as id', 'nama_outlet as name')->orderBy('nama_outlet')->get();
+        
         return Inertia::render('OutletPayment/ReportInvoiceOutlet', [
             'data' => $data,
             'details' => $details,
             'outlets' => $outlets,
             'filters' => $request->only(['search', 'from', 'to', 'outlet_id']),
             'user_id_outlet' => $user->id_outlet,
+            'hasFilters' => true,
         ]);
     }
 } 
