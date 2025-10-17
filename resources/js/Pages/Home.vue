@@ -2794,15 +2794,10 @@ function uploadBanner() {
                 
                 if (response.ok) {
                     const result = await response.json();
-                    console.log('Upload response:', result);
                     // Update banner in the UI
                     user.banner = result.banner_path;
-                    console.log('Banner uploaded successfully:', result.banner_path);
-                    console.log('User banner after update:', user.banner);
                     Swal.fire('Berhasil!', 'Banner berhasil diupload.', 'success');
                 } else {
-                    const errorText = await response.text();
-                    console.error('Upload failed:', response.status, errorText);
                     Swal.fire('Error!', 'Gagal mengupload banner.', 'error');
                 }
             } catch (error) {
@@ -2815,16 +2810,12 @@ function uploadBanner() {
 }
 
 function handleBannerError(event) {
-    console.error('Banner image failed to load:', event.target.src);
-    console.log('User banner value:', user.banner);
     // Hide the image and show gradient instead
     event.target.style.display = 'none';
     event.target.parentElement.innerHTML = '<div class="w-full h-full bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500"></div>';
 }
 
 onMounted(() => {
-    console.log('User data on mount:', user);
-    console.log('User banner value:', user.banner);
     updateGreeting();
     setInterval(updateTime, 1000);
     fetchQuote();

@@ -60,6 +60,7 @@ class HandleInertiaRequests extends Middleware
                     'division_id' => $request->user()->division_id,
                     'nama_lengkap' => $request->user()->nama_lengkap ?? $request->user()->name,
                     'avatar' => $request->user()->avatar ?? null,
+                    'banner' => $request->user()->banner ?? null,
                     'jabatan' => $request->user()->load(['jabatan.level'])->jabatan ? [
                         'nama_jabatan' => $request->user()->jabatan->nama_jabatan,
                         'level' => $request->user()->jabatan->level ? [

@@ -125,13 +125,13 @@
               <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 <div v-for="attachment in poAttachments" :key="`po-${attachment.id}`" class="border border-gray-200 rounded-lg p-3">
                   <!-- Image Thumbnail -->
-                  <div v-if="isImageFile(attachment.file_name)" class="relative group cursor-pointer" @click="openLightbox(attachment.file_path, attachment.file_name)">
+                  <div v-if="isImageFile(attachment.file_name)" class="relative group cursor-pointer" @click="openLightbox(`/po-ops/attachments/${attachment.id}/view`, attachment.file_name)">
                     <div class="aspect-square bg-gray-100 border border-gray-200 rounded-lg overflow-hidden hover:shadow-lg transition-all duration-200">
                       <img
-                        :src="attachment.file_path.startsWith('/storage/') ? attachment.file_path : `/storage/${attachment.file_path}`"
+                        :src="`/po-ops/attachments/${attachment.id}/view`"
                         :alt="attachment.file_name"
                         class="w-full h-full object-cover hover:scale-105 transition-transform duration-200"
-                        @click.stop="openLightbox(attachment.file_path, attachment.file_name)"
+                        @click.stop="openLightbox(`/po-ops/attachments/${attachment.id}/view`, attachment.file_name)"
                       />
                     </div>
                     <div class="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-all duration-200 flex items-center justify-center">
@@ -239,13 +239,13 @@
                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                   <div v-for="attachment in outletData.pr_attachments" :key="`pr-${attachment.id}`" class="border border-green-200 rounded-lg p-3 bg-white">
                     <!-- Image Thumbnail -->
-                    <div v-if="isImageFile(attachment.file_name)" class="relative group cursor-pointer" @click="openLightbox(attachment.file_path, attachment.file_name)">
+                    <div v-if="isImageFile(attachment.file_name)" class="relative group cursor-pointer" @click="openLightbox(`/purchase-requisitions/attachments/${attachment.id}/view`, attachment.file_name)">
                       <div class="aspect-square bg-gray-100 border border-gray-200 rounded-lg overflow-hidden hover:shadow-lg transition-all duration-200">
                         <img
-                          :src="attachment.file_path.startsWith('/storage/') ? attachment.file_path : `/storage/${attachment.file_path}`"
+                          :src="`/purchase-requisitions/attachments/${attachment.id}/view`"
                           :alt="attachment.file_name"
                           class="w-full h-full object-cover hover:scale-105 transition-transform duration-200"
-                          @click.stop="openLightbox(attachment.file_path, attachment.file_name)"
+                          @click.stop="openLightbox(`/purchase-requisitions/attachments/${attachment.id}/view`, attachment.file_name)"
                         />
                       </div>
                       <div class="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-all duration-200 flex items-center justify-center">
