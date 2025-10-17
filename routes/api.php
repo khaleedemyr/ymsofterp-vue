@@ -362,3 +362,17 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/user/upload-banner', [\App\Http\Controllers\UserController::class, 'uploadBanner'])->name('api.user.upload-banner');
 });
 
+// Live Support Routes
+Route::middleware(['auth'])->group(function () {
+    Route::post('/support/conversations', [\App\Http\Controllers\LiveSupportController::class, 'createConversation'])->name('api.support.create-conversation');
+    Route::get('/support/conversations', [\App\Http\Controllers\LiveSupportController::class, 'getUserConversations'])->name('api.support.get-conversations');
+    Route::get('/support/conversations/{id}/messages', [\App\Http\Controllers\LiveSupportController::class, 'getConversationMessages'])->name('api.support.get-messages');
+    Route::post('/support/conversations/{id}/messages', [\App\Http\Controllers\LiveSupportController::class, 'sendMessage'])->name('api.support.send-message');
+    Route::get('/support/conversations/{conversationId}/messages/{messageId}/files/{fileIndex}', [\App\Http\Controllers\LiveSupportController::class, 'serveAttachment'])->name('api.support.serve-attachment');
+    
+    // Admin routes
+    Route::get('/support/admin/conversations', [\App\Http\Controllers\LiveSupportController::class, 'getAllConversations'])->name('api.support.admin.get-conversations');
+    Route::post('/support/admin/conversations/{id}/reply', [\App\Http\Controllers\LiveSupportController::class, 'adminReply'])->name('api.support.admin.reply');
+    Route::put('/support/admin/conversations/{id}/status', [\App\Http\Controllers\LiveSupportController::class, 'updateConversationStatus'])->name('api.support.admin.update-status');
+});
+

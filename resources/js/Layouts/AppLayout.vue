@@ -7,6 +7,7 @@ import ESignatureModal from '@/Components/ESignatureModal.vue';
 import NavLink from '@/Components/NavLink.vue';
 import ProfileUpdateModal from '@/Components/ProfileUpdateModal.vue';
 import UserPinModal from '@/Components/UserPinModal.vue';
+import LiveSupportWidget from '@/Components/LiveSupportWidget.vue';
 
 const sidebarOpen = ref(true);
 const showLang = ref(false);
@@ -337,6 +338,15 @@ const menuGroups = [
             { name: () => 'Role Management', icon: 'fa-solid fa-user-shield', route: '/roles', code: 'role_management' },
             { name: () => 'User Role Setting', icon: 'fa-solid fa-users-cog', route: '/user-roles', code: 'user_role_setting' },
             { name: () => 'Menu Management', icon: 'fa-solid fa-bars-progress', route: '/menus', code: 'menu_management' },
+        ],
+    },
+    {
+        title: () => 'Support',
+        icon: 'fa-solid fa-headset',
+        collapsible: true,
+        open: ref(false),
+        menus: [
+            { name: () => 'Support Admin Panel', icon: 'fa-solid fa-comments', route: '/support/admin', code: 'support_admin_panel' },
         ],
     },
     {
@@ -787,6 +797,9 @@ onMounted(() => {
         :show="showUserPinModal"
         @close="showUserPinModal = false"
     />
+
+    <!-- Live Support Widget - Floating di semua halaman -->
+    <LiveSupportWidget />
 </div>
 </template>
 

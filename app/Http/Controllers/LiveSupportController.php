@@ -1,0 +1,600 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
+
+class LiveSupportController extends Controller
+{
+    // Get user's conversations
+    public function getUserConversations()
+    {
+        try {
+            $userId = auth()->id();
+            
+            $conversations = DB::table('support_conversations as sc')
+                ->leftJoin('support_messages as sm', function($join) {
+                    $join->on('sc.id', '=', 'sm.conversation_id')
+                         ->whereRaw('sm.id = (SELECT MAX(id) FROM support_messages WHERE conversation_id = sc.id)');
+                })
+                ->leftJoin('users as u', 'sm.sender_id', '=', 'u.id')
+                ->where('sc.user_id', $userId)
+                ->select(
+                    'sc.id',
+                    'sc.subject',
+                    'sc.status',
+                    'sc.priority',
+                    'sc.created_at',
+                    'sc.updated_at',
+                    'sm.message as last_message',
+                    'sm.created_at as last_message_at',
+                    'u.nama_lengkap as last_sender_name',
+                    'sm.sender_type as last_sender_type',
+                    DB::raw('(SELECT COUNT(*) FROM support_messages WHERE conversation_id = sc.id AND sender_type = "admin" AND is_read = FALSE) as unread_count')
+                )
+                ->orderBy('sc.updated_at', 'desc')
+                ->get();
+
+            return response()->json($conversations);
+        } catch (\Exception $e) {
+            return response()->json(['error' => 'Failed to fetch conversations'], 500);
+        }
+    }
+
+    // Get messages for a conversation
+    public function getConversationMessages($conversationId)
+    {
+        try {
+            // Verify conversation exists (no user restriction since admin panel already has permission check)
+            $conversation = DB::table('support_conversations')
+                ->where('id', $conversationId)
+                ->first();
+
+            if (!$conversation) {
+                return response()->json(['error' => 'Conversation not found'], 404);
+            }
+
+            $messages = DB::table('support_messages as sm')
+                ->leftJoin('users as u', 'sm.sender_id', '=', 'u.id')
+                ->where('sm.conversation_id', $conversationId)
+                ->select(
+                    'sm.id',
+                    'sm.message',
+                    'sm.message_type',
+                    'sm.file_path',
+                    'sm.file_name',
+                    'sm.file_size',
+                    'sm.sender_type',
+                    'sm.created_at',
+                    'u.nama_lengkap as sender_name',
+                    'u.avatar as sender_avatar'
+                )
+                ->orderBy('sm.created_at', 'asc')
+                ->get();
+
+            // Mark admin messages as read
+            DB::table('support_messages')
+                ->where('conversation_id', $conversationId)
+                ->where('sender_type', 'admin')
+                ->update(['is_read' => true]);
+
+            return response()->json($messages);
+        } catch (\Exception $e) {
+            return response()->json(['error' => 'Failed to fetch messages'], 500);
+        }
+    }
+
+    // Create new conversation
+    public function createConversation(Request $request)
+    {
+        try {
+            $request->validate([
+                'subject' => 'required|string|max:255',
+                'message' => 'nullable|string',
+                'priority' => 'nullable|in:low,medium,high,urgent',
+                'files.*' => 'nullable|file|max:10240' // 10MB max per file
+            ]);
+
+            $userId = auth()->id();
+
+            // Create conversation
+            $conversationId = DB::table('support_conversations')->insertGetId([
+                'user_id' => $userId,
+                'subject' => $request->subject,
+                'priority' => $request->priority ?? 'medium',
+                'status' => 'open',
+                'created_at' => now(),
+                'updated_at' => now()
+            ]);
+
+            // Handle file uploads for first message
+            $messageType = 'text';
+            $filePath = null;
+            $fileName = null;
+            $uploadedFiles = [];
+            
+            if ($request->hasFile('files')) {
+                foreach ($request->file('files') as $file) {
+                    $originalName = $file->getClientOriginalName();
+                    $filename = Str::uuid() . '.' . $file->getClientOriginalExtension();
+                    $filePath = $file->storeAs('support', $filename, 'public');
+                    
+                    $uploadedFiles[] = [
+                        'original_name' => $originalName,
+                        'file_path' => $filePath,
+                        'file_size' => $file->getSize(),
+                        'mime_type' => $file->getMimeType()
+                    ];
+                }
+                
+                if (!empty($uploadedFiles)) {
+                    $filePath = json_encode($uploadedFiles);
+                    $fileName = count($uploadedFiles) . ' file(s)';
+                    $messageType = 'file';
+                }
+            }
+
+            // Create first message
+            DB::table('support_messages')->insert([
+                'conversation_id' => $conversationId,
+                'sender_id' => $userId,
+                'sender_type' => 'user',
+                'message' => $request->message ?: ($messageType === 'file' ? 'File attachment' : ''),
+                'message_type' => $messageType,
+                'file_path' => $filePath,
+                'file_name' => $fileName,
+                'created_at' => now()
+            ]);
+
+            // Get the created conversation with last message
+            $conversation = $this->getConversationWithLastMessage($conversationId);
+
+            return response()->json($conversation, 201);
+        } catch (\Exception $e) {
+            return response()->json(['error' => 'Failed to create conversation'], 500);
+        }
+    }
+
+    // Send message to conversation
+    public function sendMessage(Request $request, $conversationId)
+    {
+        try {
+            $request->validate([
+                'message' => 'nullable|string',
+                'message_type' => 'nullable|in:text,image,file',
+                'file' => 'nullable|file|max:10240', // 10MB max
+                'files.*' => 'nullable|file|max:10240' // Multiple files support
+            ]);
+
+            $userId = auth()->id();
+
+            // Verify user owns this conversation
+            $conversation = DB::table('support_conversations')
+                ->where('id', $conversationId)
+                ->where('user_id', $userId)
+                ->first();
+
+            if (!$conversation) {
+                return response()->json(['error' => 'Conversation not found'], 404);
+            }
+
+            $messageData = [
+                'conversation_id' => $conversationId,
+                'sender_id' => $userId,
+                'sender_type' => 'user',
+                'message' => $request->message,
+                'message_type' => $request->message_type ?? 'text',
+                'created_at' => now()
+            ];
+
+            // Handle file uploads (single or multiple)
+            $uploadedFiles = [];
+            if ($request->hasFile('file')) {
+                $file = $request->file('file');
+                $originalName = $file->getClientOriginalName();
+                $filename = Str::uuid() . '.' . $file->getClientOriginalExtension();
+                $filePath = $file->storeAs('support', $filename, 'public');
+                
+                $uploadedFiles[] = [
+                    'original_name' => $originalName,
+                    'file_path' => $filePath,
+                    'file_size' => $file->getSize(),
+                    'mime_type' => $file->getMimeType()
+                ];
+            }
+            
+            if ($request->hasFile('files')) {
+                foreach ($request->file('files') as $file) {
+                    $originalName = $file->getClientOriginalName();
+                    $filename = Str::uuid() . '.' . $file->getClientOriginalExtension();
+                    $filePath = $file->storeAs('support', $filename, 'public');
+                    
+                    $uploadedFiles[] = [
+                        'original_name' => $originalName,
+                        'file_path' => $filePath,
+                        'file_size' => $file->getSize(),
+                        'mime_type' => $file->getMimeType()
+                    ];
+                }
+            }
+            
+            if (!empty($uploadedFiles)) {
+                $messageData['file_path'] = json_encode($uploadedFiles);
+                $messageData['file_name'] = count($uploadedFiles) . ' file(s)';
+                $messageData['message_type'] = 'file';
+                
+                // If no message text, set default
+                if (empty($messageData['message'])) {
+                    $messageData['message'] = 'File attachment';
+                }
+            }
+
+            $messageId = DB::table('support_messages')->insertGetId($messageData);
+
+            // Update conversation timestamp
+            DB::table('support_conversations')
+                ->where('id', $conversationId)
+                ->update(['updated_at' => now()]);
+
+            // Get the created message
+            $message = DB::table('support_messages as sm')
+                ->leftJoin('users as u', 'sm.sender_id', '=', 'u.id')
+                ->where('sm.id', $messageId)
+                ->select(
+                    'sm.id',
+                    'sm.message',
+                    'sm.message_type',
+                    'sm.file_path',
+                    'sm.file_name',
+                    'sm.file_size',
+                    'sm.sender_type',
+                    'sm.created_at',
+                    'u.nama_lengkap as sender_name',
+                    'u.avatar as sender_avatar'
+                )
+                ->first();
+
+            return response()->json($message, 201);
+        } catch (\Exception $e) {
+            return response()->json(['error' => 'Failed to send message'], 500);
+        }
+    }
+
+    // Serve support attachment files
+    public function serveAttachment($conversationId, $messageId, $fileIndex = 0)
+    {
+        try {
+            // Verify conversation exists (no user restriction since admin panel already has permission check)
+            $conversation = DB::table('support_conversations')
+                ->where('id', $conversationId)
+                ->first();
+                
+            if (!$conversation) {
+                abort(404, 'Conversation not found');
+            }
+            
+            // Get message with file info
+            $message = DB::table('support_messages')
+                ->where('id', $messageId)
+                ->where('conversation_id', $conversationId)
+                ->first();
+                
+            if (!$message || !$message->file_path) {
+                abort(404, 'File not found');
+            }
+            
+            $files = json_decode($message->file_path, true);
+            
+            if (!is_array($files) || !isset($files[$fileIndex])) {
+                abort(404, 'File not found');
+            }
+            
+            $file = $files[$fileIndex];
+            $filePath = storage_path('app/public/' . $file['file_path']);
+            
+            if (!file_exists($filePath)) {
+                abort(404, 'File not found on disk');
+            }
+            
+            return response()->file($filePath, [
+                'Content-Disposition' => 'inline; filename="' . $file['original_name'] . '"',
+                'Content-Type' => $file['mime_type']
+            ]);
+            
+        } catch (\Exception $e) {
+            abort(404, 'File not found');
+        }
+    }
+
+    // Admin: Get all conversations
+    public function getAllConversations(Request $request)
+    {
+        try {
+            // Check if user has support admin panel view permission using the same system as HandleInertiaRequests
+            $userId = auth()->id();
+            $hasPermission = DB::table('users as u')
+                ->join('erp_user_role as ur', 'ur.user_id', '=', 'u.id')
+                ->join('erp_role as r', 'ur.role_id', '=', 'r.id')
+                ->join('erp_role_permission as rp', 'rp.role_id', '=', 'r.id')
+                ->join('erp_permission as p', 'p.id', '=', 'rp.permission_id')
+                ->join('erp_menu as m', 'm.id', '=', 'p.menu_id')
+                ->where('u.id', $userId)
+                ->where('m.code', 'support_admin_panel')
+                ->where('p.action', 'view')
+                ->exists();
+
+            if (!$hasPermission) {
+                return response()->json(['error' => 'Unauthorized'], 403);
+            }
+
+            $status = $request->get('status', 'all');
+            $priority = $request->get('priority', 'all');
+            $search = $request->get('search', '');
+            $dateFrom = $request->get('date_from', '');
+            $dateTo = $request->get('date_to', '');
+            $perPage = $request->get('per_page', 15);
+            $page = $request->get('page', 1);
+
+            $query = DB::table('support_conversations as sc')
+                ->leftJoin('support_messages as sm', function($join) {
+                    $join->on('sc.id', '=', 'sm.conversation_id')
+                         ->whereRaw('sm.id = (SELECT MAX(id) FROM support_messages WHERE conversation_id = sc.id)');
+                })
+                ->leftJoin('users as u', 'sm.sender_id', '=', 'u.id')
+                ->leftJoin('users as cu', 'sc.user_id', '=', 'cu.id')
+                ->leftJoin('tbl_data_outlet as o', 'cu.id_outlet', '=', 'o.id_outlet')
+                ->leftJoin('tbl_data_divisi as d', 'cu.division_id', '=', 'd.id')
+                ->leftJoin('tbl_data_jabatan as j', 'cu.id_jabatan', '=', 'j.id_jabatan')
+                ->select(
+                    'sc.id',
+                    'sc.subject',
+                    'sc.status',
+                    'sc.priority',
+                    'sc.created_at',
+                    'sc.updated_at',
+                    'sm.message as last_message',
+                    'sm.created_at as last_message_at',
+                    'u.nama_lengkap as last_sender_name',
+                    'sm.sender_type as last_sender_type',
+                    'cu.nama_lengkap as customer_name',
+                    'cu.email as customer_email',
+                    'o.nama_outlet as customer_outlet',
+                    'd.nama_divisi as customer_divisi',
+                    'j.nama_jabatan as customer_jabatan',
+                    DB::raw('(SELECT COUNT(*) FROM support_messages WHERE conversation_id = sc.id AND sender_type = "user" AND is_read = FALSE) as unread_count')
+                );
+
+            // Status filter
+            if ($status !== 'all') {
+                $query->where('sc.status', $status);
+            }
+
+            // Priority filter
+            if ($priority !== 'all') {
+                $query->where('sc.priority', $priority);
+            }
+
+            // Date range filter
+            if ($dateFrom) {
+                $query->whereDate('sc.created_at', '>=', $dateFrom);
+            }
+            if ($dateTo) {
+                $query->whereDate('sc.created_at', '<=', $dateTo);
+            }
+
+            // Smart search - search across multiple fields
+            if ($search) {
+                $query->where(function($q) use ($search) {
+                    $q->where('sc.subject', 'like', "%{$search}%")
+                      ->orWhere('cu.nama_lengkap', 'like', "%{$search}%")
+                      ->orWhere('cu.email', 'like', "%{$search}%")
+                      ->orWhere('o.nama_outlet', 'like', "%{$search}%")
+                      ->orWhere('d.nama_divisi', 'like', "%{$search}%")
+                      ->orWhere('j.nama_jabatan', 'like', "%{$search}%")
+                      ->orWhere('sm.message', 'like', "%{$search}%")
+                      ->orWhere('u.nama_lengkap', 'like', "%{$search}%");
+                });
+            }
+
+            // Get total count for pagination
+            $total = $query->count();
+
+            // Apply pagination
+            $conversations = $query->orderBy('sc.updated_at', 'desc')
+                ->offset(($page - 1) * $perPage)
+                ->limit($perPage)
+                ->get();
+
+            return response()->json([
+                'data' => $conversations,
+                'pagination' => [
+                    'current_page' => (int) $page,
+                    'per_page' => (int) $perPage,
+                    'total' => $total,
+                    'last_page' => ceil($total / $perPage),
+                    'from' => $total > 0 ? (($page - 1) * $perPage) + 1 : 0,
+                    'to' => min($page * $perPage, $total)
+                ]
+            ]);
+        } catch (\Exception $e) {
+            return response()->json(['error' => 'Failed to fetch conversations'], 500);
+        }
+    }
+
+    // Admin: Reply to conversation
+    public function adminReply(Request $request, $conversationId)
+    {
+        try {
+            // Check if user has support admin panel create permission using the same system as HandleInertiaRequests
+            $userId = auth()->id();
+            $hasPermission = DB::table('users as u')
+                ->join('erp_user_role as ur', 'ur.user_id', '=', 'u.id')
+                ->join('erp_role as r', 'ur.role_id', '=', 'r.id')
+                ->join('erp_role_permission as rp', 'rp.role_id', '=', 'r.id')
+                ->join('erp_permission as p', 'p.id', '=', 'rp.permission_id')
+                ->join('erp_menu as m', 'm.id', '=', 'p.menu_id')
+                ->where('u.id', $userId)
+                ->where('m.code', 'support_admin_panel')
+                ->where('p.action', 'create')
+                ->exists();
+
+            if (!$hasPermission) {
+                return response()->json(['error' => 'Unauthorized'], 403);
+            }
+
+            $request->validate([
+                'message' => 'required|string',
+                'files.*' => 'nullable|file|max:10240'
+            ]);
+
+            $userId = auth()->id();
+
+            // Verify conversation exists
+            $conversation = DB::table('support_conversations')
+                ->where('id', $conversationId)
+                ->first();
+
+            if (!$conversation) {
+                return response()->json(['error' => 'Conversation not found'], 404);
+            }
+
+            $messageData = [
+                'conversation_id' => $conversationId,
+                'sender_id' => $userId,
+                'sender_type' => 'admin',
+                'message' => $request->message,
+                'message_type' => 'text',
+                'created_at' => now()
+            ];
+
+            // Handle multiple file uploads
+            if ($request->hasFile('files')) {
+                $files = $request->file('files');
+                $fileData = [];
+                
+                foreach ($files as $file) {
+                    $originalName = $file->getClientOriginalName();
+                    $filename = Str::uuid() . '.' . $file->getClientOriginalExtension();
+                    $filePath = $file->storeAs('support', $filename, 'public');
+                    
+                    $fileData[] = [
+                        'original_name' => $originalName,
+                        'file_path' => $filePath,
+                        'file_size' => $file->getSize(),
+                        'mime_type' => $file->getMimeType()
+                    ];
+                }
+                
+                $messageData['file_path'] = json_encode($fileData);
+                $messageData['message_type'] = 'file';
+            }
+
+            $messageId = DB::table('support_messages')->insertGetId($messageData);
+
+            // Update conversation timestamp and status
+            DB::table('support_conversations')
+                ->where('id', $conversationId)
+                ->update([
+                    'updated_at' => now(),
+                    'status' => 'open'
+                ]);
+
+            // Get the created message
+            $message = DB::table('support_messages as sm')
+                ->leftJoin('users as u', 'sm.sender_id', '=', 'u.id')
+                ->where('sm.id', $messageId)
+                ->select(
+                    'sm.id',
+                    'sm.message',
+                    'sm.message_type',
+                    'sm.file_path',
+                    'sm.created_at',
+                    'sm.sender_type',
+                    'u.nama_lengkap as sender_name',
+                    'u.avatar as sender_avatar'
+                )
+                ->first();
+
+            return response()->json($message, 201);
+        } catch (\Exception $e) {
+            return response()->json(['error' => 'Failed to send reply'], 500);
+        }
+    }
+
+    // Admin: Update conversation status
+    public function updateConversationStatus(Request $request, $conversationId)
+    {
+        try {
+            // Check if user has support admin panel update permission using the same system as HandleInertiaRequests
+            $userId = auth()->id();
+            $hasPermission = DB::table('users as u')
+                ->join('erp_user_role as ur', 'ur.user_id', '=', 'u.id')
+                ->join('erp_role as r', 'ur.role_id', '=', 'r.id')
+                ->join('erp_role_permission as rp', 'rp.role_id', '=', 'r.id')
+                ->join('erp_permission as p', 'p.id', '=', 'rp.permission_id')
+                ->join('erp_menu as m', 'm.id', '=', 'p.menu_id')
+                ->where('u.id', $userId)
+                ->where('m.code', 'support_admin_panel')
+                ->where('p.action', 'update')
+                ->exists();
+
+            if (!$hasPermission) {
+                return response()->json(['error' => 'Unauthorized'], 403);
+            }
+
+            $request->validate([
+                'status' => 'required|in:open,closed,pending',
+                'priority' => 'nullable|in:low,medium,high,urgent'
+            ]);
+
+            $updateData = [
+                'status' => $request->status,
+                'updated_at' => now()
+            ];
+
+            if ($request->has('priority')) {
+                $updateData['priority'] = $request->priority;
+            }
+
+            $updated = DB::table('support_conversations')
+                ->where('id', $conversationId)
+                ->update($updateData);
+
+            if ($updated) {
+                return response()->json(['message' => 'Status updated successfully']);
+            } else {
+                return response()->json(['error' => 'Conversation not found'], 404);
+            }
+        } catch (\Exception $e) {
+            return response()->json(['error' => 'Failed to update status'], 500);
+        }
+    }
+
+    // Helper method to get conversation with last message
+    private function getConversationWithLastMessage($conversationId)
+    {
+        return DB::table('support_conversations as sc')
+            ->leftJoin('support_messages as sm', function($join) {
+                $join->on('sc.id', '=', 'sm.conversation_id')
+                     ->whereRaw('sm.id = (SELECT MAX(id) FROM support_messages WHERE conversation_id = sc.id)');
+            })
+            ->leftJoin('users as u', 'sm.sender_id', '=', 'u.id')
+            ->where('sc.id', $conversationId)
+            ->select(
+                'sc.id',
+                'sc.subject',
+                'sc.status',
+                'sc.priority',
+                'sc.created_at',
+                'sc.updated_at',
+                'sm.message as last_message',
+                'sm.created_at as last_message_at',
+                'u.nama_lengkap as last_sender_name',
+                'sm.sender_type as last_sender_type'
+            )
+            ->first();
+    }
+}

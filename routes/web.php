@@ -2044,6 +2044,25 @@ Route::middleware(['auth'])->group(function () {
     Route::delete('/api/notes/{id}', [App\Http\Controllers\NotesController::class, 'destroy']);
 });
 
+// Live Support API routes
+Route::middleware(['auth'])->group(function () {
+    // User routes
+    Route::get('/api/support/conversations', [App\Http\Controllers\LiveSupportController::class, 'getUserConversations']);
+    Route::post('/api/support/conversations', [App\Http\Controllers\LiveSupportController::class, 'createConversation']);
+    Route::get('/api/support/conversations/{id}/messages', [App\Http\Controllers\LiveSupportController::class, 'getConversationMessages']);
+    Route::post('/api/support/conversations/{id}/messages', [App\Http\Controllers\LiveSupportController::class, 'sendMessage']);
+    
+    // Admin routes
+    Route::get('/api/support/admin/conversations', [App\Http\Controllers\LiveSupportController::class, 'getAllConversations']);
+    Route::post('/api/support/admin/conversations/{id}/reply', [App\Http\Controllers\LiveSupportController::class, 'adminReply']);
+    Route::put('/api/support/admin/conversations/{id}/status', [App\Http\Controllers\LiveSupportController::class, 'updateConversationStatus']);
+});
+
+// Support Admin Panel
+Route::middleware(['auth'])->group(function () {
+    Route::get('/support/admin', [App\Http\Controllers\SupportAdminController::class, 'index'])->name('support.admin');
+});
+
 // Birthday API routes
 Route::middleware(['auth'])->group(function () {
     Route::get('/api/birthdays', [App\Http\Controllers\BirthdayController::class, 'getBirthdays']);
