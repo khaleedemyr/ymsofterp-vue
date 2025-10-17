@@ -14,7 +14,7 @@ class BirthdayController extends Controller
             $today = Carbon::today();
             $next30Days = Carbon::today()->addDays(30);
             
-            // Get all active users with birth dates (3 closest birthdays)
+            // Get all active users with birth dates (5 closest birthdays)
             $users = User::with(['jabatan', 'outlet'])
                 ->whereNotNull('tanggal_lahir')
                 ->where('status', 'A')
@@ -59,7 +59,7 @@ class BirthdayController extends Controller
                 // Sort by days until birthday (today first, then by days)
                 return $user['days_until'];
             })
-            ->take(3)
+            ->take(5)
             ->values();
 
             return response()->json($birthdays);
