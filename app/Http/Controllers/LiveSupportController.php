@@ -40,7 +40,7 @@ class LiveSupportController extends Controller
 
             return response()->json($conversations);
         } catch (\Exception $e) {
-            return response()->json(['error' => 'Failed to fetch conversations'], 500);
+            return response()->json(['error' => 'Gagal mengambil data percakapan'], 500);
         }
     }
 
@@ -54,7 +54,7 @@ class LiveSupportController extends Controller
                 ->first();
 
             if (!$conversation) {
-                return response()->json(['error' => 'Conversation not found'], 404);
+                return response()->json(['error' => 'Percakapan tidak ditemukan'], 404);
             }
 
             $messages = DB::table('support_messages as sm')
@@ -83,7 +83,7 @@ class LiveSupportController extends Controller
 
             return response()->json($messages);
         } catch (\Exception $e) {
-            return response()->json(['error' => 'Failed to fetch messages'], 500);
+            return response()->json(['error' => 'Gagal mengambil data pesan'], 500);
         }
     }
 
@@ -157,7 +157,7 @@ class LiveSupportController extends Controller
 
             return response()->json($conversation, 201);
         } catch (\Exception $e) {
-            return response()->json(['error' => 'Failed to create conversation'], 500);
+            return response()->json(['error' => 'Gagal membuat percakapan'], 500);
         }
     }
 
@@ -181,7 +181,16 @@ class LiveSupportController extends Controller
                 ->first();
 
             if (!$conversation) {
-                return response()->json(['error' => 'Conversation not found'], 404);
+                return response()->json(['error' => 'Percakapan tidak ditemukan'], 404);
+            }
+
+            // Check if conversation is closed
+            if ($conversation->status === 'closed') {
+                return response()->json([
+                    'error' => 'Percakapan ini telah ditutup oleh tim support. Silakan buat percakapan baru jika Anda memerlukan bantuan lebih lanjut.',
+                    'conversation_closed' => true,
+                    'status' => 'closed'
+                ], 403);
             }
 
             $messageData = [
@@ -265,7 +274,7 @@ class LiveSupportController extends Controller
 
             return response()->json($message, 201);
         } catch (\Exception $e) {
-            return response()->json(['error' => 'Failed to send message'], 500);
+            return response()->json(['error' => 'Gagal mengirim pesan'], 500);
         }
     }
 
@@ -289,20 +298,20 @@ class LiveSupportController extends Controller
                 ->first();
                 
             if (!$message || !$message->file_path) {
-                abort(404, 'File not found');
+                abort(404, 'File tidak ditemukan');
             }
             
             $files = json_decode($message->file_path, true);
             
             if (!is_array($files) || !isset($files[$fileIndex])) {
-                abort(404, 'File not found');
+                abort(404, 'File tidak ditemukan');
             }
             
             $file = $files[$fileIndex];
             $filePath = storage_path('app/public/' . $file['file_path']);
             
             if (!file_exists($filePath)) {
-                abort(404, 'File not found on disk');
+                abort(404, 'File tidak ditemukan di disk');
             }
             
             return response()->file($filePath, [
@@ -333,7 +342,7 @@ class LiveSupportController extends Controller
                 ->exists();
 
             if (!$hasPermission) {
-                return response()->json(['error' => 'Unauthorized'], 403);
+                return response()->json(['error' => 'Tidak memiliki izin'], 403);
             }
 
             $status = $request->get('status', 'all');
@@ -426,7 +435,7 @@ class LiveSupportController extends Controller
                 ]
             ]);
         } catch (\Exception $e) {
-            return response()->json(['error' => 'Failed to fetch conversations'], 500);
+            return response()->json(['error' => 'Gagal mengambil data percakapan'], 500);
         }
     }
 
@@ -448,7 +457,7 @@ class LiveSupportController extends Controller
                 ->exists();
 
             if (!$hasPermission) {
-                return response()->json(['error' => 'Unauthorized'], 403);
+                return response()->json(['error' => 'Tidak memiliki izin'], 403);
             }
 
             $request->validate([
@@ -464,8 +473,11 @@ class LiveSupportController extends Controller
                 ->first();
 
             if (!$conversation) {
-                return response()->json(['error' => 'Conversation not found'], 404);
+                return response()->json(['error' => 'Percakapan tidak ditemukan'], 404);
             }
+
+            // If conversation is closed, admin can reply and it will be reopened
+            $wasClosed = $conversation->status === 'closed';
 
             $messageData = [
                 'conversation_id' => $conversationId,
@@ -508,6 +520,16 @@ class LiveSupportController extends Controller
                     'status' => 'open'
                 ]);
 
+            // Log if conversation was reopened
+            if ($wasClosed) {
+                \Log::info('Support conversation reopened by admin', [
+                    'conversation_id' => $conversationId,
+                    'admin_id' => $userId,
+                    'previous_status' => 'closed',
+                    'new_status' => 'open'
+                ]);
+            }
+
             // Send notification to support team for new chat message
             $this->sendChatMessageNotifications($conversationId, $messageData['message'], $userId);
 
@@ -529,7 +551,7 @@ class LiveSupportController extends Controller
 
             return response()->json($message, 201);
         } catch (\Exception $e) {
-            return response()->json(['error' => 'Failed to send reply'], 500);
+            return response()->json(['error' => 'Gagal mengirim balasan'], 500);
         }
     }
 
@@ -551,7 +573,7 @@ class LiveSupportController extends Controller
                 ->exists();
 
             if (!$hasPermission) {
-                return response()->json(['error' => 'Unauthorized'], 403);
+                return response()->json(['error' => 'Tidak memiliki izin'], 403);
             }
 
             $request->validate([
@@ -573,12 +595,12 @@ class LiveSupportController extends Controller
                 ->update($updateData);
 
             if ($updated) {
-                return response()->json(['message' => 'Status updated successfully']);
+                return response()->json(['message' => 'Status berhasil diperbarui']);
             } else {
-                return response()->json(['error' => 'Conversation not found'], 404);
+                return response()->json(['error' => 'Percakapan tidak ditemukan'], 404);
             }
         } catch (\Exception $e) {
-            return response()->json(['error' => 'Failed to update status'], 500);
+            return response()->json(['error' => 'Gagal memperbarui status'], 500);
         }
     }
 

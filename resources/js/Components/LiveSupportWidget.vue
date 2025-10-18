@@ -851,6 +851,15 @@ const sendMessage = async () => {
         scrollToBottom();
     } catch (error) {
         console.error('Error sending message:', error);
+        
+        // Handle conversation closed error
+        if (error.response?.data?.conversation_closed) {
+            alert('Percakapan ini telah ditutup oleh tim support. Silakan buat percakapan baru jika Anda memerlukan bantuan lebih lanjut.');
+            // Optionally refresh conversations to show updated status
+            await fetchConversations();
+        } else if (error.response?.data?.error) {
+            alert(error.response.data.error);
+        }
     } finally {
         sending.value = false;
     }
@@ -867,7 +876,7 @@ const createConversation = async () => {
             : newConversation.value.subject;
             
         if (!subject) {
-            alert('Please specify the subject');
+            alert('Silakan tentukan subjek percakapan');
             return;
         }
         
@@ -954,7 +963,7 @@ const handleFileUpload = (event) => {
         if (file.size <= 10 * 1024 * 1024) { // 10MB limit
             selectedFiles.value.push(file);
         } else {
-            alert(`File ${file.name} is too large. Maximum size is 10MB.`);
+            alert(`File ${file.name} terlalu besar. Ukuran maksimal adalah 10MB.`);
         }
     });
     event.target.value = ''; // Reset input
@@ -971,7 +980,7 @@ const handleNewConversationFileUpload = (event) => {
         if (file.size <= 10 * 1024 * 1024) { // 10MB limit
             newConversationFiles.value.push(file);
         } else {
-            alert(`File ${file.name} is too large. Maximum size is 10MB.`);
+            alert(`File ${file.name} terlalu besar. Ukuran maksimal adalah 10MB.`);
         }
     });
     event.target.value = ''; // Reset input
@@ -997,7 +1006,7 @@ const captureFromCameraForNewConversation = async () => {
         }
     } catch (error) {
         console.error('Error accessing camera:', error);
-        alert('Unable to access camera. Please check permissions.');
+        alert('Tidak dapat mengakses kamera. Silakan periksa izin kamera.');
         showCameraModal.value = false;
     }
 };
@@ -1051,7 +1060,7 @@ const captureFromCamera = async () => {
         }
     } catch (error) {
         console.error('Error accessing camera:', error);
-        alert('Unable to access camera. Please check permissions.');
+        alert('Tidak dapat mengakses kamera. Silakan periksa izin kamera.');
         showCameraModal.value = false;
     }
 };
