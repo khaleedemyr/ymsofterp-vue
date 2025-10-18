@@ -242,6 +242,9 @@ class LiveSupportController extends Controller
                 ->where('id', $conversationId)
                 ->update(['updated_at' => now()]);
 
+            // Send notification to support team for new chat message
+            $this->sendChatMessageNotifications($conversationId, $messageData['message'], $userId);
+
             // Get the created message
             $message = DB::table('support_messages as sm')
                 ->leftJoin('users as u', 'sm.sender_id', '=', 'u.id')
@@ -505,6 +508,9 @@ class LiveSupportController extends Controller
                     'status' => 'open'
                 ]);
 
+            // Send notification to support team for new chat message
+            $this->sendChatMessageNotifications($conversationId, $messageData['message'], $userId);
+
             // Get the created message
             $message = DB::table('support_messages as sm')
                 ->leftJoin('users as u', 'sm.sender_id', '=', 'u.id')
@@ -657,7 +663,7 @@ class LiveSupportController extends Controller
                     'task_id' => $conversationId, // Using task_id field to store conversation_id
                     'type' => 'live_support_conversation',
                     'message' => $message,
-                    'url' => config('app.url') . '/support/admin-panel',
+                    'url' => config('app.url') . '/support/admin',
                     'is_read' => 0,
                     'created_at' => now(),
                     'updated_at' => now()
@@ -673,6 +679,92 @@ class LiveSupportController extends Controller
 
         } catch (\Exception $e) {
             \Log::error('Error sending Live Support notifications', [
+                'conversation_id' => $conversationId,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+        }
+    }
+
+    // Send notifications to support team for new chat messages
+    private function sendChatMessageNotifications($conversationId, $message, $userId)
+    {
+        try {
+            // Get users with division_id=21 and status='A'
+            $supportUsers = DB::table('users')
+                ->where('division_id', 21)
+                ->where('status', 'A')
+                ->pluck('id');
+
+            if ($supportUsers->isEmpty()) {
+                \Log::warning('No support users found for chat message notification', [
+                    'conversation_id' => $conversationId,
+                    'division_id' => 21
+                ]);
+                return;
+            }
+
+            // Get user details who sent the message
+            $user = DB::table('users as u')
+                ->leftJoin('tbl_data_outlet as o', 'u.id_outlet', '=', 'o.id_outlet')
+                ->leftJoin('tbl_data_divisi as d', 'u.division_id', '=', 'd.id')
+                ->leftJoin('tbl_data_jabatan as j', 'u.id_jabatan', '=', 'j.id_jabatan')
+                ->where('u.id', $userId)
+                ->select(
+                    'u.nama_lengkap',
+                    'u.email',
+                    'o.nama_outlet',
+                    'd.nama_divisi',
+                    'j.nama_jabatan'
+                )
+                ->first();
+
+            // Get conversation subject
+            $conversation = DB::table('support_conversations')
+                ->where('id', $conversationId)
+                ->select('subject')
+                ->first();
+
+            // Create notification message
+            $notificationMessage = "Live Support: Chat baru diterima\n\n";
+            $notificationMessage .= "Percakapan: " . ($conversation->subject ?? 'Tanpa subjek') . "\n";
+            $notificationMessage .= "Dari: {$user->nama_lengkap}\n";
+            $notificationMessage .= "Email: {$user->email}\n";
+            if ($user->nama_outlet) {
+                $notificationMessage .= "Outlet: {$user->nama_outlet}\n";
+            }
+            if ($user->nama_divisi) {
+                $notificationMessage .= "Divisi: {$user->nama_divisi}\n";
+            }
+            if ($user->nama_jabatan) {
+                $notificationMessage .= "Jabatan: {$user->nama_jabatan}\n";
+            }
+            $notificationMessage .= "\nPesan: " . (strlen($message) > 100 ? substr($message, 0, 100) . '...' : $message);
+            $notificationMessage .= "\n\nSilakan segera tanggapi chat ini melalui Live Support Admin Panel.";
+
+            // Send notification to each support user
+            foreach ($supportUsers as $supportUserId) {
+                DB::table('notifications')->insert([
+                    'user_id' => $supportUserId,
+                    'task_id' => $conversationId, // Using task_id field to store conversation_id
+                    'type' => 'live_support_chat',
+                    'message' => $notificationMessage,
+                    'url' => config('app.url') . '/support/admin',
+                    'is_read' => 0,
+                    'created_at' => now(),
+                    'updated_at' => now()
+                ]);
+            }
+
+            \Log::info('Live Support chat notifications sent successfully', [
+                'conversation_id' => $conversationId,
+                'message_preview' => substr($message, 0, 50) . '...',
+                'user_id' => $userId,
+                'support_users_count' => $supportUsers->count()
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error('Error sending Live Support chat notifications', [
                 'conversation_id' => $conversationId,
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
