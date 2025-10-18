@@ -1060,7 +1060,19 @@ const isExtraOffType = computed(() => {
 
 // Computed property untuk menghitung total saldo extra off
 const totalExtraOffDays = computed(() => {
-  return extraOffDays.value.length
+  if (!extraOffDays.value || extraOffDays.value.length === 0) return 0
+  
+  // Calculate total days based on compensation type
+  return extraOffDays.value.reduce((total, day) => {
+    if (day.compensation_type === 'extra_off') {
+      // For extra_off type, each record = 1 day
+      return total + 1
+    } else if (day.compensation_type === 'bonus') {
+      // For bonus type, use compensation_amount as days
+      return total + (parseFloat(day.compensation_amount) || 0)
+    }
+    return total
+  }, 0)
 })
 
 // Computed property untuk mendapatkan saldo cuti tahunan dari user

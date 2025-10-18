@@ -144,9 +144,11 @@ class HolidayAttendanceController extends Controller
     {
         $userId = auth()->id();
         
+        // Get both extra_off and bonus compensation types for Public Holiday balance
         $extraOffDays = HolidayAttendanceCompensation::where('user_id', $userId)
-            ->where('compensation_type', 'extra_off')
+            ->whereIn('compensation_type', ['extra_off', 'bonus'])
             ->where('status', 'approved')
+            ->whereNull('used_date') // Only get unused compensations
             ->with('holiday')
             ->orderBy('holiday_date', 'desc')
             ->get();
