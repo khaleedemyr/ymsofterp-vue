@@ -507,14 +507,16 @@ const generateLabelsPDF = () => {
      currentY += 3;
      
      // Process Date
-     doc.setFontSize(6);
+     doc.setFontSize(10);
      doc.setFont(undefined, 'normal');
      doc.text(`PROCESS DATE: ${formatDateForLabel(labelData.value.processDate)}`, x + 5, currentY, { align: 'left' });
-     currentY += 2.5;
+     currentY += 3.5;
      
      // Batch Number
+     doc.setFontSize(10);
+     doc.setFont(undefined, 'normal');
      doc.text(`BATCH NUMBER: ${labelData.value.batchNumber}`, x + 5, currentY, { align: 'left' });
-     currentY += 2.5;
+     currentY += 3.5;
      
      // Expire Date (butcher date + exp from items table)
      const butcherDate = new Date(labelData.value.processDate)
@@ -528,11 +530,15 @@ const generateLabelsPDF = () => {
      console.log('Calculated expire date:', expireDate.toISOString().split('T')[0])
      
      const expireDateFormatted = formatDateForLabel(expireDate.toISOString().split('T')[0])
+     doc.setFontSize(10);
+     doc.setFont(undefined, 'normal');
      doc.text(`EXP: ${expireDateFormatted}`, x + 5, currentY, { align: 'left' });
-     currentY += 2.5;
+     currentY += 3.5;
      
      // Ready To Sale (same as process date)
      const readyToSaleDate = formatDateForLabel(labelData.value.processDate)
+     doc.setFontSize(10);
+     doc.setFont(undefined, 'normal');
      doc.text(`READY TO SALE: ${readyToSaleDate}`, x + 5, currentY, { align: 'left' });
     
     // Move to next position
