@@ -1,19 +1,41 @@
 <template>
     <!-- Floating Chat Button -->
-    <div class="fixed bottom-6 right-6 z-50">
+    <div 
+        ref="widgetContainer"
+        class="fixed z-50"
+        :class="{ 'dragging': isDragging }"
+        :style="{ 
+            left: widgetPosition.x + 'px', 
+            bottom: widgetPosition.y + 'px',
+            cursor: isDragging ? 'grabbing' : 'grab'
+        }"
+        @mousedown="startDrag"
+        @touchstart="startDrag"
+        @dblclick="resetWidgetPosition"
+    >
         <!-- Chat Button with Label -->
         <div class="flex flex-col items-end gap-2 group">
             <!-- Live Support Label -->
             <div v-if="!isOpen" 
-                 class="bg-gray-800 text-white text-xs px-3 py-1 rounded-full shadow-lg whitespace-nowrap">
+                 class="bg-gray-800 text-white text-xs px-3 py-1 rounded-full shadow-lg whitespace-nowrap flex items-center gap-1 cursor-move"
+                 :class="{ 'opacity-80': isDragging }">
+                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"></path>
+                </svg>
                 Live Support
             </div>
             
             <!-- Chat Button -->
             <button 
                 @click="toggleChat"
-                class="bg-blue-500 hover:bg-blue-600 text-white rounded-full p-4 shadow-lg transition-all duration-300 hover:scale-110 relative"
-                :class="{ 'animate-pulse': hasUnreadMessages }"
+                class="bg-blue-500 hover:bg-blue-600 text-white rounded-full p-4 shadow-lg transition-all duration-300 hover:scale-110 relative select-none group"
+                :class="{ 
+                    'animate-pulse': hasUnreadMessages,
+                    'opacity-80': isDragging,
+                    'scale-105': isDragging,
+                    'shadow-2xl': isDragging
+                }"
+                :title="!isOpen ? 'Click to open chat, drag to move, or double-click to reset position' : 'Click to close chat'"
             >
                 <!-- Chat Icon -->
                 <svg v-if="!isOpen" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -509,6 +531,14 @@ const capturedImage = ref('');
 const videoElement = ref(null);
 const stream = ref(null);
 
+// Draggable state
+const isDragging = ref(false);
+const dragStart = ref({ x: 0, y: 0 });
+const widgetPosition = ref({ x: 24, y: 24 }); // Default position (bottom-right)
+const widgetContainer = ref(null);
+const dragThreshold = 5; // Minimum distance to consider as drag
+const hasDragged = ref(false);
+
 const newConversation = ref({
     subject: '',
     customSubject: '',
@@ -521,8 +551,177 @@ const newConversationFiles = ref([]);
 // Polling interval
 let pollingInterval = null;
 
+// Drag methods
+const startDrag = (event) => {
+    // Prevent default to avoid text selection
+    event.preventDefault();
+    
+    // Only allow dragging when chat is closed
+    if (isOpen.value) return;
+    
+    hasDragged.value = false;
+    
+    // Get initial mouse/touch position
+    const clientX = event.type === 'touchstart' ? event.touches[0].clientX : event.clientX;
+    const clientY = event.type === 'touchstart' ? event.touches[0].clientY : event.clientY;
+    
+    dragStart.value = {
+        x: clientX - widgetPosition.value.x,
+        y: clientY - widgetPosition.value.y,
+        startX: clientX,
+        startY: clientY
+    };
+    
+    // Add event listeners
+    document.addEventListener('mousemove', handleDrag);
+    document.addEventListener('mouseup', stopDrag);
+    document.addEventListener('touchmove', handleDrag);
+    document.addEventListener('touchend', stopDrag);
+};
+
+const handleDrag = (event) => {
+    event.preventDefault();
+    
+    const clientX = event.type === 'touchmove' ? event.touches[0].clientX : event.clientX;
+    const clientY = event.type === 'touchmove' ? event.touches[0].clientY : event.clientY;
+    
+    // Check if we've moved enough to start dragging
+    const deltaX = Math.abs(clientX - dragStart.value.startX);
+    const deltaY = Math.abs(clientY - dragStart.value.startY);
+    
+    if (!isDragging.value && (deltaX > dragThreshold || deltaY > dragThreshold)) {
+        isDragging.value = true;
+        hasDragged.value = true;
+    }
+    
+    if (!isDragging.value) return;
+    
+    // Calculate new position
+    let newX = clientX - dragStart.value.x;
+    let newY = clientY - dragStart.value.y;
+    
+    // Get viewport dimensions
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    
+    // Get widget dimensions (approximate)
+    const widgetWidth = 80; // Approximate width of the button
+    const widgetHeight = 80; // Approximate height of the button
+    
+    // Constrain to viewport boundaries
+    newX = Math.max(0, Math.min(newX, viewportWidth - widgetWidth));
+    newY = Math.max(0, Math.min(newY, viewportHeight - widgetHeight));
+    
+    widgetPosition.value = { x: newX, y: newY };
+    
+    // Add haptic feedback on mobile if available
+    if (navigator.vibrate && (deltaX > dragThreshold || deltaY > dragThreshold)) {
+        navigator.vibrate(10);
+    }
+    
+    // Add visual feedback when reaching boundaries
+    if (newX === 0 || newX === viewportWidth - widgetWidth || 
+        newY === 0 || newY === viewportHeight - widgetHeight) {
+        // Add subtle bounce effect
+        if (widgetContainer.value) {
+            widgetContainer.value.style.transform = 'scale(1.05)';
+            setTimeout(() => {
+                widgetContainer.value.style.transform = 'scale(1)';
+            }, 100);
+        }
+        
+        // Add haptic feedback for boundary hit
+        if (navigator.vibrate) {
+            navigator.vibrate(20);
+        }
+    }
+    
+    // Add visual feedback for successful drag
+    if (isDragging.value && !hasDragged.value) {
+        hasDragged.value = true;
+        // Add subtle glow effect
+        if (widgetContainer.value) {
+            widgetContainer.value.style.boxShadow = '0 0 20px rgba(59, 130, 246, 0.5)';
+            setTimeout(() => {
+                widgetContainer.value.style.boxShadow = '';
+            }, 200);
+        }
+    }
+};
+
+const stopDrag = () => {
+    // Remove event listeners
+    document.removeEventListener('mousemove', handleDrag);
+    document.removeEventListener('mouseup', stopDrag);
+    document.removeEventListener('touchmove', handleDrag);
+    document.removeEventListener('touchend', stopDrag);
+    
+    if (isDragging.value) {
+        isDragging.value = false;
+        
+        // Save position to localStorage
+        saveWidgetPosition();
+    }
+    
+    // Reset drag state after a short delay to prevent accidental clicks
+    setTimeout(() => {
+        hasDragged.value = false;
+    }, 100);
+};
+
+const saveWidgetPosition = () => {
+    localStorage.setItem('liveSupportWidgetPosition', JSON.stringify(widgetPosition.value));
+};
+
+const loadWidgetPosition = () => {
+    const saved = localStorage.getItem('liveSupportWidgetPosition');
+    if (saved) {
+        try {
+            const position = JSON.parse(saved);
+            // Validate position is within viewport
+            const viewportWidth = window.innerWidth;
+            const viewportHeight = window.innerHeight;
+            const widgetWidth = 80;
+            const widgetHeight = 80;
+            
+            const newX = Math.max(0, Math.min(position.x, viewportWidth - widgetWidth));
+            const newY = Math.max(0, Math.min(position.y, viewportHeight - widgetHeight));
+            
+            widgetPosition.value = { x: newX, y: newY };
+            
+            // If position was corrected, save it
+            if (newX !== position.x || newY !== position.y) {
+                saveWidgetPosition();
+            }
+        } catch (e) {
+            console.error('Error loading widget position:', e);
+            // Reset to default position on error
+            widgetPosition.value = { x: 24, y: 24 };
+        }
+    }
+};
+
+const resetWidgetPosition = () => {
+    // Add visual feedback
+    if (widgetContainer.value) {
+        widgetContainer.value.style.transform = 'scale(0.9)';
+        setTimeout(() => {
+            widgetContainer.value.style.transform = 'scale(1)';
+        }, 150);
+    }
+    
+    widgetPosition.value = { x: 24, y: 24 };
+    saveWidgetPosition();
+};
+
 // Methods
-const toggleChat = () => {
+const toggleChat = (event) => {
+    // Prevent click if we were dragging
+    if (hasDragged.value) {
+        event.preventDefault();
+        return;
+    }
+    
     isOpen.value = !isOpen.value;
     if (isOpen.value) {
         fetchConversations();
@@ -906,10 +1105,47 @@ const getInitials = (name) => {
 onMounted(() => {
     // Check for unread messages on page load
     fetchConversations();
+    
+    // Load saved widget position
+    loadWidgetPosition();
+    
+    // Handle window resize to keep widget in bounds
+    window.addEventListener('resize', handleWindowResize);
+    
+    // Handle orientation change on mobile
+    window.addEventListener('orientationchange', () => {
+        // Small delay to allow viewport to update
+        setTimeout(handleWindowResize, 100);
+    });
 });
+
+const handleWindowResize = () => {
+    // Re-validate position after window resize
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    const widgetWidth = 80;
+    const widgetHeight = 80;
+    
+    const newX = Math.max(0, Math.min(widgetPosition.value.x, viewportWidth - widgetWidth));
+    const newY = Math.max(0, Math.min(widgetPosition.value.y, viewportHeight - widgetHeight));
+    
+    // Only update if position actually changed
+    if (newX !== widgetPosition.value.x || newY !== widgetPosition.value.y) {
+        widgetPosition.value = { x: newX, y: newY };
+        saveWidgetPosition();
+    }
+};
 
 onUnmounted(() => {
     stopPolling();
+    
+    // Remove event listeners
+    window.removeEventListener('resize', handleWindowResize);
+    window.removeEventListener('orientationchange', handleWindowResize);
+    document.removeEventListener('mousemove', handleDrag);
+    document.removeEventListener('mouseup', stopDrag);
+    document.removeEventListener('touchmove', handleDrag);
+    document.removeEventListener('touchend', stopDrag);
     
     // Cleanup camera stream
     if (stream.value) {
@@ -948,5 +1184,35 @@ onUnmounted(() => {
 
 .overflow-y-auto::-webkit-scrollbar-thumb:hover {
     background: #a8a8a8;
+}
+
+/* Draggable widget styles */
+.fixed {
+    user-select: none;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+}
+
+/* Prevent text selection during drag */
+.fixed * {
+    user-select: none;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+}
+
+/* Smooth transitions for non-dragging interactions */
+.fixed button {
+    transition: all 0.2s ease;
+}
+
+.fixed {
+    transition: transform 0.15s ease;
+}
+
+/* Disable transitions during drag for better performance */
+.fixed.dragging * {
+    transition: none !important;
 }
 </style>
