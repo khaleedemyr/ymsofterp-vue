@@ -517,72 +517,117 @@ class UserController extends Controller
     
     private function updatePublicHolidayBalance($userId, $amount, $notes = null)
     {
-        // Check if user has existing public holiday balance record
-        $existingBalance = DB::table('holiday_attendance_compensations')
-            ->where('user_id', $userId)
-            ->where('compensation_type', 'bonus')
-            ->where('status', 'pending')
-            ->sum('compensation_amount');
+        try {
+            // Check if user has existing public holiday balance record
+            $existingBalance = DB::table('holiday_attendance_compensations')
+                ->where('user_id', $userId)
+                ->where('compensation_type', 'bonus')
+                ->where('status', 'approved')
+                ->sum('compensation_amount');
+                
+            $currentBalance = $existingBalance ?: 0;
+            $difference = $amount - $currentBalance;
             
-        $currentBalance = $existingBalance ?: 0;
-        $difference = $amount - $currentBalance;
-        
-        if ($difference != 0) {
-            // Create adjustment transaction
-            DB::table('holiday_attendance_compensations')->insert([
+            \Log::info('Public Holiday Balance Update', [
                 'user_id' => $userId,
-                'holiday_date' => now()->toDateString(),
-                'compensation_type' => 'bonus',
-                'compensation_amount' => $difference,
-                'compensation_description' => $notes ?: 'Manual adjustment - Public Holiday Balance',
-                'status' => 'approved',
-                'created_at' => now(),
-                'updated_at' => now()
+                'amount' => $amount,
+                'current_balance' => $currentBalance,
+                'difference' => $difference
             ]);
+            
+            if ($difference != 0) {
+                // Create adjustment transaction
+                DB::table('holiday_attendance_compensations')->insert([
+                    'user_id' => $userId,
+                    'holiday_date' => now()->toDateString(),
+                    'compensation_type' => 'bonus',
+                    'compensation_amount' => $difference,
+                    'compensation_description' => $notes ?: 'Manual adjustment - Public Holiday Balance',
+                    'status' => 'approved',
+                    'created_at' => now(),
+                    'updated_at' => now()
+                ]);
+                
+                \Log::info('Public Holiday Balance transaction created', [
+                    'user_id' => $userId,
+                    'difference' => $difference
+                ]);
+            }
+        } catch (\Exception $e) {
+            \Log::error('Error updating public holiday balance: ' . $e->getMessage());
+            throw $e;
         }
     }
     
     private function updateExtraOffBalance($userId, $amount, $notes = null)
     {
-        // Get or create extra off balance record
-        $balance = DB::table('extra_off_balance')
-            ->where('user_id', $userId)
-            ->first();
-            
-        if (!$balance) {
-            // Create new balance record
-            DB::table('extra_off_balance')->insert([
-                'user_id' => $userId,
-                'balance' => $amount,
-                'created_at' => now(),
-                'updated_at' => now()
-            ]);
-        } else {
-            // Update existing balance
-            $currentBalance = $balance->balance;
-            $difference = $amount - $currentBalance;
-            
-            DB::table('extra_off_balance')
+        try {
+            // Get or create extra off balance record
+            $balance = DB::table('extra_off_balance')
                 ->where('user_id', $userId)
-                ->update([
-                    'balance' => $amount,
-                    'updated_at' => now()
-                ]);
+                ->first();
                 
-            // Create transaction record for the adjustment
-            if ($difference != 0) {
-                DB::table('extra_off_transactions')->insert([
+            \Log::info('Extra Off Balance Update', [
+                'user_id' => $userId,
+                'amount' => $amount,
+                'existing_balance' => $balance ? $balance->balance : 0
+            ]);
+                
+            if (!$balance) {
+                // Create new balance record
+                DB::table('extra_off_balance')->insert([
                     'user_id' => $userId,
-                    'transaction_type' => $difference > 0 ? 'earned' : 'used',
-                    'amount' => abs($difference),
-                    'source_type' => 'manual_adjustment',
-                    'description' => $notes ?: 'Manual adjustment - Extra Off Balance',
-                    'status' => 'approved',
-                    'approved_by' => auth()->id(),
+                    'balance' => $amount,
                     'created_at' => now(),
                     'updated_at' => now()
                 ]);
+                
+                \Log::info('Extra Off Balance created', [
+                    'user_id' => $userId,
+                    'balance' => $amount
+                ]);
+            } else {
+                // Update existing balance
+                $currentBalance = $balance->balance;
+                $difference = $amount - $currentBalance;
+                
+                DB::table('extra_off_balance')
+                    ->where('user_id', $userId)
+                    ->update([
+                        'balance' => $amount,
+                        'updated_at' => now()
+                    ]);
+                    
+                \Log::info('Extra Off Balance updated', [
+                    'user_id' => $userId,
+                    'old_balance' => $currentBalance,
+                    'new_balance' => $amount,
+                    'difference' => $difference
+                ]);
+                    
+                // Create transaction record for the adjustment
+                if ($difference != 0) {
+                    DB::table('extra_off_transactions')->insert([
+                        'user_id' => $userId,
+                        'transaction_type' => $difference > 0 ? 'earned' : 'used',
+                        'amount' => abs($difference),
+                        'source_type' => 'manual_adjustment',
+                        'description' => $notes ?: 'Manual adjustment - Extra Off Balance',
+                        'status' => 'approved',
+                        'approved_by' => auth()->id(),
+                        'created_at' => now(),
+                        'updated_at' => now()
+                    ]);
+                    
+                    \Log::info('Extra Off transaction created', [
+                        'user_id' => $userId,
+                        'difference' => $difference
+                    ]);
+                }
             }
+        } catch (\Exception $e) {
+            \Log::error('Error updating extra off balance: ' . $e->getMessage());
+            throw $e;
         }
     }
     
@@ -603,7 +648,7 @@ class UserController extends Controller
         $balance = DB::table('holiday_attendance_compensations')
             ->where('user_id', $userId)
             ->where('compensation_type', 'bonus')
-            ->where('status', 'pending')
+            ->where('status', 'approved')
             ->sum('compensation_amount');
             
         return response()->json([

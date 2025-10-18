@@ -146,7 +146,7 @@ class HolidayAttendanceController extends Controller
         
         $extraOffDays = HolidayAttendanceCompensation::where('user_id', $userId)
             ->where('compensation_type', 'extra_off')
-            ->where('status', 'pending')
+            ->where('status', 'approved')
             ->with('holiday')
             ->orderBy('holiday_date', 'desc')
             ->get();

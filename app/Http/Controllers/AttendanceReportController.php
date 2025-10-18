@@ -882,6 +882,8 @@ class AttendanceReportController extends Controller
                     $lembur = 0;
                     $is_off = false;
                     $shift_name = null;
+                    $shift_time_start = null;
+                    $shift_time_end = null;
                     $is_holiday = false;
                     $holiday_name = null;
                     $detail = '';
@@ -907,7 +909,8 @@ class AttendanceReportController extends Controller
                         $isApprovedAbsent = false;
                         if (isset($approvedAbsents[$rowUserId][$tanggal])) {
                             $isApprovedAbsent = true;
-                            $detail = 'Approved Absent: ' . $approvedAbsents[$rowUserId][$tanggal];
+                            $approvedAbsentData = $approvedAbsents[$rowUserId][$tanggal];
+                            $detail = 'Approved Absent: ' . ($approvedAbsentData['leave_type_name'] ?? 'Unknown');
                         }
                         
                         if (!$is_off && !$isApprovedAbsent) {
