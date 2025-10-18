@@ -579,11 +579,15 @@ class AttendanceReportController extends Controller
         $tahun = $request->input('tahun');
 
         $rows = collect();
+        $summary = [ 'total_telat' => 0, 'total_lembur' => 0 ];
         if (!empty($outletId) || !empty($divisionId) || !empty($search) || !empty($bulan) || !empty($tahun)) {
             $bulan = $bulan ?: date('m');
             $tahun = $tahun ?: date('Y');
             $start = date('Y-m-d', strtotime("$tahun-$bulan-26 -1 month"));
             $end = date('Y-m-d', strtotime("$tahun-$bulan-25"));
+
+            // Get approved absent requests for the date range
+            $approvedAbsents = $this->getApprovedAbsentRequests($start, $end);
 
             $period = [];
             $dt = new \DateTime($start);
@@ -603,13 +607,11 @@ class AttendanceReportController extends Controller
                     'a.scan_date',
                     'a.inoutmode',
                     'u.id as user_id',
-                    'u.nama_lengkap',
-                    'o.id_outlet',
-                    'o.nama_outlet'
+                    'u.nama_lengkap'
                 )
                 ->whereBetween(DB::raw('DATE(a.scan_date)'), [$start, $end]);
             if (!empty($outletId)) {
-                $sub->where('o.id_outlet', $outletId);
+                $sub->where('u.id_outlet', $outletId);
             }
             if (!empty($divisionId)) {
                 $sub->where('u.division_id', $divisionId);
@@ -655,10 +657,14 @@ class AttendanceReportController extends Controller
                 return (object) $item;
             });
 
-            $dataByTanggalOutlet = [];
+            // Index dataRows by tanggal
+            $indexedData = [];
             foreach ($dataRows as $row) {
-                $key = $row->tanggal . '_' . $row->id_outlet;
-                $dataByTanggalOutlet[$key] = $row;
+                $key = $row->tanggal;
+                if (!isset($indexedData[$key])) {
+                    $indexedData[$key] = [];
+                }
+                $indexedData[$key][] = $row;
             }
 
             // Ambil semua tanggal dalam periode
@@ -670,35 +676,67 @@ class AttendanceReportController extends Controller
                 $dt->modify('+1 day');
             }
 
-            // Ambil semua outlet
-            $outlets = DB::table('tbl_data_outlet')->select('id_outlet', 'nama_outlet')->get();
-
-            // Generate data untuk setiap tanggal dan outlet
+            // Generate data untuk setiap tanggal
             $finalData = [];
             foreach ($period as $tanggal) {
-                foreach ($outlets as $outlet) {
-                    $key = $tanggal . '_' . $outlet->id_outlet;
-                    if (isset($dataByTanggalOutlet[$key])) {
-                        $finalData[] = $dataByTanggalOutlet[$key];
+                if (isset($indexedData[$tanggal])) {
+                    foreach ($indexedData[$tanggal] as $row) {
+                        $finalData[] = (object) $row;
                     }
                 }
             }
 
-            $dataRows = collect($finalData)->map(function($item) {
-                return (object) $item;
-            });
+            $dataRows = collect($finalData);
 
-            $namaKaryawan = null;
-            $userId = null;
-            if (count($dataRows) > 0) {
-                $namaKaryawan = $dataRows[0]->nama_lengkap;
-                $userId = $dataRows[0]->user_id;
-            } elseif (!empty($search)) {
-                // Cari user_id dari nama
-                $user = DB::table('users')->where('nama_lengkap', $search)->first();
-                if ($user) {
-                    $namaKaryawan = $user->nama_lengkap;
-                    $userId = $user->id;
+            // Ambil nama karyawan dari hasil query (atau dari search)
+            $namaKaryawan = $dataRows->first() ? $dataRows->first()->nama_lengkap : '';
+            $userId = $dataRows->first() ? $dataRows->first()->user_id : null;
+            
+            // Jika tidak ada data dari attendance records, coba ambil dari search atau approved absents
+            if (!$userId || !$namaKaryawan) {
+                if (!empty($search)) {
+                    // Ambil user dari search
+                    $user = DB::table('users')
+                        ->where('nama_lengkap', 'like', "%$search%")
+                        ->when(!empty($outletId), function($query) use ($outletId) {
+                            return $query->where('id_outlet', $outletId);
+                        })
+                        ->when(!empty($divisionId), function($query) use ($divisionId) {
+                            return $query->where('division_id', $divisionId);
+                        })
+                        ->select('id', 'nama_lengkap')
+                        ->first();
+                        
+                    if ($user) {
+                        $userId = $user->id;
+                        $namaKaryawan = $user->nama_lengkap;
+                    }
+                } else {
+                    // Ambil user dari approved absents
+                    $approvedAbsentUser = DB::table('absent_requests')
+                        ->join('users', 'absent_requests.user_id', '=', 'users.id')
+                        ->where('absent_requests.status', 'approved')
+                        ->where(function($query) use ($start, $end) {
+                            $query->whereBetween('absent_requests.date_from', [$start, $end])
+                                  ->orWhereBetween('absent_requests.date_to', [$start, $end])
+                                  ->orWhere(function($q) use ($start, $end) {
+                                      $q->where('absent_requests.date_from', '<=', $start)
+                                        ->where('absent_requests.date_to', '>=', $end);
+                                  });
+                        })
+                        ->when(!empty($outletId), function($query) use ($outletId) {
+                            return $query->where('users.id_outlet', $outletId);
+                        })
+                        ->when(!empty($divisionId), function($query) use ($divisionId) {
+                            return $query->where('users.division_id', $divisionId);
+                        })
+                        ->select('users.id', 'users.nama_lengkap')
+                        ->first();
+                        
+                    if ($approvedAbsentUser) {
+                        $userId = $approvedAbsentUser->id;
+                        $namaKaryawan = $approvedAbsentUser->nama_lengkap;
+                    }
                 }
             }
 
@@ -706,14 +744,14 @@ class AttendanceReportController extends Controller
             $shiftData = DB::table('shifts')
                 ->first();
 
-            // Hitung lembur untuk setiap baris menggunakan smart calculation
-            $dataRows = $dataRows->map(function ($row) use ($shiftData) {
+            // Hitung lembur untuk setiap baris menggunakan perhitungan sederhana
+            foreach ($dataRows as $row) {
                 if ($row->jam_masuk && $row->jam_keluar && $shiftData) {
-                    // Ambil jam shift dari shift data - gunakan kolom yang benar
+                    // Ambil jam shift dari shift data
                     $shiftStart = $shiftData->time_start ?? '08:00:00'; // Default jika tidak ada
                     $shiftEnd = $shiftData->time_end ?? '17:00:00'; // Default jika tidak ada
                     
-                    // Gunakan smart overtime calculation
+                    // Gunakan perhitungan lembur yang sederhana dan aman
                     $row->lembur = $this->calculateSimpleOvertime($row->jam_keluar, $shiftEnd);
                 } else {
                     $row->lembur = 0;
@@ -721,9 +759,7 @@ class AttendanceReportController extends Controller
                 
                 // Set is_off jika tidak ada scan
                 $row->is_off = !$row->jam_masuk && !$row->jam_keluar;
-                
-                return $row;
-            });
+            }
 
             // Ambil semua tanggal libur dalam periode
             $holidays = DB::table('tbl_kalender_perusahaan')
@@ -815,26 +851,28 @@ class AttendanceReportController extends Controller
                             $has_no_checkout = true;
                         }
                         
-                        $rows->push((object)[
-                            'tanggal' => $tanggal,
-                            'user_id' => $rowUserId,
-                            'nama_lengkap' => $rowNama,
-                            'jam_masuk' => $jam_masuk,
-                            'jam_keluar' => $jam_keluar,
-                            'total_masuk' => $row->total_masuk,
-                            'total_keluar' => $row->total_keluar,
-                            'telat' => $telat,
-                            'lembur' => $lembur,
-                            'is_off' => $is_off,
-                            'shift_name' => $shift_name,
-                            'shift_time_start' => $shift_time_start,
-                            'shift_time_end' => $shift_time_end,
-                            'is_holiday' => $is_holiday,
-                            'holiday_name' => $holiday_name,
-                            'detail' => $detail,
-                            'is_cross_day' => $row->is_cross_day ?? false,
-                            'has_no_checkout' => $has_no_checkout,
-                        ]);
+                    $rows->push((object)[
+                        'tanggal' => $tanggal,
+                        'user_id' => $rowUserId,
+                        'nama_lengkap' => $rowNama,
+                        'outlet_id' => null,
+                        'nama_outlet' => null,
+                        'jam_masuk' => $jam_masuk,
+                        'jam_keluar' => $jam_keluar,
+                        'total_masuk' => $row->total_masuk,
+                        'total_keluar' => $row->total_keluar,
+                        'telat' => $telat,
+                        'lembur' => $lembur,
+                        'is_off' => $is_off,
+                        'shift_name' => $shift_name,
+                        'shift_time_start' => $shift_time_start,
+                        'shift_time_end' => $shift_time_end,
+                        'is_holiday' => $is_holiday,
+                        'holiday_name' => $holiday_name,
+                        'detail' => $detail,
+                        'is_cross_day' => $row->is_cross_day ?? false,
+                        'has_no_checkout' => $has_no_checkout,
+                    ]);
                     }
                 } else {
                     // Tidak ada data absensi untuk tanggal ini
@@ -863,6 +901,21 @@ class AttendanceReportController extends Controller
                             if (is_null($shift->shift_id) || (strtolower($shift->shift_name ?? '') === 'off')) {
                                 $is_off = true;
                             }
+                        }
+                        
+                        // Cek apakah ada approved absent untuk tanggal ini
+                        $isApprovedAbsent = false;
+                        if (isset($approvedAbsents[$rowUserId][$tanggal])) {
+                            $isApprovedAbsent = true;
+                            $detail = 'Approved Absent: ' . $approvedAbsents[$rowUserId][$tanggal];
+                        }
+                        
+                        if (!$is_off && !$isApprovedAbsent) {
+                            $telat = 0; // Tidak ada scan = tidak ada telat
+                            $lembur = 0;
+                        } else {
+                            $telat = 0;
+                            $lembur = 0;
                         }
                     }
                     if ($holidays->has($tanggal)) {
@@ -2418,9 +2471,9 @@ class AttendanceReportController extends Controller
     /**
      * Get approved absent requests for all users in the date range
      */
-    private function getApprovedAbsentRequests($startDate, $endDate)
+    private function getApprovedAbsentRequests($startDate, $endDate, $userId = null)
     {
-        $approvedAbsents = DB::table('absent_requests')
+        $query = DB::table('absent_requests')
             ->join('leave_types', 'absent_requests.leave_type_id', '=', 'leave_types.id')
             ->where('absent_requests.status', 'approved')
             ->where(function($query) use ($startDate, $endDate) {
@@ -2430,8 +2483,14 @@ class AttendanceReportController extends Controller
                           $q->where('absent_requests.date_from', '<=', $startDate)
                             ->where('absent_requests.date_to', '>=', $endDate);
                       });
-            })
-            ->select([
+            });
+            
+        // Filter by user if provided
+        if ($userId) {
+            $query->where('absent_requests.user_id', $userId);
+        }
+            
+        $approvedAbsents = $query->select([
                 'absent_requests.user_id',
                 'absent_requests.date_from',
                 'absent_requests.date_to',
