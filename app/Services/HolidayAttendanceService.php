@@ -363,4 +363,171 @@ class HolidayAttendanceService
 
         return true;
     }
+
+    /**
+     * Use partial Public Holiday balance
+     * 
+     * @param int $userId
+     * @param int $compensationId
+     * @param float $useAmount
+     * @param string $useDate
+     * @return bool
+     */
+    public function usePartialPublicHolidayBalance($userId, $compensationId, $useAmount, $useDate)
+    {
+        $compensation = DB::table('holiday_attendance_compensations')
+            ->where('id', $compensationId)
+            ->where('user_id', $userId)
+            ->where('compensation_type', 'bonus')
+            ->where('status', 'approved')
+            ->first();
+
+        if (!$compensation) {
+            throw new \Exception('Public Holiday balance not found or not approved');
+        }
+
+        $currentUsedAmount = $compensation->used_amount ?? 0;
+        $availableAmount = $compensation->compensation_amount - $currentUsedAmount;
+
+        if ($useAmount > $availableAmount) {
+            throw new \Exception('Insufficient Public Holiday balance. Available: ' . $availableAmount . ' days');
+        }
+
+        // Update used_amount
+        $newUsedAmount = $currentUsedAmount + $useAmount;
+        
+        DB::table('holiday_attendance_compensations')
+            ->where('id', $compensationId)
+            ->update([
+                'used_amount' => $newUsedAmount,
+                'used_date' => $useDate,
+                'updated_at' => now()
+            ]);
+
+        \Log::info("Partial Public Holiday balance used by employee", [
+            'user_id' => $userId,
+            'compensation_id' => $compensationId,
+            'use_amount' => $useAmount,
+            'use_date' => $useDate,
+            'remaining_amount' => $compensation->compensation_amount - $newUsedAmount
+        ]);
+
+        return true;
+    }
+
+    /**
+     * Use Public Holiday balance with automatic record selection
+     * This method will automatically select the best records to use based on strategy
+     * 
+     * @param int $userId
+     * @param float $useAmount
+     * @param string $useDate
+     * @param string $strategy Strategy to use: 'fifo' (First In First Out) or 'lifo' (Last In First Out)
+     * @return array
+     */
+    public function usePublicHolidayBalanceAuto($userId, $useAmount, $useDate, $strategy = 'fifo')
+    {
+        // Get all available Public Holiday balance records (both bonus and extra_off)
+        $availableRecords = DB::table('holiday_attendance_compensations')
+            ->where('user_id', $userId)
+            ->whereIn('compensation_type', ['bonus', 'extra_off'])
+            ->where('status', 'approved')
+            ->orderBy($strategy === 'fifo' ? 'created_at' : 'created_at', $strategy === 'fifo' ? 'asc' : 'desc')
+            ->get();
+
+        $totalAvailable = 0;
+        $recordsToUse = [];
+        $remainingAmount = $useAmount;
+
+        // Calculate total available balance
+        foreach ($availableRecords as $record) {
+            $usedAmount = $record->used_amount ?? 0;
+            
+            // For extra_off type, each record is either fully available or fully used
+            if ($record->compensation_type === 'extra_off') {
+                $availableAmount = ($record->used_date === null) ? 1 : 0; // 1 day if not used, 0 if used
+            } else {
+                // For bonus type, calculate based on compensation_amount and used_amount
+                $availableAmount = $record->compensation_amount - $usedAmount;
+            }
+            
+            if ($availableAmount > 0) {
+                $totalAvailable += $availableAmount;
+                
+                if ($remainingAmount > 0) {
+                    $useFromThisRecord = min($remainingAmount, $availableAmount);
+                    $recordsToUse[] = [
+                        'id' => $record->id,
+                        'compensation_type' => $record->compensation_type,
+                        'available_amount' => $availableAmount,
+                        'use_amount' => $useFromThisRecord
+                    ];
+                    $remainingAmount -= $useFromThisRecord;
+                }
+            }
+        }
+
+        if ($totalAvailable < $useAmount) {
+            throw new \Exception('Insufficient Public Holiday balance. Available: ' . $totalAvailable . ' days, Requested: ' . $useAmount . ' days');
+        }
+
+        // Update the selected records
+        $usedRecords = [];
+        foreach ($recordsToUse as $recordToUse) {
+            $record = DB::table('holiday_attendance_compensations')
+                ->where('id', $recordToUse['id'])
+                ->first();
+
+            if ($recordToUse['compensation_type'] === 'extra_off') {
+                // For extra_off type, mark as used (set used_date and status)
+                DB::table('holiday_attendance_compensations')
+                    ->where('id', $recordToUse['id'])
+                    ->update([
+                        'status' => 'used',
+                        'used_date' => $useDate,
+                        'updated_at' => now()
+                    ]);
+
+                $usedRecords[] = [
+                    'compensation_id' => $recordToUse['id'],
+                    'compensation_type' => 'extra_off',
+                    'used_amount' => $recordToUse['use_amount'],
+                    'remaining_amount' => 0 // extra_off is fully used
+                ];
+            } else {
+                // For bonus type, update used_amount
+                $currentUsedAmount = $record->used_amount ?? 0;
+                $newUsedAmount = $currentUsedAmount + $recordToUse['use_amount'];
+
+                DB::table('holiday_attendance_compensations')
+                    ->where('id', $recordToUse['id'])
+                    ->update([
+                        'used_amount' => $newUsedAmount,
+                        'used_date' => $useDate,
+                        'updated_at' => now()
+                    ]);
+
+                $usedRecords[] = [
+                    'compensation_id' => $recordToUse['id'],
+                    'compensation_type' => 'bonus',
+                    'used_amount' => $recordToUse['use_amount'],
+                    'remaining_amount' => $record->compensation_amount - $newUsedAmount
+                ];
+            }
+        }
+
+        \Log::info("Public Holiday balance used automatically", [
+            'user_id' => $userId,
+            'use_amount' => $useAmount,
+            'use_date' => $useDate,
+            'strategy' => $strategy,
+            'used_records' => $usedRecords
+        ]);
+
+        return [
+            'success' => true,
+            'used_records' => $usedRecords,
+            'total_used' => $useAmount
+        ];
+    }
 }

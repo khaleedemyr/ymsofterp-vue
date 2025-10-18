@@ -138,6 +138,71 @@ class HolidayAttendanceController extends Controller
     }
 
     /**
+     * Use partial Public Holiday balance
+     */
+    public function usePartialPublicHolidayBalance(Request $request)
+    {
+        $request->validate([
+            'compensation_id' => 'required|exists:holiday_attendance_compensations,id',
+            'use_amount' => 'required|numeric|min:0.01',
+            'use_date' => 'required|date'
+        ]);
+
+        $userId = auth()->id();
+        $compensationId = $request->input('compensation_id');
+        $useAmount = $request->input('use_amount');
+        $useDate = $request->input('use_date');
+
+        try {
+            $this->holidayAttendanceService->usePartialPublicHolidayBalance($userId, $compensationId, $useAmount, $useDate);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Public Holiday balance used successfully'
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage()
+            ], 400);
+        }
+    }
+
+    /**
+     * Use Public Holiday balance with automatic record selection
+     */
+    public function usePublicHolidayBalanceAuto(Request $request)
+    {
+        $request->validate([
+            'use_amount' => 'required|numeric|min:0.01',
+            'use_date' => 'required|date',
+            'strategy' => 'nullable|in:fifo,lifo'
+        ]);
+
+        $userId = auth()->id();
+        $useAmount = $request->input('use_amount');
+        $useDate = $request->input('use_date');
+        $strategy = $request->input('strategy', 'fifo'); // Default to FIFO
+
+        try {
+            $result = $this->holidayAttendanceService->usePublicHolidayBalanceAuto($userId, $useAmount, $useDate, $strategy);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Public Holiday balance used successfully',
+                'data' => $result
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage()
+            ], 400);
+        }
+    }
+
+    /**
      * Get user's available extra off days
      */
     public function getMyExtraOffDays(Request $request)
@@ -148,14 +213,27 @@ class HolidayAttendanceController extends Controller
         $extraOffDays = HolidayAttendanceCompensation::where('user_id', $userId)
             ->whereIn('compensation_type', ['extra_off', 'bonus'])
             ->where('status', 'approved')
-            ->whereNull('used_date') // Only get unused compensations
             ->with('holiday')
             ->orderBy('holiday_date', 'desc')
             ->get();
 
+        // Calculate available balance for each record
+        $processedDays = $extraOffDays->map(function ($day) {
+            $availableAmount = $day->compensation_amount - ($day->used_amount ?? 0);
+            
+            return [
+                ...$day->toArray(),
+                'available_amount' => max(0, $availableAmount),
+                'used_amount' => $day->used_amount ?? 0
+            ];
+        })->filter(function ($day) {
+            // Only include records that have available balance
+            return $day['available_amount'] > 0;
+        });
+
         return response()->json([
             'success' => true,
-            'extra_off_days' => $extraOffDays
+            'extra_off_days' => $processedDays
         ]);
     }
 

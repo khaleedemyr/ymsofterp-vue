@@ -2007,6 +2007,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/api/holiday-attendance/employee-history/{userId}', [\App\Http\Controllers\HolidayAttendanceController::class, 'getEmployeeHistory'])->name('api.holiday-attendance.employee-history');
     Route::post('/api/holiday-attendance/use-extra-off', [\App\Http\Controllers\HolidayAttendanceController::class, 'useExtraOffDay'])->name('api.holiday-attendance.use-extra-off');
     Route::get('/api/holiday-attendance/my-extra-off-days', [\App\Http\Controllers\HolidayAttendanceController::class, 'getMyExtraOffDays'])->name('api.holiday-attendance.my-extra-off-days');
+    Route::post('/api/holiday-attendance/use-partial-balance', [\App\Http\Controllers\HolidayAttendanceController::class, 'usePartialPublicHolidayBalance'])->name('api.holiday-attendance.use-partial-balance');
+    Route::post('/api/holiday-attendance/use-balance-auto', [\App\Http\Controllers\HolidayAttendanceController::class, 'usePublicHolidayBalanceAuto'])->name('api.holiday-attendance.use-balance-auto');
     Route::get('/api/holiday-attendance/statistics', [\App\Http\Controllers\HolidayAttendanceController::class, 'getStatistics'])->name('api.holiday-attendance.statistics');
     Route::get('/holiday-attendance/export', [\App\Http\Controllers\HolidayAttendanceController::class, 'export'])->name('holiday-attendance.export');
     
