@@ -11,6 +11,7 @@
         }"
         @mousedown="startDrag"
         @touchstart="startDrag"
+        @touchend="handleTouchEnd"
         @dblclick="resetWidgetPosition"
     >
         <!-- Chat Button with Label -->
@@ -28,6 +29,7 @@
             <!-- Chat Button -->
             <button 
                 @click="toggleChat"
+                @touchstart="handleButtonTouchStart"
                 class="bg-blue-500 hover:bg-blue-600 text-white rounded-full p-4 shadow-lg transition-all duration-300 hover:scale-110 relative select-none group"
                 :class="{ 
                     'animate-pulse': hasUnreadMessages,
@@ -553,11 +555,13 @@ let pollingInterval = null;
 
 // Drag methods
 const startDrag = (event) => {
-    // Prevent default to avoid text selection
-    event.preventDefault();
-    
     // Only allow dragging when chat is closed
     if (isOpen.value) return;
+    
+    // If this is a button touch, don't start drag
+    if (event.target.closest('button')) {
+        return;
+    }
     
     hasDragged.value = false;
     
@@ -569,19 +573,19 @@ const startDrag = (event) => {
         x: clientX - widgetPosition.value.x,
         y: clientY - widgetPosition.value.y,
         startX: clientX,
-        startY: clientY
+        startY: clientY,
+        startTime: Date.now(),
+        isButtonTouch: false
     };
     
     // Add event listeners
     document.addEventListener('mousemove', handleDrag);
     document.addEventListener('mouseup', stopDrag);
-    document.addEventListener('touchmove', handleDrag);
+    document.addEventListener('touchmove', handleDrag, { passive: false });
     document.addEventListener('touchend', stopDrag);
 };
 
 const handleDrag = (event) => {
-    event.preventDefault();
-    
     const clientX = event.type === 'touchmove' ? event.touches[0].clientX : event.clientX;
     const clientY = event.type === 'touchmove' ? event.touches[0].clientY : event.clientY;
     
@@ -592,9 +596,12 @@ const handleDrag = (event) => {
     if (!isDragging.value && (deltaX > dragThreshold || deltaY > dragThreshold)) {
         isDragging.value = true;
         hasDragged.value = true;
+        event.preventDefault(); // Only prevent default when actually dragging
     }
     
     if (!isDragging.value) return;
+    
+    event.preventDefault();
     
     // Calculate new position
     let newX = clientX - dragStart.value.x;
@@ -649,7 +656,7 @@ const handleDrag = (event) => {
     }
 };
 
-const stopDrag = () => {
+const stopDrag = (event) => {
     // Remove event listeners
     document.removeEventListener('mousemove', handleDrag);
     document.removeEventListener('mouseup', stopDrag);
@@ -667,6 +674,51 @@ const stopDrag = () => {
     setTimeout(() => {
         hasDragged.value = false;
     }, 100);
+};
+
+const handleTouchEnd = (event) => {
+    // If we were dragging, don't trigger click
+    if (hasDragged.value || isDragging.value) {
+        event.preventDefault();
+        return;
+    }
+    
+    // If this was a button touch, don't handle here
+    if (dragStart.value.isButtonTouch) {
+        return;
+    }
+    
+    // If it's a quick tap, trigger the chat toggle
+    if (dragStart.value.startTime) {
+        const tapDuration = Date.now() - dragStart.value.startTime;
+        if (tapDuration < 200) { // Quick tap
+            toggleChat(event);
+        }
+    }
+};
+
+const handleButtonTouchStart = (event) => {
+    // Prevent the container's touchstart from interfering
+    event.stopPropagation();
+    
+    // Set a flag to indicate this is a button touch
+    dragStart.value.isButtonTouch = true;
+    
+    // Set start time for button touch
+    dragStart.value.startTime = Date.now();
+    
+    // Add touchend listener for button
+    event.target.addEventListener('touchend', handleButtonTouchEnd, { once: true });
+};
+
+const handleButtonTouchEnd = (event) => {
+    // If this was a quick tap on button, trigger chat
+    if (dragStart.value.startTime) {
+        const tapDuration = Date.now() - dragStart.value.startTime;
+        if (tapDuration < 200) { // Quick tap
+            toggleChat(event);
+        }
+    }
 };
 
 const saveWidgetPosition = () => {
@@ -720,6 +772,15 @@ const toggleChat = (event) => {
     if (hasDragged.value) {
         event.preventDefault();
         return;
+    }
+    
+    // For mobile, check if this is a quick tap (not a drag)
+    if (event.type === 'touchend' && dragStart.value.startTime) {
+        const tapDuration = Date.now() - dragStart.value.startTime;
+        if (tapDuration > 200) { // If touch lasted more than 200ms, it might be a drag
+            event.preventDefault();
+            return;
+        }
     }
     
     isOpen.value = !isOpen.value;
@@ -1192,6 +1253,7 @@ onUnmounted(() => {
     -webkit-user-select: none;
     -moz-user-select: none;
     -ms-user-select: none;
+    touch-action: manipulation;
 }
 
 /* Prevent text selection during drag */
@@ -1200,6 +1262,17 @@ onUnmounted(() => {
     -webkit-user-select: none;
     -moz-user-select: none;
     -ms-user-select: none;
+}
+
+/* Mobile touch improvements */
+@media (hover: none) and (pointer: coarse) {
+    .fixed {
+        touch-action: manipulation;
+    }
+    
+    .fixed button {
+        touch-action: manipulation;
+    }
 }
 
 /* Smooth transitions for non-dragging interactions */
