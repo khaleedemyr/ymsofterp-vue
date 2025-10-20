@@ -658,7 +658,7 @@ class AttendanceController extends Controller
                                 ->where('date_to', '>=', $request->date_to);
                           });
                 })
-                ->whereIn('status', ['pending', 'approved'])
+                ->whereIn('status', ['pending', 'approved', 'supervisor_approved'])
                 ->exists();
             
             if ($existingRequest) {
