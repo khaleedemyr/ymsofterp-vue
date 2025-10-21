@@ -1313,9 +1313,23 @@ class PurchaseOrderOpsController extends Controller
                 'purchase_requisition.division',
                 'purchase_requisition.category',
                 'purchase_requisition.outlet',
+                'purchase_requisition.creator',
                 'approvalFlows.approver.jabatan'
             ])->whereIn('id', $poIds)->get();
 
+            // Add budget info for each PO that has a purchase requisition
+            foreach ($purchaseOrders as $po) {
+                if ($po->purchase_requisition) {
+                    try {
+                        // Get budget info using the same logic as in PurchaseRequisitionController
+                        $budgetInfo = $this->getBudgetInfo($po->purchase_requisition);
+                        $po->purchase_requisition->budget_info = $budgetInfo;
+                    } catch (\Exception $e) {
+                        \Log::warning('Failed to get budget info for PR ' . $po->purchase_requisition->id . ': ' . $e->getMessage());
+                        $po->purchase_requisition->budget_info = null;
+                    }
+                }
+            }
             
             return view('purchase-order-ops.print-preview', [
                 'purchaseOrders' => $purchaseOrders,
@@ -1332,5 +1346,88 @@ class PurchaseOrderOpsController extends Controller
                 'error' => 'Failed to generate print preview: ' . $e->getMessage()
             ], 500);
         }
+    }
+
+    /**
+     * Get budget info for a purchase requisition
+     */
+    private function getBudgetInfo($purchaseRequisition)
+    {
+        $categoryId = $purchaseRequisition->category_id;
+        $outletId = $purchaseRequisition->outlet_id;
+        $currentAmount = $purchaseRequisition->amount;
+        $year = $purchaseRequisition->created_at->year;
+        $month = $purchaseRequisition->created_at->month;
+
+        if (!$categoryId) {
+            return null;
+        }
+
+        // Get category budget
+        $category = \App\Models\PurchaseRequisitionCategory::find($categoryId);
+        if (!$category) {
+            return null;
+        }
+
+        $budgetInfo = [];
+
+        if ($category->isGlobalBudget()) {
+            // GLOBAL BUDGET: Calculate across all outlets
+            $categoryBudget = $category->budget_limit;
+            
+            $categoryUsedAmount = \App\Models\PurchaseRequisition::where('category_id', $categoryId)
+                ->whereYear('created_at', $year)
+                ->whereMonth('created_at', $month)
+                ->whereIn('status', ['SUBMITTED', 'APPROVED', 'PROCESSED', 'COMPLETED'])
+                ->sum('amount');
+
+            $budgetInfo = [
+                'budget_type' => 'GLOBAL',
+                'current_year' => $year,
+                'current_month' => $month,
+                'category_budget' => $categoryBudget,
+                'category_used_amount' => $categoryUsedAmount,
+                'category_remaining_amount' => $categoryBudget - $categoryUsedAmount,
+            ];
+
+        } else if ($category->isPerOutletBudget()) {
+            // PER_OUTLET BUDGET: Calculate per specific outlet
+            if (!$outletId) {
+                return null;
+            }
+
+            // Get outlet budget allocation
+            $outletBudget = \App\Models\PurchaseRequisitionOutletBudget::where('category_id', $categoryId)
+                ->where('outlet_id', $outletId)
+                ->first();
+
+            if (!$outletBudget) {
+                return null;
+            }
+
+            // Calculate used amount for this specific outlet
+            $outletUsedAmount = \App\Models\PurchaseRequisition::where('category_id', $categoryId)
+                ->where('outlet_id', $outletId)
+                ->whereYear('created_at', $year)
+                ->whereMonth('created_at', $month)
+                ->whereIn('status', ['SUBMITTED', 'APPROVED', 'PROCESSED', 'COMPLETED'])
+                ->sum('amount');
+
+            $budgetInfo = [
+                'budget_type' => 'PER_OUTLET',
+                'current_year' => $year,
+                'current_month' => $month,
+                'category_budget' => $category->budget_limit, // Global budget for reference
+                'outlet_budget' => $outletBudget->allocated_budget,
+                'outlet_used_amount' => $outletUsedAmount,
+                'outlet_remaining_amount' => $outletBudget->allocated_budget - $outletUsedAmount,
+                'outlet_info' => [
+                    'id' => $outletBudget->outlet_id,
+                    'name' => $outletBudget->outlet->nama_outlet ?? 'Unknown Outlet',
+                ],
+            ];
+        }
+
+        return $budgetInfo;
     }
 }
