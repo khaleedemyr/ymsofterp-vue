@@ -3953,6 +3953,46 @@ watch(locale, () => {
                         </div>
                     </div>
 
+                    <!-- Purchase Requisition Ops Information -->
+                    <div v-if="selectedPoOpsApproval.purchase_requisition" class="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg">
+                        <h4 class="text-md font-semibold text-gray-900 dark:text-white mb-3">
+                            <i class="fa fa-shopping-cart mr-2 text-green-500"></i>
+                            Informasi Purchase Requisition Ops
+                        </h4>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="text-sm font-medium text-gray-600 dark:text-gray-400">PR Number</label>
+                                <p class="text-gray-900 dark:text-white font-semibold">{{ selectedPoOpsApproval.purchase_requisition.pr_number }}</p>
+                            </div>
+                            <div>
+                                <label class="text-sm font-medium text-gray-600 dark:text-gray-400">Title</label>
+                                <p class="text-gray-900 dark:text-white">{{ selectedPoOpsApproval.purchase_requisition.title }}</p>
+                            </div>
+                            <div>
+                                <label class="text-sm font-medium text-gray-600 dark:text-gray-400">Division</label>
+                                <p class="text-gray-900 dark:text-white">{{ selectedPoOpsApproval.purchase_requisition.division?.nama_divisi || '-' }}</p>
+                            </div>
+                            <div>
+                                <label class="text-sm font-medium text-gray-600 dark:text-gray-400">Category</label>
+                                <p class="text-gray-900 dark:text-white">{{ selectedPoOpsApproval.purchase_requisition.category?.name || '-' }}</p>
+                            </div>
+                            <div>
+                                <label class="text-sm font-medium text-gray-600 dark:text-gray-400">Outlet</label>
+                                <p class="text-gray-900 dark:text-white">{{ selectedPoOpsApproval.purchase_requisition.outlet?.nama_outlet || '-' }}</p>
+                            </div>
+                            <div>
+                                <label class="text-sm font-medium text-gray-600 dark:text-gray-400">Amount</label>
+                                <p class="text-gray-900 dark:text-white font-semibold text-lg">
+                                    Rp {{ new Intl.NumberFormat('id-ID').format(selectedPoOpsApproval.purchase_requisition.amount) }}
+                                </p>
+                            </div>
+                        </div>
+                        <div v-if="selectedPoOpsApproval.purchase_requisition.description" class="mt-4">
+                            <label class="text-sm font-medium text-gray-600 dark:text-gray-400">Description</label>
+                            <p class="text-gray-900 dark:text-white mt-1">{{ selectedPoOpsApproval.purchase_requisition.description }}</p>
+                        </div>
+                    </div>
+
                     <!-- Budget Information -->
                     <div v-if="poOpsApprovalBudgetInfo" class="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
                         <h4 class="text-md font-semibold text-gray-900 dark:text-white mb-3">
