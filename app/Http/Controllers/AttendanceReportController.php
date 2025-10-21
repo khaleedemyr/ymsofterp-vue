@@ -1593,10 +1593,6 @@ class AttendanceReportController extends Controller
             $start = date('Y-m-d', strtotime("$tahun-$bulan-26 -1 month"));
             $end = date('Y-m-d', strtotime("$tahun-$bulan-25"));
 
-            \Log::info('Date range calculated', [
-                'start' => $start,
-                'end' => $end
-            ]);
 
             // Query data absensi dengan optimasi
             \Log::info('Starting database query at: ' . now());
@@ -1631,12 +1627,10 @@ class AttendanceReportController extends Controller
                 // Apply filters - Filter outlet dan divisi untuk memfilter karyawan
                 if (!empty($outletId)) {
                     $sub->where('u.id_outlet', $outletId);
-                    \Log::info('Applied outlet filter: ' . $outletId);
                 }
                 
                 if (!empty($divisionId)) {
                     $sub->where('u.division_id', $divisionId);
-                    \Log::info('Applied division filter: ' . $divisionId);
                 }
 
                 // Gunakan chunk untuk mencegah memory overflow
@@ -1967,60 +1961,17 @@ class AttendanceReportController extends Controller
                         // Calculate alpa days (days with shift but no attendance and no absent request)
                         $alpaDays = $this->calculateAlpaDays($firstRow->user_id, null, $start, $end);
                         
-                        // DEBUG: Log lembur calculation for suspicious values
-                        $lemburSum = $employeeRows->sum('lembur');
-                        if ($lemburSum > 100) { // If total lembur > 100 hours, log it
-                            \Log::error('SUSPICIOUS LEMBUR TOTAL', [
-                                'user_id' => $firstRow->user_id,
-                                'nama_lengkap' => $firstRow->nama_lengkap,
-                                'lembur_sum' => $lemburSum,
-                                'employee_rows_count' => $employeeRows->count(),
-                                'sample_lembur_values' => $employeeRows->pluck('lembur')->take(10)->toArray()
-                            ]);
-                            
-                            // SAFETY: Reset lembur values that are too large
-                            $employeeRows->transform(function($row) {
-                                if ($row->lembur > 12) {
-                                    \Log::error('Resetting large lembur value', [
-                                        'user_id' => $row->user_id,
-                                        'tanggal' => $row->tanggal,
-                                        'old_lembur' => $row->lembur,
-                                        'new_lembur' => 0
-                                    ]);
-                                    $row->lembur = 0;
-                                }
-                                return $row;
-                            });
-                        }
+                        // SAFETY: Reset lembur values that are too large
+                        $employeeRows->transform(function($row) {
+                            if ($row->lembur > 12) {
+                                $row->lembur = 0;
+                            }
+                            return $row;
+                        });
                         
                         // FIXED: Calculate Extra Off overtime once to prevent accumulation
                         $extraOffOvertimeTotal = floor($this->getExtraOffOvertimeHours($firstRow->user_id, $start, $end));
                         
-                        // SPECIAL DEBUG for ALYA PUTRI AMALIA
-                        if ($firstRow->user_id == 2558) { // Use correct user_id
-                            \Log::error('ALYA PUTRI AMALIA DEBUG', [
-                                'user_id' => $firstRow->user_id,
-                                'nama_lengkap' => $firstRow->nama_lengkap,
-                                'lembur_sum' => $lemburSum,
-                                'extra_off_overtime_total' => $extraOffOvertimeTotal,
-                                'total_expected' => $lemburSum + $extraOffOvertimeTotal,
-                                'employee_rows_count' => $employeeRows->count(),
-                                'all_lembur_values' => $employeeRows->pluck('lembur')->toArray(),
-                                'dates_with_lembur' => $employeeRows->where('lembur', '>', 0)->pluck('tanggal', 'lembur')->toArray()
-                            ]);
-                            
-                            // FORCE RESET for ALYA PUTRI AMALIA if lembur is too large
-                            if ($lemburSum > 1000) {
-                                \Log::error('FORCE RESET ALYA PUTRI AMALIA LEMBUR', [
-                                    'old_lembur_sum' => $lemburSum,
-                                    'action' => 'force_reset_to_zero'
-                                ]);
-                                $employeeRows->transform(function($row) {
-                                    $row->lembur = 0;
-                                    return $row;
-                                });
-                            }
-                        }
 
                         // Siapkan data detail absensi harian untuk expandable table
                         $dailyAttendance = $employeeRows->map(function($row) use ($firstRow, $extraOffOvertimeTotal, $employeeRows) {
@@ -2204,7 +2155,6 @@ class AttendanceReportController extends Controller
         // Set timeout untuk mencegah loading terlalu lama
         set_time_limit(300); // 5 menit
         
-        \Log::info('Export request received at: ' . now());
         
         if (!empty($outletId) || !empty($divisionId) || !empty($bulan) || !empty($tahun)) {
             $bulan = $bulan ?: date('m');
@@ -2212,14 +2162,9 @@ class AttendanceReportController extends Controller
             $start = date('Y-m-d', strtotime("$tahun-$bulan-26 -1 month"));
             $end = date('Y-m-d', strtotime("$tahun-$bulan-25"));
 
-            \Log::info('Date range calculated', [
-                'start' => $start,
-                'end' => $end
-            ]);
 
             try {
                 // Query data absensi dengan optimasi
-                \Log::info('Starting database query for export...');
                 
                 $chunkSize = 5000;
                 $rawData = collect();
@@ -2242,12 +2187,10 @@ class AttendanceReportController extends Controller
                 // Apply filters - SAMA PERSIS DENGAN METHOD employeeSummary
                 if (!empty($outletId)) {
                     $sub->where('u.id_outlet', $outletId);
-                    \Log::info('Applied outlet filter: ' . $outletId);
                 }
                 
                 if (!empty($divisionId)) {
                     $sub->where('u.division_id', $divisionId);
-                    \Log::info('Applied division filter: ' . $divisionId);
                 }
 
                 $sub->orderBy('a.scan_date')->chunk($chunkSize, function($chunk) use (&$rawData) {
@@ -2491,7 +2434,6 @@ class AttendanceReportController extends Controller
                 // Sort employee summary by nama_lengkap
                 $employeeSummary = $employeeSummary->sortBy('nama_lengkap')->values();
 
-                \Log::info('Employee summary prepared for export. Count: ' . $employeeSummary->count());
 
                 // Ambil nama outlet dan divisi untuk nama file
                 $outletName = null;
@@ -2697,7 +2639,6 @@ class AttendanceReportController extends Controller
         // Set timeout untuk mencegah loading terlalu lama
         set_time_limit(300); // 5 menit
         
-        \Log::info('Export request received at: ' . now());
 
         // Implementation untuk export Excel
         // Ini bisa diimplementasikan sesuai kebutuhan
@@ -2841,9 +2782,6 @@ class AttendanceReportController extends Controller
                 $jamKeluar = $sameDayOuts->last()['scan_date'];
                 $isCrossDay = false;
                 
-                \Log::info('Only same-day checkout available', [
-                    'chosen_out' => $jamKeluar
-                ]);
                 
             } elseif ($nextDayOuts->isNotEmpty()) {
                 // Hanya ada cross-day OUT scan
@@ -2856,10 +2794,6 @@ class AttendanceReportController extends Controller
                     $isCrossDay = true;
                     $totalKeluar = 1;
                     
-                    \Log::info('Only cross-day checkout available', [
-                        'out_hour' => $outHour,
-                        'chosen_out' => $jamKeluar
-                    ]);
                     
                     // Hapus scan keluar dari hari berikutnya
                     $allProcessedData[$nextDayKey]['scans'] = $nextDayScans->where('inoutmode', '!=', 2)->values()->toArray();
@@ -2892,12 +2826,6 @@ class AttendanceReportController extends Controller
         // Pola 1: Masuk pagi (06:00-09:00) dengan multiple IN scans DAN tidak ada OUT scan
         // Ini kemungkinan kelanjutan shift malam sebelumnya (multi-outlet)
         if ($masukHour >= 6 && $masukHour <= 9 && $inScans->count() > 1 && $outScans->count() == 0) {
-            \Log::info('Cross-day pattern detected: Early morning entry with multiple IN scans, no OUT', [
-                'jam_masuk' => $jamMasuk,
-                'masuk_hour' => $masukHour,
-                'in_count' => $inScans->count(),
-                'out_count' => $outScans->count()
-            ]);
             return true;
         }
         
@@ -2911,12 +2839,6 @@ class AttendanceReportController extends Controller
                 
                 // HANYA jika OUT di pagi sangat awal (06:00-10:00)
                 if ($outHour >= 6 && $outHour <= 10) {
-                    \Log::info('Cross-day pattern detected: Very early morning IN with very early OUT', [
-                        'jam_masuk' => $jamMasuk,
-                        'jam_keluar' => $firstOutAfterIn,
-                        'masuk_hour' => $masukHour,
-                        'out_hour' => $outHour
-                    ]);
                     return true;
                 }
             }
@@ -2925,12 +2847,6 @@ class AttendanceReportController extends Controller
         // Pola 3: Masuk pagi (06:00-09:00) tanpa OUT scan di hari yang sama
         // Kemungkinan shift malam yang berakhir pagi
         if ($masukHour >= 6 && $masukHour <= 9 && $outScans->count() == 0) {
-            \Log::info('Cross-day pattern detected: Early morning entry without OUT scans', [
-                'jam_masuk' => $jamMasuk,
-                'masuk_hour' => $masukHour,
-                'in_count' => $inScans->count(),
-                'out_count' => $outScans->count()
-            ]);
             return true;
         }
         
@@ -2994,31 +2910,6 @@ class AttendanceReportController extends Controller
         // Hitung selisih dalam detik
         $diffSeconds = $keluarTimestamp - $shiftEndTimestamp;
         
-        \Log::info('Overtime calculation debug', [
-            'jam_keluar' => $jamKeluar,
-            'jam_keluar_time' => $jamKeluarTime,
-            'shift_end' => $shiftEnd,
-            'keluar_timestamp' => $keluarTimestamp,
-            'shift_end_timestamp' => $shiftEndTimestamp,
-            'diff_seconds' => $diffSeconds,
-            'diff_hours' => round($diffSeconds / 3600, 2),
-            'warning' => $diffSeconds > 43200 ? 'VERY LARGE DIFF - CHECK DATA' : 'OK' // 12 hours = 43200 seconds
-        ]);
-        
-        // SPECIAL LOGGING for debugging large values
-        if (abs($diffSeconds) > 43200) { // More than 12 hours difference
-            \Log::error('SUSPICIOUS OVERTIME CALCULATION', [
-                'jam_keluar' => $jamKeluar,
-                'jam_keluar_time' => $jamKeluarTime,
-                'shift_end' => $shiftEnd,
-                'diff_seconds' => $diffSeconds,
-                'diff_hours' => round($diffSeconds / 3600, 2),
-                'keluar_timestamp' => $keluarTimestamp,
-                'shift_end_timestamp' => $shiftEndTimestamp,
-                'keluar_date' => date('Y-m-d H:i:s', $keluarTimestamp),
-                'shift_end_date' => date('Y-m-d H:i:s', $shiftEndTimestamp)
-            ]);
-        }
         
         // Jika selisih negatif, kemungkinan cross-day ATAU checkout lebih awal
         if ($diffSeconds < 0) {
@@ -3033,28 +2924,16 @@ class AttendanceReportController extends Controller
                 $crossDaySeconds = (24 * 3600) + $diffSeconds; // 24 jam + selisih negatif
                 $overtimeHours = floor($crossDaySeconds / 3600);
                 
-                \Log::info('Cross-day overtime calculation', [
-                    'cross_day_seconds' => $crossDaySeconds,
-                    'overtime_hours' => $overtimeHours
-                ]);
             } else {
                 // Ini bukan cross-day, tapi checkout lebih awal dari shift end
                 // Tidak ada lembur
                 $overtimeHours = 0;
                 
-                \Log::info('Early checkout - no overtime', [
-                    'checkout_hour' => $checkoutHour,
-                    'shift_end_hour' => $shiftEndHour,
-                    'reason' => 'checkout_before_shift_end'
-                ]);
             }
         } else {
             // Normal overtime
             $overtimeHours = floor($diffSeconds / 3600);
             
-            \Log::info('Normal overtime calculation', [
-                'overtime_hours' => $overtimeHours
-            ]);
         }
         
         // Batasi maksimal 12 jam untuk mencegah error
@@ -3065,25 +2944,13 @@ class AttendanceReportController extends Controller
             $overtimeHours = 0;
         }
         
-        // SAFETY CHECK: Jika nilai lembur terlalu besar, log dan reset ke 0
+        // SAFETY CHECK: Jika nilai lembur terlalu besar, reset ke 0
         if ($overtimeHours > 12) {
-            \Log::error('Overtime calculation error - value too large', [
-                'jam_keluar' => $jamKeluar,
-                'shift_end' => $shiftEnd,
-                'calculated_overtime' => $overtimeHours,
-                'action' => 'reset_to_zero'
-            ]);
             $overtimeHours = 0;
         }
         
         // ADDITIONAL SAFETY: Jika nilai lembur negatif atau sangat besar, reset ke 0
         if ($overtimeHours < 0 || $overtimeHours > 24) {
-            \Log::error('Overtime calculation error - invalid value', [
-                'jam_keluar' => $jamKeluar,
-                'shift_end' => $shiftEnd,
-                'calculated_overtime' => $overtimeHours,
-                'action' => 'reset_to_zero'
-            ]);
             $overtimeHours = 0;
         }
         
