@@ -1135,8 +1135,11 @@ Route::get('/report-rekap-fj/export', [\App\Http\Controllers\ReportController::c
 Route::post('/report/warehouse-sales-detail', [\App\Http\Controllers\ReportController::class, 'warehouseSalesDetail'])->name('report.warehouse-sales-detail');
     Route::post('/api/report/fj-detail', [\App\Http\Controllers\ReportController::class, 'fjDetail'])->name('report.fj-detail');
     Route::post('/api/report/fj-detail-pdf', [\App\Http\Controllers\ReportController::class, 'fjDetailPdf'])->name('report.fj-detail-pdf');
+    Route::post('/api/report/fj-detail-excel', [\App\Http\Controllers\ReportController::class, 'fjDetailExcel'])->name('report.fj-detail-excel');
     Route::post('/api/report/retail-detail-pdf', [\App\Http\Controllers\ReportController::class, 'retailDetailPdf'])->name('report.retail-detail-pdf');
     Route::post('/api/report/warehouse-detail-pdf', [\App\Http\Controllers\ReportController::class, 'warehouseDetailPdf'])->name('report.warehouse-detail-pdf');
+    Route::post('/api/report/retail-detail-excel', [\App\Http\Controllers\ReportController::class, 'retailDetailExcel'])->name('report.retail-detail-excel');
+    Route::post('/api/report/warehouse-detail-excel', [\App\Http\Controllers\ReportController::class, 'warehouseDetailExcel'])->name('report.warehouse-detail-excel');
 });
 
 // Outlet Payments
@@ -1162,6 +1165,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::resource('non-food-payments', \App\Http\Controllers\NonFoodPaymentController::class);
     Route::get('non-food-payments/po-items/{poId}', [\App\Http\Controllers\NonFoodPaymentController::class, 'getPOItems'])->name('non-food-payments.po-items');
+    Route::get('non-food-payments/print-preview', [\App\Http\Controllers\NonFoodPaymentController::class, 'printPreview'])->name('non-food-payments.print-preview');
     Route::post('non-food-payments/{nonFoodPayment}/approve', [\App\Http\Controllers\NonFoodPaymentController::class, 'approve'])->name('non-food-payments.approve');
     Route::post('non-food-payments/{nonFoodPayment}/reject', [\App\Http\Controllers\NonFoodPaymentController::class, 'reject'])->name('non-food-payments.reject');
     Route::post('non-food-payments/{nonFoodPayment}/mark-as-paid', [\App\Http\Controllers\NonFoodPaymentController::class, 'markAsPaid'])->name('non-food-payments.mark-as-paid');

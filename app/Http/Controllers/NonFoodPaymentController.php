@@ -752,4 +752,45 @@ class NonFoodPaymentController extends Controller
             return back()->with('error', 'Gagal membatalkan Non Food Payment: ' . $e->getMessage());
         }
     }
+
+    /**
+     * Print preview for Non Food Payments
+     */
+    public function printPreview(Request $request)
+    {
+        try {
+            $ids = $request->get('ids', '');
+            
+            if (empty($ids)) {
+                \Log::warning('No IDs provided in Non Food Payment printPreview');
+                return response()->json(['error' => 'No IDs provided'], 400);
+            }
+
+            $paymentIds = explode(',', $ids);
+            
+            // Validate that all IDs are numeric
+            foreach ($paymentIds as $id) {
+                if (!is_numeric($id)) {
+                    \Log::warning('Invalid Payment ID format', ['id' => $id]);
+                    return response()->json(['error' => 'Invalid ID format: ' . $id], 400);
+                }
+            }
+            
+            $payments = NonFoodPayment::with([
+                'supplier',
+                'creator',
+                'purchaseOrderOps.supplier',
+                'purchaseOrderOps.items',
+                'purchaseRequisition'
+            ])->whereIn('id', $paymentIds)->get();
+
+            return view('non-food-payments.print-preview', [
+                'payments' => $payments,
+            ]);
+            
+        } catch (\Exception $e) {
+            \Log::error('Non Food Payment printPreview error: ' . $e->getMessage());
+            return response()->json(['error' => 'Terjadi kesalahan saat generate print preview: ' . $e->getMessage()], 500);
+        }
+    }
 }

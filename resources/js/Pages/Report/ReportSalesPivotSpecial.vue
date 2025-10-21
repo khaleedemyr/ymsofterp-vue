@@ -273,8 +273,16 @@
           <button @click="showModal = false" class="absolute top-3 right-4 text-2xl text-yellow-700 hover:text-red-500 font-bold">&times;</button>
           <h2 class="text-xl font-bold mb-4 text-yellow-800 flex items-center gap-2"><i class="fas fa-list-alt"></i> Detail Penjualan: {{ modalCustomer }}</h2>
           
-          <!-- Download PDF Button -->
-          <div class="mb-4 flex justify-end">
+          <!-- Download Buttons -->
+          <div class="mb-4 flex justify-end gap-2">
+            <button 
+              @click="downloadExcel"
+              :disabled="loadingDetail || Object.keys(detailData).length === 0"
+              class="inline-flex items-center px-4 py-2 bg-green-600 text-white rounded-md font-semibold hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              <i class="fas fa-file-excel mr-2"></i>
+              Download Excel
+            </button>
             <button 
               @click="downloadPDF"
               :disabled="loadingDetail || Object.keys(detailData).length === 0"
@@ -702,6 +710,56 @@ async function downloadPDF() {
       alert('Terjadi kesalahan server saat generate PDF. Silakan coba lagi.')
     } else {
       alert('Terjadi kesalahan saat download PDF. Silakan coba lagi.')
+    }
+  }
+}
+
+async function downloadExcel() {
+  try {
+    let endpoint = '/api/report/fj-detail-excel';
+    let customerName = modalCustomer.value;
+    
+    // Determine the correct endpoint and customer name based on modal type
+    if (modalCustomer.value.includes('(Retail)')) {
+      endpoint = '/api/report/retail-detail-excel';
+      customerName = modalCustomer.value.replace(' (Retail)', '');
+    } else if (modalCustomer.value.includes('(Warehouse)')) {
+      endpoint = '/api/report/warehouse-detail-excel';
+      customerName = modalCustomer.value.replace(' (Warehouse)', '');
+    }
+    
+    const response = await axios.post(endpoint, {
+      customer: customerName,
+      from: from.value,
+      to: to.value
+    }, {
+      responseType: 'blob'
+    });
+    
+    const blob = new Blob([response.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    // Clean filename from invalid characters and ensure it's safe
+    const cleanCustomer = modalCustomer.value
+      .replace(/[^a-zA-Z0-9\s\-_]/g, '_')
+      .trim()
+      .replace(/\s+/g, '_');
+    link.download = `Detail_${cleanCustomer}_${from.value}_${to.value}.xlsx`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(url)
+  } catch (error) {
+    console.error('Error downloading Excel:', error)
+    
+    // Check if it's a server error with message
+    if (error.response && error.response.data && error.response.data.error) {
+      alert('Error: ' + error.response.data.error)
+    } else if (error.response && error.response.status === 500) {
+      alert('Terjadi kesalahan server saat generate Excel. Silakan coba lagi.')
+    } else {
+      alert('Terjadi kesalahan saat download Excel. Silakan coba lagi.')
     }
   }
 }

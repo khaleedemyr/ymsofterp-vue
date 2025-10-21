@@ -7,8 +7,16 @@
         Detail FJ: {{ modalCustomer }}
       </h2>
       
-      <!-- Download PDF Button -->
-      <div class="mb-4 flex justify-end">
+      <!-- Download Buttons -->
+      <div class="mb-4 flex justify-end gap-2">
+        <button 
+          @click="downloadExcel"
+          :disabled="loadingDetail || Object.keys(detailData).length === 0"
+          class="inline-flex items-center px-4 py-2 bg-green-600 text-white rounded-md font-semibold hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        >
+          <i class="fas fa-file-excel mr-2"></i>
+          Download Excel
+        </button>
         <button 
           @click="downloadPDF"
           :disabled="loadingDetail || Object.keys(detailData).length === 0"
@@ -276,6 +284,31 @@ async function fetchDetail() {
     detailData.value = {}
   } finally {
     loadingDetail.value = false
+  }
+}
+
+async function downloadExcel() {
+  try {
+    const response = await axios.post('/api/report/fj-detail-excel', {
+      customer: props.customer,
+      from: props.from,
+      to: props.to
+    }, {
+      responseType: 'blob'
+    })
+    
+    const blob = new Blob([response.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `FJ_Detail_${props.customer}_${props.from}_${props.to}.xlsx`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(url)
+  } catch (error) {
+    console.error('Error downloading Excel:', error)
+    alert('Terjadi kesalahan saat download Excel')
   }
 }
 

@@ -9,6 +9,9 @@
           <button @click="goBack" class="bg-gray-500 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold">
             <i class="fa fa-arrow-left mr-1"></i> Kembali
           </button>
+          <button @click="printPayment" class="bg-blue-500 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold">
+            <i class="fas fa-print mr-1"></i> Print
+          </button>
           <button v-if="payment.status === 'pending'" @click="editPayment" class="bg-yellow-500 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold">
             <i class="fa fa-pencil-alt mr-1"></i> Edit
           </button>
@@ -547,5 +550,11 @@ function openLightbox(imagePath, imageName) {
 function closeLightbox() {
   lightboxVisible.value = false;
   lightboxImage.value = null;
+}
+
+function printPayment() {
+  // Open print preview in new window
+  const printUrl = `/non-food-payments/print-preview?ids=${payment.id}`;
+  window.open(printUrl, '_blank', 'width=800,height=600,scrollbars=yes,resizable=yes');
 }
 </script>

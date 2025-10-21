@@ -2925,4 +2925,332 @@ class ReportController extends Controller
             ], 500);
         }
     }
+
+    /**
+     * Export FJ Detail to Excel
+     */
+    public function fjDetailExcel(Request $request)
+    {
+        try {
+            $request->validate([
+                'customer' => 'required|string',
+                'from' => 'required|date',
+                'to' => 'required|date',
+            ]);
+
+            $customer = $request->customer;
+            $from = $request->from;
+            $to = $request->to;
+
+            // Helper function to get GR data with grouping to avoid duplicates
+            $getGRData = function($warehouseCondition, $subCategoryCondition = null, $excludeSubCategories = null) use ($customer, $from, $to) {
+                $query = DB::table('outlet_food_good_receives as gr')
+                    ->join('outlet_food_good_receive_items as i', 'gr.id', '=', 'i.outlet_food_good_receive_id')
+                    ->join('items as it', 'i.item_id', '=', 'it.id')
+                    ->join('categories as cat', 'it.category_id', '=', 'cat.id')
+                    ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
+                    ->join('units as u', 'i.unit_id', '=', 'u.id')
+                    ->join('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
+                    ->join('food_floor_order_items as fo', function($join) {
+                        $join->on('i.item_id', '=', 'fo.item_id')
+                             ->on('fo.floor_order_id', '=', 'do.floor_order_id');
+                    })
+                    ->leftJoin('warehouse_division as wd', 'it.warehouse_division_id', '=', 'wd.id')
+                    ->leftJoin('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
+                    ->join('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
+                    ->where('o.nama_outlet', $customer)
+                    ->whereDate('gr.receive_date', '>=', $from)
+                    ->whereDate('gr.receive_date', '<=', $to)
+                    ->whereNull('gr.deleted_at');
+
+                // Apply warehouse condition
+                if (is_array($warehouseCondition)) {
+                    $query->whereIn('w.name', $warehouseCondition);
+                } else {
+                    $query->where('w.name', $warehouseCondition);
+                }
+
+                // Apply sub-category condition if provided
+                if ($subCategoryCondition) {
+                    if (is_array($subCategoryCondition)) {
+                        $query->whereIn('sc.name', $subCategoryCondition);
+                    } else {
+                        $query->where('sc.name', $subCategoryCondition);
+                    }
+                }
+
+                // Apply exclude sub-categories if provided
+                if ($excludeSubCategories) {
+                    $query->whereNotIn('sc.name', $excludeSubCategories);
+                }
+
+                return $query->select(
+                        'it.name as item_name',
+                        'cat.name as category',
+                        'u.name as unit',
+                        DB::raw('SUM(i.received_qty) as received_qty'),
+                        DB::raw('AVG(fo.price) as price'),
+                        DB::raw('SUM(i.received_qty * fo.price) as subtotal')
+                    )
+                    ->groupBy('it.name', 'cat.name', 'u.name')
+                    ->orderBy('cat.name')
+                    ->orderBy('it.name')
+                    ->get();
+            };
+
+            // Get data using helper functions
+            $mainKitchen = $getGRData(['MK1 Hot Kitchen', 'MK2 Cold Kitchen']);
+            $mainStore = $getGRData('MAIN STORE', null, ['Chemical', 'Stationary', 'Marketing']);
+            $chemical = $getGRData('MAIN STORE', 'Chemical');
+            $stationary = $getGRData('MAIN STORE', 'Stationary');
+            $marketing = $getGRData('MAIN STORE', 'Marketing');
+
+            // Prepare data for Excel
+            $excelData = [];
+            
+            // Add header
+            $excelData[] = [
+                'Kategori',
+                'Item Name',
+                'Category',
+                'Unit',
+                'Qty Received',
+                'Price',
+                'Subtotal'
+            ];
+
+            // Add Main Kitchen data
+            foreach ($mainKitchen as $item) {
+                $excelData[] = [
+                    'Main Kitchen',
+                    $item->item_name,
+                    $item->category,
+                    $item->unit,
+                    $item->received_qty,
+                    $item->price,
+                    $item->subtotal
+                ];
+            }
+
+            // Add Main Store data
+            foreach ($mainStore as $item) {
+                $excelData[] = [
+                    'Main Store',
+                    $item->item_name,
+                    $item->category,
+                    $item->unit,
+                    $item->received_qty,
+                    $item->price,
+                    $item->subtotal
+                ];
+            }
+
+            // Add Chemical data
+            foreach ($chemical as $item) {
+                $excelData[] = [
+                    'Chemical',
+                    $item->item_name,
+                    $item->category,
+                    $item->unit,
+                    $item->received_qty,
+                    $item->price,
+                    $item->subtotal
+                ];
+            }
+
+            // Add Stationary data
+            foreach ($stationary as $item) {
+                $excelData[] = [
+                    'Stationary',
+                    $item->item_name,
+                    $item->category,
+                    $item->unit,
+                    $item->received_qty,
+                    $item->price,
+                    $item->subtotal
+                ];
+            }
+
+            // Add Marketing data
+            foreach ($marketing as $item) {
+                $excelData[] = [
+                    'Marketing',
+                    $item->item_name,
+                    $item->category,
+                    $item->unit,
+                    $item->received_qty,
+                    $item->price,
+                    $item->subtotal
+                ];
+            }
+
+            // Create Excel file
+            $filename = 'FJ_Detail_' . $customer . '_' . $from . '_' . $to . '.xlsx';
+            
+            return \Maatwebsite\Excel\Facades\Excel::download(
+                new \App\Exports\FjDetailExport($excelData),
+                $filename
+            );
+
+        } catch (\Exception $e) {
+            \Log::error('FJ Detail Excel error: ' . $e->getMessage());
+            return response()->json(['error' => 'Terjadi kesalahan saat generate Excel: ' . $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Export Retail Detail to Excel
+     */
+    public function retailDetailExcel(Request $request)
+    {
+        try {
+            $request->validate([
+                'customer' => 'required|string',
+                'from' => 'required|date',
+                'to' => 'required|date',
+            ]);
+
+            $customer = $request->customer;
+            $from = $request->from;
+            $to = $request->to;
+
+            // Get retail sales data
+            $retailData = DB::table('retail_sales as rs')
+                ->join('retail_sales_items as rsi', 'rs.id', '=', 'rsi.retail_sales_id')
+                ->join('items as i', 'rsi.item_id', '=', 'i.id')
+                ->join('categories as c', 'i.category_id', '=', 'c.id')
+                ->join('units as u', 'rsi.unit_id', '=', 'u.id')
+                ->join('tbl_data_outlet as o', 'rs.outlet_id', '=', 'o.id_outlet')
+                ->where('o.nama_outlet', $customer)
+                ->whereDate('rs.sales_date', '>=', $from)
+                ->whereDate('rs.sales_date', '<=', $to)
+                ->select(
+                    'i.name as item_name',
+                    'c.name as category',
+                    'u.name as unit',
+                    DB::raw('SUM(rsi.qty) as qty'),
+                    DB::raw('AVG(rsi.price) as price'),
+                    DB::raw('SUM(rsi.qty * rsi.price) as subtotal')
+                )
+                ->groupBy('i.name', 'c.name', 'u.name')
+                ->orderBy('c.name')
+                ->orderBy('i.name')
+                ->get();
+
+            // Prepare data for Excel
+            $excelData = [];
+            
+            // Add header
+            $excelData[] = [
+                'Item Name',
+                'Category',
+                'Unit',
+                'Qty',
+                'Price',
+                'Subtotal'
+            ];
+
+            // Add retail data
+            foreach ($retailData as $item) {
+                $excelData[] = [
+                    $item->item_name,
+                    $item->category,
+                    $item->unit,
+                    $item->qty,
+                    $item->price,
+                    $item->subtotal
+                ];
+            }
+
+            // Create Excel file
+            $filename = 'Retail_Detail_' . $customer . '_' . $from . '_' . $to . '.xlsx';
+            
+            return \Maatwebsite\Excel\Facades\Excel::download(
+                new \App\Exports\FjDetailExport($excelData),
+                $filename
+            );
+
+        } catch (\Exception $e) {
+            \Log::error('Retail Detail Excel error: ' . $e->getMessage());
+            return response()->json(['error' => 'Terjadi kesalahan saat generate Excel: ' . $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Export Warehouse Detail to Excel
+     */
+    public function warehouseDetailExcel(Request $request)
+    {
+        try {
+            $request->validate([
+                'customer' => 'required|string',
+                'from' => 'required|date',
+                'to' => 'required|date',
+            ]);
+
+            $customer = $request->customer;
+            $from = $request->from;
+            $to = $request->to;
+
+            // Get warehouse sales data
+            $warehouseData = DB::table('warehouse_sales as ws')
+                ->join('warehouse_sales_items as wsi', 'ws.id', '=', 'wsi.warehouse_sales_id')
+                ->join('items as i', 'wsi.item_id', '=', 'i.id')
+                ->join('categories as c', 'i.category_id', '=', 'c.id')
+                ->join('units as u', 'wsi.unit_id', '=', 'u.id')
+                ->join('tbl_data_outlet as o', 'ws.outlet_id', '=', 'o.id_outlet')
+                ->where('o.nama_outlet', $customer)
+                ->whereDate('ws.sales_date', '>=', $from)
+                ->whereDate('ws.sales_date', '<=', $to)
+                ->select(
+                    'i.name as item_name',
+                    'c.name as category',
+                    'u.name as unit',
+                    DB::raw('SUM(wsi.qty) as qty'),
+                    DB::raw('AVG(wsi.price) as price'),
+                    DB::raw('SUM(wsi.qty * wsi.price) as subtotal')
+                )
+                ->groupBy('i.name', 'c.name', 'u.name')
+                ->orderBy('c.name')
+                ->orderBy('i.name')
+                ->get();
+
+            // Prepare data for Excel
+            $excelData = [];
+            
+            // Add header
+            $excelData[] = [
+                'Item Name',
+                'Category',
+                'Unit',
+                'Qty',
+                'Price',
+                'Subtotal'
+            ];
+
+            // Add warehouse data
+            foreach ($warehouseData as $item) {
+                $excelData[] = [
+                    $item->item_name,
+                    $item->category,
+                    $item->unit,
+                    $item->qty,
+                    $item->price,
+                    $item->subtotal
+                ];
+            }
+
+            // Create Excel file
+            $filename = 'Warehouse_Detail_' . $customer . '_' . $from . '_' . $to . '.xlsx';
+            
+            return \Maatwebsite\Excel\Facades\Excel::download(
+                new \App\Exports\FjDetailExport($excelData),
+                $filename
+            );
+
+        } catch (\Exception $e) {
+            \Log::error('Warehouse Detail Excel error: ' . $e->getMessage());
+            return response()->json(['error' => 'Terjadi kesalahan saat generate Excel: ' . $e->getMessage()], 500);
+        }
+    }
 } 
