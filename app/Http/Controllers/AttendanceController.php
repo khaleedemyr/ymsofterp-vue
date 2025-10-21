@@ -117,118 +117,37 @@ class AttendanceController extends Controller
     
     private function getAttendanceRecords($userId, $startDate, $endDate)
     {
-        // Get raw attendance data and process manually (following AttendanceReportController logic)
-        $rawData = DB::table('att_log as a')
-            ->join('tbl_data_outlet as o', 'a.sn', '=', 'o.sn')
-            ->join('user_pins as up', function($q) {
-                $q->on('a.pin', '=', 'up.pin')->on('o.id_outlet', '=', 'up.outlet_id');
-            })
-            ->join('users as u', 'up.user_id', '=', 'u.id')
-            ->select(
-                'a.scan_date',
-                'a.inoutmode',
-                'u.id as user_id',
-                'u.nama_lengkap'
-            )
-            ->where('u.id', $userId)
-            ->whereBetween(DB::raw('DATE(a.scan_date)'), [$startDate, $endDate])
-            ->orderBy('a.scan_date')
-            ->get();
-
-        // Process data to handle cross-day correctly (following AttendanceReportController logic)
-        $processedData = [];
+        // Use the same logic as getAttendanceDataWithFirstInLastOut for consistency
+        $attendanceData = $this->getAttendanceDataWithFirstInLastOut($userId, $startDate, $endDate);
         
-        // Step 1: Group scans by user and date
-        foreach ($rawData as $scan) {
-            $date = date('Y-m-d', strtotime($scan->scan_date));
-            $key = $scan->user_id . '_' . $date;
-            
-            if (!isset($processedData[$key])) {
-                $processedData[$key] = [
-                    'tanggal' => $date,
-                    'user_id' => $scan->user_id,
-                    'nama_lengkap' => $scan->nama_lengkap,
-                    'scans' => []
-                ];
-            }
-            
-            $processedData[$key]['scans'][] = [
-                'scan_date' => $scan->scan_date,
-                'inoutmode' => $scan->inoutmode
-            ];
-        }
-        
-        // Step 2: Process each group to determine first in and last out
+        // Convert to the format expected by the frontend
         $attendance = [];
-        foreach ($processedData as $key => $data) {
-            $scans = collect($data['scans'])->sortBy('scan_date');
-            $inScans = $scans->where('inoutmode', 1);
-            $outScans = $scans->where('inoutmode', 2);
-            
-            // Get first in scan
-            $firstIn = $inScans->first()['scan_date'] ?? null;
-            
-            // Get last out scan (including cross-day)
-            $lastOut = null;
-            $isCrossDay = false;
-            
-            if ($firstIn) {
-                // Look for last out on the same day (following AttendanceReportController logic)
-                $sameDayOuts = $outScans->where('scan_date', '>', $firstIn);
-                if ($sameDayOuts->isNotEmpty()) {
-                    $lastOut = $sameDayOuts->last()['scan_date'];
-                    $isCrossDay = false;
-                } else {
-                    // Look for last out on the next day
-                    $nextDay = date('Y-m-d', strtotime($data['tanggal'] . ' +1 day'));
-                    $nextDayKey = $data['user_id'] . '_' . $nextDay;
-                    
-                    if (isset($processedData[$nextDayKey])) {
-                        $nextDayScans = collect($processedData[$nextDayKey]['scans'])->sortBy('scan_date');
-                        $nextDayOuts = $nextDayScans->where('inoutmode', 2);
-                        
-                        if ($nextDayOuts->isNotEmpty()) {
-                            $lastOut = $nextDayOuts->first()['scan_date'];
-                            $isCrossDay = true;
-                            
-                            // Remove this scan from next day (following AttendanceReportController logic)
-                            $processedData[$nextDayKey]['scans'] = $nextDayScans->where('inoutmode', '!=', 2)->values()->toArray();
-                        }
-                    }
-                }
-            }
-            
-            // Get shift data for this date
-            $shift = DB::table('user_shifts as us')
-                ->leftJoin('shifts as s', 'us.shift_id', '=', 's.id')
-                ->where('us.user_id', $data['user_id'])
-                ->where('us.tanggal', $data['tanggal'])
-                ->select('s.time_start', 's.time_end', 's.shift_name', 'us.shift_id')
-                ->first();
-            
+        foreach ($attendanceData as $date => $data) {
             // Calculate work duration
             $workDurationMinutes = 0;
-            if ($firstIn && $lastOut) {
-                $workDurationMinutes = (strtotime($lastOut) - strtotime($firstIn)) / 60;
-            }
-            
-            // Deteksi attendance tanpa checkout
-            $has_no_checkout = false;
-            if ($firstIn && !$lastOut) {
-                $has_no_checkout = true;
+            if ($data['first_in'] && $data['last_out']) {
+                $firstInTime = strtotime($date . ' ' . $data['first_in']);
+                $lastOutTime = strtotime($date . ' ' . $data['last_out']);
+                
+                // If cross-day, add 24 hours to last out time
+                if ($data['is_cross_day']) {
+                    $lastOutTime = strtotime($date . ' ' . $data['last_out'] . ' +1 day');
+                }
+                
+                $workDurationMinutes = ($lastOutTime - $firstInTime) / 60;
             }
             
             $attendance[] = (object) [
-                'attendance_date' => $data['tanggal'],
-                'check_in_time' => $firstIn,
-                'check_out_time' => $lastOut,
-                'shift_name' => $shift->shift_name ?? null,
-                'start_time' => $shift->time_start ?? null,
-                'end_time' => $shift->time_end ?? null,
-                'shift_id' => $shift->shift_id ?? null,
+                'attendance_date' => $date,
+                'check_in_time' => $data['first_in'] ? $date . ' ' . $data['first_in'] : null,
+                'check_out_time' => $data['last_out'] ? $date . ' ' . $data['last_out'] : null,
+                'shift_name' => null, // Will be filled by work schedule
+                'start_time' => null, // Will be filled by work schedule
+                'end_time' => null, // Will be filled by work schedule
+                'shift_id' => null, // Will be filled by work schedule
                 'work_duration_minutes' => $workDurationMinutes,
-                'is_cross_day' => $isCrossDay,
-                'has_no_checkout' => $has_no_checkout
+                'is_cross_day' => $data['is_cross_day'],
+                'has_no_checkout' => $data['has_no_checkout']
             ];
         }
         
