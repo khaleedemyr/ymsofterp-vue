@@ -1091,9 +1091,10 @@ const calculatedDateTo = computed(() => {
     // Jika max_days = 0, return date_from (user bisa pilih manual)
     return absentForm.value.date_from
   } else {
-    // Jika max_days > 0, hitung tanggal to = date_from + max_days
+    // Jika max_days > 0, hitung tanggal to = date_from + (max_days - 1)
+    // karena tanggal yang dipilih sudah dihitung sebagai hari pertama
     const dateTo = new Date(dateFrom)
-    dateTo.setDate(dateTo.getDate() + maxDays)
+    dateTo.setDate(dateTo.getDate() + (maxDays - 1))
     return dateTo.toISOString().split('T')[0]
   }
 })
