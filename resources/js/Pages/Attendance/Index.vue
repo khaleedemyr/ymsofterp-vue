@@ -274,8 +274,8 @@
                     </div>
                   </div>
                   
-                  <!-- Absent Button - Show only if no attendance data, no approved absent, is in payroll period, and not past date -->
-                  <div v-else-if="day.isInPayrollPeriod && !day.holiday && !hasAttendanceData(day) && !isPastDate(day.date)" class="mt-1">
+                  <!-- Absent Button - Show only if no attendance data, no approved absent, is in payroll period, not past date, and backdate is allowed -->
+                  <div v-else-if="day.isInPayrollPeriod && !day.holiday && !hasAttendanceData(day) && !isPastDate(day.date) && isBackdateAllowed(day)" class="mt-1">
                     <button 
                       @click="showAbsentModal(day.date)"
                       class="w-full text-xs bg-red-500 hover:bg-red-600 text-white px-1 py-0.5 rounded transition-colors"
@@ -1164,6 +1164,40 @@ const hasAttendanceData = (day) => {
   )
 }
 
+// Function to check if a date is yesterday (backdate)
+const isYesterday = (dateString) => {
+  if (!dateString) return false
+  
+  try {
+    const today = new Date()
+    const date = new Date(dateString)
+    
+    // Check if date is valid
+    if (isNaN(date.getTime())) return false
+    
+    // Set time to start of day for accurate comparison
+    today.setHours(0, 0, 0, 0)
+    date.setHours(0, 0, 0, 0)
+    
+    // Check if date is yesterday
+    const yesterday = new Date(today)
+    yesterday.setDate(yesterday.getDate() - 1)
+    
+    return date.getTime() === yesterday.getTime()
+  } catch (error) {
+    console.error('Error checking yesterday:', error)
+    return false
+  }
+}
+
+// Function to check if backdate is allowed (no attendance in the previous day)
+const isBackdateAllowed = (day) => {
+  if (!isYesterday(day.date)) return true // Not yesterday, so backdate rules don't apply
+  
+  // If it's yesterday, check if there's no attendance data
+  return !hasAttendanceData(day)
+}
+
 const isPastDate = (dateString) => {
   if (!dateString) return false
   
@@ -1178,7 +1212,12 @@ const isPastDate = (dateString) => {
     today.setHours(0, 0, 0, 0)
     date.setHours(0, 0, 0, 0)
     
-    return date < today
+    // Allow backdate 1 day (yesterday)
+    const yesterday = new Date(today)
+    yesterday.setDate(yesterday.getDate() - 1)
+    
+    // Return true if date is before yesterday (more than 1 day ago)
+    return date < yesterday
   } catch (error) {
     console.error('Error checking past date:', error)
     return false
