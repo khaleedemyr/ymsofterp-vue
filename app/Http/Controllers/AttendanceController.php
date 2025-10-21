@@ -37,6 +37,7 @@ class AttendanceController extends Controller
         foreach ($workSchedules as $schedule) {
             $attendanceInfo = $attendanceData[$schedule->schedule_date] ?? null;
             
+            
             $calendar[$schedule->schedule_date][$user->id] = [
                 'user_id' => $user->id,
                 'nama_lengkap' => $user->nama_lengkap,
@@ -329,7 +330,8 @@ class AttendanceController extends Controller
         // Combine schedules with attendance data
         $calendarData = [];
         foreach ($schedules as $schedule) {
-            $attendanceInfo = $attendanceData->where('attendance_date', $schedule->schedule_date)->first();
+            $attendanceInfo = $attendanceData[$schedule->schedule_date] ?? null;
+            
             
             $calendarData[] = (object) [
                 'schedule_date' => $schedule->schedule_date,
@@ -337,10 +339,10 @@ class AttendanceController extends Controller
                 'shift_name' => $schedule->shift_name,
                 'start_time' => $schedule->start_time,
                 'end_time' => $schedule->end_time,
-                'check_in_time' => $attendanceInfo->check_in_time ?? null,
-                'check_out_time' => $attendanceInfo->check_out_time ?? null,
+                'check_in_time' => $attendanceInfo['first_in'] ?? null,
+                'check_out_time' => $attendanceInfo['last_out'] ?? null,
                 'attendance_status' => $attendanceInfo ? 'present' : 'absent',
-                'has_no_checkout' => $attendanceInfo->has_no_checkout ?? false
+                'has_no_checkout' => $attendanceInfo['has_no_checkout'] ?? false
             ];
         }
         
@@ -394,18 +396,16 @@ class AttendanceController extends Controller
         // Process data to handle cross-day correctly with multi-outlet support
         $processedData = [];
         
-        // Step 1: Group scans by user, date, and outlet (for multi-outlet support)
+        // Step 1: Group scans by user and date - SAME AS AttendanceReportController
         foreach ($rawData as $scan) {
             $date = date('Y-m-d', strtotime($scan->scan_date));
-            $key = $scan->user_id . '_' . $date . '_' . $scan->id_outlet;
+            $key = $scan->user_id . '_' . $date;
             
             if (!isset($processedData[$key])) {
                 $processedData[$key] = [
                     'tanggal' => $date,
                     'user_id' => $scan->user_id,
                     'nama_lengkap' => $scan->nama_lengkap,
-                    'id_outlet' => $scan->id_outlet,
-                    'nama_outlet' => $scan->nama_outlet,
                     'scans' => []
                 ];
             }
@@ -416,37 +416,10 @@ class AttendanceController extends Controller
             ];
         }
         
-        // Step 2: Group by date first, then process each date using smart cross-day logic
+        // Step 2: Process each group using smart cross-day processing - SAME AS AttendanceReportController
         $attendanceData = [];
-        $groupedByDate = [];
-        
-        // Group all outlet data by date
         foreach ($processedData as $key => $data) {
-            $dateKey = $data['tanggal'];
-            if (!isset($groupedByDate[$dateKey])) {
-                $groupedByDate[$dateKey] = [];
-            }
-            $groupedByDate[$dateKey][] = $data;
-        }
-        
-        // Process each date with all its outlets
-        foreach ($groupedByDate as $dateKey => $dateData) {
-            // Combine all scans for this date from all outlets
-            $allScans = [];
-            foreach ($dateData as $data) {
-                $allScans = array_merge($allScans, $data['scans']);
-            }
-            
-            // Create combined data for this date
-            $combinedData = [
-                'tanggal' => $dateKey,
-                'user_id' => $dateData[0]['user_id'],
-                'nama_lengkap' => $dateData[0]['nama_lengkap'],
-                'scans' => $allScans
-            ];
-            
-            // Use smart cross-day processing for the combined data
-            $result = $this->processSmartCrossDayAttendance($combinedData, $processedData);
+            $result = $this->processSmartCrossDayAttendance($data, $processedData);
             
             $firstIn = $result['jam_masuk'];
             $lastOut = $result['jam_keluar'];
@@ -497,35 +470,16 @@ class AttendanceController extends Controller
                 $has_no_checkout = true;
             }
             
+            
             // Store data for this date
-            $attendanceData[$dateKey] = [
+            $attendanceData[$data['tanggal']] = [
                 'first_in' => $firstIn ? date('H:i', strtotime($firstIn)) : null,
                 'last_out' => $lastOut ? date('H:i', strtotime($lastOut)) : null,
                 'is_cross_day' => $isCrossDay,
                 'telat' => $telat,
                 'lembur' => $lembur,
-                'has_no_checkout' => $has_no_checkout,
-                'outlets' => []
+                'has_no_checkout' => $has_no_checkout
             ];
-            
-            // Store outlet-specific data for detail view
-            foreach ($dateData as $outletData) {
-                $attendanceData[$dateKey]['outlets'][] = [
-                    'id_outlet' => $outletData['id_outlet'],
-                    'nama_outlet' => $outletData['nama_outlet'],
-                    'first_in' => $firstIn ? date('H:i', strtotime($firstIn)) : null,
-                    'last_out' => $lastOut ? date('H:i', strtotime($lastOut)) : null,
-                    'is_cross_day' => $isCrossDay,
-                    'telat' => $telat,
-                    'lembur' => $lembur,
-                    'has_no_checkout' => $has_no_checkout
-                ];
-            }
-        }
-        
-        // Clean up outlet data for backward compatibility
-        foreach ($attendanceData as $date => $data) {
-            unset($attendanceData[$date]['outlets']);
         }
         
         return $attendanceData;
@@ -699,6 +653,7 @@ class AttendanceController extends Controller
             }
             
         }
+        
         
         return [
             'tanggal' => $data['tanggal'],

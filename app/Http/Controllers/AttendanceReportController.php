@@ -482,21 +482,49 @@ class AttendanceReportController extends Controller
                 $totalOut = $outScans->count();
                 
                 if ($jamIn) {
-                    // Cari scan keluar TERAKHIR di hari yang sama
+                    // Cari scan keluar di hari yang sama
                     $sameDayOuts = $outScans->where('scan_date', '>', $jamIn);
-                    if ($sameDayOuts->isNotEmpty()) {
+                    
+                    // Cari scan keluar di hari berikutnya (cross-day)
+                    $nextDayKey = $data['id_outlet'] . '_' . $nextDay;
+                    $nextDayOuts = collect();
+                    
+                    if (isset($processedData[$nextDayKey])) {
+                        $nextDayScans = collect($processedData[$nextDayKey]['scans'])->sortBy('scan_date');
+                        $nextDayOuts = $nextDayScans->where('inoutmode', 2);
+                    }
+                    
+                    // Tentukan OUT scan yang paling masuk akal - SAMA DENGAN AttendanceController
+                    if ($sameDayOuts->isNotEmpty() && $nextDayOuts->isNotEmpty()) {
+                        // Ada both same-day dan cross-day OUT scan
+                        $lastSameDayOut = $sameDayOuts->last()['scan_date'];
+                        $firstNextDayOut = $nextDayOuts->first()['scan_date'];
+                        
+                        // Cek durasi same-day OUT
+                        $sameDayDuration = strtotime($lastSameDayOut) - strtotime($jamIn);
+                        $outHour = (int)date('H', strtotime($firstNextDayOut));
+                        
+                        // Prioritas cross-day jika:
+                        // 1. Same-day OUT terlalu pendek (< 5 jam) ATAU
+                        // 2. Cross-day OUT di pagi sangat awal (00:00-06:00)
+                        if ($sameDayDuration < 18000 || ($outHour >= 0 && $outHour <= 6)) {
+                            $jamOut = $firstNextDayOut;
+                            $totalOut = 1;
+                        } else {
+                            $jamOut = $lastSameDayOut;
+                        }
+                    } elseif ($sameDayOuts->isNotEmpty()) {
+                        // Hanya ada same-day OUT scan
                         $jamOut = $sameDayOuts->last()['scan_date'];
-                    } else {
-                        // Cari scan keluar TERAKHIR di hari berikutnya
-                        $nextDayKey = $data['id_outlet'] . '_' . $nextDay;
-                        if (isset($processedData[$nextDayKey])) {
-                            $nextDayScans = collect($processedData[$nextDayKey]['scans'])->sortBy('scan_date');
-                            $nextDayOuts = $nextDayScans->where('inoutmode', 2);
-                            
-                            if ($nextDayOuts->isNotEmpty()) {
-                                $jamOut = $nextDayOuts->first()['scan_date'];
-                                $totalOut = 1; // Cross-day scan keluar
-                            }
+                    } elseif ($nextDayOuts->isNotEmpty()) {
+                        // Hanya ada cross-day OUT scan
+                        $firstNextDayOut = $nextDayOuts->first()['scan_date'];
+                        $outHour = (int)date('H', strtotime($firstNextDayOut));
+                        
+                        // Untuk cross-day, hanya gunakan jika di pagi sangat awal (00:00-12:00)
+                        if ($outHour >= 0 && $outHour <= 12) {
+                            $jamOut = $firstNextDayOut;
+                            $totalOut = 1;
                         }
                     }
                 }
@@ -506,6 +534,7 @@ class AttendanceReportController extends Controller
                 if ($jamIn && !$jamOut) {
                     $has_no_checkout = true;
                 }
+                
                 
                 $result[] = [
                     'id_outlet' => $data['id_outlet'],
@@ -518,6 +547,7 @@ class AttendanceReportController extends Controller
                 ];
             }
         }
+        
         
         \Log::info('Attendance detail result', ['result' => $result]);
         return response()->json($result);
@@ -2801,6 +2831,7 @@ class AttendanceReportController extends Controller
             }
             
         }
+        
         
         return [
             'tanggal' => $data['tanggal'],
