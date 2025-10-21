@@ -280,10 +280,10 @@
                                 <tr>
                                     <td>{{ $itemIndex + 1 }}</td>
                                     <td>{{ $item->item_name }}</td>
-                                    <td>{{ $item->qty }}</td>
+                                    <td>{{ $item->quantity }}</td>
                                     <td>{{ $item->unit }}</td>
-                                    <td>Rp {{ number_format($item->unit_price, 0, ',', '.') }}</td>
-                                    <td>Rp {{ number_format($item->subtotal, 0, ',', '.') }}</td>
+                                    <td>Rp {{ number_format($item->price, 0, ',', '.') }}</td>
+                                    <td>Rp {{ number_format($item->total, 0, ',', '.') }}</td>
                                 </tr>
                             @endforeach
                         </tbody>
