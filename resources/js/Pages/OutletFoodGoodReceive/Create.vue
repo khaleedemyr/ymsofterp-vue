@@ -76,7 +76,7 @@
           <div class="mb-6 text-lg">Yakin ingin submit Good Receive ini?</div>
           <div class="flex justify-end gap-3">
             <button @click="showConfirmModal = false" class="px-4 py-2 text-gray-700 bg-gray-100 rounded hover:bg-gray-200">Batal</button>
-            <button @click="submitGR" :disabled="loadingSubmit" class="px-4 py-2 text-white bg-blue-600 rounded hover:bg-blue-700 font-bold">
+            <button @click="submitGR" :disabled="loadingSubmit" class="px-4 py-2 text-white bg-blue-600 rounded hover:bg-blue-700 font-bold disabled:opacity-50 disabled:cursor-not-allowed">
               <i v-if="loadingSubmit" class="fa fa-spinner fa-spin mr-2"></i>
               Submit
             </button>
@@ -386,6 +386,12 @@ async function confirmSubmit() {
 }
 
 async function submitGR() {
+  // Prevent double submit
+  if (loadingSubmit.value) {
+    console.log('Submit already in progress, ignoring duplicate request');
+    return;
+  }
+  
   loadingSubmit.value = true;
   try {
     
@@ -479,7 +485,58 @@ async function submitGR() {
       const data = e.response.data;
       
       if (status === 422) {
-        // Validation errors
+        // Check if it's a duplicate submission error
+        if (data.message && data.message.includes('sudah pernah disubmit')) {
+          const duplicateInfo = data.duplicate_info || {};
+          const existingTime = duplicateInfo.submitted_at ? new Date(duplicateInfo.submitted_at).toLocaleString('id-ID') : 'Tidak diketahui';
+          const timeDiff = duplicateInfo.time_diff || 0;
+          const remainingTime = Math.max(0, 30 - timeDiff);
+          
+          await Swal.fire({
+            icon: 'warning',
+            title: 'Data Duplikasi Terdeteksi',
+            html: `
+              <div class="text-left">
+                <div class="mb-4">
+                  <i class="fas fa-exclamation-triangle text-yellow-500 text-2xl mb-2"></i>
+                  <p class="text-lg font-semibold text-gray-800">${data.message}</p>
+                </div>
+                <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded">
+                  <div class="flex">
+                    <div class="flex-shrink-0">
+                      <i class="fas fa-info-circle text-yellow-400"></i>
+                    </div>
+                    <div class="ml-3">
+                      <p class="text-sm text-yellow-700">
+                        <strong>Detail Duplikasi:</strong><br>
+                        • Delivery Order: ${doDetail.value?.do?.do_number || 'N/A'}<br>
+                        • Data Sebelumnya: ${duplicateInfo.existing_number || 'N/A'}<br>
+                        • Waktu Submit Sebelumnya: ${existingTime}<br>
+                        • Selisih Waktu: ${timeDiff} detik yang lalu<br>
+                        • Tunggu: ${remainingTime} detik lagi
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                <div class="mt-4 text-sm text-gray-600">
+                  <strong>Solusi:</strong><br>
+                  1. Tunggu ${remainingTime} detik sebelum submit ulang<br>
+                  2. Atau refresh halaman untuk memulai ulang<br>
+                  3. Periksa apakah data sudah tersimpan di halaman Good Receive
+                </div>
+              </div>
+            `,
+            confirmButtonText: 'OK, Saya Mengerti',
+            confirmButtonColor: '#f59e0b',
+            width: '700px',
+            customClass: {
+              popup: 'swal-wide'
+            }
+          });
+          return; // Exit early for duplicate error
+        }
+        
+        // Regular validation errors
         const errors = data.errors;
         if (errors) {
           const errorList = Object.values(errors).flat().join('\n• ');

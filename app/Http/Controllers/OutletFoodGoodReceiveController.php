@@ -84,8 +84,30 @@ class OutletFoodGoodReceiveController extends Controller
                 'items.*.unit_id' => 'required|integer',
                 'items.*.received_qty' => 'required|numeric|min:0',
             ]);
-            DB::beginTransaction();
+            
+            // Check for duplicate submission within last 30 seconds
             $user = auth()->user();
+            $recentSubmission = DB::table('outlet_food_good_receives')
+                ->where('delivery_order_id', $validated['delivery_order_id'])
+                ->where('created_by', $user->id)
+                ->where('created_at', '>=', now()->subSeconds(30))
+                ->first();
+                
+            if ($recentSubmission) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Data sudah pernah disubmit dalam 30 detik terakhir. Silakan tunggu sebentar atau refresh halaman.',
+                    'duplicate_info' => [
+                        'existing_id' => $recentSubmission->id,
+                        'existing_number' => $recentSubmission->number,
+                        'submitted_at' => $recentSubmission->created_at,
+                        'time_diff' => now()->diffInSeconds($recentSubmission->created_at),
+                        'delivery_order_id' => $recentSubmission->delivery_order_id
+                    ]
+                ], 422);
+            }
+            
+            DB::beginTransaction();
             $do = DB::table('delivery_orders')->where('id', $validated['delivery_order_id'])->first();
             if (!$do) throw new \Exception('Delivery Order tidak ditemukan');
             
