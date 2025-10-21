@@ -325,49 +325,49 @@
                         <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; font-size: 11px;">
                             <div style="text-align: center; padding: 8px; background-color: #e3f2fd; border-radius: 3px;">
                                 <div style="font-weight: bold; color: #1976d2; margin-bottom: 3px;">
-                                    {{ $po->purchase_requisition->budget_info->budget_type === 'PER_OUTLET' ? 'Outlet Budget' : 'Total Budget' }}
+                                    {{ $po->purchase_requisition->budget_info['budget_type'] === 'PER_OUTLET' ? 'Outlet Budget' : 'Total Budget' }}
                                 </div>
                                 <div style="font-size: 12px; font-weight: bold; color: #1976d2;">
-                                    Rp {{ number_format($po->purchase_requisition->budget_info->budget_type === 'PER_OUTLET' ? $po->purchase_requisition->budget_info->outlet_budget : $po->purchase_requisition->budget_info->category_budget, 0, ',', '.') }}
+                                    Rp {{ number_format($po->purchase_requisition->budget_info['budget_type'] === 'PER_OUTLET' ? $po->purchase_requisition->budget_info['outlet_budget'] : $po->purchase_requisition->budget_info['category_budget'], 0, ',', '.') }}
                                 </div>
-                                @if($po->purchase_requisition->budget_info->budget_type === 'PER_OUTLET')
+                                @if($po->purchase_requisition->budget_info['budget_type'] === 'PER_OUTLET')
                                     <div style="font-size: 10px; color: #666; margin-top: 2px;">
-                                        Global: Rp {{ number_format($po->purchase_requisition->budget_info->category_budget, 0, ',', '.') }}
+                                        Global: Rp {{ number_format($po->purchase_requisition->budget_info['category_budget'], 0, ',', '.') }}
                                     </div>
                                 @endif
                             </div>
                             <div style="text-align: center; padding: 8px; background-color: #fff3e0; border-radius: 3px;">
                                 <div style="font-weight: bold; color: #f57c00; margin-bottom: 3px;">Used This Month</div>
                                 <div style="font-size: 12px; font-weight: bold; color: #f57c00;">
-                                    Rp {{ number_format($po->purchase_requisition->budget_info->budget_type === 'PER_OUTLET' ? $po->purchase_requisition->budget_info->outlet_used_amount : $po->purchase_requisition->budget_info->category_used_amount, 0, ',', '.') }}
+                                    Rp {{ number_format($po->purchase_requisition->budget_info['budget_type'] === 'PER_OUTLET' ? $po->purchase_requisition->budget_info['outlet_used_amount'] : $po->purchase_requisition->budget_info['category_used_amount'], 0, ',', '.') }}
                                 </div>
                             </div>
                             <div style="text-align: center; padding: 8px; background-color: #e8f5e8; border-radius: 3px;">
                                 <div style="font-weight: bold; color: #2e7d32; margin-bottom: 3px;">Remaining Budget</div>
                                 <div style="font-size: 12px; font-weight: bold; color: #2e7d32;">
-                                    Rp {{ number_format($po->purchase_requisition->budget_info->budget_type === 'PER_OUTLET' ? $po->purchase_requisition->budget_info->outlet_remaining_amount : $po->purchase_requisition->budget_info->category_remaining_amount, 0, ',', '.') }}
+                                    Rp {{ number_format($po->purchase_requisition->budget_info['budget_type'] === 'PER_OUTLET' ? $po->purchase_requisition->budget_info['outlet_remaining_amount'] : $po->purchase_requisition->budget_info['category_remaining_amount'], 0, ',', '.') }}
                                 </div>
                             </div>
                         </div>
                         <div style="margin-top: 8px;">
                             <div style="display: flex; justify-content: space-between; font-size: 10px; color: #666; margin-bottom: 3px;">
                                 <span>Budget Usage</span>
-                                <span>{{ round(($po->purchase_requisition->budget_info->budget_type === 'PER_OUTLET' ? $po->purchase_requisition->budget_info->outlet_used_amount : $po->purchase_requisition->budget_info->category_used_amount) / ($po->purchase_requisition->budget_info->budget_type === 'PER_OUTLET' ? $po->purchase_requisition->budget_info->outlet_budget : $po->purchase_requisition->budget_info->category_budget) * 100, 1) }}%</span>
+                                <span>{{ round(($po->purchase_requisition->budget_info['budget_type'] === 'PER_OUTLET' ? $po->purchase_requisition->budget_info['outlet_used_amount'] : $po->purchase_requisition->budget_info['category_used_amount']) / ($po->purchase_requisition->budget_info['budget_type'] === 'PER_OUTLET' ? $po->purchase_requisition->budget_info['outlet_budget'] : $po->purchase_requisition->budget_info['category_budget']) * 100, 1) }}%</span>
                             </div>
                             <div style="width: 100%; background-color: #e0e0e0; border-radius: 10px; height: 8px; overflow: hidden;">
                                 <div style="height: 100%; background-color: #4caf50; border-radius: 10px; transition: width 0.3s;"
-                                     style="width: {{ min(($po->purchase_requisition->budget_info->budget_type === 'PER_OUTLET' ? $po->purchase_requisition->budget_info->outlet_used_amount : $po->purchase_requisition->budget_info->category_used_amount) / ($po->purchase_requisition->budget_info->budget_type === 'PER_OUTLET' ? $po->purchase_requisition->budget_info->outlet_budget : $po->purchase_requisition->budget_info->category_budget) * 100, 100) }}%;"></div>
+                                     style="width: {{ min(($po->purchase_requisition->budget_info['budget_type'] === 'PER_OUTLET' ? $po->purchase_requisition->budget_info['outlet_used_amount'] : $po->purchase_requisition->budget_info['category_used_amount']) / ($po->purchase_requisition->budget_info['budget_type'] === 'PER_OUTLET' ? $po->purchase_requisition->budget_info['outlet_budget'] : $po->purchase_requisition->budget_info['category_budget']) * 100, 100) }}%;"></div>
                             </div>
                         </div>
                         @php
-                            $remainingAmount = $po->purchase_requisition->budget_info->budget_type === 'PER_OUTLET' ? $po->purchase_requisition->budget_info->outlet_remaining_amount : $po->purchase_requisition->budget_info->category_remaining_amount;
-                            $totalBudget = $po->purchase_requisition->budget_info->budget_type === 'PER_OUTLET' ? $po->purchase_requisition->budget_info->outlet_budget : $po->purchase_requisition->budget_info->category_budget;
+                            $remainingAmount = $po->purchase_requisition->budget_info['budget_type'] === 'PER_OUTLET' ? $po->purchase_requisition->budget_info['outlet_remaining_amount'] : $po->purchase_requisition->budget_info['category_remaining_amount'];
+                            $totalBudget = $po->purchase_requisition->budget_info['budget_type'] === 'PER_OUTLET' ? $po->purchase_requisition->budget_info['outlet_budget'] : $po->purchase_requisition->budget_info['category_budget'];
                         @endphp
                         @if($remainingAmount < 0)
                             <div style="margin-top: 8px; padding: 5px; background-color: #f8d7da; border: 1px solid #f5c6cb; border-radius: 3px; color: #721c24; font-size: 10px;">
                                 <i class="fa fa-exclamation-triangle" style="margin-right: 3px;"></i>
                                 <strong>Budget Exceeded!</strong> 
-                                @if($po->purchase_requisition->budget_info->budget_type === 'PER_OUTLET')
+                                @if($po->purchase_requisition->budget_info['budget_type'] === 'PER_OUTLET')
                                     This outlet has exceeded its monthly budget limit.
                                 @else
                                     This category has exceeded its monthly budget limit.
