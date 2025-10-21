@@ -1310,6 +1310,9 @@ class PurchaseOrderOpsController extends Controller
                 'supplier',
                 'creator',
                 'items',
+                'purchase_requisition.division',
+                'purchase_requisition.category',
+                'purchase_requisition.outlet',
                 'approvalFlows.approver.jabatan'
             ])->whereIn('id', $poIds)->get();
 

@@ -263,6 +263,54 @@
                     </div>
                 </div>
 
+                <!-- Purchase Requisition Information -->
+                @if($po->purchase_requisition)
+                    <div style="background-color: #f0f8ff; padding: 10px; margin: 10px 0; border-left: 4px solid #28a745; border-radius: 3px;">
+                        <h4 style="margin: 0 0 8px 0; color: #28a745; font-size: 14px; font-weight: bold;">
+                            <i class="fa fa-shopping-cart" style="margin-right: 5px;"></i>
+                            Purchase Requisition Information
+                        </h4>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 11px;">
+                            <div>
+                                <div style="margin-bottom: 5px;">
+                                    <span style="font-weight: bold; color: #333;">PR Number:</span>
+                                    <span style="color: #666; margin-left: 5px;">{{ $po->purchase_requisition->pr_number ?? 'N/A' }}</span>
+                                </div>
+                                <div style="margin-bottom: 5px;">
+                                    <span style="font-weight: bold; color: #333;">Title:</span>
+                                    <span style="color: #666; margin-left: 5px;">{{ $po->purchase_requisition->title ?? 'N/A' }}</span>
+                                </div>
+                                <div style="margin-bottom: 5px;">
+                                    <span style="font-weight: bold; color: #333;">Division:</span>
+                                    <span style="color: #666; margin-left: 5px;">{{ $po->purchase_requisition->division->nama_divisi ?? 'N/A' }}</span>
+                                </div>
+                            </div>
+                            <div>
+                                <div style="margin-bottom: 5px;">
+                                    <span style="font-weight: bold; color: #333;">Category:</span>
+                                    <span style="color: #666; margin-left: 5px;">{{ $po->purchase_requisition->category->name ?? 'N/A' }}</span>
+                                </div>
+                                <div style="margin-bottom: 5px;">
+                                    <span style="font-weight: bold; color: #333;">Outlet:</span>
+                                    <span style="color: #666; margin-left: 5px;">{{ $po->purchase_requisition->outlet->nama_outlet ?? 'N/A' }}</span>
+                                </div>
+                                <div style="margin-bottom: 5px;">
+                                    <span style="font-weight: bold; color: #333;">Amount:</span>
+                                    <span style="color: #666; margin-left: 5px; font-weight: bold;">Rp {{ number_format($po->purchase_requisition->amount, 0, ',', '.') }}</span>
+                                </div>
+                            </div>
+                        </div>
+                        @if($po->purchase_requisition->description)
+                            <div style="margin-top: 8px; font-size: 11px;">
+                                <span style="font-weight: bold; color: #333;">Description:</span>
+                                <div style="color: #666; margin-top: 3px; padding: 5px; background-color: #f9f9f9; border-radius: 3px;">
+                                    {{ $po->purchase_requisition->description }}
+                                </div>
+                            </div>
+                        @endif
+                    </div>
+                @endif
+
                 @if($po->items && count($po->items) > 0)
                     <table class="items-table">
                         <thead>
