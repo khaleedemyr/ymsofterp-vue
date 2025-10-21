@@ -11,6 +11,7 @@
             padding: 10px;
             background-color: #f5f5f5;
             font-size: 12px;
+            min-height: 100vh;
         }
         .print-container {
             max-width: 800px;
@@ -40,7 +41,6 @@
         }
         .po-section {
             margin-bottom: 15px;
-            page-break-inside: avoid;
         }
         .po-header {
             background-color: #f8f9fa;
@@ -178,6 +178,10 @@
                 margin: 0;
                 padding: 5px;
                 max-width: none;
+                page-break-inside: avoid;
+            }
+            .header {
+                page-break-after: avoid;
             }
             .po-section {
                 margin-bottom: 10px;
