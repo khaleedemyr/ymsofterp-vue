@@ -625,6 +625,9 @@ class ReportController extends Controller
         if ($request->filled('to')) {
             $query2->whereDate('gr.receive_date', '<=', $request->to);
         }
+        
+        // Filter GR yang belum dihapus (untuk good_receive_outlet_suppliers, tidak ada soft delete)
+        // Tabel ini menggunakan hard delete, jadi tidak perlu whereNull('gr.deleted_at')
 
         $report2 = $query2->groupBy('o.nama_outlet', 'o.is_outlet')
             ->orderBy('o.is_outlet', 'desc')
@@ -2363,7 +2366,8 @@ class ReportController extends Controller
                 ->join('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
                 ->where('o.nama_outlet', $customer)
                 ->whereDate('gr.receive_date', '>=', $from)
-                ->whereDate('gr.receive_date', '<=', $to);
+                ->whereDate('gr.receive_date', '<=', $to)
+                ->whereNull('gr.deleted_at'); // Filter GR yang belum dihapus
 
             // Apply warehouse condition
             if (is_array($warehouseCondition)) {
@@ -2577,7 +2581,8 @@ class ReportController extends Controller
                 ->join('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
                 ->where('o.nama_outlet', $customer)
                 ->whereDate('gr.receive_date', '>=', $from)
-                ->whereDate('gr.receive_date', '<=', $to);
+                ->whereDate('gr.receive_date', '<=', $to)
+                ->whereNull('gr.deleted_at'); // Filter GR yang belum dihapus
 
             // Apply warehouse condition
             if (is_array($warehouseCondition)) {

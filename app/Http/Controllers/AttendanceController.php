@@ -497,47 +497,41 @@ class AttendanceController extends Controller
             ];
         }
         
-        // Step 2: Process each group to determine first in and last out per outlet
+        // Step 2: Group by date first, then process each date using smart cross-day logic
         $attendanceData = [];
+        $groupedByDate = [];
+        
+        // Group all outlet data by date
         foreach ($processedData as $key => $data) {
-            $scans = collect($data['scans'])->sortBy('scan_date');
-            $inScans = $scans->where('inoutmode', 1);
-            $outScans = $scans->where('inoutmode', 2);
-            
-            // Get first in scan
-            $firstIn = $inScans->first()['scan_date'] ?? null;
-            
-            // Get last out scan (including cross-day) - FIXED for multi-outlet
-            $lastOut = null;
-            $isCrossDay = false;
-            
-            if ($firstIn) {
-                // Look for last out on the same day (following AttendanceReportController logic)
-                $sameDayOuts = $outScans->where('scan_date', '>', $firstIn);
-                
-                if ($sameDayOuts->isNotEmpty()) {
-                    // Ada scan keluar di hari yang sama - ambil yang paling akhir
-                    $lastOut = $sameDayOuts->last()['scan_date'];
-                    $isCrossDay = false;
-                } else {
-                    // Cari scan keluar di hari berikutnya untuk outlet yang sama
-                    $nextDay = date('Y-m-d', strtotime($data['tanggal'] . ' +1 day'));
-                    $nextDayKey = $data['user_id'] . '_' . $nextDay . '_' . $data['id_outlet'];
-                    
-                    if (isset($processedData[$nextDayKey])) {
-                        $nextDayScans = collect($processedData[$nextDayKey]['scans'])->sortBy('scan_date');
-                        $nextDayOuts = $nextDayScans->where('inoutmode', 2);
-                        
-                        if ($nextDayOuts->isNotEmpty()) {
-                            $lastOut = $nextDayOuts->first()['scan_date'];
-                            $isCrossDay = true;
-                            
-                            // Hapus scan keluar ini dari hari berikutnya (following AttendanceReportController logic)
-                            $processedData[$nextDayKey]['scans'] = $nextDayScans->where('inoutmode', '!=', 2)->values()->toArray();
-                        }
-                    }
-                }
+            $dateKey = $data['tanggal'];
+            if (!isset($groupedByDate[$dateKey])) {
+                $groupedByDate[$dateKey] = [];
             }
+            $groupedByDate[$dateKey][] = $data;
+        }
+        
+        // Process each date with all its outlets
+        foreach ($groupedByDate as $dateKey => $dateData) {
+            // Combine all scans for this date from all outlets
+            $allScans = [];
+            foreach ($dateData as $data) {
+                $allScans = array_merge($allScans, $data['scans']);
+            }
+            
+            // Create combined data for this date
+            $combinedData = [
+                'tanggal' => $dateKey,
+                'user_id' => $dateData[0]['user_id'],
+                'nama_lengkap' => $dateData[0]['nama_lengkap'],
+                'scans' => $allScans
+            ];
+            
+            // Use smart cross-day processing for the combined data
+            $result = $this->processSmartCrossDayAttendance($combinedData, $processedData);
+            
+            $firstIn = $result['jam_masuk'];
+            $lastOut = $result['jam_keluar'];
+            $isCrossDay = $result['is_cross_day'];
             
             // Calculate telat and lembur following AttendanceReportController logic exactly
             $telat = 0;
@@ -584,74 +578,29 @@ class AttendanceController extends Controller
                 $has_no_checkout = true;
             }
             
-            // Store data per outlet for this date
-            $dateKey = $data['tanggal'];
-            if (!isset($attendanceData[$dateKey])) {
-                $attendanceData[$dateKey] = [
-                    'first_in' => null,
-                    'last_out' => null,
-                    'is_cross_day' => false,
-                    'telat' => 0,
-                    'lembur' => 0,
-                    'has_no_checkout' => false,
-                    'outlets' => []
-                ];
-            }
-            
-            // Store outlet-specific data
-            $attendanceData[$dateKey]['outlets'][] = [
-                'id_outlet' => $data['id_outlet'],
-                'nama_outlet' => $data['nama_outlet'],
+            // Store data for this date
+            $attendanceData[$dateKey] = [
                 'first_in' => $firstIn ? date('H:i', strtotime($firstIn)) : null,
                 'last_out' => $lastOut ? date('H:i', strtotime($lastOut)) : null,
                 'is_cross_day' => $isCrossDay,
                 'telat' => $telat,
                 'lembur' => $lembur,
-                'has_no_checkout' => $has_no_checkout
+                'has_no_checkout' => $has_no_checkout,
+                'outlets' => []
             ];
             
-            // For main attendance data, use the earliest first_in and latest last_out
-            if ($firstIn) {
-                if (!$attendanceData[$dateKey]['first_in'] || strtotime($firstIn) < strtotime($attendanceData[$dateKey]['first_in'])) {
-                    $attendanceData[$dateKey]['first_in'] = date('H:i', strtotime($firstIn));
-                }
-            }
-            
-            if ($lastOut) {
-                // For multi-outlet cross-day, prioritize cross-day checkout over same-day
-                if (!$attendanceData[$dateKey]['last_out']) {
-                    $attendanceData[$dateKey]['last_out'] = date('H:i', strtotime($lastOut));
-                    $attendanceData[$dateKey]['is_cross_day'] = $isCrossDay;
-                } else {
-                    // If we already have a checkout, choose the better one
-                    $currentOutTime = strtotime($attendanceData[$dateKey]['last_out']);
-                    $newOutTime = strtotime($lastOut);
-                    
-                    // Prioritize cross-day checkout for multi-outlet scenarios
-                    if ($isCrossDay && !$attendanceData[$dateKey]['is_cross_day']) {
-                        // New checkout is cross-day, current is not - use new one
-                        $attendanceData[$dateKey]['last_out'] = date('H:i', strtotime($lastOut));
-                        $attendanceData[$dateKey]['is_cross_day'] = $isCrossDay;
-                    } elseif (!$isCrossDay && $attendanceData[$dateKey]['is_cross_day']) {
-                        // Current is cross-day, new is not - keep current
-                        // Do nothing, keep current
-                    } else {
-                        // Both same type, use the later one
-                        if ($newOutTime > $currentOutTime) {
-                            $attendanceData[$dateKey]['last_out'] = date('H:i', strtotime($lastOut));
-                            $attendanceData[$dateKey]['is_cross_day'] = $isCrossDay;
-                        }
-                    }
-                }
-            }
-            
-            // Accumulate telat and lembur from all outlets
-            $attendanceData[$dateKey]['telat'] = max($attendanceData[$dateKey]['telat'], $telat);
-            $attendanceData[$dateKey]['lembur'] = max($attendanceData[$dateKey]['lembur'], $lembur);
-            
-            // Set has_no_checkout if any outlet has no checkout
-            if ($has_no_checkout) {
-                $attendanceData[$dateKey]['has_no_checkout'] = true;
+            // Store outlet-specific data for detail view
+            foreach ($dateData as $outletData) {
+                $attendanceData[$dateKey]['outlets'][] = [
+                    'id_outlet' => $outletData['id_outlet'],
+                    'nama_outlet' => $outletData['nama_outlet'],
+                    'first_in' => $firstIn ? date('H:i', strtotime($firstIn)) : null,
+                    'last_out' => $lastOut ? date('H:i', strtotime($lastOut)) : null,
+                    'is_cross_day' => $isCrossDay,
+                    'telat' => $telat,
+                    'lembur' => $lembur,
+                    'has_no_checkout' => $has_no_checkout
+                ];
             }
         }
         
@@ -682,15 +631,6 @@ class AttendanceController extends Controller
         // Hitung selisih dalam detik
         $diffSeconds = $keluarTimestamp - $shiftEndTimestamp;
         
-        \Log::info('My Attendance - Overtime calculation debug', [
-            'jam_keluar' => $jamKeluar,
-            'jam_keluar_time' => $jamKeluarTime,
-            'shift_end' => $shiftEnd,
-            'keluar_timestamp' => $keluarTimestamp,
-            'shift_end_timestamp' => $shiftEndTimestamp,
-            'diff_seconds' => $diffSeconds,
-            'diff_hours' => round($diffSeconds / 3600, 2)
-        ]);
         
         // Jika selisih negatif, kemungkinan cross-day ATAU checkout lebih awal
         if ($diffSeconds < 0) {
@@ -705,28 +645,16 @@ class AttendanceController extends Controller
                 $crossDaySeconds = (24 * 3600) + $diffSeconds; // 24 jam + selisih negatif
                 $overtimeHours = floor($crossDaySeconds / 3600);
                 
-                \Log::info('My Attendance - Cross-day overtime calculation', [
-                    'cross_day_seconds' => $crossDaySeconds,
-                    'overtime_hours' => $overtimeHours
-                ]);
             } else {
                 // Ini bukan cross-day, tapi checkout lebih awal dari shift end
                 // Tidak ada lembur
                 $overtimeHours = 0;
                 
-                \Log::info('My Attendance - Early checkout - no overtime', [
-                    'checkout_hour' => $checkoutHour,
-                    'shift_end_hour' => $shiftEndHour,
-                    'reason' => 'checkout_before_shift_end'
-                ]);
             }
         } else {
             // Normal overtime
             $overtimeHours = floor($diffSeconds / 3600);
             
-            \Log::info('My Attendance - Normal overtime calculation', [
-                'overtime_hours' => $overtimeHours
-            ]);
         }
         
         // Batasi maksimal 12 jam untuk mencegah error
@@ -738,6 +666,131 @@ class AttendanceController extends Controller
         }
         
         return $overtimeHours;
+    }
+    
+    /**
+     * Calculate lateness for early checkout - SAME LOGIC AS AttendanceReportController
+     */
+    private function calculateEarlyCheckoutLateness($jamKeluar, $shiftEnd, $isCrossDay = false) {
+        // Jika cross-day, tidak ada telat dari early checkout
+        if ($isCrossDay) {
+            return 0;
+        }
+        
+        if (!$jamKeluar || !$shiftEnd) {
+            return 0;
+        }
+        
+        // Ambil jam saja (abaikan tanggal)
+        $jamKeluarTime = date('H:i:s', strtotime($jamKeluar));
+        
+        // Konversi ke timestamp untuk perhitungan
+        $keluarTimestamp = strtotime($jamKeluarTime);
+        $shiftEndTimestamp = strtotime($shiftEnd);
+        
+        // Hitung selisih dalam detik
+        $diffSeconds = $shiftEndTimestamp - $keluarTimestamp;
+        
+        // Jika checkout lebih awal dari shift end, hitung telat
+        if ($diffSeconds > 0) {
+            $latenessMinutes = round($diffSeconds / 60);
+            return $latenessMinutes;
+        }
+        
+        return 0;
+    }
+    
+    /**
+     * Smart cross-day attendance processing untuk multi-outlet scenarios
+     * SAME LOGIC AS AttendanceReportController
+     */
+    private function processSmartCrossDayAttendance($data, $allProcessedData) {
+        $scans = collect($data['scans'])->sortBy('scan_date');
+        $inScans = $scans->where('inoutmode', 1);
+        $outScans = $scans->where('inoutmode', 2);
+        
+        $totalMasuk = $inScans->count();
+        $totalKeluar = $outScans->count();
+        
+        // Ambil scan masuk pertama
+        $jamMasuk = $inScans->first()['scan_date'] ?? null;
+        $jamKeluar = null;
+        $isCrossDay = false;
+        
+        if ($jamMasuk) {
+            // SOLUSI TERBAIK: Logika sederhana dan konsisten dengan multi-outlet support
+            
+            // 1. Cari OUT scan di hari yang sama
+            $sameDayOuts = $outScans->where('scan_date', '>', $jamMasuk);
+            
+            // 2. Cari OUT scan di hari berikutnya (cross-day)
+            $nextDay = date('Y-m-d', strtotime($data['tanggal'] . ' +1 day'));
+            $nextDayKey = $data['user_id'] . '_' . $nextDay;
+            $nextDayOuts = collect();
+            
+            if (isset($allProcessedData[$nextDayKey])) {
+                $nextDayScans = collect($allProcessedData[$nextDayKey]['scans'])->sortBy('scan_date');
+                $nextDayOuts = $nextDayScans->where('inoutmode', 2);
+            }
+            
+            // 3. Tentukan OUT scan yang paling masuk akal - FIXED for multi-outlet
+            if ($sameDayOuts->isNotEmpty() && $nextDayOuts->isNotEmpty()) {
+                // Ada both same-day dan cross-day OUT scan
+                $lastSameDayOut = $sameDayOuts->last()['scan_date'];
+                $firstNextDayOut = $nextDayOuts->first()['scan_date'];
+                
+                // Cek durasi same-day OUT
+                $sameDayDuration = strtotime($lastSameDayOut) - strtotime($jamMasuk);
+                $outHour = (int)date('H', strtotime($firstNextDayOut));
+                
+                // Untuk multi-outlet cross-day, prioritas cross-day jika:
+                // 1. Same-day OUT terlalu pendek (< 5 jam) ATAU
+                // 2. Cross-day OUT di pagi sangat awal (00:00-06:00)
+                if ($sameDayDuration < 18000 || ($outHour >= 0 && $outHour <= 6)) {
+                    $jamKeluar = $firstNextDayOut;
+                    $isCrossDay = true;
+                    $totalKeluar = 1;
+                    
+                    // Hapus scan keluar dari hari berikutnya
+                    $allProcessedData[$nextDayKey]['scans'] = $nextDayScans->where('inoutmode', '!=', 2)->values()->toArray();
+                    
+                } else {
+                    $jamKeluar = $lastSameDayOut;
+                    $isCrossDay = false;
+                }
+            } elseif ($sameDayOuts->isNotEmpty()) {
+                // Hanya ada same-day OUT scan
+                $jamKeluar = $sameDayOuts->last()['scan_date'];
+                $isCrossDay = false;
+                
+            } elseif ($nextDayOuts->isNotEmpty()) {
+                // Hanya ada cross-day OUT scan
+                $firstNextDayOut = $nextDayOuts->first()['scan_date'];
+                $outHour = (int)date('H', strtotime($firstNextDayOut));
+                
+                // Untuk cross-day, hanya gunakan jika di pagi sangat awal (00:00-12:00)
+                if ($outHour >= 0 && $outHour <= 12) {
+                    $jamKeluar = $firstNextDayOut;
+                    $isCrossDay = true;
+                    $totalKeluar = 1;
+                    
+                    // Hapus scan keluar dari hari berikutnya
+                    $allProcessedData[$nextDayKey]['scans'] = $nextDayScans->where('inoutmode', '!=', 2)->values()->toArray();
+                }
+            }
+            
+        }
+        
+        return [
+            'tanggal' => $data['tanggal'],
+            'user_id' => $data['user_id'],
+            'nama_lengkap' => $data['nama_lengkap'],
+            'jam_masuk' => $jamMasuk,
+            'jam_keluar' => $jamKeluar,
+            'total_masuk' => $totalMasuk,
+            'total_keluar' => $totalKeluar,
+            'is_cross_day' => $isCrossDay
+        ];
     }
     
     public function submitAbsentRequest(Request $request)
