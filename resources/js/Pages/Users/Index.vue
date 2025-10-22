@@ -507,6 +507,22 @@ function performUpload() {
 function downloadTemplate() {
   window.open('/employee-upload/template', '_blank');
 }
+
+function exportToExcel() {
+  // Build query parameters from current filters
+  const params = new URLSearchParams();
+  
+  if (search.value) params.append('search', search.value);
+  if (outletId.value) params.append('outlet_id', outletId.value);
+  if (divisionId.value) params.append('division_id', divisionId.value);
+  if (status.value && status.value !== 'A') params.append('status', status.value);
+  
+  // Create export URL with current filters
+  const exportUrl = `/users/export?${params.toString()}`;
+  
+  // Open export URL in new tab to trigger download
+  window.open(exportUrl, '_blank');
+}
 </script>
 
 <template>
@@ -520,6 +536,9 @@ function downloadTemplate() {
            <button @click="toggleViewMode" class="bg-gradient-to-r from-purple-500 to-purple-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold">
              <i :class="viewMode === 'list' ? 'fa-solid fa-th-large mr-2' : 'fa-solid fa-list mr-2'"></i>
              {{ viewMode === 'list' ? 'Card View' : 'List View' }}
+           </button>
+           <button @click="exportToExcel" class="bg-gradient-to-r from-orange-500 to-orange-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold">
+             <i class="fa-solid fa-file-excel mr-2"></i>Export Excel
            </button>
            <button @click="openUploadModal" class="bg-gradient-to-r from-green-500 to-green-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold">
              <i class="fa-solid fa-upload mr-2"></i>Upload Excel

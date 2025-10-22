@@ -1412,6 +1412,11 @@ Route::get('/item-engineering', function () {
 
 Route::get('/users/dropdown-data', [UserController::class, 'getDropdownData'])->name('users.dropdown-data');
 
+// Export route must be before resource route to avoid conflicts
+Route::middleware(['auth'])->group(function () {
+    Route::get('users/export', [UserController::class, 'export'])->name('users.export');
+});
+
 Route::resource('users', UserController::class);
 Route::patch('users/{user}/toggle-status', [UserController::class, 'toggleStatus'])->name('users.toggle-status');
 Route::post('users/{user}/activate', [UserController::class, 'activate'])->name('users.activate');

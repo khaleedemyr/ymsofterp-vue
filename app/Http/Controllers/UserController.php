@@ -4,11 +4,13 @@ namespace App\Http\Controllers;
 
 use App\Models\User;
 use App\Models\ActivityLog;
+use App\Exports\UsersExport;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
+use Maatwebsite\Excel\Facades\Excel;
 
 class UserController extends Controller
 {
@@ -825,6 +827,26 @@ class UserController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Gagal mengupload banner: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Export users to Excel
+     */
+    public function export(Request $request)
+    {
+        try {
+            $filters = $request->only(['search', 'outlet_id', 'division_id', 'status']);
+            
+            return new UsersExport($filters);
+            
+        } catch (\Exception $e) {
+            \Log::error('Error exporting users: ' . $e->getMessage());
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal mengexport data karyawan: ' . $e->getMessage()
             ], 500);
         }
     }
