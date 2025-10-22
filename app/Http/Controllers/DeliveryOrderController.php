@@ -533,7 +533,7 @@ class DeliveryOrderController extends Controller
             'updated_at' => now(),
         ]);
         
-        // Process inventory (simplified version)
+        // Process inventory with proper unit conversion (CRITICAL FIX)
         if ($warehouseId) {
             $inventoryItem = DB::table('food_inventory_items')->where('item_id', $realItemId)->first();
             if ($inventoryItem) {
@@ -543,30 +543,75 @@ class DeliveryOrderController extends Controller
                     ->first();
                 
                 if ($stock) {
-                    // Update stock
-                    DB::table('food_inventory_stocks')
-                        ->where('inventory_item_id', $inventoryItem->id)
-                        ->where('warehouse_id', $warehouseId)
-                        ->update([
-                            'qty_small' => DB::raw('qty_small - ' . $item['qty_scan']),
-                            'updated_at' => now(),
+                    // CRITICAL: Use proper unit conversion for fallback too
+                    $itemMaster = DB::table('items')->where('id', $realItemId)->first();
+                    if ($itemMaster) {
+                        $unit = $item['unit'] ?? null;
+                        $qty_input = $item['qty_scan'];
+                        $qty_small = 0;
+                        $qty_medium = 0;
+                        $qty_large = 0;
+                        
+                        $unitSmall = DB::table('units')->where('id', $itemMaster->small_unit_id)->value('name');
+                        $unitMedium = DB::table('units')->where('id', $itemMaster->medium_unit_id)->value('name');
+                        $unitLarge = DB::table('units')->where('id', $itemMaster->large_unit_id)->value('name');
+                        $smallConv = $itemMaster->small_conversion_qty ?: 1;
+                        $mediumConv = $itemMaster->medium_conversion_qty ?: 1;
+                        
+                        if ($unit === $unitSmall) {
+                            $qty_small = $qty_input;
+                            $qty_medium = $smallConv > 0 ? $qty_small / $smallConv : 0;
+                            $qty_large = ($smallConv > 0 && $mediumConv > 0) ? $qty_small / ($smallConv * $mediumConv) : 0;
+                        } elseif ($unit === $unitMedium) {
+                            $qty_medium = $qty_input;
+                            $qty_small = $qty_medium * $smallConv;
+                            $qty_large = $mediumConv > 0 ? $qty_medium / $mediumConv : 0;
+                        } elseif ($unit === $unitLarge) {
+                            $qty_large = $qty_input;
+                            $qty_medium = $qty_large * $mediumConv;
+                            $qty_small = $qty_medium * $smallConv;
+                        } else {
+                            $qty_small = $qty_input;
+                        }
+                        
+                        // Validate stock availability
+                        if ($qty_small > $stock->qty_small) {
+                            throw new \Exception("Qty melebihi stok yang tersedia. Stok tersedia: {$stock->qty_small} {$unitSmall}");
+                        }
+                        
+                        // Update stock with proper conversion
+                        DB::table('food_inventory_stocks')
+                            ->where('inventory_item_id', $inventoryItem->id)
+                            ->where('warehouse_id', $warehouseId)
+                            ->update([
+                                'qty_small' => $stock->qty_small - $qty_small,
+                                'qty_medium' => $stock->qty_medium - $qty_medium,
+                                'qty_large' => $stock->qty_large - $qty_large,
+                                'updated_at' => now(),
+                            ]);
+                        
+                        // Insert inventory card with proper conversion
+                        DB::table('food_inventory_cards')->insert([
+                            'inventory_item_id' => $inventoryItem->id,
+                            'warehouse_id' => $warehouseId,
+                            'date' => now()->toDateString(),
+                            'reference_type' => 'delivery_order',
+                            'reference_id' => $doId,
+                            'out_qty_small' => $qty_small,
+                            'out_qty_medium' => $qty_medium,
+                            'out_qty_large' => $qty_large,
+                            'cost_per_small' => $stock->last_cost_small,
+                            'cost_per_medium' => $stock->last_cost_medium,
+                            'cost_per_large' => $stock->last_cost_large,
+                            'value_out' => $qty_small * $stock->last_cost_small,
+                            'saldo_qty_small' => $stock->qty_small - $qty_small,
+                            'saldo_qty_medium' => $stock->qty_medium - $qty_medium,
+                            'saldo_qty_large' => $stock->qty_large - $qty_large,
+                            'saldo_value' => ($stock->qty_small - $qty_small) * $stock->last_cost_small,
+                            'description' => 'Stock Out - Delivery Order (Fallback)',
+                            'created_at' => now(),
                         ]);
-                    
-                    // Insert inventory card
-                    DB::table('food_inventory_cards')->insert([
-                        'inventory_item_id' => $inventoryItem->id,
-                        'warehouse_id' => $warehouseId,
-                        'date' => now()->toDateString(),
-                        'reference_type' => 'delivery_order',
-                        'reference_id' => $doId,
-                        'out_qty_small' => $item['qty_scan'],
-                        'cost_per_small' => $stock->last_cost_small,
-                        'value_out' => $item['qty_scan'] * $stock->last_cost_small,
-                        'saldo_qty_small' => $stock->qty_small - $item['qty_scan'],
-                        'saldo_value' => ($stock->qty_small - $item['qty_scan']) * $stock->last_cost_small,
-                        'description' => 'Stock Out - Delivery Order (Fallback)',
-                        'created_at' => now(),
-                    ]);
+                    }
                 }
             }
         }
@@ -694,7 +739,7 @@ class DeliveryOrderController extends Controller
     }
 
     /**
-     * OPTIMIZED: Calculate quantities
+     * OPTIMIZED: Calculate quantities with proper unit conversion
      */
     private function calculateQuantities($itemId, $qtyInput, $unit, $itemData)
     {
@@ -703,10 +748,12 @@ class DeliveryOrderController extends Controller
             throw new \Exception('Item tidak ditemukan');
         }
         
+        // Get unit names from database
         $unitSmall = DB::table('units')->where('id', $item->small_unit_id)->value('name');
         $unitMedium = DB::table('units')->where('id', $item->medium_unit_id)->value('name');
         $unitLarge = DB::table('units')->where('id', $item->large_unit_id)->value('name');
         
+        // Get conversion factors
         $smallConv = $item->small_conversion_qty ?: 1;
         $mediumConv = $item->medium_conversion_qty ?: 1;
         
@@ -714,6 +761,7 @@ class DeliveryOrderController extends Controller
         $qty_medium = 0;
         $qty_large = 0;
         
+        // CRITICAL: Proper unit conversion logic (same as original)
         if ($unit === $unitSmall) {
             $qty_small = $qtyInput;
             $qty_medium = $smallConv > 0 ? $qty_small / $smallConv : 0;
@@ -727,8 +775,24 @@ class DeliveryOrderController extends Controller
             $qty_medium = $qty_large * $mediumConv;
             $qty_small = $qty_medium * $smallConv;
         } else {
+            // Default to small unit if unit doesn't match
             $qty_small = $qtyInput;
         }
+        
+        // Log conversion for debugging
+        Log::info('Unit conversion calculation', [
+            'item_id' => $itemId,
+            'input_qty' => $qtyInput,
+            'input_unit' => $unit,
+            'small_unit' => $unitSmall,
+            'medium_unit' => $unitMedium,
+            'large_unit' => $unitLarge,
+            'small_conv' => $smallConv,
+            'medium_conv' => $mediumConv,
+            'result_small' => $qty_small,
+            'result_medium' => $qty_medium,
+            'result_large' => $qty_large
+        ]);
         
         return [
             'qty_small' => $qty_small,
