@@ -64,11 +64,17 @@ class AttendanceController extends Controller
         // Get approved absent requests for the date range
         $approvedAbsents = $this->getApprovedAbsentRequests($user->id, $startDate, $endDate);
         
+        // Get user's leave requests (for cancel functionality)
+        $userLeaveRequests = $this->getUserLeaveRequests($user->id, $startDate, $endDate);
+        
         // Get active leave types
         $leaveTypes = LeaveType::active()
             ->select('id', 'name', 'max_days', 'requires_document', 'description')
             ->orderBy('name')
             ->get();
+        
+        // Get available approvers for leave request
+        $availableApprovers = $this->getAvailableApprovers($user);
         
         return Inertia::render('Attendance/Index', [
             'workSchedules' => $workSchedules,
@@ -77,7 +83,9 @@ class AttendanceController extends Controller
             'calendar' => $calendar,
             'holidays' => $holidays,
             'approvedAbsents' => $approvedAbsents,
+            'userLeaveRequests' => $userLeaveRequests,
             'leaveTypes' => $leaveTypes,
+            'availableApprovers' => $availableApprovers,
             'filters' => [
                 'bulan' => $bulan,
                 'tahun' => $tahun,
@@ -677,6 +685,7 @@ class AttendanceController extends Controller
                 'date_from' => 'required|date',
                 'date_to' => 'required|date|after_or_equal:date_from',
                 'reason' => 'required|string|max:1000',
+                'approver_id' => 'required|exists:users,id', // Wajib pilih atasan
                 'document' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:5120', // 5MB max
                 'documents' => 'nullable|array',
                 'documents.*' => 'file|mimes:pdf,jpg,jpeg,png|max:5120' // 5MB max per file
@@ -781,47 +790,56 @@ class AttendanceController extends Controller
                 'updated_at' => now()
             ]);
             
-            // Find approver (atasan) based on user's jabatan and outlet
-            $approver = $this->findApprover($user);
-            
-            if ($approver) {
-                // Find HRD approver
-                $hrdApprover = $this->findHrdApprover();
+            // Validate that the selected approver exists and is active
+            $selectedApprover = DB::table('users')
+                ->where('id', $request->approver_id)
+                ->where('status', 'A')
+                ->select('id', 'nama_lengkap', 'email')
+                ->first();
                 
-                // Create approval request
-                $approvalRequestId = DB::table('approval_requests')->insertGetId([
-                    'user_id' => $user->id,
-                    'approver_id' => $approver->id,
-                    'hrd_approver_id' => $hrdApprover ? $hrdApprover->id : null,
-                    'leave_type_id' => $request->leave_type_id,
-                    'date_from' => $request->date_from,
-                    'date_to' => $request->date_to,
-                    'reason' => $request->reason,
-                    'document_path' => $documentPath,
-                    'document_paths' => !empty($documentPaths) ? json_encode($documentPaths) : null, // Store multiple paths as JSON
-                    'status' => 'pending',
-                    'hrd_status' => $hrdApprover ? 'pending' : null,
-                    'created_at' => now(),
-                    'updated_at' => now()
-                ]);
-
-                // Link absent request with approval request
-                DB::table('absent_requests')
-                    ->where('id', $absentRequestId)
-                    ->update(['approval_request_id' => $approvalRequestId]);
-
-                // Kirim notifikasi ke atasan
-                DB::table('notifications')->insert([
-                    'user_id' => $approver->id,
-                    'type' => 'leave_approval_request',
-                    'message' => "Permohonan izin/cuti baru dari {$user->nama_lengkap} ({$leaveType->name}) untuk periode {$request->date_from} - {$request->date_to} membutuhkan persetujuan Anda.",
-                    'url' => config('app.url') . '/home',
-                    'is_read' => 0,
-                    'approval_id' => $approvalRequestId,
-                    'created_at' => now(),
-                    'updated_at' => now()
-                ]);
+            if (!$selectedApprover) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Atasan yang dipilih tidak valid atau tidak aktif'
+                ], 400);
             }
+            
+            // Find HRD approver (division_id=6 and status=A)
+            $hrdApprover = $this->findHrdApprover();
+            
+            // Create approval request
+            $approvalRequestId = DB::table('approval_requests')->insertGetId([
+                'user_id' => $user->id,
+                'approver_id' => $selectedApprover->id, // Use selected approver
+                'hrd_approver_id' => $hrdApprover ? $hrdApprover->id : null,
+                'leave_type_id' => $request->leave_type_id,
+                'date_from' => $request->date_from,
+                'date_to' => $request->date_to,
+                'reason' => $request->reason,
+                'document_path' => $documentPath,
+                'document_paths' => !empty($documentPaths) ? json_encode($documentPaths) : null, // Store multiple paths as JSON
+                'status' => 'pending',
+                'hrd_status' => $hrdApprover ? 'pending' : null,
+                'created_at' => now(),
+                'updated_at' => now()
+            ]);
+
+            // Link absent request with approval request
+            DB::table('absent_requests')
+                ->where('id', $absentRequestId)
+                ->update(['approval_request_id' => $approvalRequestId]);
+
+            // Kirim notifikasi ke atasan yang dipilih
+            DB::table('notifications')->insert([
+                'user_id' => $selectedApprover->id,
+                'type' => 'leave_approval_request',
+                'message' => "Permohonan izin/cuti baru dari {$user->nama_lengkap} ({$leaveType->name}) untuk periode {$request->date_from} - {$request->date_to} membutuhkan persetujuan Anda.",
+                'url' => config('app.url') . '/home',
+                'is_read' => 0,
+                'approval_id' => $approvalRequestId,
+                'created_at' => now(),
+                'updated_at' => now()
+            ]);
             
             return response()->json([
                 'success' => true,
@@ -892,6 +910,185 @@ class AttendanceController extends Controller
     }
     
     /**
+     * Get available approvers for leave request
+     * Returns users from same outlet who are not the current user
+     */
+    private function getAvailableApprovers($user)
+    {
+        $approvers = DB::table('users as u')
+            ->leftJoin('tbl_data_jabatan as j', 'u.id_jabatan', '=', 'j.id_jabatan')
+            ->leftJoin('tbl_data_divisi as d', 'u.division_id', '=', 'd.id')
+            ->where('u.id_outlet', $user->id_outlet) // Same outlet
+            ->where('u.id', '!=', $user->id) // Not the current user
+            ->where('u.status', 'A') // Active users only
+            ->select([
+                'u.id',
+                'u.nama_lengkap',
+                'u.email',
+                'j.nama_jabatan',
+                'd.nama_divisi'
+            ])
+            ->orderBy('j.nama_jabatan')
+            ->orderBy('u.nama_lengkap')
+            ->get();
+            
+        return $approvers;
+    }
+    
+    /**
+     * Get approvers for leave request with search functionality
+     */
+    public function getApprovers(Request $request)
+    {
+        try {
+            $user = auth()->user();
+            $search = $request->get('search', '');
+            
+            $query = DB::table('users as u')
+                ->leftJoin('tbl_data_jabatan as j', 'u.id_jabatan', '=', 'j.id_jabatan')
+                ->leftJoin('tbl_data_divisi as d', 'u.division_id', '=', 'd.id')
+                ->where('u.id_outlet', $user->id_outlet) // Same outlet
+                ->where('u.id', '!=', $user->id) // Not the current user
+                ->where('u.status', 'A'); // Active users only
+            
+            // Add search functionality
+            if (!empty($search)) {
+                $query->where(function($q) use ($search) {
+                    $q->where('u.nama_lengkap', 'LIKE', "%{$search}%")
+                      ->orWhere('u.email', 'LIKE', "%{$search}%")
+                      ->orWhere('j.nama_jabatan', 'LIKE', "%{$search}%")
+                      ->orWhere('d.nama_divisi', 'LIKE', "%{$search}%");
+                });
+            }
+            
+            $approvers = $query->select([
+                    'u.id',
+                    'u.nama_lengkap',
+                    'u.email',
+                    'j.nama_jabatan',
+                    'd.nama_divisi'
+                ])
+                ->orderBy('j.nama_jabatan')
+                ->orderBy('u.nama_lengkap')
+                ->limit(20) // Limit results for performance
+                ->get();
+            
+            return response()->json([
+                'success' => true,
+                'users' => $approvers
+            ]);
+            
+        } catch (\Exception $e) {
+            \Log::error('Error getting approvers: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Terjadi kesalahan saat mengambil daftar atasan'
+            ], 500);
+        }
+    }
+    
+    /**
+     * Cancel leave request
+     */
+    public function cancelLeaveRequest(Request $request, $id)
+    {
+        try {
+            $user = auth()->user();
+            
+            // Find the leave request
+            $leaveRequest = DB::table('absent_requests')
+                ->where('id', $id)
+                ->where('user_id', $user->id)
+                ->first();
+                
+            if (!$leaveRequest) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Permohonan izin/cuti tidak ditemukan'
+                ], 404);
+            }
+            
+            // Check if request can be cancelled
+            if (!in_array($leaveRequest->status, ['pending', 'supervisor_approved'])) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Permohonan izin/cuti tidak dapat dibatalkan. Status: ' . $leaveRequest->status
+                ], 400);
+            }
+            
+            // Check if request is too close to start date (within 24 hours)
+            $startDate = new \DateTime($leaveRequest->date_from);
+            $now = new \DateTime();
+            $hoursUntilStart = $now->diff($startDate)->h + ($now->diff($startDate)->days * 24);
+            
+            if ($hoursUntilStart < 24 && $leaveRequest->status === 'supervisor_approved') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Permohonan izin/cuti tidak dapat dibatalkan karena sudah kurang dari 24 jam dari tanggal mulai'
+                ], 400);
+            }
+            
+            // Update the request status to rejected (cancelled by user)
+            DB::table('absent_requests')
+                ->where('id', $id)
+                ->update([
+                    'status' => 'rejected',
+                    'rejection_reason' => $request->get('reason', 'Dibatalkan oleh user'),
+                    'updated_at' => now()
+                ]);
+            
+            // Update approval request if exists
+            if ($leaveRequest->approval_request_id) {
+                DB::table('approval_requests')
+                    ->where('id', $leaveRequest->approval_request_id)
+                    ->update([
+                        'status' => 'rejected',
+                        'updated_at' => now()
+                    ]);
+            }
+            
+            // Send notification to approver if request was approved
+            if ($leaveRequest->status === 'supervisor_approved') {
+                $approvalRequest = DB::table('approval_requests')
+                    ->where('id', $leaveRequest->approval_request_id)
+                    ->first();
+                    
+                if ($approvalRequest && $approvalRequest->approver_id) {
+                    DB::table('notifications')->insert([
+                        'user_id' => $approvalRequest->approver_id,
+                        'type' => 'leave_cancelled',
+                        'message' => "Permohonan izin/cuti dari {$user->nama_lengkap} untuk periode {$leaveRequest->date_from} - {$leaveRequest->date_to} telah dibatalkan.",
+                        'url' => config('app.url') . '/home',
+                        'is_read' => 0,
+                        'approval_id' => $leaveRequest->approval_request_id,
+                        'created_at' => now(),
+                        'updated_at' => now()
+                    ]);
+                }
+            }
+            
+            \Log::info('Leave request cancelled', [
+                'user_id' => $user->id,
+                'leave_request_id' => $id,
+                'previous_status' => $leaveRequest->status,
+                'cancellation_reason' => $request->get('reason', 'Dibatalkan oleh user')
+            ]);
+            
+            return response()->json([
+                'success' => true,
+                'message' => 'Permohonan izin/cuti berhasil dibatalkan'
+            ]);
+            
+        } catch (\Exception $e) {
+            \Log::error('Error cancelling leave request: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Terjadi kesalahan saat membatalkan permohonan'
+            ], 500);
+        }
+    }
+    
+    /**
      * Get approved absent requests for the user in the date range
      */
     private function getApprovedAbsentRequests($userId, $startDate, $endDate)
@@ -921,6 +1118,38 @@ class AttendanceController extends Controller
             ->get();
             
         return $approvedAbsents;
+    }
+    
+    /**
+     * Get user's leave requests for the date range
+     */
+    private function getUserLeaveRequests($userId, $startDate, $endDate)
+    {
+        $leaveRequests = DB::table('absent_requests')
+            ->join('leave_types', 'absent_requests.leave_type_id', '=', 'leave_types.id')
+            ->where('absent_requests.user_id', $userId)
+            ->where(function($query) use ($startDate, $endDate) {
+                $query->whereBetween('absent_requests.date_from', [$startDate, $endDate])
+                      ->orWhereBetween('absent_requests.date_to', [$startDate, $endDate])
+                      ->orWhere(function($q) use ($startDate, $endDate) {
+                          $q->where('absent_requests.date_from', '<=', $startDate)
+                            ->where('absent_requests.date_to', '>=', $endDate);
+                      });
+            })
+            ->whereIn('absent_requests.status', ['pending', 'supervisor_approved'])
+            ->select([
+                'absent_requests.id',
+                'absent_requests.date_from',
+                'absent_requests.date_to',
+                'absent_requests.reason',
+                'absent_requests.status',
+                'absent_requests.created_at',
+                'leave_types.name as leave_type_name'
+            ])
+            ->orderBy('absent_requests.created_at', 'desc')
+            ->get();
+            
+        return $leaveRequests;
     }
 
     /**

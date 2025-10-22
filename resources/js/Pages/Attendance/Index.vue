@@ -387,9 +387,88 @@
           </button>
         </div>
       </div>
-    </div>
+        </div>
 
-    <!-- Absent Modal -->
+        <!-- My Leave Requests Section -->
+        <div class="bg-white dark:bg-gray-800 overflow-hidden shadow-sm sm:rounded-lg mb-4">
+          <div class="p-4">
+            <h3 class="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">
+              <i class="fa-solid fa-calendar-xmark mr-2 text-blue-500"></i>
+              Permohonan Izin/Cuti Aktif
+            </h3>
+            
+            <!-- Show message if no active requests -->
+            <div v-if="!userLeaveRequests || userLeaveRequests.length === 0" class="text-center py-8">
+              <div class="text-gray-400 dark:text-gray-500 mb-4">
+                <i class="fa-solid fa-calendar-check text-4xl"></i>
+              </div>
+              <p class="text-gray-600 dark:text-gray-400 text-sm">
+                Tidak ada permohonan izin/cuti yang sedang aktif
+              </p>
+              <p class="text-gray-500 dark:text-gray-500 text-xs mt-1">
+                Permohonan yang sudah disetujui, ditolak, atau dibatalkan tidak ditampilkan di sini
+              </p>
+            </div>
+            
+            <!-- Show active requests -->
+            <div v-else class="space-y-3">
+              <div
+                v-for="request in userLeaveRequests"
+                :key="request.id"
+                class="border border-gray-200 dark:border-gray-600 rounded-lg p-4"
+                :class="{
+                  'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-700': request.status === 'pending',
+                  'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-700': request.status === 'supervisor_approved' || request.status === 'approved',
+                  'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-700': request.status === 'rejected'
+                }"
+              >
+                <div class="flex items-center justify-between">
+                  <div class="flex-1">
+                    <div class="flex items-center gap-2 mb-2">
+                      <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
+                            :class="{
+                              'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200': request.status === 'pending',
+                              'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200': request.status === 'supervisor_approved' || request.status === 'approved',
+                              'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200': request.status === 'rejected'
+                            }">
+                        {{ getStatusText(request.status) }}
+                      </span>
+                      <span class="text-sm text-gray-600 dark:text-gray-400">
+                        {{ request.leave_type_name }}
+                      </span>
+                    </div>
+                    
+                    <div class="text-sm text-gray-900 dark:text-gray-100 mb-1">
+                      <strong>Periode:</strong> {{ formatDateRange(request.date_from, request.date_to) }}
+                    </div>
+                    
+                    <div class="text-sm text-gray-600 dark:text-gray-400 mb-2">
+                      <strong>Alasan:</strong> {{ request.reason }}
+                    </div>
+                    
+                    <div class="text-xs text-gray-500 dark:text-gray-400">
+                      <strong>Diajukan:</strong> {{ formatDateTime(request.created_at) }}
+                    </div>
+                    
+                  </div>
+                  
+                  <!-- Cancel Button -->
+                  <div v-if="canCancelRequest(request)" class="ml-4">
+                    <button
+                      @click="showCancelModal(request)"
+                      class="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition-colors"
+                    >
+                      <i class="fa-solid fa-times mr-1"></i>
+                      Batalkan
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Absent Modal -->
     <div v-if="showAbsentModalFlag" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4">
         <div class="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
@@ -651,6 +730,62 @@
                 ></textarea>
               </div>
               
+              <!-- Approver Selection -->
+              <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Pilih Atasan <span class="text-red-500">*</span>
+                </label>
+                
+                <!-- Search Input -->
+                <div class="relative">
+                  <input
+                    v-model="approverSearch"
+                    type="text"
+                    placeholder="Cari atasan berdasarkan nama, email, atau jabatan..."
+                    class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-gray-100"
+                    @focus="approverSearch.length >= 2 && loadApprovers(approverSearch)"
+                    @input="onApproverSearchInput"
+                  />
+                  
+                  <!-- Dropdown Results -->
+                  <div v-if="showApproverDropdown && approverResults.length > 0" class="absolute z-10 w-full mt-1 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                    <div
+                      v-for="user in approverResults"
+                      :key="user.id"
+                      @click="selectApprover(user)"
+                      class="px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-600 cursor-pointer border-b border-gray-200 dark:border-gray-500 last:border-b-0"
+                    >
+                      <div class="font-medium text-gray-900 dark:text-white">{{ user.nama_lengkap }}</div>
+                      <div class="text-sm text-gray-600 dark:text-gray-400">{{ user.email }}</div>
+                      <div v-if="user.nama_jabatan" class="text-xs text-blue-600 dark:text-blue-400 font-medium">{{ user.nama_jabatan }}</div>
+                      <div v-if="user.nama_divisi" class="text-xs text-gray-500 dark:text-gray-400">{{ user.nama_divisi }}</div>
+                    </div>
+                  </div>
+                </div>
+                
+                <!-- Selected Approver Display -->
+                <div v-if="selectedApprover" class="mt-3 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-md">
+                  <div class="flex items-center justify-between">
+                    <div>
+                      <div class="font-medium text-blue-900 dark:text-blue-100">{{ selectedApprover.nama_lengkap }}</div>
+                      <div class="text-sm text-blue-700 dark:text-blue-300">{{ selectedApprover.email }}</div>
+                      <div v-if="selectedApprover.nama_jabatan" class="text-xs text-blue-600 dark:text-blue-400 font-medium">{{ selectedApprover.nama_jabatan }}</div>
+                      <div v-if="selectedApprover.nama_divisi" class="text-xs text-blue-500 dark:text-blue-400">{{ selectedApprover.nama_divisi }}</div>
+                    </div>
+                    <button
+                      @click="clearApprover"
+                      class="p-1 text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
+                      title="Hapus Atasan"
+                    >
+                      <i class="fa fa-times"></i>
+                    </button>
+                  </div>
+                </div>
+                
+                <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  Ketik minimal 2 karakter untuk mencari atasan yang akan menyetujui permohonan izin/cuti Anda
+                </p>
+              </div>
               
               <!-- Supporting Document - Camera Capture -->
               <div>
@@ -841,6 +976,78 @@
       </div>
     </div>
     
+    <!-- Cancel Leave Modal -->
+    <div v-if="showCancelModalFlag" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4">
+        <div class="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
+          <h3 class="text-lg font-semibold text-gray-900 dark:text-gray-100">
+            Batalkan Permohonan Izin/Cuti
+          </h3>
+          <button
+            @click="closeCancelModal"
+            class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+          >
+            <i class="fa-solid fa-times text-xl"></i>
+          </button>
+        </div>
+        
+        <div class="p-4">
+          <div class="mb-4">
+            <div class="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700 rounded-lg p-3 mb-4">
+              <div class="flex items-center">
+                <i class="fa-solid fa-exclamation-triangle text-yellow-600 dark:text-yellow-400 mr-2"></i>
+                <span class="text-sm text-yellow-800 dark:text-yellow-200 font-medium">
+                  Apakah Anda yakin ingin membatalkan permohonan ini?
+                </span>
+              </div>
+            </div>
+            
+            <div v-if="selectedCancelRequest" class="bg-gray-50 dark:bg-gray-700 rounded-lg p-3 mb-4">
+              <div class="text-sm text-gray-900 dark:text-gray-100">
+                <strong>Jenis:</strong> {{ selectedCancelRequest.leave_type_name }}
+              </div>
+              <div class="text-sm text-gray-900 dark:text-gray-100">
+                <strong>Periode:</strong> {{ formatDateRange(selectedCancelRequest.date_from, selectedCancelRequest.date_to) }}
+              </div>
+              <div class="text-sm text-gray-600 dark:text-gray-400">
+                <strong>Alasan:</strong> {{ selectedCancelRequest.reason }}
+              </div>
+            </div>
+          </div>
+          
+          <div class="mb-4">
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Alasan Pembatalan (Opsional)
+            </label>
+            <textarea
+              v-model="cancelReason"
+              rows="3"
+              class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-gray-100"
+              placeholder="Jelaskan alasan pembatalan (opsional)..."
+            ></textarea>
+          </div>
+          
+          <div class="flex justify-end gap-3">
+            <button
+              @click="closeCancelModal"
+              class="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-600 hover:bg-gray-200 dark:hover:bg-gray-500 rounded-md transition-colors"
+            >
+              Batal
+            </button>
+            <button
+              @click="confirmCancelRequest"
+              :disabled="cancellingRequest"
+              class="px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 disabled:bg-red-400 rounded-md transition-colors"
+            >
+              <i v-if="cancellingRequest" class="fa-solid fa-spinner fa-spin mr-2"></i>
+              <i v-else class="fa-solid fa-times mr-2"></i>
+              {{ cancellingRequest ? 'Membatalkan...' : 'Ya, Batalkan' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Hidden Canvas for Photo Capture -->
     <canvas ref="canvasRef" style="display: none;"></canvas>
   </AppLayout>
@@ -860,7 +1067,9 @@ const props = defineProps({
   calendar: Object,
   holidays: Array,
   approvedAbsents: Array,
+  userLeaveRequests: Array,
   leaveTypes: Array,
+  availableApprovers: Array,
   filters: Object,
   user: Object
 })
@@ -878,6 +1087,9 @@ const loadingDetail = ref(false)
 
 const calendarData = ref({})
 const loading = ref(false)
+
+// Reactive data for user leave requests
+const userLeaveRequests = ref(props.userLeaveRequests || [])
 
 // Extra off days data
 const extraOffDays = ref([])
@@ -1015,10 +1227,23 @@ const submittingAbsent = ref(false)
 const absentForm = ref({
   leave_type_id: '',
   reason: '',
+  approver_id: '',
   document: null,
   date_from: '',
   date_to: ''
 })
+
+// Approver search functionality
+const approverSearch = ref('')
+const approverResults = ref([])
+const showApproverDropdown = ref(false)
+const selectedApprover = ref(null)
+
+// Cancel leave functionality
+const showCancelModalFlag = ref(false)
+const selectedCancelRequest = ref(null)
+const cancelReason = ref('')
+const cancellingRequest = ref(false)
 
 // Camera capture states
 const showCameraModal = ref(false)
@@ -1231,6 +1456,7 @@ const showAbsentModal = (date) => {
   absentForm.value = {
     leave_type_id: '',
     reason: '',
+    approver_id: '',
     document: null,
     date_from: date,
     date_to: date
@@ -1280,6 +1506,12 @@ const closeAbsentModal = () => {
   capturedImages.value = []
   absentForm.value.document = null
   stopCamera()
+  // Reset approver search
+  approverSearch.value = ''
+  approverResults.value = []
+  showApproverDropdown.value = false
+  selectedApprover.value = null
+  absentForm.value.approver_id = ''
 }
 
 // Camera functions
@@ -1471,6 +1703,7 @@ const submitAbsentRequest = async () => {
     formData.append('date_from', absentForm.value.date_from)
     formData.append('date_to', absentForm.value.date_to)
     formData.append('reason', absentForm.value.reason)
+    formData.append('approver_id', absentForm.value.approver_id)
     
     // Add captured images to FormData
     if (capturedImages.value.length > 0) {
@@ -1645,6 +1878,150 @@ const submitAbsentRequest = async () => {
   }
 }
 
+// Approver search methods
+const loadApprovers = async (search = '') => {
+  try {
+    const response = await axios.get('/api/attendance/approvers', {
+      params: { search },
+      headers: {
+        'X-Requested-With': 'XMLHttpRequest',
+        'Accept': 'application/json'
+      }
+    })
+    
+    if (response.data.success) {
+      approverResults.value = response.data.users
+      showApproverDropdown.value = true
+    }
+  } catch (error) {
+    console.error('Failed to load approvers:', error)
+    approverResults.value = []
+  }
+}
+
+const selectApprover = (user) => {
+  selectedApprover.value = user
+  absentForm.value.approver_id = user.id
+  approverSearch.value = ''
+  showApproverDropdown.value = false
+}
+
+const clearApprover = () => {
+  selectedApprover.value = null
+  absentForm.value.approver_id = ''
+  approverSearch.value = ''
+}
+
+const onApproverSearchInput = () => {
+  if (approverSearch.value.length >= 2) {
+    loadApprovers(approverSearch.value)
+  } else {
+    showApproverDropdown.value = false
+    approverResults.value = []
+  }
+}
+
+// Cancel leave methods
+const canCancelRequest = (request) => {
+  // Can cancel if status is pending or supervisor_approved
+  if (!['pending', 'supervisor_approved'].includes(request.status)) {
+    return false
+  }
+  
+  // Check if request is too close to start date (within 24 hours)
+  if (request.status === 'supervisor_approved') {
+    const startDate = new Date(request.date_from)
+    const now = new Date()
+    const hoursUntilStart = (startDate - now) / (1000 * 60 * 60)
+    
+    if (hoursUntilStart < 24) {
+      return false
+    }
+  }
+  
+  return true
+}
+
+const showCancelModal = (request) => {
+  selectedCancelRequest.value = request
+  cancelReason.value = ''
+  showCancelModalFlag.value = true
+}
+
+const closeCancelModal = () => {
+  showCancelModalFlag.value = false
+  selectedCancelRequest.value = null
+  cancelReason.value = ''
+  cancellingRequest.value = false
+}
+
+const confirmCancelRequest = async () => {
+  if (!selectedCancelRequest.value) return
+  
+  cancellingRequest.value = true
+  
+  try {
+    const response = await axios.post(`/api/attendance/cancel-leave/${selectedCancelRequest.value.id}`, {
+      reason: cancelReason.value || 'Dibatalkan oleh user'
+    })
+    
+    if (response.data.success) {
+      try {
+        // Remove the cancelled request from the list first
+        const index = userLeaveRequests.value.findIndex(req => req.id === selectedCancelRequest.value.id)
+        if (index > -1) {
+          userLeaveRequests.value.splice(index, 1)
+        }
+        
+        closeCancelModal()
+        
+        await Swal.fire({
+          icon: 'success',
+          title: 'Berhasil!',
+          text: 'Permohonan izin/cuti berhasil dibatalkan',
+          confirmButtonText: 'OK',
+          confirmButtonColor: '#10B981'
+        })
+      } catch (successError) {
+        console.error('Error in success handling:', successError)
+        // Still show success message even if there's a minor error
+        await Swal.fire({
+          icon: 'success',
+          title: 'Berhasil!',
+          text: 'Permohonan izin/cuti berhasil dibatalkan',
+          confirmButtonText: 'OK',
+          confirmButtonColor: '#10B981'
+        })
+      }
+    } else {
+      await Swal.fire({
+        icon: 'error',
+        title: 'Gagal Membatalkan',
+        text: response.data.message || 'Terjadi kesalahan saat membatalkan permohonan',
+        confirmButtonText: 'OK',
+        confirmButtonColor: '#EF4444'
+      })
+    }
+  } catch (error) {
+    console.error('Error cancelling leave request:', error)
+    
+    let errorMessage = 'Terjadi kesalahan saat membatalkan permohonan'
+    if (error.response && error.response.data && error.response.data.message) {
+      errorMessage = error.response.data.message
+    }
+    
+    await Swal.fire({
+      icon: 'error',
+      title: 'Gagal Membatalkan',
+      text: errorMessage,
+      confirmButtonText: 'OK',
+      confirmButtonColor: '#EF4444'
+    })
+  } finally {
+    cancellingRequest.value = false
+  }
+}
+
 // Helper function to get display name for form fields
 const getFieldDisplayName = (field) => {
   const fieldNames = {
@@ -1652,6 +2029,7 @@ const getFieldDisplayName = (field) => {
     'date_from': 'Tanggal Mulai',
     'date_to': 'Tanggal Selesai',
     'reason': 'Alasan',
+    'approver_id': 'Atasan',
     'document': 'Dokumen',
     'documents': 'Dokumen'
   }
@@ -1667,6 +2045,73 @@ const formatDate = (dateString) => {
     month: 'long',
     day: 'numeric'
   })
+}
+
+const formatDateRange = (dateFrom, dateTo) => {
+  if (!dateFrom || !dateTo) return ''
+  
+  const fromDate = new Date(dateFrom)
+  const toDate = new Date(dateTo)
+  
+  if (dateFrom === dateTo) {
+    return fromDate.toLocaleDateString('id-ID', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric'
+    })
+  }
+  
+  return `${fromDate.toLocaleDateString('id-ID', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric'
+  })} - ${toDate.toLocaleDateString('id-ID', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric'
+  })}`
+}
+
+const formatDateTime = (dateString) => {
+  if (!dateString) return ''
+  const date = new Date(dateString)
+  return date.toLocaleDateString('id-ID', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  })
+}
+
+const getStatusText = (status) => {
+  // Leave request status
+  const leaveStatusMap = {
+    'pending': 'Menunggu Persetujuan',
+    'supervisor_approved': 'Disetujui Atasan',
+    'approved': 'Disetujui',
+    'rejected': 'Ditolak/Dibatalkan'
+  }
+  
+  // Attendance status
+  const attendanceStatusMap = {
+    'present': 'Hadir',
+    'late': 'Terlambat',
+    'absent': 'Tidak Hadir',
+    'half_day': 'Setengah Hari'
+  }
+  
+  // Check leave status first
+  if (leaveStatusMap[status]) {
+    return leaveStatusMap[status]
+  }
+  
+  // Check attendance status
+  if (attendanceStatusMap[status]) {
+    return attendanceStatusMap[status]
+  }
+  
+  return status
 }
 
 const calculateWorkDuration = (jamIn, jamOut) => {
@@ -1723,20 +2168,6 @@ const getStatusClass = (status) => {
   }
 }
 
-const getStatusText = (status) => {
-  switch (status) {
-    case 'present':
-      return 'Hadir'
-    case 'late':
-      return 'Terlambat'
-    case 'absent':
-      return 'Tidak Hadir'
-    case 'half_day':
-      return 'Setengah Hari'
-    default:
-      return status
-  }
-}
 
 const formatTime = (time) => {
   return new Date(time).toLocaleTimeString('id-ID', {
