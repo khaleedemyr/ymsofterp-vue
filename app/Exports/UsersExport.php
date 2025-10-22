@@ -73,6 +73,7 @@ class UsersExport implements FromCollection, WithHeadings, WithMapping, WithStyl
     public function headings(): array
     {
         return [
+            'ID',
             'NIK',
             'Nama Lengkap',
             'Nama Panggilan',
@@ -102,6 +103,7 @@ class UsersExport implements FromCollection, WithHeadings, WithMapping, WithStyl
     public function map($user): array
     {
         return [
+            $user->id,
             $user->nik,
             $user->nama_lengkap,
             $user->nama_panggilan,
@@ -142,25 +144,26 @@ class UsersExport implements FromCollection, WithHeadings, WithMapping, WithStyl
     public function columnWidths(): array
     {
         return [
-            'A' => 15, // NIK
-            'B' => 25, // Nama Lengkap
-            'C' => 20, // Nama Panggilan
-            'D' => 30, // Email
-            'E' => 15, // No. HP
-            'F' => 20, // No. KTP
-            'G' => 25, // Jabatan
-            'H' => 20, // Divisi
-            'I' => 25, // Outlet
-            'J' => 10, // Status
-            'K' => 15, // Tanggal Masuk
-            'L' => 15, // Tanggal Keluar
-            'M' => 40, // Alamat
-            'N' => 15, // Tanggal Lahir
-            'O' => 15, // Jenis Kelamin
-            'P' => 15, // Agama
-            'Q' => 15, // Status Kawin
-            'R' => 20, // Tanggal Dibuat
-            'S' => 20, // Tanggal Diupdate
+            'A' => 10, // ID
+            'B' => 15, // NIK
+            'C' => 25, // Nama Lengkap
+            'D' => 20, // Nama Panggilan
+            'E' => 30, // Email
+            'F' => 15, // No. HP
+            'G' => 20, // No. KTP
+            'H' => 25, // Jabatan
+            'I' => 20, // Divisi
+            'J' => 25, // Outlet
+            'K' => 10, // Status
+            'L' => 15, // Tanggal Masuk
+            'M' => 15, // Tanggal Keluar
+            'N' => 40, // Alamat
+            'O' => 15, // Tanggal Lahir
+            'P' => 15, // Jenis Kelamin
+            'Q' => 15, // Agama
+            'R' => 15, // Status Kawin
+            'S' => 20, // Tanggal Dibuat
+            'T' => 20, // Tanggal Diupdate
         ];
     }
 
