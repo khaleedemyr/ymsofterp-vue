@@ -36,7 +36,7 @@ LEFT JOIN food_floor_orders fo ON (
 LEFT JOIN tbl_data_outlet o ON fo.id_outlet = o.id_outlet
 LEFT JOIN warehouse_outlets wo ON fo.warehouse_outlet_id = wo.id
 LEFT JOIN warehouses w ON wo.warehouse_id = w.id
-LEFT JOIN warehouse_divisions wd ON w.warehouse_division_id = wd.id
+LEFT JOIN warehouse_division wd ON w.warehouse_division_id = wd.id
 ```
 
 #### **New Fields Added:**
@@ -104,7 +104,7 @@ LEFT JOIN warehouse_divisions wd ON w.warehouse_division_id = wd.id
 -- Warehouse hierarchy joins
 LEFT JOIN warehouse_outlets wo ON fo.warehouse_outlet_id = wo.id
 LEFT JOIN warehouses w ON wo.warehouse_id = w.id
-LEFT JOIN warehouse_divisions wd ON w.warehouse_division_id = wd.id
+LEFT JOIN warehouse_division wd ON w.warehouse_division_id = wd.id
 ```
 
 ### **2. Data Flow:**
