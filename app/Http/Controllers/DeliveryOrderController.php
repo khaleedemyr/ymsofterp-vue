@@ -444,7 +444,7 @@ class DeliveryOrderController extends Controller
                     'current_stock' => $stockInfo
                 ];
                 
-                // Prepare inventory card
+                // Prepare inventory card with detailed description
                 $inventoryCards[] = [
                     'inventory_item_id' => $stockInfo['inventory_item_id'],
                     'warehouse_id' => $warehouseId,
@@ -462,7 +462,7 @@ class DeliveryOrderController extends Controller
                     'saldo_qty_medium' => $stockInfo['qty_medium'] - $quantities['qty_medium'],
                     'saldo_qty_large' => $stockInfo['qty_large'] - $quantities['qty_large'],
                     'saldo_value' => ($stockInfo['qty_small'] - $quantities['qty_small']) * $stockInfo['last_cost_small'],
-                    'description' => 'Stock Out - Delivery Order',
+                    'description' => 'Stock Out - Delivery Order ' . $this->getDONumber($doId) . ' to ' . ($this->getOutletName($doId) ?: 'Outlet'),
                     'created_at' => now(),
                 ];
             } catch (\Exception $e) {
@@ -591,26 +591,26 @@ class DeliveryOrderController extends Controller
                             ]);
                         
                         // Insert inventory card with proper conversion
-                        DB::table('food_inventory_cards')->insert([
-                            'inventory_item_id' => $inventoryItem->id,
-                            'warehouse_id' => $warehouseId,
-                            'date' => now()->toDateString(),
-                            'reference_type' => 'delivery_order',
-                            'reference_id' => $doId,
-                            'out_qty_small' => $qty_small,
-                            'out_qty_medium' => $qty_medium,
-                            'out_qty_large' => $qty_large,
-                            'cost_per_small' => $stock->last_cost_small,
-                            'cost_per_medium' => $stock->last_cost_medium,
-                            'cost_per_large' => $stock->last_cost_large,
-                            'value_out' => $qty_small * $stock->last_cost_small,
-                            'saldo_qty_small' => $stock->qty_small - $qty_small,
-                            'saldo_qty_medium' => $stock->qty_medium - $qty_medium,
-                            'saldo_qty_large' => $stock->qty_large - $qty_large,
-                            'saldo_value' => ($stock->qty_small - $qty_small) * $stock->last_cost_small,
-                            'description' => 'Stock Out - Delivery Order (Fallback)',
-                            'created_at' => now(),
-                        ]);
+                            DB::table('food_inventory_cards')->insert([
+                                'inventory_item_id' => $inventoryItem->id,
+                                'warehouse_id' => $warehouseId,
+                                'date' => now()->toDateString(),
+                                'reference_type' => 'delivery_order',
+                                'reference_id' => $doId,
+                                'out_qty_small' => $qty_small,
+                                'out_qty_medium' => $qty_medium,
+                                'out_qty_large' => $qty_large,
+                                'cost_per_small' => $stock->last_cost_small,
+                                'cost_per_medium' => $stock->last_cost_medium,
+                                'cost_per_large' => $stock->last_cost_large,
+                                'value_out' => $qty_small * $stock->last_cost_small,
+                                'saldo_qty_small' => $stock->qty_small - $qty_small,
+                                'saldo_qty_medium' => $stock->qty_medium - $qty_medium,
+                                'saldo_qty_large' => $stock->qty_large - $qty_large,
+                                'saldo_value' => ($stock->qty_small - $qty_small) * $stock->last_cost_small,
+                                'description' => 'Stock Out - Delivery Order ' . $this->getDONumber($doId) . ' to ' . ($this->getOutletName($doId) ?: 'Outlet') . ' (Fallback)',
+                                'created_at' => now(),
+                            ]);
                     }
                 }
             }
@@ -802,6 +802,54 @@ class DeliveryOrderController extends Controller
     }
 
     /**
+     * Get DO number for delivery order
+     */
+    private function getDONumber($doId)
+    {
+        try {
+            $doNumber = DB::table('delivery_orders')
+                ->where('id', $doId)
+                ->value('number');
+            
+            return $doNumber ?: 'DO-' . $doId;
+        } catch (\Exception $e) {
+            Log::warning('Failed to get DO number', [
+                'do_id' => $doId,
+                'error' => $e->getMessage()
+            ]);
+            return 'DO-' . $doId;
+        }
+    }
+
+    /**
+     * Get outlet name for delivery order
+     */
+    private function getOutletName($doId)
+    {
+        try {
+            $outletName = DB::table('delivery_orders as do')
+                ->leftJoin('food_packing_lists as pl', 'do.packing_list_id', '=', 'pl.id')
+                ->leftJoin('food_good_receives as gr', 'do.ro_supplier_gr_id', '=', 'gr.id')
+                ->leftJoin('purchase_order_foods as po', 'gr.po_id', '=', 'po.id')
+                ->leftJoin('food_floor_orders as fo', function($join) {
+                    $join->on('pl.food_floor_order_id', '=', 'fo.id')
+                         ->orOn('po.source_id', '=', 'fo.id');
+                })
+                ->leftJoin('tbl_data_outlet as o', 'fo.id_outlet', '=', 'o.id_outlet')
+                ->where('do.id', $doId)
+                ->value('o.nama_outlet');
+            
+            return $outletName ?: 'Outlet';
+        } catch (\Exception $e) {
+            Log::warning('Failed to get outlet name for DO', [
+                'do_id' => $doId,
+                'error' => $e->getMessage()
+            ]);
+            return 'Outlet';
+        }
+    }
+
+    /**
      * OPTIMIZED: Get delivery orders with optimized query
      */
     private function getDeliveryOrdersOptimized($search, $dateFrom, $dateTo, $perPage)
@@ -812,6 +860,8 @@ class DeliveryOrderController extends Controller
                 do.id,
                 do.number,
                 do.created_at,
+                DATE_FORMAT(do.created_at, '%d/%m/%Y') as created_date,
+                DATE_FORMAT(do.created_at, '%H:%i:%s') as created_time,
                 do.packing_list_id,
                 do.ro_supplier_gr_id,
                 u.nama_lengkap as created_by_name,

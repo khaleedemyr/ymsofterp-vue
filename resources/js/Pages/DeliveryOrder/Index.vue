@@ -95,7 +95,7 @@
             <tr>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider rounded-tl-2xl">No</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">No DO</th>
-              <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Tanggal</th>
+              <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Tanggal & Jam</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Outlet</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Warehouse Outlet</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Packing List</th>
@@ -130,7 +130,12 @@
             <tr v-for="(order, idx) in orders.data" :key="order.id" class="hover:bg-blue-50 transition shadow-sm">
               <td class="px-6 py-3">{{ (orders.current_page - 1) * orders.per_page + idx + 1 }}</td>
               <td class="px-6 py-3">{{ order.number || '-' }}</td>
-              <td class="px-6 py-3">{{ formatDate(order.created_at) }}</td>
+              <td class="px-6 py-3">
+                <div class="text-sm">
+                  <div class="font-medium">{{ order.created_date || formatDate(order.created_at) }}</div>
+                  <div class="text-gray-500 text-xs">{{ order.created_time || formatTime(order.created_at) }}</div>
+                </div>
+              </td>
               <td class="px-6 py-3">{{ order.nama_outlet || '-' }}</td>
               <td class="px-6 py-3">{{ order.warehouse_outlet_name || '-' }}</td>
               <td class="px-6 py-3">{{ order.packing_number || '-' }}</td>
@@ -298,6 +303,15 @@ watch(perPage, (newPerPage) => {
 function formatDate(date) {
   if (!date) return '-';
   return new Date(date).toLocaleDateString('id-ID');
+}
+
+function formatTime(date) {
+  if (!date) return '-';
+  return new Date(date).toLocaleTimeString('id-ID', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  });
 }
 
 async function handleDelete(id) {
