@@ -2699,9 +2699,17 @@ class AttendanceReportController extends Controller
 
             foreach ($overtimeTransactions as $transaction) {
                 // Extract work hours from description
-                // Format: "Lembur dari kerja tanpa shift di tanggal 2025-10-12 (10.45 jam)"
-                if (preg_match('/\(([0-9.]+)\s*jam\)/', $transaction->description, $matches)) {
+                // Format: "Lembur dari kerja tanpa shift di tanggal 2025-10-12 (jam 08:00 - 18:00, 10.45 jam)"
+                // or: "Lembur dari kerja tanpa shift di tanggal 2025-10-12 (10.45 jam)"
+                if (preg_match('/\(jam\s+[0-9:]+\s*-\s*[0-9:]+,\s*([0-9.]+)\s*jam\)/', $transaction->description, $matches)) {
+                    // New format with time range
                     $workHours = (float) $matches[1];
+                    $workHours = floor($workHours * 100) / 100;
+                    $totalOvertimeHours += $workHours;
+                } elseif (preg_match('/\(([0-9.]+)\s*jam\)/', $transaction->description, $matches)) {
+                    // Old format without time range
+                    $workHours = (float) $matches[1];
+                    $workHours = floor($workHours * 100) / 100;
                     $totalOvertimeHours += $workHours;
                 }
             }

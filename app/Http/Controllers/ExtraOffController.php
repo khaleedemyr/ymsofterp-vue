@@ -77,6 +77,28 @@ class ExtraOffController extends Controller
     }
 
     /**
+     * Update existing transaction descriptions to include work time details
+     */
+    public function updateTransactionDescriptions(Request $request)
+    {
+        try {
+            $results = $this->extraOffService->updateExistingTransactionDescriptions();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Transaction descriptions updated successfully',
+                'data' => $results
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage()
+            ], 400);
+        }
+    }
+
+    /**
      * Manual adjustment of balance (Admin only)
      */
     public function adjustBalance(Request $request)

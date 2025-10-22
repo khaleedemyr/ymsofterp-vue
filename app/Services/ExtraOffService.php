@@ -109,25 +109,29 @@ class ExtraOffService
             // Process each detected worker
             foreach ($unscheduledWorkers as $worker) {
                 try {
-                    // Calculate work hours for this employee on this date
-                    $workHours = $this->calculateWorkHours($worker->user_id, $worker->work_date);
+                    // Calculate work hours and time details for this employee on this date
+                    $workDetails = $this->calculateWorkHoursWithDetails($worker->user_id, $worker->work_date);
                     
-                    if ($workHours > 8) {
+                    if ($workDetails['hours'] > 8) {
                         // Extra off: work > 8 hours
                         $this->giveExtraOffForUnscheduledWork(
                             $worker->user_id,
                             $worker->work_date,
                             $worker->nama_lengkap,
-                            $workHours
+                            $workDetails['hours'],
+                            $workDetails['checkin_time'],
+                            $workDetails['checkout_time']
                         );
                         $results['processed']++;
-                    } else if ($workHours > 0) {
+                    } else if ($workDetails['hours'] > 0) {
                         // Overtime: work <= 8 hours
                         $this->giveOvertimeForUnscheduledWork(
                             $worker->user_id,
                             $worker->work_date,
                             $worker->nama_lengkap,
-                            $workHours
+                            $workDetails['hours'],
+                            $workDetails['checkin_time'],
+                            $workDetails['checkout_time']
                         );
                         $results['overtime_processed']++;
                     }
@@ -135,6 +139,117 @@ class ExtraOffService
                     $results['errors'][] = [
                         'user_id' => $worker->user_id,
                         'nama' => $worker->nama_lengkap,
+                        'error' => $e->getMessage()
+                    ];
+                }
+            }
+
+        } catch (\Exception $e) {
+            $results['errors'][] = [
+                'error' => 'System error: ' . $e->getMessage()
+            ];
+        }
+
+        return $results;
+    }
+
+    /**
+     * Update existing transaction descriptions to include work time details
+     * This method should be run once to update existing transactions
+     */
+    public function updateExistingTransactionDescriptions()
+    {
+        $results = [
+            'updated' => 0,
+            'errors' => []
+        ];
+
+        try {
+            // Get all unscheduled work transactions that need updating
+            $transactions = DB::table('extra_off_transactions')
+                ->where('source_type', 'unscheduled_work')
+                ->where('transaction_type', 'earned')
+                ->where('description', 'like', '%kerja tanpa shift di tanggal%')
+                ->where('description', 'not like', '%jam % - %')
+                ->get();
+
+            foreach ($transactions as $transaction) {
+                try {
+                    // Extract date from description
+                    if (preg_match('/kerja tanpa shift di tanggal (\d{4}-\d{2}-\d{2})/', $transaction->description, $matches)) {
+                        $workDate = $matches[1];
+                        
+                        // Get work details for this date
+                        $workDetails = $this->calculateWorkHoursWithDetails($transaction->user_id, $workDate);
+                        
+                        if ($workDetails['hours'] > 0) {
+                            // Format new description
+                            $timeInfo = '';
+                            if ($workDetails['checkin_time'] && $workDetails['checkout_time']) {
+                                $timeInfo = " (jam {$workDetails['checkin_time']} - {$workDetails['checkout_time']}, " . number_format(floor($workDetails['hours'] * 100) / 100, 2) . " jam)";
+                            } else {
+                                $timeInfo = " (" . number_format(floor($workDetails['hours'] * 100) / 100, 2) . " jam)";
+                            }
+
+                            // Update transaction description
+                            DB::table('extra_off_transactions')
+                                ->where('id', $transaction->id)
+                                ->update([
+                                    'description' => "Extra off dari kerja tanpa shift di tanggal {$workDate}{$timeInfo}",
+                                    'updated_at' => now()
+                                ]);
+
+                            $results['updated']++;
+                        }
+                    }
+                } catch (\Exception $e) {
+                    $results['errors'][] = [
+                        'transaction_id' => $transaction->id,
+                        'error' => $e->getMessage()
+                    ];
+                }
+            }
+
+            // Also update overtime transactions
+            $overtimeTransactions = DB::table('extra_off_transactions')
+                ->where('source_type', 'overtime_work')
+                ->where('transaction_type', 'earned')
+                ->where('description', 'like', '%kerja tanpa shift di tanggal%')
+                ->where('description', 'not like', '%jam % - %')
+                ->get();
+
+            foreach ($overtimeTransactions as $transaction) {
+                try {
+                    // Extract date from description
+                    if (preg_match('/kerja tanpa shift di tanggal (\d{4}-\d{2}-\d{2})/', $transaction->description, $matches)) {
+                        $workDate = $matches[1];
+                        
+                        // Get work details for this date
+                        $workDetails = $this->calculateWorkHoursWithDetails($transaction->user_id, $workDate);
+                        
+                        if ($workDetails['hours'] > 0) {
+                            // Format new description
+                            $timeInfo = '';
+                            if ($workDetails['checkin_time'] && $workDetails['checkout_time']) {
+                                $timeInfo = " (jam {$workDetails['checkin_time']} - {$workDetails['checkout_time']}, " . number_format(floor($workDetails['hours'] * 100) / 100, 2) . " jam)";
+                            } else {
+                                $timeInfo = " (" . number_format(floor($workDetails['hours'] * 100) / 100, 2) . " jam)";
+                            }
+
+                            // Update transaction description
+                            DB::table('extra_off_transactions')
+                                ->where('id', $transaction->id)
+                                ->update([
+                                    'description' => "Lembur dari kerja tanpa shift di tanggal {$workDate}{$timeInfo}",
+                                    'updated_at' => now()
+                                ]);
+
+                            $results['updated']++;
+                        }
+                    }
+                } catch (\Exception $e) {
+                    $results['errors'][] = [
+                        'transaction_id' => $transaction->id,
                         'error' => $e->getMessage()
                     ];
                 }
@@ -237,16 +352,128 @@ class ExtraOffService
     }
 
     /**
+     * Calculate work hours with detailed time information for an employee on a specific date
+     * 
+     * @param int $userId
+     * @param string $workDate
+     * @return array Work details with hours, checkin_time, and checkout_time
+     */
+    public function calculateWorkHoursWithDetails($userId, $workDate)
+    {
+        // Get all attendance data for this user on this date
+        $attendanceData = DB::table('att_log as a')
+            ->join('tbl_data_outlet as o', 'a.sn', '=', 'o.sn')
+            ->join('user_pins as up', function($q) {
+                $q->on('a.pin', '=', 'up.pin')->on('o.id_outlet', '=', 'up.outlet_id');
+            })
+            ->where('up.user_id', $userId)
+            ->where(DB::raw('DATE(a.scan_date)'), $workDate)
+            ->select('a.scan_date', 'a.inoutmode')
+            ->orderBy('a.scan_date')
+            ->get();
+
+        if ($attendanceData->isEmpty()) {
+            return [
+                'hours' => 0,
+                'checkin_time' => null,
+                'checkout_time' => null
+            ];
+        }
+
+        // Process scans to determine first checkin and last checkout
+        $scans = $attendanceData->sortBy('scan_date');
+        $inScans = $scans->where('inoutmode', 1);
+        $outScans = $scans->where('inoutmode', 2);
+
+        $firstCheckin = $inScans->first();
+        if (!$firstCheckin) {
+            return [
+                'hours' => 0,
+                'checkin_time' => null,
+                'checkout_time' => null
+            ];
+        }
+
+        $lastCheckout = null;
+        $isCrossDay = false;
+
+        // Find last checkout on the same day
+        $sameDayOuts = $outScans->where('scan_date', '>', $firstCheckin->scan_date);
+        if ($sameDayOuts->isNotEmpty()) {
+            $lastCheckout = $sameDayOuts->last();
+            $isCrossDay = false;
+        } else {
+            // Check for checkout on next day (cross-day work)
+            $nextDay = date('Y-m-d', strtotime($workDate . ' +1 day'));
+            $nextDayAttendance = DB::table('att_log as a')
+                ->join('tbl_data_outlet as o', 'a.sn', '=', 'o.sn')
+                ->join('user_pins as up', function($q) {
+                    $q->on('a.pin', '=', 'up.pin')->on('o.id_outlet', '=', 'up.outlet_id');
+                })
+                ->where('up.user_id', $userId)
+                ->where(DB::raw('DATE(a.scan_date)'), $nextDay)
+                ->where('a.inoutmode', 2)
+                ->select('a.scan_date')
+                ->orderBy('a.scan_date')
+                ->first();
+
+            if ($nextDayAttendance) {
+                $lastCheckout = (object)['scan_date' => $nextDayAttendance->scan_date];
+                $isCrossDay = true;
+            }
+        }
+
+        if (!$lastCheckout) {
+            return [
+                'hours' => 0,
+                'checkin_time' => date('H:i', strtotime($firstCheckin->scan_date)),
+                'checkout_time' => null
+            ];
+        }
+
+        // Calculate work hours
+        $checkinTime = strtotime($firstCheckin->scan_date);
+        $checkoutTime = strtotime($lastCheckout->scan_date);
+        $workSeconds = $checkoutTime - $checkinTime;
+        $workHours = $workSeconds / 3600; // Convert to hours
+
+        \Log::info('Work hours calculation with details', [
+            'user_id' => $userId,
+            'work_date' => $workDate,
+            'first_checkin' => $firstCheckin->scan_date,
+            'last_checkout' => $lastCheckout->scan_date,
+            'is_cross_day' => $isCrossDay,
+            'work_hours' => $workHours
+        ]);
+
+        return [
+            'hours' => $workHours,
+            'checkin_time' => date('H:i', strtotime($firstCheckin->scan_date)),
+            'checkout_time' => date('H:i', strtotime($lastCheckout->scan_date))
+        ];
+    }
+
+    /**
      * Give extra off for unscheduled work (>8 hours)
      * 
      * @param int $userId
      * @param string $workDate
      * @param string $employeeName
      * @param float $workHours
+     * @param string $checkinTime
+     * @param string $checkoutTime
      * @return void
      */
-    public function giveExtraOffForUnscheduledWork($userId, $workDate, $employeeName, $workHours = null)
+    public function giveExtraOffForUnscheduledWork($userId, $workDate, $employeeName, $workHours = null, $checkinTime = null, $checkoutTime = null)
     {
+        // Format time information
+        $timeInfo = '';
+        if ($checkinTime && $checkoutTime) {
+            $timeInfo = " (jam {$checkinTime} - {$checkoutTime}, " . number_format(floor($workHours * 100) / 100, 2) . " jam)";
+        } elseif ($workHours) {
+            $timeInfo = " (" . number_format(floor($workHours * 100) / 100, 2) . " jam)";
+        }
+
         // Create transaction record
         $transaction = ExtraOffTransaction::create([
             'user_id' => $userId,
@@ -254,8 +481,7 @@ class ExtraOffService
             'amount' => 1,
             'source_type' => 'unscheduled_work',
             'source_date' => $workDate,
-            'description' => "Extra off dari kerja tanpa shift di tanggal {$workDate}" . 
-                           ($workHours ? " ({$workHours} jam)" : ""),
+            'description' => "Extra off dari kerja tanpa shift di tanggal {$workDate}{$timeInfo}",
             'status' => 'approved'
         ]);
 
@@ -286,8 +512,16 @@ class ExtraOffService
      * @param float $workHours
      * @return void
      */
-    public function giveOvertimeForUnscheduledWork($userId, $workDate, $employeeName, $workHours)
+    public function giveOvertimeForUnscheduledWork($userId, $workDate, $employeeName, $workHours, $checkinTime = null, $checkoutTime = null)
     {
+        // Format time information
+        $timeInfo = '';
+        if ($checkinTime && $checkoutTime) {
+            $timeInfo = " (jam {$checkinTime} - {$checkoutTime}, " . number_format(floor($workHours * 100) / 100, 2) . " jam)";
+        } else {
+            $timeInfo = " (" . number_format(floor($workHours * 100) / 100, 2) . " jam)";
+        }
+
         // Create transaction record for overtime (not extra off)
         $transaction = ExtraOffTransaction::create([
             'user_id' => $userId,
@@ -295,7 +529,7 @@ class ExtraOffService
             'amount' => 0, // No extra off balance, just record the overtime
             'source_type' => 'overtime_work',
             'source_date' => $workDate,
-            'description' => "Lembur dari kerja tanpa shift di tanggal {$workDate} ({$workHours} jam)",
+            'description' => "Lembur dari kerja tanpa shift di tanggal {$workDate}{$timeInfo}",
             'status' => 'approved'
         ]);
 

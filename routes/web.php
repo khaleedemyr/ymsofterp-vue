@@ -2033,6 +2033,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('/initialize', [\App\Http\Controllers\ExtraOffController::class, 'initializeBalances'])->name('api.extra-off.initialize');
         Route::get('/balances', [\App\Http\Controllers\ExtraOffController::class, 'getAllBalances'])->name('api.extra-off.balances');
         Route::get('/all-transactions', [\App\Http\Controllers\ExtraOffController::class, 'getAllTransactionsSimple'])->name('api.extra-off.all-transactions');
+        Route::post('/update-descriptions', [\App\Http\Controllers\ExtraOffController::class, 'updateTransactionDescriptions'])->name('api.extra-off.update-descriptions');
     });
 });
 

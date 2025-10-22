@@ -394,19 +394,19 @@
           <div class="p-4">
             <h3 class="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">
               <i class="fa-solid fa-calendar-xmark mr-2 text-blue-500"></i>
-              Permohonan Izin/Cuti Aktif
+              Permohonan Izin/Cuti
             </h3>
             
-            <!-- Show message if no active requests -->
+            <!-- Show message if no requests -->
             <div v-if="!userLeaveRequests || userLeaveRequests.length === 0" class="text-center py-8">
               <div class="text-gray-400 dark:text-gray-500 mb-4">
                 <i class="fa-solid fa-calendar-check text-4xl"></i>
               </div>
               <p class="text-gray-600 dark:text-gray-400 text-sm">
-                Tidak ada permohonan izin/cuti yang sedang aktif
+                Tidak ada permohonan izin/cuti untuk bulan ini
               </p>
               <p class="text-gray-500 dark:text-gray-500 text-xs mt-1">
-                Permohonan yang sudah disetujui, ditolak, atau dibatalkan tidak ditampilkan di sini
+                Semua permohonan (disetujui, ditolak, atau dibatalkan) akan ditampilkan di sini
               </p>
             </div>
             
@@ -419,7 +419,8 @@
                 :class="{
                   'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-700': request.status === 'pending',
                   'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-700': request.status === 'supervisor_approved' || request.status === 'approved',
-                  'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-700': request.status === 'rejected'
+                  'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-700': request.status === 'rejected',
+                  'bg-gray-50 dark:bg-gray-900/20 border-gray-200 dark:border-gray-700': request.status === 'cancelled'
                 }"
               >
                 <div class="flex items-center justify-between">
@@ -429,7 +430,8 @@
                             :class="{
                               'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200': request.status === 'pending',
                               'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200': request.status === 'supervisor_approved' || request.status === 'approved',
-                              'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200': request.status === 'rejected'
+                              'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200': request.status === 'rejected',
+                              'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200': request.status === 'cancelled'
                             }">
                         {{ getStatusText(request.status) }}
                       </span>
@@ -463,6 +465,156 @@
                     </button>
                   </div>
                 </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- PH and Extra Off Section -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+          <!-- PH (Public Holiday) Section -->
+          <div class="bg-white dark:bg-gray-800 overflow-hidden shadow-sm sm:rounded-lg">
+            <div class="p-4">
+              <h3 class="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">
+                <i class="fa-solid fa-calendar-star mr-2 text-blue-500"></i>
+                Public Holiday (PH)
+              </h3>
+              
+              <!-- PH Summary -->
+              <div class="grid grid-cols-2 gap-4 mb-4">
+                <div class="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3 border border-blue-200 dark:border-blue-700">
+                  <div class="text-center">
+                    <div class="text-2xl font-bold text-blue-900 dark:text-blue-100">
+                      {{ phData.total_days }}
+                    </div>
+                    <div class="text-sm text-blue-700 dark:text-blue-300">Total Hari PH</div>
+                  </div>
+                </div>
+                <div class="bg-green-50 dark:bg-green-900/20 rounded-lg p-3 border border-green-200 dark:border-green-700">
+                  <div class="text-center">
+                    <div class="text-2xl font-bold text-green-900 dark:text-green-100">
+                      {{ phData.total_bonus.toLocaleString('id-ID') }}
+                    </div>
+                    <div class="text-sm text-green-700 dark:text-green-300">Total Bonus (Rp)</div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- PH Details -->
+              <div v-if="phData.compensations && phData.compensations.length > 0" class="space-y-2">
+                <div class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Detail PH Bulan Ini:</div>
+                <div class="space-y-2 max-h-40 overflow-y-auto">
+                  <div 
+                    v-for="compensation in phData.compensations" 
+                    :key="compensation.id"
+                    class="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-700 rounded border"
+                  >
+                    <div class="flex-1">
+                      <div class="text-sm font-medium text-gray-900 dark:text-gray-100">
+                        {{ compensation.holiday_name || 'Hari Libur' }}
+                      </div>
+                      <div class="text-xs text-gray-500 dark:text-gray-400">
+                        {{ formatDate(compensation.holiday_date) }}
+                      </div>
+                    </div>
+                    <div class="text-right">
+                      <span 
+                        class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium"
+                        :class="{
+                          'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200': compensation.compensation_type === 'extra_off',
+                          'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200': compensation.compensation_type === 'bonus'
+                        }"
+                      >
+                        {{ compensation.compensation_type === 'extra_off' ? 'Extra Off' : 'Bonus' }}
+                      </span>
+                      <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                        {{ compensation.compensation_type === 'bonus' ? 'Rp ' + compensation.compensation_amount.toLocaleString('id-ID') : compensation.compensation_amount + ' hari' }}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              <!-- No PH Data -->
+              <div v-else class="text-center py-4">
+                <div class="text-gray-400 dark:text-gray-500 mb-2">
+                  <i class="fa-solid fa-calendar-xmark text-2xl"></i>
+                </div>
+                <p class="text-sm text-gray-600 dark:text-gray-400">
+                  Tidak ada PH untuk bulan ini
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Extra Off Section -->
+          <div class="bg-white dark:bg-gray-800 overflow-hidden shadow-sm sm:rounded-lg">
+            <div class="p-4">
+              <h3 class="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">
+                <i class="fa-solid fa-calendar-plus mr-2 text-purple-500"></i>
+                Extra Off
+              </h3>
+              
+              <!-- Extra Off Summary -->
+              <div class="grid grid-cols-2 gap-4 mb-4">
+                <div class="bg-purple-50 dark:bg-purple-900/20 rounded-lg p-3 border border-purple-200 dark:border-purple-700">
+                  <div class="text-center">
+                    <div class="text-2xl font-bold text-purple-900 dark:text-purple-100">
+                      {{ extraOffData.current_balance }}
+                    </div>
+                    <div class="text-sm text-purple-700 dark:text-purple-300">Saldo Saat Ini</div>
+                  </div>
+                </div>
+                <div class="bg-orange-50 dark:bg-orange-900/20 rounded-lg p-3 border border-orange-200 dark:border-orange-700">
+                  <div class="text-center">
+                    <div class="text-2xl font-bold text-orange-900 dark:text-orange-100">
+                      {{ extraOffData.period_net }}
+                    </div>
+                    <div class="text-sm text-orange-700 dark:text-orange-300">Net Bulan Ini</div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Extra Off Details -->
+              <div v-if="extraOffData.transactions && extraOffData.transactions.length > 0" class="space-y-2">
+                <div class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Transaksi Bulan Ini:</div>
+                <div class="space-y-2 max-h-40 overflow-y-auto">
+                  <div 
+                    v-for="transaction in extraOffData.transactions" 
+                    :key="transaction.id"
+                    class="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-700 rounded border"
+                  >
+                    <div class="flex-1">
+                      <div class="text-sm font-medium text-gray-900 dark:text-gray-100">
+                        {{ getTransactionDescription(transaction) }}
+                      </div>
+                      <div class="text-xs text-gray-500 dark:text-gray-400">
+                        {{ formatDateTime(transaction.created_at) }}
+                      </div>
+                    </div>
+                    <div class="text-right">
+                      <span 
+                        class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium"
+                        :class="{
+                          'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200': transaction.transaction_type === 'earned',
+                          'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200': transaction.transaction_type === 'used'
+                        }"
+                      >
+                        {{ transaction.transaction_type === 'earned' ? '+' : '-' }}{{ transaction.amount }}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              <!-- No Extra Off Data -->
+              <div v-else class="text-center py-4">
+                <div class="text-gray-400 dark:text-gray-500 mb-2">
+                  <i class="fa-solid fa-calendar-plus text-2xl"></i>
+                </div>
+                <p class="text-sm text-gray-600 dark:text-gray-400">
+                  Tidak ada transaksi extra off untuk bulan ini
+                </p>
               </div>
             </div>
           </div>
@@ -1070,6 +1222,8 @@ const props = defineProps({
   userLeaveRequests: Array,
   leaveTypes: Array,
   availableApprovers: Array,
+  phData: Object,
+  extraOffData: Object,
   filters: Object,
   user: Object
 })
@@ -2090,7 +2244,8 @@ const getStatusText = (status) => {
     'pending': 'Menunggu Persetujuan',
     'supervisor_approved': 'Disetujui Atasan',
     'approved': 'Disetujui',
-    'rejected': 'Ditolak/Dibatalkan'
+    'rejected': 'Ditolak',
+    'cancelled': 'Dibatalkan'
   }
   
   // Attendance status
@@ -2112,6 +2267,22 @@ const getStatusText = (status) => {
   }
   
   return status
+}
+
+const getTransactionDescription = (transaction) => {
+  if (transaction.description) {
+    return transaction.description
+  }
+  
+  // Generate description based on source_type
+  const sourceTypeMap = {
+    'unscheduled_work': 'Kerja tanpa shift',
+    'manual_adjustment': 'Penyesuaian manual',
+    'holiday_work': 'Kerja di hari libur',
+    'overtime_work': 'Lembur'
+  }
+  
+  return sourceTypeMap[transaction.source_type] || transaction.source_type || 'Extra Off'
 }
 
 const calculateWorkDuration = (jamIn, jamOut) => {

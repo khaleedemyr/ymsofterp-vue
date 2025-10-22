@@ -76,6 +76,10 @@ class AttendanceController extends Controller
         // Get available approvers for leave request
         $availableApprovers = $this->getAvailableApprovers($user);
         
+        // Get PH and Extra Off data for current month
+        $phData = $this->getPHData($user->id, $startDate, $endDate);
+        $extraOffData = $this->getExtraOffData($user->id, $startDate, $endDate);
+        
         return Inertia::render('Attendance/Index', [
             'workSchedules' => $workSchedules,
             'attendanceRecords' => $attendanceRecords,
@@ -86,6 +90,8 @@ class AttendanceController extends Controller
             'userLeaveRequests' => $userLeaveRequests,
             'leaveTypes' => $leaveTypes,
             'availableApprovers' => $availableApprovers,
+            'phData' => $phData,
+            'extraOffData' => $extraOffData,
             'filters' => [
                 'bulan' => $bulan,
                 'tahun' => $tahun,
@@ -1136,7 +1142,8 @@ class AttendanceController extends Controller
                             ->where('absent_requests.date_to', '>=', $endDate);
                       });
             })
-            ->whereIn('absent_requests.status', ['pending', 'supervisor_approved'])
+            // Show all statuses: pending, supervisor_approved, approved, rejected, cancelled
+            ->whereIn('absent_requests.status', ['pending', 'supervisor_approved', 'approved', 'rejected', 'cancelled'])
             ->select([
                 'absent_requests.id',
                 'absent_requests.date_from',
@@ -1150,6 +1157,94 @@ class AttendanceController extends Controller
             ->get();
             
         return $leaveRequests;
+    }
+
+    /**
+     * Get PH (Public Holiday) data for user in date range
+     */
+    private function getPHData($userId, $startDate, $endDate)
+    {
+        // Get holiday attendance compensations for this user in the period
+        $compensations = DB::table('holiday_attendance_compensations')
+            ->leftJoin('tbl_kalender_perusahaan', 'holiday_attendance_compensations.holiday_date', '=', 'tbl_kalender_perusahaan.tgl_libur')
+            ->where('holiday_attendance_compensations.user_id', $userId)
+            ->whereBetween('holiday_attendance_compensations.holiday_date', [$startDate, $endDate])
+            ->whereIn('holiday_attendance_compensations.status', ['approved', 'used'])
+            ->select([
+                'holiday_attendance_compensations.id',
+                'holiday_attendance_compensations.holiday_date',
+                'holiday_attendance_compensations.compensation_type',
+                'holiday_attendance_compensations.compensation_amount',
+                'holiday_attendance_compensations.compensation_description',
+                'holiday_attendance_compensations.status',
+                'holiday_attendance_compensations.created_at',
+                'tbl_kalender_perusahaan.keterangan as holiday_name'
+            ])
+            ->orderBy('holiday_attendance_compensations.holiday_date', 'desc')
+            ->get();
+
+        // Calculate totals
+        $totalDays = 0;
+        $totalBonus = 0;
+        $extraOffDays = 0;
+
+        foreach ($compensations as $compensation) {
+            if ($compensation->compensation_type === 'extra_off') {
+                $extraOffDays += $compensation->compensation_amount;
+                $totalDays += $compensation->compensation_amount;
+            } else if ($compensation->compensation_type === 'bonus') {
+                $totalBonus += $compensation->compensation_amount;
+                $totalDays += 1; // Each bonus compensation counts as 1 PH day
+            }
+        }
+
+        return [
+            'compensations' => $compensations,
+            'total_days' => $totalDays,
+            'total_bonus' => $totalBonus,
+            'extra_off_days' => $extraOffDays,
+            'bonus_days' => $totalDays - $extraOffDays
+        ];
+    }
+
+    /**
+     * Get Extra Off data for user in date range
+     */
+    private function getExtraOffData($userId, $startDate, $endDate)
+    {
+        // Get current balance
+        $balance = DB::table('extra_off_balance')
+            ->where('user_id', $userId)
+            ->first();
+
+        // Get transactions for the period
+        $transactions = DB::table('extra_off_transactions')
+            ->where('user_id', $userId)
+            ->whereBetween('created_at', [$startDate, $endDate])
+            ->where('status', 'approved')
+            ->select([
+                'id',
+                'transaction_type',
+                'amount',
+                'source_type',
+                'source_date',
+                'description',
+                'created_at'
+            ])
+            ->orderBy('created_at', 'desc')
+            ->get();
+
+        // Calculate earned and used amounts for the period
+        $earnedAmount = $transactions->where('transaction_type', 'earned')->sum('amount');
+        $usedAmount = $transactions->where('transaction_type', 'used')->sum('amount');
+
+        return [
+            'current_balance' => $balance ? $balance->balance : 0,
+            'transactions' => $transactions,
+            'period_earned' => $earnedAmount,
+            'period_used' => $usedAmount,
+            'period_net' => $earnedAmount - $usedAmount
+        ];
     }
 
     /**
