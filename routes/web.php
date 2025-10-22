@@ -2094,4 +2094,35 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/employee-survey-report', [App\Http\Controllers\EmployeeSurveyController::class, 'report'])->name('employee-survey.report');
 });
 
+// Member Apps Settings routes
+Route::middleware(['auth'])->prefix('admin')->group(function () {
+    Route::get('/member-apps-settings', [App\Http\Controllers\MemberAppsSettingsController::class, 'index'])->name('member-apps-settings.index');
+    
+    // Banner routes
+    Route::post('/member-apps-settings/banner', [App\Http\Controllers\MemberAppsSettingsController::class, 'storeBanner'])->name('member-apps-settings.banner.store');
+    Route::put('/member-apps-settings/banner/{id}', [App\Http\Controllers\MemberAppsSettingsController::class, 'updateBanner'])->name('member-apps-settings.banner.update');
+    Route::delete('/member-apps-settings/banner/{id}', [App\Http\Controllers\MemberAppsSettingsController::class, 'deleteBanner'])->name('member-apps-settings.banner.delete');
+    
+    // Reward routes
+    Route::post('/member-apps-settings/reward', [App\Http\Controllers\MemberAppsSettingsController::class, 'storeReward'])->name('member-apps-settings.reward.store');
+    Route::put('/member-apps-settings/reward/{id}', [App\Http\Controllers\MemberAppsSettingsController::class, 'updateReward'])->name('member-apps-settings.reward.update');
+    Route::delete('/member-apps-settings/reward/{id}', [App\Http\Controllers\MemberAppsSettingsController::class, 'deleteReward'])->name('member-apps-settings.reward.delete');
+    Route::get('/member-apps-settings/items', [App\Http\Controllers\MemberAppsSettingsController::class, 'getItems'])->name('member-apps-settings.items');
+    
+    // Challenge routes
+    Route::post('/member-apps-settings/challenge', [App\Http\Controllers\MemberAppsSettingsController::class, 'storeChallenge'])->name('member-apps-settings.challenge.store');
+    Route::put('/member-apps-settings/challenge/{id}', [App\Http\Controllers\MemberAppsSettingsController::class, 'updateChallenge'])->name('member-apps-settings.challenge.update');
+    Route::delete('/member-apps-settings/challenge/{id}', [App\Http\Controllers\MemberAppsSettingsController::class, 'deleteChallenge'])->name('member-apps-settings.challenge.delete');
+    
+    // Whats On routes
+    Route::post('/member-apps-settings/whats-on', [App\Http\Controllers\MemberAppsSettingsController::class, 'storeWhatsOn'])->name('member-apps-settings.whats-on.store');
+    Route::put('/member-apps-settings/whats-on/{id}', [App\Http\Controllers\MemberAppsSettingsController::class, 'updateWhatsOn'])->name('member-apps-settings.whats-on.update');
+    Route::delete('/member-apps-settings/whats-on/{id}', [App\Http\Controllers\MemberAppsSettingsController::class, 'deleteWhatsOn'])->name('member-apps-settings.whats-on.delete');
+    
+    // Brand routes
+    Route::post('/member-apps-settings/brand', [App\Http\Controllers\MemberAppsSettingsController::class, 'storeBrand'])->name('member-apps-settings.brand.store');
+    Route::put('/member-apps-settings/brand/{id}', [App\Http\Controllers\MemberAppsSettingsController::class, 'updateBrand'])->name('member-apps-settings.brand.update');
+    Route::delete('/member-apps-settings/brand/{id}', [App\Http\Controllers\MemberAppsSettingsController::class, 'deleteBrand'])->name('member-apps-settings.brand.delete');
+});
+
 require __DIR__.'/auth.php';

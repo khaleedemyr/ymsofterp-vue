@@ -80,6 +80,9 @@ class AttendanceController extends Controller
         $phData = $this->getPHData($user->id, $startDate, $endDate);
         $extraOffData = $this->getExtraOffData($user->id, $startDate, $endDate);
         
+        // Get correction requests for this user
+        $correctionRequests = $this->getCorrectionRequests($user->id, $startDate, $endDate);
+        
         return Inertia::render('Attendance/Index', [
             'workSchedules' => $workSchedules,
             'attendanceRecords' => $attendanceRecords,
@@ -92,6 +95,7 @@ class AttendanceController extends Controller
             'availableApprovers' => $availableApprovers,
             'phData' => $phData,
             'extraOffData' => $extraOffData,
+            'correctionRequests' => $correctionRequests,
             'filters' => [
                 'bulan' => $bulan,
                 'tahun' => $tahun,
@@ -1483,5 +1487,61 @@ class AttendanceController extends Controller
         $filename = 'absent_report_' . date('Y-m-d_H-i-s') . '.xlsx';
         
         return \Maatwebsite\Excel\Facades\Excel::download($export, $filename);
+    }
+
+    /**
+     * Get correction requests for a specific user
+     */
+private function getCorrectionRequests($userId, $startDate, $endDate)
+    {
+        try {
+            $corrections = DB::table('schedule_attendance_correction_approvals as saca')
+                ->leftJoin('users as approver', 'saca.approved_by', '=', 'approver.id')
+                ->leftJoin('users as requester', 'saca.requested_by', '=', 'requester.id')
+                ->leftJoin('tbl_data_outlet', 'saca.outlet_id', '=', 'tbl_data_outlet.id_outlet')
+                ->where('saca.user_id', $userId) // user_id = user yang correction-nya diajukan untuk
+                ->whereBetween('saca.tanggal', [$startDate, $endDate])
+                ->select([
+                    'saca.id',
+                    'saca.type',
+                    'saca.tanggal',
+                    'saca.old_value',
+                    'saca.new_value',
+                    'saca.reason',
+                    'saca.status',
+                    'saca.created_at',
+                    'saca.approved_at',
+                    'saca.rejection_reason',
+                    'approver.nama_lengkap as approved_by_name',
+                    'requester.nama_lengkap as requested_by_name',
+                    'tbl_data_outlet.nama_outlet'
+                ])
+                ->orderBy('saca.created_at', 'desc')
+                ->get();
+
+            // Clean data to prevent JSON parsing errors
+            $corrections = $corrections->map(function ($item) {
+                return [
+                    'id' => $item->id,
+                    'type' => $item->type,
+                    'tanggal' => $item->tanggal,
+                    'old_value' => $item->old_value ?: '',
+                    'new_value' => $item->new_value ?: '',
+                    'reason' => $item->reason ?: '',
+                    'status' => $item->status,
+                    'created_at' => $item->created_at,
+                    'approved_at' => $item->approved_at,
+                    'rejection_reason' => $item->rejection_reason ?: '',
+                    'approved_by_name' => $item->approved_by_name ?: '',
+                    'requested_by_name' => $item->requested_by_name ?: '',
+                    'nama_outlet' => $item->nama_outlet ?: ''
+                ];
+            });
+
+            return $corrections;
+        } catch (\Exception $e) {
+            \Log::error('Error getting correction requests: ' . $e->getMessage());
+            return collect([]);
+        }
     }
 }

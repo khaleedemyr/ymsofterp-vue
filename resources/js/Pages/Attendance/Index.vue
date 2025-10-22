@@ -1202,6 +1202,80 @@
 
     <!-- Hidden Canvas for Photo Capture -->
     <canvas ref="canvasRef" style="display: none;"></canvas>
+
+    <!-- Correction Requests Section - Moved to bottom -->
+    <div v-if="correctionRequests && correctionRequests.length > 0" class="bg-white dark:bg-gray-800 overflow-hidden shadow-sm sm:rounded-lg mb-4">
+      <div class="p-4">
+        <h3 class="text-lg font-medium text-gray-900 dark:text-gray-100 mb-3">
+          <i class="fas fa-edit text-blue-600 mr-2"></i>
+          Status Pengajuan Koreksi
+        </h3>
+        <div class="space-y-3">
+          <div v-for="request in correctionRequests" :key="request.id" 
+               class="border border-gray-200 dark:border-gray-600 rounded-lg p-4 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+            <div class="flex items-start justify-between">
+              <div class="flex-1">
+                <div class="flex items-center gap-2 mb-2">
+                  <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
+                        :class="{
+                          'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200': request.status === 'pending',
+                          'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200': request.status === 'approved',
+                          'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200': request.status === 'rejected'
+                        }">
+                    <i class="fas fa-clock mr-1" v-if="request.status === 'pending'"></i>
+                    <i class="fas fa-check mr-1" v-if="request.status === 'approved'"></i>
+                    <i class="fas fa-times mr-1" v-if="request.status === 'rejected'"></i>
+                    {{ getStatusText(request.status) }}
+                  </span>
+                  <span class="text-sm text-gray-500 dark:text-gray-400">
+                    {{ formatDate(request.tanggal) }}
+                  </span>
+                </div>
+                
+                <div class="mb-2">
+                  <p class="text-sm font-medium text-gray-900 dark:text-gray-100">
+                    {{ getTypeText(request.type) }} - {{ request.nama_outlet }}
+                  </p>
+                  <p class="text-sm text-gray-600 dark:text-gray-400 mb-1">
+                    <i class="fas fa-user mr-1"></i>
+                    Diajukan oleh: <span class="font-medium">{{ request.requested_by_name }}</span>
+                  </p>
+                      <div class="text-sm text-gray-600 dark:text-gray-400">
+                        <div class="mb-2">
+                          <span class="font-medium text-red-600 dark:text-red-400">Sebelum:</span>
+                          <div class="ml-4 mt-1 p-2 bg-red-50 dark:bg-red-900/20 rounded border-l-2 border-red-300">
+                            {{ formatCorrectionValue(request.old_value, request.type) }}
+                          </div>
+                        </div>
+                        <div>
+                          <span class="font-medium text-green-600 dark:text-green-400">Sesudah:</span>
+                          <div class="ml-4 mt-1 p-2 bg-green-50 dark:bg-green-900/20 rounded border-l-2 border-green-300">
+                            {{ formatCorrectionValue(request.new_value, request.type) }}
+                          </div>
+                        </div>
+                      </div>
+                </div>
+                
+                <p class="text-sm text-gray-600 dark:text-gray-400 mb-2">
+                  <strong>Alasan:</strong> {{ request.reason }}
+                </p>
+                
+                <div v-if="request.status === 'approved' && request.approved_by_name" class="text-sm text-green-600 dark:text-green-400">
+                  <i class="fas fa-user-check mr-1"></i>
+                  Disetujui oleh: {{ request.approved_by_name }}
+                  <span class="ml-2">{{ formatDateTime(request.approved_at) }}</span>
+                </div>
+                
+                <div v-if="request.status === 'rejected' && request.rejection_reason" class="text-sm text-red-600 dark:text-red-400">
+                  <i class="fas fa-exclamation-triangle mr-1"></i>
+                  Alasan penolakan: {{ request.rejection_reason }}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   </AppLayout>
 </template>
 
@@ -1224,6 +1298,7 @@ const props = defineProps({
   availableApprovers: Array,
   phData: Object,
   extraOffData: Object,
+  correctionRequests: Array,
   filters: Object,
   user: Object
 })
@@ -2256,6 +2331,13 @@ const getStatusText = (status) => {
     'half_day': 'Setengah Hari'
   }
   
+  // Correction request status
+  const correctionStatusMap = {
+    'pending': 'Menunggu Persetujuan',
+    'approved': 'Disetujui',
+    'rejected': 'Ditolak'
+  }
+  
   // Check leave status first
   if (leaveStatusMap[status]) {
     return leaveStatusMap[status]
@@ -2264,6 +2346,11 @@ const getStatusText = (status) => {
   // Check attendance status
   if (attendanceStatusMap[status]) {
     return attendanceStatusMap[status]
+  }
+  
+  // Check correction request status
+  if (correctionStatusMap[status]) {
+    return correctionStatusMap[status]
   }
   
   return status
@@ -2353,6 +2440,76 @@ const formatTime = (time) => {
 watch(filters, () => {
   fetchData()
 }, { deep: true })
+
+// Helper methods for correction requests
+
+const getTypeText = (type) => {
+  const typeMap = {
+    'schedule': 'Koreksi Jadwal',
+    'attendance': 'Koreksi Kehadiran',
+    'manual_attendance': 'Tambah Kehadiran Manual'
+  }
+  return typeMap[type] || type
+}
+
+const formatCorrectionValue = (value, type) => {
+  if (!value) return 'Tidak ada data'
+  
+  try {
+    // Parse JSON if it's a string
+    const data = typeof value === 'string' ? JSON.parse(value) : value
+    
+    if (type === 'schedule' || type === 'attendance') {
+      // For schedule corrections, show shift name
+      if (type === 'schedule') {
+        return data === 'OFF' ? 'Libur' : `Shift: ${data}`
+      }
+      
+      // For attendance corrections, show formatted attendance data
+      if (type === 'attendance' && data.scan_date) {
+        const scanDate = new Date(data.scan_date)
+        const formattedDate = scanDate.toLocaleDateString('id-ID', {
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric'
+        })
+        const formattedTime = scanDate.toLocaleTimeString('id-ID', {
+          hour: '2-digit',
+          minute: '2-digit'
+        })
+        
+        const inoutText = data.inoutmode === 1 ? 'Masuk' : data.inoutmode === 2 ? 'Keluar' : `Mode ${data.inoutmode}`
+        
+        return `${inoutText} - ${formattedDate} ${formattedTime}`
+      }
+    }
+    
+    // For manual attendance
+    if (type === 'manual_attendance' && data.scan_date) {
+      const scanDate = new Date(data.scan_date)
+      const formattedDate = scanDate.toLocaleDateString('id-ID', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric'
+      })
+      const formattedTime = scanDate.toLocaleTimeString('id-ID', {
+        hour: '2-digit',
+        minute: '2-digit'
+      })
+      
+      const inoutText = data.inoutmode === 1 ? 'Masuk' : data.inoutmode === 2 ? 'Keluar' : `Mode ${data.inoutmode}`
+      
+      return `Tambah ${inoutText} - ${formattedDate} ${formattedTime}`
+    }
+    
+    // Fallback: return original value if can't parse
+    return value
+  } catch (error) {
+    // If JSON parsing fails, return original value
+    return value
+  }
+}
+
 </script>
 
 <style scoped>

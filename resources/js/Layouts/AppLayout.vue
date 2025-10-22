@@ -369,6 +369,7 @@ const menuGroups = [
             { name: () => 'Customer Analytics', icon: 'fa-solid fa-chart-pie', route: '/crm/customer-analytics', code: 'crm_analytics' },
             { name: () => 'Member Reports', icon: 'fa-solid fa-file-lines', route: '/crm/member-reports', code: 'crm_reports' },
             { name: () => 'Point Management', icon: 'fa-solid fa-coins', route: '/crm/point-management', code: 'crm_point_management' },
+            { name: () => 'Member Apps Settings', icon: 'fa-solid fa-mobile-screen-button', route: '/admin/member-apps-settings', code: 'member_apps_settings' },
         ],
     },
        
