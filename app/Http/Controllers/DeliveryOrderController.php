@@ -421,10 +421,12 @@ class DeliveryOrderController extends Controller
                 }
                 
                 // Prepare delivery order item
+                $barcode = $this->processBarcode($item['barcode'] ?? null);
+                
                 $deliveryOrderItems[] = [
                     'delivery_order_id' => $doId,
                     'item_id' => $realItemId,
-                    'barcode' => $item['barcode'] ?? null,
+                    'barcode' => $barcode,
                     'qty_packing_list' => $item['qty'],
                     'qty_scan' => $item['qty_scan'],
                     'unit' => $item['unit'] ?? null,
@@ -518,10 +520,12 @@ class DeliveryOrderController extends Controller
         }
         
         // Insert delivery order item
+        $barcode = $this->processBarcode($item['barcode'] ?? null);
+        
         DB::table('delivery_order_items')->insert([
             'delivery_order_id' => $doId,
             'item_id' => $realItemId,
-            'barcode' => $item['barcode'] ?? null,
+            'barcode' => $barcode,
             'qty_packing_list' => $item['qty'],
             'qty_scan' => $item['qty_scan'],
             'unit' => $item['unit'] ?? null,
@@ -566,6 +570,31 @@ class DeliveryOrderController extends Controller
                 }
             }
         }
+    }
+
+    /**
+     * Process barcode to ensure it's a string
+     */
+    private function processBarcode($barcode)
+    {
+        if (is_null($barcode)) {
+            return null;
+        }
+        
+        if (is_array($barcode)) {
+            // If it's an array, take the first element or join them
+            if (count($barcode) > 0) {
+                return is_array($barcode[0]) ? implode(',', $barcode[0]) : $barcode[0];
+            }
+            return null;
+        }
+        
+        if (is_string($barcode)) {
+            return $barcode;
+        }
+        
+        // Convert to string if it's other type
+        return (string) $barcode;
     }
 
     /**
