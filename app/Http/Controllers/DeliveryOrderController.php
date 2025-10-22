@@ -868,7 +868,9 @@ class DeliveryOrderController extends Controller
                 COALESCE(pl.packing_number, gr.gr_number) as packing_number,
                 fo.order_number as floor_order_number,
                 o.nama_outlet,
-                wo.name as warehouse_outlet_name
+                wo.name as warehouse_outlet_name,
+                w.name as warehouse_name,
+                wd.name as warehouse_division_name
             FROM delivery_orders do
             LEFT JOIN users u ON do.created_by = u.id
             LEFT JOIN food_packing_lists pl ON do.packing_list_id = pl.id
@@ -880,6 +882,8 @@ class DeliveryOrderController extends Controller
             )
             LEFT JOIN tbl_data_outlet o ON fo.id_outlet = o.id_outlet
             LEFT JOIN warehouse_outlets wo ON fo.warehouse_outlet_id = wo.id
+            LEFT JOIN warehouses w ON wo.warehouse_id = w.id
+            LEFT JOIN warehouse_divisions wd ON w.warehouse_division_id = wd.id
             WHERE 1=1
         ";
         

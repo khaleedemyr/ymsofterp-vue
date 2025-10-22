@@ -98,6 +98,8 @@
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Tanggal & Jam</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Outlet</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Warehouse Outlet</th>
+              <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Warehouse</th>
+              <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Warehouse Division</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Packing List</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Floor Order</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">User</th>
@@ -138,6 +140,8 @@
               </td>
               <td class="px-6 py-3">{{ order.nama_outlet || '-' }}</td>
               <td class="px-6 py-3">{{ order.warehouse_outlet_name || '-' }}</td>
+              <td class="px-6 py-3">{{ order.warehouse_name || '-' }}</td>
+              <td class="px-6 py-3">{{ order.warehouse_division_name || '-' }}</td>
               <td class="px-6 py-3">{{ order.packing_number || '-' }}</td>
               <td class="px-6 py-3">{{ order.floor_order_number || '-' }}</td>
               <td class="px-6 py-3">{{ order.created_by_name || '-' }}</td>
