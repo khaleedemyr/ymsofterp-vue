@@ -712,20 +712,34 @@ class AttendanceController extends Controller
             }
             
             // Check if user already has absent request for any date in the range
+            // IMPROVED VALIDATION: More precise date overlap checking
             $existingRequest = DB::table('absent_requests')
                 ->where('user_id', $user->id)
-                ->where(function($query) use ($request) {
-                    $query->whereBetween('date_from', [$request->date_from, $request->date_to])
-                          ->orWhereBetween('date_to', [$request->date_from, $request->date_to])
-                          ->orWhere(function($q) use ($request) {
-                              $q->where('date_from', '<=', $request->date_from)
-                                ->where('date_to', '>=', $request->date_to);
-                          });
-                })
+                ->where('date_from', '<=', $request->date_to) // Existing request starts before or on new request end
+                ->where('date_to', '>=', $request->date_from) // Existing request ends after or on new request start
                 ->whereIn('status', ['pending', 'approved', 'supervisor_approved'])
                 ->exists();
             
             if ($existingRequest) {
+                // Log the conflicting request for debugging
+                $conflictingRequest = DB::table('absent_requests')
+                    ->where('user_id', $user->id)
+                    ->where('date_from', '<=', $request->date_to)
+                    ->where('date_to', '>=', $request->date_from)
+                    ->whereIn('status', ['pending', 'approved', 'supervisor_approved'])
+                    ->first();
+                
+                \Log::warning('Leave request validation failed', [
+                    'user_id' => $user->id,
+                    'user_name' => $user->nama_lengkap,
+                    'requested_from' => $request->date_from,
+                    'requested_to' => $request->date_to,
+                    'conflicting_request_id' => $conflictingRequest->id ?? null,
+                    'conflicting_from' => $conflictingRequest->date_from ?? null,
+                    'conflicting_to' => $conflictingRequest->date_to ?? null,
+                    'conflicting_status' => $conflictingRequest->status ?? null
+                ]);
+                
                 return response()->json([
                     'success' => false,
                     'message' => 'Anda sudah mengajukan izin/cuti untuk salah satu tanggal dalam rentang ini'

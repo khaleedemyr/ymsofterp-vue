@@ -1507,29 +1507,155 @@ const submitAbsentRequest = async () => {
     }
   } catch (error) {
     console.error('Error submitting absent request:', error)
-    if (error.response && error.response.data && error.response.data.errors) {
-      // Handle validation errors
-      const errors = error.response.data.errors
-      const errorMessages = Object.values(errors).flat().join('\n')
+    
+    // Handle different types of errors with detailed information
+    if (error.response && error.response.data) {
+      const data = error.response.data
+      const status = error.response.status
+      
+      // Handle validation errors (422)
+      if (status === 422 && data.errors) {
+        const errors = data.errors
+        let errorHtml = '<div class="text-left">'
+        errorHtml += '<p class="font-semibold text-red-600 mb-3">Data tidak valid. Periksa field berikut:</p>'
+        errorHtml += '<ul class="list-disc list-inside text-sm space-y-1">'
+        
+        Object.keys(errors).forEach(field => {
+          const fieldName = getFieldDisplayName(field)
+          if (Array.isArray(errors[field])) {
+            errors[field].forEach(error => {
+              errorHtml += `<li class="text-red-600"><strong>${fieldName}:</strong> ${error}</li>`
+            })
+          } else {
+            errorHtml += `<li class="text-red-600"><strong>${fieldName}:</strong> ${errors[field]}</li>`
+          }
+        })
+        
+        errorHtml += '</ul>'
+        errorHtml += '<p class="text-xs text-gray-500 mt-3">Silakan perbaiki field yang bermasalah dan coba lagi.</p>'
+        errorHtml += '</div>'
+        
+        await Swal.fire({
+          icon: 'error',
+          title: 'Data Tidak Valid',
+          html: errorHtml,
+          confirmButtonText: 'OK',
+          confirmButtonColor: '#EF4444',
+          width: '500px'
+        })
+      }
+      // Handle specific error messages (400, 500, etc.)
+      else if (data.message) {
+        let errorHtml = '<div class="text-left">'
+        errorHtml += '<p class="font-semibold text-red-600 mb-3">Gagal mengirim permohonan izin/cuti:</p>'
+        errorHtml += '<div class="bg-red-50 border border-red-200 rounded-md p-3 mb-3">'
+        errorHtml += `<p class="text-red-800">${data.message}</p>`
+        errorHtml += '</div>'
+        
+        // Add additional context for common errors
+        if (data.message.includes('sudah mengajukan izin/cuti')) {
+          errorHtml += '<div class="bg-yellow-50 border border-yellow-200 rounded-md p-3 mb-3">'
+          errorHtml += '<p class="text-yellow-800 text-sm"><strong>Solusi:</strong></p>'
+          errorHtml += '<ul class="list-disc list-inside text-yellow-700 text-sm mt-2">'
+          errorHtml += '<li>Periksa apakah Anda sudah mengajukan izin/cuti untuk tanggal yang sama</li>'
+          errorHtml += '<li>Pilih rentang tanggal yang berbeda</li>'
+          errorHtml += '<li>Hubungi HR jika Anda yakin belum pernah mengajukan izin/cuti</li>'
+          errorHtml += '</ul>'
+          errorHtml += '</div>'
+        } else if (data.message.includes('data kehadiran')) {
+          errorHtml += '<div class="bg-blue-50 border border-blue-200 rounded-md p-3 mb-3">'
+          errorHtml += '<p class="text-blue-800 text-sm"><strong>Informasi:</strong></p>'
+          errorHtml += '<p class="text-blue-700 text-sm mt-2">Anda sudah memiliki data kehadiran untuk salah satu tanggal dalam rentang ini. Tidak dapat mengajukan izin/cuti untuk tanggal yang sudah ada kehadiran.</p>'
+          errorHtml += '</div>'
+        }
+        
+        errorHtml += '<p class="text-xs text-gray-500 mt-3">Jika masalah berlanjut, silakan hubungi administrator.</p>'
+        errorHtml += '</div>'
+        
+        await Swal.fire({
+          icon: 'error',
+          title: 'Gagal Mengirim Permohonan',
+          html: errorHtml,
+          confirmButtonText: 'OK',
+          confirmButtonColor: '#EF4444',
+          width: '600px'
+        })
+      }
+      // Handle other error responses
+      else {
+        await Swal.fire({
+          icon: 'error',
+          title: 'Terjadi Kesalahan',
+          html: `
+            <div class="text-left">
+              <p class="font-semibold text-red-600 mb-3">Terjadi kesalahan saat mengirim permohonan:</p>
+              <div class="bg-red-50 border border-red-200 rounded-md p-3 mb-3">
+                <p class="text-red-800">Status: ${status}</p>
+                <p class="text-red-800">Response: ${JSON.stringify(data, null, 2)}</p>
+              </div>
+              <p class="text-xs text-gray-500 mt-3">Silakan coba lagi atau hubungi administrator jika masalah berlanjut.</p>
+            </div>
+          `,
+          confirmButtonText: 'OK',
+          confirmButtonColor: '#EF4444',
+          width: '600px'
+        })
+      }
+    }
+    // Handle network errors
+    else if (error.request) {
       await Swal.fire({
         icon: 'error',
-        title: 'Data Tidak Valid',
-        html: 'Data tidak valid:<br>' + errorMessages.replace(/\n/g, '<br>'),
+        title: 'Koneksi Bermasalah',
+        html: `
+          <div class="text-left">
+            <p class="font-semibold text-red-600 mb-3">Tidak dapat terhubung ke server:</p>
+            <div class="bg-red-50 border border-red-200 rounded-md p-3 mb-3">
+              <p class="text-red-800">Periksa koneksi internet Anda dan coba lagi.</p>
+            </div>
+            <p class="text-xs text-gray-500 mt-3">Jika masalah berlanjut, silakan hubungi administrator.</p>
+          </div>
+        `,
         confirmButtonText: 'OK',
-        confirmButtonColor: '#EF4444'
+        confirmButtonColor: '#EF4444',
+        width: '500px'
       })
-    } else {
+    }
+    // Handle other errors
+    else {
       await Swal.fire({
         icon: 'error',
         title: 'Terjadi Kesalahan',
-        text: 'Terjadi kesalahan saat mengirim permohonan',
+        html: `
+          <div class="text-left">
+            <p class="font-semibold text-red-600 mb-3">Terjadi kesalahan tidak terduga:</p>
+            <div class="bg-red-50 border border-red-200 rounded-md p-3 mb-3">
+              <p class="text-red-800">${error.message || 'Unknown error'}</p>
+            </div>
+            <p class="text-xs text-gray-500 mt-3">Silakan coba lagi atau hubungi administrator jika masalah berlanjut.</p>
+          </div>
+        `,
         confirmButtonText: 'OK',
-        confirmButtonColor: '#EF4444'
+        confirmButtonColor: '#EF4444',
+        width: '500px'
       })
     }
   } finally {
     submittingAbsent.value = false
   }
+}
+
+// Helper function to get display name for form fields
+const getFieldDisplayName = (field) => {
+  const fieldNames = {
+    'leave_type_id': 'Jenis Izin/Cuti',
+    'date_from': 'Tanggal Mulai',
+    'date_to': 'Tanggal Selesai',
+    'reason': 'Alasan',
+    'document': 'Dokumen',
+    'documents': 'Dokumen'
+  }
+  return fieldNames[field] || field
 }
 
 const formatDate = (dateString) => {
