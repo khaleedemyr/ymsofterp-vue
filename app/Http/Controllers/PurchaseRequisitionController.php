@@ -82,6 +82,9 @@ class PurchaseRequisitionController extends Controller
                 'divisions' => $divisions,
             ],
             'statistics' => $statistics,
+            'auth' => [
+                'user' => auth()->user()
+            ],
         ]);
     }
 
