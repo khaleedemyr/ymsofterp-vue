@@ -9,13 +9,12 @@ use App\Models\ActivityLog;
 use Illuminate\Support\Collection;
 use Maatwebsite\Excel\Concerns\ToCollection;
 use Maatwebsite\Excel\Concerns\WithHeadingRow;
-use Maatwebsite\Excel\Concerns\WithValidation;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
 use Carbon\Carbon;
 use Maatwebsite\Excel\Concerns\WithMultipleSheets;
 
-class FoodStockBalanceImport implements ToCollection, WithHeadingRow, WithValidation, WithMultipleSheets
+class FoodStockBalanceImport implements ToCollection, WithHeadingRow, WithMultipleSheets
 {
     protected $errors = [];
     protected $successCount = 0;
@@ -33,12 +32,12 @@ class FoodStockBalanceImport implements ToCollection, WithHeadingRow, WithValida
                 try {
                     // Validasi data
                     $missingFields = [];
-                    if (empty($row['sku'])) $missingFields[] = 'SKU';
-                    if (empty($row['name'])) $missingFields[] = 'Name';
-                    if (empty($row['small_unit'])) $missingFields[] = 'Small Unit';
-                    if (empty($row['warehouse'])) $missingFields[] = 'Warehouse';
-                    if (!isset($row['quantity']) || $row['quantity'] === '') $missingFields[] = 'Quantity';
-                    if (!isset($row['cost']) || $row['cost'] === '') $missingFields[] = 'Cost';
+                    if (empty($row['sku']) || trim($row['sku']) === '') $missingFields[] = 'SKU';
+                    if (empty($row['name']) || trim($row['name']) === '') $missingFields[] = 'Name';
+                    if (empty($row['small_unit']) || trim($row['small_unit']) === '') $missingFields[] = 'Small Unit';
+                    if (empty($row['warehouse']) || trim($row['warehouse']) === '') $missingFields[] = 'Warehouse';
+                    if (!isset($row['quantity']) || $row['quantity'] === '' || $row['quantity'] === null) $missingFields[] = 'Quantity';
+                    if (!isset($row['cost']) || $row['cost'] === '' || $row['cost'] === null) $missingFields[] = 'Cost';
                     
                     if (!empty($missingFields)) {
                         throw new \Exception('Field wajib diisi: ' . implode(', ', $missingFields));
@@ -235,26 +234,6 @@ class FoodStockBalanceImport implements ToCollection, WithHeadingRow, WithValida
         }
     }
 
-    public function rules(): array
-    {
-        return [
-            'sku' => 'required|string',
-            'name' => 'required|string',
-            'small_unit' => 'required|string',
-            'warehouse' => 'required|string',
-            'quantity' => 'required|numeric|min:0',
-            'cost' => 'required|numeric|min:0',
-            'notes' => 'nullable|string',
-        ];
-    }
-
-    protected function validateRow($row)
-    {
-        $validator = \Validator::make($row->toArray(), $this->rules());
-        if ($validator->fails()) {
-            throw new \Exception(implode(', ', $validator->errors()->all()));
-        }
-    }
 
     public function getErrors()
     {

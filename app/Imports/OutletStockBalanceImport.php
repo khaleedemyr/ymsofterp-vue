@@ -7,13 +7,12 @@ use App\Models\Outlet;
 use Illuminate\Support\Collection;
 use Maatwebsite\Excel\Concerns\ToCollection;
 use Maatwebsite\Excel\Concerns\WithHeadingRow;
-use Maatwebsite\Excel\Concerns\WithValidation;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
 use Carbon\Carbon;
 use Maatwebsite\Excel\Concerns\WithMultipleSheets;
 
-class OutletStockBalanceImport implements ToCollection, WithHeadingRow, WithValidation, WithMultipleSheets
+class OutletStockBalanceImport implements ToCollection, WithHeadingRow, WithMultipleSheets
 {
     protected $errors = [];
     protected $successCount = 0;
@@ -28,12 +27,12 @@ class OutletStockBalanceImport implements ToCollection, WithHeadingRow, WithVali
                 try {
                     // Validasi data
                     $missingFields = [];
-                    if (empty($row['sku'])) $missingFields[] = 'SKU';
-                    if (empty($row['name'])) $missingFields[] = 'Name';
-                    if (empty($row['small_unit'])) $missingFields[] = 'Small Unit';
-                    if (empty($row['outlet'])) $missingFields[] = 'Outlet';
-                    if (!isset($row['quantity']) || $row['quantity'] === '') $missingFields[] = 'Quantity';
-                    if (!isset($row['cost']) || $row['cost'] === '') $missingFields[] = 'Cost';
+                    if (empty($row['sku']) || trim($row['sku']) === '') $missingFields[] = 'SKU';
+                    if (empty($row['name']) || trim($row['name']) === '') $missingFields[] = 'Name';
+                    if (empty($row['small_unit']) || trim($row['small_unit']) === '') $missingFields[] = 'Small Unit';
+                    if (empty($row['outlet']) || trim($row['outlet']) === '') $missingFields[] = 'Outlet';
+                    if (!isset($row['quantity']) || $row['quantity'] === '' || $row['quantity'] === null) $missingFields[] = 'Quantity';
+                    if (!isset($row['cost']) || $row['cost'] === '' || $row['cost'] === null) $missingFields[] = 'Cost';
                     
                     if (!empty($missingFields)) {
                         throw new \Exception('Field wajib diisi: ' . implode(', ', $missingFields));
@@ -205,19 +204,6 @@ class OutletStockBalanceImport implements ToCollection, WithHeadingRow, WithVali
             DB::rollBack();
             throw $e;
         }
-    }
-    public function rules(): array
-    {
-        return [
-            'sku' => 'required|string',
-            'name' => 'required|string',
-            'small_unit' => 'required|string',
-            'outlet' => 'required|string',
-            'quantity' => 'required|numeric|min:0',
-            'cost' => 'required|numeric|min:0',
-            'notes' => 'nullable|string',
-            'warehouse_outlet_id' => 'required|integer|exists:warehouse_outlets,id',
-        ];
     }
     public function sheets(): array
     {
