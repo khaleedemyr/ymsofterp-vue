@@ -284,12 +284,12 @@ class DeliveryOrderController extends Controller
             $this->processDeliveryOrderItemsBatch($doId, $request->items, $isROSupplierGR, $grId, $warehouseId);
             
             // Update status RO menjadi delivered hanya jika semua packing list sudah dibuat DO
-            if ($isROSupplierGR) {
+                if ($isROSupplierGR) {
                 $po = DB::table('purchase_order_foods')->where('id', $gr->po_id)->first();
                 if ($po && $po->source_id) {
                     $this->checkAndUpdateFloorOrderStatus($po->source_id, 'RO Supplier GR');
                 }
-            } else {
+                } else {
                 if ($floorOrderId) {
                     $this->checkAndUpdateFloorOrderStatus($floorOrderId, 'Regular Packing List');
                 }
@@ -506,32 +506,32 @@ class DeliveryOrderController extends Controller
     private function processItemFallback($doId, $item, $isROSupplierGR, $grId, $warehouseId)
     {
         // Use original method as fallback
-        $realItemId = null;
-        if ($isROSupplierGR) {
-            $grItem = DB::table('food_good_receive_items')->where('id', $item['id'])->first();
-            if (!$grItem) throw new \Exception('GR item tidak ditemukan untuk id: ' . $item['id']);
-            $realItemId = $grItem->item_id;
-        } else {
-            $packingListItem = DB::table('food_packing_list_items')->where('id', $item['id'])->first();
-            if (!$packingListItem) throw new \Exception('Packing list item tidak ditemukan untuk id: ' . $item['id']);
-            $floorOrderItem = DB::table('food_floor_order_items')->where('id', $packingListItem->food_floor_order_item_id)->first();
-            if (!$floorOrderItem) throw new \Exception('Floor order item tidak ditemukan untuk id: ' . $packingListItem->food_floor_order_item_id);
-            $realItemId = $floorOrderItem->item_id;
-        }
+                    $realItemId = null;
+                    if ($isROSupplierGR) {
+                        $grItem = DB::table('food_good_receive_items')->where('id', $item['id'])->first();
+                        if (!$grItem) throw new \Exception('GR item tidak ditemukan untuk id: ' . $item['id']);
+                        $realItemId = $grItem->item_id;
+                    } else {
+                        $packingListItem = DB::table('food_packing_list_items')->where('id', $item['id'])->first();
+                        if (!$packingListItem) throw new \Exception('Packing list item tidak ditemukan untuk id: ' . $item['id']);
+                        $floorOrderItem = DB::table('food_floor_order_items')->where('id', $packingListItem->food_floor_order_item_id)->first();
+                        if (!$floorOrderItem) throw new \Exception('Floor order item tidak ditemukan untuk id: ' . $packingListItem->food_floor_order_item_id);
+                        $realItemId = $floorOrderItem->item_id;
+                    }
         
         // Insert delivery order item
         $barcode = $this->processBarcode($item['barcode'] ?? null);
         
         DB::table('delivery_order_items')->insert([
             'delivery_order_id' => $doId,
-            'item_id' => $realItemId,
+                            'item_id' => $realItemId,
             'barcode' => $barcode,
             'qty_packing_list' => $item['qty'],
             'qty_scan' => $item['qty_scan'],
             'unit' => $item['unit'] ?? null,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
+                            'created_at' => now(),
+                            'updated_at' => now(),
+                        ]);
         
         // Process inventory with proper unit conversion (CRITICAL FIX)
         if ($warehouseId) {
@@ -546,71 +546,71 @@ class DeliveryOrderController extends Controller
                     // CRITICAL: Use proper unit conversion for fallback too
                     $itemMaster = DB::table('items')->where('id', $realItemId)->first();
                     if ($itemMaster) {
-                        $unit = $item['unit'] ?? null;
-                        $qty_input = $item['qty_scan'];
-                        $qty_small = 0;
-                        $qty_medium = 0;
-                        $qty_large = 0;
+                    $unit = $item['unit'] ?? null;
+                    $qty_input = $item['qty_scan'];
+                    $qty_small = 0;
+                    $qty_medium = 0;
+                    $qty_large = 0;
                         
-                        $unitSmall = DB::table('units')->where('id', $itemMaster->small_unit_id)->value('name');
-                        $unitMedium = DB::table('units')->where('id', $itemMaster->medium_unit_id)->value('name');
-                        $unitLarge = DB::table('units')->where('id', $itemMaster->large_unit_id)->value('name');
-                        $smallConv = $itemMaster->small_conversion_qty ?: 1;
-                        $mediumConv = $itemMaster->medium_conversion_qty ?: 1;
+                    $unitSmall = DB::table('units')->where('id', $itemMaster->small_unit_id)->value('name');
+                    $unitMedium = DB::table('units')->where('id', $itemMaster->medium_unit_id)->value('name');
+                    $unitLarge = DB::table('units')->where('id', $itemMaster->large_unit_id)->value('name');
+                    $smallConv = $itemMaster->small_conversion_qty ?: 1;
+                    $mediumConv = $itemMaster->medium_conversion_qty ?: 1;
                         
-                        if ($unit === $unitSmall) {
-                            $qty_small = $qty_input;
-                            $qty_medium = $smallConv > 0 ? $qty_small / $smallConv : 0;
-                            $qty_large = ($smallConv > 0 && $mediumConv > 0) ? $qty_small / ($smallConv * $mediumConv) : 0;
-                        } elseif ($unit === $unitMedium) {
-                            $qty_medium = $qty_input;
-                            $qty_small = $qty_medium * $smallConv;
-                            $qty_large = $mediumConv > 0 ? $qty_medium / $mediumConv : 0;
-                        } elseif ($unit === $unitLarge) {
-                            $qty_large = $qty_input;
-                            $qty_medium = $qty_large * $mediumConv;
-                            $qty_small = $qty_medium * $smallConv;
-                        } else {
-                            $qty_small = $qty_input;
-                        }
+                    if ($unit === $unitSmall) {
+                        $qty_small = $qty_input;
+                        $qty_medium = $smallConv > 0 ? $qty_small / $smallConv : 0;
+                        $qty_large = ($smallConv > 0 && $mediumConv > 0) ? $qty_small / ($smallConv * $mediumConv) : 0;
+                    } elseif ($unit === $unitMedium) {
+                        $qty_medium = $qty_input;
+                        $qty_small = $qty_medium * $smallConv;
+                        $qty_large = $mediumConv > 0 ? $qty_medium / $mediumConv : 0;
+                    } elseif ($unit === $unitLarge) {
+                        $qty_large = $qty_input;
+                        $qty_medium = $qty_large * $mediumConv;
+                        $qty_small = $qty_medium * $smallConv;
+                    } else {
+                        $qty_small = $qty_input;
+                    }
                         
                         // Validate stock availability
-                        if ($qty_small > $stock->qty_small) {
-                            throw new \Exception("Qty melebihi stok yang tersedia. Stok tersedia: {$stock->qty_small} {$unitSmall}");
-                        }
+                    if ($qty_small > $stock->qty_small) {
+                        throw new \Exception("Qty melebihi stok yang tersedia. Stok tersedia: {$stock->qty_small} {$unitSmall}");
+                    }
                         
                         // Update stock with proper conversion
-                        DB::table('food_inventory_stocks')
+                    DB::table('food_inventory_stocks')
                             ->where('inventory_item_id', $inventoryItem->id)
-                            ->where('warehouse_id', $warehouseId)
-                            ->update([
-                                'qty_small' => $stock->qty_small - $qty_small,
-                                'qty_medium' => $stock->qty_medium - $qty_medium,
-                                'qty_large' => $stock->qty_large - $qty_large,
-                                'updated_at' => now(),
-                            ]);
+                        ->where('warehouse_id', $warehouseId)
+                        ->update([
+                            'qty_small' => $stock->qty_small - $qty_small,
+                            'qty_medium' => $stock->qty_medium - $qty_medium,
+                            'qty_large' => $stock->qty_large - $qty_large,
+                            'updated_at' => now(),
+                        ]);
                         
                         // Insert inventory card with proper conversion
-                            DB::table('food_inventory_cards')->insert([
+                    DB::table('food_inventory_cards')->insert([
                                 'inventory_item_id' => $inventoryItem->id,
-                                'warehouse_id' => $warehouseId,
-                                'date' => now()->toDateString(),
-                                'reference_type' => 'delivery_order',
-                                'reference_id' => $doId,
-                                'out_qty_small' => $qty_small,
-                                'out_qty_medium' => $qty_medium,
-                                'out_qty_large' => $qty_large,
-                                'cost_per_small' => $stock->last_cost_small,
-                                'cost_per_medium' => $stock->last_cost_medium,
-                                'cost_per_large' => $stock->last_cost_large,
-                                'value_out' => $qty_small * $stock->last_cost_small,
-                                'saldo_qty_small' => $stock->qty_small - $qty_small,
-                                'saldo_qty_medium' => $stock->qty_medium - $qty_medium,
-                                'saldo_qty_large' => $stock->qty_large - $qty_large,
-                                'saldo_value' => ($stock->qty_small - $qty_small) * $stock->last_cost_small,
+                        'warehouse_id' => $warehouseId,
+                        'date' => now()->toDateString(),
+                        'reference_type' => 'delivery_order',
+                        'reference_id' => $doId,
+                        'out_qty_small' => $qty_small,
+                        'out_qty_medium' => $qty_medium,
+                        'out_qty_large' => $qty_large,
+                        'cost_per_small' => $stock->last_cost_small,
+                        'cost_per_medium' => $stock->last_cost_medium,
+                        'cost_per_large' => $stock->last_cost_large,
+                        'value_out' => $qty_small * $stock->last_cost_small,
+                        'saldo_qty_small' => $stock->qty_small - $qty_small,
+                        'saldo_qty_medium' => $stock->qty_medium - $qty_medium,
+                        'saldo_qty_large' => $stock->qty_large - $qty_large,
+                        'saldo_value' => ($stock->qty_small - $qty_small) * $stock->last_cost_small,
                                 'description' => 'Stock Out - Delivery Order ' . $this->getDONumber($doId) . ' to ' . ($this->getOutletName($doId) ?: 'Outlet') . ' (Fallback)',
-                                'created_at' => now(),
-                            ]);
+                        'created_at' => now(),
+                    ]);
                     }
                 }
             }
@@ -647,7 +647,7 @@ class DeliveryOrderController extends Controller
      */
     private function getItemDataBatch($itemIds, $isROSupplierGR)
     {
-        if ($isROSupplierGR) {
+            if ($isROSupplierGR) {
             $data = DB::table('food_good_receive_items as fgri')
                 ->join('items as i', 'fgri.item_id', '=', 'i.id')
                 ->whereIn('fgri.id', $itemIds)
@@ -774,7 +774,7 @@ class DeliveryOrderController extends Controller
             $qty_large = $qtyInput;
             $qty_medium = $qty_large * $mediumConv;
             $qty_small = $qty_medium * $smallConv;
-        } else {
+            } else {
             // Default to small unit if unit doesn't match
             $qty_small = $qtyInput;
         }
@@ -830,7 +830,7 @@ class DeliveryOrderController extends Controller
             $outletName = DB::table('delivery_orders as do')
                 ->leftJoin('food_packing_lists as pl', 'do.packing_list_id', '=', 'pl.id')
                 ->leftJoin('food_good_receives as gr', 'do.ro_supplier_gr_id', '=', 'gr.id')
-                ->leftJoin('purchase_order_foods as po', 'gr.po_id', '=', 'po.id')
+                    ->leftJoin('purchase_order_foods as po', 'gr.po_id', '=', 'po.id')
                 ->leftJoin('food_floor_orders as fo', function($join) {
                     $join->on('pl.food_floor_order_id', '=', 'fo.id')
                          ->orOn('po.source_id', '=', 'fo.id');
@@ -869,8 +869,7 @@ class DeliveryOrderController extends Controller
                 fo.order_number as floor_order_number,
                 o.nama_outlet,
                 wo.name as warehouse_outlet_name,
-                w.name as warehouse_name,
-                wd.name as warehouse_division_name
+                CONCAT(COALESCE(w.name, ''), CASE WHEN w.name IS NOT NULL AND wd.name IS NOT NULL THEN ' - ' ELSE '' END, COALESCE(wd.name, '')) as warehouse_info
             FROM delivery_orders do
             LEFT JOIN users u ON do.created_by = u.id
             LEFT JOIN food_packing_lists pl ON do.packing_list_id = pl.id
@@ -882,8 +881,8 @@ class DeliveryOrderController extends Controller
             )
             LEFT JOIN tbl_data_outlet o ON fo.id_outlet = o.id_outlet
             LEFT JOIN warehouse_outlets wo ON fo.warehouse_outlet_id = wo.id
-            LEFT JOIN warehouses w ON wo.warehouse_id = w.id
-            LEFT JOIN warehouse_division wd ON w.warehouse_division_id = wd.id
+            LEFT JOIN warehouse_division wd ON pl.warehouse_division_id = wd.id
+            LEFT JOIN warehouses w ON wd.warehouse_id = w.id
             WHERE 1=1
         ";
         
