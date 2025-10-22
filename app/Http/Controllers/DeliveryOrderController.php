@@ -404,68 +404,80 @@ class DeliveryOrderController extends Controller
         $stockData = $this->getStockDataBatch($itemData, $warehouseId);
         
         foreach ($items as $item) {
-            $realItemId = $this->getRealItemId($item['id'], $isROSupplierGR, $itemData);
-            $stockInfo = $stockData[$realItemId] ?? null;
-            
-            if (!$stockInfo) {
-                throw new \Exception('Item tidak ditemukan atau tidak ada stok');
+            try {
+                $realItemId = $this->getRealItemId($item['id'], $isROSupplierGR, $itemData);
+                $stockInfo = $stockData[$realItemId] ?? null;
+                
+                if (!$stockInfo) {
+                    throw new \Exception('Item tidak ditemukan atau tidak ada stok');
+                }
+                
+                // Calculate quantities
+                $quantities = $this->calculateQuantities($realItemId, $item['qty_scan'], $item['unit'] ?? null, $itemData);
+                
+                // Validate stock availability
+                if ($quantities['qty_small'] > $stockInfo['qty_small']) {
+                    throw new \Exception("Qty melebihi stok yang tersedia. Stok tersedia: {$stockInfo['qty_small']}");
+                }
+                
+                // Prepare delivery order item
+                $deliveryOrderItems[] = [
+                    'delivery_order_id' => $doId,
+                    'item_id' => $realItemId,
+                    'barcode' => $item['barcode'] ?? null,
+                    'qty_packing_list' => $item['qty'],
+                    'qty_scan' => $item['qty_scan'],
+                    'unit' => $item['unit'] ?? null,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ];
+                
+                // Prepare inventory update
+                $inventoryUpdates[] = [
+                    'inventory_item_id' => $stockInfo['inventory_item_id'],
+                    'warehouse_id' => $warehouseId,
+                    'qty_small' => $quantities['qty_small'],
+                    'qty_medium' => $quantities['qty_medium'],
+                    'qty_large' => $quantities['qty_large'],
+                    'current_stock' => $stockInfo
+                ];
+                
+                // Prepare inventory card
+                $inventoryCards[] = [
+                    'inventory_item_id' => $stockInfo['inventory_item_id'],
+                    'warehouse_id' => $warehouseId,
+                    'date' => now()->toDateString(),
+                    'reference_type' => 'delivery_order',
+                    'reference_id' => $doId,
+                    'out_qty_small' => $quantities['qty_small'],
+                    'out_qty_medium' => $quantities['qty_medium'],
+                    'out_qty_large' => $quantities['qty_large'],
+                    'cost_per_small' => $stockInfo['last_cost_small'],
+                    'cost_per_medium' => $stockInfo['last_cost_medium'],
+                    'cost_per_large' => $stockInfo['last_cost_large'],
+                    'value_out' => $quantities['qty_small'] * $stockInfo['last_cost_small'],
+                    'saldo_qty_small' => $stockInfo['qty_small'] - $quantities['qty_small'],
+                    'saldo_qty_medium' => $stockInfo['qty_medium'] - $quantities['qty_medium'],
+                    'saldo_qty_large' => $stockInfo['qty_large'] - $quantities['qty_large'],
+                    'saldo_value' => ($stockInfo['qty_small'] - $quantities['qty_small']) * $stockInfo['last_cost_small'],
+                    'description' => 'Stock Out - Delivery Order',
+                    'created_at' => now(),
+                ];
+            } catch (\Exception $e) {
+                // Fallback: Use original method for this item
+                Log::warning('Fallback to original method for item', [
+                    'item_id' => $item['id'],
+                    'error' => $e->getMessage()
+                ]);
+                
+                $this->processItemFallback($doId, $item, $isROSupplierGR, $grId, $warehouseId);
             }
-            
-            // Calculate quantities
-            $quantities = $this->calculateQuantities($realItemId, $item['qty_scan'], $item['unit'] ?? null, $itemData);
-            
-            // Validate stock availability
-            if ($quantities['qty_small'] > $stockInfo['qty_small']) {
-                throw new \Exception("Qty melebihi stok yang tersedia. Stok tersedia: {$stockInfo['qty_small']}");
-            }
-            
-            // Prepare delivery order item
-            $deliveryOrderItems[] = [
-                'delivery_order_id' => $doId,
-                'item_id' => $realItemId,
-                'barcode' => $item['barcode'] ?? null,
-                'qty_packing_list' => $item['qty'],
-                'qty_scan' => $item['qty_scan'],
-                'unit' => $item['unit'] ?? null,
-                'created_at' => now(),
-                'updated_at' => now(),
-            ];
-            
-            // Prepare inventory update
-            $inventoryUpdates[] = [
-                'inventory_item_id' => $stockInfo['inventory_item_id'],
-                'warehouse_id' => $warehouseId,
-                'qty_small' => $quantities['qty_small'],
-                'qty_medium' => $quantities['qty_medium'],
-                'qty_large' => $quantities['qty_large'],
-                'current_stock' => $stockInfo
-            ];
-            
-            // Prepare inventory card
-            $inventoryCards[] = [
-                'inventory_item_id' => $stockInfo['inventory_item_id'],
-                'warehouse_id' => $warehouseId,
-                'date' => now()->toDateString(),
-                'reference_type' => 'delivery_order',
-                'reference_id' => $doId,
-                'out_qty_small' => $quantities['qty_small'],
-                'out_qty_medium' => $quantities['qty_medium'],
-                'out_qty_large' => $quantities['qty_large'],
-                'cost_per_small' => $stockInfo['last_cost_small'],
-                'cost_per_medium' => $stockInfo['last_cost_medium'],
-                'cost_per_large' => $stockInfo['last_cost_large'],
-                'value_out' => $quantities['qty_small'] * $stockInfo['last_cost_small'],
-                'saldo_qty_small' => $stockInfo['qty_small'] - $quantities['qty_small'],
-                'saldo_qty_medium' => $stockInfo['qty_medium'] - $quantities['qty_medium'],
-                'saldo_qty_large' => $stockInfo['qty_large'] - $quantities['qty_large'],
-                'saldo_value' => ($stockInfo['qty_small'] - $quantities['qty_small']) * $stockInfo['last_cost_small'],
-                'description' => 'Stock Out - Delivery Order',
-                'created_at' => now(),
-            ];
         }
         
         // OPTIMIZED: Batch insert delivery order items
-        DB::table('delivery_order_items')->insert($deliveryOrderItems);
+        if (!empty($deliveryOrderItems)) {
+            DB::table('delivery_order_items')->insert($deliveryOrderItems);
+        }
         
         // OPTIMIZED: Batch update inventory stocks
         foreach ($inventoryUpdates as $update) {
@@ -487,19 +499,89 @@ class DeliveryOrderController extends Controller
     }
 
     /**
+     * FALLBACK: Process item using original method
+     */
+    private function processItemFallback($doId, $item, $isROSupplierGR, $grId, $warehouseId)
+    {
+        // Use original method as fallback
+        $realItemId = null;
+        if ($isROSupplierGR) {
+            $grItem = DB::table('food_good_receive_items')->where('id', $item['id'])->first();
+            if (!$grItem) throw new \Exception('GR item tidak ditemukan untuk id: ' . $item['id']);
+            $realItemId = $grItem->item_id;
+        } else {
+            $packingListItem = DB::table('food_packing_list_items')->where('id', $item['id'])->first();
+            if (!$packingListItem) throw new \Exception('Packing list item tidak ditemukan untuk id: ' . $item['id']);
+            $floorOrderItem = DB::table('food_floor_order_items')->where('id', $packingListItem->food_floor_order_item_id)->first();
+            if (!$floorOrderItem) throw new \Exception('Floor order item tidak ditemukan untuk id: ' . $packingListItem->food_floor_order_item_id);
+            $realItemId = $floorOrderItem->item_id;
+        }
+        
+        // Insert delivery order item
+        DB::table('delivery_order_items')->insert([
+            'delivery_order_id' => $doId,
+            'item_id' => $realItemId,
+            'barcode' => $item['barcode'] ?? null,
+            'qty_packing_list' => $item['qty'],
+            'qty_scan' => $item['qty_scan'],
+            'unit' => $item['unit'] ?? null,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        
+        // Process inventory (simplified version)
+        if ($warehouseId) {
+            $inventoryItem = DB::table('food_inventory_items')->where('item_id', $realItemId)->first();
+            if ($inventoryItem) {
+                $stock = DB::table('food_inventory_stocks')
+                    ->where('inventory_item_id', $inventoryItem->id)
+                    ->where('warehouse_id', $warehouseId)
+                    ->first();
+                
+                if ($stock) {
+                    // Update stock
+                    DB::table('food_inventory_stocks')
+                        ->where('inventory_item_id', $inventoryItem->id)
+                        ->where('warehouse_id', $warehouseId)
+                        ->update([
+                            'qty_small' => DB::raw('qty_small - ' . $item['qty_scan']),
+                            'updated_at' => now(),
+                        ]);
+                    
+                    // Insert inventory card
+                    DB::table('food_inventory_cards')->insert([
+                        'inventory_item_id' => $inventoryItem->id,
+                        'warehouse_id' => $warehouseId,
+                        'date' => now()->toDateString(),
+                        'reference_type' => 'delivery_order',
+                        'reference_id' => $doId,
+                        'out_qty_small' => $item['qty_scan'],
+                        'cost_per_small' => $stock->last_cost_small,
+                        'value_out' => $item['qty_scan'] * $stock->last_cost_small,
+                        'saldo_qty_small' => $stock->qty_small - $item['qty_scan'],
+                        'saldo_value' => ($stock->qty_small - $item['qty_scan']) * $stock->last_cost_small,
+                        'description' => 'Stock Out - Delivery Order (Fallback)',
+                        'created_at' => now(),
+                    ]);
+                }
+            }
+        }
+    }
+
+    /**
      * OPTIMIZED: Get item data in batch
      */
     private function getItemDataBatch($itemIds, $isROSupplierGR)
     {
         if ($isROSupplierGR) {
-            return DB::table('food_good_receive_items as fgri')
+            $data = DB::table('food_good_receive_items as fgri')
                 ->join('items as i', 'fgri.item_id', '=', 'i.id')
                 ->whereIn('fgri.id', $itemIds)
                 ->select('fgri.id', 'fgri.item_id', 'i.*')
                 ->get()
                 ->keyBy('id');
         } else {
-            return DB::table('food_packing_list_items as fpli')
+            $data = DB::table('food_packing_list_items as fpli')
                 ->join('food_floor_order_items as ffoi', 'fpli.food_floor_order_item_id', '=', 'ffoi.id')
                 ->join('items as i', 'ffoi.item_id', '=', 'i.id')
                 ->whereIn('fpli.id', $itemIds)
@@ -507,6 +589,16 @@ class DeliveryOrderController extends Controller
                 ->get()
                 ->keyBy('id');
         }
+        
+        // Debug: Log the fetched data
+        Log::info('Item data batch fetched', [
+            'itemIds' => $itemIds,
+            'isROSupplierGR' => $isROSupplierGR,
+            'fetched_count' => $data->count(),
+            'fetched_keys' => $data->keys()->toArray()
+        ]);
+        
+        return $data;
     }
 
     /**
@@ -560,7 +652,14 @@ class DeliveryOrderController extends Controller
     {
         $data = $itemData[$itemId] ?? null;
         if (!$data) {
-            throw new \Exception('Item data tidak ditemukan');
+            // Debug: Log the available data
+            Log::error('Item data tidak ditemukan', [
+                'itemId' => $itemId,
+                'isROSupplierGR' => $isROSupplierGR,
+                'available_keys' => $itemData->keys()->toArray(),
+                'itemData_count' => $itemData->count()
+            ]);
+            throw new \Exception('Item data tidak ditemukan untuk ID: ' . $itemId);
         }
         return $data->item_id;
     }
