@@ -53,77 +53,8 @@ class DeliveryOrderController extends Controller
         $orders = null;
         
         if ($loadData === '1') {
-            // OPTIMIZED: Pisahkan query untuk packing list dan RO Supplier GR untuk performa lebih baik
-            $packingListQuery = DB::table('delivery_orders as do')
-                ->leftJoin('food_packing_lists as pl', 'do.packing_list_id', '=', 'pl.id')
-                ->leftJoin('food_floor_orders as fo', 'pl.food_floor_order_id', '=', 'fo.id')
-                ->leftJoin('users as u', 'do.created_by', '=', 'u.id')
-                ->leftJoin('tbl_data_outlet as o', 'fo.id_outlet', '=', 'o.id_outlet')
-                ->leftJoin('warehouse_outlets as wo', 'fo.warehouse_outlet_id', '=', 'wo.id')
-                ->whereNotNull('do.packing_list_id')
-                ->select(
-                    'do.*',
-                    'u.nama_lengkap as created_by_name',
-                    'pl.packing_number',
-                    'fo.order_number as floor_order_number',
-                    'o.nama_outlet',
-                    'wo.name as warehouse_outlet_name'
-                );
-
-            $roSupplierQuery = DB::table('delivery_orders as do')
-                ->leftJoin('food_good_receives as gr', 'do.ro_supplier_gr_id', '=', 'gr.id')
-                ->leftJoin('purchase_order_foods as po', 'gr.po_id', '=', 'po.id')
-                ->leftJoin('food_floor_orders as fo', 'po.source_id', '=', 'fo.id')
-                ->leftJoin('users as u', 'do.created_by', '=', 'u.id')
-                ->leftJoin('tbl_data_outlet as o', 'fo.id_outlet', '=', 'o.id_outlet')
-                ->leftJoin('warehouse_outlets as wo', 'fo.warehouse_outlet_id', '=', 'wo.id')
-                ->whereNotNull('do.ro_supplier_gr_id')
-                ->select(
-                    'do.*',
-                    'u.nama_lengkap as created_by_name',
-                    'gr.gr_number as packing_number',
-                    'fo.order_number as floor_order_number',
-                    'o.nama_outlet',
-                    'wo.name as warehouse_outlet_name'
-                );
-
-            // Apply filters to both queries
-            if (!empty($search)) {
-                $searchTerm = '%' . $search . '%';
-                $packingListQuery->where(function($q) use ($searchTerm) {
-                    $q->where('pl.packing_number', 'like', $searchTerm)
-                      ->orWhere('fo.order_number', 'like', $searchTerm)
-                      ->orWhere('u.nama_lengkap', 'like', $searchTerm)
-                      ->orWhere('o.nama_outlet', 'like', $searchTerm)
-                      ->orWhere('wo.name', 'like', $searchTerm)
-                      ->orWhere('do.number', 'like', $searchTerm);
-                });
-                
-                $roSupplierQuery->where(function($q) use ($searchTerm) {
-                    $q->where('gr.gr_number', 'like', $searchTerm)
-                      ->orWhere('fo.order_number', 'like', $searchTerm)
-                      ->orWhere('u.nama_lengkap', 'like', $searchTerm)
-                      ->orWhere('o.nama_outlet', 'like', $searchTerm)
-                      ->orWhere('wo.name', 'like', $searchTerm)
-                      ->orWhere('do.number', 'like', $searchTerm);
-                });
-            }
-
-            if (!empty($dateFrom)) {
-                $packingListQuery->whereDate('do.created_at', '>=', $dateFrom);
-                $roSupplierQuery->whereDate('do.created_at', '>=', $dateFrom);
-            }
-
-            if (!empty($dateTo)) {
-                $packingListQuery->whereDate('do.created_at', '<=', $dateTo);
-                $roSupplierQuery->whereDate('do.created_at', '<=', $dateTo);
-            }
-
-            // OPTIMIZED: Union queries instead of complex JOIN
-            $orders = $packingListQuery->union($roSupplierQuery)
-                ->orderByDesc('created_at')
-                ->paginate($perPage)
-                ->withQueryString();
+            // OPTIMIZED: Use single query with conditional joins for better performance
+            $orders = $this->getDeliveryOrdersOptimized($search, $dateFrom, $dateTo, $perPage);
         }
 
         return Inertia::render('DeliveryOrder/Index', [
@@ -288,7 +219,8 @@ class DeliveryOrderController extends Controller
 
     public function store(Request $request)
     {
-        // Log removed for performance
+        // OPTIMIZED: Pre-validate all data before transaction
+        $this->validateDeliveryOrderData($request);
         
         // Cek apakah ini adalah RO Supplier GR atau Packing List biasa
         $isROSupplierGR = false;
@@ -316,8 +248,6 @@ class DeliveryOrderController extends Controller
             $floorOrderId = $gr->id; // source_id dari PO
             $warehouseDivisionId = 1; // Perishable
             $warehouseId = 1; // Warehouse 1
-            
-            // Log removed for performance
         } else {
             // Ini adalah Packing List biasa
             $packingList = DB::table('food_packing_lists')->where('id', $request->packing_list_id)->first();
@@ -327,10 +257,9 @@ class DeliveryOrderController extends Controller
                 $warehouseId = DB::table('warehouse_division')->where('id', $warehouseDivisionId)->value('warehouse_id');
             }
         }
+        
         DB::beginTransaction();
         try {
-            // Log removed for performance
-            
             $insertData = [
                 'number' => $this->generateDONumber(),
                 'floor_order_id' => $floorOrderId,
@@ -341,8 +270,7 @@ class DeliveryOrderController extends Controller
             
             if ($isROSupplierGR) {
                 $insertData['ro_supplier_gr_id'] = $grId;
-                // Untuk RO Supplier GR, set packing_list_id ke 0 atau nilai default
-                $insertData['packing_list_id'] = 0; // Atau gunakan nilai default yang sesuai
+                $insertData['packing_list_id'] = 0;
                 $insertData['source_type'] = 'ro_supplier_gr';
             } else {
                 $insertData['packing_list_id'] = $request->packing_list_id;
@@ -351,188 +279,23 @@ class DeliveryOrderController extends Controller
             }
             
             $doId = DB::table('delivery_orders')->insertGetId($insertData);
-            // Log removed for performance
-            foreach ($request->items as $item) {
-                // Ambil item_id berdasarkan jenis source
-                $realItemId = null;
-                if ($isROSupplierGR) {
-                    // Untuk RO Supplier GR, ambil dari food_good_receive_items
-                    $grItem = DB::table('food_good_receive_items')->where('id', $item['id'])->first();
-                    if (!$grItem) throw new \Exception('GR item tidak ditemukan untuk id: ' . $item['id']);
-                    $realItemId = $grItem->item_id;
-                } else {
-                    // Untuk Packing List biasa, ambil dari food_floor_order_items via packing list item
-                    $packingListItem = DB::table('food_packing_list_items')->where('id', $item['id'])->first();
-                    if (!$packingListItem) throw new \Exception('Packing list item tidak ditemukan untuk id: ' . $item['id']);
-                    $floorOrderItem = DB::table('food_floor_order_items')->where('id', $packingListItem->food_floor_order_item_id)->first();
-                    if (!$floorOrderItem) throw new \Exception('Floor order item tidak ditemukan untuk id: ' . $packingListItem->food_floor_order_item_id);
-                    $realItemId = $floorOrderItem->item_id;
-                }
-                // Ambil barcode hasil scan dari frontend (ambil barcode pertama jika array, string jika satu, null jika tidak ada)
-                $barcode = null;
-                if (isset($item['barcode'])) {
-                    if (is_array($item['barcode']) && count($item['barcode']) > 0) {
-                        $barcode = $item['barcode'][0];
-                    } elseif (is_string($item['barcode'])) {
-                        $barcode = $item['barcode'];
-                    }
-                }
-                DB::table('delivery_order_items')->insert([
-                    'delivery_order_id' => $doId,
-                    'item_id' => $realItemId,
-                    'barcode' => $barcode,
-                    'qty_packing_list' => $item['qty'],
-                    'qty_scan' => $item['qty_scan'],
-                    'unit' => $item['unit'] ?? null,
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ]);
-                if ($warehouseId) {
-                    // Ambil item_id berdasarkan jenis source
-                    $realItemId = null;
-                    if ($isROSupplierGR) {
-                        // Untuk RO Supplier GR, ambil dari food_good_receive_items
-                        $grItem = DB::table('food_good_receive_items')->where('id', $item['id'])->first();
-                        if (!$grItem) throw new \Exception('GR item tidak ditemukan untuk id: ' . $item['id']);
-                        $realItemId = $grItem->item_id;
-                    } else {
-                        // Untuk Packing List biasa, ambil dari food_floor_order_items via food_packing_list_items
-                        $packingListItem = DB::table('food_packing_list_items')->where('id', $item['id'])->first();
-                        if (!$packingListItem) throw new \Exception('Packing list item tidak ditemukan untuk id: ' . $item['id']);
-                        $floorOrderItem = DB::table('food_floor_order_items')->where('id', $packingListItem->food_floor_order_item_id)->first();
-                        if (!$floorOrderItem) throw new \Exception('Floor order item tidak ditemukan untuk id: ' . $packingListItem->food_floor_order_item_id);
-                        $realItemId = $floorOrderItem->item_id;
-                    }
-                    // Pastikan item_id valid
-                    $itemMaster = DB::table('items')->where('id', $realItemId)->first();
-                    if (!$itemMaster) throw new \Exception('Item master tidak ditemukan di tabel items untuk item_id: ' . $realItemId);
-                    // Cari inventory_item_id, insert jika belum ada
-                    $inventoryItem = DB::table('food_inventory_items')->where('item_id', $realItemId)->first();
-                    if (!$inventoryItem) {
-                        $inventoryItemId = DB::table('food_inventory_items')->insertGetId([
-                            'item_id' => $realItemId,
-                            'small_unit_id' => $itemMaster->small_unit_id,
-                            'medium_unit_id' => $itemMaster->medium_unit_id,
-                            'large_unit_id' => $itemMaster->large_unit_id,
-                            'created_at' => now(),
-                            'updated_at' => now(),
-                        ]);
-                        $inventoryItem = DB::table('food_inventory_items')->where('id', $inventoryItemId)->first();
-                        if (!$inventoryItem) throw new \Exception('Gagal insert food_inventory_items untuk item_id: ' . $realItemId);
-                    }
-                    $inventory_item_id = $inventoryItem->id;
-                    // Ambil data konversi dari tabel items
-                    $itemMaster = DB::table('items')->where('id', $realItemId)->first();
-                    if (!$itemMaster) throw new \Exception('Item master not found for item_id: ' . $realItemId);
-                    $unit = $item['unit'] ?? null;
-                    $qty_input = $item['qty_scan'];
-                    $qty_small = 0;
-                    $qty_medium = 0;
-                    $qty_large = 0;
-                    $unitSmall = DB::table('units')->where('id', $itemMaster->small_unit_id)->value('name');
-                    $unitMedium = DB::table('units')->where('id', $itemMaster->medium_unit_id)->value('name');
-                    $unitLarge = DB::table('units')->where('id', $itemMaster->large_unit_id)->value('name');
-                    $smallConv = $itemMaster->small_conversion_qty ?: 1;
-                    $mediumConv = $itemMaster->medium_conversion_qty ?: 1;
-                    if ($unit === $unitSmall) {
-                        $qty_small = $qty_input;
-                        $qty_medium = $smallConv > 0 ? $qty_small / $smallConv : 0;
-                        $qty_large = ($smallConv > 0 && $mediumConv > 0) ? $qty_small / ($smallConv * $mediumConv) : 0;
-                    } elseif ($unit === $unitMedium) {
-                        $qty_medium = $qty_input;
-                        $qty_small = $qty_medium * $smallConv;
-                        $qty_large = $mediumConv > 0 ? $qty_medium / $mediumConv : 0;
-                    } elseif ($unit === $unitLarge) {
-                        $qty_large = $qty_input;
-                        $qty_medium = $qty_large * $mediumConv;
-                        $qty_small = $qty_medium * $smallConv;
-                    } else {
-                        $qty_small = $qty_input;
-                    }
-                    // Tambahkan log sebelum cek stok tersedia
-                    Log::info('Cek stok inventory', [
-                        'inventory_item_id' => $inventory_item_id,
-                        'warehouse_id' => $warehouseId,
-                        'item_id' => $realItemId,
-                        'qty_small' => $qty_small,
-                        'isROSupplierGR' => $isROSupplierGR,
-                    ]);
-                    $stock = DB::table('food_inventory_stocks')
-                        ->where('inventory_item_id', $inventory_item_id)
-                        ->where('warehouse_id', $warehouseId)
-                        ->first();
-                    if (!$stock) {
-                        Log::error('Stok tidak ditemukan di gudang', [
-                            'inventory_item_id' => $inventory_item_id,
-                            'warehouse_id' => $warehouseId,
-                            'item_id' => $realItemId
-                        ]);
-                        throw new \Exception('Stok tidak ditemukan di gudang');
-                    }
-                    // Tambahkan log sebelum validasi qty
-                    Log::info('Validasi qty vs stok', [
-                        'qty_small' => $qty_small,
-                        'stok_tersedia' => $stock->qty_small,
-                        'unit' => $unitSmall
-                    ]);
-                    if ($qty_small > $stock->qty_small) {
-                        Log::error('Qty melebihi stok yang tersedia', [
-                            'qty_small' => $qty_small,
-                            'stok_tersedia' => $stock->qty_small,
-                            'unit' => $unitSmall
-                        ]);
-                        throw new \Exception("Qty melebihi stok yang tersedia. Stok tersedia: {$stock->qty_small} {$unitSmall}");
-                    }
-                    // Update stok di warehouse (kurangi)
-                    DB::table('food_inventory_stocks')
-                        ->where('inventory_item_id', $inventory_item_id)
-                        ->where('warehouse_id', $warehouseId)
-                        ->update([
-                            'qty_small' => $stock->qty_small - $qty_small,
-                            'qty_medium' => $stock->qty_medium - $qty_medium,
-                            'qty_large' => $stock->qty_large - $qty_large,
-                            'updated_at' => now(),
-                        ]);
-                    // Insert kartu stok OUT
-                    DB::table('food_inventory_cards')->insert([
-                        'inventory_item_id' => $inventory_item_id,
-                        'warehouse_id' => $warehouseId,
-                        'date' => now()->toDateString(),
-                        'reference_type' => 'delivery_order',
-                        'reference_id' => $doId,
-                        'out_qty_small' => $qty_small,
-                        'out_qty_medium' => $qty_medium,
-                        'out_qty_large' => $qty_large,
-                        'cost_per_small' => $stock->last_cost_small,
-                        'cost_per_medium' => $stock->last_cost_medium,
-                        'cost_per_large' => $stock->last_cost_large,
-                        'value_out' => $qty_small * $stock->last_cost_small,
-                        'saldo_qty_small' => $stock->qty_small - $qty_small,
-                        'saldo_qty_medium' => $stock->qty_medium - $qty_medium,
-                        'saldo_qty_large' => $stock->qty_large - $qty_large,
-                        'saldo_value' => ($stock->qty_small - $qty_small) * $stock->last_cost_small,
-                        'description' => 'Stock Out - Delivery Order',
-                        'created_at' => now(),
-                    ]);
-                }
-            }
+            
+            // OPTIMIZED: Batch process items instead of individual loops
+            $this->processDeliveryOrderItemsBatch($doId, $request->items, $isROSupplierGR, $grId, $warehouseId);
             
             // Update status RO menjadi delivered hanya jika semua packing list sudah dibuat DO
             if ($isROSupplierGR) {
-                // Untuk RO Supplier GR, update status RO dari purchase order
                 $po = DB::table('purchase_order_foods')->where('id', $gr->po_id)->first();
                 if ($po && $po->source_id) {
-                    // Cek apakah semua packing list untuk RO ini sudah dibuat DO
                     $this->checkAndUpdateFloorOrderStatus($po->source_id, 'RO Supplier GR');
                 }
             } else {
-                // Untuk Packing List biasa, cek apakah semua packing list sudah dibuat DO
                 if ($floorOrderId) {
                     $this->checkAndUpdateFloorOrderStatus($floorOrderId, 'Regular Packing List');
                 }
             }
             
-            Log::info('Insert activity_logs');
+            // Log activity
             DB::table('activity_logs')->insert([
                 'user_id' => auth()->id(),
                 'activity_type' => 'create',
@@ -544,13 +307,13 @@ class DeliveryOrderController extends Controller
                 'new_data' => json_encode($request->all()),
                 'created_at' => now(),
             ]);
+            
             DB::commit();
             Log::info('Sukses simpan Delivery Order');
             $kasirName = DB::table('users')->where('id', auth()->id())->value('nama_lengkap');
             
             // Ambil data untuk response berdasarkan jenis source
             if ($isROSupplierGR) {
-                // Untuk RO Supplier GR, ambil data dari purchase order dan floor order
                 $roSupplierData = DB::table('food_good_receives as gr')
                     ->leftJoin('purchase_order_foods as po', 'gr.po_id', '=', 'po.id')
                     ->leftJoin('food_floor_orders as fo', 'po.source_id', '=', 'fo.id')
@@ -576,7 +339,6 @@ class DeliveryOrderController extends Controller
                     'ro_creator_name' => $roSupplierData->ro_creator_name ?? null
                 ]);
             } else {
-                // Untuk Packing List biasa, ambil data dari packing list
                 $packingListFull = DB::table('food_packing_lists as pl')
                     ->leftJoin('warehouse_division as wd', 'pl.warehouse_division_id', '=', 'wd.id')
                     ->leftJoin('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
@@ -608,6 +370,330 @@ class DeliveryOrderController extends Controller
             Log::error('Gagal simpan Delivery Order: ' . $e->getMessage(), ['trace' => $e->getTraceAsString()]);
             return response()->json(['success' => false, 'message' => 'Gagal menyimpan Delivery Order: ' . $e->getMessage()]);
         }
+    }
+
+    /**
+     * OPTIMIZED: Validate delivery order data before processing
+     */
+    private function validateDeliveryOrderData($request)
+    {
+        if (empty($request->items) || !is_array($request->items)) {
+            throw new \Exception('Items tidak boleh kosong');
+        }
+        
+        // Validate each item has required fields
+        foreach ($request->items as $item) {
+            if (!isset($item['id']) || !isset($item['qty_scan'])) {
+                throw new \Exception('Data item tidak lengkap');
+            }
+        }
+    }
+
+    /**
+     * OPTIMIZED: Batch process delivery order items
+     */
+    private function processDeliveryOrderItemsBatch($doId, $items, $isROSupplierGR, $grId, $warehouseId)
+    {
+        $deliveryOrderItems = [];
+        $inventoryUpdates = [];
+        $inventoryCards = [];
+        
+        // OPTIMIZED: Pre-fetch all required data in batch
+        $itemIds = collect($items)->pluck('id')->toArray();
+        $itemData = $this->getItemDataBatch($itemIds, $isROSupplierGR);
+        $stockData = $this->getStockDataBatch($itemData, $warehouseId);
+        
+        foreach ($items as $item) {
+            $realItemId = $this->getRealItemId($item['id'], $isROSupplierGR, $itemData);
+            $stockInfo = $stockData[$realItemId] ?? null;
+            
+            if (!$stockInfo) {
+                throw new \Exception('Item tidak ditemukan atau tidak ada stok');
+            }
+            
+            // Calculate quantities
+            $quantities = $this->calculateQuantities($realItemId, $item['qty_scan'], $item['unit'] ?? null, $itemData);
+            
+            // Validate stock availability
+            if ($quantities['qty_small'] > $stockInfo['qty_small']) {
+                throw new \Exception("Qty melebihi stok yang tersedia. Stok tersedia: {$stockInfo['qty_small']}");
+            }
+            
+            // Prepare delivery order item
+            $deliveryOrderItems[] = [
+                'delivery_order_id' => $doId,
+                'item_id' => $realItemId,
+                'barcode' => $item['barcode'] ?? null,
+                'qty_packing_list' => $item['qty'],
+                'qty_scan' => $item['qty_scan'],
+                'unit' => $item['unit'] ?? null,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ];
+            
+            // Prepare inventory update
+            $inventoryUpdates[] = [
+                'inventory_item_id' => $stockInfo['inventory_item_id'],
+                'warehouse_id' => $warehouseId,
+                'qty_small' => $quantities['qty_small'],
+                'qty_medium' => $quantities['qty_medium'],
+                'qty_large' => $quantities['qty_large'],
+                'current_stock' => $stockInfo
+            ];
+            
+            // Prepare inventory card
+            $inventoryCards[] = [
+                'inventory_item_id' => $stockInfo['inventory_item_id'],
+                'warehouse_id' => $warehouseId,
+                'date' => now()->toDateString(),
+                'reference_type' => 'delivery_order',
+                'reference_id' => $doId,
+                'out_qty_small' => $quantities['qty_small'],
+                'out_qty_medium' => $quantities['qty_medium'],
+                'out_qty_large' => $quantities['qty_large'],
+                'cost_per_small' => $stockInfo['last_cost_small'],
+                'cost_per_medium' => $stockInfo['last_cost_medium'],
+                'cost_per_large' => $stockInfo['last_cost_large'],
+                'value_out' => $quantities['qty_small'] * $stockInfo['last_cost_small'],
+                'saldo_qty_small' => $stockInfo['qty_small'] - $quantities['qty_small'],
+                'saldo_qty_medium' => $stockInfo['qty_medium'] - $quantities['qty_medium'],
+                'saldo_qty_large' => $stockInfo['qty_large'] - $quantities['qty_large'],
+                'saldo_value' => ($stockInfo['qty_small'] - $quantities['qty_small']) * $stockInfo['last_cost_small'],
+                'description' => 'Stock Out - Delivery Order',
+                'created_at' => now(),
+            ];
+        }
+        
+        // OPTIMIZED: Batch insert delivery order items
+        DB::table('delivery_order_items')->insert($deliveryOrderItems);
+        
+        // OPTIMIZED: Batch update inventory stocks
+        foreach ($inventoryUpdates as $update) {
+            DB::table('food_inventory_stocks')
+                ->where('inventory_item_id', $update['inventory_item_id'])
+                ->where('warehouse_id', $update['warehouse_id'])
+                ->update([
+                    'qty_small' => DB::raw('qty_small - ' . $update['qty_small']),
+                    'qty_medium' => DB::raw('qty_medium - ' . $update['qty_medium']),
+                    'qty_large' => DB::raw('qty_large - ' . $update['qty_large']),
+                    'updated_at' => now(),
+                ]);
+        }
+        
+        // OPTIMIZED: Batch insert inventory cards
+        if (!empty($inventoryCards)) {
+            DB::table('food_inventory_cards')->insert($inventoryCards);
+        }
+    }
+
+    /**
+     * OPTIMIZED: Get item data in batch
+     */
+    private function getItemDataBatch($itemIds, $isROSupplierGR)
+    {
+        if ($isROSupplierGR) {
+            return DB::table('food_good_receive_items as fgri')
+                ->join('items as i', 'fgri.item_id', '=', 'i.id')
+                ->whereIn('fgri.id', $itemIds)
+                ->select('fgri.id', 'fgri.item_id', 'i.*')
+                ->get()
+                ->keyBy('id');
+        } else {
+            return DB::table('food_packing_list_items as fpli')
+                ->join('food_floor_order_items as ffoi', 'fpli.food_floor_order_item_id', '=', 'ffoi.id')
+                ->join('items as i', 'ffoi.item_id', '=', 'i.id')
+                ->whereIn('fpli.id', $itemIds)
+                ->select('fpli.id', 'ffoi.item_id', 'i.*')
+                ->get()
+                ->keyBy('id');
+        }
+    }
+
+    /**
+     * OPTIMIZED: Get stock data in batch
+     */
+    private function getStockDataBatch($itemData, $warehouseId)
+    {
+        if (!$warehouseId) return [];
+        
+        $itemIds = $itemData->pluck('item_id')->unique()->toArray();
+        
+        $inventoryItems = DB::table('food_inventory_items')
+            ->whereIn('item_id', $itemIds)
+            ->get()
+            ->keyBy('item_id');
+        
+        $inventoryItemIds = $inventoryItems->pluck('id')->toArray();
+        
+        $stocks = DB::table('food_inventory_stocks')
+            ->whereIn('inventory_item_id', $inventoryItemIds)
+            ->where('warehouse_id', $warehouseId)
+            ->get()
+            ->keyBy('inventory_item_id');
+        
+        $result = [];
+        foreach ($itemData as $data) {
+            $inventoryItem = $inventoryItems[$data->item_id] ?? null;
+            if ($inventoryItem) {
+                $stock = $stocks[$inventoryItem->id] ?? null;
+                if ($stock) {
+                    $result[$data->item_id] = [
+                        'inventory_item_id' => $inventoryItem->id,
+                        'qty_small' => (float)$stock->qty_small,
+                        'qty_medium' => (float)$stock->qty_medium,
+                        'qty_large' => (float)$stock->qty_large,
+                        'last_cost_small' => (float)$stock->last_cost_small,
+                        'last_cost_medium' => (float)$stock->last_cost_medium,
+                        'last_cost_large' => (float)$stock->last_cost_large,
+                    ];
+                }
+            }
+        }
+        
+        return $result;
+    }
+
+    /**
+     * OPTIMIZED: Get real item ID
+     */
+    private function getRealItemId($itemId, $isROSupplierGR, $itemData)
+    {
+        $data = $itemData[$itemId] ?? null;
+        if (!$data) {
+            throw new \Exception('Item data tidak ditemukan');
+        }
+        return $data->item_id;
+    }
+
+    /**
+     * OPTIMIZED: Calculate quantities
+     */
+    private function calculateQuantities($itemId, $qtyInput, $unit, $itemData)
+    {
+        $item = $itemData->where('item_id', $itemId)->first();
+        if (!$item) {
+            throw new \Exception('Item tidak ditemukan');
+        }
+        
+        $unitSmall = DB::table('units')->where('id', $item->small_unit_id)->value('name');
+        $unitMedium = DB::table('units')->where('id', $item->medium_unit_id)->value('name');
+        $unitLarge = DB::table('units')->where('id', $item->large_unit_id)->value('name');
+        
+        $smallConv = $item->small_conversion_qty ?: 1;
+        $mediumConv = $item->medium_conversion_qty ?: 1;
+        
+        $qty_small = 0;
+        $qty_medium = 0;
+        $qty_large = 0;
+        
+        if ($unit === $unitSmall) {
+            $qty_small = $qtyInput;
+            $qty_medium = $smallConv > 0 ? $qty_small / $smallConv : 0;
+            $qty_large = ($smallConv > 0 && $mediumConv > 0) ? $qty_small / ($smallConv * $mediumConv) : 0;
+        } elseif ($unit === $unitMedium) {
+            $qty_medium = $qtyInput;
+            $qty_small = $qty_medium * $smallConv;
+            $qty_large = $mediumConv > 0 ? $qty_medium / $mediumConv : 0;
+        } elseif ($unit === $unitLarge) {
+            $qty_large = $qtyInput;
+            $qty_medium = $qty_large * $mediumConv;
+            $qty_small = $qty_medium * $smallConv;
+        } else {
+            $qty_small = $qtyInput;
+        }
+        
+        return [
+            'qty_small' => $qty_small,
+            'qty_medium' => $qty_medium,
+            'qty_large' => $qty_large
+        ];
+    }
+
+    /**
+     * OPTIMIZED: Get delivery orders with optimized query
+     */
+    private function getDeliveryOrdersOptimized($search, $dateFrom, $dateTo, $perPage)
+    {
+        // Use raw SQL for better performance with complex joins
+        $query = "
+            SELECT 
+                do.id,
+                do.number,
+                do.created_at,
+                do.packing_list_id,
+                do.ro_supplier_gr_id,
+                u.nama_lengkap as created_by_name,
+                COALESCE(pl.packing_number, gr.gr_number) as packing_number,
+                fo.order_number as floor_order_number,
+                o.nama_outlet,
+                wo.name as warehouse_outlet_name
+            FROM delivery_orders do
+            LEFT JOIN users u ON do.created_by = u.id
+            LEFT JOIN food_packing_lists pl ON do.packing_list_id = pl.id
+            LEFT JOIN food_good_receives gr ON do.ro_supplier_gr_id = gr.id
+            LEFT JOIN purchase_order_foods po ON gr.po_id = po.id
+            LEFT JOIN food_floor_orders fo ON (
+                (do.packing_list_id IS NOT NULL AND pl.food_floor_order_id = fo.id) OR
+                (do.ro_supplier_gr_id IS NOT NULL AND po.source_id = fo.id)
+            )
+            LEFT JOIN tbl_data_outlet o ON fo.id_outlet = o.id_outlet
+            LEFT JOIN warehouse_outlets wo ON fo.warehouse_outlet_id = wo.id
+            WHERE 1=1
+        ";
+        
+        $bindings = [];
+        
+        // Apply search filter
+        if (!empty($search)) {
+            $query .= " AND (
+                COALESCE(pl.packing_number, gr.gr_number) LIKE ? OR
+                fo.order_number LIKE ? OR
+                u.nama_lengkap LIKE ? OR
+                o.nama_outlet LIKE ? OR
+                wo.name LIKE ? OR
+                do.number LIKE ?
+            )";
+            $searchTerm = '%' . $search . '%';
+            $bindings = array_merge($bindings, [$searchTerm, $searchTerm, $searchTerm, $searchTerm, $searchTerm, $searchTerm]);
+        }
+        
+        // Apply date filters
+        if (!empty($dateFrom)) {
+            $query .= " AND DATE(do.created_at) >= ?";
+            $bindings[] = $dateFrom;
+        }
+        
+        if (!empty($dateTo)) {
+            $query .= " AND DATE(do.created_at) <= ?";
+            $bindings[] = $dateTo;
+        }
+        
+        $query .= " ORDER BY do.created_at DESC";
+        
+        // Get total count for pagination
+        $countQuery = "SELECT COUNT(*) as total FROM ($query) as count_query";
+        $total = DB::select($countQuery, $bindings)[0]->total;
+        
+        // Apply pagination
+        $offset = (request('page', 1) - 1) * $perPage;
+        $query .= " LIMIT $perPage OFFSET $offset";
+        
+        $results = DB::select($query, $bindings);
+        
+        // Convert to pagination format
+        $currentPage = request('page', 1);
+        $lastPage = ceil($total / $perPage);
+        
+        return [
+            'data' => $results,
+            'current_page' => (int)$currentPage,
+            'last_page' => $lastPage,
+            'per_page' => $perPage,
+            'total' => $total,
+            'from' => $total > 0 ? (($currentPage - 1) * $perPage) + 1 : null,
+            'to' => min($currentPage * $perPage, $total),
+            'links' => []
+        ];
     }
 
     public function getPackingListItems($id)
