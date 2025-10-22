@@ -49,9 +49,9 @@
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
                 </svg>
                 
-                <!-- Unread Badge -->
+                <!-- Unread Badge - Only show if there are unread messages -->
                 <span v-if="unreadCount > 0" 
-                      class="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full h-6 w-6 flex items-center justify-center font-bold">
+                      class="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full h-6 w-6 flex items-center justify-center font-bold animate-pulse">
                     {{ unreadCount > 99 ? '99+' : unreadCount }}
                 </span>
             </button>
@@ -767,7 +767,7 @@ const resetWidgetPosition = () => {
 };
 
 // Methods
-const toggleChat = (event) => {
+const toggleChat = async (event) => {
     // Prevent click if we were dragging
     if (hasDragged.value) {
         event.preventDefault();
@@ -785,10 +785,21 @@ const toggleChat = (event) => {
     
     isOpen.value = !isOpen.value;
     if (isOpen.value) {
-        fetchConversations();
+        await fetchConversations();
         startPolling();
+        
+        // If there's a selected conversation, scroll to bottom after opening
+        if (selectedConversation.value) {
+            await nextTick();
+            setTimeout(() => {
+                scrollToBottom();
+            }, 100); // Small delay to ensure DOM is updated
+        }
     } else {
         stopPolling();
+        // Reset unread count when chat is closed
+        unreadCount.value = 0;
+        hasUnreadMessages.value = false;
     }
 };
 
@@ -797,8 +808,21 @@ const fetchConversations = async () => {
         const response = await axios.get('/api/support/conversations');
         conversations.value = response.data;
         
-        // Calculate unread count
-        unreadCount.value = conversations.value.reduce((total, conv) => total + (conv.unread_count || 0), 0);
+        // Calculate unread count - only count conversations with unread messages
+        unreadCount.value = conversations.value.reduce((total, conv) => {
+            // Only count if there are unread messages AND the conversation is not closed/resolved
+            if (conv.unread_count && 
+                typeof conv.unread_count === 'number' && 
+                conv.unread_count > 0 && 
+                conv.status !== 'closed' && 
+                conv.status !== 'resolved') {
+                return total + conv.unread_count;
+            }
+            return total;
+        }, 0);
+        
+        // Ensure unreadCount is a valid number and greater than 0
+        unreadCount.value = unreadCount.value > 0 ? unreadCount.value : 0;
         hasUnreadMessages.value = unreadCount.value > 0;
     } catch (error) {
         console.error('Error fetching conversations:', error);
@@ -808,6 +832,23 @@ const fetchConversations = async () => {
 const selectConversation = async (conversation) => {
     selectedConversation.value = conversation;
     await fetchMessages(conversation.id);
+    
+    // Mark messages as read when conversation is selected
+    if (conversation.unread_count > 0) {
+        try {
+            await axios.post(`/api/support/conversations/${conversation.id}/mark-read`);
+            // Refresh conversations to update unread count
+            await fetchConversations();
+        } catch (error) {
+            console.error('Error marking messages as read:', error);
+        }
+    }
+    
+    // Ensure scroll to bottom after messages are loaded
+    await nextTick();
+    setTimeout(() => {
+        scrollToBottom();
+    }, 150); // Slightly longer delay to ensure all messages are rendered
 };
 
 const fetchMessages = async (conversationId) => {
@@ -846,9 +887,11 @@ const sendMessage = async () => {
         newMessage.value = '';
         selectedFiles.value = []; // Clear selected files
         
-        // Scroll to bottom
+        // Scroll to bottom after sending message
         await nextTick();
-        scrollToBottom();
+        setTimeout(() => {
+            scrollToBottom();
+        }, 100);
     } catch (error) {
         console.error('Error sending message:', error);
         
@@ -924,16 +967,26 @@ const refreshConversations = async () => {
 const scrollToBottom = () => {
     const container = messagesContainer.value;
     if (container) {
-        container.scrollTop = container.height;
+        // Scroll to the very bottom of the container
+        container.scrollTop = container.scrollHeight;
     }
 };
 
 const startPolling = () => {
-    pollingInterval = setInterval(() => {
+    pollingInterval = setInterval(async () => {
         if (isOpen.value) {
-            fetchConversations();
+            const previousMessageCount = messages.value.length;
+            await fetchConversations();
             if (selectedConversation.value) {
-                fetchMessages(selectedConversation.value.id);
+                await fetchMessages(selectedConversation.value.id);
+                
+                // If new messages were added, scroll to bottom
+                if (messages.value.length > previousMessageCount) {
+                    await nextTick();
+                    setTimeout(() => {
+                        scrollToBottom();
+                    }, 100);
+                }
             }
         }
     }, 5000); // Poll every 5 seconds

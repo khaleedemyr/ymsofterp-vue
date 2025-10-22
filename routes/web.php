@@ -2059,6 +2059,7 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/api/support/conversations', [App\Http\Controllers\LiveSupportController::class, 'createConversation']);
     Route::get('/api/support/conversations/{id}/messages', [App\Http\Controllers\LiveSupportController::class, 'getConversationMessages']);
     Route::post('/api/support/conversations/{id}/messages', [App\Http\Controllers\LiveSupportController::class, 'sendMessage']);
+    Route::post('/api/support/conversations/{id}/mark-read', [App\Http\Controllers\LiveSupportController::class, 'markMessagesAsRead']);
     
     // Admin routes
     Route::get('/api/support/admin/conversations', [App\Http\Controllers\LiveSupportController::class, 'getAllConversations']);

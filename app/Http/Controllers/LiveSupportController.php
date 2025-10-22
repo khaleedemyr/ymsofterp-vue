@@ -38,6 +38,7 @@ class LiveSupportController extends Controller
                 ->orderBy('sc.updated_at', 'desc')
                 ->get();
 
+
             return response()->json($conversations);
         } catch (\Exception $e) {
             return response()->json(['error' => 'Gagal mengambil data percakapan'], 500);
@@ -76,14 +77,55 @@ class LiveSupportController extends Controller
                 ->get();
 
             // Mark admin messages as read
-            DB::table('support_messages')
+            $markedRead = DB::table('support_messages')
                 ->where('conversation_id', $conversationId)
                 ->where('sender_type', 'admin')
                 ->update(['is_read' => true]);
 
+
             return response()->json($messages);
         } catch (\Exception $e) {
             return response()->json(['error' => 'Gagal mengambil data pesan'], 500);
+        }
+    }
+
+    // Mark messages as read
+    public function markMessagesAsRead($conversationId)
+    {
+        try {
+            $userId = auth()->id();
+            
+            // Verify conversation belongs to user
+            $conversation = DB::table('support_conversations')
+                ->where('id', $conversationId)
+                ->where('user_id', $userId)
+                ->first();
+
+            if (!$conversation) {
+                return response()->json(['error' => 'Percakapan tidak ditemukan'], 404);
+            }
+
+            // Get count of admin messages before update
+            $beforeCount = DB::table('support_messages')
+                ->where('conversation_id', $conversationId)
+                ->where('sender_type', 'admin')
+                ->where('is_read', false)
+                ->count();
+
+            // Mark all admin messages as read
+            $updated = DB::table('support_messages')
+                ->where('conversation_id', $conversationId)
+                ->where('sender_type', 'admin')
+                ->update(['is_read' => true]);
+
+
+            return response()->json(['success' => true, 'updated' => $updated]);
+        } catch (\Exception $e) {
+            \Log::error('Error marking messages as read', [
+                'conversation_id' => $conversationId,
+                'error' => $e->getMessage()
+            ]);
+            return response()->json(['error' => 'Gagal menandai pesan sebagai dibaca'], 500);
         }
     }
 
@@ -519,6 +561,11 @@ class LiveSupportController extends Controller
                     'updated_at' => now(),
                     'status' => 'open'
                 ]);
+
+            // Mark the new admin message as unread for the user
+            DB::table('support_messages')
+                ->where('id', $messageId)
+                ->update(['is_read' => false]);
 
             // Log if conversation was reopened
             if ($wasClosed) {

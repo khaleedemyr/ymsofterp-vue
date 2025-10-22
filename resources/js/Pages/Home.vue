@@ -189,15 +189,20 @@ const totalNotificationsCount = computed(() => {
     const hrdApprovalCount = pendingHrdApprovals.value.length;
     const correctionApprovalCount = pendingCorrectionApprovals.value.length;
     const leaveNotificationCount = leaveNotifications.value.filter(n => !n.is_read && (n.type === 'leave_approved' || n.type === 'leave_rejected')).length;
-    return approvalCount + hrdApprovalCount + correctionApprovalCount + leaveNotificationCount;
+    const total = approvalCount + hrdApprovalCount + correctionApprovalCount + leaveNotificationCount;
+    
+    // Only return count if there are actual unread notifications
+    return total > 0 ? total : 0;
 });
 
 const prApprovalCount = computed(() => {
-    return pendingPrApprovals.value.length;
+    const count = pendingPrApprovals.value.length;
+    return count > 0 ? count : 0;
 });
 
 const poOpsApprovalCount = computed(() => {
-    return pendingPoOpsApprovals.value.length;
+    const count = pendingPoOpsApprovals.value.length;
+    return count > 0 ? count : 0;
 });
 
 const availableTrainingsStats = computed(() => {
@@ -3024,7 +3029,7 @@ watch(locale, () => {
                 </div>
 
 
-                <!-- Notifications Section -->
+                <!-- Notifications Section - Only show if there are unread notifications -->
                 <div v-if="totalNotificationsCount > 0" class="flex-shrink-0 mb-4 px-4 md:px-6 max-w-full">
                     <div class="backdrop-blur-md rounded-2xl shadow-2xl border p-4 transition-all duration-500 animate-fade-in hover:shadow-3xl"
                         :class="isNight ? 'bg-slate-800/90 border-slate-600/50' : 'bg-white/90 border-white/20'">
