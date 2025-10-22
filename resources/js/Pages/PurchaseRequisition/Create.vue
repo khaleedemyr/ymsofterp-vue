@@ -703,6 +703,19 @@ const reorderApprover = (fromIndex, toIndex) => {
 const submitForm = async () => {
   loading.value = true
   
+  // Validate approvers
+  if (form.approvers.length === 0) {
+    loading.value = false
+    await Swal.fire({
+      icon: 'warning',
+      title: 'Approver Diperlukan',
+      text: 'Silakan pilih minimal satu approver sebelum menyimpan',
+      confirmButtonText: 'OK',
+      confirmButtonColor: '#F59E0B'
+    })
+    return
+  }
+  
   // Calculate total amount from items
   form.amount = totalAmount.value
   

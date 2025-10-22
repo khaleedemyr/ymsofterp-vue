@@ -381,11 +381,15 @@ function editPR(pr) {
 }
 
 function canDelete(pr) {
-  // Only allow delete for DRAFT status and if user is the creator
-  return pr.status === 'DRAFT' && pr.created_by === props.auth?.user?.id;
+  // Allow delete for DRAFT status and if user is the creator
+  // Also allow delete for SUBMITTED status (not yet approved) if user is the creator
+  const deletableStatuses = ['DRAFT', 'SUBMITTED'];
+  return deletableStatuses.includes(pr.status) && pr.created_by === props.auth?.user?.id;
 }
 
 function deletePR(pr) {
+  const statusText = pr.status === 'DRAFT' ? 'Draft' : 'Submitted (belum di-approve)';
+  
   Swal.fire({
     title: 'Hapus Purchase Requisition?',
     html: `
@@ -393,6 +397,7 @@ function deletePR(pr) {
         <p class="mb-2"><strong>PR Number:</strong> ${pr.pr_number}</p>
         <p class="mb-2"><strong>Title:</strong> ${pr.title}</p>
         <p class="mb-2"><strong>Amount:</strong> ${formatCurrency(pr.amount)}</p>
+        <p class="mb-2"><strong>Status:</strong> ${statusText}</p>
         <p class="text-red-600 font-semibold">Tindakan ini tidak dapat dibatalkan!</p>
       </div>
     `,
