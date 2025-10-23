@@ -310,25 +310,72 @@ function onScanBarcode() {
     const maxQty = Number(item.qty);
     const currentScan = Number(item.qty_scan || 0);
     
-    // Cari stock yang sesuai dengan unit item
+    // Cari stock yang sesuai dengan unit item dengan unit conversion yang proper
     let stock = 0;
     let stockUnit = '';
     if (item.stock && item.units) {
+      // Debug logging untuk troubleshooting
+      console.log('=== STOCK DEBUG ===');
+      console.log('Item:', item.name);
+      console.log('Item unit:', item.unit);
+      console.log('Available units:', item.units);
+      console.log('Stock data:', item.stock);
+      console.log('Conversion factors:', {
+        small_conversion_qty: item.small_conversion_qty,
+        medium_conversion_qty: item.medium_conversion_qty
+      });
+      
       if (item.unit === item.units.small_unit) {
         stock = Number(item.stock.small ?? 0);
         stockUnit = item.units.small_unit;
+        console.log('Using small unit stock:', stock, stockUnit);
       } else if (item.unit === item.units.medium_unit) {
         stock = Number(item.stock.medium ?? 0);
         stockUnit = item.units.medium_unit;
+        console.log('Using medium unit stock:', stock, stockUnit);
       } else if (item.unit === item.units.large_unit) {
         stock = Number(item.stock.large ?? 0);
         stockUnit = item.units.large_unit;
+        console.log('Using large unit stock:', stock, stockUnit);
       } else {
-        // Fallback ke small unit jika unit tidak cocok
-        stock = Number(item.stock.small ?? 0);
-        stockUnit = item.units.small_unit || item.unit;
+        // Unit conversion: convert semua stock ke unit yang diminta
+        const smallStock = Number(item.stock.small ?? 0);
+        const mediumStock = Number(item.stock.medium ?? 0);
+        const largeStock = Number(item.stock.large ?? 0);
+        
+        console.log('Raw stock values:', { smallStock, mediumStock, largeStock });
+        
+        // Convert semua ke small unit dulu, lalu ke unit yang diminta
+        const totalSmall = smallStock + (mediumStock * (item.small_conversion_qty || 1)) + (largeStock * (item.small_conversion_qty || 1) * (item.medium_conversion_qty || 1));
+        
+        console.log('Total small unit stock:', totalSmall);
+        
+        // Convert dari small ke unit yang diminta
+        if (item.unit === item.units.small_unit) {
+          stock = totalSmall;
+          stockUnit = item.units.small_unit;
+        } else if (item.unit === item.units.medium_unit) {
+          stock = totalSmall / (item.small_conversion_qty || 1);
+          stockUnit = item.units.medium_unit;
+        } else if (item.unit === item.units.large_unit) {
+          stock = totalSmall / ((item.small_conversion_qty || 1) * (item.medium_conversion_qty || 1));
+          stockUnit = item.units.large_unit;
+        } else {
+          // Fallback: gunakan stock yang paling besar
+          stock = Math.max(smallStock, mediumStock, largeStock);
+          stockUnit = item.unit;
+        }
+        
+        console.log('Final calculated stock:', stock, stockUnit);
       }
     }
+    
+    console.log('=== FINAL STOCK VALIDATION ===');
+    console.log('Available stock:', stock, stockUnit);
+    console.log('Requested qty:', qty);
+    console.log('Current scan:', currentScan);
+    console.log('Total needed:', currentScan + qty);
+    console.log('Stock >= needed?', stock >= (currentScan + qty));
     
     // Validasi stock tersedia
     if (stock <= 0) {
@@ -395,25 +442,72 @@ function confirmQtyModal() {
   const currentScan = Number(item.qty_scan || 0);
   const inputQty = Number(qtyModalValue.value);
   
-  // Cari stock yang sesuai dengan unit item
+  // Cari stock yang sesuai dengan unit item dengan unit conversion yang proper
   let stock = 0;
   let stockUnit = '';
   if (item.stock && item.units) {
+    // Debug logging untuk troubleshooting
+    console.log('=== QTY MODAL STOCK DEBUG ===');
+    console.log('Item:', item.name);
+    console.log('Item unit:', item.unit);
+    console.log('Available units:', item.units);
+    console.log('Stock data:', item.stock);
+    console.log('Conversion factors:', {
+      small_conversion_qty: item.small_conversion_qty,
+      medium_conversion_qty: item.medium_conversion_qty
+    });
+    
     if (item.unit === item.units.small_unit) {
       stock = Number(item.stock.small ?? 0);
       stockUnit = item.units.small_unit;
+      console.log('Using small unit stock:', stock, stockUnit);
     } else if (item.unit === item.units.medium_unit) {
       stock = Number(item.stock.medium ?? 0);
       stockUnit = item.units.medium_unit;
+      console.log('Using medium unit stock:', stock, stockUnit);
     } else if (item.unit === item.units.large_unit) {
       stock = Number(item.stock.large ?? 0);
       stockUnit = item.units.large_unit;
+      console.log('Using large unit stock:', stock, stockUnit);
     } else {
-      // Fallback ke small unit jika unit tidak cocok
-      stock = Number(item.stock.small ?? 0);
-      stockUnit = item.units.small_unit || item.unit;
+      // Unit conversion: convert semua stock ke unit yang diminta
+      const smallStock = Number(item.stock.small ?? 0);
+      const mediumStock = Number(item.stock.medium ?? 0);
+      const largeStock = Number(item.stock.large ?? 0);
+      
+      console.log('Raw stock values:', { smallStock, mediumStock, largeStock });
+      
+      // Convert semua ke small unit dulu, lalu ke unit yang diminta
+      const totalSmall = smallStock + (mediumStock * (item.small_conversion_qty || 1)) + (largeStock * (item.small_conversion_qty || 1) * (item.medium_conversion_qty || 1));
+      
+      console.log('Total small unit stock:', totalSmall);
+      
+      // Convert dari small ke unit yang diminta
+      if (item.unit === item.units.small_unit) {
+        stock = totalSmall;
+        stockUnit = item.units.small_unit;
+      } else if (item.unit === item.units.medium_unit) {
+        stock = totalSmall / (item.small_conversion_qty || 1);
+        stockUnit = item.units.medium_unit;
+      } else if (item.unit === item.units.large_unit) {
+        stock = totalSmall / ((item.small_conversion_qty || 1) * (item.medium_conversion_qty || 1));
+        stockUnit = item.units.large_unit;
+      } else {
+        // Fallback: gunakan stock yang paling besar
+        stock = Math.max(smallStock, mediumStock, largeStock);
+        stockUnit = item.unit;
+      }
+      
+      console.log('Final calculated stock:', stock, stockUnit);
     }
   }
+  
+  console.log('=== QTY MODAL FINAL VALIDATION ===');
+  console.log('Available stock:', stock, stockUnit);
+  console.log('Input qty:', inputQty);
+  console.log('Current scan:', currentScan);
+  console.log('Total needed:', currentScan + inputQty);
+  console.log('Stock >= needed?', stock >= (currentScan + inputQty));
   
   // Validasi stock tersedia
   if (stock <= 0) {

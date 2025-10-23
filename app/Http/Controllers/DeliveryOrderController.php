@@ -1040,11 +1040,30 @@ class DeliveryOrderController extends Controller
             }
         }
 
-        // Tambahkan barcode dan stock ke setiap item
-        $items = $items->map(function($item) use ($barcodeMap, $itemStocks, $itemUnits) {
+        // Ambil conversion factors untuk setiap item
+        $itemConversions = [];
+        foreach ($items as $item) {
+            $itemMaster = DB::table('items')->where('id', $item->item_id)->first();
+            if ($itemMaster) {
+                $itemConversions[$item->id] = [
+                    'small_conversion_qty' => $itemMaster->small_conversion_qty ?? 1,
+                    'medium_conversion_qty' => $itemMaster->medium_conversion_qty ?? 1
+                ];
+            } else {
+                $itemConversions[$item->id] = [
+                    'small_conversion_qty' => 1,
+                    'medium_conversion_qty' => 1
+                ];
+            }
+        }
+
+        // Tambahkan barcode, stock, units, dan conversion factors ke setiap item
+        $items = $items->map(function($item) use ($barcodeMap, $itemStocks, $itemUnits, $itemConversions) {
             $item->barcodes = $barcodeMap->get($item->item_id, []);
             $item->stock = $itemStocks[$item->id] ?? ['small' => 0, 'medium' => 0, 'large' => 0];
             $item->units = $itemUnits[$item->id] ?? ['small_unit' => null, 'medium_unit' => null, 'large_unit' => null];
+            $item->small_conversion_qty = $itemConversions[$item->id]['small_conversion_qty'];
+            $item->medium_conversion_qty = $itemConversions[$item->id]['medium_conversion_qty'];
             return $item;
         });
 
@@ -1142,10 +1161,29 @@ class DeliveryOrderController extends Controller
             }
         }
         
-        $items = $items->map(function($item) use ($barcodeMap, $itemStocks, $itemUnits) {
+        // Ambil conversion factors untuk setiap item
+        $itemConversions = [];
+        foreach ($items as $item) {
+            $itemMaster = DB::table('items')->where('id', $item->item_id)->first();
+            if ($itemMaster) {
+                $itemConversions[$item->id] = [
+                    'small_conversion_qty' => $itemMaster->small_conversion_qty ?? 1,
+                    'medium_conversion_qty' => $itemMaster->medium_conversion_qty ?? 1
+                ];
+            } else {
+                $itemConversions[$item->id] = [
+                    'small_conversion_qty' => 1,
+                    'medium_conversion_qty' => 1
+                ];
+            }
+        }
+
+        $items = $items->map(function($item) use ($barcodeMap, $itemStocks, $itemUnits, $itemConversions) {
             $item->barcodes = $barcodeMap[$item->item_id] ?? collect();
             $item->stock = $itemStocks[$item->id] ?? ['small' => 0, 'medium' => 0, 'large' => 0];
             $item->units = $itemUnits[$item->id] ?? ['small_unit' => null, 'medium_unit' => null, 'large_unit' => null];
+            $item->small_conversion_qty = $itemConversions[$item->id]['small_conversion_qty'];
+            $item->medium_conversion_qty = $itemConversions[$item->id]['medium_conversion_qty'];
             return $item;
         });
         
