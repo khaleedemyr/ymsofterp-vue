@@ -297,12 +297,12 @@ function onScanBarcode() {
   const input = barcodeInputVal.value.trim();
   if (!input) return;
   let code = input;
-  let qty = 1;
+  let qty = null; // Tidak ada default qty, harus scan dengan qty atau input manual
   // Ubah parsing qty agar bisa menerima pecahan
   const match = input.match(/^([\S]+)\s+(\d+(?:\.\d+)?)$/);
   if (match) {
     code = match[1];
-    qty = parseFloat(match[2]) || 1;
+    qty = parseFloat(match[2]);
   }
   // Cari item yang barcodes-nya mengandung code
   const item = packingListItems.find(i => Array.isArray(i.barcodes) ? i.barcodes.includes(code) : i.barcode === code);
@@ -395,8 +395,8 @@ function onScanBarcode() {
       return;
     }
     
-    // Selalu tampilkan modal input qty jika scan tanpa qty (qty === 1, artinya user tidak input qty di barcode)
-    if (qty === 1) {
+    // Selalu tampilkan modal input qty jika scan tanpa qty (qty === null, artinya user tidak input qty di barcode)
+    if (qty === null) {
       qtyModalItem.value = item;
       // Default value sesuai sisa qty yang belum di-scan
       const remainingQty = maxQty - currentScan;
@@ -410,24 +410,33 @@ function onScanBarcode() {
       return;
     }
     
-    // Validasi qty scan tidak melebihi qty packing list
-    if (currentScan + qty > maxQty) {
-      scanFeedback.value = `❌ Qty scan tidak boleh lebih dari ${maxQty} (sisa: ${maxQty - currentScan})`;
-      scanFeedbackClass.value = 'text-red-600';
+    // Jika qty sudah diinput di barcode, langsung proses
+    if (qty !== null) {
+      // Validasi qty scan tidak melebihi qty packing list
+      if (currentScan + qty > maxQty) {
+        scanFeedback.value = `❌ Qty scan tidak boleh lebih dari ${maxQty} (sisa: ${maxQty - currentScan})`;
+        scanFeedbackClass.value = 'text-red-600';
+        barcodeInputVal.value = '';
+        nextTick(() => barcodeInput.value?.focus());
+        return;
+      }
+      
+      // Validasi qty scan tidak melebihi stock yang tersedia
+      if (currentScan + qty > stock) {
+        scanFeedback.value = `❌ Qty scan tidak boleh melebihi stock (${stock} ${stockUnit})`;
+        scanFeedbackClass.value = 'text-red-600';
+        barcodeInputVal.value = '';
+        nextTick(() => barcodeInput.value?.focus());
+        return;
+      }
+      
+      item.qty_scan = currentScan + qty;
+      scanFeedback.value = `✅ Berhasil scan ${qty} ${item.unit}`;
+      scanFeedbackClass.value = 'text-green-600';
       barcodeInputVal.value = '';
       nextTick(() => barcodeInput.value?.focus());
       return;
     }
-    item.qty_scan = currentScan + qty;
-    // Simpan barcode hasil scan
-    if (!item.barcode) item.barcode = [];
-    if (Array.isArray(item.barcode)) {
-      for (let i = 0; i < qty; i++) item.barcode.push(code);
-    } else {
-      item.barcode = [item.barcode, ...Array(qty-1).fill(code)];
-    }
-    scanFeedback.value = `✔️ ${item.name} (${item.qty_scan}/${item.qty})`;
-    scanFeedbackClass.value = Number(item.qty_scan).toFixed(2) === Number(item.qty).toFixed(2) ? 'text-green-700' : (Number(item.qty_scan) > Number(item.qty) ? 'text-red-700' : 'text-yellow-700');
   } else {
     scanFeedback.value = '❌ Barcode tidak ditemukan di Packing List!';
     scanFeedbackClass.value = 'text-red-600';
