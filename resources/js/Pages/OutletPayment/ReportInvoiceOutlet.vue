@@ -161,22 +161,56 @@
       </div>
       
       <!-- Grand Total Section -->
-      <div v-if="props.hasFilters && props.data.length > 0" class="mt-6 bg-gray-50 rounded-lg p-4">
-        <div class="flex justify-between items-center">
-          <div class="flex items-center gap-4">
-            <h3 class="text-lg font-semibold text-gray-800">Grand Total</h3>
-            <div class="flex items-center gap-2 text-sm text-gray-600">
-              <span class="bg-green-100 text-green-800 px-2 py-1 rounded-full text-xs font-semibold">
-                GR: {{ grCount }} transaksi
+      <div v-if="props.hasFilters && props.data.length > 0" class="mt-6 bg-gray-50 rounded-lg p-6">
+        <div class="flex justify-between items-center mb-4">
+          <h3 class="text-xl font-bold text-gray-800">Grand Total Summary</h3>
+          <div class="text-right">
+            <div class="text-3xl font-bold text-gray-900">{{ formatRupiah(grandTotal) }}</div>
+            <div class="text-sm text-gray-500">Total {{ props.data.length }} transaksi</div>
+          </div>
+        </div>
+        
+        <!-- Breakdown Section -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <!-- GR Breakdown -->
+          <div class="bg-white rounded-lg p-4 border-l-4 border-green-500">
+            <div class="flex items-center justify-between mb-2">
+              <div class="flex items-center gap-2">
+                <span class="bg-green-100 text-green-800 px-2 py-1 rounded-full text-xs font-semibold">
+                  GR (Good Receive)
+                </span>
+                <span class="text-sm text-gray-600">{{ grCount }} transaksi</span>
+              </div>
+            </div>
+            <div class="text-2xl font-bold text-green-700">{{ formatRupiah(grTotal) }}</div>
+          </div>
+          
+          <!-- RWS Breakdown -->
+          <div class="bg-white rounded-lg p-4 border-l-4 border-blue-500">
+            <div class="flex items-center justify-between mb-2">
+              <div class="flex items-center gap-2">
+                <span class="bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-xs font-semibold">
+                  RWS (Retail Warehouse Sales)
+                </span>
+                <span class="text-sm text-gray-600">{{ rwsCount }} transaksi</span>
+              </div>
+            </div>
+            <div class="text-2xl font-bold text-blue-700">{{ formatRupiah(rwsTotal) }}</div>
+          </div>
+        </div>
+        
+        <!-- Percentage Breakdown -->
+        <div class="mt-4 pt-4 border-t border-gray-200">
+          <div class="flex items-center justify-between text-sm">
+            <span class="text-gray-600">Persentase:</span>
+            <div class="flex items-center gap-4">
+              <span class="text-green-700 font-semibold">
+                GR: {{ grPercentage }}%
               </span>
-              <span class="bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-xs font-semibold">
-                RWS: {{ rwsCount }} transaksi
+              <span class="text-blue-700 font-semibold">
+                RWS: {{ rwsPercentage }}%
               </span>
             </div>
-          </div>
-          <div class="text-right">
-            <div class="text-2xl font-bold text-gray-900">{{ formatRupiah(grandTotal) }}</div>
-            <div class="text-sm text-gray-500">Total {{ props.data.length }} transaksi</div>
           </div>
         </div>
       </div>
@@ -224,6 +258,31 @@ const grCount = computed(() => {
 // Computed property untuk menghitung jumlah RWS
 const rwsCount = computed(() => {
   return props.data.filter(row => row.transaction_type === 'RWS').length;
+});
+
+// Computed property untuk total GR
+const grTotal = computed(() => {
+  return props.data
+    .filter(row => row.transaction_type === 'GR')
+    .reduce((total, row) => total + (parseFloat(row.payment_total) || 0), 0);
+});
+
+// Computed property untuk total RWS
+const rwsTotal = computed(() => {
+  return props.data
+    .filter(row => row.transaction_type === 'RWS')
+    .reduce((total, row) => total + (parseFloat(row.payment_total) || 0), 0);
+});
+
+
+// Computed property untuk persentase GR
+const grPercentage = computed(() => {
+  return grandTotal.value > 0 ? Math.round((grTotal.value / grandTotal.value) * 100) : 0;
+});
+
+// Computed property untuk persentase RWS
+const rwsPercentage = computed(() => {
+  return grandTotal.value > 0 ? Math.round((rwsTotal.value / grandTotal.value) * 100) : 0;
 });
 
 const filterOutlet = ref(props.filters?.outlet_id || '');
