@@ -131,6 +131,7 @@ const menuGroups = [
             { name: () => 'Report Attendance', icon: 'fa-solid fa-fingerprint', route: '/attendance-report', code: 'attendance_report' },
             { name: () => 'Attendance per Outlet', icon: 'fa-solid fa-fingerprint', route: '/attendance-report/employee-summary', code: 'attendance_outlet_summary' },
             { name: () => 'Holiday Attendance', icon: 'fa-solid fa-calendar-day', route: '/holiday-attendance', code: 'holiday_attendance' },
+            { name: () => 'Extra Off & PH Report', icon: 'fa-solid fa-chart-line', route: '/extra-off-report', code: 'extra_off_report' },
             { name: () => 'Master Payroll', icon: 'fa-solid fa-money-check-dollar', route: '/payroll/master', code: 'payroll_master' },
             { name: () => 'Payroll', icon: 'fa-solid fa-file-invoice-dollar', route: '/payroll/report', code: 'payroll_report' },
             { name: () => 'Employee Movement', icon: 'fa-solid fa-people-arrows', route: '/employee-movements', code: 'employee_movement' },

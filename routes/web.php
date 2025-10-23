@@ -2024,7 +2024,21 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/api/holiday-attendance/statistics', [\App\Http\Controllers\HolidayAttendanceController::class, 'getStatistics'])->name('api.holiday-attendance.statistics');
     Route::get('/holiday-attendance/export', [\App\Http\Controllers\HolidayAttendanceController::class, 'export'])->name('holiday-attendance.export');
     
-    // Extra Off API Routes
+    // Extra Off Report Routes
+Route::middleware(['auth', 'verified'])->group(function () {
+    Route::get('/extra-off-report', [\App\Http\Controllers\ExtraOffReportController::class, 'index'])->name('extra-off-report.index');
+    Route::get('/api/extra-off-report/data', [\App\Http\Controllers\ExtraOffReportController::class, 'getReportData'])->name('api.extra-off-report.data');
+    Route::get('/api/extra-off-report/export', [\App\Http\Controllers\ExtraOffReportController::class, 'export'])->name('api.extra-off-report.export');
+    Route::get('/api/users', [\App\Http\Controllers\ExtraOffReportController::class, 'getUsers'])->name('api.users');
+    
+    // Delete routes
+    Route::delete('/api/extra-off-report/extra-off/{id}', [\App\Http\Controllers\ExtraOffReportController::class, 'deleteExtraOff'])->name('api.extra-off-report.delete-extra-off');
+    Route::delete('/api/extra-off-report/public-holiday/{id}', [\App\Http\Controllers\ExtraOffReportController::class, 'deletePublicHoliday'])->name('api.extra-off-report.delete-public-holiday');
+    Route::delete('/api/extra-off-report/extra-off-multiple', [\App\Http\Controllers\ExtraOffReportController::class, 'multipleDeleteExtraOff'])->name('api.extra-off-report.multiple-delete-extra-off');
+    Route::delete('/api/extra-off-report/public-holiday-multiple', [\App\Http\Controllers\ExtraOffReportController::class, 'multipleDeletePublicHoliday'])->name('api.extra-off-report.multiple-delete-public-holiday');
+});
+
+// Extra Off API Routes
     Route::prefix('api/extra-off')->group(function () {
         // User routes (authenticated users)
         Route::get('/balance', [\App\Http\Controllers\ExtraOffController::class, 'getBalance'])->name('api.extra-off.balance');
