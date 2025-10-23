@@ -165,6 +165,7 @@ const reasonOptions = [
 ];
 const selectedReason = ref('');
 const loadingSubmit = ref(false);
+const lastSubmitTime = ref(0);
 const spsModal = ref(false);
 const spsItem = ref({});
 const spsLoading = ref(false);
@@ -386,13 +387,22 @@ async function confirmSubmit() {
 }
 
 async function submitGR() {
-  // Prevent double submit
-  if (loadingSubmit.value) {
-    console.log('Submit already in progress, ignoring duplicate request');
+  // Prevent double submit with time-based debounce
+  const now = Date.now();
+  if (loadingSubmit.value || (now - lastSubmitTime.value < 2000)) {
+    console.log('Submit already in progress or too soon, ignoring duplicate request');
     return;
   }
   
+  lastSubmitTime.value = now;
   loadingSubmit.value = true;
+  
+  // Disable all submit buttons to prevent multiple clicks
+  const submitButtons = document.querySelectorAll('button[onclick*="submitGR"], button:contains("Submit")');
+  submitButtons.forEach(btn => {
+    btn.disabled = true;
+    btn.style.opacity = '0.5';
+  });
   try {
     
     
@@ -486,7 +496,7 @@ async function submitGR() {
       
       if (status === 422) {
         // Check if it's a duplicate submission error
-        if (data.message && data.message.includes('sudah pernah disubmit')) {
+        if (data.message && (data.message.includes('sudah pernah disubmit') || data.message.includes('sudah pernah dibuat'))) {
           const duplicateInfo = data.duplicate_info || {};
           const existingTime = duplicateInfo.submitted_at ? new Date(duplicateInfo.submitted_at).toLocaleString('id-ID') : 'Tidak diketahui';
           const timeDiff = duplicateInfo.time_diff || 0;
@@ -520,17 +530,31 @@ async function submitGR() {
                 </div>
                 <div class="mt-4 text-sm text-gray-600">
                   <strong>Solusi:</strong><br>
-                  1. Tunggu ${remainingTime} detik sebelum submit ulang<br>
-                  2. Atau refresh halaman untuk memulai ulang<br>
-                  3. Periksa apakah data sudah tersimpan di halaman Good Receive
+                  ${remainingTime > 0 ? `1. Tunggu ${remainingTime} detik sebelum submit ulang<br>` : ''}
+                  2. Refresh halaman untuk memulai ulang<br>
+                  3. Periksa apakah data sudah tersimpan di halaman Good Receive<br>
+                  4. Jika data sudah ada, gunakan fitur Edit untuk mengubah
                 </div>
               </div>
             `,
+            showCancelButton: true,
             confirmButtonText: 'OK, Saya Mengerti',
+            cancelButtonText: 'Lihat Data Sebelumnya',
             confirmButtonColor: '#f59e0b',
+            cancelButtonColor: '#3b82f6',
             width: '700px',
             customClass: {
               popup: 'swal-wide'
+            }
+          }).then((result) => {
+            if (result.dismiss === Swal.DismissReason.cancel) {
+              // User clicked "Lihat Data Sebelumnya"
+              const existingId = duplicateInfo.existing_id;
+              if (existingId) {
+                window.location.href = `/outlet-food-good-receives/${existingId}`;
+              } else {
+                window.location.href = '/outlet-food-good-receives';
+              }
             }
           });
           return; // Exit early for duplicate error
@@ -607,6 +631,14 @@ async function submitGR() {
     }
   } finally {
     loadingSubmit.value = false;
+    showConfirmModal.value = false;
+    
+    // Re-enable all submit buttons
+    const submitButtons = document.querySelectorAll('button[onclick*="submitGR"], button:contains("Submit")');
+    submitButtons.forEach(btn => {
+      btn.disabled = false;
+      btn.style.opacity = '1';
+    });
   }
 }
 

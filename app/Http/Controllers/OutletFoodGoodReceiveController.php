@@ -110,6 +110,26 @@ class OutletFoodGoodReceiveController extends Controller
                 ], 422);
             }
             
+            // Additional check: Check if there's already a GR for this DO from this user
+            $existingGR = DB::table('outlet_food_good_receives')
+                ->where('delivery_order_id', $validated['delivery_order_id'])
+                ->where('created_by', $user->id)
+                ->whereNull('deleted_at')
+                ->first();
+                
+            if ($existingGR) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Good Receive untuk Delivery Order ini sudah pernah dibuat sebelumnya.',
+                    'duplicate_info' => [
+                        'existing_id' => $existingGR->id,
+                        'existing_number' => $existingGR->number,
+                        'submitted_at' => $existingGR->created_at,
+                        'delivery_order_id' => $existingGR->delivery_order_id
+                    ]
+                ], 422);
+            }
+            
             DB::beginTransaction();
             $do = DB::table('delivery_orders')->where('id', $validated['delivery_order_id'])->first();
             if (!$do) throw new \Exception('Delivery Order tidak ditemukan');
