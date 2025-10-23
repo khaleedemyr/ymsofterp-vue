@@ -175,20 +175,26 @@ class ApprovalController extends Controller
         
         $userId = auth()->id();
         
-        // Get approval request and check if current user is the approver
-        $approvalRequest = DB::table('approval_requests')
-            ->join('users', 'approval_requests.user_id', '=', 'users.id')
-            ->where('approval_requests.id', $id)
-            ->where('approval_requests.approver_id', $userId)
-            ->where('approval_requests.status', 'pending')
+        // Get absent request and check if current user is the approver
+        $absentRequest = DB::table('absent_requests')
+            ->join('users', 'absent_requests.user_id', '=', 'users.id')
+            ->join('tbl_data_jabatan', 'users.id_jabatan', '=', 'tbl_data_jabatan.id_jabatan')
+            ->join('users as approvers', function($join) {
+                $join->on('tbl_data_jabatan.id_atasan', '=', 'approvers.id_jabatan')
+                     ->where('approvers.id_outlet', '=', DB::raw('users.id_outlet'))
+                     ->where('approvers.status', '=', 'A');
+            })
+            ->where('absent_requests.id', $id)
+            ->where('approvers.id', $userId)
+            ->where('absent_requests.status', 'pending')
             ->select([
-                'approval_requests.*',
+                'absent_requests.*',
                 'users.nama_lengkap as user_name',
                 'users.id as user_id'
             ])
             ->first();
             
-        if (!$approvalRequest) {
+        if (!$absentRequest) {
             return response()->json([
                 'success' => false,
                 'message' => 'Approval request not found or already processed'
@@ -198,19 +204,9 @@ class ApprovalController extends Controller
         try {
             DB::beginTransaction();
             
-            // Update approval request to approved
-            DB::table('approval_requests')
-                ->where('id', $id)
-                ->update([
-                    'status' => 'approved',
-                    'approved_at' => now(),
-                    'approval_notes' => $request->notes,
-                    'updated_at' => now()
-                ]);
-            
-            // Update corresponding absent request to supervisor_approved
+            // Update absent request to supervisor_approved (waiting for HRD approval)
             DB::table('absent_requests')
-                ->where('approval_request_id', $id)
+                ->where('id', $id)
                 ->update([
                     'status' => 'supervisor_approved',
                     'approved_by' => $userId,
@@ -221,9 +217,9 @@ class ApprovalController extends Controller
             // Kirim notifikasi ke user yang mengajukan
             $approver = auth()->user();
             DB::table('notifications')->insert([
-                'user_id' => $approvalRequest->user_id,
+                'user_id' => $absentRequest->user_id,
                 'type' => 'leave_supervisor_approved',
-                'message' => "Permohonan izin/cuti Anda untuk periode {$approvalRequest->date_from} - {$approvalRequest->date_to} telah disetujui oleh atasan ({$approver->nama_lengkap}). Menunggu persetujuan HRD.",
+                'message' => "Permohonan izin/cuti Anda untuk periode {$absentRequest->date_from} - {$absentRequest->date_to} telah disetujui oleh atasan ({$approver->nama_lengkap}). Menunggu persetujuan HRD.",
                 'url' => config('app.url') . '/attendance',
                 'is_read' => 0,
                 'created_at' => now(),
@@ -241,7 +237,7 @@ class ApprovalController extends Controller
                 DB::table('notifications')->insert([
                     'user_id' => $hrdUser->id,
                     'type' => 'leave_hrd_approval_request',
-                    'message' => "Permohonan izin/cuti dari {$approvalRequest->user_name} untuk periode {$approvalRequest->date_from} - {$approvalRequest->date_to} telah disetujui oleh atasan dan membutuhkan persetujuan HRD Anda.",
+                    'message' => "Permohonan izin/cuti dari {$absentRequest->user_name} untuk periode {$absentRequest->date_from} - {$absentRequest->date_to} telah disetujui oleh atasan dan membutuhkan persetujuan HRD Anda.",
                     'url' => config('app.url') . '/home',
                     'is_read' => 0,
                     'created_at' => now(),
@@ -253,14 +249,16 @@ class ApprovalController extends Controller
             
             return response()->json([
                 'success' => true,
-                'message' => 'Approval request approved successfully'
+                'message' => 'Permohonan izin/cuti berhasil disetujui'
             ]);
             
         } catch (\Exception $e) {
-            DB::rollback();
+            DB::rollBack();
+            \Log::error('Error approving request: ' . $e->getMessage());
+            
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to approve request: ' . $e->getMessage()
+                'message' => 'Terjadi kesalahan saat menyetujui permohonan'
             ], 500);
         }
     }
@@ -271,25 +269,31 @@ class ApprovalController extends Controller
     public function reject(Request $request, $id)
     {
         $request->validate([
-            'notes' => 'nullable|string|max:500'
+            'notes' => 'required|string|max:500'
         ]);
         
         $userId = auth()->id();
         
-        // Get approval request and check if current user is the approver
-        $approvalRequest = DB::table('approval_requests')
-            ->join('users', 'approval_requests.user_id', '=', 'users.id')
-            ->where('approval_requests.id', $id)
-            ->where('approval_requests.approver_id', $userId)
-            ->where('approval_requests.status', 'pending')
+        // Get absent request and check if current user is the approver
+        $absentRequest = DB::table('absent_requests')
+            ->join('users', 'absent_requests.user_id', '=', 'users.id')
+            ->join('tbl_data_jabatan', 'users.id_jabatan', '=', 'tbl_data_jabatan.id_jabatan')
+            ->join('users as approvers', function($join) {
+                $join->on('tbl_data_jabatan.id_atasan', '=', 'approvers.id_jabatan')
+                     ->where('approvers.id_outlet', '=', DB::raw('users.id_outlet'))
+                     ->where('approvers.status', '=', 'A');
+            })
+            ->where('absent_requests.id', $id)
+            ->where('approvers.id', $userId)
+            ->where('absent_requests.status', 'pending')
             ->select([
-                'approval_requests.*',
+                'absent_requests.*',
                 'users.nama_lengkap as user_name',
                 'users.id as user_id'
             ])
             ->first();
             
-        if (!$approvalRequest) {
+        if (!$absentRequest) {
             return response()->json([
                 'success' => false,
                 'message' => 'Approval request not found or already processed'
@@ -299,51 +303,44 @@ class ApprovalController extends Controller
         try {
             DB::beginTransaction();
             
-            // Update approval request to rejected
-            DB::table('approval_requests')
-                ->where('id', $id)
-                ->update([
-                    'status' => 'rejected',
-                    'rejected_at' => now(),
-                    'approval_notes' => $request->notes,
-                    'updated_at' => now()
-                ]);
-            
-            // Update corresponding absent request to rejected
+            // Update absent request
             DB::table('absent_requests')
-                ->where('approval_request_id', $id)
+                ->where('id', $id)
                 ->update([
                     'status' => 'rejected',
                     'rejected_by' => $userId,
                     'rejected_at' => now(),
-                    'rejection_reason' => $request->notes,
+                    'rejection_reason' => $request->input('notes'),
                     'updated_at' => now()
                 ]);
             
             // Kirim notifikasi ke user yang mengajukan
             $approver = auth()->user();
+            $rejectionReason = $request->input('notes') ? "\n\nAlasan penolakan: {$request->input('notes')}" : '';
             DB::table('notifications')->insert([
-                'user_id' => $approvalRequest->user_id,
+                'user_id' => $absentRequest->user_id,
                 'type' => 'leave_rejected',
-                'message' => "Permohonan izin/cuti Anda untuk periode {$approvalRequest->date_from} - {$approvalRequest->date_to} telah ditolak oleh atasan ({$approver->nama_lengkap}).",
+                'message' => "Permohonan izin/cuti Anda untuk periode {$absentRequest->date_from} - {$absentRequest->date_to} telah ditolak oleh {$approver->nama_lengkap}.{$rejectionReason}",
                 'url' => config('app.url') . '/attendance',
                 'is_read' => 0,
                 'created_at' => now(),
                 'updated_at' => now()
             ]);
-
+            
             DB::commit();
             
             return response()->json([
                 'success' => true,
-                'message' => 'Approval request rejected successfully'
+                'message' => 'Permohonan izin/cuti berhasil ditolak'
             ]);
             
         } catch (\Exception $e) {
-            DB::rollback();
+            DB::rollBack();
+            \Log::error('Error rejecting request: ' . $e->getMessage());
+            
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to reject request: ' . $e->getMessage()
+                'message' => 'Terjadi kesalahan saat menolak permohonan'
             ], 500);
         }
     }
@@ -356,32 +353,31 @@ class ApprovalController extends Controller
         $userId = auth()->id();
         $limit = $request->get('limit', 10);
         
-        // Only HRD users (division_id = 6) can access this
-        if (auth()->user()->division_id != 6) {
+        // Only HRD users (division_id=6) can see HRD approvals
+        if (auth()->user()->division_id !== 6) {
             return response()->json([
-                'success' => false,
-                'message' => 'Unauthorized access'
-            ], 403);
+                'success' => true,
+                'approvals' => []
+            ]);
         }
         
-        // Get pending approval requests that need HRD approval
-        $approvals = DB::table('approval_requests')
-            ->join('users', 'approval_requests.user_id', '=', 'users.id')
-            ->join('leave_types', 'approval_requests.leave_type_id', '=', 'leave_types.id')
-            ->where('approval_requests.status', 'approved')
-            ->where('approval_requests.hrd_status', 'pending')
+        // Get supervisor_approved absent requests
+        $approvals = DB::table('absent_requests')
+            ->join('users', 'absent_requests.user_id', '=', 'users.id')
+            ->join('leave_types', 'absent_requests.leave_type_id', '=', 'leave_types.id')
+            ->where('absent_requests.status', 'supervisor_approved')
             ->select([
-                'approval_requests.id',
-                'approval_requests.user_id',
-                'approval_requests.date_from',
-                'approval_requests.date_to',
-                'approval_requests.reason',
-                'approval_requests.created_at',
+                'absent_requests.id',
+                'absent_requests.user_id',
+                'absent_requests.date_from',
+                'absent_requests.date_to',
+                'absent_requests.reason',
+                'absent_requests.created_at',
                 'users.nama_lengkap as user_name',
                 'leave_types.name as leave_type_name',
                 'leave_types.id as leave_type_id'
             ])
-            ->orderBy('approval_requests.created_at', 'desc')
+            ->orderBy('absent_requests.created_at', 'desc')
             ->limit($limit)
             ->get();
             
@@ -413,17 +409,235 @@ class ApprovalController extends Controller
     }
     
     /**
-     * Get notifications for leave approvals
+     * HRD Approve a request
      */
-    public function getNotifications(Request $request)
+    public function hrdApprove(Request $request, $id)
+    {
+        $request->validate([
+            'notes' => 'nullable|string|max:500'
+        ]);
+        
+        $userId = auth()->id();
+        
+        // Only HRD users can approve
+        if (auth()->user()->division_id !== 6) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthorized'
+            ], 403);
+        }
+        
+        // Get supervisor_approved absent request
+        $absentRequest = DB::table('absent_requests')
+            ->join('users', 'absent_requests.user_id', '=', 'users.id')
+            ->where('absent_requests.id', $id)
+            ->where('absent_requests.status', 'supervisor_approved')
+            ->select([
+                'absent_requests.*',
+                'users.nama_lengkap as user_name',
+                'users.id as user_id'
+            ])
+            ->first();
+            
+        if (!$absentRequest) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Approval request not found or already processed'
+            ], 404);
+        }
+        
+        try {
+            DB::beginTransaction();
+            
+            // Update absent request to approved
+            DB::table('absent_requests')
+                ->where('id', $id)
+                ->update([
+                    'status' => 'approved',
+                    'hrd_approved_by' => $userId,
+                    'hrd_approved_at' => now(),
+                    'updated_at' => now()
+                ]);
+            
+            // Kirim notifikasi ke user yang mengajukan
+            $hrdApprover = auth()->user();
+            DB::table('notifications')->insert([
+                'user_id' => $absentRequest->user_id,
+                'type' => 'leave_approved',
+                'message' => "Permohonan izin/cuti Anda untuk periode {$absentRequest->date_from} - {$absentRequest->date_to} telah disetujui oleh HRD ({$hrdApprover->nama_lengkap}).",
+                'url' => config('app.url') . '/attendance',
+                'is_read' => 0,
+                'created_at' => now(),
+                'updated_at' => now()
+            ]);
+
+            DB::commit();
+            
+            return response()->json([
+                'success' => true,
+                'message' => 'Permohonan izin/cuti berhasil disetujui oleh HRD'
+            ]);
+            
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::error('Error HRD approving request: ' . $e->getMessage());
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Terjadi kesalahan saat menyetujui permohonan'
+            ], 500);
+        }
+    }
+    
+    /**
+     * HRD Reject a request
+     */
+    public function hrdReject(Request $request, $id)
+    {
+        $request->validate([
+            'notes' => 'required|string|max:500'
+        ]);
+        
+        $userId = auth()->id();
+        
+        // Only HRD users can reject
+        if (auth()->user()->division_id !== 6) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthorized'
+            ], 403);
+        }
+        
+        // Get supervisor_approved absent request
+        $absentRequest = DB::table('absent_requests')
+            ->join('users', 'absent_requests.user_id', '=', 'users.id')
+            ->where('absent_requests.id', $id)
+            ->where('absent_requests.status', 'supervisor_approved')
+            ->select([
+                'absent_requests.*',
+                'users.nama_lengkap as user_name',
+                'users.id as user_id'
+            ])
+            ->first();
+            
+        if (!$absentRequest) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Approval request not found or already processed'
+            ], 404);
+        }
+        
+        try {
+            DB::beginTransaction();
+            
+            // Update absent request to rejected
+            DB::table('absent_requests')
+                ->where('id', $id)
+                ->update([
+                    'status' => 'rejected',
+                    'hrd_rejected_by' => $userId,
+                    'hrd_rejected_at' => now(),
+                    'hrd_rejection_reason' => $request->input('notes'),
+                    'updated_at' => now()
+                ]);
+            
+            // Kirim notifikasi ke user yang mengajukan
+            $hrdRejector = auth()->user();
+            $rejectionReason = $request->input('notes') ? "\n\nAlasan penolakan: {$request->input('notes')}" : '';
+            DB::table('notifications')->insert([
+                'user_id' => $absentRequest->user_id,
+                'type' => 'leave_rejected',
+                'message' => "Permohonan izin/cuti Anda untuk periode {$absentRequest->date_from} - {$absentRequest->date_to} telah ditolak oleh HRD ({$hrdRejector->nama_lengkap}).{$rejectionReason}",
+                'url' => config('app.url') . '/attendance',
+                'is_read' => 0,
+                'created_at' => now(),
+                'updated_at' => now()
+            ]);
+
+            DB::commit();
+            
+            return response()->json([
+                'success' => true,
+                'message' => 'Permohonan izin/cuti berhasil ditolak oleh HRD'
+            ]);
+            
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::error('Error HRD rejecting request: ' . $e->getMessage());
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Terjadi kesalahan saat menolak permohonan'
+            ], 500);
+        }
+    }
+    
+    /**
+     * Get approval statistics for the current user
+     */
+    public function getApprovalStats(Request $request)
     {
         $userId = auth()->id();
         
+        // Get pending count from absent_requests where current user is approver
+        $pendingCount = DB::table('absent_requests')
+            ->join('users', 'absent_requests.user_id', '=', 'users.id')
+            ->join('tbl_data_jabatan', 'users.id_jabatan', '=', 'tbl_data_jabatan.id_jabatan')
+            ->join('users as approvers', function($join) {
+                $join->on('tbl_data_jabatan.id_atasan', '=', 'approvers.id_jabatan')
+                     ->where('approvers.id_outlet', '=', DB::raw('users.id_outlet'))
+                     ->where('approvers.status', '=', 'A');
+            })
+            ->where('approvers.id', $userId)
+            ->where('absent_requests.status', 'pending')
+            ->count();
+        
+        $stats = [
+            'pending_count' => $pendingCount,
+            'approved_count' => 0,
+            'rejected_count' => 0,
+            'total_count' => $pendingCount
+        ];
+        
+        return response()->json([
+            'success' => true,
+            'stats' => $stats
+        ]);
+    }
+    
+    /**
+     * Get user's own approval requests (as requester)
+     */
+    public function getMyRequests(Request $request)
+    {
+        $userId = auth()->id();
+        $limit = $request->get('limit', 10);
+        
+        $requests = ApprovalRequest::with(['approver', 'hrdApprover', 'leaveType'])
+            ->where('user_id', $userId)
+            ->orderBy('created_at', 'desc')
+            ->limit($limit)
+            ->get();
+            
+        return response()->json([
+            'success' => true,
+            'requests' => $requests
+        ]);
+    }
+
+    /**
+     * Get user's notifications related to leave requests
+     */
+    public function getLeaveNotifications(Request $request)
+    {
+        $userId = auth()->id();
+        $limit = $request->get('limit', 10);
+        
         $notifications = DB::table('notifications')
             ->where('user_id', $userId)
-            ->whereIn('type', ['leave_approved', 'leave_rejected', 'leave_supervisor_approved', 'leave_hrd_approval_request'])
+            ->whereIn('type', ['leave_approval_request', 'leave_supervisor_approved', 'leave_approved', 'leave_rejected', 'leave_hrd_approval_request'])
             ->orderBy('created_at', 'desc')
-            ->limit(20)
+            ->limit($limit)
             ->get();
             
         return response()->json([
@@ -431,4 +645,7 @@ class ApprovalController extends Controller
             'notifications' => $notifications
         ]);
     }
+
+
+
 }

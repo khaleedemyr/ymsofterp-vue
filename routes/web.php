@@ -2110,6 +2110,20 @@ Route::middleware(['auth'])->prefix('admin')->group(function () {
     Route::get('/member-apps-settings/items', [App\Http\Controllers\MemberAppsSettingsController::class, 'getItems'])->name('member-apps-settings.items');
     
     // Challenge routes
+    Route::get('/challenges', [App\Http\Controllers\ChallengeController::class, 'index'])->name('challenges.index');
+    Route::get('/challenges/create', [App\Http\Controllers\ChallengeController::class, 'create'])->name('challenges.create');
+    Route::post('/challenges', [App\Http\Controllers\ChallengeController::class, 'store'])->name('challenges.store');
+    Route::get('/challenges/{challenge}', [App\Http\Controllers\ChallengeController::class, 'show'])->name('challenges.show');
+    Route::get('/challenges/{challenge}/edit', [App\Http\Controllers\ChallengeController::class, 'edit'])->name('challenges.edit');
+    Route::put('/challenges/{challenge}', [App\Http\Controllers\ChallengeController::class, 'update'])->name('challenges.update');
+    Route::delete('/challenges/{challenge}', [App\Http\Controllers\ChallengeController::class, 'destroy'])->name('challenges.destroy');
+    Route::patch('/challenges/{challenge}/toggle-status', [App\Http\Controllers\ChallengeController::class, 'toggleStatus'])->name('challenges.toggle-status');
+    
+    // Challenge API routes
+    Route::get('/api/challenge-items', [App\Http\Controllers\ChallengeController::class, 'getChallengeItems'])->name('api.challenge-items');
+    Route::get('/api/challenge-type-config', [App\Http\Controllers\ChallengeController::class, 'getChallengeTypeConfig'])->name('api.challenge-type-config');
+    
+    // Legacy challenge routes (keep for backward compatibility)
     Route::post('/member-apps-settings/challenge', [App\Http\Controllers\MemberAppsSettingsController::class, 'storeChallenge'])->name('member-apps-settings.challenge.store');
     Route::put('/member-apps-settings/challenge/{id}', [App\Http\Controllers\MemberAppsSettingsController::class, 'updateChallenge'])->name('member-apps-settings.challenge.update');
     Route::delete('/member-apps-settings/challenge/{id}', [App\Http\Controllers\MemberAppsSettingsController::class, 'deleteChallenge'])->name('member-apps-settings.challenge.delete');
