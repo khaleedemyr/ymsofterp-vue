@@ -222,7 +222,7 @@ class ApprovalController extends Controller
             $approver = auth()->user();
             DB::table('notifications')->insert([
                 'user_id' => $approvalRequest->user_id,
-                'type' => 'leave_supervisor_approved',
+                'type' => 'leave_approved',
                 'message' => "Permohonan izin/cuti Anda untuk periode {$approvalRequest->date_from} - {$approvalRequest->date_to} telah disetujui oleh atasan ({$approver->nama_lengkap}). Menunggu persetujuan HRD.",
                 'url' => config('app.url') . '/attendance',
                 'is_read' => 0,
@@ -418,11 +418,37 @@ class ApprovalController extends Controller
     public function getNotifications(Request $request)
     {
         $userId = auth()->id();
+        $user = auth()->user();
         
-        $notifications = DB::table('notifications')
-            ->where('user_id', $userId)
-            ->whereIn('type', ['leave_approved', 'leave_rejected', 'leave_supervisor_approved', 'leave_hrd_approval_request'])
-            ->orderBy('created_at', 'desc')
+        // Check if this user is an approver (supervisor or HRD)
+        $isApprover = DB::table('approval_requests')
+            ->where('approver_id', $userId)
+            ->orWhere('hrd_approver_id', $userId)
+            ->exists();
+            
+        if ($isApprover) {
+            // This user is an approver - they should NOT see leave_approved/leave_rejected notifications
+            // These notifications are only for the user who submitted the request
+            $query = DB::table('notifications')
+                ->where('user_id', $userId);
+                
+            // Filter based on user role
+            if ($user->division_id === 6) {
+                // HRD users should only see leave_hrd_approval_request notifications
+                $query->where('type', 'leave_hrd_approval_request');
+            } else {
+                // Supervisor users should only see leave_approval_request notifications
+                $query->where('type', 'leave_approval_request');
+            }
+        } else {
+            // This user is NOT an approver - they should see leave_approved/leave_rejected notifications
+            // These are notifications about their own requests being approved/rejected
+            $query = DB::table('notifications')
+                ->where('user_id', $userId)
+                ->whereIn('type', ['leave_approved', 'leave_rejected']);
+        }
+        
+        $notifications = $query->orderBy('created_at', 'desc')
             ->limit(20)
             ->get();
             
@@ -430,5 +456,233 @@ class ApprovalController extends Controller
             'success' => true,
             'notifications' => $notifications
         ]);
+    }
+    
+    /**
+     * HRD Approve a request
+     */
+    public function hrdApprove(Request $request, $id)
+    {
+        $request->validate([
+            'notes' => 'nullable|string|max:500'
+        ]);
+        
+        $userId = auth()->id();
+        
+        // Only HRD users can approve
+        if (auth()->user()->division_id !== 6) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthorized'
+            ], 403);
+        }
+        
+        // Get approval request that needs HRD approval
+        $approvalRequest = DB::table('approval_requests')
+            ->join('users', 'approval_requests.user_id', '=', 'users.id')
+            ->where('approval_requests.id', $id)
+            ->where('approval_requests.status', 'approved')
+            ->where('approval_requests.hrd_status', 'pending')
+            ->select([
+                'approval_requests.*',
+                'users.nama_lengkap as user_name',
+                'users.id as user_id'
+            ])
+            ->first();
+            
+        if (!$approvalRequest) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Approval request not found or already processed'
+            ], 404);
+        }
+        
+        try {
+            DB::beginTransaction();
+            
+            // Update approval request to HRD approved
+            DB::table('approval_requests')
+                ->where('id', $id)
+                ->update([
+                    'hrd_status' => 'approved',
+                    'hrd_approved_by' => $userId,
+                    'hrd_approved_at' => now(),
+                    'hrd_approval_notes' => $request->notes,
+                    'updated_at' => now()
+                ]);
+            
+            // Update corresponding absent request to approved
+            DB::table('absent_requests')
+                ->where('approval_request_id', $id)
+                ->update([
+                    'status' => 'approved',
+                    'hrd_approved_by' => $userId,
+                    'hrd_approved_at' => now(),
+                    'updated_at' => now()
+                ]);
+            
+            // Kirim notifikasi ke user yang mengajukan
+            $hrdApprover = auth()->user();
+            DB::table('notifications')->insert([
+                'user_id' => $approvalRequest->user_id,
+                'type' => 'leave_approved',
+                'message' => "Permohonan izin/cuti Anda untuk periode {$approvalRequest->date_from} - {$approvalRequest->date_to} telah disetujui oleh HRD ({$hrdApprover->nama_lengkap}).",
+                'url' => config('app.url') . '/attendance',
+                'is_read' => 0,
+                'created_at' => now(),
+                'updated_at' => now()
+            ]);
+
+            DB::commit();
+            
+            return response()->json([
+                'success' => true,
+                'message' => 'Permohonan izin/cuti berhasil disetujui oleh HRD'
+            ]);
+            
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::error('Error HRD approving request: ' . $e->getMessage());
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Terjadi kesalahan saat menyetujui permohonan'
+            ], 500);
+        }
+    }
+    
+    /**
+     * HRD Reject a request
+     */
+    public function hrdReject(Request $request, $id)
+    {
+        $request->validate([
+            'notes' => 'required|string|max:500'
+        ]);
+        
+        $userId = auth()->id();
+        
+        // Only HRD users can reject
+        if (auth()->user()->division_id !== 6) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthorized'
+            ], 403);
+        }
+        
+        // Get approval request that needs HRD approval
+        $approvalRequest = DB::table('approval_requests')
+            ->join('users', 'approval_requests.user_id', '=', 'users.id')
+            ->where('approval_requests.id', $id)
+            ->where('approval_requests.status', 'approved')
+            ->where('approval_requests.hrd_status', 'pending')
+            ->select([
+                'approval_requests.*',
+                'users.nama_lengkap as user_name',
+                'users.id as user_id'
+            ])
+            ->first();
+            
+        if (!$approvalRequest) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Approval request not found or already processed'
+            ], 404);
+        }
+        
+        try {
+            DB::beginTransaction();
+            
+            // Update approval request to HRD rejected
+            DB::table('approval_requests')
+                ->where('id', $id)
+                ->update([
+                    'hrd_status' => 'rejected',
+                    'hrd_rejected_by' => $userId,
+                    'hrd_rejected_at' => now(),
+                    'hrd_rejection_reason' => $request->notes,
+                    'updated_at' => now()
+                ]);
+            
+            // Update corresponding absent request to rejected
+            DB::table('absent_requests')
+                ->where('approval_request_id', $id)
+                ->update([
+                    'status' => 'rejected',
+                    'hrd_rejected_by' => $userId,
+                    'hrd_rejected_at' => now(),
+                    'rejection_reason' => $request->notes,
+                    'updated_at' => now()
+                ]);
+            
+            // Kirim notifikasi ke user yang mengajukan
+            $hrdApprover = auth()->user();
+            DB::table('notifications')->insert([
+                'user_id' => $approvalRequest->user_id,
+                'type' => 'leave_rejected',
+                'message' => "Permohonan izin/cuti Anda untuk periode {$approvalRequest->date_from} - {$approvalRequest->date_to} telah ditolak oleh HRD ({$hrdApprover->nama_lengkap}).",
+                'url' => config('app.url') . '/attendance',
+                'is_read' => 0,
+                'created_at' => now(),
+                'updated_at' => now()
+            ]);
+
+            DB::commit();
+            
+            return response()->json([
+                'success' => true,
+                'message' => 'Permohonan izin/cuti berhasil ditolak oleh HRD'
+            ]);
+            
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::error('Error HRD rejecting request: ' . $e->getMessage());
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Terjadi kesalahan saat menolak permohonan'
+            ], 500);
+        }
+    }
+
+    /**
+     * Mark notification as read
+     */
+    public function markNotificationAsRead(Request $request, $id)
+    {
+        $userId = auth()->id();
+        
+        try {
+            $notification = DB::table('notifications')
+                ->where('id', $id)
+                ->where('user_id', $userId)
+                ->first();
+                
+            if (!$notification) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Notification not found'
+                ], 404);
+            }
+            
+            DB::table('notifications')
+                ->where('id', $id)
+                ->where('user_id', $userId)
+                ->update([
+                    'is_read' => true,
+                    'updated_at' => now()
+                ]);
+                
+            return response()->json([
+                'success' => true,
+                'message' => 'Notification marked as read'
+            ]);
+            
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to mark notification as read: ' . $e->getMessage()
+            ], 500);
+        }
     }
 }

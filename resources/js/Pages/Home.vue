@@ -65,6 +65,12 @@ const showAllApprovalsModal = ref(false);
 const allApprovals = ref([]);
 const loadingAllApprovals = ref(false);
 
+// Filter and search for approvals
+const approvalSearchQuery = ref('');
+const approvalTypeFilter = ref('');
+const approvalDateFilter = ref('');
+const approvalSortBy = ref('newest');
+
 // Training invitations
 const trainingInvitations = ref([]);
 const loadingTrainingInvitations = ref(false);
@@ -188,7 +194,7 @@ const totalNotificationsCount = computed(() => {
     const approvalCount = pendingApprovals.value.length;
     const hrdApprovalCount = pendingHrdApprovals.value.length;
     const correctionApprovalCount = pendingCorrectionApprovals.value.length;
-    const leaveNotificationCount = leaveNotifications.value.filter(n => !n.is_read && (n.type === 'leave_approved' || n.type === 'leave_rejected')).length;
+    const leaveNotificationCount = leaveNotifications.value.filter(n => !n.is_read && (n.type === 'leave_approved' || n.type === 'leave_rejected' || n.type === 'leave_hrd_approval_request') && isNotificationForCurrentUser(n)).length;
     const total = approvalCount + hrdApprovalCount + correctionApprovalCount + leaveNotificationCount;
     
     // Only return count if there are actual unread notifications
@@ -218,6 +224,74 @@ const availableTrainingsStats = computed(() => {
         available,
         completionRate: total > 0 ? Math.round((completed / total) * 100) : 0
     };
+});
+
+// Computed property for filtered approvals
+const filteredApprovals = computed(() => {
+    let filtered = [...allApprovals.value];
+    
+    // Search filter
+    if (approvalSearchQuery.value) {
+        const query = approvalSearchQuery.value.toLowerCase();
+        filtered = filtered.filter(approval => {
+            const name = (approval.employee_name || approval.user?.nama_lengkap || '').toLowerCase();
+            const leaveType = (approval.leave_type?.name || '').toLowerCase();
+            const reason = (approval.reason || '').toLowerCase();
+            const outlet = (approval.nama_outlet || '').toLowerCase();
+            
+            return name.includes(query) || 
+                   leaveType.includes(query) || 
+                   reason.includes(query) || 
+                   outlet.includes(query);
+        });
+    }
+    
+    // Type filter
+    if (approvalTypeFilter.value) {
+        filtered = filtered.filter(approval => approval.type === approvalTypeFilter.value);
+    }
+    
+    // Date filter
+    if (approvalDateFilter.value) {
+        const now = new Date();
+        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        
+        filtered = filtered.filter(approval => {
+            const approvalDate = new Date(approval.created_at || approval.tanggal);
+            
+            switch (approvalDateFilter.value) {
+                case 'today':
+                    return approvalDate >= today;
+                case 'week':
+                    const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+                    return approvalDate >= weekAgo;
+                case 'month':
+                    const monthAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
+                    return approvalDate >= monthAgo;
+                default:
+                    return true;
+            }
+        });
+    }
+    
+    // Sort
+    filtered.sort((a, b) => {
+        switch (approvalSortBy.value) {
+            case 'oldest':
+                return new Date(a.created_at || a.tanggal) - new Date(b.created_at || b.tanggal);
+            case 'name':
+                const nameA = (a.employee_name || a.user?.nama_lengkap || '').toLowerCase();
+                const nameB = (b.employee_name || b.user?.nama_lengkap || '').toLowerCase();
+                return nameA.localeCompare(nameB);
+            case 'date':
+                return new Date(a.date_from || a.tanggal) - new Date(b.date_from || b.tanggal);
+            case 'newest':
+            default:
+                return new Date(b.created_at || b.tanggal) - new Date(a.created_at || a.tanggal);
+        }
+    });
+    
+    return filtered;
 });
 
 function updateGreeting() {
@@ -2164,6 +2238,27 @@ async function handleNotificationClick(notification) {
         if (approvalId) {
             await showApprovalDetails(approvalId);
         }
+    } else if (notification.type === 'leave_approved' || notification.type === 'leave_rejected') {
+        // Mark notification as read
+        try {
+            await axios.post(`/api/approval/notifications/${notification.id}/mark-read`);
+            // Update local state
+            const index = leaveNotifications.value.findIndex(n => n.id === notification.id);
+            if (index !== -1) {
+                leaveNotifications.value[index].is_read = true;
+            }
+        } catch (error) {
+            console.error('Error marking notification as read:', error);
+        }
+        
+        // Show notification details
+        await Swal.fire({
+            icon: notification.type === 'leave_approved' ? 'success' : 'error',
+            title: notification.type === 'leave_approved' ? 'Izin Disetujui' : 'Izin Ditolak',
+            text: notification.message,
+            confirmButtonText: 'OK',
+            confirmButtonColor: notification.type === 'leave_approved' ? '#10B981' : '#EF4444'
+        });
     }
 }
 
@@ -2719,6 +2814,36 @@ function clearFilters() {
     loadAnnouncements(1);
 }
 
+function clearApprovalFilters() {
+    approvalSearchQuery.value = '';
+    approvalTypeFilter.value = '';
+    approvalDateFilter.value = '';
+    approvalSortBy.value = 'newest';
+}
+
+// Check if notification is for current user (not for approver)
+function isNotificationForCurrentUser(notification) {
+    // Notifications like leave_approved and leave_rejected are sent to the user who submitted the request
+    // They should NOT appear in the approver's dashboard (both supervisor and HRD)
+    if (notification.type === 'leave_approved' || notification.type === 'leave_rejected') {
+        return false; // These notifications are for the requester, not the approver
+    }
+    
+    // For HRD users, only show leave_hrd_approval_request notifications
+    // For supervisor users, only show leave_approval_request notifications
+    if (user.division_id === 6) { // HRD user
+        if (notification.type === 'leave_approval_request') {
+            return false; // This is for supervisor, not HRD
+        }
+    } else { // Supervisor user
+        if (notification.type === 'leave_hrd_approval_request') {
+            return false; // This is for HRD, not supervisor
+        }
+    }
+    
+    return true; // Other notifications can be shown
+}
+
 async function changePage(page) {
     await loadAnnouncements(page);
 }
@@ -3133,24 +3258,29 @@ watch(locale, () => {
 
 
                             <!-- Leave Notifications -->
-                            <div v-for="notification in leaveNotifications.filter(n => n.type === 'leave_approved' || n.type === 'leave_rejected').slice(0, 2)" :key="'notification-' + notification.id"
+                            <div v-for="notification in leaveNotifications.filter(n => (n.type === 'leave_approved' || n.type === 'leave_rejected' || n.type === 'leave_hrd_approval_request') && !n.is_read && isNotificationForCurrentUser(n)).slice(0, 2)" :key="'notification-' + notification.id"
                                 @click="handleNotificationClick(notification)"
                                 class="p-3 rounded-lg transition-all duration-200"
                                 :class="[
                                     isNight ? 'bg-slate-700/50' : 'bg-green-50',
                                     notification.type === 'leave_approved' ? (isNight ? 'border-l-4 border-green-500' : 'border-l-4 border-green-500') :
                                     notification.type === 'leave_rejected' ? (isNight ? 'border-l-4 border-red-500' : 'border-l-4 border-red-500') :
+                                    notification.type === 'leave_hrd_approval_request' ? (isNight ? 'border-l-4 border-purple-500' : 'border-l-4 border-purple-500') :
                                     (isNight ? 'border-l-4 border-yellow-500' : 'border-l-4 border-yellow-500')
                                 ]">
                                 <div class="flex items-start gap-2">
                                     <div class="flex-shrink-0 mt-1">
                                         <div v-if="notification.type === 'leave_approved'" class="w-2 h-2 rounded-full bg-green-500"></div>
                                         <div v-else-if="notification.type === 'leave_rejected'" class="w-2 h-2 rounded-full bg-red-500"></div>
+                                        <div v-else-if="notification.type === 'leave_hrd_approval_request'" class="w-2 h-2 rounded-full bg-purple-500"></div>
                                         <div v-else class="w-2 h-2 rounded-full bg-yellow-500"></div>
                                     </div>
                                     <div class="flex-1">
                                         <div class="text-xs font-medium" :class="isNight ? 'text-white' : 'text-slate-800'">
-                                            {{ notification.type === 'leave_approved' ? 'Izin Disetujui' : 'Izin Ditolak' }}
+                                            {{ notification.type === 'leave_approved' ? 'Izin Disetujui' : 
+                                               notification.type === 'leave_rejected' ? 'Izin Ditolak' : 
+                                               notification.type === 'leave_hrd_approval_request' ? 'Butuh Persetujuan HRD' : 
+                                               'Notifikasi Izin' }}
                                         </div>
                                         <div class="text-xs mt-1" :class="isNight ? 'text-slate-300' : 'text-slate-600'">
                                             {{ notification.message }}
@@ -3162,9 +3292,9 @@ watch(locale, () => {
                                 </div>
                             </div>
                             
-                            <div v-if="(pendingApprovals.length + pendingHrdApprovals.length + leaveNotifications.filter(n => n.type === 'leave_approved' || n.type === 'leave_rejected').length) > 6" class="text-center pt-2">
+                            <div v-if="(pendingApprovals.length + pendingHrdApprovals.length + leaveNotifications.filter(n => (n.type === 'leave_approved' || n.type === 'leave_rejected' || n.type === 'leave_hrd_approval_request') && !n.is_read && isNotificationForCurrentUser(n)).length) > 6" class="text-center pt-2">
                                 <button class="text-sm text-blue-500 hover:text-blue-700 font-medium">
-                                    Lihat {{ (pendingApprovals.length + pendingHrdApprovals.length + leaveNotifications.filter(n => n.type === 'leave_approved' || n.type === 'leave_rejected').length) - 6 }} notifikasi lainnya...
+                                    Lihat {{ (pendingApprovals.length + pendingHrdApprovals.length + leaveNotifications.filter(n => (n.type === 'leave_approved' || n.type === 'leave_rejected' || n.type === 'leave_hrd_approval_request') && !n.is_read && isNotificationForCurrentUser(n)).length) - 6 }} notifikasi lainnya...
                                 </button>
                             </div>
                             
@@ -6132,6 +6262,63 @@ watch(locale, () => {
 
             <!-- Modal Body -->
             <div class="p-6 overflow-y-auto max-h-[calc(90vh-140px)]">
+                
+                <!-- Search and Filter Section -->
+                <div class="mb-6 space-y-4">
+                    <!-- Search Input -->
+                    <div class="relative">
+                        <input 
+                            v-model="approvalSearchQuery" 
+                            type="text" 
+                            placeholder="Cari berdasarkan nama, jenis izin, atau alasan..."
+                            class="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+                        >
+                        <i class="fa-solid fa-search absolute left-3 top-3 text-gray-400"></i>
+                    </div>
+                    
+                    <!-- Filter Options -->
+                    <div class="flex flex-wrap gap-4">
+                        <!-- Type Filter -->
+                        <div class="flex items-center gap-2">
+                            <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Tipe:</label>
+                            <select v-model="approvalTypeFilter" class="px-3 py-1 border border-gray-300 dark:border-gray-600 rounded-md text-sm dark:bg-gray-700 dark:text-white">
+                                <option value="">Semua</option>
+                                <option value="leave">Izin/Cuti</option>
+                                <option value="hrd_leave">Izin/Cuti HRD</option>
+                                <option value="correction">Koreksi</option>
+                            </select>
+                        </div>
+                        
+                        <!-- Date Filter -->
+                        <div class="flex items-center gap-2">
+                            <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Tanggal:</label>
+                            <select v-model="approvalDateFilter" class="px-3 py-1 border border-gray-300 dark:border-gray-600 rounded-md text-sm dark:bg-gray-700 dark:text-white">
+                                <option value="">Semua</option>
+                                <option value="today">Hari ini</option>
+                                <option value="week">Minggu ini</option>
+                                <option value="month">Bulan ini</option>
+                            </select>
+                        </div>
+                        
+                        <!-- Sort Options -->
+                        <div class="flex items-center gap-2">
+                            <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Urutkan:</label>
+                            <select v-model="approvalSortBy" class="px-3 py-1 border border-gray-300 dark:border-gray-600 rounded-md text-sm dark:bg-gray-700 dark:text-white">
+                                <option value="newest">Terbaru</option>
+                                <option value="oldest">Terlama</option>
+                                <option value="name">Nama A-Z</option>
+                                <option value="date">Tanggal Izin</option>
+                            </select>
+                        </div>
+                        
+                        <!-- Clear Filters -->
+                        <button @click="clearApprovalFilters" 
+                                class="px-3 py-1 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700">
+                            <i class="fa-solid fa-times mr-1"></i>Reset
+                        </button>
+                    </div>
+                </div>
+                
                 <!-- Loading State -->
                 <div v-if="loadingAllApprovals" class="text-center py-8">
                     <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
@@ -6145,8 +6332,11 @@ watch(locale, () => {
                 </div>
 
                 <!-- Approvals List -->
-                <div v-else class="space-y-4">
-                    <div v-for="approval in allApprovals" :key="`all-approval-${approval.type}-${approval.id}`" 
+                <div v-else-if="filteredApprovals.length > 0" class="space-y-4">
+                    <div class="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                        Menampilkan {{ filteredApprovals.length }} dari {{ allApprovals.length }} approval
+                    </div>
+                    <div v-for="approval in filteredApprovals" :key="`all-approval-${approval.type}-${approval.id}`" 
                          class="border border-gray-200 dark:border-gray-600 rounded-lg p-4 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
                         
                         <!-- Approval Header -->
@@ -6240,13 +6430,28 @@ watch(locale, () => {
                         </div>
                     </div>
                 </div>
+                
+                <!-- No Results State -->
+                <div v-else class="text-center py-8">
+                    <i class="fa-solid fa-search text-4xl text-gray-400 mb-4"></i>
+                    <p class="text-gray-600 dark:text-gray-400">Tidak ada approval yang sesuai dengan filter</p>
+                    <button @click="clearApprovalFilters" 
+                            class="mt-2 px-4 py-2 text-sm text-blue-600 hover:text-blue-800 border border-blue-300 rounded-md hover:bg-blue-50">
+                        <i class="fa-solid fa-times mr-1"></i>Reset Filter
+                    </button>
+                </div>
             </div>
 
             <!-- Modal Footer -->
             <div class="bg-gray-50 dark:bg-gray-700 px-6 py-4 border-t border-gray-200 dark:border-gray-600">
                 <div class="flex justify-between items-center">
                     <div class="text-sm text-gray-600 dark:text-gray-400">
-                        Total: {{ allApprovals.length }} approval pending
+                        <span v-if="filteredApprovals.length === allApprovals.length">
+                            Total: {{ allApprovals.length }} approval pending
+                        </span>
+                        <span v-else>
+                            Menampilkan {{ filteredApprovals.length }} dari {{ allApprovals.length }} approval
+                        </span>
                     </div>
                     <button @click="showAllApprovalsModal = false" 
                             class="px-4 py-2 text-gray-600 border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-500 transition-colors">

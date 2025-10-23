@@ -2002,7 +2002,8 @@ Route::middleware(['auth', 'verified'])->prefix('api/approval')->group(function 
     Route::get('/pending-hrd', [\App\Http\Controllers\ApprovalController::class, 'getPendingHrdApprovals'])->name('api.approval.pending-hrd');
     Route::get('/stats', [\App\Http\Controllers\ApprovalController::class, 'getApprovalStats'])->name('api.approval.stats');
     Route::get('/my-requests', [\App\Http\Controllers\ApprovalController::class, 'getMyRequests'])->name('api.approval.my-requests');
-    Route::get('/notifications', [\App\Http\Controllers\ApprovalController::class, 'getLeaveNotifications'])->name('api.approval.notifications');
+    Route::get('/notifications', [\App\Http\Controllers\ApprovalController::class, 'getNotifications'])->name('api.approval.notifications');
+    Route::post('/notifications/{id}/mark-read', [\App\Http\Controllers\ApprovalController::class, 'markNotificationAsRead'])->name('api.approval.notifications.mark-read');
     Route::get('/{id}', [\App\Http\Controllers\ApprovalController::class, 'getApprovalDetails'])->name('api.approval.details');
     Route::post('/{id}/approve', [\App\Http\Controllers\ApprovalController::class, 'approve'])->name('api.approval.approve');
     Route::post('/{id}/reject', [\App\Http\Controllers\ApprovalController::class, 'reject'])->name('api.approval.reject');

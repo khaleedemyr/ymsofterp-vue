@@ -406,7 +406,7 @@
 
     <!-- Challenge Modal -->
     <div v-if="showChallengeModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto">
+      <div class="bg-white rounded-2xl shadow-2xl w-full max-w-4xl mx-4 max-h-[90vh] overflow-y-auto">
         <div class="px-6 py-4 border-b border-gray-200">
           <div class="flex justify-between items-center">
             <h3 class="text-lg font-semibold text-gray-700">
@@ -418,44 +418,168 @@
           </div>
         </div>
         <form @submit.prevent="saveChallenge" class="p-6">
-          <div class="space-y-4">
-            <div>
-              <label class="block text-sm font-medium text-gray-700 mb-2">Title</label>
-              <input v-model="challengeForm.title" type="text" required class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
-            </div>
-            <div>
-              <label class="block text-sm font-medium text-gray-700 mb-2">Description</label>
-              <textarea v-model="challengeForm.description" rows="3" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"></textarea>
-            </div>
-            <div>
-              <label class="block text-sm font-medium text-gray-700 mb-2">Rules</label>
-              <textarea v-model="challengeForm.rules" rows="4" required class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"></textarea>
-            </div>
-            <div>
-              <label class="block text-sm font-medium text-gray-700 mb-2">Image</label>
-              <input @change="handleChallengeImageChange" type="file" accept="image/*" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
-              <div v-if="editingChallenge && editingChallenge.image" class="mt-2">
-                <img :src="getImageUrl(editingChallenge.image)" alt="Current image" class="w-32 h-20 object-cover rounded">
-                <p class="text-sm text-gray-500 mt-1">Current image</p>
+          <div class="space-y-6">
+            <!-- Basic Information -->
+            <div class="bg-gray-50 rounded-lg p-4">
+              <h4 class="text-md font-semibold text-gray-900 mb-4">Informasi Dasar</h4>
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label class="block text-sm font-medium text-gray-700 mb-2">Challenge Type *</label>
+                  <select v-model="challengeForm.challenge_type_id" @change="onChallengeTypeChange" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" required>
+                    <option value="">Pilih Challenge Type</option>
+                    <option value="spending">Spending-based</option>
+                    <option value="product">Product-based</option>
+                    <option value="multi-condition">Multi-condition</option>
+                    <option value="recurring">Recurring</option>
+                    <option value="custom">Custom</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-gray-700 mb-2">Title *</label>
+                  <input v-model="challengeForm.title" type="text" required class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                </div>
+              </div>
+              <div class="mt-4">
+                <label class="block text-sm font-medium text-gray-700 mb-2">Description</label>
+                <textarea v-model="challengeForm.description" rows="3" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"></textarea>
               </div>
             </div>
-            <div>
-              <label class="block text-sm font-medium text-gray-700 mb-2">Points Reward</label>
-              <input v-model.number="challengeForm.points_reward" type="number" min="0" required class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
-            </div>
-            <div class="grid grid-cols-2 gap-4">
-              <div>
-                <label class="block text-sm font-medium text-gray-700 mb-2">Start Date</label>
-                <input v-model="challengeForm.start_date" type="date" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+
+            <!-- Challenge Rules (Dynamic based on type) -->
+            <div v-if="challengeForm.challenge_type_id" class="bg-gray-50 rounded-lg p-4">
+              <h4 class="text-md font-semibold text-gray-900 mb-4">Challenge Rules</h4>
+              
+              <!-- Spending-based Rules -->
+              <div v-if="challengeForm.challenge_type_id === 'spending'" class="space-y-4">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Minimum Spending (IDR) *</label>
+                    <input v-model="challengeForm.rules.min_amount" type="number" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="300000" required>
+                  </div>
+                  <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Reward Type *</label>
+                    <select v-model="challengeForm.rules.reward_type" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" required>
+                      <option value="">Pilih Reward Type</option>
+                      <option value="item">Item</option>
+                      <option value="points">Points</option>
+                      <option value="voucher">Voucher</option>
+                    </select>
+                  </div>
+                </div>
+                <div v-if="challengeForm.rules.reward_type">
+                  <label class="block text-sm font-medium text-gray-700 mb-2">Reward Value *</label>
+                  <input v-model="challengeForm.rules.reward_value" type="text" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="Free Iced Coffee / 100 points / IDR 100.000" required>
+                </div>
+                <div class="flex items-center">
+                  <input v-model="challengeForm.rules.immediate" type="checkbox" class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded">
+                  <label class="ml-2 text-sm text-gray-700">Reward langsung diberikan</label>
+                </div>
               </div>
-              <div>
-                <label class="block text-sm font-medium text-gray-700 mb-2">End Date</label>
-                <input v-model="challengeForm.end_date" type="date" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+
+              <!-- Product-based Rules -->
+              <div v-else-if="challengeForm.challenge_type_id === 'product'" class="space-y-4">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Product Category *</label>
+                    <input v-model="challengeForm.rules.product_category" type="text" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="New Product Development" required>
+                  </div>
+                  <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Quantity Required *</label>
+                    <input v-model="challengeForm.rules.quantity_required" type="number" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="2" required>
+                  </div>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Reward Type *</label>
+                    <select v-model="challengeForm.rules.reward_type" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" required>
+                      <option value="">Pilih Reward Type</option>
+                      <option value="points">Points</option>
+                      <option value="item">Item</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Reward Value *</label>
+                    <input v-model="challengeForm.rules.reward_value" type="text" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="100 points" required>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Multi-condition Rules -->
+              <div v-else-if="challengeForm.challenge_type_id === 'multi-condition'" class="space-y-4">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Min Spending (IDR) *</label>
+                    <input v-model="challengeForm.rules.min_spending" type="number" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="1000000" required>
+                  </div>
+                  <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Min Transactions *</label>
+                    <input v-model="challengeForm.rules.min_transactions" type="number" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="2" required>
+                  </div>
+                  <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Min Visits *</label>
+                    <input v-model="challengeForm.rules.min_visits" type="number" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="2" required>
+                  </div>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Reward Type *</label>
+                    <select v-model="challengeForm.rules.reward_type" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" required>
+                      <option value="">Pilih Reward Type</option>
+                      <option value="voucher">Voucher</option>
+                      <option value="item">Item</option>
+                      <option value="points">Points</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Reward Value *</label>
+                    <input v-model="challengeForm.rules.reward_value" type="text" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="IDR 100.000" required>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Custom Rules -->
+              <div v-else-if="challengeForm.challenge_type_id === 'custom'" class="space-y-4">
+                <div>
+                  <label class="block text-sm font-medium text-gray-700 mb-2">Custom Rules *</label>
+                  <textarea v-model="challengeForm.rules" rows="4" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="Masukkan rules challenge secara detail..."></textarea>
+                </div>
               </div>
             </div>
-            <div class="flex items-center">
-              <input v-model="challengeForm.is_active" type="checkbox" id="challenge_active" class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded">
-              <label for="challenge_active" class="ml-2 block text-sm text-gray-700">Active</label>
+            <!-- Validity & Settings -->
+            <div class="bg-gray-50 rounded-lg p-4">
+              <h4 class="text-md font-semibold text-gray-900 mb-4">Pengaturan Challenge</h4>
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label class="block text-sm font-medium text-gray-700 mb-2">Validity Period (Days) *</label>
+                  <input v-model="challengeForm.validity_period_days" type="number" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="30" required>
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-gray-700 mb-2">Points Reward</label>
+                  <input v-model.number="challengeForm.points_reward" type="number" min="0" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                </div>
+              </div>
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                <div>
+                  <label class="block text-sm font-medium text-gray-700 mb-2">Start Date</label>
+                  <input v-model="challengeForm.start_date" type="date" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-gray-700 mb-2">End Date</label>
+                  <input v-model="challengeForm.end_date" type="date" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                </div>
+              </div>
+              <div class="mt-4">
+                <label class="block text-sm font-medium text-gray-700 mb-2">Image</label>
+                <input @change="handleChallengeImageChange" type="file" accept="image/*" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                <div v-if="editingChallenge && editingChallenge.image" class="mt-2">
+                  <img :src="getImageUrl(editingChallenge.image)" alt="Current image" class="w-32 h-20 object-cover rounded">
+                  <p class="text-sm text-gray-500 mt-1">Current image</p>
+                </div>
+              </div>
+              <div class="flex items-center mt-4">
+                <input v-model="challengeForm.is_active" type="checkbox" id="challenge_active" class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded">
+                <label for="challenge_active" class="ml-2 block text-sm text-gray-700">Active</label>
+              </div>
             </div>
           </div>
           <div class="flex justify-end gap-3 mt-6">
@@ -654,9 +778,11 @@ const rewardForm = ref({
 })
 
 const challengeForm = ref({
+  challenge_type_id: '',
   title: '',
   description: '',
-  rules: '',
+  rules: {},
+  validity_period_days: 30,
   image: null,
   points_reward: 0,
   start_date: '',
@@ -743,9 +869,11 @@ const openRewardModal = () => {
 const openChallengeModal = () => {
   editingChallenge.value = null
   challengeForm.value = {
+    challenge_type_id: '',
     title: '',
     description: '',
-    rules: '',
+    rules: {},
+    validity_period_days: 30,
     image: null,
     points_reward: 0,
     start_date: '',
@@ -753,6 +881,11 @@ const openChallengeModal = () => {
     is_active: true
   }
   showChallengeModal.value = true
+}
+
+const onChallengeTypeChange = () => {
+  // Reset rules when type changes
+  challengeForm.value.rules = {}
 }
 
 const openWhatsOnModal = () => {
@@ -837,9 +970,11 @@ const editReward = (reward) => {
 const editChallenge = (challenge) => {
   editingChallenge.value = challenge
   challengeForm.value = {
+    challenge_type_id: challenge.challenge_type_id || '',
     title: challenge.title,
     description: challenge.description || '',
-    rules: challenge.rules,
+    rules: challenge.rules || {},
+    validity_period_days: challenge.validity_period_days || 30,
     image: null,
     points_reward: challenge.points_reward,
     start_date: challenge.start_date || '',
