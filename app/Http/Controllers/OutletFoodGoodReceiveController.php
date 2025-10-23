@@ -17,6 +17,7 @@ class OutletFoodGoodReceiveController extends Controller
             ->leftJoin('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
             ->leftJoin('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
             ->leftJoin('warehouse_outlets as wo', 'gr.warehouse_outlet_id', '=', 'wo.id')
+            ->leftJoin('users as u', 'gr.created_by', '=', 'u.id')
             ->whereNull('gr.deleted_at') // Exclude soft deleted records
             ->select(
                 'gr.id',
@@ -29,7 +30,9 @@ class OutletFoodGoodReceiveController extends Controller
                 'do.number as delivery_order_number',
                 'do.source_type',
                 'gr.warehouse_outlet_id',
-                'wo.name as warehouse_outlet_name'
+                'wo.name as warehouse_outlet_name',
+                'u.nama_lengkap as creator_name',
+                'gr.created_at'
             );
         if ($user->id_outlet != 1) {
             $query->where('gr.outlet_id', $user->id_outlet);
