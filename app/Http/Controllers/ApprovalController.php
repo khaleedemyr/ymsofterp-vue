@@ -505,14 +505,13 @@ class ApprovalController extends Controller
                 ->where('id', $id)
                 ->update([
                     'hrd_status' => 'approved',
-                    'hrd_approved_by' => $userId,
                     'hrd_approved_at' => now(),
                     'hrd_approval_notes' => $request->notes,
                     'updated_at' => now()
                 ]);
             
-            // Update corresponding absent request to approved
-            DB::table('absent_requests')
+            // Update corresponding absent request to approved (if exists)
+            $absentRequestUpdated = DB::table('absent_requests')
                 ->where('approval_request_id', $id)
                 ->update([
                     'status' => 'approved',
@@ -520,6 +519,11 @@ class ApprovalController extends Controller
                     'hrd_approved_at' => now(),
                     'updated_at' => now()
                 ]);
+                
+            // Log if no absent request was found
+            if ($absentRequestUpdated === 0) {
+                \Log::warning("No absent_request found for approval_request_id: {$id}");
+            }
             
             // Kirim notifikasi ke user yang mengajukan
             $hrdApprover = auth()->user();
@@ -598,14 +602,13 @@ class ApprovalController extends Controller
                 ->where('id', $id)
                 ->update([
                     'hrd_status' => 'rejected',
-                    'hrd_rejected_by' => $userId,
                     'hrd_rejected_at' => now(),
-                    'hrd_rejection_reason' => $request->notes,
+                    'hrd_approval_notes' => $request->notes,
                     'updated_at' => now()
                 ]);
             
-            // Update corresponding absent request to rejected
-            DB::table('absent_requests')
+            // Update corresponding absent request to rejected (if exists)
+            $absentRequestUpdated = DB::table('absent_requests')
                 ->where('approval_request_id', $id)
                 ->update([
                     'status' => 'rejected',
@@ -614,6 +617,11 @@ class ApprovalController extends Controller
                     'rejection_reason' => $request->notes,
                     'updated_at' => now()
                 ]);
+                
+            // Log if no absent request was found
+            if ($absentRequestUpdated === 0) {
+                \Log::warning("No absent_request found for approval_request_id: {$id}");
+            }
             
             // Kirim notifikasi ke user yang mengajukan
             $hrdApprover = auth()->user();
