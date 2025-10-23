@@ -3725,7 +3725,7 @@ watch(locale, () => {
                 <div class="bg-gray-50 dark:bg-gray-700 px-6 py-4 border-t border-gray-200 dark:border-gray-600">
                     <div class="flex justify-end gap-3">
                         <!-- HRD Actions -->
-                        <template v-if="user.division_id === 6 && selectedApproval.status === 'supervisor_approved'">
+                        <template v-if="user.division_id === 6 && selectedApproval.status === 'approved' && selectedApproval.hrd_status === 'pending'">
                             <button @click="hrdRejectRequest(selectedApproval.id)" 
                                     class="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 transition-colors">
                                 Tolak HRD
