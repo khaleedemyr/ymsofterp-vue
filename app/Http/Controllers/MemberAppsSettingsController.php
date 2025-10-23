@@ -17,19 +17,41 @@ class MemberAppsSettingsController extends Controller
 {
     public function index()
     {
-        $banners = MemberAppsBanner::orderBy('sort_order')->get();
-        $rewards = MemberAppsReward::with('item')->get();
-        $challenges = MemberAppsChallenge::orderBy('created_at', 'desc')->get();
-        $whatsOn = MemberAppsWhatsOn::orderBy('published_at', 'desc')->get();
-        $brands = MemberAppsBrand::orderBy('sort_order')->get();
-        
-        return Inertia::render('MemberAppsSettings/Index', [
-            'banners' => $banners,
-            'rewards' => $rewards,
-            'challenges' => $challenges,
-            'whatsOn' => $whatsOn,
-            'brands' => $brands
-        ]);
+        try {
+            \Log::info('MemberAppsSettings - Loading index page');
+            
+            $banners = MemberAppsBanner::orderBy('sort_order')->get();
+            \Log::info('MemberAppsSettings - Banners loaded:', ['count' => $banners->count()]);
+            
+            $rewards = MemberAppsReward::with('item')->get();
+            \Log::info('MemberAppsSettings - Rewards loaded:', ['count' => $rewards->count()]);
+            
+            $challenges = MemberAppsChallenge::orderBy('created_at', 'desc')->get();
+            \Log::info('MemberAppsSettings - Challenges loaded:', ['count' => $challenges->count()]);
+            
+            $whatsOn = MemberAppsWhatsOn::orderBy('published_at', 'desc')->get();
+            \Log::info('MemberAppsSettings - WhatsOn loaded:', ['count' => $whatsOn->count()]);
+            
+            $brands = MemberAppsBrand::orderBy('sort_order')->get();
+            \Log::info('MemberAppsSettings - Brands loaded:', ['count' => $brands->count()]);
+            
+            return Inertia::render('MemberAppsSettings/Index', [
+                'banners' => $banners,
+                'rewards' => $rewards,
+                'challenges' => $challenges,
+                'whatsOn' => $whatsOn,
+                'brands' => $brands
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('MemberAppsSettings - Error loading index:', [
+                'message' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return redirect()->back()->with('error', 'Failed to load page: ' . $e->getMessage());
+        }
     }
 
     // Banner Methods
@@ -162,13 +184,28 @@ class MemberAppsSettingsController extends Controller
 
     public function getItems()
     {
-        $items = Item::join('categories', 'items.category_id', '=', 'categories.id')
-                    ->where('items.status', 'active')
-                    ->where('categories.show_pos', '1')
-                    ->select('items.id', 'items.name')
-                    ->get();
-        
-        return response()->json($items);
+        try {
+            \Log::info('GetItems - Loading items for reward dropdown');
+            
+            $items = Item::join('categories', 'items.category_id', '=', 'categories.id')
+                        ->where('items.status', 'active')
+                        ->where('categories.show_pos', '1')
+                        ->select('items.id', 'items.name')
+                        ->get();
+            
+            \Log::info('GetItems - Items loaded successfully:', ['count' => $items->count()]);
+            
+            return response()->json($items);
+        } catch (\Exception $e) {
+            \Log::error('GetItems - Error loading items:', [
+                'message' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json(['error' => 'Failed to load items'], 500);
+        }
     }
 
     // Challenge Methods
@@ -265,33 +302,51 @@ class MemberAppsSettingsController extends Controller
     // Whats On Methods
     public function storeWhatsOn(Request $request)
     {
-        $validator = Validator::make($request->all(), [
-            'title' => 'required|string|max:255',
-            'content' => 'required|string',
-            'image' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
-            'is_featured' => 'nullable|boolean',
-            'published_at' => 'nullable|date'
-        ]);
+        try {
+            \Log::info('StoreWhatsOn - Request data:', $request->all());
+            
+            $validator = Validator::make($request->all(), [
+                'title' => 'required|string|max:255',
+                'content' => 'required|string',
+                'image' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
+                'is_featured' => 'nullable|in:true,false,1,0,"true","false"',
+                'published_at' => 'nullable|date'
+            ]);
 
-        if ($validator->fails()) {
-            return redirect()->back()->withErrors($validator)->withInput();
+            if ($validator->fails()) {
+                \Log::error('StoreWhatsOn - Validation failed:', $validator->errors()->toArray());
+                return redirect()->back()->withErrors($validator)->withInput();
+            }
+
+            $data = [
+                'title' => $request->title,
+                'content' => $request->content,
+                'is_featured' => $request->boolean('is_featured'),
+                'published_at' => $request->published_at ?? now(),
+                'is_active' => true
+            ];
+
+            if ($request->hasFile('image')) {
+                $data['image'] = $request->file('image')->store('member-apps/whats-on', 'public');
+            }
+
+            \Log::info('StoreWhatsOn - Data to create:', $data);
+            
+            $whatsOn = MemberAppsWhatsOn::create($data);
+            
+            \Log::info('StoreWhatsOn - Successfully created:', ['id' => $whatsOn->id]);
+
+            return redirect()->back()->with('success', 'Whats On berhasil ditambahkan');
+        } catch (\Exception $e) {
+            \Log::error('StoreWhatsOn - Error occurred:', [
+                'message' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return redirect()->back()->with('error', 'Failed to save news: ' . $e->getMessage());
         }
-
-        $data = [
-            'title' => $request->title,
-            'content' => $request->content,
-            'is_featured' => $request->has('is_featured'),
-            'published_at' => $request->published_at ?? now(),
-            'is_active' => true
-        ];
-
-        if ($request->hasFile('image')) {
-            $data['image'] = $request->file('image')->store('member-apps/whats-on', 'public');
-        }
-
-        MemberAppsWhatsOn::create($data);
-
-        return redirect()->back()->with('success', 'Whats On berhasil ditambahkan');
     }
 
     public function updateWhatsOn(Request $request, $id)
@@ -302,9 +357,9 @@ class MemberAppsSettingsController extends Controller
             'title' => 'required|string|max:255',
             'content' => 'required|string',
             'image' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
-            'is_featured' => 'nullable|boolean',
+            'is_featured' => 'nullable|in:true,false,1,0,"true","false"',
             'published_at' => 'nullable|date',
-            'is_active' => 'nullable|boolean'
+            'is_active' => 'nullable|in:true,false,1,0,"true","false"'
         ]);
 
         if ($validator->fails()) {
@@ -314,9 +369,9 @@ class MemberAppsSettingsController extends Controller
         $data = [
             'title' => $request->title,
             'content' => $request->content,
-            'is_featured' => $request->has('is_featured'),
+            'is_featured' => $request->boolean('is_featured'),
             'published_at' => $request->published_at,
-            'is_active' => $request->has('is_active')
+            'is_active' => $request->boolean('is_active')
         ];
 
         if ($request->hasFile('image')) {

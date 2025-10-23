@@ -103,7 +103,6 @@
                         </div>
                         <div class="ml-4">
                           <div class="text-sm font-medium text-gray-900">{{ reward.item?.name }}</div>
-                          <div class="text-sm text-gray-500">Rp {{ formatCurrency(reward.item?.price) }}</div>
                         </div>
                       </div>
                     </td>
@@ -356,6 +355,11 @@
                 label="name"
                 placeholder="Select Item"
                 :allow-empty="false"
+                :multiple="false"
+                :select-label="''"
+                :selected-label="''"
+                :deselect-label="''"
+                :custom-label="(option) => option.name"
                 required
               >
                 <template #option="{ option }">
@@ -365,15 +369,15 @@
                 </template>
                 <template #singleLabel="{ value }">
                   <div class="flex justify-between items-center">
-                    <span>{{ value.name }}</span>
+                    <span>{{ value?.name || '' }}</span>
                   </div>
                 </template>
               </Multiselect>
-              <div v-if="rewardForm.item_id" class="mt-2 p-2 bg-green-50 border border-green-200 rounded-lg">
+              <div v-if="rewardForm.item_id && rewardForm.item_id.name" class="mt-2 p-2 bg-green-50 border border-green-200 rounded-lg">
                 <div class="flex items-center gap-2">
                   <i class="fa-solid fa-check-circle text-green-600"></i>
                   <span class="text-sm text-green-800">
-                    Selected: <strong>{{ rewardForm.item_id.name }}</strong>
+                    Selected: <strong>{{ rewardForm.item_id?.name || 'Unknown Item' }}</strong>
                   </span>
                 </div>
               </div>
@@ -1318,6 +1322,7 @@ const loadItems = async () => {
     })
   }
 }
+
 
 onMounted(() => {
   loadItems()
