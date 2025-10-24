@@ -40,13 +40,17 @@
               <div class="flex-1">
                 <div class="flex items-center gap-2 mb-1">
                   <span class="font-medium">{{ cb.number }}</span>
-                  <span :class="{
-                    'bg-blue-100 text-blue-700': cb.source_type_display === 'PR Foods',
-                    'bg-green-100 text-green-700': cb.source_type_display === 'RO Supplier',
-                    'bg-purple-100 text-purple-700': cb.source_type_display === 'Retail Food',
-                    'bg-gray-100 text-gray-700': cb.source_type_display === 'Unknown'
-                  }" class="px-2 py-1 rounded-full text-xs font-semibold">
-                    {{ cb.source_type_display }}
+                  <span v-if="cb.source_type_display === 'PR Foods'" class="bg-blue-100 text-blue-700 px-2 py-1 rounded-full text-xs font-semibold">
+                    🔵 PR Foods
+                  </span>
+                  <span v-else-if="cb.source_type_display === 'RO Supplier'" class="bg-green-100 text-green-700 px-2 py-1 rounded-full text-xs font-semibold">
+                    🟢 RO Supplier
+                  </span>
+                  <span v-else-if="cb.source_type_display === 'Retail Food'" class="bg-purple-100 text-purple-700 px-2 py-1 rounded-full text-xs font-semibold">
+                    🟣 Retail Food
+                  </span>
+                  <span v-else class="bg-gray-100 text-gray-700 px-2 py-1 rounded-full text-xs font-semibold">
+                    ⚪ Unknown
                   </span>
                 </div>
                 <div class="text-sm text-gray-600">
@@ -54,11 +58,9 @@
                   <div v-if="cb.supplier_invoice_number" class="text-xs text-gray-500">
                     No. Invoice: {{ cb.supplier_invoice_number }}
                   </div>
-                  <div v-if="cb.source_numbers && cb.source_numbers.length > 0" class="text-xs text-blue-600 mt-1">
-                    <i class="fa fa-file-alt mr-1"></i> Source: {{ cb.source_numbers.join(', ') }}
-                  </div>
-                  <div v-if="cb.source_outlets && cb.source_outlets.length > 0" class="text-xs text-orange-600 mt-1">
-                    <i class="fa fa-map-marker-alt mr-1"></i> Outlet: {{ cb.source_outlets.join(', ') }}
+                  <div v-if="cb.outlet_names && cb.outlet_names.length > 0" class="text-xs text-orange-600 mt-1">
+                    <i class="fa fa-map-marker-alt mr-1"></i>
+                    Outlet: {{ cb.outlet_names.join(', ') }}
                   </div>
                 </div>
               </div>

@@ -718,6 +718,10 @@ class EnrollTestController extends Controller
         // Bobot: Essay 70%, PG+Yes/No 30%
         $weightedPercentage = ($essayPercentage * 0.7) + ($pgYesNoPercentage * 0.3);
         
+        // Konversi persentase ke GPA (1-4) seperti IPK
+        $gpaScore = $this->convertPercentageToGPA($weightedPercentage);
+        $gradeDescription = $this->getGradeDescription($gpaScore);
+        
         // Total score untuk display (tanpa bobot)
         $totalScore = $essayScore + $pgYesNoScore;
         $maxScore = $essayMaxScore + $pgYesNoMaxScore;
@@ -725,8 +729,42 @@ class EnrollTestController extends Controller
         $testResult->update([
             'total_score' => $totalScore,
             'max_score' => $maxScore,
-            'percentage' => $weightedPercentage
+            'percentage' => $weightedPercentage,
+            'gpa_score' => $gpaScore,
+            'grade_description' => $gradeDescription
         ]);
+    }
+
+    /**
+     * Konversi persentase ke GPA (1-4) seperti sistem IPK
+     */
+    private function convertPercentageToGPA($percentage)
+    {
+        if ($percentage >= 90) return 4.0;      // A (90-100%)
+        if ($percentage >= 80) return 3.5;     // A- (80-89%)
+        if ($percentage >= 75) return 3.0;     // B+ (75-79%)
+        if ($percentage >= 70) return 2.5;     // B (70-74%)
+        if ($percentage >= 65) return 2.0;    // B- (65-69%)
+        if ($percentage >= 60) return 1.5;     // C+ (60-64%)
+        if ($percentage >= 55) return 1.0;     // C (55-59%)
+        if ($percentage >= 50) return 0.5;     // D (50-54%)
+        return 0.0;                            // E (<50%)
+    }
+
+    /**
+     * Mendapatkan deskripsi grade berdasarkan GPA
+     */
+    private function getGradeDescription($gpaScore)
+    {
+        if ($gpaScore >= 4.0) return 'A (Sempurna)';
+        if ($gpaScore >= 3.5) return 'A- (Sangat Baik)';
+        if ($gpaScore >= 3.0) return 'B+ (Baik Sekali)';
+        if ($gpaScore >= 2.5) return 'B (Baik)';
+        if ($gpaScore >= 2.0) return 'B- (Cukup Baik)';
+        if ($gpaScore >= 1.5) return 'C+ (Cukup)';
+        if ($gpaScore >= 1.0) return 'C (Kurang)';
+        if ($gpaScore >= 0.5) return 'D (Sangat Kurang)';
+        return 'E (Tidak Lulus)';
     }
 
     private function sendEnrollmentNotifications($enrollTests, $validated)

@@ -134,10 +134,13 @@
                           <div class="text-right">
                             <div class="text-sm text-gray-500">Skor</div>
                             <div class="font-semibold text-lg" 
-                                 :class="getScoreColor(testResult.percentage)">
-                              {{ testResult.total_score || 0 }}/{{ (testResult.test_answers?.length || 0) * 4 }}
+                                 :class="getGPAColor(testResult.gpa_score)">
+                              GPA: {{ testResult.gpa_score || 0 }}
                             </div>
                             <div class="text-xs text-gray-400">
+                              {{ testResult.grade_description || 'Belum dinilai' }}
+                            </div>
+                            <div class="text-xs text-gray-500 mt-1">
                               ({{ Math.round(testResult.percentage || 0) }}%)
                             </div>
                           </div>
@@ -152,15 +155,17 @@
                     <!-- Test Result Details -->
                     <div v-if="expandedTestResults.includes(testResult.id)" class="p-4">
                         <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+                          <div class="bg-blue-50 p-3 rounded border border-blue-200">
+                            <div class="text-sm text-blue-600 font-medium">GPA Score</div>
+                            <div class="font-bold text-2xl" :class="getGPAColor(testResult.gpa_score)">
+                              {{ testResult.gpa_score || 0 }}
+                            </div>
+                            <div class="text-xs text-blue-500">{{ testResult.grade_description || 'Belum dinilai' }}</div>
+                          </div>
                           <div class="bg-gray-50 p-3 rounded">
                             <div class="text-sm text-gray-500">Total Skor</div>
                             <div class="font-semibold">{{ testResult.total_score || 0 }} / {{ (testResult.test_answers?.length || 0) * 4 }}</div>
                             <div class="text-xs text-gray-400">({{ Math.round(testResult.percentage || 0) }}%)</div>
-                          </div>
-                          <div class="bg-gray-50 p-3 rounded">
-                            <div class="text-sm text-gray-500">Skor Asli</div>
-                            <div class="font-semibold">{{ testResult.total_score || 0 }}</div>
-                            <div class="text-xs text-gray-400">dari {{ (testResult.test_answers?.length || 0) * 4 }}</div>
                           </div>
                           <div class="bg-gray-50 p-3 rounded">
                             <div class="text-sm text-gray-500">Durasi</div>
@@ -174,18 +179,30 @@
                           </div>
                         </div>
 
-                        <!-- Bobot Information -->
-                        <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
-                          <div class="flex items-center mb-2">
-                            <i class="fa-solid fa-info-circle text-blue-600 mr-2"></i>
-                            <h6 class="font-medium text-blue-900">Sistem Penilaian dengan Bobot</h6>
+                        <!-- GPA Information -->
+                        <div class="bg-gradient-to-r from-blue-50 to-green-50 border border-blue-200 rounded-lg p-4 mb-4">
+                          <div class="flex items-center mb-3">
+                            <i class="fa-solid fa-graduation-cap text-blue-600 mr-2"></i>
+                            <h6 class="font-medium text-blue-900">Sistem Penilaian GPA (Grade Point Average)</h6>
                           </div>
-                          <div class="text-sm text-blue-800">
-                            <p class="mb-1">• <strong>Essay:</strong> 70% dari total nilai</p>
-                            <p class="mb-1">• <strong>Pilihan Ganda & Ya/Tidak:</strong> 30% dari total nilai</p>
-                            <p class="text-xs text-blue-600 mt-2">
-                              Persentase yang ditampilkan sudah menggunakan sistem bobot ini.
-                            </p>
+                          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div class="text-sm text-blue-800">
+                              <p class="mb-2 font-semibold">Sistem Bobot:</p>
+                              <p class="mb-1">• <strong>Essay:</strong> 70% dari total nilai</p>
+                              <p class="mb-1">• <strong>Pilihan Ganda & Ya/Tidak:</strong> 30% dari total nilai</p>
+                            </div>
+                            <div class="text-sm text-green-800">
+                              <p class="mb-2 font-semibold">Konversi GPA:</p>
+                              <p class="mb-1">• <strong>4.0:</strong> A (90-100%) - Sempurna</p>
+                              <p class="mb-1">• <strong>3.5:</strong> A- (80-89%) - Sangat Baik</p>
+                              <p class="mb-1">• <strong>3.0:</strong> B+ (75-79%) - Baik Sekali</p>
+                              <p class="mb-1">• <strong>2.5:</strong> B (70-74%) - Baik</p>
+                              <p class="mb-1">• <strong>2.0:</strong> B- (65-69%) - Cukup Baik</p>
+                              <p class="mb-1">• <strong>1.5:</strong> C+ (60-64%) - Cukup</p>
+                              <p class="mb-1">• <strong>1.0:</strong> C (55-59%) - Kurang</p>
+                              <p class="mb-1">• <strong>0.5:</strong> D (50-54%) - Sangat Kurang</p>
+                              <p class="mb-1">• <strong>0.0:</strong> E (<50%) - Tidak Lulus</p>
+                            </div>
                           </div>
                         </div>
 
@@ -737,6 +754,18 @@ function getScoreColor(percentage) {
   if (percentage >= 80) return 'text-green-600';
   if (percentage >= 60) return 'text-yellow-600';
   return 'text-red-600';
+}
+
+function getGPAColor(gpaScore) {
+  if (gpaScore >= 4.0) return 'text-green-600';      // A (Sempurna)
+  if (gpaScore >= 3.5) return 'text-green-500';     // A- (Sangat Baik)
+  if (gpaScore >= 3.0) return 'text-blue-600';      // B+ (Baik Sekali)
+  if (gpaScore >= 2.5) return 'text-blue-500';      // B (Baik)
+  if (gpaScore >= 2.0) return 'text-yellow-600';    // B- (Cukup Baik)
+  if (gpaScore >= 1.5) return 'text-yellow-500';   // C+ (Cukup)
+  if (gpaScore >= 1.0) return 'text-orange-600';    // C (Kurang)
+  if (gpaScore >= 0.5) return 'text-red-500';       // D (Sangat Kurang)
+  return 'text-red-600';                            // E (Tidak Lulus)
 }
 
 function getStatusColor(status) {
