@@ -724,7 +724,9 @@ class OutletFoodGoodReceiveController extends Controller
                 // Data untuk RO Supplier GR
                 'gr_ro.gr_number as ro_gr_number',
                 'fo_ro.order_number as ro_floor_order_number', 'fo_ro.tanggal as ro_floor_order_date', 'fo_ro.description as ro_floor_order_desc',
-                'fo_ro.warehouse_outlet_id as ro_warehouse_outlet_id', 'wo_ro.name as ro_warehouse_outlet_name'
+                'fo_ro.warehouse_outlet_id as ro_warehouse_outlet_id', 'wo_ro.name as ro_warehouse_outlet_name',
+                // Data PO untuk source type dan outlet
+                'po.id as po_id', 'po.number as po_number', 'po.source_type as po_source_type'
             )
             ->where('do.id', $do_id)
             ->first();
@@ -755,9 +757,36 @@ class OutletFoodGoodReceiveController extends Controller
             return $item;
         });
 
+        // Add PO source type and outlet information
+        $poInfo = null;
+        if ($do && $do->po_id) {
+            $poInfo = [
+                'po_id' => $do->po_id,
+                'po_number' => $do->po_number,
+                'source_type' => $do->po_source_type,
+                'source_type_display' => 'PR Foods',
+                'outlet_names' => []
+            ];
+            
+            if ($do->po_source_type === 'ro_supplier') {
+                $poInfo['source_type_display'] = 'RO Supplier';
+                // Get outlet names for RO Supplier
+                $outletData = DB::table('food_floor_orders as fo')
+                    ->join('purchase_order_food_items as poi', 'fo.id', '=', 'poi.ro_id')
+                    ->leftJoin('tbl_data_outlet as o', 'fo.id_outlet', '=', 'o.id_outlet')
+                    ->where('poi.purchase_order_food_id', $do->po_id)
+                    ->select('o.nama_outlet')
+                    ->distinct()
+                    ->get();
+                
+                $poInfo['outlet_names'] = $outletData->pluck('nama_outlet')->filter()->unique()->toArray();
+            }
+        }
+
         return response()->json([
             'do' => $do,
             'items' => $items,
+            'po_info' => $poInfo,
         ]);
     }
 

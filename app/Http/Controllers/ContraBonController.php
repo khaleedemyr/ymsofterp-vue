@@ -75,9 +75,10 @@ class ContraBonController extends Controller
                         ->join('purchase_order_food_items as poi', 'fo.id', '=', 'poi.ro_id')
                         ->leftJoin('tbl_data_outlet as o', 'fo.id_outlet', '=', 'o.id_outlet')
                         ->where('poi.purchase_order_food_id', $po->id)
-                        ->select('fo.order_number', 'o.nama_outlet')
+                        ->select('fo.order_number', 'o.nama_outlet', 'fo.id_outlet')
                         ->distinct()
                         ->get();
+                    
                     
                     $contraBon->source_numbers = $roData->pluck('order_number')->unique()->filter()->toArray();
                     $contraBon->source_outlets = $roData->pluck('nama_outlet')->unique()->filter()->toArray();
@@ -291,9 +292,10 @@ class ContraBonController extends Controller
                     ->join('purchase_order_food_items as poi', 'fo.id', '=', 'poi.ro_id')
                     ->leftJoin('tbl_data_outlet as o', 'fo.id_outlet', '=', 'o.id_outlet')
                     ->where('poi.purchase_order_food_id', $po->id)
-                    ->select('fo.order_number', 'o.nama_outlet')
+                    ->select('fo.order_number', 'o.nama_outlet', 'fo.id_outlet')
                     ->distinct()
                     ->get();
+                
                 
                 $contraBon->source_numbers = $roData->pluck('order_number')->unique()->filter()->toArray();
                 $contraBon->source_outlets = $roData->pluck('nama_outlet')->unique()->filter()->toArray();
@@ -497,6 +499,7 @@ class ContraBonController extends Controller
                     'po.id as po_id',
                     'po.number as po_number',
                     'po.date as po_date',
+                    'po.source_type',
                     'po_creator.nama_lengkap as po_creator_name',
                     'gr.id as gr_id',
                     'gr.gr_number',
@@ -526,6 +529,25 @@ class ContraBonController extends Controller
                         'poi.price as po_price'
                     )
                     ->get();
+                
+                // Get source type display and outlet information
+                $sourceTypeDisplay = 'PR Foods';
+                $outletNames = [];
+                
+                if ($row->source_type === 'ro_supplier') {
+                    $sourceTypeDisplay = 'RO Supplier';
+                    // Get outlet names for RO Supplier
+                    $outletData = \DB::table('food_floor_orders as fo')
+                        ->join('purchase_order_food_items as poi', 'fo.id', '=', 'poi.ro_id')
+                        ->leftJoin('tbl_data_outlet as o', 'fo.id_outlet', '=', 'o.id_outlet')
+                        ->where('poi.purchase_order_food_id', $row->po_id)
+                        ->select('o.nama_outlet')
+                        ->distinct()
+                        ->get();
+                    
+                    $outletNames = $outletData->pluck('nama_outlet')->filter()->unique()->toArray();
+                }
+                
                 $result[] = [
                     'po_id' => $row->po_id,
                     'po_number' => $row->po_number,
@@ -537,6 +559,9 @@ class ContraBonController extends Controller
                     'gr_receiver_name' => $row->gr_receiver_name,
                     'supplier_id' => $row->supplier_id,
                     'supplier_name' => $row->supplier_name,
+                    'source_type' => $row->source_type,
+                    'source_type_display' => $sourceTypeDisplay,
+                    'outlet_names' => $outletNames,
                     'items' => $items,
                 ];
             }

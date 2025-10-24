@@ -326,7 +326,13 @@ function goBack() {
             <select v-model="selectedPOGRKey" @change="onPOGRChange" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500" required>
               <option value="">Pilih PO - GR - Supplier</option>
               <option v-for="p in poWithGRList" :key="p.po_id + '-' + p.gr_id" :value="p.po_id + '-' + p.gr_id">
+                <span v-if="p.source_type_display === 'PR Foods'">🔵 PR Foods -</span>
+                <span v-else-if="p.source_type_display === 'RO Supplier'">🟢 RO Supplier -</span>
+                <span v-else>⚪ Unknown -</span>
                 {{ p.po_number }} - {{ p.gr_number }} - {{ p.supplier_name }}
+                <span v-if="p.outlet_names && p.outlet_names.length > 0" class="text-orange-600">
+                  ({{ p.outlet_names.join(', ') }})
+                </span>
               </option>
             </select>
             <input type="hidden" v-model="form.po_id" />

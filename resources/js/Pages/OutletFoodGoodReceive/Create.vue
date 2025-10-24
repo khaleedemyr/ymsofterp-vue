@@ -24,6 +24,38 @@
         <div><b>Tanggal Floor Order:</b> {{ doDetail.do.floor_order_date || '-' }}</div>
         <div><b>Warehouse Outlet:</b> {{ doDetail.do.warehouse_outlet_name || '-' }}</div>
       </div>
+
+      <!-- Card Info PO dengan Source Type dan Outlet -->
+      <div v-if="doDetail" class="mb-6 w-full max-w-xl bg-green-50 border-l-4 border-green-400 p-4 rounded animate-fade-in">
+        <div class="font-bold text-green-800 mb-1">Info Purchase Order</div>
+        <div v-if="doDetail.po_info">
+          <div><b>Nomor PO:</b> {{ doDetail.po_info.po_number }}</div>
+          <div><b>Source Type:</b> 
+            <span :class="{
+              'bg-blue-100 text-blue-700': doDetail.po_info.source_type_display === 'PR Foods',
+              'bg-green-100 text-green-700': doDetail.po_info.source_type_display === 'RO Supplier',
+              'bg-gray-100 text-gray-700': doDetail.po_info.source_type_display === 'Unknown'
+            }" class="px-2 py-1 rounded-full text-xs font-semibold">
+              {{ doDetail.po_info.source_type_display }}
+            </span>
+          </div>
+          <div v-if="doDetail.po_info.outlet_names && doDetail.po_info.outlet_names.length > 0">
+            <b>Outlet:</b> 
+            <div class="flex flex-wrap gap-1 mt-1">
+              <span v-for="outlet in doDetail.po_info.outlet_names" :key="outlet" 
+                    class="bg-orange-100 text-orange-800 text-xs px-2 py-1 rounded-full">
+                {{ outlet }}
+              </span>
+            </div>
+          </div>
+          <div v-else-if="doDetail.po_info.source_type_display === 'PR Foods'">
+            <b>Outlet:</b> <span class="text-gray-500 text-sm">-</span>
+          </div>
+        </div>
+        <div v-else>
+          <div class="text-gray-500 text-sm">Tidak ada informasi PO</div>
+        </div>
+      </div>
       <!-- Tabel Item DO -->
       <div v-if="items.length" class="mb-8 w-full max-w-3xl animate-fade-in">
         <table class="min-w-full rounded-xl overflow-hidden shadow-xl">
