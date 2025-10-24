@@ -15,7 +15,23 @@
 - Error message menampilkan stock dalam unit small (Gram)
 - Tidak mempertimbangkan unit yang dipilih user
 
-### 2. **Konversi Unit yang Tidak Konsisten**
+### 2. **Dua Jalur Validasi yang Tidak Konsisten**
+
+**Masalah Utama:**
+- Ada **dua jalur validasi** stock di `DeliveryOrderController.php`
+- **Jalur Utama**: `processDeliveryOrderItemsBatch()` - sudah diperbaiki
+- **Jalur Fallback**: `processItemFallback()` - belum diperbaiki
+- Jika ada error di jalur utama, sistem fallback ke jalur kedua yang masih menggunakan validasi lama
+
+**Kode yang Bermasalah:**
+```php
+// Jalur Fallback (line 616-618) - MASIH MENGGUNAKAN VALIDASI LAMA
+if ($qty_small > $stock->qty_small) {
+    throw new \Exception("Qty melebihi stok yang tersedia. Stok tersedia: {$stock->qty_small} {$unitSmall}");
+}
+```
+
+### 3. **Konversi Unit yang Tidak Konsisten**
 
 **Frontend:**
 ```javascript
@@ -36,9 +52,61 @@ if ($quantities['qty_small'] > $stockInfo['qty_small']) {
 
 ## Solusi yang Diterapkan
 
-### 1. **Debug Logging**
-Menambahkan logging untuk melihat nilai stock yang sebenarnya:
+### 1. **Perbaikan Jalur Utama (processDeliveryOrderItemsBatch)**
+- Menambahkan debug logging untuk troubleshooting
+- Memperbaiki error message untuk menampilkan unit yang benar
 
+### 2. **Perbaikan Jalur Fallback (processItemFallback)**
+**Masalah:** Jalur fallback masih menggunakan validasi lama yang tidak konsisten
+
+**Solusi:**
+```php
+// DEBUG: Log stock validation details for fallback
+Log::info('Fallback stock validation debug', [
+    'item_id' => $realItemId,
+    'qty_small_needed' => $qty_small,
+    'qty_medium_needed' => $qty_medium,
+    'qty_large_needed' => $qty_large,
+    'stock_small_available' => $stock->qty_small,
+    'stock_medium_available' => $stock->qty_medium,
+    'stock_large_available' => $stock->qty_large,
+    'input_qty' => $qty_input,
+    'input_unit' => $item['unit'] ?? 'null'
+]);
+
+// Validate stock availability dengan error message yang benar
+if ($qty_small > $stock->qty_small) {
+    // Get unit names for better error message
+    $unitMedium = DB::table('units')->where('id', $itemMaster->medium_unit_id)->value('name');
+    $unitLarge = DB::table('units')->where('id', $itemMaster->large_unit_id)->value('name');
+    
+    // Show stock in the unit that user is trying to use
+    $inputUnit = $item['unit'] ?? null;
+    $availableStock = 0;
+    $unitName = '';
+    
+    if ($inputUnit === $unitSmall) {
+        $availableStock = $stock->qty_small;
+        $unitName = $unitSmall;
+    } elseif ($inputUnit === $unitMedium) {
+        $availableStock = $stock->qty_medium;
+        $unitName = $unitMedium;
+    } elseif ($inputUnit === $unitLarge) {
+        $availableStock = $stock->qty_large;
+        $unitName = $unitLarge;
+    } else {
+        $availableStock = $stock->qty_small;
+        $unitName = $unitSmall;
+    }
+    
+    throw new \Exception("Qty melebihi stok yang tersedia. Stok tersedia: {$availableStock} {$unitName}");
+}
+```
+
+### 3. **Debug Logging untuk Kedua Jalur**
+Menambahkan logging untuk melihat nilai stock yang sebenarnya di kedua jalur:
+
+**Jalur Utama:**
 ```php
 Log::info('Stock validation debug', [
     'item_id' => $realItemId,
@@ -53,30 +121,19 @@ Log::info('Stock validation debug', [
 ]);
 ```
 
-### 2. **Error Message yang Lebih Informatif**
-Memperbaiki error message untuk menampilkan stock dalam unit yang dipilih user:
-
+**Jalur Fallback:**
 ```php
-// Show stock in the unit that user is trying to use
-$inputUnit = $item['unit'] ?? null;
-$availableStock = 0;
-$unitName = '';
-
-if ($inputUnit === $unitSmall) {
-    $availableStock = $stockInfo['qty_small'];
-    $unitName = $unitSmall;
-} elseif ($inputUnit === $unitMedium) {
-    $availableStock = $stockInfo['qty_medium'];
-    $unitName = $unitMedium;
-} elseif ($inputUnit === $unitLarge) {
-    $availableStock = $stockInfo['qty_large'];
-    $unitName = $unitLarge;
-} else {
-    $availableStock = $stockInfo['qty_small'];
-    $unitName = $unitSmall;
-}
-
-throw new \Exception("Qty melebihi stok yang tersedia. Stok tersedia: {$availableStock} {$unitName}");
+Log::info('Fallback stock validation debug', [
+    'item_id' => $realItemId,
+    'qty_small_needed' => $qty_small,
+    'qty_medium_needed' => $qty_medium,
+    'qty_large_needed' => $qty_large,
+    'stock_small_available' => $stock->qty_small,
+    'stock_medium_available' => $stock->qty_medium,
+    'stock_large_available' => $stock->qty_large,
+    'input_qty' => $qty_input,
+    'input_unit' => $item['unit'] ?? 'null'
+]);
 ```
 
 ## Testing yang Diperlukan
@@ -99,8 +156,12 @@ throw new \Exception("Qty melebihi stok yang tersedia. Stok tersedia: {$availabl
 ## File yang Dimodifikasi
 
 1. **app/Http/Controllers/DeliveryOrderController.php**
-   - Line 418-429: Menambahkan debug logging
-   - Line 432-459: Memperbaiki error message dengan unit yang benar
+   - **Jalur Utama (processDeliveryOrderItemsBatch):**
+     - Line 418-429: Menambahkan debug logging
+     - Line 432-459: Memperbaiki error message dengan unit yang benar
+   - **Jalur Fallback (processItemFallback):**
+     - Line 615-626: Menambahkan debug logging untuk fallback
+     - Line 629-641: Memperbaiki error message dengan unit yang benar
 
 ## Monitoring
 

@@ -612,9 +612,45 @@ class DeliveryOrderController extends Controller
                         $qty_small = $qty_input;
                     }
                         
+                        // DEBUG: Log stock validation details for fallback
+                        Log::info('Fallback stock validation debug', [
+                            'item_id' => $realItemId,
+                            'qty_small_needed' => $qty_small,
+                            'qty_medium_needed' => $qty_medium,
+                            'qty_large_needed' => $qty_large,
+                            'stock_small_available' => $stock->qty_small,
+                            'stock_medium_available' => $stock->qty_medium,
+                            'stock_large_available' => $stock->qty_large,
+                            'input_qty' => $qty_input,
+                            'input_unit' => $item['unit'] ?? 'null'
+                        ]);
+                        
                         // Validate stock availability
                     if ($qty_small > $stock->qty_small) {
-                        throw new \Exception("Qty melebihi stok yang tersedia. Stok tersedia: {$stock->qty_small} {$unitSmall}");
+                        // Get unit names for better error message
+                        $unitMedium = DB::table('units')->where('id', $itemMaster->medium_unit_id)->value('name');
+                        $unitLarge = DB::table('units')->where('id', $itemMaster->large_unit_id)->value('name');
+                        
+                        // Show stock in the unit that user is trying to use
+                        $inputUnit = $item['unit'] ?? null;
+                        $availableStock = 0;
+                        $unitName = '';
+                        
+                        if ($inputUnit === $unitSmall) {
+                            $availableStock = $stock->qty_small;
+                            $unitName = $unitSmall;
+                        } elseif ($inputUnit === $unitMedium) {
+                            $availableStock = $stock->qty_medium;
+                            $unitName = $unitMedium;
+                        } elseif ($inputUnit === $unitLarge) {
+                            $availableStock = $stock->qty_large;
+                            $unitName = $unitLarge;
+                        } else {
+                            $availableStock = $stock->qty_small;
+                            $unitName = $unitSmall;
+                        }
+                        
+                        throw new \Exception("Qty melebihi stok yang tersedia. Stok tersedia: {$availableStock} {$unitName}");
                     }
                         
                         // Update stock with proper conversion
