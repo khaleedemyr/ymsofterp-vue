@@ -954,40 +954,41 @@ class AttendanceController extends Controller
             $user = auth()->user();
             $search = $request->get('search', '');
             
-            $query = DB::table('users as u')
-                ->leftJoin('tbl_data_jabatan as j', 'u.id_jabatan', '=', 'j.id_jabatan')
-                ->leftJoin('tbl_data_divisi as d', 'u.division_id', '=', 'd.id')
-                ->leftJoin('tbl_data_level as l', 'j.id_level', '=', 'l.id')
-                ->where('u.id_outlet', $user->id_outlet) // Same outlet
-                ->where('u.id', '!=', $user->id) // Not the current user
-                ->where('u.status', 'A') // Active users only
-                ->whereNotIn('j.id_level', [7, 8, 13]); // Exclude specific levels
-            
-            // Add search functionality
-            if (!empty($search)) {
-                $query->where(function($q) use ($search) {
-                    $q->where('u.nama_lengkap', 'LIKE', "%{$search}%")
-                      ->orWhere('u.email', 'LIKE', "%{$search}%")
-                      ->orWhere('j.nama_jabatan', 'LIKE', "%{$search}%")
-                      ->orWhere('d.nama_divisi', 'LIKE', "%{$search}%");
-                });
-            }
-            
-            $approvers = $query->select([
-                    'u.id',
-                    'u.nama_lengkap',
-                    'u.email',
-                    'j.nama_jabatan',
-                    'd.nama_divisi'
-                ])
-                ->orderBy('j.nama_jabatan')
-                ->orderBy('u.nama_lengkap')
-                ->limit(20) // Limit results for performance
+            // Use same approach as Purchase Order Ops
+            $users = \App\Models\User::where('users.status', 'A')
+                ->join('tbl_data_jabatan', 'users.id_jabatan', '=', 'tbl_data_jabatan.id_jabatan')
+                ->leftJoin('tbl_data_divisi', 'users.division_id', '=', 'tbl_data_divisi.id')
+                ->leftJoin('tbl_data_outlet', 'users.id_outlet', '=', 'tbl_data_outlet.id_outlet')
+                ->where('users.id', '!=', $user->id) // Not the current user
+                ->where(function($query) use ($search) {
+                    $query->where('users.nama_lengkap', 'like', "%{$search}%")
+                          ->orWhere('users.email', 'like', "%{$search}%")
+                          ->orWhere('tbl_data_jabatan.nama_jabatan', 'like', "%{$search}%");
+                })
+                ->where(function($q) {
+                    $q->whereNull('tbl_data_jabatan.id_level') // Include users without level
+                      ->orWhereNotIn('tbl_data_jabatan.id_level', [7, 8, 13]); // Exclude specific levels
+                })
+                ->select('users.id', 'users.nama_lengkap', 'users.email', 'tbl_data_jabatan.nama_jabatan', 'tbl_data_divisi.nama_divisi', 'tbl_data_outlet.nama_outlet', 'tbl_data_jabatan.id_level')
+                ->orderBy('users.nama_lengkap')
+                ->limit(50)
                 ->get();
+            
+            // Debug logging
+            \Log::info('Approvers query result (with level filter)', [
+                'total_count' => $users->count(),
+                'user_outlet' => $user->id_outlet,
+                'search_term' => $search,
+                'user_id' => $user->id,
+                'users' => $users->toArray(),
+                'level_summary' => $users->groupBy('id_level')->map(function($group) {
+                    return $group->count();
+                })
+            ]);
             
             return response()->json([
                 'success' => true,
-                'users' => $approvers
+                'users' => $users
             ]);
             
         } catch (\Exception $e) {

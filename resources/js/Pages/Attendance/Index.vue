@@ -911,6 +911,7 @@
                       <div class="text-sm text-gray-600 dark:text-gray-400">{{ user.email }}</div>
                       <div v-if="user.nama_jabatan" class="text-xs text-blue-600 dark:text-blue-400 font-medium">{{ user.nama_jabatan }}</div>
                       <div v-if="user.nama_divisi" class="text-xs text-gray-500 dark:text-gray-400">{{ user.nama_divisi }}</div>
+                      <div v-if="user.nama_outlet" class="text-xs text-green-600 dark:text-green-400 font-medium">{{ user.nama_outlet }}</div>
                     </div>
                   </div>
                 </div>
@@ -923,6 +924,7 @@
                       <div class="text-sm text-blue-700 dark:text-blue-300">{{ selectedApprover.email }}</div>
                       <div v-if="selectedApprover.nama_jabatan" class="text-xs text-blue-600 dark:text-blue-400 font-medium">{{ selectedApprover.nama_jabatan }}</div>
                       <div v-if="selectedApprover.nama_divisi" class="text-xs text-blue-500 dark:text-blue-400">{{ selectedApprover.nama_divisi }}</div>
+                      <div v-if="selectedApprover.nama_outlet" class="text-xs text-green-600 dark:text-green-400 font-medium">{{ selectedApprover.nama_outlet }}</div>
                     </div>
                     <button
                       @click="clearApprover"
