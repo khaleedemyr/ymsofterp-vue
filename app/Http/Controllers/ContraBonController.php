@@ -48,6 +48,58 @@ class ContraBonController extends Controller
             $query->whereDate('date', '<=', $request->to);
         }
         $contraBons = $query->paginate(10)->withQueryString();
+        
+        // Transform data to include source information
+        $contraBons->getCollection()->transform(function ($contraBon) {
+            // Add source information for purchase orders
+            if ($contraBon->source_type === 'purchase_order' && $contraBon->purchaseOrder) {
+                $po = $contraBon->purchaseOrder;
+                
+                // Get source information based on PO source_type
+                if ($po->source_type === 'pr_foods' || !$po->source_type) {
+                    // For PR Foods, get PR numbers
+                    $prNumbers = DB::table('pr_foods as pr')
+                        ->join('pr_food_items as pri', 'pr.id', '=', 'pri.pr_food_id')
+                        ->join('purchase_order_food_items as poi', 'pri.id', '=', 'poi.pr_food_item_id')
+                        ->where('poi.purchase_order_food_id', $po->id)
+                        ->distinct()
+                        ->pluck('pr.pr_number')
+                        ->toArray();
+                    
+                    $contraBon->source_numbers = $prNumbers;
+                    $contraBon->source_outlets = []; // PR Foods tidak punya outlet
+                    $contraBon->source_type_display = 'PR Foods';
+                } elseif ($po->source_type === 'ro_supplier') {
+                    // Get RO Supplier numbers and outlet names
+                    $roData = DB::table('food_floor_orders as fo')
+                        ->join('purchase_order_food_items as poi', 'fo.id', '=', 'poi.ro_id')
+                        ->leftJoin('tbl_data_outlet as o', 'fo.id_outlet', '=', 'o.id_outlet')
+                        ->where('poi.purchase_order_food_id', $po->id)
+                        ->select('fo.order_number', 'o.nama_outlet')
+                        ->distinct()
+                        ->get();
+                    
+                    $contraBon->source_numbers = $roData->pluck('order_number')->unique()->filter()->toArray();
+                    $contraBon->source_outlets = $roData->pluck('nama_outlet')->unique()->filter()->toArray();
+                    $contraBon->source_type_display = 'RO Supplier';
+                } else {
+                    $contraBon->source_numbers = [];
+                    $contraBon->source_outlets = [];
+                    $contraBon->source_type_display = 'Unknown';
+                }
+            } elseif ($contraBon->source_type === 'retail_food') {
+                $contraBon->source_numbers = [$contraBon->retailFood->retail_number ?? ''];
+                $contraBon->source_outlets = [$contraBon->retailFood->outlet_name ?? ''];
+                $contraBon->source_type_display = 'Retail Food';
+            } else {
+                $contraBon->source_numbers = [];
+                $contraBon->source_outlets = [];
+                $contraBon->source_type_display = 'Unknown';
+            }
+            
+            return $contraBon;
+        });
+        
         return inertia('ContraBon/Index', [
             'contraBons' => $contraBons,
             'filters' => $request->only(['search', 'status', 'from', 'to']),
@@ -214,6 +266,52 @@ class ContraBonController extends Controller
             'financeManager',
             'gmFinance'
         ])->findOrFail($id);
+
+        // Add source information for purchase orders
+        if ($contraBon->source_type === 'purchase_order' && $contraBon->purchaseOrder) {
+            $po = $contraBon->purchaseOrder;
+            
+            // Get source information based on PO source_type
+            if ($po->source_type === 'pr_foods' || !$po->source_type) {
+                // For PR Foods, get PR numbers
+                $prNumbers = DB::table('pr_foods as pr')
+                    ->join('pr_food_items as pri', 'pr.id', '=', 'pri.pr_food_id')
+                    ->join('purchase_order_food_items as poi', 'pri.id', '=', 'poi.pr_food_item_id')
+                    ->where('poi.purchase_order_food_id', $po->id)
+                    ->distinct()
+                    ->pluck('pr.pr_number')
+                    ->toArray();
+                
+                $contraBon->source_numbers = $prNumbers;
+                $contraBon->source_outlets = []; // PR Foods tidak punya outlet
+                $contraBon->source_type_display = 'PR Foods';
+            } elseif ($po->source_type === 'ro_supplier') {
+                // Get RO Supplier numbers and outlet names
+                $roData = DB::table('food_floor_orders as fo')
+                    ->join('purchase_order_food_items as poi', 'fo.id', '=', 'poi.ro_id')
+                    ->leftJoin('tbl_data_outlet as o', 'fo.id_outlet', '=', 'o.id_outlet')
+                    ->where('poi.purchase_order_food_id', $po->id)
+                    ->select('fo.order_number', 'o.nama_outlet')
+                    ->distinct()
+                    ->get();
+                
+                $contraBon->source_numbers = $roData->pluck('order_number')->unique()->filter()->toArray();
+                $contraBon->source_outlets = $roData->pluck('nama_outlet')->unique()->filter()->toArray();
+                $contraBon->source_type_display = 'RO Supplier';
+            } else {
+                $contraBon->source_numbers = [];
+                $contraBon->source_outlets = [];
+                $contraBon->source_type_display = 'Unknown';
+            }
+        } elseif ($contraBon->source_type === 'retail_food') {
+            $contraBon->source_numbers = [$contraBon->retailFood->retail_number ?? ''];
+            $contraBon->source_outlets = [$contraBon->retailFood->outlet_name ?? ''];
+            $contraBon->source_type_display = 'Retail Food';
+        } else {
+            $contraBon->source_numbers = [];
+            $contraBon->source_outlets = [];
+            $contraBon->source_type_display = 'Unknown';
+        }
 
         return inertia('ContraBon/Show', [
             'contraBon' => $contraBon,

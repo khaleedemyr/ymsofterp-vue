@@ -23,6 +23,39 @@
                   </p>
                   <p><span class="font-medium">Supplier:</span> {{ contraBon.supplier?.name }}</p>
                   <p><span class="font-medium">Dibuat oleh:</span> {{ contraBon.creator?.nama_lengkap }}</p>
+                  <p><span class="font-medium">Source Type:</span> 
+                    <span :class="{
+                      'bg-blue-100 text-blue-700': contraBon.source_type_display === 'PR Foods',
+                      'bg-green-100 text-green-700': contraBon.source_type_display === 'RO Supplier',
+                      'bg-purple-100 text-purple-700': contraBon.source_type_display === 'Retail Food',
+                      'bg-gray-100 text-gray-700': contraBon.source_type_display === 'Unknown',
+                    }" class="px-2 py-1 rounded-full text-xs font-semibold">
+                      {{ contraBon.source_type_display || (contraBon.source_type === 'purchase_order' ? 'PO/GR' : 'Retail Food') }}
+                    </span>
+                  </p>
+                  <div v-if="contraBon.source_numbers && contraBon.source_numbers.length > 0">
+                    <p><span class="font-medium">Source Numbers:</span></p>
+                    <div class="flex flex-wrap gap-1 mt-1">
+                      <span v-for="number in contraBon.source_numbers" :key="number" 
+                            :class="{
+                              'bg-blue-100 text-blue-800': contraBon.source_type_display === 'PR Foods',
+                              'bg-green-100 text-green-800': contraBon.source_type_display === 'RO Supplier',
+                              'bg-purple-100 text-purple-800': contraBon.source_type_display === 'Retail Food'
+                            }"
+                            class="text-xs px-2 py-1 rounded-full">
+                        {{ number }}
+                      </span>
+                    </div>
+                  </div>
+                  <div v-if="contraBon.source_outlets && contraBon.source_outlets.length > 0">
+                    <p><span class="font-medium">Outlet:</span></p>
+                    <div class="flex flex-wrap gap-1 mt-1">
+                      <span v-for="outlet in contraBon.source_outlets" :key="outlet" 
+                            class="bg-orange-100 text-orange-800 text-xs px-2 py-1 rounded-full">
+                        {{ outlet }}
+                      </span>
+                    </div>
+                  </div>
                 </div>
               </div>
               <div>

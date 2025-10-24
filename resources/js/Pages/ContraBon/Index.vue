@@ -39,6 +39,8 @@
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Supplier</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Sumber</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">No. PO/Retail</th>
+              <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Source Numbers</th>
+              <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Outlet</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">No Invoice Supplier</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Total</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Status</th>
@@ -48,7 +50,7 @@
           </thead>
           <tbody>
             <tr v-if="!contraBons.data || !contraBons.data.length">
-              <td colspan="10" class="text-center py-10 text-gray-400">Belum ada data Contra Bon.</td>
+              <td colspan="12" class="text-center py-10 text-gray-400">Belum ada data Contra Bon.</td>
             </tr>
             <tr v-for="cb in contraBons.data" :key="cb.id" class="hover:bg-blue-50 transition shadow-sm">
               <td class="px-6 py-3 font-mono font-semibold text-blue-700">{{ cb.number }}</td>
@@ -56,14 +58,39 @@
               <td class="px-6 py-3">{{ cb.supplier?.name }}</td>
               <td class="px-6 py-3">
                 <span :class="{
-                  'bg-blue-100 text-blue-700': cb.source_type === 'purchase_order',
-                  'bg-purple-100 text-purple-700': cb.source_type === 'retail_food',
+                  'bg-blue-100 text-blue-700': cb.source_type_display === 'PR Foods',
+                  'bg-green-100 text-green-700': cb.source_type_display === 'RO Supplier',
+                  'bg-purple-100 text-purple-700': cb.source_type_display === 'Retail Food',
+                  'bg-gray-100 text-gray-700': cb.source_type_display === 'Unknown',
                 }" class="px-2 py-1 rounded-full text-xs font-semibold">
-                  {{ cb.source_type === 'purchase_order' ? 'PO/GR' : 'Retail Food' }}
+                  {{ cb.source_type_display || (cb.source_type === 'purchase_order' ? 'PO/GR' : 'Retail Food') }}
                 </span>
               </td>
               <td class="px-6 py-3">
                 {{ cb.source_type === 'purchase_order' ? cb.purchase_order?.number : cb.retail_food?.retail_number || '-' }}
+              </td>
+              <td class="px-6 py-3">
+                <div v-if="cb.source_numbers && cb.source_numbers.length > 0" class="flex flex-wrap gap-1">
+                  <span v-for="number in cb.source_numbers" :key="number" 
+                        :class="{
+                          'bg-blue-100 text-blue-800': cb.source_type_display === 'PR Foods',
+                          'bg-green-100 text-green-800': cb.source_type_display === 'RO Supplier',
+                          'bg-purple-100 text-purple-800': cb.source_type_display === 'Retail Food'
+                        }"
+                        class="text-xs px-2 py-1 rounded-full">
+                    {{ number }}
+                  </span>
+                </div>
+                <span v-else class="text-gray-400 text-sm">-</span>
+              </td>
+              <td class="px-6 py-3">
+                <div v-if="cb.source_outlets && cb.source_outlets.length > 0" class="flex flex-wrap gap-1">
+                  <span v-for="outlet in cb.source_outlets" :key="outlet" 
+                        class="bg-orange-100 text-orange-800 text-xs px-2 py-1 rounded-full">
+                    {{ outlet }}
+                  </span>
+                </div>
+                <span v-else class="text-gray-400 text-sm">-</span>
               </td>
               <td class="px-6 py-3">{{ cb.supplier_invoice_number || '-' }}</td>
               <td class="px-6 py-3">{{ formatCurrency(cb.total_amount) }}</td>
