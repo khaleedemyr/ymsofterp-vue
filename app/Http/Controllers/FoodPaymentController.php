@@ -131,6 +131,45 @@ class FoodPaymentController extends Controller
     public function show($id)
     {
         $payment = FoodPayment::with(['supplier', 'creator', 'financeManager', 'contraBons'])->findOrFail($id);
+        
+        // Transform contra bons to include source type and outlet information
+        $payment->contraBons = $payment->contraBons->map(function($cb) {
+            $cb->source_type_display = 'Unknown';
+            $cb->source_numbers = [];
+            $cb->source_outlets = [];
+            
+            if ($cb->source_type === 'purchase_order' && $cb->purchaseOrder) {
+                $po = $cb->purchaseOrder;
+                $cb->source_numbers = [$po->number];
+                
+                if ($po->source_type === 'pr_foods') {
+                    $cb->source_type_display = 'PR Foods';
+                } elseif ($po->source_type === 'ro_supplier') {
+                    $cb->source_type_display = 'RO Supplier';
+                    // Get outlet names for RO Supplier
+                    $outletData = DB::table('food_floor_orders as fo')
+                        ->join('purchase_order_food_items as poi', 'fo.id', '=', 'poi.ro_id')
+                        ->leftJoin('tbl_data_outlet as o', 'fo.id_outlet', '=', 'o.id_outlet')
+                        ->where('poi.purchase_order_food_id', $po->id)
+                        ->select('o.nama_outlet')
+                        ->distinct()
+                        ->get();
+                    
+                    $cb->source_outlets = $outletData->pluck('nama_outlet')->filter()->unique()->toArray();
+                }
+            } elseif ($cb->source_type === 'retail_food') {
+                $cb->source_type_display = 'Retail Food';
+                $cb->source_numbers = [$cb->source_id];
+                // Get outlet name for retail food
+                $retailFood = DB::table('retail_foods')->where('id', $cb->source_id)->first();
+                if ($retailFood) {
+                    $cb->source_outlets = [$retailFood->outlet_name];
+                }
+            }
+            
+            return $cb;
+        });
+        
         return inertia('FoodPayment/Show', [
             'payment' => $payment
         ]);
@@ -151,6 +190,45 @@ class FoodPaymentController extends Controller
             ->where('status', 'approved')
             ->whereNotIn('id', $paidContraBonIds)
             ->get();
+        
+        // Transform data to include source type and outlet information
+        $contraBons = $contraBons->map(function($cb) {
+            $cb->source_type_display = 'Unknown';
+            $cb->source_numbers = [];
+            $cb->source_outlets = [];
+            
+            if ($cb->source_type === 'purchase_order' && $cb->purchaseOrder) {
+                $po = $cb->purchaseOrder;
+                $cb->source_numbers = [$po->number];
+                
+                if ($po->source_type === 'pr_foods') {
+                    $cb->source_type_display = 'PR Foods';
+                } elseif ($po->source_type === 'ro_supplier') {
+                    $cb->source_type_display = 'RO Supplier';
+                    // Get outlet names for RO Supplier
+                    $outletData = DB::table('food_floor_orders as fo')
+                        ->join('purchase_order_food_items as poi', 'fo.id', '=', 'poi.ro_id')
+                        ->leftJoin('tbl_data_outlet as o', 'fo.id_outlet', '=', 'o.id_outlet')
+                        ->where('poi.purchase_order_food_id', $po->id)
+                        ->select('o.nama_outlet')
+                        ->distinct()
+                        ->get();
+                    
+                    $cb->source_outlets = $outletData->pluck('nama_outlet')->filter()->unique()->toArray();
+                }
+            } elseif ($cb->source_type === 'retail_food') {
+                $cb->source_type_display = 'Retail Food';
+                $cb->source_numbers = [$cb->source_id];
+                // Get outlet name for retail food
+                $retailFood = DB::table('retail_foods')->where('id', $cb->source_id)->first();
+                if ($retailFood) {
+                    $cb->source_outlets = [$retailFood->outlet_name];
+                }
+            }
+            
+            return $cb;
+        });
+        
         return response()->json($contraBons);
     }
 

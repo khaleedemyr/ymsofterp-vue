@@ -35,14 +35,30 @@
           <h3 class="font-bold mb-2">Pilih Contra Bon yang akan dibayar</h3>
           <div class="border rounded p-2 max-h-60 overflow-y-auto bg-white">
             <div v-if="contraBons.length === 0" class="text-gray-400 text-sm p-2">Tidak ada contra bon yang belum dibayar untuk supplier ini.</div>
-            <div v-for="cb in contraBons" :key="cb.id" class="flex items-center mb-1 p-2 hover:bg-blue-50 rounded">
-              <input type="checkbox" :value="cb.id" v-model="form.selected_contra_bon_ids" class="mr-2" />
+            <div v-for="cb in contraBons" :key="cb.id" class="flex items-center mb-2 p-3 hover:bg-blue-50 rounded border border-gray-200">
+              <input type="checkbox" :value="cb.id" v-model="form.selected_contra_bon_ids" class="mr-3" />
               <div class="flex-1">
-                <div class="font-medium">{{ cb.number }}</div>
+                <div class="flex items-center gap-2 mb-1">
+                  <span class="font-medium">{{ cb.number }}</span>
+                  <span :class="{
+                    'bg-blue-100 text-blue-700': cb.source_type_display === 'PR Foods',
+                    'bg-green-100 text-green-700': cb.source_type_display === 'RO Supplier',
+                    'bg-purple-100 text-purple-700': cb.source_type_display === 'Retail Food',
+                    'bg-gray-100 text-gray-700': cb.source_type_display === 'Unknown'
+                  }" class="px-2 py-1 rounded-full text-xs font-semibold">
+                    {{ cb.source_type_display }}
+                  </span>
+                </div>
                 <div class="text-sm text-gray-600">
                   <div>Total: {{ formatCurrency(cb.total_amount) }}</div>
                   <div v-if="cb.supplier_invoice_number" class="text-xs text-gray-500">
                     No. Invoice: {{ cb.supplier_invoice_number }}
+                  </div>
+                  <div v-if="cb.source_numbers && cb.source_numbers.length > 0" class="text-xs text-blue-600 mt-1">
+                    <i class="fa fa-file-alt mr-1"></i> Source: {{ cb.source_numbers.join(', ') }}
+                  </div>
+                  <div v-if="cb.source_outlets && cb.source_outlets.length > 0" class="text-xs text-orange-600 mt-1">
+                    <i class="fa fa-map-marker-alt mr-1"></i> Outlet: {{ cb.source_outlets.join(', ') }}
                   </div>
                 </div>
               </div>
