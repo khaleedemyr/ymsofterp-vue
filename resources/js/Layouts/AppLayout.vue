@@ -143,6 +143,7 @@ const menuGroups = [
             { name: () => 'Enroll Test', icon: 'fa-solid fa-user-graduate', route: '/enroll-test', code: 'enroll_test' },
             { name: () => 'My Tests', icon: 'fa-solid fa-clipboard-check', route: '/my-tests', code: 'my_tests' },
             { name: () => 'Report Hasil Test', icon: 'fa-solid fa-chart-line', route: '/enroll-test-report', code: 'enroll_test_report' },
+            { name: () => 'Manajemen Cuti', icon: 'fa-solid fa-calendar-days', route: '/leave-management', code: 'leave_management' },
         ],
     },
     {

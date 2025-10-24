@@ -415,9 +415,47 @@ class DeliveryOrderController extends Controller
                 // Calculate quantities
                 $quantities = $this->calculateQuantities($realItemId, $item['qty_scan'], $item['unit'] ?? null, $itemData);
                 
+                // DEBUG: Log stock validation details
+                Log::info('Stock validation debug', [
+                    'item_id' => $realItemId,
+                    'qty_small_needed' => $quantities['qty_small'],
+                    'qty_medium_needed' => $quantities['qty_medium'],
+                    'qty_large_needed' => $quantities['qty_large'],
+                    'stock_small_available' => $stockInfo['qty_small'],
+                    'stock_medium_available' => $stockInfo['qty_medium'],
+                    'stock_large_available' => $stockInfo['qty_large'],
+                    'input_qty' => $item['qty_scan'],
+                    'input_unit' => $item['unit'] ?? 'null'
+                ]);
+                
                 // Validate stock availability
                 if ($quantities['qty_small'] > $stockInfo['qty_small']) {
-                    throw new \Exception("Qty melebihi stok yang tersedia. Stok tersedia: {$stockInfo['qty_small']}");
+                    // Get unit names for better error message
+                    $itemDataForError = $itemData->where('item_id', $realItemId)->first();
+                    $unitSmall = DB::table('units')->where('id', $itemDataForError->small_unit_id)->value('name');
+                    $unitMedium = DB::table('units')->where('id', $itemDataForError->medium_unit_id)->value('name');
+                    $unitLarge = DB::table('units')->where('id', $itemDataForError->large_unit_id)->value('name');
+                    
+                    // Show stock in the unit that user is trying to use
+                    $inputUnit = $item['unit'] ?? null;
+                    $availableStock = 0;
+                    $unitName = '';
+                    
+                    if ($inputUnit === $unitSmall) {
+                        $availableStock = $stockInfo['qty_small'];
+                        $unitName = $unitSmall;
+                    } elseif ($inputUnit === $unitMedium) {
+                        $availableStock = $stockInfo['qty_medium'];
+                        $unitName = $unitMedium;
+                    } elseif ($inputUnit === $unitLarge) {
+                        $availableStock = $stockInfo['qty_large'];
+                        $unitName = $unitLarge;
+                    } else {
+                        $availableStock = $stockInfo['qty_small'];
+                        $unitName = $unitSmall;
+                    }
+                    
+                    throw new \Exception("Qty melebihi stok yang tersedia. Stok tersedia: {$availableStock} {$unitName}");
                 }
                 
                 // Prepare delivery order item

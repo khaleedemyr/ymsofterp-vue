@@ -108,6 +108,7 @@ use App\Http\Controllers\TrainingScheduleController;
 use App\Http\Controllers\LmsCurriculumController;
 use App\Http\Controllers\JabatanTrainingController;
 use App\Http\Controllers\TrainingComplianceController;
+use App\Http\Controllers\LeaveManagementController;
 
 
 Route::get('/', function () {
@@ -1621,6 +1622,18 @@ Route::middleware(['auth'])->group(function () {
     // User search endpoints
     Route::get('shared-documents/users/search', [SharedDocumentController::class, 'searchUsers'])->name('shared-documents.users.search');
     Route::get('shared-documents/users/dropdown', [SharedDocumentController::class, 'getDropdownData'])->name('shared-documents.users.dropdown');
+});
+// Leave Management Routes
+Route::middleware(['auth'])->group(function () {
+    Route::prefix('leave-management')->name('leave-management.')->group(function () {
+        Route::get('/', [LeaveManagementController::class, 'index'])->name('index');
+        Route::get('/history/{userId}', [LeaveManagementController::class, 'showHistory'])->name('history');
+        Route::post('/manual-adjustment', [LeaveManagementController::class, 'manualAdjustment'])->name('manual-adjustment');
+        Route::post('/use-leave', [LeaveManagementController::class, 'useLeave'])->name('use-leave');
+        Route::post('/process-monthly-credit', [LeaveManagementController::class, 'processMonthlyCredit'])->name('process-monthly-credit');
+        Route::post('/process-burning', [LeaveManagementController::class, 'processBurning'])->name('process-burning');
+        Route::get('/statistics', [LeaveManagementController::class, 'getStatistics'])->name('statistics');
+    });
 });
 
 // CRM Routes
