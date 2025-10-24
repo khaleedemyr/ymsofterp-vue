@@ -26,6 +26,14 @@ const loadingRetailFood = ref(false);
 const selectedRetailFoodKey = ref('');
 const sourceType = ref('purchase_order'); // 'purchase_order' or 'retail_food'
 
+// Modal search functionality
+const showPOListModal = ref(false);
+const showRetailFoodModal = ref(false);
+const poSearchQuery = ref('');
+const retailFoodSearchQuery = ref('');
+const filteredPOList = ref([]);
+const filteredRetailFoodList = ref([]);
+
 const form = useForm({
   date: props.contraBon?.date ? props.contraBon.date.substring(0, 10) : '',
   po_id: props.contraBon?.po_id || '',
@@ -56,28 +64,28 @@ onMounted(async () => {
     const dd = String(today.getDate()).padStart(2, '0');
     form.date = `${yyyy}-${mm}-${dd}`;
     
-    // Load PO/GR data
-    loadingPOGR.value = true;
-    try {
-      const res = await axios.get('/api/contra-bon/po-with-approved-gr');
-      poWithGRList.value = res.data;
-    } catch (e) {
-      Swal.fire('Error', 'Gagal mengambil data PO/GR', 'error');
-    } finally {
-      loadingPOGR.value = false;
-    }
+     // Load PO/GR data
+     loadingPOGR.value = true;
+     try {
+       const res = await axios.get('/api/contra-bon/po-with-approved-gr');
+       poWithGRList.value = res.data;
+     } catch (e) {
+       Swal.fire('Error', 'Gagal mengambil data PO/GR', 'error');
+     } finally {
+       loadingPOGR.value = false;
+     }
     
          // Load Retail Food data
      loadingRetailFood.value = true;
-           try {
-        const res = await axios.get('/api/contra-bon/retail-food-contra-bon');
-        retailFoodList.value = res.data;
-      } catch (e) {
-       console.error('Error loading retail food:', e);
-       Swal.fire('Error', 'Gagal mengambil data Retail Food', 'error');
-     } finally {
-       loadingRetailFood.value = false;
-     }
+            try {
+         const res = await axios.get('/api/contra-bon/retail-food-contra-bon');
+         retailFoodList.value = res.data;
+       } catch (e) {
+        console.error('Error loading retail food:', e);
+        Swal.fire('Error', 'Gagal mengambil data Retail Food', 'error');
+      } finally {
+        loadingRetailFood.value = false;
+      }
   } else {
     // Mode edit: set preview image jika ada
     if (props.contraBon?.image_path) {
@@ -85,6 +93,126 @@ onMounted(async () => {
     }
   }
 });
+
+// Filter functions for modal search
+function filterPOList() {
+  if (!poSearchQuery.value.trim()) {
+    filteredPOList.value = poWithGRList.value;
+    return;
+  }
+  
+  const query = poSearchQuery.value.toLowerCase();
+  filteredPOList.value = poWithGRList.value.filter(p => 
+    p.po_number.toLowerCase().includes(query) ||
+    p.gr_number.toLowerCase().includes(query) ||
+    p.supplier_name.toLowerCase().includes(query) ||
+    (p.outlet_names && p.outlet_names.some(outlet => outlet.toLowerCase().includes(query)))
+  );
+}
+
+function filterRetailFoodList() {
+  if (!retailFoodSearchQuery.value.trim()) {
+    filteredRetailFoodList.value = retailFoodList.value;
+    return;
+  }
+  
+  const query = retailFoodSearchQuery.value.toLowerCase();
+  filteredRetailFoodList.value = retailFoodList.value.filter(rf => 
+    rf.retail_number.toLowerCase().includes(query) ||
+    rf.supplier_name.toLowerCase().includes(query) ||
+    (rf.outlet_name && rf.outlet_name.toLowerCase().includes(query)) ||
+    (rf.warehouse_outlet_name && rf.warehouse_outlet_name.toLowerCase().includes(query))
+  );
+}
+
+// Modal functions
+function openPOListModal() {
+  showPOListModal.value = true;
+  poSearchQuery.value = '';
+  filteredPOList.value = poWithGRList.value;
+}
+
+function openRetailFoodModal() {
+  showRetailFoodModal.value = true;
+  retailFoodSearchQuery.value = '';
+  filteredRetailFoodList.value = retailFoodList.value;
+}
+
+function closePOListModal() {
+  showPOListModal.value = false;
+  poSearchQuery.value = '';
+}
+
+function closeRetailFoodModal() {
+  showRetailFoodModal.value = false;
+  retailFoodSearchQuery.value = '';
+}
+
+function selectPOFromModal(po) {
+  selectedPOGR.value = po;
+  selectedPOGRKey.value = `${po.po_id}-${po.gr_id}`;
+  form.po_id = po.po_id;
+  form.gr_id = po.gr_id;
+  
+  if (po.items) {
+    form.items = po.items.map(item => ({
+      gr_item_id: item.id,
+      item_id: item.item_id,
+      po_item_id: item.po_item_id,
+      unit_id: item.unit_id,
+      quantity: item.qty_received,
+      price: item.po_price,
+      notes: '',
+      _rowKey: Date.now() + '-' + Math.random(),
+    }));
+  } else {
+    form.items = [];
+  }
+  
+  // Fetch supplier detail
+  if (po.supplier_id) {
+    axios.get(`/api/suppliers/${po.supplier_id}`)
+      .then(res => supplierDetail.value = res.data)
+      .catch(() => supplierDetail.value = null);
+  } else {
+    supplierDetail.value = null;
+  }
+  
+  closePOListModal();
+}
+
+function selectRetailFoodFromModal(rf) {
+  selectedRetailFood.value = rf;
+  selectedRetailFoodKey.value = rf.retail_food_id;
+  
+  if (rf.items) {
+    form.items = rf.items.map(item => ({
+      gr_item_id: null,
+      item_id: null,
+      po_item_id: null,
+      unit_id: null,
+      quantity: item.qty,
+      price: item.price,
+      notes: '',
+      item_name: item.item_name,
+      unit_name: item.unit_name,
+      _rowKey: Date.now() + '-' + Math.random(),
+    }));
+  } else {
+    form.items = [];
+  }
+  
+  // Fetch supplier detail
+  if (rf.supplier_id) {
+    axios.get(`/api/suppliers/${rf.supplier_id}`)
+      .then(res => supplierDetail.value = res.data)
+      .catch(() => supplierDetail.value = null);
+  } else {
+    supplierDetail.value = null;
+  }
+  
+  closeRetailFoodModal();
+}
 
 async function onPOGRChange() {
   if (!selectedPOGRKey.value) {
@@ -95,6 +223,7 @@ async function onPOGRChange() {
     supplierDetail.value = null;
     fileImage.value = null;
     fileImagePreview.value = null;
+    poSearchQuery.value = '';
     return;
   }
   const sepIdx = selectedPOGRKey.value.lastIndexOf('-');
@@ -105,6 +234,7 @@ async function onPOGRChange() {
   const pogr = poWithGRList.value.find(p => String(p.po_id) === poId && String(p.gr_id) === grId);
   selectedPOGR.value = pogr;
   if (pogr) {
+    poSearchQuery.value = `${pogr.po_number} - ${pogr.gr_number} - ${pogr.supplier_name}`;
     form.items = pogr.items.map(item => ({
       gr_item_id: item.id,
       item_id: item.item_id,
@@ -131,6 +261,7 @@ async function onPOGRChange() {
     supplierDetail.value = null;
   }
 }
+
 
 async function onRetailFoodChange() {
   if (!selectedRetailFoodKey.value) {
@@ -204,6 +335,7 @@ function onSourceTypeChange() {
   supplierDetail.value = null;
   fileImage.value = null;
   fileImagePreview.value = null;
+  
 }
 
 function onFileChange(e) {
@@ -323,18 +455,21 @@ function goBack() {
         <div v-if="sourceType === 'purchase_order'" class="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label class="block text-sm font-medium text-gray-700">Purchase Order</label>
-            <select v-model="selectedPOGRKey" @change="onPOGRChange" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500" required>
-              <option value="">Pilih PO - GR - Supplier</option>
-              <option v-for="p in poWithGRList" :key="p.po_id + '-' + p.gr_id" :value="p.po_id + '-' + p.gr_id">
-                <span v-if="p.source_type_display === 'PR Foods'">🔵 PR Foods -</span>
-                <span v-else-if="p.source_type_display === 'RO Supplier'">🟢 RO Supplier -</span>
-                <span v-else>⚪ Unknown -</span>
-                {{ p.po_number }} - {{ p.gr_number }} - {{ p.supplier_name }}
-                <span v-if="p.outlet_names && p.outlet_names.length > 0" class="text-orange-600">
-                  ({{ p.outlet_names.join(', ') }})
-                </span>
-              </option>
-            </select>
+            <div class="flex gap-2">
+              <input 
+                :value="selectedPOGR ? `${selectedPOGR.po_number} - ${selectedPOGR.gr_number} - ${selectedPOGR.supplier_name}` : ''"
+                readonly
+                class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm bg-gray-50"
+                placeholder="Pilih PO - GR - Supplier"
+              />
+              <button 
+                type="button" 
+                @click="openPOListModal"
+                class="mt-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:ring-2 focus:ring-blue-500"
+              >
+                <i class="fa fa-search"></i> Cari
+              </button>
+            </div>
             <input type="hidden" v-model="form.po_id" />
             <input type="hidden" v-model="form.gr_id" />
             <div v-if="form.errors.po_id" class="text-xs text-red-500 mt-1">{{ form.errors.po_id }}</div>
@@ -346,25 +481,29 @@ function goBack() {
           </div>
         </div>
 
-                 <!-- Retail Food Selection -->
-         <div v-if="sourceType === 'retail_food'" class="grid grid-cols-1 md:grid-cols-2 gap-4">
-           <div>
-             <label class="block text-sm font-medium text-gray-700">Retail Food</label>
-             <div class="relative">
-               <select v-model="selectedRetailFoodKey" @change="onRetailFoodChange" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500" required :disabled="loadingRetailFood">
-                 <option value="">Pilih Retail Food - Supplier</option>
-                 <option v-for="rf in retailFoodList" :key="rf.retail_food_id" :value="rf.retail_food_id">
-                   {{ rf.retail_number }} - {{ rf.supplier_name }}
-                 </option>
-               </select>
-               <div v-if="loadingRetailFood" class="absolute inset-y-0 right-0 flex items-center pr-3">
-                 <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
-               </div>
-             </div>
-             <input type="hidden" v-model="form.po_id" />
-             <input type="hidden" v-model="form.gr_id" />
-             <div v-if="form.errors.po_id" class="text-xs text-red-500 mt-1">{{ form.errors.po_id }}</div>
-           </div>
+        <!-- Retail Food Selection -->
+        <div v-if="sourceType === 'retail_food'" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700">Retail Food</label>
+            <div class="flex gap-2">
+              <input 
+                :value="selectedRetailFood ? `${selectedRetailFood.retail_number} - ${selectedRetailFood.supplier_name}` : ''"
+                readonly
+                class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm bg-gray-50"
+                placeholder="Pilih Retail Food - Supplier"
+              />
+              <button 
+                type="button" 
+                @click="openRetailFoodModal"
+                class="mt-1 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 focus:ring-2 focus:ring-purple-500"
+              >
+                <i class="fa fa-search"></i> Cari
+              </button>
+            </div>
+            <input type="hidden" v-model="form.po_id" />
+            <input type="hidden" v-model="form.gr_id" />
+            <div v-if="form.errors.po_id" class="text-xs text-red-500 mt-1">{{ form.errors.po_id }}</div>
+          </div>
           <div>
             <label class="block text-sm font-medium text-gray-700">Tanggal</label>
             <input type="date" v-model="form.date" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500" />
@@ -380,6 +519,22 @@ function goBack() {
             <div>Tanggal PO: {{ selectedPOGR.po_date }}</div>
             <div>Supplier: <b>{{ selectedPOGR.supplier_name }}</b></div>
             <div>Dibuat oleh: {{ selectedPOGR.po_creator_name }}</div>
+            <div v-if="selectedPOGR.source_type_display">
+              Source Type: 
+              <span :class="{
+                'bg-blue-100 text-blue-700': selectedPOGR.source_type_display === 'PR Foods',
+                'bg-green-100 text-green-700': selectedPOGR.source_type_display === 'RO Supplier'
+              }" class="px-2 py-1 rounded-full text-xs font-semibold">
+                {{ selectedPOGR.source_type_display }}
+              </span>
+            </div>
+            <div v-if="selectedPOGR.outlet_names && selectedPOGR.outlet_names.length > 0">
+              Outlet: 
+              <span v-for="outlet in selectedPOGR.outlet_names" :key="outlet" 
+                    class="bg-orange-100 text-orange-800 text-xs px-2 py-1 rounded-full ml-1">
+                {{ outlet }}
+              </span>
+            </div>
           </div>
           <div class="bg-green-50 rounded-lg p-4 shadow">
             <h3 class="font-bold mb-2">Info Good Receive</h3>
@@ -491,6 +646,112 @@ function goBack() {
           <button type="submit" :disabled="form.processing" class="px-4 py-2 rounded bg-blue-600 text-white font-semibold hover:bg-blue-700 disabled:opacity-50">{{ isEdit ? 'Simpan Perubahan' : 'Simpan' }}</button>
         </div>
       </form>
+    </div>
+
+    <!-- Modal PO List -->
+    <div v-if="showPOListModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div class="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[80vh] flex flex-col">
+        <div class="p-6 border-b">
+          <div class="flex justify-between items-center">
+            <h3 class="text-lg font-semibold">Pilih Purchase Order</h3>
+            <button @click="closePOListModal" class="text-gray-500 hover:text-gray-700">
+              <i class="fa fa-times"></i>
+            </button>
+          </div>
+          <div class="mt-4">
+            <input 
+              v-model="poSearchQuery" 
+              @input="filterPOList"
+              type="text" 
+              class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" 
+              placeholder="Cari PO, GR, Supplier, atau Outlet..."
+            />
+          </div>
+        </div>
+        <div class="flex-1 overflow-y-auto">
+          <div v-if="filteredPOList.length === 0" class="p-8 text-center text-gray-500">
+            Tidak ada data yang ditemukan
+          </div>
+          <div v-else class="divide-y divide-gray-200">
+            <div 
+              v-for="p in filteredPOList" 
+              :key="p.po_id + '-' + p.gr_id" 
+              @click="selectPOFromModal(p)"
+              class="p-4 cursor-pointer hover:bg-blue-50 transition-colors"
+            >
+              <div class="flex items-center gap-3">
+                <span v-if="p.source_type_display === 'PR Foods'" class="text-blue-500 text-xl">🔵</span>
+                <span v-else-if="p.source_type_display === 'RO Supplier'" class="text-green-500 text-xl">🟢</span>
+                <span v-else class="text-gray-500 text-xl">⚪</span>
+                <div class="flex-1">
+                  <div class="font-semibold text-lg">
+                    {{ p.po_number }} - {{ p.gr_number }}
+                  </div>
+                  <div class="text-gray-600">{{ p.supplier_name }}</div>
+                  <div v-if="p.outlet_names && p.outlet_names.length > 0" class="text-sm text-orange-600 mt-1">
+                    <i class="fa fa-map-marker-alt"></i> {{ p.outlet_names.join(', ') }}
+                  </div>
+                </div>
+                <div class="text-right">
+                  <div class="text-sm text-gray-500">{{ p.source_type_display }}</div>
+                  <div class="text-sm text-gray-500">{{ p.po_date }}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal Retail Food List -->
+    <div v-if="showRetailFoodModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div class="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[80vh] flex flex-col">
+        <div class="p-6 border-b">
+          <div class="flex justify-between items-center">
+            <h3 class="text-lg font-semibold">Pilih Retail Food</h3>
+            <button @click="closeRetailFoodModal" class="text-gray-500 hover:text-gray-700">
+              <i class="fa fa-times"></i>
+            </button>
+          </div>
+          <div class="mt-4">
+            <input 
+              v-model="retailFoodSearchQuery" 
+              @input="filterRetailFoodList"
+              type="text" 
+              class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500" 
+              placeholder="Cari Retail Food, Supplier, atau Outlet..."
+            />
+          </div>
+        </div>
+        <div class="flex-1 overflow-y-auto">
+          <div v-if="filteredRetailFoodList.length === 0" class="p-8 text-center text-gray-500">
+            Tidak ada data yang ditemukan
+          </div>
+          <div v-else class="divide-y divide-gray-200">
+            <div 
+              v-for="rf in filteredRetailFoodList" 
+              :key="rf.retail_food_id" 
+              @click="selectRetailFoodFromModal(rf)"
+              class="p-4 cursor-pointer hover:bg-purple-50 transition-colors"
+            >
+              <div class="flex items-center gap-3">
+                <span class="text-purple-500 text-xl">🟣</span>
+                <div class="flex-1">
+                  <div class="font-semibold text-lg">{{ rf.retail_number }}</div>
+                  <div class="text-gray-600">{{ rf.supplier_name }}</div>
+                  <div v-if="rf.outlet_name || rf.warehouse_outlet_name" class="text-sm text-purple-600 mt-1">
+                    <i class="fa fa-map-marker-alt"></i> {{ rf.outlet_name || rf.warehouse_outlet_name }}
+                  </div>
+                </div>
+                <div class="text-right">
+                  <div class="text-sm text-gray-500">Retail Food</div>
+                  <div class="text-sm text-gray-500">{{ rf.transaction_date }}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   </AppLayout>
 </template> 
