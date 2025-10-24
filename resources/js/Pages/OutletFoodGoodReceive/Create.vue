@@ -398,7 +398,7 @@ async function submitGR() {
   loadingSubmit.value = true;
   
   // Disable all submit buttons to prevent multiple clicks
-  const submitButtons = document.querySelectorAll('button[onclick*="submitGR"], button:contains("Submit")');
+  const submitButtons = document.querySelectorAll('button[onclick*="submitGR"], button[class*="bg-blue-600"]');
   submitButtons.forEach(btn => {
     btn.disabled = true;
     btn.style.opacity = '0.5';
@@ -634,7 +634,7 @@ async function submitGR() {
     showConfirmModal.value = false;
     
     // Re-enable all submit buttons
-    const submitButtons = document.querySelectorAll('button[onclick*="submitGR"], button:contains("Submit")');
+    const submitButtons = document.querySelectorAll('button[onclick*="submitGR"], button[class*="bg-blue-600"]');
     submitButtons.forEach(btn => {
       btn.disabled = false;
       btn.style.opacity = '1';
