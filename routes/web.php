@@ -1714,6 +1714,8 @@ Route::middleware(['auth'])->group(function () {
     // Organization Chart Routes
     Route::get('organization-chart', [App\Http\Controllers\OrganizationChartController::class, 'index'])->name('organization-chart.index');
     Route::get('api/organization-chart', [App\Http\Controllers\OrganizationChartController::class, 'getOrganizationData'])->name('organization-chart.data');
+    Route::get('api/organization-chart/outlets', [App\Http\Controllers\OrganizationChartController::class, 'getOutlets'])->name('organization-chart.outlets');
+    Route::get('api/organization-chart/outlet/{outletId}', [App\Http\Controllers\OrganizationChartController::class, 'getOrganizationByOutlet'])->name('organization-chart.outlet');
     Route::get('api/organization-chart/debug', [App\Http\Controllers\OrganizationChartController::class, 'debugData'])->name('organization-chart.debug');
     
     // Schedule/Attendance Correction Routes

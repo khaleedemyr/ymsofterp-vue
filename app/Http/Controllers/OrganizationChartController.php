@@ -4,33 +4,46 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use App\Models\Jabatan;
+use App\Models\Outlet;
 
 class OrganizationChartController extends Controller
 {
-    public function index()
+    public function __construct()
     {
-        return inertia('OrganizationChart/Index');
+        // Middleware akan dihandle di routes
     }
 
-    public function getOrganizationData()
+    public function index()
+    {
+        // Get all outlets for selection
+        $outlets = Outlet::active()
+            ->select('id_outlet', 'nama_outlet')
+            ->orderBy('nama_outlet')
+            ->get();
+
+        return inertia('OrganizationChart/Index', [
+            'outlets' => $outlets
+        ]);
+    }
+
+    public function getOrganizationData(Request $request)
     {
         try {
-            // Debug: Check if there's data in users table
-            $usersCount = DB::table('users')->where('status', 'A')->count();
-            $usersOutlet1Count = DB::table('users')->where('id_outlet', 1)->where('status', 'A')->count();
-            $jabatanCount = DB::table('tbl_data_jabatan')->where('status', 'A')->count();
+            $outletId = $request->get('outlet_id', 1);
             
-            \Log::info("Debug Organization Chart - Users count: {$usersCount}, Users outlet 1 count: {$usersOutlet1Count}, Jabatan count: {$jabatanCount}");
+            \Log::info("Debug Organization Chart - Outlet ID: {$outletId}");
             
-            // Query untuk mengambil data organisasi dengan join
+            // Get simple organization data
             $organizationData = DB::table('users as u')
                 ->join('tbl_data_jabatan as j', 'u.id_jabatan', '=', 'j.id_jabatan')
                 ->leftJoin('tbl_data_level as l', 'j.id_level', '=', 'l.id')
+                ->leftJoin('tbl_data_divisi as d', 'j.id_divisi', '=', 'd.id')
                 ->leftJoin('tbl_data_jabatan as atasan', 'j.id_atasan', '=', 'atasan.id_jabatan')
-                ->leftJoin('users as atasan_user', 'atasan.id_jabatan', '=', 'atasan_user.id_jabatan')
-                ->where('u.id_outlet', 1)
+                ->where('u.id_outlet', $outletId)
                 ->where('u.status', 'A')
                 ->where('j.status', 'A')
+                ->where('atasan.status', 'A') // Filter atasan yang aktif juga
                 ->select([
                     'u.id',
                     'u.nama_lengkap',
@@ -39,106 +52,200 @@ class OrganizationChartController extends Controller
                     'j.nama_jabatan',
                     'j.id_atasan',
                     'j.id_level',
+                    'j.id_divisi',
                     'l.nama_level',
                     'l.nilai_level',
-                    'atasan.nama_jabatan as atasan_jabatan',
-                    'atasan_user.nama_lengkap as atasan_nama',
-                    'atasan_user.avatar as atasan_avatar'
+                    'd.nama_divisi',
+                    'atasan.nama_jabatan as atasan_jabatan'
                 ])
                 ->orderBy('j.id_atasan', 'asc')
                 ->orderBy('u.nama_lengkap', 'asc')
                 ->get();
-                
-            // Get all jabatan that are referenced in hierarchy but might not have employees in outlet 1
-            $allJabatanInHierarchy = DB::table('tbl_data_jabatan as j')
-                ->leftJoin('tbl_data_level as l', 'j.id_level', '=', 'l.id')
-                ->where('j.status', 'A')
-                ->select([
-                    'j.id_jabatan',
-                    'j.nama_jabatan',
-                    'j.id_atasan',
-                    'j.id_level',
-                    'l.nama_level',
-                    'l.nilai_level'
-                ])
-                ->get();
-                
-            // Add missing jabatan to organization data
-            $existingJabatanIds = $organizationData->pluck('id_jabatan')->unique();
-            $missingJabatan = $allJabatanInHierarchy->whereNotIn('id_jabatan', $existingJabatanIds);
             
-            foreach($missingJabatan as $jabatan) {
-                // Add as empty jabatan (no employees in outlet 1)
-                $organizationData->push((object)[
-                    'id' => null,
-                    'nama_lengkap' => null,
-                    'id_jabatan' => $jabatan->id_jabatan,
-                    'avatar' => null,
-                    'nama_jabatan' => $jabatan->nama_jabatan,
-                    'id_atasan' => $jabatan->id_atasan,
-                    'id_level' => $jabatan->id_level,
-                    'nama_level' => $jabatan->nama_level,
-                    'nilai_level' => $jabatan->nilai_level,
-                    'atasan_jabatan' => null,
-                    'atasan_nama' => null,
-                    'atasan_avatar' => null
-                ]);
-            }
-                
-            \Log::info("Debug Organization Chart - Query result count: " . $organizationData->count());
-
-            // Hitung jumlah bawahan untuk setiap jabatan
-            $subordinatesCount = [];
-            foreach ($organizationData as $employee) {
-                $superiorId = $employee->id_atasan;
-                if ($superiorId) {
-                    if (!isset($subordinatesCount[$superiorId])) {
-                        $subordinatesCount[$superiorId] = 0;
-                    }
-                    $subordinatesCount[$superiorId]++;
-                }
-            }
-
-            // Tambahkan informasi atasan dan jumlah bawahan
-            $processedData = $organizationData->map(function ($employee) use ($subordinatesCount) {
-                $employee->subordinates_count = $subordinatesCount[$employee->id_jabatan] ?? 0;
-                
-                // Tambahkan informasi atasan jika ada
-                if ($employee->id_atasan && $employee->atasan_nama) {
-                    $employee->atasan = [
-                        'nama_lengkap' => $employee->atasan_nama,
-                        'nama_jabatan' => $employee->atasan_jabatan,
-                        'avatar' => $employee->atasan_avatar
-                    ];
-                } else {
-                    $employee->atasan = null;
-                }
-
-                // Hapus field yang tidak diperlukan
-                unset($employee->atasan_nama, $employee->atasan_jabatan, $employee->atasan_avatar);
-
-                return $employee;
-            });
-
-            \Log::info("Debug Organization Chart - Final processed data count: " . $processedData->count());
-            \Log::info("Debug Organization Chart - Sample processed data: " . json_encode($processedData->take(2)));
-
+            \Log::info("Debug Organization Chart - Data count: " . $organizationData->count());
+            \Log::info("Debug Organization Chart - Sample data: " . json_encode($organizationData->take(2)));
+            
+            // Get outlet info
+            $outlet = Outlet::find($outletId);
+            
             return response()->json([
                 'success' => true,
-                'data' => $processedData,
-                'message' => 'Data organisasi berhasil dimuat',
+                'data' => $organizationData,
+                'outlet' => $outlet ? [
+                    'id_outlet' => $outlet->id_outlet,
+                    'nama_outlet' => $outlet->nama_outlet
+                ] : null,
+                'message' => 'Data struktur organisasi berhasil dimuat',
                 'debug' => [
-                    'total_count' => $processedData->count(),
-                    'sample_data' => $processedData->take(3)
+                    'outlet_id' => $outletId,
+                    'data_count' => $organizationData->count(),
+                    'sample_data' => $organizationData->take(2)
                 ]
             ]);
 
         } catch (\Exception $e) {
+            \Log::error('Organization Chart Error: ' . $e->getMessage());
             return response()->json([
                 'success' => false,
-                'message' => 'Gagal memuat data organisasi: ' . $e->getMessage()
+                'message' => 'Gagal memuat data struktur organisasi: ' . $e->getMessage()
             ], 500);
         }
+    }
+
+    /**
+     * Process organization tree to include additional information
+     */
+    private function processOrganizationTree($tree)
+    {
+        return $tree->map(function ($jabatan) {
+            $jabatanData = [
+                'id_jabatan' => $jabatan->id_jabatan,
+                'nama_jabatan' => $jabatan->nama_jabatan,
+                'id_atasan' => $jabatan->id_atasan,
+                'id_level' => $jabatan->id_level,
+                'id_divisi' => $jabatan->id_divisi,
+                'id_sub_divisi' => $jabatan->id_sub_divisi,
+                'level' => $jabatan->level ? [
+                    'id' => $jabatan->level->id,
+                    'nama_level' => $jabatan->level->nama_level,
+                    'nilai_level' => $jabatan->level->nilai_level
+                ] : null,
+                'divisi' => $jabatan->divisi ? [
+                    'id' => $jabatan->divisi->id,
+                    'nama_divisi' => $jabatan->divisi->nama_divisi
+                ] : null,
+                'sub_divisi' => $jabatan->subDivisi ? [
+                    'id' => $jabatan->subDivisi->id,
+                    'nama_sub_divisi' => $jabatan->subDivisi->nama_sub_divisi
+                ] : null,
+                'atasan' => $jabatan->atasan ? [
+                    'id_jabatan' => $jabatan->atasan->id_jabatan,
+                    'nama_jabatan' => $jabatan->atasan->nama_jabatan
+                ] : null,
+                'employees' => $jabatan->users->map(function ($user) {
+                    return [
+                        'id' => $user->id,
+                        'nama_lengkap' => $user->nama_lengkap,
+                        'avatar' => $user->avatar,
+                        'email' => $user->email
+                    ];
+                }),
+                'employee_count' => $jabatan->users->count(),
+                'children' => $this->processOrganizationTree($jabatan->children)
+            ];
+
+            return $jabatanData;
+        });
+    }
+
+    /**
+     * Get all outlets for organization chart
+     */
+    public function getOutlets()
+    {
+        try {
+            $outlets = Outlet::active()
+                ->select('id_outlet', 'nama_outlet', 'lokasi')
+                ->orderBy('nama_outlet')
+                ->get();
+
+            return response()->json([
+                'success' => true,
+                'data' => $outlets
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal memuat data outlet: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Get organization structure for specific outlet (alternative method)
+     */
+    public function getOrganizationByOutlet($outletId)
+    {
+        try {
+            $outlet = Outlet::find($outletId);
+            if (!$outlet) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Outlet tidak ditemukan'
+                ], 404);
+            }
+
+            // Get root jabatans (top level positions)
+            $rootJabatans = Jabatan::getRootJabatans($outletId);
+            
+            // Build complete tree structure
+            $tree = $this->buildCompleteTree($rootJabatans, $outletId);
+            
+            return response()->json([
+                'success' => true,
+                'data' => $tree,
+                'outlet' => [
+                    'id_outlet' => $outlet->id_outlet,
+                    'nama_outlet' => $outlet->nama_outlet,
+                    'lokasi' => $outlet->lokasi
+                ]
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal memuat struktur organisasi: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Build complete tree structure recursively
+     */
+    private function buildCompleteTree($jabatans, $outletId)
+    {
+        return $jabatans->map(function ($jabatan) use ($outletId) {
+            // Get employees for this position in this outlet
+            $employees = $jabatan->users()
+                ->where('status', 'A')
+                ->where('id_outlet', $outletId)
+                ->get();
+
+            // Get subordinates (bawahan)
+            $subordinates = Jabatan::active()
+                ->where('id_atasan', $jabatan->id_jabatan)
+                ->where('status', 'A')
+                ->with(['level', 'divisi', 'subDivisi'])
+                ->get();
+
+            return [
+                'id_jabatan' => $jabatan->id_jabatan,
+                'nama_jabatan' => $jabatan->nama_jabatan,
+                'id_atasan' => $jabatan->id_atasan,
+                'level' => $jabatan->level ? [
+                    'id' => $jabatan->level->id,
+                    'nama_level' => $jabatan->level->nama_level,
+                    'nilai_level' => $jabatan->level->nilai_level
+                ] : null,
+                'divisi' => $jabatan->divisi ? [
+                    'id' => $jabatan->divisi->id,
+                    'nama_divisi' => $jabatan->divisi->nama_divisi
+                ] : null,
+                'sub_divisi' => $jabatan->subDivisi ? [
+                    'id' => $jabatan->subDivisi->id,
+                    'nama_sub_divisi' => $jabatan->subDivisi->nama_sub_divisi
+                ] : null,
+                'employees' => $employees->map(function ($user) {
+                    return [
+                        'id' => $user->id,
+                        'nama_lengkap' => $user->nama_lengkap,
+                        'avatar' => $user->avatar,
+                        'email' => $user->email
+                    ];
+                }),
+                'employee_count' => $employees->count(),
+                'children' => $this->buildCompleteTree($subordinates, $outletId)
+            ];
+        });
     }
 
     public function debugData()

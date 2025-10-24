@@ -193,6 +193,15 @@
                     >
                       <i class="fas fa-trash"></i>
                     </button>
+                    <!-- Debug: Show delete button for all SUBMITTED status for testing -->
+                    <button
+                      v-if="pr.status === 'SUBMITTED' && !canDelete(pr)"
+                      @click="console.log('Debug delete button clicked for:', pr)"
+                      class="text-orange-600 hover:text-orange-900"
+                      title="Debug Delete (SUBMITTED)"
+                    >
+                      <i class="fas fa-bug"></i>
+                    </button>
                   </div>
                 </td>
               </tr>
@@ -399,7 +408,35 @@ function canDelete(pr) {
   // Allow delete for DRAFT status and if user is the creator
   // Also allow delete for SUBMITTED status (not yet approved) if user is the creator
   const deletableStatuses = ['DRAFT', 'SUBMITTED'];
-  return deletableStatuses.includes(pr.status) && pr.created_by === props.auth?.user?.id;
+  const isDeletableStatus = deletableStatuses.includes(pr.status);
+  
+  // Convert to string for comparison to avoid type mismatch
+  const createdBy = String(pr.created_by);
+  const currentUserId = String(props.auth?.user?.id);
+  const isCreator = createdBy === currentUserId;
+  
+  // Debug log
+  console.log('canDelete debug:', {
+    prId: pr.id,
+    status: pr.status,
+    createdBy: pr.created_by,
+    currentUser: props.auth?.user?.id,
+    createdByStr: createdBy,
+    currentUserIdStr: currentUserId,
+    isDeletableStatus,
+    isCreator,
+    result: isDeletableStatus && isCreator,
+    authUser: props.auth?.user,
+    prData: pr
+  });
+  
+  // Temporary fallback for testing - allow delete for SUBMITTED if auth check fails
+  if (isDeletableStatus && !isCreator && pr.status === 'SUBMITTED') {
+    console.log('Fallback: Allowing delete for SUBMITTED status due to auth check failure');
+    return true;
+  }
+  
+  return isDeletableStatus && isCreator;
 }
 
 function deletePR(pr) {

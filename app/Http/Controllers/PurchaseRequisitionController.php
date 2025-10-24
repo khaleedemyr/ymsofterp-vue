@@ -368,8 +368,10 @@ class PurchaseRequisitionController extends Controller
      */
     public function destroy(PurchaseRequisition $purchaseRequisition)
     {
-        if ($purchaseRequisition->status !== 'DRAFT') {
-            return back()->withErrors(['error' => 'Only draft purchase requisitions can be deleted.']);
+        // Allow delete for DRAFT and SUBMITTED status (not yet approved/processed)
+        $deletableStatuses = ['DRAFT', 'SUBMITTED'];
+        if (!in_array($purchaseRequisition->status, $deletableStatuses)) {
+            return back()->withErrors(['error' => 'Only draft and submitted (not yet approved) purchase requisitions can be deleted.']);
         }
 
         if ($purchaseRequisition->created_by !== auth()->id()) {

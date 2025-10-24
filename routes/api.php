@@ -347,6 +347,12 @@ Route::get('/pr-ops/available', [\App\Http\Controllers\PurchaseOrderOpsControlle
 
 // PR Tracking Report API
 Route::get('/pr-tracking-report', [\App\Http\Controllers\PurchaseRequisitionController::class, 'getPRTrackingReport']);
+
+// Organization Chart API routes
+Route::get('/organization-chart', [\App\Http\Controllers\OrganizationChartController::class, 'getOrganizationData']);
+Route::get('/organization-chart/outlets', [\App\Http\Controllers\OrganizationChartController::class, 'getOutlets']);
+Route::get('/organization-chart/outlet/{outletId}', [\App\Http\Controllers\OrganizationChartController::class, 'getOrganizationByOutlet']);
+Route::get('/organization-chart/debug', [\App\Http\Controllers\OrganizationChartController::class, 'debugData']);
 Route::get('/divisions', [\App\Http\Controllers\PurchaseRequisitionController::class, 'getDivisions']);
 
 // Payment API routes
