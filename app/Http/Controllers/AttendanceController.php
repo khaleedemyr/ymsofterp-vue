@@ -957,9 +957,11 @@ class AttendanceController extends Controller
             $query = DB::table('users as u')
                 ->leftJoin('tbl_data_jabatan as j', 'u.id_jabatan', '=', 'j.id_jabatan')
                 ->leftJoin('tbl_data_divisi as d', 'u.division_id', '=', 'd.id')
+                ->leftJoin('tbl_data_level as l', 'j.id_level', '=', 'l.id')
                 ->where('u.id_outlet', $user->id_outlet) // Same outlet
                 ->where('u.id', '!=', $user->id) // Not the current user
-                ->where('u.status', 'A'); // Active users only
+                ->where('u.status', 'A') // Active users only
+                ->whereNotIn('j.id_level', [7, 8, 13]); // Exclude specific levels
             
             // Add search functionality
             if (!empty($search)) {
