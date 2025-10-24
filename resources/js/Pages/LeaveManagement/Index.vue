@@ -589,8 +589,12 @@ async function showHistory(user) {
   isProcessing.value = true;
   try {
     const response = await axios.get(route('leave-management.history', user.id));
-    leaveHistory.value = response.data;
-    showHistoryModal.value = true;
+    if (response.data.success) {
+      leaveHistory.value = response.data.data;
+      showHistoryModal.value = true;
+    } else {
+      Swal.fire('Error', response.data.message || 'Gagal mengambil data history cuti', 'error');
+    }
   } catch (error) {
     console.error('Error fetching leave history:', error);
     Swal.fire('Error', 'Gagal mengambil data history cuti', 'error');

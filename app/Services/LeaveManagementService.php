@@ -332,7 +332,35 @@ class LeaveManagementService
         return LeaveTransaction::where('user_id', $userId)
             ->where('year', $year)
             ->orderBy('created_at', 'desc')
-            ->get();
+            ->get()
+            ->map(function ($transaction) {
+                return [
+                    'id' => $transaction->id,
+                    'transaction_date' => $transaction->created_at->format('Y-m-d'),
+                    'type' => $this->mapTransactionType($transaction->transaction_type),
+                    'amount' => $transaction->amount,
+                    'current_balance' => $transaction->balance_after,
+                    'description' => $transaction->description,
+                    'created_at' => $transaction->created_at,
+                    'transaction_type_original' => $transaction->transaction_type
+                ];
+            });
+    }
+
+    /**
+     * Map transaction type to frontend format
+     */
+    private function mapTransactionType($type)
+    {
+        $mapping = [
+            'monthly_credit' => 'credit',
+            'leave_usage' => 'usage', 
+            'manual_adjustment' => 'adjustment',
+            'burning' => 'burning',
+            'initial_balance' => 'credit'
+        ];
+
+        return $mapping[$type] ?? 'unknown';
     }
 
     /**

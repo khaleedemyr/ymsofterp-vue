@@ -66,6 +66,9 @@ class User extends Authenticatable
         return $this->belongsTo(\App\Models\Outlet::class, 'id_outlet', 'id_outlet');
     }
     
+    public function leaveTransactions() {
+        return $this->hasMany(\App\Models\LeaveTransaction::class, 'user_id', 'id');
+    }
 
 
     public function userPins()

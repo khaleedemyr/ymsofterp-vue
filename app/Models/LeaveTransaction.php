@@ -70,7 +70,8 @@ class LeaveTransaction extends Model
             'monthly_credit' => 'Kredit Bulanan',
             'burning' => 'Burning Cuti',
             'manual_adjustment' => 'Penyesuaian Manual',
-            'leave_usage' => 'Penggunaan Cuti'
+            'leave_usage' => 'Penggunaan Cuti',
+            'initial_balance' => 'Saldo Awal'
         ];
 
         return $types[$this->transaction_type] ?? 'Unknown';

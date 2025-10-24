@@ -62,16 +62,29 @@ class LeaveManagementController extends Controller
      */
     public function showHistory($userId, Request $request)
     {
-        $user = User::findOrFail($userId);
-        $year = $request->input('year', date('Y'));
+        try {
+            $user = User::findOrFail($userId);
+            $year = $request->input('year', date('Y'));
 
-        $leaveHistory = $this->leaveService->getLeaveHistory($userId, $year);
+            $leaveHistory = $this->leaveService->getLeaveHistory($userId, $year);
 
-        return Inertia::render('LeaveManagement/History', [
-            'user' => $user,
-            'leaveHistory' => $leaveHistory,
-            'year' => $year
-        ]);
+            return response()->json([
+                'success' => true,
+                'data' => $leaveHistory,
+                'user' => [
+                    'id' => $user->id,
+                    'nama_lengkap' => $user->nama_lengkap,
+                    'email' => $user->email
+                ]
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Error fetching leave history: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal mengambil data history cuti',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 
     /**
