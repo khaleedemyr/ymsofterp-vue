@@ -114,11 +114,13 @@ class UserShiftController extends Controller
             'division_id' => 'required|integer',
             'start_date' => 'required|date',
             'shifts' => 'required|array', // [user_id][tanggal] = shift_id/null
+            'explicit_off' => 'sometimes|array', // optional: [user_id][tanggal] = true to force OFF
         ]);
         $outletId = $data['outlet_id'];
         $divisionId = $data['division_id'];
         $startDate = $data['start_date'];
         $shiftsInput = $data['shifts'];
+        $explicitOff = $data['explicit_off'] ?? [];
         $start = date('Y-m-d', strtotime($startDate));
         $dates = [];
         for ($i = 0; $i < 7; $i++) {
@@ -134,6 +136,12 @@ class UserShiftController extends Controller
                     ->where('tanggal', $tanggal)
                     ->first();
                 if ($existing) {
+                    // If incoming value is OFF (null) but existing already has a shift, skip turning it OFF
+                    // unless explicitly forced by client for this cell
+                    $forcedOff = isset($explicitOff[$userId]) && array_key_exists($tanggal, (array) $explicitOff[$userId]) && $explicitOff[$userId][$tanggal];
+                    if (is_null($shiftId) && !is_null($existing->shift_id) && !$forcedOff) {
+                        continue;
+                    }
                     DB::table('user_shifts')->where('id', $existing->id)->update([
                         'shift_id' => $shiftId,
                         'outlet_id' => $outletId,
