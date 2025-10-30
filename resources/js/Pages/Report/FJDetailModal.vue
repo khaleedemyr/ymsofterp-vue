@@ -372,14 +372,14 @@ function formatQty(value) {
 function sectionItems(sectionKey) {
   const section = detailData.value?.[sectionKey]
   if (!section) return []
+  // Prioritaskan dataset GR (menyamakan dengan export Excel)
+  if (Array.isArray(section.gr)) return section.gr
+  // Jika respons sudah dalam bentuk array biasa
   if (Array.isArray(section)) return section
+  // Jika tidak ada gr namun ada all, gunakan all sebagai fallback terakhir
   if (Array.isArray(section.all)) return section.all
-  // fallback: merge known arrays if present
-  const merged = []
-  ;['gr', 'gr_supplier', 'retail_food'].forEach(k => {
-    if (Array.isArray(section[k])) merged.push(...section[k])
-  })
-  return merged
+  // Fallback akhir: kosong
+  return []
 }
 </script>
 
