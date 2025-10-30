@@ -294,7 +294,7 @@ async function submitManualAttendance() {
       // Reset limit info
       manualAttendanceLimit.value = {
         canSubmit: true,
-        remaining: 30,
+        remaining: 5,
         used: 0,
         period: null
       };
@@ -456,7 +456,7 @@ async function checkManualAttendanceLimit() {
     console.error('Error checking manual attendance limit:', error);
     manualAttendanceLimit.value = {
       canSubmit: true,
-      remaining: 30,
+      remaining: 5,
       used: 0,
       period: null
     };
@@ -742,7 +742,7 @@ if (userOutletId && userOutletId != 1) {
                       Periode: {{ manualAttendanceLimit.period.start_formatted }} - {{ manualAttendanceLimit.period.end_formatted }}
                     </div>
                     <div class="text-xs" :class="manualAttendanceLimit.canSubmit ? 'text-blue-600' : 'text-red-600'">
-                      Digunakan: {{ manualAttendanceLimit.used }}/30 • Sisa: {{ manualAttendanceLimit.remaining }}
+                      Digunakan: {{ manualAttendanceLimit.used }}/5 • Sisa: {{ manualAttendanceLimit.remaining }}
                     </div>
                   </div>
                   <div v-if="checkingLimit" class="text-xs text-gray-500">

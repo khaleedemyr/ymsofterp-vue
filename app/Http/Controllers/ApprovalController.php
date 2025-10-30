@@ -7,6 +7,7 @@ use App\Models\ApprovalRequest;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
+use App\Services\ExtraOffService;
 
 class ApprovalController extends Controller
 {
@@ -480,13 +481,15 @@ class ApprovalController extends Controller
         // Get approval request that needs HRD approval
         $approvalRequest = DB::table('approval_requests')
             ->join('users', 'approval_requests.user_id', '=', 'users.id')
+            ->leftJoin('leave_types', 'approval_requests.leave_type_id', '=', 'leave_types.id')
             ->where('approval_requests.id', $id)
             ->where('approval_requests.status', 'approved')
             ->where('approval_requests.hrd_status', 'pending')
             ->select([
                 'approval_requests.*',
                 'users.nama_lengkap as user_name',
-                'users.id as user_id'
+                'users.id as user_id',
+                'leave_types.name as leave_type_name'
             ])
             ->first();
             
@@ -539,6 +542,34 @@ class ApprovalController extends Controller
 
             DB::commit();
             
+            // After commit: deduct Extra Off balance if this is Extra Off leave
+            try {
+                if ($approvalRequest->leave_type_name && strcasecmp(trim($approvalRequest->leave_type_name), 'Extra Off') === 0) {
+                    $extraOffService = app(ExtraOffService::class);
+                    $start = Carbon::parse($approvalRequest->date_from)->startOfDay();
+                    $end = Carbon::parse($approvalRequest->date_to)->startOfDay();
+                    $days = $start->diffInDays($end) + 1;
+                    for ($i = 0; $i < $days; $i++) {
+                        $useDate = $start->copy()->addDays($i)->format('Y-m-d');
+                        try {
+                            $extraOffService->useExtraOffDay($approvalRequest->user_id, $useDate, 'Extra Off leave approved HRD');
+                        } catch (\Throwable $t) {
+                            \Log::error('Failed to deduct extra off balance on HRD approval', [
+                                'approval_request_id' => $id,
+                                'user_id' => $approvalRequest->user_id,
+                                'use_date' => $useDate,
+                                'error' => $t->getMessage()
+                            ]);
+                        }
+                    }
+                }
+            } catch (\Throwable $e) {
+                \Log::error('Post-approval extra off deduction error', [
+                    'approval_request_id' => $id,
+                    'error' => $e->getMessage()
+                ]);
+            }
+
             return response()->json([
                 'success' => true,
                 'message' => 'Permohonan izin/cuti berhasil disetujui oleh HRD'

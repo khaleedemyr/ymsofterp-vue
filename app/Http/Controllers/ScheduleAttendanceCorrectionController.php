@@ -291,7 +291,7 @@ class ScheduleAttendanceCorrectionController extends Controller
             ->whereBetween('tanggal', [$periodStart, $periodEnd])
             ->count();
             
-        $remaining = max(0, 30 - $existingCount);
+        $remaining = max(0, 5 - $existingCount);
         $canSubmit = $remaining > 0;
         
         return response()->json([
@@ -335,8 +335,8 @@ class ScheduleAttendanceCorrectionController extends Controller
                 ->whereBetween('tanggal', [$periodStart, $periodEnd])
                 ->count();
                 
-            if ($existingCount >= 30) {
-                throw new \Exception('User ini sudah mencapai batas maksimal 30x input absen manual dalam periode ini (' . $period['start_formatted'] . ' - ' . $period['end_formatted'] . '). Silakan coba lagi di periode berikutnya.');
+            if ($existingCount >= 5) {
+                throw new \Exception('User ini sudah mencapai batas maksimal 5x input absen manual dalam periode ini (' . $period['start_formatted'] . ' - ' . $period['end_formatted'] . '). Silakan coba lagi di periode berikutnya.');
             }
             
             // Get outlet SN
