@@ -1121,19 +1121,25 @@ class PurchaseOrderOpsController extends Controller
     public function getPendingApprovals()
     {
         $userId = Auth::id();
-        
+        // Only include POs where:
+        // - There is a PENDING step for current user
+        // - No approval flow is REJECTED (stop chain)
+        // - Overall PO status is not rejected/cancelled/approved/received
         $pendingPOs = PurchaseOrderOps::whereHas('approvalFlows', function($query) use ($userId) {
             $query->where('approver_id', $userId)
                   ->where('status', 'PENDING');
+        })
+        ->whereNotIn('status', ['rejected', 'approved', 'received', 'cancelled'])
+        ->whereDoesntHave('approvalFlows', function($q) {
+            $q->where('status', 'REJECTED');
         })
         ->with([
             'supplier', 
             'creator', 
             'source_pr.attachments.uploader',
             'attachments.uploader',
-            'approvalFlows' => function($query) use ($userId) {
-                $query->where('approver_id', $userId);
-            }
+            // include all flows to allow frontend filtering if needed
+            'approvalFlows'
         ])
         ->get();
 
