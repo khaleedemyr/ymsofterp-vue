@@ -37,7 +37,7 @@
       
       <div v-else class="space-y-6 max-h-[60vh] overflow-y-auto">
         <!-- Main Kitchen Section -->
-        <div v-if="detailData.main_kitchen && detailData.main_kitchen.length > 0" class="bg-white rounded-lg p-4 shadow-sm">
+        <div v-if="sectionItems('main_kitchen').length > 0" class="bg-white rounded-lg p-4 shadow-sm">
           <h3 class="text-lg font-semibold text-blue-700 mb-3 flex items-center gap-2">
             <i class="fas fa-utensils"></i>
             Main Kitchen
@@ -55,7 +55,7 @@
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="item in detailData.main_kitchen" :key="item.id" class="border-b last:border-b-0 hover:bg-gray-50">
+                <tr v-for="item in sectionItems('main_kitchen')" :key="item.item_name + (item.category||'') + (item.unit||'')" class="border-b last:border-b-0 hover:bg-gray-50">
                   <td class="px-3 py-2">{{ item.item_name }}</td>
                   <td class="px-3 py-2">{{ item.category }}</td>
                   <td class="px-3 py-2">{{ item.unit }}</td>
@@ -69,7 +69,7 @@
         </div>
 
         <!-- Main Store Section -->
-        <div v-if="detailData.main_store && detailData.main_store.length > 0" class="bg-white rounded-lg p-4 shadow-sm">
+        <div v-if="sectionItems('main_store').length > 0" class="bg-white rounded-lg p-4 shadow-sm">
           <h3 class="text-lg font-semibold text-green-700 mb-3 flex items-center gap-2">
             <i class="fas fa-store"></i>
             Main Store
@@ -87,7 +87,7 @@
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="item in detailData.main_store" :key="item.id" class="border-b last:border-b-0 hover:bg-gray-50">
+                <tr v-for="item in sectionItems('main_store')" :key="item.item_name + (item.category||'') + (item.unit||'')" class="border-b last:border-b-0 hover:bg-gray-50">
                   <td class="px-3 py-2">{{ item.item_name }}</td>
                   <td class="px-3 py-2">{{ item.category }}</td>
                   <td class="px-3 py-2">{{ item.unit }}</td>
@@ -101,7 +101,7 @@
         </div>
 
         <!-- Chemical Section -->
-        <div v-if="detailData.chemical && detailData.chemical.length > 0" class="bg-white rounded-lg p-4 shadow-sm">
+        <div v-if="sectionItems('chemical').length > 0" class="bg-white rounded-lg p-4 shadow-sm">
           <h3 class="text-lg font-semibold text-purple-700 mb-3 flex items-center gap-2">
             <i class="fas fa-flask"></i>
             Chemical
@@ -119,7 +119,7 @@
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="item in detailData.chemical" :key="item.id" class="border-b last:border-b-0 hover:bg-gray-50">
+                <tr v-for="item in sectionItems('chemical')" :key="item.item_name + (item.category||'') + (item.unit||'')" class="border-b last:border-b-0 hover:bg-gray-50">
                   <td class="px-3 py-2">{{ item.item_name }}</td>
                   <td class="px-3 py-2">{{ item.category }}</td>
                   <td class="px-3 py-2">{{ item.unit }}</td>
@@ -133,7 +133,7 @@
         </div>
 
         <!-- Stationary Section -->
-        <div v-if="detailData.stationary && detailData.stationary.length > 0" class="bg-white rounded-lg p-4 shadow-sm">
+        <div v-if="sectionItems('stationary').length > 0" class="bg-white rounded-lg p-4 shadow-sm">
           <h3 class="text-lg font-semibold text-orange-700 mb-3 flex items-center gap-2">
             <i class="fas fa-pencil-alt"></i>
             Stationary
@@ -151,7 +151,7 @@
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="item in detailData.stationary" :key="item.id" class="border-b last:border-b-0 hover:bg-gray-50">
+                <tr v-for="item in sectionItems('stationary')" :key="item.item_name + (item.category||'') + (item.unit||'')" class="border-b last:border-b-0 hover:bg-gray-50">
                   <td class="px-3 py-2">{{ item.item_name }}</td>
                   <td class="px-3 py-2">{{ item.category }}</td>
                   <td class="px-3 py-2">{{ item.unit }}</td>
@@ -165,7 +165,7 @@
         </div>
 
         <!-- Marketing Section -->
-        <div v-if="detailData.marketing && detailData.marketing.length > 0" class="bg-white rounded-lg p-4 shadow-sm">
+        <div v-if="sectionItems('marketing').length > 0" class="bg-white rounded-lg p-4 shadow-sm">
           <h3 class="text-lg font-semibold text-pink-700 mb-3 flex items-center gap-2">
             <i class="fas fa-bullhorn"></i>
             Marketing
@@ -183,7 +183,7 @@
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="item in detailData.marketing" :key="item.id" class="border-b last:border-b-0 hover:bg-gray-50">
+                <tr v-for="item in sectionItems('marketing')" :key="item.item_name + (item.category||'') + (item.unit||'')" class="border-b last:border-b-0 hover:bg-gray-50">
                   <td class="px-3 py-2">{{ item.item_name }}</td>
                   <td class="px-3 py-2">{{ item.category }}</td>
                   <td class="px-3 py-2">{{ item.unit }}</td>
@@ -338,11 +338,15 @@ async function downloadPDF() {
 }
 
 const summary = computed(() => {
-  const main_kitchen = detailData.value.main_kitchen?.reduce((sum, item) => sum + (Number(item.subtotal) || 0), 0) || 0
-  const main_store = detailData.value.main_store?.reduce((sum, item) => sum + (Number(item.subtotal) || 0), 0) || 0
-  const chemical = detailData.value.chemical?.reduce((sum, item) => sum + (Number(item.subtotal) || 0), 0) || 0
-  const stationary = detailData.value.stationary?.reduce((sum, item) => sum + (Number(item.subtotal) || 0), 0) || 0
-  const marketing = detailData.value.marketing?.reduce((sum, item) => sum + (Number(item.subtotal) || 0), 0) || 0
+  const sumSection = (key) => {
+    const arr = sectionItems(key)
+    return arr.reduce((sum, item) => sum + (Number(item.subtotal) || 0), 0)
+  }
+  const main_kitchen = sumSection('main_kitchen')
+  const main_store = sumSection('main_store')
+  const chemical = sumSection('chemical')
+  const stationary = sumSection('stationary')
+  const marketing = sumSection('marketing')
   
   return {
     main_kitchen,
@@ -362,6 +366,20 @@ function formatRupiah(value) {
 function formatQty(value) {
   if (value == null) return ''
   return Number(value).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+// Helper to normalize API differences: if section is an object with 'all', use it; if it's an array, use directly
+function sectionItems(sectionKey) {
+  const section = detailData.value?.[sectionKey]
+  if (!section) return []
+  if (Array.isArray(section)) return section
+  if (Array.isArray(section.all)) return section.all
+  // fallback: merge known arrays if present
+  const merged = []
+  ;['gr', 'gr_supplier', 'retail_food'].forEach(k => {
+    if (Array.isArray(section[k])) merged.push(...section[k])
+  })
+  return merged
 }
 </script>
 
