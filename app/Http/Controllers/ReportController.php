@@ -231,9 +231,70 @@ class ReportController extends Controller
         ->orderBy('o.nama_outlet')
         ->orderBy('it.name');
 
+        // Build GR Supplier query with same select structure
+        $supplierQuery = DB::table('good_receive_outlet_suppliers as gr')
+            ->join('good_receive_outlet_supplier_items as i', 'gr.id', '=', 'i.good_receive_id')
+            ->join('items as it', 'i.item_id', '=', 'it.id')
+            ->join('units as u', 'i.unit_id', '=', 'u.id')
+            ->leftJoin('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
+            ->leftJoin('food_packing_lists as pl', 'do.packing_list_id', '=', 'pl.id')
+            ->leftJoin('warehouse_division as wd', 'it.warehouse_division_id', '=', 'wd.id')
+            ->leftJoin('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
+            ->leftJoin('food_floor_order_items as fo', function($join) {
+                $join->on('i.item_id', '=', 'fo.item_id')
+                     ->on('fo.floor_order_id', '=', 'do.floor_order_id');
+            })
+            ->join('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
+            ->select(
+                DB::raw('DATE_FORMAT(gr.receive_date, "%d %M %Y") as tanggal'),
+                DB::raw('COALESCE(w.name, "MAIN STORE") as gudang'),
+                'o.nama_outlet as outlet',
+                'it.name as nama_barang',
+                DB::raw('SUM(i.qty_received) as qty'),
+                'u.name as unit',
+                DB::raw('COALESCE(fo.price, 0) as harga'),
+                DB::raw('SUM(i.qty_received * COALESCE(fo.price, 0)) as subtotal')
+            );
+
+        if ($request->filled('gudang')) {
+            $supplierQuery->where(function($q) use ($request) {
+                $q->where('w.name', $request->gudang)
+                  ->orWhereNull('w.name');
+            });
+        }
+        if ($request->filled('outlet')) {
+            $supplierQuery->where('o.nama_outlet', $request->outlet);
+        }
+        if ($request->filled('dateFrom')) {
+            $supplierQuery->whereDate('gr.receive_date', '>=', $request->dateFrom);
+        }
+        if ($request->filled('dateTo')) {
+            $supplierQuery->whereDate('gr.receive_date', '<=', $request->dateTo);
+        }
+        if ($request->filled('search')) {
+            $search = '%' . $request->search . '%';
+            $supplierQuery->where(function($q) use ($search) {
+                $q->where('w.name', 'like', $search)
+                  ->orWhere('o.nama_outlet', 'like', $search)
+                  ->orWhere('it.name', 'like', $search);
+            });
+        }
+
+        $supplierQuery->groupBy(
+            DB::raw('gr.receive_date'),
+            DB::raw('COALESCE(w.name, "MAIN STORE")'),
+            'o.nama_outlet',
+            'it.name',
+            'u.name',
+            DB::raw('COALESCE(fo.price, 0)')
+        );
+
+        // Merge both datasets in memory for pagination
+        $data = collect($query->get())->merge(collect($supplierQuery->get()))
+            ->sortBy([['tanggal', 'asc'], ['gudang', 'asc'], ['outlet', 'asc'], ['nama_barang', 'asc']])
+            ->values();
         $perPage = $request->input('perPage', 25);
         $page = $request->input('page', 1);
-        $data = collect($query->get());
 
         $total = $data->count();
         $paginated = $data->slice(($page - 1) * $perPage, $perPage)->values();
@@ -320,7 +381,71 @@ class ReportController extends Controller
         ->orderBy('o.nama_outlet')
         ->orderBy('it.name');
 
-        $data = $query->get();
+        // Build GR Supplier query and merge
+        $supplierQuery = DB::table('good_receive_outlet_suppliers as gr')
+            ->join('good_receive_outlet_supplier_items as i', 'gr.id', '=', 'i.good_receive_id')
+            ->join('items as it', 'i.item_id', '=', 'it.id')
+            ->join('units as u', 'i.unit_id', '=', 'u.id')
+            ->leftJoin('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
+            ->leftJoin('food_packing_lists as pl', 'do.packing_list_id', '=', 'pl.id')
+            ->leftJoin('warehouse_division as wd', 'it.warehouse_division_id', '=', 'wd.id')
+            ->leftJoin('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
+            ->leftJoin('food_floor_order_items as fo', function($join) {
+                $join->on('i.item_id', '=', 'fo.item_id')
+                     ->on('fo.floor_order_id', '=', 'do.floor_order_id');
+            })
+            ->join('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
+            ->select(
+                DB::raw('DATE_FORMAT(gr.receive_date, "%d %M %Y") as tanggal'),
+                DB::raw('COALESCE(w.name, "MAIN STORE") as gudang'),
+                'o.nama_outlet as outlet',
+                'it.name as nama_barang',
+                DB::raw('SUM(i.qty_received) as qty'),
+                'u.name as unit',
+                DB::raw('COALESCE(fo.price, 0) as harga'),
+                DB::raw('SUM(i.qty_received * COALESCE(fo.price, 0)) as subtotal')
+            );
+
+        if ($request->filled('gudang')) {
+            $supplierQuery->where(function($q) use ($request) {
+                $q->where('w.name', $request->gudang)
+                  ->orWhereNull('w.name');
+            });
+        }
+        if ($request->filled('outlet')) {
+            $supplierQuery->where('o.nama_outlet', $request->outlet);
+        }
+        if ($request->filled('dateFrom')) {
+            $supplierQuery->whereDate('gr.receive_date', '>=', $request->dateFrom);
+        }
+        if ($request->filled('dateTo')) {
+            $supplierQuery->whereDate('gr.receive_date', '<=', $request->dateTo);
+        }
+        if ($request->filled('search')) {
+            $search = '%' . $request->search . '%';
+            $supplierQuery->where(function($q) use ($search) {
+                $q->where('w.name', 'like', $search)
+                  ->orWhere('o.nama_outlet', 'like', $search)
+                  ->orWhere('it.name', 'like', $search);
+            });
+        }
+
+        $supplierQuery->groupBy(
+            DB::raw('gr.receive_date'),
+            DB::raw('COALESCE(w.name, "MAIN STORE")'),
+            'o.nama_outlet',
+            'it.name',
+            'u.name',
+            DB::raw('COALESCE(fo.price, 0)')
+        )
+        ->orderBy('gr.receive_date')
+        ->orderBy('gudang')
+        ->orderBy('o.nama_outlet')
+        ->orderBy('it.name');
+
+        $data = collect($query->get())->merge(collect($supplierQuery->get()))
+            ->sortBy([['tanggal', 'asc'], ['gudang', 'asc'], ['outlet', 'asc'], ['nama_barang', 'asc']])
+            ->values();
 
         $filters = [
             'search' => $request->search,
