@@ -47,6 +47,240 @@ const loadingPoOpsApprovals = ref(false);
 const showPoOpsApprovalModal = ref(false);
 const selectedPoOpsApproval = ref(null);
 const poOpsApprovalBudgetInfo = ref(null);
+// PO Ops - All list modal
+const showAllPoOpsModal = ref(false);
+const allPendingPoOps = ref([]);
+const loadingAllPoOps = ref(false);
+// PO Ops filters
+const poOpsSearchQuery = ref('');
+const poOpsStatusFilter = ref(''); // '', 'submitted', 'pending', 'awaiting', 'waiting'
+const poOpsDateFilter = ref(''); // '', 'today', 'week', 'month'
+const poOpsSortBy = ref('newest'); // 'newest', 'oldest', 'number', 'amount'
+
+const filteredAllPendingPoOps = computed(() => {
+    let result = [...allPendingPoOps.value];
+    // Search by number, supplier, PR number/title, creator
+    if (poOpsSearchQuery.value) {
+        const q = poOpsSearchQuery.value.toLowerCase();
+        result = result.filter(po => {
+            const number = (po.number || '').toLowerCase();
+            const supplier = (po.supplier?.name || '').toLowerCase();
+            const prNumber = (po.purchase_requisition?.pr_number || '').toLowerCase();
+            const prTitle = (po.purchase_requisition?.title || '').toLowerCase();
+            const creator = (po.creator?.nama_lengkap || '').toLowerCase();
+            return number.includes(q) || supplier.includes(q) || prNumber.includes(q) || prTitle.includes(q) || creator.includes(q);
+        });
+    }
+    // Status filter
+    if (poOpsStatusFilter.value) {
+        result = result.filter(po => (po.status || '').toString().toLowerCase() === poOpsStatusFilter.value);
+    }
+    // Date filter (based on po.date)
+    if (poOpsDateFilter.value) {
+        const now = new Date();
+        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        result = result.filter(po => {
+            const d = new Date(po.date);
+            switch (poOpsDateFilter.value) {
+                case 'today':
+                    return d >= today;
+                case 'week':
+                    return d >= new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+                case 'month':
+                    return d >= new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
+                default:
+                    return true;
+            }
+        });
+    }
+    // Sort
+    result.sort((a, b) => {
+        switch (poOpsSortBy.value) {
+            case 'oldest':
+                return new Date(a.date) - new Date(b.date);
+            case 'number':
+                return (a.number || '').localeCompare(b.number || '');
+            case 'amount':
+                return (b.grand_total || 0) - (a.grand_total || 0);
+            case 'newest':
+            default:
+                return new Date(b.date) - new Date(a.date);
+        }
+    });
+    return result;
+});
+
+function isPoOpsVisibleToCurrentUser(po) {
+    const status = (po.status || '').toString().toLowerCase();
+    if (['approved', 'rejected', 'cancelled', 'received'].includes(status)) return false;
+    const flows = Array.isArray(po.approval_flows) ? po.approval_flows : [];
+    // Hide any PO that already has a rejection in its flow
+    if (flows.some(f => (f.status || '').toString().toUpperCase() === 'REJECTED')) return false;
+    // If approval flow exists, show only when this user has a PENDING step
+    if (flows.length > 0) {
+        return flows.some(f => f.approver_id === user.id && (f.status || '').toString().toUpperCase() === 'PENDING');
+    }
+    // Fallback: no flow data, rely on status submitted/pending/etc.
+    return ['submitted', 'pending', 'awaiting', 'waiting'].includes(status);
+}
+
+// Personal Movement approvals (from API, not notifications)
+const showAllMovementApprovalsModal = ref(false);
+const movementSearchQuery = ref('');
+const pendingMovementApprovals = ref([]);
+const loadingMovementApprovals = ref(false);
+const showMovementDetailModal = ref(false);
+const selectedMovement = ref(null);
+const loadingMovementDetail = ref(false);
+
+function getMovementCurrentLevel(mv) {
+    if (!mv) return null;
+    const isHodPending = mv.hod_approver_id === user.id && !mv.hod_approval;
+    const isGmPending = mv.gm_approver_id === user.id && !mv.gm_approval && (mv.hod_approval || '').toLowerCase() === 'approved';
+    const isGmHrPending = mv.gm_hr_approver_id === user.id && !mv.gm_hr_approval && (mv.gm_approval || '').toLowerCase() === 'approved';
+    const isBodPending = mv.bod_approver_id === user.id && !mv.bod_approval && (mv.gm_hr_approval || '').toLowerCase() === 'approved';
+    if (isHodPending) return 'hod';
+    if (isGmPending) return 'gm';
+    if (isGmHrPending) return 'gm_hr';
+    if (isBodPending) return 'bod';
+    return null;
+}
+
+const canApproveSelectedMovement = computed(() => !!getMovementCurrentLevel(selectedMovement.value));
+
+async function approveSelectedMovement() {
+    const mv = selectedMovement.value;
+    const level = getMovementCurrentLevel(mv);
+    if (!mv || !level) return;
+    try {
+        const result = await Swal.fire({
+            title: 'Setujui Personal Movement?',
+            text: 'Tindakan ini akan meneruskan ke approver berikutnya.',
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonText: 'Ya, Setujui',
+            cancelButtonText: 'Batal',
+            confirmButtonColor: '#10B981',
+            cancelButtonColor: '#6B7280'
+        });
+        if (!result.isConfirmed) return;
+        const resp = await axios.post(`/employee-movements/${mv.id}/approve`, {
+            approval_level: level,
+            status: 'approved',
+            notes: ''
+        });
+        if (resp.data?.success) {
+            await Swal.fire('Berhasil', 'Persetujuan berhasil diproses', 'success');
+            showMovementDetailModal.value = false;
+            await loadPendingMovementApprovals();
+        } else {
+            await Swal.fire('Gagal', resp.data?.message || 'Gagal memproses persetujuan', 'error');
+        }
+    } catch (e) {
+        console.error(e);
+        await Swal.fire('Error', e.response?.data?.message || 'Gagal memproses persetujuan', 'error');
+    }
+}
+
+async function rejectSelectedMovement() {
+    const mv = selectedMovement.value;
+    const level = getMovementCurrentLevel(mv);
+    if (!mv || !level) return;
+    const { value: notes } = await Swal.fire({
+        title: 'Tolak Personal Movement',
+        text: 'Berikan alasan penolakan:',
+        input: 'textarea',
+        inputPlaceholder: 'Masukkan alasan penolakan...',
+        inputValidator: (value) => { if (!value) return 'Alasan harus diisi'; },
+        showCancelButton: true,
+        confirmButtonText: 'Tolak',
+        cancelButtonText: 'Batal',
+        confirmButtonColor: '#EF4444',
+        cancelButtonColor: '#6B7280'
+    });
+    if (!notes) return;
+    try {
+        const resp = await axios.post(`/employee-movements/${mv.id}/approve`, {
+            approval_level: level,
+            status: 'rejected',
+            notes
+        });
+        if (resp.data?.success) {
+            await Swal.fire('Berhasil', 'Penolakan berhasil diproses', 'success');
+            showMovementDetailModal.value = false;
+            await loadPendingMovementApprovals();
+        } else {
+            await Swal.fire('Gagal', resp.data?.message || 'Gagal memproses penolakan', 'error');
+        }
+    } catch (e) {
+        console.error(e);
+        await Swal.fire('Error', e.response?.data?.message || 'Gagal memproses penolakan', 'error');
+    }
+}
+
+function formatMovementLabelRaw(value) {
+    if (value === null || value === undefined) return '';
+    let text = String(value).trim();
+    // If it's digits-only (likely an ID), hide it
+    if (/^\d+$/.test(text)) return '';
+    // Remove any trailing id codes: " - 27", " — 27", "– 27", "-> 27", "→ 27"
+    text = text
+        .replace(/\s[-–—]\s*\d+$/g, '')
+        .replace(/\s->\s*\d+$/g, '')
+        .replace(/\s→\s*\d+$/g, '')
+        .trim();
+    // Also remove inline patterns like "Name — 27" if present anywhere
+    text = text.replace(/\s[–—-]\s*\d+(?=\s|$)/g, '').trim();
+    return text;
+}
+
+function displayMovement(value) {
+    const cleaned = formatMovementLabelRaw(value);
+    return cleaned || '-';
+}
+const filteredMovementApprovals = computed(() => {
+    let list = [...pendingMovementApprovals.value];
+    if (movementSearchQuery.value) {
+        const q = movementSearchQuery.value.toLowerCase();
+        list = list.filter(mv => {
+            const name = (mv.employee_name || '').toLowerCase();
+            const type = (mv.employment_type || '').toLowerCase();
+            return name.includes(q) || type.includes(q) || (mv.id + '').includes(q);
+        });
+    }
+    return list;
+});
+async function loadPendingMovementApprovals() {
+    loadingMovementApprovals.value = true;
+    try {
+        const response = await axios.get('/employee-movements/pending-approvals?limit=100');
+        if (response.data?.success) {
+            pendingMovementApprovals.value = response.data.data || [];
+        }
+    } catch (e) {
+        console.error('Error loading pending personal movement approvals:', e);
+    } finally {
+        loadingMovementApprovals.value = false;
+    }
+}
+function openAllMovementApprovalsModal() {
+    showAllMovementApprovalsModal.value = true;
+}
+async function openMovementApproval(movement) {
+    if (!movement?.id) return;
+    loadingMovementDetail.value = true;
+    try {
+        const resp = await axios.get(`/employee-movements/${movement.id}/debug`);
+        if (resp.data?.success) {
+            selectedMovement.value = resp.data.data;
+            showMovementDetailModal.value = true;
+        }
+    } catch (e) {
+        console.error('Error loading movement detail:', e);
+    } finally {
+        loadingMovementDetail.value = false;
+    }
+}
 
 // General notifications
 const leaveNotifications = ref([]);
@@ -364,7 +598,12 @@ async function loadPendingApprovals() {
     try {
         const response = await axios.get('/api/approval/pending');
         if (response.data.success) {
-            pendingApprovals.value = response.data.approvals;
+            const approvals = response.data.approvals || [];
+            pendingApprovals.value = approvals.filter(a => {
+                const status = (a.status || a.approval_status || '').toString().toLowerCase();
+                if (!status) return true;
+                return status === 'pending' || status === 'awaiting' || status === 'waiting';
+            });
         }
     } catch (error) {
         console.error('Error loading pending approvals:', error);
@@ -394,13 +633,34 @@ async function loadPendingPoOpsApprovals() {
     try {
         const response = await axios.get('/po-ops/pending-approvals');
         if (response.data.success) {
-            pendingPoOpsApprovals.value = response.data.data;
+            const approvals = response.data.data || [];
+            pendingPoOpsApprovals.value = approvals.filter(po => isPoOpsVisibleToCurrentUser(po));
         }
     } catch (error) {
         console.error('Error loading pending PO Ops approvals:', error);
     } finally {
         loadingPoOpsApprovals.value = false;
     }
+}
+
+async function loadAllPendingPoOps() {
+    loadingAllPoOps.value = true;
+    try {
+        const response = await axios.get('/po-ops/pending-approvals?limit=200');
+        if (response.data.success) {
+            const approvals = response.data.data || [];
+            allPendingPoOps.value = approvals.filter(po => isPoOpsVisibleToCurrentUser(po));
+        }
+    } catch (error) {
+        console.error('Error loading all pending PO Ops approvals:', error);
+    } finally {
+        loadingAllPoOps.value = false;
+    }
+}
+
+function openAllPoOpsModal() {
+    showAllPoOpsModal.value = true;
+    loadAllPendingPoOps();
 }
 
 // Load active sanctions
@@ -922,7 +1182,12 @@ async function loadPendingHrdApprovals() {
     try {
         const response = await axios.get('/api/approval/pending-hrd');
         if (response.data.success) {
-            pendingHrdApprovals.value = response.data.approvals;
+            const approvals = response.data.approvals || [];
+            pendingHrdApprovals.value = approvals.filter(a => {
+                const status = (a.status || a.approval_status || '').toString().toLowerCase();
+                if (!status) return true;
+                return status === 'pending' || status === 'awaiting' || status === 'waiting';
+            });
         }
     } catch (error) {
         console.error('Error loading pending HRD approvals:', error);
@@ -963,7 +1228,9 @@ async function loadAllApprovals() {
         
         // Add leave approvals
         if (approvalsResponse.data.success) {
-            approvalsResponse.data.approvals.forEach(approval => {
+            (approvalsResponse.data.approvals || []).forEach(approval => {
+                const status = (approval.status || approval.approval_status || '').toString().toLowerCase();
+                if (status && status !== 'pending' && status !== 'awaiting' && status !== 'waiting') return;
                 allApprovalsData.push({
                     ...approval,
                     type: 'leave',
@@ -974,7 +1241,9 @@ async function loadAllApprovals() {
 
         // Add HRD approvals
         if (hrdResponse.data.success) {
-            hrdResponse.data.approvals.forEach(approval => {
+            (hrdResponse.data.approvals || []).forEach(approval => {
+                const status = (approval.status || approval.approval_status || '').toString().toLowerCase();
+                if (status && status !== 'pending' && status !== 'awaiting' && status !== 'waiting') return;
                 allApprovalsData.push({
                     ...approval,
                     type: 'hrd_leave',
@@ -2358,6 +2627,8 @@ async function approveRequest(approvalId) {
                     confirmButtonColor: '#10B981'
                 });
                 showApprovalModal.value = false;
+                await loadPendingApprovals();
+                await loadAllApprovals();
                 await loadLeaveNotifications();
             }
         } catch (error) {
@@ -2405,6 +2676,8 @@ async function rejectRequest(approvalId) {
                     confirmButtonColor: '#10B981'
                 });
                 showApprovalModal.value = false;
+                await loadPendingApprovals();
+                await loadAllApprovals();
                 await loadLeaveNotifications();
             }
         } catch (error) {
@@ -2445,6 +2718,7 @@ async function hrdApproveRequest(approvalId) {
                 });
                 showApprovalModal.value = false;
                 await loadPendingHrdApprovals();
+                await loadAllApprovals();
                 await loadLeaveNotifications();
             }
         } catch (error) {
@@ -2493,6 +2767,7 @@ async function hrdRejectRequest(approvalId) {
                 });
                 showApprovalModal.value = false;
                 await loadPendingHrdApprovals();
+                await loadAllApprovals();
                 await loadLeaveNotifications();
             }
         } catch (error) {
@@ -2953,6 +3228,7 @@ onMounted(() => {
     loadPendingApprovals();
     loadPendingPrApprovals();
     loadPendingPoOpsApprovals();
+    loadPendingMovementApprovals();
     loadLeaveNotifications();
     loadPendingHrdApprovals();
     loadPendingCorrectionApprovals();
@@ -3310,6 +3586,53 @@ watch(locale, () => {
                     </div>
                 </div>
 
+                <!-- Personal Movement Approval Section -->
+                <div v-if="pendingMovementApprovals.length > 0" class="flex-shrink-0 mb-4">
+                    <div class="backdrop-blur-md rounded-2xl shadow-2xl border p-4 transition-all duration-500 animate-fade-in hover:shadow-3xl"
+                        :class="isNight ? 'bg-slate-800/90 border-slate-600/50' : 'bg-white/90 border-white/20'">
+                        <div class="flex items-center justify-between mb-3">
+                            <div class="flex items-center gap-2">
+                                <div class="w-3 h-3 rounded-full bg-emerald-500 animate-pulse"></div>
+                                <h3 class="text-lg font-bold" :class="isNight ? 'text-white' : 'text-slate-800'">
+                                    <i class="fa fa-person-walking-arrow-right mr-2 text-emerald-500"></i>
+                                    Personal Movement Approval
+                                </h3>
+                            </div>
+                            <div class="bg-emerald-500 text-white text-xs font-bold px-2 py-1 rounded-full">
+                                {{ pendingMovementApprovals.length }}
+                            </div>
+                        </div>
+
+                        <div v-if="loadingMovementApprovals" class="text-center py-4">
+                            <div class="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-emerald-500"></div>
+                            <p class="text-sm mt-2" :class="isNight ? 'text-slate-300' : 'text-slate-600'">Memuat data...</p>
+                        </div>
+
+                        <div v-else class="space-y-2">
+                            <div v-for="mv in pendingMovementApprovals.slice(0, 3)" :key="'pm-approval-' + mv.id"
+                                 @click="openMovementApproval(mv)"
+                                 class="p-3 rounded-lg cursor-pointer transition-all duration-200 hover:scale-105"
+                                 :class="isNight ? 'bg-slate-700/50 hover:bg-slate-600/50' : 'bg-emerald-50 hover:bg-emerald-100'">
+                                <div class="flex items-center justify-between">
+                                    <div class="flex-1 min-w-0">
+                                        <div class="font-semibold text-sm truncate" :class="isNight ? 'text-white' : 'text-slate-800'">Personal Movement</div>
+                                        <div class="text-xs truncate" :class="isNight ? 'text-slate-300' : 'text-slate-600'">{{ mv.employee_name }} — {{ (mv.employment_type || '').replaceAll('_', ' ') }}</div>
+                                    </div>
+                                    <div class="text-xs text-emerald-600 font-medium whitespace-nowrap ml-2">
+                                        <i class="fa fa-user-check mr-1"></i>Approval
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div v-if="pendingMovementApprovals.length > 3" class="text-center pt-2">
+                                <button @click="showAllMovementApprovalsModal = true" class="text-sm text-emerald-600 hover:text-emerald-700 font-medium">
+                                    Lihat {{ pendingMovementApprovals.length - 3 }} Personal Movement lainnya...
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Coaching Approval Section -->
                 <div v-if="pendingCoachingApprovals.length > 0" class="flex-shrink-0 mb-4">
                     <div class="backdrop-blur-md rounded-2xl shadow-2xl border p-4 transition-all duration-500 animate-fade-in hover:shadow-3xl"
@@ -3475,6 +3798,17 @@ watch(locale, () => {
                                         <div class="text-xs" :class="isNight ? 'text-slate-300' : 'text-slate-600'">
                                             {{ po.supplier?.name || 'Unknown Supplier' }}
                                         </div>
+                                    <div v-if="po.purchase_requisition" class="text-xs" :class="isNight ? 'text-slate-300' : 'text-slate-600'">
+                                        <i class="fa fa-shopping-cart mr-1 text-green-600"></i>
+                                        PR: {{ po.purchase_requisition.pr_number }}
+                                    </div>
+                                    <div v-if="po.purchase_requisition?.title" class="text-[11px] truncate" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
+                                        {{ po.purchase_requisition.title }}
+                                    </div>
+                                    <div v-if="po.purchase_requisition?.outlet || po.purchase_requisition?.division" class="text-[11px]" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
+                                        <i class="fa fa-store mr-1 text-blue-500"></i>
+                                        {{ po.purchase_requisition?.outlet?.nama_outlet || po.purchase_requisition?.division?.nama_divisi || '-' }}
+                                    </div>
                                         <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
                                             Rp {{ new Intl.NumberFormat('id-ID').format(po.grand_total) }}
                                         </div>
@@ -3490,10 +3824,12 @@ watch(locale, () => {
                             
                             <!-- Show more button if there are more than 3 PO Ops -->
                             <div v-if="pendingPoOpsApprovals.length > 3" class="text-center pt-2">
-                                <button class="text-sm text-orange-500 hover:text-orange-700 font-medium">
+                                <button @click="openAllPoOpsModal" class="text-sm text-orange-500 hover:text-orange-700 font-medium">
                                     Lihat {{ pendingPoOpsApprovals.length - 3 }} PO Ops lainnya...
                                 </button>
                             </div>
+
+                            
                         </div>
                     </div>
                 </div>
@@ -4399,6 +4735,320 @@ watch(locale, () => {
                     <button @click="showRejectPoOpsModal(selectedPoOpsApproval.id)" 
                             class="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors">
                         <i class="fa fa-times mr-2"></i>Reject
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- All Pending Purchase Order Ops Modal -->
+        <div v-if="showAllPoOpsModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click="showAllPoOpsModal = false">
+            <div class="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-5xl mx-4 max-h-[90vh] overflow-y-auto" @click.stop>
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-lg font-medium text-gray-900 dark:text-white">
+                        <i class="fa fa-list mr-2 text-orange-500"></i>
+                        Semua Purchase Order Ops Pending
+                    </h3>
+                    <button @click="showAllPoOpsModal = false" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                        <i class="fa-solid fa-times text-xl"></i>
+                    </button>
+                </div>
+
+                <!-- Filters -->
+                <div class="mb-4 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+                        <div>
+                            <label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Cari</label>
+                            <input v-model="poOpsSearchQuery" type="text" placeholder="No PO, Supplier, PR, atau Pembuat"
+                                   class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-orange-500 focus:border-orange-500 dark:bg-gray-600 dark:text-gray-100" />
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Status</label>
+                            <select v-model="poOpsStatusFilter"
+                                    class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-orange-500 focus:border-orange-500 dark:bg-gray-600 dark:text-gray-100">
+                                <option value="">Semua</option>
+                                <option value="submitted">Submitted</option>
+                                <option value="pending">Pending</option>
+                                <option value="awaiting">Awaiting</option>
+                                <option value="waiting">Waiting</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Tanggal</label>
+                            <select v-model="poOpsDateFilter"
+                                    class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-orange-500 focus:border-orange-500 dark:bg-gray-600 dark:text-gray-100">
+                                <option value="">Semua</option>
+                                <option value="today">Hari ini</option>
+                                <option value="week">7 hari terakhir</option>
+                                <option value="month">30 hari terakhir</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Urutkan</label>
+                            <select v-model="poOpsSortBy"
+                                    class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-orange-500 focus:border-orange-500 dark:bg-gray-600 dark:text-gray-100">
+                                <option value="newest">Terbaru</option>
+                                <option value="oldest">Terlama</option>
+                                <option value="number">Nomor PO</option>
+                                <option value="amount">Nominal</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <div v-if="loadingAllPoOps" class="text-center py-6">
+                    <div class="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-orange-500"></div>
+                    <p class="text-sm mt-2 text-gray-600 dark:text-gray-300">Memuat data...</p>
+                </div>
+
+                <div v-else>
+                    <div v-if="filteredAllPendingPoOps.length === 0" class="text-center py-10">
+                        <i class="fa-solid fa-check-circle text-4xl text-green-500 mb-2"></i>
+                        <p class="text-gray-600 dark:text-gray-300">Tidak ada PO Ops pending</p>
+                    </div>
+                    <div v-else class="space-y-3">
+                        <div class="text-sm text-gray-600 dark:text-gray-400 mb-1">Menampilkan {{ filteredAllPendingPoOps.length }} dari {{ allPendingPoOps.length }} PO Ops</div>
+                        <div v-for="po in filteredAllPendingPoOps" :key="'all-po-ops-' + po.id"
+                             class="p-3 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors cursor-pointer"
+                             @click="showPoOpsApprovalDetails(po.id)">
+                            <div class="flex items-center justify-between">
+                                <div class="flex-1 min-w-0">
+                                    <div class="flex items-center gap-2">
+                                        <span class="font-semibold text-gray-900 dark:text-white truncate">{{ po.number }}</span>
+                                        <span class="text-xs px-2 py-0.5 rounded-full" :class="getStatusColor(po.status)">{{ (po.status || '').toString().toUpperCase() }}</span>
+                                    </div>
+                                    <div class="text-xs text-gray-600 dark:text-gray-300 truncate">
+                                        {{ po.supplier?.name || 'Unknown Supplier' }} • Rp {{ new Intl.NumberFormat('id-ID').format(po.grand_total) }}
+                                    </div>
+                                    <div v-if="po.purchase_requisition" class="text-[11px] text-gray-500 dark:text-gray-400 truncate">
+                                        <i class="fa fa-shopping-cart mr-1 text-green-600"></i>
+                                        PR {{ po.purchase_requisition.pr_number }} — {{ po.purchase_requisition.title }}
+                                    </div>
+                                </div>
+                                <div class="text-xs text-gray-500 dark:text-gray-400 pl-3 whitespace-nowrap">
+                                    {{ new Date(po.date).toLocaleDateString('id-ID') }}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex justify-end gap-3 mt-6 pt-4 border-t border-gray-200 dark:border-gray-600">
+                    <button @click="showAllPoOpsModal = false" class="px-4 py-2 text-gray-600 dark:text-gray-400 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                        Tutup
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Personal Movement Detail Modal -->
+        <div v-if="showMovementDetailModal && selectedMovement" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click="showMovementDetailModal = false">
+            <div class="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-3xl mx-4 max-h-[85vh] overflow-y-auto" @click.stop>
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-lg font-medium text-gray-900 dark:text-white">
+                        <i class="fa fa-person-walking-arrow-right mr-2 text-emerald-500"></i>
+                        Detail Personal Movement
+                    </h3>
+                    <button @click="showMovementDetailModal = false" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                        <i class="fa-solid fa-times text-xl"></i>
+                    </button>
+                </div>
+
+                <div v-if="loadingMovementDetail" class="text-center py-6">
+                    <div class="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-emerald-500"></div>
+                    <p class="text-sm mt-2 text-gray-600 dark:text-gray-300">Memuat detail...</p>
+                </div>
+
+                <div v-else class="space-y-6">
+                    <!-- Basic Info -->
+                    <div class="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="text-sm font-medium text-gray-600 dark:text-gray-400">Karyawan</label>
+                                <p class="text-gray-900 dark:text-white font-semibold">{{ selectedMovement.employee_nama_lengkap || selectedMovement.employee?.nama_lengkap || selectedMovement.employee_name }}</p>
+                            </div>
+                            <div>
+                                <label class="text-sm font-medium text-gray-600 dark:text-gray-400">Jenis Movement</label>
+                                <p class="text-gray-900 dark:text-white">{{ (selectedMovement.employment_type || '').replaceAll('_', ' ') }}</p>
+                            </div>
+                            <div>
+                                <label class="text-sm font-medium text-gray-600 dark:text-gray-400">Status</label>
+                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
+                                      :class="selectedMovement.status === 'approved' ? 'bg-green-100 text-green-800' : selectedMovement.status === 'rejected' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'">
+                                    {{ (selectedMovement.status || '').toUpperCase() }}
+                                </span>
+                            </div>
+                            <div>
+                                <label class="text-sm font-medium text-gray-600 dark:text-gray-400">Dibuat</label>
+                                <p class="text-gray-900 dark:text-white">{{ new Date(selectedMovement.created_at).toLocaleString('id-ID') }}</p>
+                            </div>
+                            <div>
+                                <label class="text-sm font-medium text-gray-600 dark:text-gray-400">Jabatan Saat Ini</label>
+                                <p class="text-gray-900 dark:text-white">{{ selectedMovement.employee_jabatan || '-' }}</p>
+                            </div>
+                            <div>
+                                <label class="text-sm font-medium text-gray-600 dark:text-gray-400">Divisi Saat Ini</label>
+                                <p class="text-gray-900 dark:text-white">{{ selectedMovement.employee_divisi || '-' }}</p>
+                            </div>
+                            <div class="md:col-span-2">
+                                <label class="text-sm font-medium text-gray-600 dark:text-gray-400">Outlet/Unit Saat Ini</label>
+                                <p class="text-gray-900 dark:text-white">{{ selectedMovement.employee_outlet || '-' }}</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Approval Flow -->
+                    <div class="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
+                        <h4 class="text-md font-semibold text-gray-900 dark:text-white mb-3">Approval Flow</h4>
+                        <div class="space-y-2">
+                            <div class="flex items-center justify-between p-3 bg-white dark:bg-gray-600 rounded border border-gray-200 dark:border-gray-500">
+                                <div>
+                                    <div class="font-medium text-sm text-gray-900 dark:text-white">HOD</div>
+                                    <div class="text-xs text-gray-500 dark:text-gray-300">{{ selectedMovement.hod_approver?.nama_lengkap || '-' }}</div>
+                                </div>
+                                <div class="text-right">
+                                    <div class="text-sm" :class="(selectedMovement.hod_approval || 'PENDING').toUpperCase() === 'APPROVED' ? 'text-green-600' : (selectedMovement.hod_approval || 'PENDING').toUpperCase() === 'REJECTED' ? 'text-red-600' : 'text-yellow-600'">
+                                        {{ (selectedMovement.hod_approval || 'PENDING').toUpperCase() }}
+                                    </div>
+                                    <div v-if="selectedMovement.hod_approval_date" class="text-xs text-gray-500">{{ new Date(selectedMovement.hod_approval_date).toLocaleString('id-ID') }}</div>
+                                </div>
+                            </div>
+                            <div class="flex items-center justify-between p-3 bg-white dark:bg-gray-600 rounded border border-gray-200 dark:border-gray-500">
+                                <div>
+                                    <div class="font-medium text-sm text-gray-900 dark:text-white">GM</div>
+                                    <div class="text-xs text-gray-500 dark:text-gray-300">{{ selectedMovement.gm_approver?.nama_lengkap || '-' }}</div>
+                                </div>
+                                <div class="text-right">
+                                    <div class="text-sm" :class="(selectedMovement.gm_approval || 'PENDING').toUpperCase() === 'APPROVED' ? 'text-green-600' : (selectedMovement.gm_approval || 'PENDING').toUpperCase() === 'REJECTED' ? 'text-red-600' : 'text-yellow-600'">
+                                        {{ (selectedMovement.gm_approval || 'PENDING').toUpperCase() }}
+                                    </div>
+                                    <div v-if="selectedMovement.gm_approval_date" class="text-xs text-gray-500">{{ new Date(selectedMovement.gm_approval_date).toLocaleString('id-ID') }}</div>
+                                </div>
+                            </div>
+                            <div class="flex items-center justify-between p-3 bg-white dark:bg-gray-600 rounded border border-gray-200 dark:border-gray-500">
+                                <div>
+                                    <div class="font-medium text-sm text-gray-900 dark:text-white">GM HR</div>
+                                    <div class="text-xs text-gray-500 dark:text-gray-300">{{ selectedMovement.gm_hr_approver?.nama_lengkap || '-' }}</div>
+                                </div>
+                                <div class="text-right">
+                                    <div class="text-sm" :class="(selectedMovement.gm_hr_approval || 'PENDING').toUpperCase() === 'APPROVED' ? 'text-green-600' : (selectedMovement.gm_hr_approval || 'PENDING').toUpperCase() === 'REJECTED' ? 'text-red-600' : 'text-yellow-600'">
+                                        {{ (selectedMovement.gm_hr_approval || 'PENDING').toUpperCase() }}
+                                    </div>
+                                    <div v-if="selectedMovement.gm_hr_approval_date" class="text-xs text-gray-500">{{ new Date(selectedMovement.gm_hr_approval_date).toLocaleString('id-ID') }}</div>
+                                </div>
+                            </div>
+                            <div class="flex items-center justify-between p-3 bg-white dark:bg-gray-600 rounded border border-gray-200 dark:border-gray-500">
+                                <div>
+                                    <div class="font-medium text-sm text-gray-900 dark:text-white">BOD</div>
+                                    <div class="text-xs text-gray-500 dark:text-gray-300">{{ selectedMovement.bod_approver?.nama_lengkap || '-' }}</div>
+                                </div>
+                                <div class="text-right">
+                                    <div class="text-sm" :class="(selectedMovement.bod_approval || 'PENDING').toUpperCase() === 'APPROVED' ? 'text-green-600' : (selectedMovement.bod_approval || 'PENDING').toUpperCase() === 'REJECTED' ? 'text-red-600' : 'text-yellow-600'">
+                                        {{ (selectedMovement.bod_approval || 'PENDING').toUpperCase() }}
+                                    </div>
+                                    <div v-if="selectedMovement.bod_approval_date" class="text-xs text-gray-500">{{ new Date(selectedMovement.bod_approval_date).toLocaleString('id-ID') }}</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Changes Summary -->
+                    <div class="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
+                        <h4 class="text-md font-semibold text-gray-900 dark:text-white mb-3">Perubahan</h4>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div v-if="selectedMovement.position_change">
+                                <div class="text-xs text-gray-500 dark:text-gray-300 mb-1">Jabatan</div>
+                                <div class="text-sm text-gray-900 dark:text-white">{{ displayMovement(selectedMovement.position_from) }} ➝ <span class="font-semibold">{{ displayMovement(selectedMovement.position_to) }}</span></div>
+                            </div>
+                            <div v-if="selectedMovement.level_change">
+                                <div class="text-xs text-gray-500 dark:text-gray-300 mb-1">Level</div>
+                                <div class="text-sm text-gray-900 dark:text-white">{{ displayMovement(selectedMovement.level_from) }} ➝ <span class="font-semibold">{{ displayMovement(selectedMovement.level_to) }}</span></div>
+                            </div>
+                            <div v-if="selectedMovement.department_change">
+                                <div class="text-xs text-gray-500 dark:text-gray-300 mb-1">Departemen</div>
+                                <div class="text-sm text-gray-900 dark:text-white">{{ displayMovement(selectedMovement.department_from) }} ➝ <span class="font-semibold">{{ displayMovement(selectedMovement.department_to) }}</span></div>
+                            </div>
+                            <div v-if="selectedMovement.division_change">
+                                <div class="text-xs text-gray-500 dark:text-gray-300 mb-1">Divisi</div>
+                                <div class="text-sm text-gray-900 dark:text-white">{{ displayMovement(selectedMovement.division_from) }} ➝ <span class="font-semibold">{{ displayMovement(selectedMovement.division_to) }}</span></div>
+                            </div>
+                            <div v-if="selectedMovement.unit_property_change">
+                                <div class="text-xs text-gray-500 dark:text-gray-300 mb-1">Outlet/Unit</div>
+                                <div class="text-sm text-gray-900 dark:text-white">{{ displayMovement(selectedMovement.unit_property_from) }} ➝ <span class="font-semibold">{{ displayMovement(selectedMovement.unit_property_to) }}</span></div>
+                            </div>
+                            <div v-if="selectedMovement.salary_change">
+                                <div class="text-xs text-gray-500 dark:text-gray-300 mb-1">Gaji</div>
+                                <div class="text-sm text-gray-900 dark:text-white">Rp {{ new Intl.NumberFormat('id-ID').format(selectedMovement.salary_from || 0) }} ➝ <span class="font-semibold">Rp {{ new Intl.NumberFormat('id-ID').format(selectedMovement.salary_to || 0) }}</span></div>
+                            </div>
+                        </div>
+                        <div v-if="selectedMovement.employment_effective_date" class="mt-4 text-xs text-gray-600 dark:text-gray-300">
+                            <span class="font-medium">Efektif:</span> {{ new Date(selectedMovement.employment_effective_date).toLocaleDateString('id-ID') }}
+                        </div>
+                    </div>
+
+                    <div class="flex justify-end gap-3 mt-6 pt-4 border-t border-gray-200 dark:border-gray-600">
+                        <button @click="showMovementDetailModal = false" class="px-4 py-2 text-gray-600 dark:text-gray-400 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                            Tutup
+                        </button>
+                        <template v-if="canApproveSelectedMovement">
+                            <button @click="rejectSelectedMovement" class="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors">
+                                <i class="fa fa-times mr-2"></i>Tolak
+                            </button>
+                            <button @click="approveSelectedMovement" class="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors">
+                                <i class="fa fa-check mr-2"></i>Approve
+                            </button>
+                        </template>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- All Pending Personal Movement Approvals Modal -->
+        <div v-if="showAllMovementApprovalsModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click="showAllMovementApprovalsModal = false">
+            <div class="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-4xl mx-4 max-h-[90vh] overflow-y-auto" @click.stop>
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-lg font-medium text-gray-900 dark:text-white">
+                        <i class="fa fa-list-check mr-2 text-emerald-500"></i>
+                        Semua Personal Movement Pending
+                    </h3>
+                    <button @click="showAllMovementApprovalsModal = false" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                        <i class="fa-solid fa-times text-xl"></i>
+                    </button>
+                </div>
+
+                <div class="mb-4 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Cari</label>
+                            <input v-model="movementSearchQuery" type="text" placeholder="Nama karyawan, judul, dll"
+                                   class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-emerald-500 focus:border-emerald-500 dark:bg-gray-600 dark:text-gray-100" />
+                        </div>
+                    </div>
+                </div>
+
+                <div v-if="filteredMovementApprovals.length === 0" class="text-center py-10">
+                    <i class="fa-solid fa-check-circle text-4xl text-green-500 mb-2"></i>
+                    <p class="text-gray-600 dark:text-gray-300">Tidak ada Personal Movement pending</p>
+                </div>
+                <div v-else class="space-y-3">
+                    <div class="text-sm text-gray-600 dark:text-gray-400 mb-1">Menampilkan {{ filteredMovementApprovals.length }} dari {{ pendingMovementApprovals.length }} Personal Movement</div>
+                    <div v-for="mv in filteredMovementApprovals" :key="'all-pm-' + mv.id"
+                         class="p-3 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors cursor-pointer"
+                         @click="openMovementApproval(mv)">
+                        <div class="flex items-center justify-between">
+                            <div class="flex-1 min-w-0">
+                                <div class="font-semibold text-gray-900 dark:text-white truncate">Personal Movement</div>
+                                <div class="text-xs text-gray-600 dark:text-gray-300 truncate">{{ mv.employee_name }} — {{ (mv.employment_type || '').replaceAll('_', ' ') }}</div>
+                            </div>
+                            <div class="text-xs text-gray-500 dark:text-gray-400 pl-3 whitespace-nowrap">
+                                {{ new Date(mv.created_at).toLocaleDateString('id-ID') }}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex justify-end gap-3 mt-6 pt-4 border-t border-gray-200 dark:border-gray-600">
+                    <button @click="showAllMovementApprovalsModal = false" class="px-4 py-2 text-gray-600 dark:text-gray-400 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                        Tutup
                     </button>
                 </div>
             </div>

@@ -153,6 +153,7 @@ class ExtraOffReportController extends Controller
         $query = DB::table('extra_off_transactions as eot')
             ->join('users as u', 'eot.user_id', '=', 'u.id')
             ->leftJoin('users as approver', 'eot.approved_by', '=', 'approver.id')
+            ->leftJoin('tbl_data_outlet as o', 'u.id_outlet', '=', 'o.id_outlet')
             ->whereBetween('eot.created_at', [$startDate, $endDate . ' 23:59:59'])
             ->where('eot.status', 'approved')
             ->select([
@@ -167,7 +168,8 @@ class ExtraOffReportController extends Controller
                 'eot.description',
                 'eot.used_date',
                 'eot.created_at',
-                'approver.nama_lengkap as approver_name'
+                'approver.nama_lengkap as approver_name',
+                'o.nama_outlet as outlet_name'
             ]);
 
         if ($userId) {
@@ -216,6 +218,7 @@ class ExtraOffReportController extends Controller
         $query = DB::table('holiday_attendance_compensations as hac')
             ->join('users as u', 'hac.user_id', '=', 'u.id')
             ->leftJoin('tbl_kalender_perusahaan as tkp', 'hac.holiday_date', '=', 'tkp.tgl_libur')
+            ->leftJoin('tbl_data_outlet as o', 'u.id_outlet', '=', 'o.id_outlet')
             ->whereBetween('hac.holiday_date', [$startDate, $endDate])
             ->whereIn('hac.status', ['approved', 'used'])
             ->select([
@@ -230,7 +233,8 @@ class ExtraOffReportController extends Controller
                 'hac.status',
                 'hac.used_date',
                 'hac.created_at',
-                'tkp.keterangan as holiday_name'
+                'tkp.keterangan as holiday_name',
+                'o.nama_outlet as outlet_name'
             ]);
 
         if ($userId) {

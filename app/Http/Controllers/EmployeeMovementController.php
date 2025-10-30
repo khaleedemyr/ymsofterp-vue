@@ -225,6 +225,143 @@ class EmployeeMovementController extends Controller
         ]);
     }
 
+    /**
+     * Return pending personal movement approvals for the current approver.
+     */
+    public function pendingApprovals(Request $request)
+    {
+        $user = Auth::user();
+
+        $query = EmployeeMovement::query()
+            ->select([
+                'id',
+                'employee_id',
+                'employee_name',
+                'employment_type',
+                'status',
+                'hod_approver_id', 'hod_approval',
+                'gm_approver_id', 'gm_approval',
+                'gm_hr_approver_id', 'gm_hr_approval',
+                'bod_approver_id', 'bod_approval',
+                'created_at', 'updated_at'
+            ])
+            ->where(function ($q) use ($user) {
+                // HOD pending
+                $q->orWhere(function ($q2) use ($user) {
+                    $q2->where('hod_approver_id', $user->id)
+                        ->where(function ($s) {
+                            $s->whereNull('hod_approval')
+                              ->orWhere('hod_approval', '')
+                              ->orWhereRaw("LOWER(hod_approval) = 'pending'");
+                        })
+                        ->whereRaw("LOWER(status) = 'pending'")
+                        // No prior rejections (none for HOD) and ensure others not already rejected
+                        ->whereRaw("LOWER(COALESCE(gm_approval, '')) <> 'rejected'")
+                        ->whereRaw("LOWER(COALESCE(gm_hr_approval, '')) <> 'rejected'")
+                        ->whereRaw("LOWER(COALESCE(bod_approval, '')) <> 'rejected'");
+                });
+                // GM pending (after HOD approved)
+                $q->orWhere(function ($q2) use ($user) {
+                    $q2->where('gm_approver_id', $user->id)
+                        ->where(function ($s) {
+                            $s->whereNull('gm_approval')
+                              ->orWhere('gm_approval', '')
+                              ->orWhereRaw("LOWER(gm_approval) = 'pending'");
+                        })
+                        ->whereRaw("LOWER(COALESCE(hod_approval, '')) = 'approved'")
+                        ->whereRaw("LOWER(status) = 'pending'")
+                        // Ensure no rejections anywhere
+                        ->whereRaw("LOWER(COALESCE(hod_approval, '')) <> 'rejected'")
+                        ->whereRaw("LOWER(COALESCE(gm_hr_approval, '')) <> 'rejected'")
+                        ->whereRaw("LOWER(COALESCE(bod_approval, '')) <> 'rejected'");
+                });
+                // GM HR pending (after GM approved)
+                $q->orWhere(function ($q2) use ($user) {
+                    $q2->where('gm_hr_approver_id', $user->id)
+                        ->where(function ($s) {
+                            $s->whereNull('gm_hr_approval')
+                              ->orWhere('gm_hr_approval', '')
+                              ->orWhereRaw("LOWER(gm_hr_approval) = 'pending'");
+                        })
+                        ->whereRaw("LOWER(COALESCE(gm_approval, '')) = 'approved'")
+                        ->whereRaw("LOWER(status) = 'pending'")
+                        ->whereRaw("LOWER(COALESCE(hod_approval, '')) <> 'rejected'")
+                        ->whereRaw("LOWER(COALESCE(gm_approval, '')) <> 'rejected'")
+                        ->whereRaw("LOWER(COALESCE(bod_approval, '')) <> 'rejected'");
+                });
+                // BOD pending (after GM HR approved)
+                $q->orWhere(function ($q2) use ($user) {
+                    $q2->where('bod_approver_id', $user->id)
+                        ->where(function ($s) {
+                            $s->whereNull('bod_approval')
+                              ->orWhere('bod_approval', '')
+                              ->orWhereRaw("LOWER(bod_approval) = 'pending'");
+                        })
+                        ->whereRaw("LOWER(COALESCE(gm_hr_approval, '')) = 'approved'")
+                        ->whereRaw("LOWER(status) = 'pending'")
+                        ->whereRaw("LOWER(COALESCE(hod_approval, '')) <> 'rejected'")
+                        ->whereRaw("LOWER(COALESCE(gm_approval, '')) <> 'rejected'")
+                        ->whereRaw("LOWER(COALESCE(gm_hr_approval, '')) <> 'rejected'");
+                });
+            })
+            ->orderByDesc('created_at');
+
+        $limit = (int) $request->input('limit', 100);
+        $movements = $query->limit($limit)->get();
+
+        return response()->json([
+            'success' => true,
+            'data' => $movements,
+        ]);
+    }
+
+    /**
+     * Debug endpoint: return essential fields for a specific movement as JSON
+     */
+    public function debugMovement($id)
+    {
+        $movement = EmployeeMovement::query()
+            ->leftJoin('users', 'employee_movements.employee_id', '=', 'users.id')
+            ->leftJoin('tbl_data_jabatan', 'users.id_jabatan', '=', 'tbl_data_jabatan.id_jabatan')
+            ->leftJoin('tbl_data_outlet', 'users.id_outlet', '=', 'tbl_data_outlet.id_outlet')
+            ->leftJoin('tbl_data_divisi', 'users.division_id', '=', 'tbl_data_divisi.id')
+            ->with([
+                'hodApprover:id,nama_lengkap',
+                'gmApprover:id,nama_lengkap',
+                'gmHrApprover:id,nama_lengkap',
+                'bodApprover:id,nama_lengkap'
+            ])
+            ->select([
+                'employee_movements.*',
+                'hod_approver_id', 'hod_approval', 'hod_approval_date',
+                'gm_approver_id', 'gm_approval', 'gm_approval_date',
+                'gm_hr_approver_id', 'gm_hr_approval', 'gm_hr_approval_date',
+                'bod_approver_id', 'bod_approval', 'bod_approval_date',
+                // change flags and fields
+                'position_change', 'position_from', 'position_to',
+                'level_change', 'level_from', 'level_to',
+                'department_change', 'department_from', 'department_to',
+                'division_change', 'division_from', 'division_to',
+                'unit_property_change', 'unit_property_from', 'unit_property_to',
+                'salary_change', 'salary_from', 'salary_to',
+                'employment_effective_date', 'kpi_required', 'kpi_date',
+                'employee_movements.created_at', 'employee_movements.updated_at',
+                // employee meta
+                'users.nama_lengkap as employee_nama_lengkap',
+                'tbl_data_jabatan.nama_jabatan as employee_jabatan',
+                'tbl_data_outlet.nama_outlet as employee_outlet',
+                'tbl_data_divisi.nama_divisi as employee_divisi'
+            ])
+            ->where('employee_movements.id', $id)
+            ->first();
+
+        if (!$movement) {
+            return response()->json(['success' => false, 'message' => 'Not found'], 404);
+        }
+
+        return response()->json(['success' => true, 'data' => $movement]);
+    }
+
     public function update(Request $request, EmployeeMovement $employeeMovement)
     {
         $processedRequest = $this->preprocessRequestData($request);

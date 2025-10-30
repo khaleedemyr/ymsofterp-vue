@@ -192,6 +192,9 @@
                                                         Karyawan
                                                     </th>
                                                     <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                                                        Outlet
+                                                    </th>
+                                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                                                         Jenis
                                                     </th>
                                                     <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
@@ -218,6 +221,9 @@
                                                     </td>
                                                     <td class="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">
                                                         {{ transaction.employee_name }}
+                                                    </td>
+                                                    <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                                                        {{ transaction.outlet_name || '-' }}
                                                     </td>
                                                     <td class="px-4 py-3 whitespace-nowrap text-sm">
                                                         <span :class="[
@@ -377,6 +383,9 @@
                                                         Karyawan
                                                     </th>
                                                     <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                                                        Outlet
+                                                    </th>
+                                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                                                         Tanggal Libur
                                                     </th>
                                                     <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
@@ -403,6 +412,9 @@
                                                     </td>
                                                     <td class="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">
                                                         {{ compensation.employee_name }}
+                                                    </td>
+                                                    <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                                                        {{ compensation.outlet_name || '-' }}
                                                     </td>
                                                     <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                                                         {{ formatDate(compensation.holiday_date) }}
@@ -780,11 +792,11 @@ const createCSVContent = (data) => {
     
     // Extra Off Transactions
     csvContent += 'EXTRA OFF TRANSACTIONS\n'
-    csvContent += 'Employee Name,Type,Amount,Date,Description\n'
+    csvContent += 'Employee Name,Outlet,Type,Amount,Date,Description\n'
     
     if (data.extra_off?.transactions) {
         data.extra_off.transactions.forEach(transaction => {
-            csvContent += `"${transaction.employee_name || ''}","${transaction.transaction_type || ''}","${transaction.amount || ''}","${formatDate(transaction.created_at)}","${transaction.description || ''}"\n`
+            csvContent += `"${transaction.employee_name || ''}","${transaction.outlet_name || '-'}","${transaction.transaction_type || ''}","${transaction.amount || ''}","${formatDate(transaction.created_at)}","${transaction.description || ''}"\n`
         })
     }
     
@@ -792,11 +804,11 @@ const createCSVContent = (data) => {
     
     // Public Holiday Compensations
     csvContent += 'PUBLIC HOLIDAY COMPENSATIONS\n'
-    csvContent += 'Employee Name,Holiday Date,Type,Amount,Status\n'
+    csvContent += 'Employee Name,Outlet,Holiday Date,Type,Amount,Status\n'
     
     if (data.public_holiday?.compensations) {
         data.public_holiday.compensations.forEach(compensation => {
-            csvContent += `"${compensation.employee_name || ''}","${formatDate(compensation.holiday_date)}","${compensation.compensation_type || ''}","${compensation.compensation_amount || ''}","${compensation.status || ''}"\n`
+            csvContent += `"${compensation.employee_name || ''}","${compensation.outlet_name || '-'}","${formatDate(compensation.holiday_date)}","${compensation.compensation_type || ''}","${compensation.compensation_amount || ''}","${compensation.status || ''}"\n`
         })
     }
     

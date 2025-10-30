@@ -188,13 +188,14 @@ class NonFoodPaymentController extends Controller
             ->limit(50)
             ->get();
 
-        // Get available Purchase Requisitions that don't have payments yet
+        // Get available Purchase Requisitions (mode purchase_payment) that don't have payments yet
         $prQuery = DB::table('purchase_requisitions as pr')
             ->leftJoin('non_food_payments as nfp', function($join) {
                 $join->on('pr.id', '=', 'nfp.purchase_requisition_id')
                      ->where('nfp.status', '!=', 'cancelled');
             })
             ->where('pr.status', 'APPROVED')
+            ->where('pr.mode', 'purchase_payment')
             ->whereNull('nfp.id')
             ->select(
                 'pr.id',

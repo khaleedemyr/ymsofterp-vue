@@ -135,6 +135,7 @@ class PurchaseRequisitionController extends Controller
             'items.*.subtotal' => 'required|numeric|min:0',
             'approvers' => 'nullable|array',
             'approvers.*' => 'required|exists:users,id',
+            'mode' => 'required|in:pr_ops,purchase_payment',
         ]);
 
         // Check budget limit before saving
@@ -154,6 +155,8 @@ class PurchaseRequisitionController extends Controller
         $validated['requested_by'] = auth()->id();
         $validated['department'] = 'Operations';
         $validated['status'] = 'DRAFT';
+        // Persist mode selection
+        $validated['mode'] = $validated['mode'] ?? 'pr_ops';
         $validated['created_by'] = auth()->id();
 
         try {
