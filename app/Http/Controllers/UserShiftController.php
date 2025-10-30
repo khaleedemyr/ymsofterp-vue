@@ -109,6 +109,8 @@ class UserShiftController extends Controller
     // Simpan data shift mingguan
     public function store(Request $request)
     {
+        // Log payload mentah dari frontend (request body all)
+        \Log::info('USER_SHIFT_RAW_REQUEST', $request->all());
         $data = $request->validate([
             'outlet_id' => 'required|integer',
             'division_id' => 'required|integer',
@@ -116,6 +118,7 @@ class UserShiftController extends Controller
             'shifts' => 'required|array', // [user_id][tanggal] = shift_id/null
             'explicit_off' => 'sometimes|array', // optional: [user_id][tanggal] = true to force OFF
         ]);
+        \Log::info('USER_SHIFT_VALIDATED', $data);
         $outletId = $data['outlet_id'];
         $divisionId = $data['division_id'];
         $startDate = $data['start_date'];
@@ -138,9 +141,16 @@ class UserShiftController extends Controller
                 if ($existing) {
                     // If incoming value is OFF (null) but existing already has a shift, skip turning it OFF
                     // unless explicitly forced by client for this cell
-                    $forcedOff = isset($explicitOff[$userId]) && array_key_exists($tanggal, (array) $explicitOff[$userId]) && $explicitOff[$userId][$tanggal];
-                    if (is_null($shiftId) && !is_null($existing->shift_id) && !$forcedOff) {
-                        continue;
+                    $forcedOff = isset($explicitOff[$userId]) && array_key_exists($tanggal, (array) $explicitOff[$userId]);
+                    // Patch: parse value 'true' string as boolean
+                    $explicitVal = $forcedOff ? $explicitOff[$userId][$tanggal] : null;
+                    if ($explicitVal === 'true' || $explicitVal === 1 || $explicitVal === '1') $explicitVal = true;
+                    $forcedOff = $forcedOff && ($explicitVal === true);
+                    if (is_null($shiftId) && !is_null($existing->shift_id)) {
+                        \Log::info('USER_SHIFT_DEBUG', ['user_id' => $userId, 'tanggal' => $tanggal, 'forcedOff' => $forcedOff, 'explicitVal' => $explicitVal, 'explicit_off' => $explicitOff[$userId][$tanggal] ?? null]);
+                        if (!$forcedOff) {
+                            continue;
+                        }
                     }
                     DB::table('user_shifts')->where('id', $existing->id)->update([
                         'shift_id' => $shiftId,

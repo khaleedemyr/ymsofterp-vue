@@ -111,6 +111,7 @@ const form = useForm({
   division_id: divisionId.value,
   start_date: startDate.value,
   shifts: {}, // {user_id: {tanggal: shift_id/null}}
+  explicit_off: {}, // AGAR SELALU IKUT POST!!
 });
 
 // Inisialisasi form.shifts dari userShiftMap
@@ -143,10 +144,37 @@ function reloadFilter() {
   });
 }
 
+// --- BEGIN: Explicit OFF flag builder - patch perbandingan nilai awal
+function buildExplicitOffFlags() {
+  const explicitOff = {};
+  props.users.forEach(user => {
+    explicitOff[user.id] = {};
+    props.dates.forEach(date => {
+      // Cek: hanya flag cell jika AWAL-nya ADA isi, dan AKHIR-nya (hasil edit) null
+      const awal = userShiftMap.value[user.id]?.[date] ?? null;
+      const akhir = form.shifts[user.id][date];
+      if (awal !== null && akhir === null) {
+        explicitOff[user.id][date] = true;
+      }
+    });
+    if (Object.keys(explicitOff[user.id]).length === 0) {
+      delete explicitOff[user.id];
+    }
+  });
+  return explicitOff;
+}
+// --- END explicit OFF flag builder
+
 function submit() {
   form.outlet_id = outletId.value;
   form.division_id = divisionId.value;
   form.start_date = startDate.value;
+
+  // PATCH: ubah ke plain JS object agar inertia/axios tidak kirim Proxy
+  const explicitOffObj = buildExplicitOffFlags();
+  form.explicit_off = JSON.parse(JSON.stringify(explicitOffObj));
+  console.log('DEBUG explicit_off', form.explicit_off);
+
   form.post('/user-shifts', {
     onSuccess: () => Swal.fire('Berhasil', 'Jadwal shift berhasil disimpan!', 'success'),
   });
