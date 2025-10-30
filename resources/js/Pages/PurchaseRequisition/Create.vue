@@ -24,16 +24,6 @@
               <option value="purchase_payment">Purchase Payment</option>
             </select>
           </div>
-          <div v-if="form.mode === 'purchase_payment'" class="md:col-span-2 p-3 bg-yellow-50 border border-yellow-200 rounded">
-            <div class="text-sm text-yellow-800">
-              Anda memilih mode Purchase Payment. Untuk melakukan pembayaran atas PO yang sudah dibuat, lanjutkan ke halaman pembayaran.
-            </div>
-            <div class="mt-2">
-              <a href="/purchase-payments" class="inline-flex items-center px-3 py-1 text-sm bg-yellow-600 text-white rounded hover:bg-yellow-700">
-                <i class="fa-solid fa-credit-card mr-2"></i> Buka Halaman Purchase Payment
-              </a>
-            </div>
-          </div>
         </div>
         
         <form @submit.prevent="submitForm">
