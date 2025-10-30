@@ -1342,6 +1342,8 @@ Route::post('/stock-cut/order-items', [\App\Http\Controllers\StockCutController:
 Route::post('/stock-cut/engineering', [\App\Http\Controllers\StockCutController::class, 'engineering']);
 Route::post('/stock-cut/check-status', [\App\Http\Controllers\StockCutController::class, 'checkStockCutStatus']);
 Route::post('/stock-cut/cek-kebutuhan', [\App\Http\Controllers\StockCutController::class, 'cekKebutuhanStockV2']);
+Route::post('/stock-cut/dispatch', [\App\Http\Controllers\StockCutController::class, 'dispatchStockCut']);
+Route::post('/stock-cut/status', [\App\Http\Controllers\StockCutController::class, 'status']);
 
 Route::get('/stock-cut', function () {
     return Inertia::render('StockCut');

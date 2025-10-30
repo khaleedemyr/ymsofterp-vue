@@ -180,9 +180,9 @@
                 <span v-if="loading" class="animate-spin mr-2">⏳</span>
                 Cek Kebutuhan Stock Engineering
               </button>
-              <button v-if="bolehPotong" @click="potongStock" :disabled="loadingPotong" class="ml-2 bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 transition">
+              <button v-if="bolehPotong" @click="potongStockAsync" :disabled="loadingPotong" class="ml-2 bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 transition">
                 <span v-if="loadingPotong" class="animate-spin mr-2">⏳</span>
-                Potong Stock Sekarang
+                Potong Stock Sekarang (Queue)
               </button>
             </div>
           </div>
@@ -608,6 +608,7 @@ async function cekKebutuhan() {
   }
 }
 
+let pollTimer = null
 async function potongStock() {
   loadingPotong.value = true
   errorMsg.value = ''
@@ -621,6 +622,51 @@ async function potongStock() {
     if (res.data.status === 'success') {
       successMsg.value = res.data.message
       bolehPotong.value = false
+    } else if (res.data.kurang) {
+      errorMsg.value = 'Stock kurang, tidak bisa potong stock!'
+    }
+  } catch (e) {
+    errorMsg.value = e.response?.data?.message || e.message
+  } finally {
+    loadingPotong.value = false
+  }
+}
+
+async function potongStockAsync() {
+  loadingPotong.value = true
+  errorMsg.value = ''
+  successMsg.value = ''
+  try {
+    // Dispatch async job
+    const res = await axios.post('/stock-cut/dispatch', {
+      tanggal: tanggal.value,
+      id_outlet: selectedOutlet.value || user.value.id_outlet,
+      type: selectedType.value || null
+    })
+    if (res.data.status === 'queued') {
+      successMsg.value = 'Stock cut masuk antrian. Memproses...'
+      // Start polling status
+      if (pollTimer) clearInterval(pollTimer)
+      pollTimer = setInterval(async () => {
+        try {
+          const st = await axios.post('/stock-cut/status', {
+            tanggal: tanggal.value,
+            id_outlet: selectedOutlet.value || user.value.id_outlet,
+            type: selectedType.value || null
+          })
+          const status = st.data?.status
+          if (status === 'running' || status === 'queued' || status === 'skipped_locked') return
+          clearInterval(pollTimer)
+          if (status === 'success') {
+            successMsg.value = 'Potong stock berhasil.'
+            bolehPotong.value = false
+          } else if (status === 'failed') {
+            errorMsg.value = 'Potong stock gagal. Cek log.'
+          }
+        } catch (e) {
+          console.error('Polling error', e)
+        }
+      }, 3000)
     } else if (res.data.kurang) {
       errorMsg.value = 'Stock kurang, tidak bisa potong stock!'
     }

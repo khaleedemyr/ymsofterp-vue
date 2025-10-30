@@ -4,6 +4,8 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Cache;
+use App\Jobs\RunStockCutForOutlet;
 use App\Models\StockCutLog;
 
 class StockCutController extends Controller
@@ -405,6 +407,49 @@ class StockCutController extends Controller
         );
 
         return response()->json(['status' => 'success', 'message' => 'Potong stock berhasil']);
+    }
+
+    /**
+     * Dispatch asynchronous stock cut job per outlet with locking
+     */
+    public function dispatchStockCut(Request $request)
+    {
+        $tanggal = $request->input('tanggal');
+        $id_outlet = (int) $request->input('id_outlet');
+        $type_filter = $request->input('type');
+
+        if (!$tanggal || !$id_outlet) {
+            return response()->json(['status' => 'error', 'message' => 'Tanggal dan id_outlet wajib diisi'], 422);
+        }
+
+        $key = sprintf('stockcut:%s:%s:%s', $id_outlet, $tanggal, $type_filter ?: '-');
+        $lock = Cache::lock('lock:' . $key, 60 * 30);
+        if (!$lock->get()) {
+            return response()->json(['status' => 'error', 'message' => 'Proses stock cut untuk outlet ini sedang berjalan'], 409);
+        }
+        // Release immediately; job will acquire again to ensure single runner
+        $lock->release();
+
+        RunStockCutForOutlet::dispatch($id_outlet, $tanggal, $type_filter);
+        Cache::put('stockcut_status:' . $key, ['status' => 'queued', 'message' => 'Queued'], 60 * 30);
+
+        return response()->json(['status' => 'queued']);
+    }
+
+    /**
+     * Get asynchronous stock cut status
+     */
+    public function status(Request $request)
+    {
+        $tanggal = $request->input('tanggal');
+        $id_outlet = (int) $request->input('id_outlet');
+        $type_filter = $request->input('type');
+        if (!$tanggal || !$id_outlet) {
+            return response()->json(['status' => 'error', 'message' => 'Tanggal dan id_outlet wajib diisi'], 422);
+        }
+        $key = sprintf('stockcut:%s:%s:%s', $id_outlet, $tanggal, $type_filter ?: '-');
+        $status = Cache::get('stockcut_status:' . $key, ['status' => 'unknown']);
+        return response()->json($status);
     }
 
     /**
