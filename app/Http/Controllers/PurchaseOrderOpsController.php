@@ -1138,10 +1138,26 @@ class PurchaseOrderOpsController extends Controller
             'creator', 
             'source_pr.attachments.uploader',
             'attachments.uploader',
-            // include all flows to allow frontend filtering if needed
+            // include all flows to allow server-side filtering by level order
             'approvalFlows'
         ])
         ->get();
+
+        // Enforce level order: only show if current user's pending flow is the lowest pending level
+        $pendingPOs = $pendingPOs->filter(function ($po) use ($userId) {
+            $flows = collect($po->approvalFlows ?? []);
+            if ($flows->contains(function ($f) { return strtoupper($f->status) === 'REJECTED'; })) {
+                return false;
+            }
+            // Normalize statuses
+            $pending = $flows->filter(function ($f) { return strtoupper($f->status) === 'PENDING'; })
+                             ->sortBy('approval_level');
+            if ($pending->isEmpty()) {
+                return false;
+            }
+            $nextFlow = $pending->first();
+            return intval($nextFlow->approver_id) === intval($userId);
+        })->values();
 
         return response()->json(['success' => true, 'data' => $pendingPOs]);
     }
