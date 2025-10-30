@@ -504,6 +504,7 @@ function closeMatrixModal() {
           <thead class="bg-gradient-to-r from-blue-50 to-blue-100">
             <tr>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider rounded-tl-2xl">No. Packing List</th>
+              <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">No. RO</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Tanggal</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Divisi Gudang Asal</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Outlet Tujuan</th>
@@ -538,7 +539,8 @@ function closeMatrixModal() {
             </tr>
             <tr v-for="list in props.packingLists.data" :key="list.id" class="hover:bg-blue-50 transition shadow-sm">
               <td class="px-6 py-3 font-mono font-semibold text-blue-700">{{ list.packing_number }}</td>
-              <td class="px-6 py-3">{{ new Date(list.created_at).toLocaleDateString('id-ID') }}</td>
+              <td class="px-6 py-3 font-mono text-blue-600">{{ list.fo_number || '-' }}</td>
+              <td class="px-6 py-3">{{ list.created_at_format }}</td>
               <td class="px-6 py-3">{{ list.warehouse_division?.name ?? '-' }}</td>
               <td class="px-6 py-3">{{ list.floor_order?.outlet?.nama_outlet ?? '-' }}</td>
               <td class="px-6 py-3">{{ list.creator?.nama_lengkap ?? '-' }}</td>

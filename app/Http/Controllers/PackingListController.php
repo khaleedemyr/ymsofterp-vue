@@ -60,10 +60,12 @@ class PackingListController extends Controller
         if ($loadData === '1') {
             $query = FoodPackingList::with([
                 'warehouseDivision',
-                'floorOrder.outlet',
-                'floorOrder.requester',
+                'floorOrder:id,order_number,id_outlet,user_id',
+                'creator:id,nama_lengkap',
+                'warehouseDivision:id,name',
                 'items',
-                'creator',
+                'floorOrder.outlet:id_outlet,nama_outlet',
+                'floorOrder.requester:id,nama_lengkap',
             ]);
             
             // Apply filters if provided
@@ -98,12 +100,37 @@ class PackingListController extends Controller
                 $query->where('status', $status);
             }
             
-            $packingLists = $query->orderByDesc('created_at')->paginate($perPage)->withQueryString();
+            $packingLists = $query->with([
+                'warehouseDivision',
+                'floorOrder:id,order_number,id_outlet,user_id',
+                'creator:id,nama_lengkap',
+                'warehouseDivision:id,name',
+                'items',
+                'floorOrder.outlet:id_outlet,nama_outlet',
+                'floorOrder.requester:id,nama_lengkap',
+            ])->orderByDesc('created_at')->paginate($perPage)->withQueryString();
         }
 
         return inertia('PackingList/Index', [
             'user' => $user,
-            'packingLists' => $packingLists ?: $this->getEmptyPagination(),
+            'packingLists' => $packingLists
+                ? $packingLists->through(function($pl) {
+                    return [
+                        'id' => $pl->id,
+                        'packing_number' => $pl->packing_number,
+                        'created_at' => $pl->created_at,
+                        'created_at_format' => $pl->created_at ? $pl->created_at->setTimezone('Asia/Jakarta')->format('d/m/Y H:i') : null,
+                        'fo_number' => $pl->floorOrder?->order_number,
+                        'destination_outlet' => $pl->floorOrder?->outlet,
+                        'requester' => $pl->floorOrder?->requester,
+                        'warehouse_division' => $pl->warehouseDivision,
+                        'floor_order' => $pl->floorOrder,
+                        'creator' => $pl->creator,
+                        'status' => $pl->status,
+                        'items' => $pl->items,
+                    ];
+                })
+                : [],
             'filters' => [
                 'search' => $search,
                 'date_from' => $dateFrom,
