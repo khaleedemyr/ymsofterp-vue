@@ -1336,11 +1336,24 @@ class PurchaseRequisitionController extends Controller
                 $query->whereDate('created_at', '<=', $request->dateTo);
             }
 
-            $prs = $query->orderBy('created_at', 'desc')->get();
+            // Get per_page from request, default to 15
+            $perPage = $request->get('per_page', 15);
+            
+            // Paginate results
+            $prs = $query->orderBy('created_at', 'desc')->paginate($perPage);
 
             return response()->json([
                 'success' => true,
-                'data' => $prs
+                'data' => $prs->items(),
+                'pagination' => [
+                    'current_page' => $prs->currentPage(),
+                    'last_page' => $prs->lastPage(),
+                    'per_page' => $prs->perPage(),
+                    'total' => $prs->total(),
+                    'from' => $prs->firstItem(),
+                    'to' => $prs->lastItem(),
+                    'links' => $prs->linkCollection()->toArray()
+                ]
             ]);
 
         } catch (\Exception $e) {

@@ -16,21 +16,42 @@ const filters = ref({
   status: '',
   division: '',
   dateFrom: '',
-  dateTo: ''
+  dateTo: '',
+  per_page: 15,
+  page: 1
 });
 
 const divisions = ref([]);
+const pagination = ref({
+  current_page: 1,
+  last_page: 1,
+  per_page: 15,
+  total: 0,
+  from: null,
+  to: null,
+  links: []
+});
 
 // Fetch PR tracking data
-const fetchPRTrackingData = async () => {
+const fetchPRTrackingData = async (page = 1) => {
   try {
     loading.value = true;
+    const params = {
+      ...filters.value,
+      page: page,
+      per_page: filters.value.per_page
+    };
+    
     const response = await axios.get('/api/pr-tracking-report', {
-      params: filters.value
+      params: params
     });
     
     if (response.data.success) {
       prList.value = response.data.data;
+      if (response.data.pagination) {
+        pagination.value = response.data.pagination;
+        filters.value.page = response.data.pagination.current_page;
+      }
     }
   } catch (error) {
     console.error('Error fetching PR tracking data:', error);
@@ -374,7 +395,8 @@ const getPOPendingCount = () => {
 
 // Apply filters
 const applyFilters = () => {
-  fetchPRTrackingData();
+  filters.value.page = 1; // Reset to first page when filtering
+  fetchPRTrackingData(1);
 };
 
 // Clear filters
@@ -384,9 +406,31 @@ const clearFilters = () => {
     status: '',
     division: '',
     dateFrom: '',
-    dateTo: ''
+    dateTo: '',
+    per_page: filters.value.per_page, // Keep per_page
+    page: 1
   };
-  fetchPRTrackingData();
+  fetchPRTrackingData(1);
+};
+
+// Change per page
+const changePerPage = () => {
+  filters.value.page = 1; // Reset to first page when changing per_page
+  fetchPRTrackingData(1);
+};
+
+// Go to page
+const goToPage = (page) => {
+  if (page >= 1 && page <= pagination.value.last_page) {
+    fetchPRTrackingData(page);
+  }
+};
+
+// Get page number from link
+const getPageFromLink = (link) => {
+  if (!link || !link.url) return null;
+  const match = link.url.match(/[?&]page=(\d+)/);
+  return match ? parseInt(match[1]) : null;
 };
 
 onMounted(() => {
@@ -415,7 +459,7 @@ onMounted(() => {
       <!-- Filters -->
       <div class="bg-white rounded-xl shadow-lg p-6 mb-6">
         <h2 class="text-lg font-semibold text-gray-800 mb-4">Filters</h2>
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-7 gap-4">
           <!-- Search -->
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Search</label>
@@ -476,6 +520,22 @@ onMounted(() => {
               type="date"
               class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
+          </div>
+
+          <!-- Per Page -->
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Per Page</label>
+            <select
+              v-model="filters.per_page"
+              @change="changePerPage"
+              class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option :value="10">10</option>
+              <option :value="15">15</option>
+              <option :value="25">25</option>
+              <option :value="50">50</option>
+              <option :value="100">100</option>
+            </select>
           </div>
 
           <!-- Action Buttons -->
@@ -669,6 +729,56 @@ onMounted(() => {
                   </div>
                 </div>
               </div>
+            </div>
+          </div>
+
+          <!-- Pagination -->
+          <div v-if="!loading && prList.length > 0" class="mt-6 flex flex-col sm:flex-row justify-between items-center gap-4">
+            <!-- Pagination Info -->
+            <div class="text-sm text-gray-700">
+              Menampilkan <span class="font-medium">{{ pagination.from || 0 }}</span> sampai 
+              <span class="font-medium">{{ pagination.to || 0 }}</span> dari 
+              <span class="font-medium">{{ pagination.total }}</span> data
+            </div>
+
+            <!-- Pagination Controls -->
+            <div class="flex items-center gap-2">
+              <!-- Previous Button -->
+              <button
+                @click="goToPage(pagination.current_page - 1)"
+                :disabled="pagination.current_page === 1"
+                class="px-3 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <i class="fas fa-chevron-left mr-1"></i> Previous
+              </button>
+
+              <!-- Page Numbers -->
+              <div class="flex items-center gap-1">
+                <button
+                  v-for="link in pagination.links"
+                  :key="link.label"
+                  @click="goToPage(getPageFromLink(link))"
+                  :disabled="!link.url || link.active"
+                  :class="[
+                    'px-3 py-2 border rounded-md text-sm font-medium',
+                    link.active
+                      ? 'bg-blue-600 text-white border-blue-600 cursor-default'
+                      : link.url
+                      ? 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                      : 'bg-gray-50 text-gray-400 border-gray-200 cursor-not-allowed'
+                  ]"
+                  v-html="link.label"
+                ></button>
+              </div>
+
+              <!-- Next Button -->
+              <button
+                @click="goToPage(pagination.current_page + 1)"
+                :disabled="pagination.current_page === pagination.last_page"
+                class="px-3 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Next <i class="fas fa-chevron-right ml-1"></i>
+              </button>
             </div>
           </div>
         </div>
