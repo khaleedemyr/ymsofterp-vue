@@ -83,7 +83,14 @@
           <h2 class="text-xl font-bold text-gray-900">Trend Active Users (Real-time)</h2>
           <span class="text-sm text-gray-500">Updated: {{ lastUpdate || 'Loading...' }}</span>
         </div>
-        <div id="chart-container" class="mt-4"></div>
+        <div class="mt-4">
+          <apexchart 
+            type="line" 
+            :options="chartOptions" 
+            :series="chartSeries" 
+            height="350"
+          />
+        </div>
       </div>
 
       <!-- Active Sessions Table -->
@@ -158,9 +165,8 @@
 
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue'
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import axios from 'axios'
-import ApexCharts from 'apexcharts'
 
 const stats = ref({
   total_active_sessions: 0,
@@ -174,8 +180,174 @@ const peakTime = ref(null)
 const timeWindow = ref(30)
 const loading = ref(true)
 const lastUpdate = ref('')
-let chart = null
 let pollInterval = null
+
+// Chart Series
+const chartSeries = computed(() => [{
+  name: 'Active Users',
+  data: chartData.value.map(item => item.count)
+}])
+
+// Chart Options
+const chartOptions = computed(() => ({
+  chart: {
+    type: 'line',
+    height: 350,
+    toolbar: { 
+      show: true,
+      tools: {
+        download: true,
+        selection: true,
+        zoom: true,
+        zoomin: true,
+        zoomout: true,
+        pan: true,
+        reset: true
+      }
+    },
+    animations: {
+      enabled: true,
+      easing: 'easeinout',
+      speed: 800,
+      animateGradually: {
+        enabled: true,
+        delay: 150
+      },
+      dynamicAnimation: {
+        enabled: true,
+        speed: 350
+      }
+    },
+    dropShadow: {
+      enabled: true,
+      top: 4,
+      left: 2,
+      blur: 8,
+      opacity: 0.18
+    }
+  },
+  stroke: {
+    width: 4,
+    curve: 'smooth',
+    colors: ['#3B82F6']
+  },
+  markers: {
+    size: 5,
+    colors: ['#fff'],
+    strokeColors: ['#3B82F6'],
+    strokeWidth: 3,
+    hover: {
+      size: 8
+    }
+  },
+  fill: {
+    type: 'gradient',
+    gradient: {
+      shade: 'light',
+      type: 'vertical',
+      shadeIntensity: 0.5,
+      gradientToColors: ['#3B82F6'],
+      inverseColors: false,
+      opacityFrom: 0.8,
+      opacityTo: 0.3,
+      stops: [0, 90, 100]
+    }
+  },
+  xaxis: {
+    categories: chartData.value.map(item => item.time),
+    labels: {
+      style: {
+        fontSize: '12px',
+        fontWeight: 600
+      }
+    }
+  },
+  yaxis: {
+    title: {
+      text: 'Jumlah User'
+    },
+    min: 0,
+    labels: {
+      style: {
+        fontSize: '12px',
+        fontWeight: 600
+      },
+      formatter: (value) => {
+        return value.toLocaleString('id-ID')
+      }
+    }
+  },
+  colors: ['#3B82F6'],
+  grid: {
+    borderColor: '#E5E7EB',
+    strokeDashArray: 4,
+    xaxis: {
+      lines: {
+        show: false
+      }
+    },
+    yaxis: {
+      lines: {
+        show: true
+      }
+    }
+  },
+  tooltip: {
+    theme: 'light',
+    shared: true,
+    intersect: false,
+    y: {
+      formatter: (value) => {
+        return value + ' user'
+      }
+    }
+  },
+  dataLabels: {
+    enabled: true,
+    style: {
+      fontSize: '12px',
+      fontWeight: 600,
+      colors: ['#3B82F6']
+    },
+    offsetY: -5
+  },
+  legend: {
+    show: false
+  },
+  noData: {
+    text: 'Tidak ada data',
+    align: 'center',
+    verticalAlign: 'middle',
+    style: {
+      color: '#999',
+      fontSize: '14px',
+      fontFamily: undefined
+    }
+  },
+  states: {
+    hover: {
+      filter: {
+        type: 'lighten',
+        value: 0.15
+      }
+    },
+    active: {
+      allowMultipleDataPointsSelection: false,
+      filter: {
+        type: 'darken',
+        value: 0.35
+      }
+    }
+  },
+  responsive: [{
+    breakpoint: 480,
+    options: {
+      chart: {
+        height: 300
+      }
+    }
+  }]
+}))
 
 onMounted(() => {
   loadStats()
@@ -183,17 +355,11 @@ onMounted(() => {
   pollInterval = setInterval(() => {
     loadStats()
   }, 5000)
-  
-  // Initialize chart
-  initChart()
 })
 
 onUnmounted(() => {
   if (pollInterval) {
     clearInterval(pollInterval)
-  }
-  if (chart) {
-    chart.destroy()
   }
 })
 
@@ -216,9 +382,6 @@ function loadStats() {
         chartData.value = data.chart_data || []
         peakTime.value = data.peak_time
         lastUpdate.value = data.updated_at
-        
-        // Update chart
-        updateChart()
       }
     })
     .catch(error => {
@@ -227,109 +390,6 @@ function loadStats() {
     .finally(() => {
       loading.value = false
     })
-}
-
-function initChart() {
-  const options = {
-    series: [{
-      name: 'Active Users',
-      data: []
-    }],
-    chart: {
-      type: 'line',
-      height: 350,
-      toolbar: {
-        show: true,
-        tools: {
-          download: true,
-          selection: true,
-          zoom: true,
-          zoomin: true,
-          zoomout: true,
-          pan: true,
-          reset: true
-        }
-      },
-      animations: {
-        enabled: true,
-        easing: 'easeinout',
-        speed: 800
-      }
-    },
-    dataLabels: {
-      enabled: true,
-      style: {
-        fontSize: '12px',
-        fontWeight: 600
-      }
-    },
-    stroke: {
-      curve: 'smooth',
-      width: 3
-    },
-    xaxis: {
-      categories: [],
-      labels: {
-        style: {
-          fontSize: '12px'
-        }
-      }
-    },
-    yaxis: {
-      title: {
-        text: 'Jumlah User'
-      },
-      labels: {
-        style: {
-          fontSize: '12px'
-        }
-      },
-      min: 0
-    },
-    colors: ['#3B82F6'],
-    fill: {
-      type: 'gradient',
-      gradient: {
-        shadeIntensity: 1,
-        opacityFrom: 0.7,
-        opacityTo: 0.3,
-        stops: [0, 90, 100]
-      }
-    },
-    grid: {
-      borderColor: '#E5E7EB',
-      strokeDashArray: 4
-    },
-    tooltip: {
-      theme: 'light',
-      y: {
-        formatter: function (val) {
-          return val + " user"
-        }
-      }
-    }
-  }
-
-  chart = new ApexCharts(document.querySelector("#chart-container"), options)
-  chart.render()
-}
-
-function updateChart() {
-  if (!chart || !chartData.value.length) return
-
-  const categories = chartData.value.map(item => item.time)
-  const data = chartData.value.map(item => item.count)
-
-  chart.updateOptions({
-    xaxis: {
-      categories: categories
-    }
-  })
-
-  chart.updateSeries([{
-    name: 'Active Users',
-    data: data
-  }])
 }
 
 function formatTime(dateString) {
