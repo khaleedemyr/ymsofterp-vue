@@ -350,6 +350,7 @@ const menuGroups = [
         open: ref(false),
         menus: [
             { name: () => 'Support Admin Panel', icon: 'fa-solid fa-comments', route: '/support/admin', code: 'support_admin_panel' },
+            { name: () => 'Monitoring User Aktif', icon: 'fa-solid fa-users-line', route: '/monitoring/active-users', code: 'monitoring_active_users' },
         ],
     },
     {

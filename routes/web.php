@@ -1021,6 +1021,10 @@ Route::get('/outlet-internal-use-waste/{id}', [\App\Http\Controllers\OutletInter
 Route::delete('/outlet-internal-use-waste/{id}', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'destroy'])->name('outlet-internal-use-waste.destroy');
 Route::get('/outlet-internal-use-waste/get-item-units/{id}', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'getItemUnits'])->name('outlet-internal-use-waste.get-item-units');
 
+// Active Users Monitoring
+Route::get('/monitoring/active-users', [\App\Http\Controllers\ActiveUsersMonitorController::class, 'index'])->name('monitoring.active-users');
+Route::get('/api/monitoring/active-users/stats', [\App\Http\Controllers\ActiveUsersMonitorController::class, 'getStats'])->name('api.monitoring.active-users.stats');
+
 // Regional Routes
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/regional', [\App\Http\Controllers\RegionalController::class, 'index'])->name('regional.index');
