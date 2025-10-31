@@ -1249,8 +1249,9 @@ class StockCutController extends Controller
                 ->where('name', $name)
                 ->first();
             
-            if ($modifierOption && $modifierOption->modifier_id == 1) {
-                continue; // Skip modifier dengan modifier_id = 1
+            // Skip jika modifierOption tidak ditemukan atau modifier_id = 1
+            if (!$modifierOption || $modifierOption->modifier_id == 1) {
+                continue;
             }
             
             // Ambil info modifier group

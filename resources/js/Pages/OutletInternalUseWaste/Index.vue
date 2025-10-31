@@ -24,18 +24,20 @@
                 <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Tipe</th>
                 <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Outlet</th>
                 <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Warehouse Outlet</th>
+                <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Creator</th>
                 <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Aksi</th>
               </tr>
             </thead>
             <tbody class="bg-white divide-y divide-gray-200">
               <tr v-if="!props.data.length">
-                <td colspan="8" class="text-center py-10 text-green-300">Tidak ada data.</td>
+                <td colspan="6" class="text-center py-10 text-green-300">Tidak ada data.</td>
               </tr>
               <tr v-for="row in props.data" :key="row.id">
                 <td class="px-6 py-3">{{ formatDate(row.date) }}</td>
                 <td class="px-6 py-3">{{ typeLabel(row.type) }}</td>
                 <td class="px-6 py-3">{{ row.outlet_name }}</td>
                 <td class="px-6 py-3">{{ row.warehouse_outlet_name || '-' }}</td>
+                <td class="px-6 py-3">{{ row.creator_name || '-' }}</td>
                 <td class="px-6 py-3">
                   <button class="inline-flex items-center btn btn-xs bg-green-100 text-green-800 hover:bg-green-200 rounded px-2 py-1 font-semibold transition" @click="goDetail(row.id)">
                     <i class="fa fa-eye mr-1"></i> Detail

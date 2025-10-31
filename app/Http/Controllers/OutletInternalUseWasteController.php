@@ -14,10 +14,12 @@ class OutletInternalUseWasteController extends Controller
         $data = DB::table('outlet_internal_use_waste_headers as h')
             ->leftJoin('tbl_data_outlet as o', 'h.outlet_id', '=', 'o.id_outlet')
             ->leftJoin('warehouse_outlets as wo', 'h.warehouse_outlet_id', '=', 'wo.id')
+            ->leftJoin('users as u', 'h.created_by', '=', 'u.id')
             ->select(
                 'h.*',
                 'o.nama_outlet as outlet_name',
-                'wo.name as warehouse_outlet_name'
+                'wo.name as warehouse_outlet_name',
+                'u.nama_lengkap as creator_name'
             );
         if ($user->id_outlet != 1) {
             $data->where('h.outlet_id', $user->id_outlet);
@@ -81,6 +83,29 @@ class OutletInternalUseWasteController extends Controller
                 'items.*.note' => 'nullable|string'
             ]);
 
+            // Get user ID with multiple fallback methods
+            $userId = Auth::id() ?? auth()->id();
+            if (!$userId) {
+                $user = auth()->user();
+                $userId = $user ? $user->id : null;
+            }
+            
+            \Log::info('OutletInternalUseWaste store - User info:', [
+                'auth_id' => Auth::id(),
+                'auth_user_id' => auth()->id(),
+                'user_id' => $userId,
+                'user_exists' => $userId ? 'yes' : 'no',
+                'request_user' => $request->user() ? $request->user()->id : null
+            ]);
+            
+            if (!$userId) {
+                \Log::error('OutletInternalUseWaste store - No user ID found!', [
+                    'all_request' => $request->all(),
+                    'session' => session()->all()
+                ]);
+                throw new \Exception('User tidak terautentikasi. Silakan login ulang.');
+            }
+            
             DB::beginTransaction();
             $headerId = DB::table('outlet_internal_use_waste_headers')->insertGetId([
                 'type' => $request->type,
@@ -88,8 +113,14 @@ class OutletInternalUseWasteController extends Controller
                 'outlet_id' => $request->outlet_id,
                 'warehouse_outlet_id' => $request->warehouse_outlet_id,
                 'notes' => $request->notes,
+                'created_by' => $userId,
                 'created_at' => now(),
                 'updated_at' => now()
+            ]);
+            
+            \Log::info('OutletInternalUseWaste store - Header created:', [
+                'header_id' => $headerId,
+                'created_by' => $userId
             ]);
 
             foreach ($request->items as $item) {
@@ -438,10 +469,12 @@ class OutletInternalUseWasteController extends Controller
         $query = DB::table('outlet_internal_use_waste_headers as h')
             ->leftJoin('tbl_data_outlet as o', 'h.outlet_id', '=', 'o.id_outlet')
             ->leftJoin('warehouse_outlets as wo', 'h.warehouse_outlet_id', '=', 'wo.id')
+            ->leftJoin('users as u', 'h.created_by', '=', 'u.id')
             ->select(
                 'h.*',
                 'o.nama_outlet as outlet_name',
-                'wo.name as warehouse_outlet_name'
+                'wo.name as warehouse_outlet_name',
+                'u.nama_lengkap as creator_name'
             );
         if ($user->id_outlet != 1) {
             $query->where('h.outlet_id', $user->id_outlet);
