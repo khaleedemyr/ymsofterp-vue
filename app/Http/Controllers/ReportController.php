@@ -3368,56 +3368,59 @@ class ReportController extends Controller
             $from = $request->from;
             $to = $request->to;
 
-            // Get retail sales data
-            $retailData = DB::table('retail_sales as rs')
-                ->join('retail_sales_items as rsi', 'rs.id', '=', 'rsi.retail_sales_id')
-                ->join('items as i', 'rsi.item_id', '=', 'i.id')
-                ->join('categories as c', 'i.category_id', '=', 'c.id')
-                ->join('units as u', 'rsi.unit_id', '=', 'u.id')
-                ->join('tbl_data_outlet as o', 'rs.outlet_id', '=', 'o.id_outlet')
-                ->where('o.nama_outlet', $customer)
-                ->whereDate('rs.sales_date', '>=', $from)
-                ->whereDate('rs.sales_date', '<=', $to)
+            // Get retail sales data (using same tables as retailSalesDetail and retailDetailPdf)
+            $retailData = DB::table('retail_warehouse_sales as rws')
+                ->join('retail_warehouse_sale_items as rwsi', 'rws.id', '=', 'rwsi.retail_warehouse_sale_id')
+                ->join('customers as c', 'rws.customer_id', '=', 'c.id')
+                ->join('items as it', 'rwsi.item_id', '=', 'it.id')
+                ->leftJoin('categories as cat', 'it.category_id', '=', 'cat.id')
+                ->leftJoin('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
+                ->where('c.name', $customer)
+                ->whereDate('rws.created_at', '>=', $from)
+                ->whereDate('rws.created_at', '<=', $to)
                 ->select(
-                    'i.name as item_name',
-                    'c.name as category',
-                    'u.name as unit',
-                    DB::raw('SUM(rsi.qty) as qty'),
-                    DB::raw('AVG(rsi.price) as price'),
-                    DB::raw('SUM(rsi.qty * rsi.price) as subtotal')
+                    DB::raw('COALESCE(sc.name, "Uncategorized") as sub_category'),
+                    'it.name as item_name',
+                    DB::raw('COALESCE(cat.name, "Uncategorized") as category_name'),
+                    DB::raw('COALESCE(rwsi.unit, "Pcs") as unit'),
+                    DB::raw('SUM(rwsi.qty) as qty'),
+                    DB::raw('AVG(rwsi.price) as price'),
+                    DB::raw('SUM(rwsi.subtotal) as subtotal')
                 )
-                ->groupBy('i.name', 'c.name', 'u.name')
-                ->orderBy('c.name')
-                ->orderBy('i.name')
+                ->groupBy(DB::raw('COALESCE(sc.name, "Uncategorized")'), 'it.name', DB::raw('COALESCE(cat.name, "Uncategorized")'), 'rwsi.unit')
+                ->orderBy('sub_category')
+                ->orderBy('it.name')
                 ->get();
 
             // Prepare data for Excel
             $excelData = [];
             
-            // Add header
+            // Add header (matching FjDetailExport structure: Kategori, Item Name, Category, Unit, Qty Received, Price, Subtotal)
             $excelData[] = [
+                'Kategori',
                 'Item Name',
                 'Category',
                 'Unit',
-                'Qty',
+                'Qty Received',
                 'Price',
                 'Subtotal'
             ];
 
-            // Add retail data
+            // Add retail data grouped by sub_category
             foreach ($retailData as $item) {
                 $excelData[] = [
-                    $item->item_name,
-                    $item->category,
-                    $item->unit,
-                    $item->qty,
-                    $item->price,
-                    $item->subtotal
+                    $item->sub_category ?: 'Uncategorized', // Kategori (sub_category)
+                    $item->item_name, // Item Name
+                    $item->category_name ?: 'Uncategorized', // Category (from categories table)
+                    $item->unit ?: 'Pcs', // Unit
+                    $item->qty, // Qty Received
+                    $item->price, // Price
+                    $item->subtotal // Subtotal
                 ];
             }
 
             // Create Excel file
-            $filename = 'Retail_Detail_' . $customer . '_' . $from . '_' . $to . '.xlsx';
+            $filename = 'Retail_Detail_' . str_replace([' ', '/'], '_', $customer) . '_' . $from . '_' . $to . '.xlsx';
             
             return \Maatwebsite\Excel\Facades\Excel::download(
                 new \App\Exports\FjDetailExport($excelData),
@@ -3426,6 +3429,7 @@ class ReportController extends Controller
 
         } catch (\Exception $e) {
             \Log::error('Retail Detail Excel error: ' . $e->getMessage());
+            \Log::error('Retail Detail Excel error trace: ' . $e->getTraceAsString());
             return response()->json(['error' => 'Terjadi kesalahan saat generate Excel: ' . $e->getMessage()], 500);
         }
     }
