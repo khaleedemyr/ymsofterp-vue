@@ -60,7 +60,7 @@ class BudgetManagementController extends Controller
     {
         $request->validate([
             'name' => 'required|string|max:255',
-            'division' => 'required|in:MARKETING,MAINTENANCE,ASSET,PROJECT_ENHANCEMENT',
+            'division' => 'required|in:GENERAL,MARKETING,MAINTENANCE,ASSET,PROJECT_ENHANCEMENT',
             'subcategory' => 'required|string|max:255',
             'budget_limit' => 'required|numeric|min:0',
             'budget_type' => 'required|in:GLOBAL,PER_OUTLET',

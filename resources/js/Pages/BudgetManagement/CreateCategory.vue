@@ -51,6 +51,7 @@
                     required
                   >
                     <option value="">Select division</option>
+                    <option value="GENERAL">General</option>
                     <option value="MARKETING">Marketing</option>
                     <option value="MAINTENANCE">Maintenance</option>
                     <option value="ASSET">Asset</option>
