@@ -5,6 +5,8 @@ namespace App\Http\Controllers;
 use App\Models\RetailNonFood;
 use App\Models\RetailNonFoodItem;
 use App\Models\Outlet;
+use App\Models\PurchaseRequisitionCategory;
+use App\Models\PurchaseRequisition;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
@@ -45,9 +47,9 @@ class RetailNonFoodController extends Controller
         $dateFrom = $request->get('date_from', '');
         $dateTo = $request->get('date_to', '');
         
-        // Query dengan join warehouse outlet
+        // Query dengan join warehouse outlet dan category budget
         $query = RetailNonFood::query()
-            ->with(['outlet', 'creator', 'items'])
+            ->with(['outlet', 'creator', 'items', 'categoryBudget'])
             ->orderByDesc('created_at');
             
         // Apply outlet filter
@@ -99,9 +101,17 @@ class RetailNonFoodController extends Controller
         } else {
             $outlets = Outlet::where('id_outlet', $userOutletId)->where('status', 'A')->get(['id_outlet', 'nama_outlet']);
         }
+        
+        // Ambil category budgets (hanya yang GLOBAL)
+        $categoryBudgets = PurchaseRequisitionCategory::where('budget_type', 'GLOBAL')
+            ->orderBy('division')
+            ->orderBy('name')
+            ->get(['id', 'name', 'division', 'subcategory', 'budget_limit', 'description']);
+        
         return Inertia::render('RetailNonFood/Form', [
             'user' => $user,
-            'outlets' => $outlets
+            'outlets' => $outlets,
+            'categoryBudgets' => $categoryBudgets
         ]);
     }
 
@@ -110,6 +120,7 @@ class RetailNonFoodController extends Controller
         $request->validate([
             'outlet_id' => 'required|exists:tbl_data_outlet,id_outlet',
             'transaction_date' => 'required|date',
+            'category_budget_id' => 'nullable|exists:purchase_requisition_categories,id',
             'items' => 'required|array|min:1',
             'items.*.item_name' => 'required|string',
             'items.*.qty' => 'required|numeric|min:0',
@@ -129,6 +140,55 @@ class RetailNonFoodController extends Controller
                 return $item['qty'] * $item['price'];
             });
 
+            // Validasi budget sebelum simpan (jika category_budget_id dipilih)
+            if ($request->category_budget_id) {
+                $category = PurchaseRequisitionCategory::find($request->category_budget_id);
+                if (!$category || $category->budget_type !== 'GLOBAL') {
+                    return response()->json([
+                        'message' => 'Category budget tidak valid atau bukan GLOBAL budget'
+                    ], 422);
+                }
+
+                // Hitung budget yang sudah digunakan (bulan berjalan)
+                $currentMonth = date('n'); // 1-12
+                $currentYear = date('Y');
+                
+                // 1. Total dari Retail Non Food (approved)
+                $retailNonFoodUsed = RetailNonFood::where('category_budget_id', $request->category_budget_id)
+                    ->whereYear('transaction_date', $currentYear)
+                    ->whereMonth('transaction_date', $currentMonth)
+                    ->where('status', 'approved')
+                    ->sum('total_amount');
+                
+                // 2. Total dari Purchase Requisition (SUBMITTED, APPROVED, PROCESSED, COMPLETED)
+                $prUsed = PurchaseRequisition::where('category_id', $request->category_budget_id)
+                    ->whereYear('created_at', $currentYear)
+                    ->whereMonth('created_at', $currentMonth)
+                    ->whereIn('status', ['SUBMITTED', 'APPROVED', 'PROCESSED', 'COMPLETED'])
+                    ->sum('amount');
+                
+                // Total yang sudah digunakan
+                $totalUsed = $retailNonFoodUsed + $prUsed;
+                
+                // Total setelah ditambah transaksi baru
+                $totalAfterNew = $totalUsed + $totalAmount;
+                
+                // Validasi budget
+                if ($totalAfterNew > $category->budget_limit) {
+                    DB::rollBack();
+                    return response()->json([
+                        'message' => "Transaksi ditolak! Budget untuk kategori '{$category->name}' telah terlampaui.\n\n" .
+                                   "📊 Detail Budget:\n" .
+                                   "• Budget yang ditetapkan: Rp " . number_format($category->budget_limit, 0, ',', '.') . "\n" .
+                                   "• Total Retail Non Food (bulan ini): Rp " . number_format($retailNonFoodUsed, 0, ',', '.') . "\n" .
+                                   "• Total Purchase Requisition (bulan ini): Rp " . number_format($prUsed, 0, ',', '.') . "\n" .
+                                   "• Total Gabungan: Rp " . number_format($totalUsed, 0, ',', '.') . "\n" .
+                                   "• Total Setelah Transaksi Baru: Rp " . number_format($totalAfterNew, 0, ',', '.') . "\n" .
+                                   "• Kelebihan: Rp " . number_format($totalAfterNew - $category->budget_limit, 0, ',', '.')
+                    ], 422);
+                }
+            }
+
             // Cek total transaksi hari ini
             $dailyTotal = RetailNonFood::whereDate('transaction_date', $request->transaction_date)
                 ->where('status', 'approved')
@@ -138,6 +198,7 @@ class RetailNonFoodController extends Controller
             $retailNonFood = RetailNonFood::create([
                 'retail_number' => $retailNumber,
                 'outlet_id' => $request->outlet_id,
+                'category_budget_id' => $request->category_budget_id,
                 'created_by' => auth()->id(),
                 'transaction_date' => $request->transaction_date,
                 'total_amount' => $totalAmount,
@@ -195,7 +256,7 @@ class RetailNonFoodController extends Controller
 
     public function show($id)
     {
-        $retailNonFood = RetailNonFood::with(['outlet', 'creator', 'items', 'warehouseOutlet', 'invoices'])
+        $retailNonFood = RetailNonFood::with(['outlet', 'creator', 'items', 'warehouseOutlet', 'invoices', 'categoryBudget'])
             ->findOrFail($id);
 
         return Inertia::render('RetailNonFood/Detail', [
@@ -269,5 +330,81 @@ class RetailNonFoodController extends Controller
             ->sum('total_amount');
             
         return response()->json(['total' => $total]);
+    }
+
+    public function getBudgetInfo(Request $request)
+    {
+        try {
+            $request->validate([
+                'category_budget_id' => 'nullable|exists:purchase_requisition_categories,id',
+            ]);
+
+            if (!$request->category_budget_id) {
+                return response()->json([
+                    'budget_info' => null
+                ]);
+            }
+
+            $category = PurchaseRequisitionCategory::findOrFail($request->category_budget_id);
+            
+            if ($category->budget_type !== 'GLOBAL') {
+                return response()->json([
+                    'budget_info' => null,
+                    'message' => 'Category budget harus GLOBAL'
+                ]);
+            }
+
+            // Hitung budget yang sudah digunakan (bulan berjalan)
+            $currentMonth = date('n'); // 1-12
+            $currentYear = date('Y');
+            
+            // 1. Total dari Retail Non Food (approved)
+            $retailNonFoodUsed = RetailNonFood::where('category_budget_id', $request->category_budget_id)
+                ->whereYear('transaction_date', $currentYear)
+                ->whereMonth('transaction_date', $currentMonth)
+                ->where('status', 'approved')
+                ->sum('total_amount');
+            
+            // 2. Total dari Purchase Requisition (SUBMITTED, APPROVED, PROCESSED, COMPLETED)
+            $prUsed = PurchaseRequisition::where('category_id', $request->category_budget_id)
+                ->whereYear('created_at', $currentYear)
+                ->whereMonth('created_at', $currentMonth)
+                ->whereIn('status', ['SUBMITTED', 'APPROVED', 'PROCESSED', 'COMPLETED'])
+                ->sum('amount');
+            
+            // Total yang sudah digunakan
+            $totalUsed = $retailNonFoodUsed + $prUsed;
+            
+            // Sisa budget
+            $remainingBudget = $category->budget_limit - $totalUsed;
+            
+            // Persentase penggunaan
+            $budgetPercentage = $category->budget_limit > 0 
+                ? round(($totalUsed / $category->budget_limit) * 100, 2) 
+                : 0;
+
+            return response()->json([
+                'budget_info' => [
+                    'category_id' => $category->id,
+                    'category_name' => $category->name,
+                    'division' => $category->division,
+                    'subcategory' => $category->subcategory,
+                    'budget_limit' => $category->budget_limit,
+                    'retail_non_food_used' => $retailNonFoodUsed,
+                    'purchase_requisition_used' => $prUsed,
+                    'total_used' => $totalUsed,
+                    'remaining_budget' => $remainingBudget,
+                    'budget_percentage' => $budgetPercentage,
+                    'current_month' => $currentMonth,
+                    'current_year' => $currentYear,
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'budget_info' => null,
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 } 

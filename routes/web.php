@@ -65,6 +65,7 @@ use App\Http\Controllers\OutletInventoryReportController;
 use App\Http\Controllers\OutletStockBalanceController;
 use App\Http\Controllers\OutletInternalUseWasteController;
 use App\Http\Controllers\RetailFoodController;
+use App\Http\Controllers\RetailWarehouseFoodController;
 use Illuminate\Support\Facades\Mail;
 use App\Http\Controllers\OutletFoodGoodReceiveController;
 use App\Http\Controllers\GoodReceiveOutletSupplierController;
@@ -1064,8 +1065,13 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('retail-food/get-budget-info', [\App\Http\Controllers\RetailFoodController::class, 'getBudgetInfo']);
     Route::post('retail-food/debug-budget-query', [\App\Http\Controllers\RetailFoodController::class, 'debugBudgetQuery']);
 
+    Route::resource('retail-warehouse-food', RetailWarehouseFoodController::class);
+    Route::get('retail-warehouse-food/get-item-units/{itemId}', [\App\Http\Controllers\RetailWarehouseFoodController::class, 'getItemUnits']);
+    Route::get('retail-warehouse-food/daily-total', [\App\Http\Controllers\RetailWarehouseFoodController::class, 'dailyTotal']);
+
     Route::resource('retail-non-food', \App\Http\Controllers\RetailNonFoodController::class);
     Route::get('retail-non-food/daily-total', [\App\Http\Controllers\RetailNonFoodController::class, 'dailyTotal']);
+    Route::post('retail-non-food/get-budget-info', [\App\Http\Controllers\RetailNonFoodController::class, 'getBudgetInfo']);
     
     // Outlet Food Return
     Route::resource('outlet-food-return', \App\Http\Controllers\OutletFoodReturnController::class);

@@ -235,6 +235,7 @@ const menuGroups = [
             { name: () => 'Packing List', icon: 'fa-solid fa-box', route: '/packing-list', code: 'packing_list' },
             { name: () => 'Delivery Order', icon: 'fa-solid fa-truck-arrow-right', route: '/delivery-order', code: 'delivery_order' },
             { name: () => 'Penjualan Warehouse Retail', icon: 'fa-solid fa-store', route: '/retail-warehouse-sale', code: 'retail_warehouse_sale' },
+            { name: () => 'Warehouse Retail Food', icon: 'fa-solid fa-warehouse', route: '/retail-warehouse-food', code: 'view-retail-warehouse-food' },
             { name: () => 'Saldo Awal Stok', icon: 'fa-solid fa-money-bill-wave', route: '/food-stock-balances', code: 'food_stock_balances' },
             { name: () => 'Laporan Stok Akhir', icon: 'fa-solid fa-clipboard-list', route: '/inventory/stock-position', code: 'inventory_stock_position' },
             { name: () => 'Laporan Kartu Stok', icon: 'fa-solid fa-file-lines', route: '/inventory/stock-card', code: 'inventory_stock_card' },

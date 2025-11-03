@@ -6,7 +6,7 @@
           <i class="fa-solid fa-shopping-bag text-green-500 text-3xl"></i> Input Retail Non Food
         </h1>
         <form @submit.prevent="submit" class="space-y-7">
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div>
               <label class="block text-xs font-bold text-gray-600 mb-2">Tanggal</label>
               <input type="date" v-model="form.transaction_date" class="input input-bordered w-full shadow-inner rounded-xl focus:ring-2 focus:ring-green-300 transition-all duration-200" required />
@@ -17,6 +17,69 @@
                 <option v-if="userOutletId == 1" value="">Pilih Outlet</option>
                 <option v-for="o in props.outlets" :key="o.id_outlet" :value="o.id_outlet">{{ o.nama_outlet }}</option>
               </select>
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-gray-600 mb-2">Category Budget <span class="text-gray-400 text-xs">(Opsional)</span></label>
+              <select v-model="form.category_budget_id" @change="fetchBudgetInfo" class="input input-bordered w-full shadow-inner rounded-xl focus:ring-2 focus:ring-green-300 transition-all duration-200">
+                <option value="">Pilih Category Budget (Opsional)</option>
+                <option v-for="cb in props.categoryBudgets" :key="cb.id" :value="cb.id">
+                  {{ cb.name }} - {{ cb.division }} ({{ formatRupiah(cb.budget_limit) }})
+                </option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Budget Information Section -->
+          <div v-if="budgetInfo" class="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-xl">
+            <h3 class="text-lg font-semibold text-yellow-800 mb-3 flex items-center gap-2">
+              <i class="fa-solid fa-chart-pie text-yellow-600"></i>
+              Informasi Budget Category
+            </h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div class="bg-white p-3 rounded-lg border border-yellow-200 shadow-sm">
+                <div class="text-sm text-gray-600 mb-1">Category</div>
+                <div class="font-semibold text-gray-800">{{ budgetInfo.category_name }}</div>
+                <div class="text-xs text-gray-500 mt-1">{{ budgetInfo.division }} - {{ budgetInfo.subcategory }}</div>
+              </div>
+              <div class="bg-white p-3 rounded-lg border border-yellow-200 shadow-sm">
+                <div class="text-sm text-gray-600 mb-1">Budget Limit</div>
+                <div class="font-semibold text-green-600">{{ formatRupiah(budgetInfo.budget_limit) }}</div>
+              </div>
+              <div class="bg-white p-3 rounded-lg border border-yellow-200 shadow-sm">
+                <div class="text-sm text-gray-600 mb-1">Total Digunakan</div>
+                <div class="font-semibold text-blue-600">{{ formatRupiah(budgetInfo.total_used) }}</div>
+                <div class="text-xs text-gray-500 mt-1">
+                  RNF: {{ formatRupiah(budgetInfo.retail_non_food_used) }} | PR: {{ formatRupiah(budgetInfo.purchase_requisition_used) }}
+                </div>
+              </div>
+              <div class="bg-white p-3 rounded-lg border border-yellow-200 shadow-sm">
+                <div class="text-sm text-gray-600 mb-1">Sisa Budget</div>
+                <div :class="budgetInfo.remaining_budget > 0 ? 'text-green-600' : 'text-red-600'" class="font-semibold">
+                  {{ formatRupiah(budgetInfo.remaining_budget) }}
+                </div>
+                <div class="mt-2">
+                  <div class="flex justify-between text-xs mb-1">
+                    <span>Penggunaan</span>
+                    <span>{{ budgetInfo.budget_percentage }}%</span>
+                  </div>
+                  <div class="w-full bg-gray-200 rounded-full h-2">
+                    <div :class="budgetInfo.budget_percentage >= 90 ? 'bg-red-500' : budgetInfo.budget_percentage >= 70 ? 'bg-yellow-500' : 'bg-green-500'"
+                         class="h-2 rounded-full transition-all duration-300"
+                         :style="{ width: Math.min(budgetInfo.budget_percentage, 100) + '%' }">
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div v-if="budgetInfo.total_used + totalAmount > budgetInfo.budget_limit" class="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
+              <div class="flex items-center gap-2 text-red-800">
+                <i class="fa fa-exclamation-triangle"></i>
+                <span class="font-semibold">Peringatan: Total transaksi ini akan melebihi budget limit!</span>
+              </div>
+              <div class="text-sm text-red-700 mt-1">
+                Total setelah transaksi: {{ formatRupiah(budgetInfo.total_used + totalAmount) }} 
+                (Kelebihan: {{ formatRupiah((budgetInfo.total_used + totalAmount) - budgetInfo.budget_limit) }})
+              </div>
             </div>
           </div>
 
@@ -124,7 +187,8 @@ import Swal from 'sweetalert2'
 
 const props = defineProps({
   outlets: Array,
-  warehouse_outlets: Array
+  warehouse_outlets: Array,
+  categoryBudgets: Array
 })
 
 const page = usePage()
@@ -144,10 +208,12 @@ const outletDisabled = computed(() => userOutletId.value != 1)
 const loading = ref(false)
 const dailyTotal = ref(0)
 const showLimitAlert = computed(() => (dailyTotal.value + totalAmount.value) >= 500000)
+const budgetInfo = ref(null)
 
 const form = ref({
   transaction_date: new Date().toISOString().split('T')[0],
   outlet_id: userOutletId.value == 1 ? '' : userOutletId.value,
+  category_budget_id: '',
   notes: '',
   items: [newItem()]
 })
@@ -196,11 +262,40 @@ async function fetchDailyTotal() {
   }
 }
 
+async function fetchBudgetInfo() {
+  if (!form.value.category_budget_id) {
+    budgetInfo.value = null
+    return
+  }
+  
+  try {
+    const res = await axios.post('/retail-non-food/get-budget-info', {
+      category_budget_id: form.value.category_budget_id
+    })
+    budgetInfo.value = res.data.budget_info
+  } catch (error) {
+    console.error('Error fetching budget info:', error)
+    budgetInfo.value = null
+  }
+}
+
 watch([
   () => form.value.outlet_id,
   () => form.value.transaction_date,
   () => form.value.items.map(i => [i.qty, i.price])
 ], fetchDailyTotal, { immediate: true, deep: true })
+
+// Watch untuk fetch budget info ketika category budget atau total amount berubah
+watch([
+  () => form.value.category_budget_id,
+  () => totalAmount.value
+], () => {
+  if (form.value.category_budget_id) {
+    fetchBudgetInfo()
+  } else {
+    budgetInfo.value = null
+  }
+}, { immediate: true })
 
 function onFileChange(e) {
   files.value = Array.from(e.target.files)
@@ -226,6 +321,9 @@ async function submit() {
     const formData = new FormData()
     formData.append('outlet_id', form.value.outlet_id)
     formData.append('transaction_date', form.value.transaction_date)
+    if (form.value.category_budget_id) {
+      formData.append('category_budget_id', form.value.category_budget_id)
+    }
     formData.append('notes', form.value.notes)
     form.value.items.forEach((item, idx) => {
       formData.append(`items[${idx}][item_name]`, item.item_name)

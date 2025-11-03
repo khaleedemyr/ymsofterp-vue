@@ -15,6 +15,7 @@ class RetailNonFood extends Model
         'retail_number',
         'outlet_id',
         'warehouse_outlet_id',
+        'category_budget_id',
         'created_by',
         'transaction_date',
         'total_amount',
@@ -50,6 +51,11 @@ class RetailNonFood extends Model
     public function invoices()
     {
         return $this->hasMany(RetailNonFoodInvoice::class);
+    }
+
+    public function categoryBudget()
+    {
+        return $this->belongsTo(\App\Models\PurchaseRequisitionCategory::class, 'category_budget_id');
     }
 
     public static function getDailyTotal($date)

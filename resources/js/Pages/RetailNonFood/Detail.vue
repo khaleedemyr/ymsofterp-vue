@@ -31,6 +31,13 @@
                 <label class="block text-sm font-semibold text-gray-600 mb-1">Outlet</label>
                 <div class="text-gray-800">{{ props.retailNonFood.outlet?.nama_outlet || '-' }}</div>
               </div>
+              <div>
+                <label class="block text-sm font-semibold text-gray-600 mb-1">Category Budget</label>
+                <div class="text-gray-800">{{ props.retailNonFood.category_budget?.name || '-' }}</div>
+                <div v-if="props.retailNonFood.category_budget" class="text-xs text-gray-500 mt-1">
+                  {{ props.retailNonFood.category_budget.division }} - {{ props.retailNonFood.category_budget.subcategory }}
+                </div>
+              </div>
             </div>
             <div class="space-y-4">
               <div>
