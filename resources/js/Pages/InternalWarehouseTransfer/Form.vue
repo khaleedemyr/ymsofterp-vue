@@ -30,17 +30,17 @@
             <div v-if="form.errors.outlet_id" class="text-xs text-red-500 mt-1">{{ form.errors.outlet_id }}</div>
           </div>
           <div>
-            <label class="block text-sm font-medium text-gray-700">Warehouse Outlet Asal</label>
+            <label class="block text-sm font-medium text-gray-700">Departemen Asal</label>
             <select v-model="form.warehouse_outlet_from_id" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500" required :disabled="!form.outlet_id">
-              <option value="">Pilih Warehouse Outlet Asal</option>
+              <option value="">Pilih Departemen Asal</option>
               <option v-for="w in warehouseOutletsFrom" :key="w.id" :value="w.id">{{ w.name }}</option>
             </select>
             <div v-if="form.errors.warehouse_outlet_from_id" class="text-xs text-red-500 mt-1">{{ form.errors.warehouse_outlet_from_id }}</div>
           </div>
           <div>
-            <label class="block text-sm font-medium text-gray-700">Warehouse Outlet Tujuan</label>
+            <label class="block text-sm font-medium text-gray-700">Departemen Tujuan</label>
             <select v-model="form.warehouse_outlet_to_id" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500" required :disabled="!form.outlet_id">
-              <option value="">Pilih Warehouse Outlet Tujuan</option>
+              <option value="">Pilih Departemen Tujuan</option>
               <option v-for="w in warehouseOutletsTo" :key="w.id" :value="w.id">{{ w.name }}</option>
             </select>
             <div v-if="form.errors.warehouse_outlet_to_id" class="text-xs text-red-500 mt-1">{{ form.errors.warehouse_outlet_to_id }}</div>
@@ -54,7 +54,7 @@
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-2">Detail Item</label>
           <div v-if="!canInputItem" class="text-red-600 text-sm mb-2">
-            Pilih outlet, warehouse outlet asal, dan warehouse outlet tujuan terlebih dahulu, dan pastikan warehouse outlet asal dan tujuan tidak sama.
+            Pilih outlet, departemen asal, dan departemen tujuan terlebih dahulu, dan pastikan departemen asal dan tujuan tidak sama.
           </div>
           <div class="overflow-x-auto" :class="{'pointer-events-none opacity-60': !canInputItem}">
             <table class="w-full min-w-full divide-y divide-gray-200">
@@ -110,7 +110,7 @@
                         <i class="fa fa-spinner fa-spin text-blue-400"></i>
                       </div>
                       <div v-if="!form.warehouse_outlet_from_id" class="text-xs text-yellow-600 mt-1">
-                        Pilih warehouse outlet terlebih dahulu untuk mencari item.
+                        Pilih departemen asal terlebih dahulu untuk mencari item.
                       </div>
                       <div v-if="item.stock" class="text-xs text-gray-500 mt-1">
                         Stok: {{ formatStockDisplay(item) }}
@@ -503,7 +503,7 @@ function onSubmit() {
       Swal.fire({
         icon: 'error',
         title: 'Gagal!',
-        text: `Qty item "${item.item_name}" melebihi stok di gudang asal untuk unit ${unit} (${stock})`,
+        text: `Qty item "${item.item_name}" melebihi stok di departemen asal untuk unit ${unit} (${stock})`,
       });
       return;
     }

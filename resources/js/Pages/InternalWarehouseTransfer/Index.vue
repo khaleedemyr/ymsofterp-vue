@@ -64,8 +64,8 @@
                   <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider rounded-tl-2xl">Nomor</th>
                   <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Tanggal</th>
                   <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Outlet</th>
-                  <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Warehouse Outlet Asal</th>
-                  <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Warehouse Outlet Tujuan</th>
+                  <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Departemen Asal</th>
+                  <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Departemen Tujuan</th>
                   <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Dibuat Oleh</th>
                   <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider rounded-tr-2xl">Aksi</th>
                 </tr>

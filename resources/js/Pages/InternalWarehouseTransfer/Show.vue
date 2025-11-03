@@ -64,11 +64,11 @@
                   <div class="mt-1">{{ getOutletName(transfer.outlet_id) }}</div>
                 </div>
                 <div>
-                  <label class="block text-sm font-medium text-gray-600">Warehouse Outlet Asal</label>
+                  <label class="block text-sm font-medium text-gray-600">Departemen Asal</label>
                   <div class="mt-1">{{ transfer.warehouse_outlet_from?.name }}</div>
                 </div>
                 <div>
-                  <label class="block text-sm font-medium text-gray-600">Warehouse Outlet Tujuan</label>
+                  <label class="block text-sm font-medium text-gray-600">Departemen Tujuan</label>
                   <div class="mt-1">{{ transfer.warehouse_outlet_to?.name }}</div>
                 </div>
               </div>
