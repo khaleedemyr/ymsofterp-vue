@@ -841,17 +841,43 @@ class PurchaseRequisitionController extends Controller
                     
                     if ($category->isGlobalBudget()) {
                         // GLOBAL BUDGET: Calculate across all outlets
-                        $usedAmount = PurchaseRequisition::where('category_id', $purchaseRequisition->category_id)
+                        $prQuery = PurchaseRequisition::where('category_id', $purchaseRequisition->category_id)
                             ->whereYear('created_at', $currentYear)
-                            ->whereMonth('created_at', $currentMonth)
-                            ->whereIn('status', ['SUBMITTED', 'APPROVED', 'PROCESSED', 'COMPLETED'])
+                            ->whereMonth('created_at', $currentMonth);
+                        
+                        // Calculate different amounts
+                        $totalUsedAmount = (clone $prQuery)->whereIn('status', ['SUBMITTED', 'APPROVED', 'PROCESSED', 'COMPLETED'])->sum('amount');
+                        $approvedAmount = (clone $prQuery)->whereIn('status', ['APPROVED', 'PROCESSED', 'COMPLETED'])->sum('amount');
+                        $unapprovedAmount = (clone $prQuery)->where('status', 'SUBMITTED')->sum('amount');
+                        
+                        // Get PR IDs in this category for the month
+                        $prIds = (clone $prQuery)->pluck('id')->toArray();
+                        
+                        // Calculate PO created amount (POs created from PRs in this category)
+                        $poCreatedAmount = \App\Models\PurchaseOrderOps::where('source_type', 'purchase_requisition_ops')
+                            ->whereIn('source_id', $prIds)
+                            ->sum('grand_total');
+                        
+                        // Calculate paid and unpaid amounts
+                        $paidAmount = \App\Models\Payment::whereIn('purchase_requisition_id', $prIds)
+                            ->where('status', 'paid')
+                            ->sum('amount');
+                        
+                        $unpaidAmount = \App\Models\Payment::whereIn('purchase_requisition_id', $prIds)
+                            ->whereIn('status', ['approved', 'pending'])
                             ->sum('amount');
                         
                         $budgetInfo = [
                             'budget_type' => 'GLOBAL',
                             'category_budget' => $category->budget_limit,
-                            'category_used_amount' => $usedAmount,
-                            'category_remaining_amount' => $category->budget_limit - $usedAmount,
+                            'category_used_amount' => $totalUsedAmount,
+                            'category_remaining_amount' => $category->budget_limit - $totalUsedAmount,
+                            'approved_amount' => $approvedAmount,
+                            'unapproved_amount' => $unapprovedAmount,
+                            'po_created_amount' => $poCreatedAmount,
+                            'paid_amount' => $paidAmount,
+                            'unpaid_amount' => $unpaidAmount,
+                            'real_remaining_budget' => $category->budget_limit - $approvedAmount - $unapprovedAmount,
                             'current_month' => $currentMonth,
                             'current_year' => $currentYear,
                         ];
@@ -863,11 +889,31 @@ class PurchaseRequisitionController extends Controller
                             ->first();
                         
                         if ($outletBudget) {
-                            $outletUsedAmount = PurchaseRequisition::where('category_id', $purchaseRequisition->category_id)
+                            $prQuery = PurchaseRequisition::where('category_id', $purchaseRequisition->category_id)
                                 ->where('outlet_id', $purchaseRequisition->outlet_id)
                                 ->whereYear('created_at', $currentYear)
-                                ->whereMonth('created_at', $currentMonth)
-                                ->whereIn('status', ['SUBMITTED', 'APPROVED', 'PROCESSED', 'COMPLETED'])
+                                ->whereMonth('created_at', $currentMonth);
+                            
+                            // Calculate different amounts
+                            $outletUsedAmount = (clone $prQuery)->whereIn('status', ['SUBMITTED', 'APPROVED', 'PROCESSED', 'COMPLETED'])->sum('amount');
+                            $approvedAmount = (clone $prQuery)->whereIn('status', ['APPROVED', 'PROCESSED', 'COMPLETED'])->sum('amount');
+                            $unapprovedAmount = (clone $prQuery)->where('status', 'SUBMITTED')->sum('amount');
+                            
+                            // Get PR IDs in this category and outlet for the month
+                            $prIds = (clone $prQuery)->pluck('id')->toArray();
+                            
+                            // Calculate PO created amount (POs created from PRs in this category and outlet)
+                            $poCreatedAmount = \App\Models\PurchaseOrderOps::where('source_type', 'purchase_requisition_ops')
+                                ->whereIn('source_id', $prIds)
+                                ->sum('grand_total');
+                            
+                            // Calculate paid and unpaid amounts
+                            $paidAmount = \App\Models\Payment::whereIn('purchase_requisition_id', $prIds)
+                                ->where('status', 'paid')
+                                ->sum('amount');
+                            
+                            $unpaidAmount = \App\Models\Payment::whereIn('purchase_requisition_id', $prIds)
+                                ->whereIn('status', ['approved', 'pending'])
                                 ->sum('amount');
                             
                             $budgetInfo = [
@@ -876,6 +922,12 @@ class PurchaseRequisitionController extends Controller
                                 'outlet_budget' => $outletBudget->allocated_budget,
                                 'outlet_used_amount' => $outletUsedAmount,
                                 'outlet_remaining_amount' => $outletBudget->allocated_budget - $outletUsedAmount,
+                                'approved_amount' => $approvedAmount,
+                                'unapproved_amount' => $unapprovedAmount,
+                                'po_created_amount' => $poCreatedAmount,
+                                'paid_amount' => $paidAmount,
+                                'unpaid_amount' => $unpaidAmount,
+                                'real_remaining_budget' => $outletBudget->allocated_budget - $approvedAmount - $unapprovedAmount,
                                 'current_month' => $currentMonth,
                                 'current_year' => $currentYear,
                                 'outlet_info' => [

@@ -1205,6 +1205,11 @@ function getPrRemainingAmount() {
         : prApprovalBudgetInfo.value.category_remaining_amount
 }
 
+function getPrRealRemainingAmount() {
+    if (!prApprovalBudgetInfo.value) return 0
+    return prApprovalBudgetInfo.value.real_remaining_budget || 0
+}
+
 function getPrUsagePercentage() {
     const used = getPrUsedAmount()
     const total = getPrTotalBudget()
@@ -4338,40 +4343,135 @@ watch(locale, () => {
                             </p>
                         </div>
                         
-                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            <div class="bg-white dark:bg-gray-800 p-3 rounded-lg">
-                                <div class="text-sm font-medium text-blue-600">
+                        <!-- Main Budget Summary -->
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                            <div class="bg-white dark:bg-gray-800 p-4 rounded-lg border-2 border-blue-300 dark:border-blue-600">
+                                <div class="text-sm font-medium text-blue-600 dark:text-blue-400 mb-1">
+                                    <i class="fa fa-wallet mr-1"></i>
                                     {{ prApprovalBudgetInfo.budget_type === 'PER_OUTLET' ? 'Outlet Budget' : 'Total Budget' }}
                                 </div>
-                                <div class="text-lg font-bold text-blue-800">
+                                <div class="text-xl font-bold text-blue-800 dark:text-blue-200">
                                     Rp {{ new Intl.NumberFormat('id-ID').format(prApprovalBudgetInfo.budget_type === 'PER_OUTLET' ? prApprovalBudgetInfo.outlet_budget : prApprovalBudgetInfo.category_budget) }}
                                 </div>
                                 <div v-if="prApprovalBudgetInfo.budget_type === 'PER_OUTLET'" class="text-xs text-gray-500 dark:text-gray-400 mt-1">
                                     Global: Rp {{ new Intl.NumberFormat('id-ID').format(prApprovalBudgetInfo.category_budget) }}
                                 </div>
                             </div>
-                            <div class="bg-white dark:bg-gray-800 p-3 rounded-lg">
-                                <div class="text-sm font-medium text-orange-600">Used This Month</div>
-                                <div class="text-lg font-bold text-orange-800">
-                                    Rp {{ new Intl.NumberFormat('id-ID').format(prApprovalBudgetInfo.budget_type === 'PER_OUTLET' ? prApprovalBudgetInfo.outlet_used_amount : prApprovalBudgetInfo.category_used_amount) }}
+                            <div class="bg-white dark:bg-gray-800 p-4 rounded-lg border-2" :class="getPrRealRemainingAmount() < 0 ? 'border-red-300 dark:border-red-600' : 'border-green-300 dark:border-green-600'">
+                                <div class="text-sm font-medium mb-1" :class="getPrRealRemainingAmount() < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'">
+                                    <i class="fa fa-coins mr-1"></i>
+                                    Sisa Budget Real
+                                </div>
+                                <div class="text-xl font-bold" :class="getPrRealRemainingAmount() < 0 ? 'text-red-800 dark:text-red-200' : 'text-green-800 dark:text-green-200'">
+                                    Rp {{ new Intl.NumberFormat('id-ID').format(getPrRealRemainingAmount()) }}
+                                </div>
+                                <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                    (Budget - Approved - Unapproved)
                                 </div>
                             </div>
-                            <div class="bg-white dark:bg-gray-800 p-3 rounded-lg">
-                                <div class="text-sm font-medium text-green-600">Remaining Budget</div>
-                                <div class="text-lg font-bold" :class="getPrRemainingAmount() < 0 ? 'text-red-800' : 'text-green-800'">
-                                    Rp {{ new Intl.NumberFormat('id-ID').format(getPrRemainingAmount()) }}
+                            <div class="bg-white dark:bg-gray-800 p-4 rounded-lg border-2 border-orange-300 dark:border-orange-600">
+                                <div class="text-sm font-medium text-orange-600 dark:text-orange-400 mb-1">
+                                    <i class="fa fa-chart-line mr-1"></i>
+                                    Budget Usage
+                                </div>
+                                <div class="text-xl font-bold text-orange-800 dark:text-orange-200">
+                                    {{ Math.round(getPrUsagePercentage()) }}%
+                                </div>
+                                <div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 mt-2">
+                                    <div class="h-2 rounded-full transition-all duration-300"
+                                         :class="getBudgetProgressColor(getPrUsedAmount(), getPrTotalBudget())"
+                                         :style="{ width: Math.min(getPrUsagePercentage(), 100) + '%' }">
+                                    </div>
                                 </div>
                             </div>
                         </div>
-                        <div class="mt-4">
-                            <div class="flex justify-between text-sm text-gray-600 dark:text-gray-400 mb-2">
-                                <span>Budget Usage</span>
-                                <span>{{ Math.round(getPrUsagePercentage()) }}%</span>
-                            </div>
-                            <div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3">
-                                <div class="h-3 rounded-full transition-all duration-300"
-                                     :class="getBudgetProgressColor(getPrUsedAmount(), getPrTotalBudget())"
-                                     :style="{ width: Math.min(getPrUsagePercentage(), 100) + '%' }">
+
+                        <!-- Detailed Budget Breakdown -->
+                        <div class="bg-white dark:bg-gray-800 p-4 rounded-lg border border-gray-200 dark:border-gray-700">
+                            <h5 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
+                                <i class="fa fa-list-ul mr-2"></i>
+                                Breakdown Budget
+                            </h5>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                <!-- Approved Amount -->
+                                <div class="flex items-center justify-between p-3 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-700">
+                                    <div class="flex items-center">
+                                        <i class="fa fa-check-circle text-green-600 dark:text-green-400 mr-2"></i>
+                                        <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Sudah Di-Approved</span>
+                                    </div>
+                                    <div class="text-right">
+                                        <div class="text-sm font-bold text-green-800 dark:text-green-200">
+                                            Rp {{ new Intl.NumberFormat('id-ID').format(prApprovalBudgetInfo.approved_amount || 0) }}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Unapproved Amount -->
+                                <div class="flex items-center justify-between p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg border border-yellow-200 dark:border-yellow-700">
+                                    <div class="flex items-center">
+                                        <i class="fa fa-clock text-yellow-600 dark:text-yellow-400 mr-2"></i>
+                                        <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Belum Di-Approved</span>
+                                    </div>
+                                    <div class="text-right">
+                                        <div class="text-sm font-bold text-yellow-800 dark:text-yellow-200">
+                                            Rp {{ new Intl.NumberFormat('id-ID').format(prApprovalBudgetInfo.unapproved_amount || 0) }}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- PO Created Amount -->
+                                <div class="flex items-center justify-between p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-700">
+                                    <div class="flex items-center">
+                                        <i class="fa fa-shopping-cart text-blue-600 dark:text-blue-400 mr-2"></i>
+                                        <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Sudah Dibuat PO</span>
+                                    </div>
+                                    <div class="text-right">
+                                        <div class="text-sm font-bold text-blue-800 dark:text-blue-200">
+                                            Rp {{ new Intl.NumberFormat('id-ID').format(prApprovalBudgetInfo.po_created_amount || 0) }}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Paid Amount -->
+                                <div class="flex items-center justify-between p-3 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg border border-emerald-200 dark:border-emerald-700">
+                                    <div class="flex items-center">
+                                        <i class="fa fa-check-double text-emerald-600 dark:text-emerald-400 mr-2"></i>
+                                        <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Sudah Di-Bayar</span>
+                                    </div>
+                                    <div class="text-right">
+                                        <div class="text-sm font-bold text-emerald-800 dark:text-emerald-200">
+                                            Rp {{ new Intl.NumberFormat('id-ID').format(prApprovalBudgetInfo.paid_amount || 0) }}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Unpaid Amount -->
+                                <div class="flex items-center justify-between p-3 bg-orange-50 dark:bg-orange-900/20 rounded-lg border border-orange-200 dark:border-orange-700">
+                                    <div class="flex items-center">
+                                        <i class="fa fa-exclamation-circle text-orange-600 dark:text-orange-400 mr-2"></i>
+                                        <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Belum Di-Bayar</span>
+                                    </div>
+                                    <div class="text-right">
+                                        <div class="text-sm font-bold text-orange-800 dark:text-orange-200">
+                                            Rp {{ new Intl.NumberFormat('id-ID').format(prApprovalBudgetInfo.unpaid_amount || 0) }}
+                                        </div>
+                                        <div class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                                            (PO sudah dibuat)
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Used This Month (Total) -->
+                                <div class="flex items-center justify-between p-3 bg-purple-50 dark:bg-purple-900/20 rounded-lg border border-purple-200 dark:border-purple-700">
+                                    <div class="flex items-center">
+                                        <i class="fa fa-chart-bar text-purple-600 dark:text-purple-400 mr-2"></i>
+                                        <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Total Terpakai Bulan Ini</span>
+                                    </div>
+                                    <div class="text-right">
+                                        <div class="text-sm font-bold text-purple-800 dark:text-purple-200">
+                                            Rp {{ new Intl.NumberFormat('id-ID').format(prApprovalBudgetInfo.budget_type === 'PER_OUTLET' ? prApprovalBudgetInfo.outlet_used_amount : prApprovalBudgetInfo.category_used_amount) }}
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
