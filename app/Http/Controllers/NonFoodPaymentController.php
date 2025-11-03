@@ -436,6 +436,122 @@ class NonFoodPaymentController extends Controller
         }
     }
 
+    public function getPRItems($prId)
+    {
+        try {
+            // Get basic PR info
+            $pr = DB::table('purchase_requisitions as pr')
+                ->leftJoin('tbl_data_divisi as d', 'pr.division_id', '=', 'd.id')
+                ->leftJoin('tbl_data_outlet as o', 'pr.outlet_id', '=', 'o.id_outlet')
+                ->leftJoin('purchase_requisition_categories as prc', 'pr.category_id', '=', 'prc.id')
+                ->where('pr.id', $prId)
+                ->select(
+                    'pr.*',
+                    'd.nama_divisi as division_name',
+                    'o.nama_outlet as outlet_name',
+                    'prc.name as category_name',
+                    'prc.division as category_division',
+                    'prc.subcategory as category_subcategory',
+                    'prc.budget_type as category_budget_type'
+                )
+                ->first();
+
+            if (!$pr) {
+                return response()->json(['error' => 'Purchase Requisition not found'], 404);
+            }
+
+            // Get PR items
+            $items = DB::table('purchase_requisition_items as pri')
+                ->where('pri.purchase_requisition_id', $prId)
+                ->select(
+                    'pri.id',
+                    'pri.item_name',
+                    'pri.qty as quantity',
+                    'pri.unit',
+                    'pri.unit_price as price',
+                    'pri.subtotal as total'
+                )
+                ->get();
+
+            // Get PR attachments
+            $prAttachments = DB::table('purchase_requisition_attachments as pra')
+                ->leftJoin('users as u', 'pra.uploaded_by', '=', 'u.id')
+                ->where('pra.purchase_requisition_id', $prId)
+                ->select(
+                    'pra.id',
+                    'pra.file_name',
+                    'pra.file_path',
+                    'pra.mime_type as file_type',
+                    'pra.file_size',
+                    'pra.created_at',
+                    'u.nama_lengkap as uploader_name'
+                )
+                ->get();
+
+            // Group items by outlet (for PR, typically single outlet or global)
+            $itemsByOutlet = [];
+            
+            $outletId = $pr->outlet_id ?? 'global';
+            $outletName = $pr->outlet_name ?? 'Global / All Outlets';
+            
+            $itemsByOutlet[$outletId] = [
+                'outlet_id' => $pr->outlet_id,
+                'outlet_name' => $outletName,
+                'category_id' => $pr->category_id,
+                'category_name' => $pr->category_name,
+                'category_division' => $pr->category_division,
+                'category_subcategory' => $pr->category_subcategory,
+                'category_budget_type' => $pr->category_budget_type,
+                'pr_number' => $pr->pr_number,
+                'pr_title' => $pr->title,
+                'pr_description' => $pr->description,
+                'pr_attachments' => $prAttachments->map(function ($attachment) {
+                    return [
+                        'id' => $attachment->id,
+                        'file_name' => $attachment->file_name,
+                        'file_path' => $attachment->file_path,
+                        'file_type' => $attachment->file_type,
+                        'file_size' => $attachment->file_size,
+                        'created_at' => $attachment->created_at,
+                        'uploader_name' => $attachment->uploader_name
+                    ];
+                }),
+                'items' => $items->map(function ($item) {
+                    return [
+                        'id' => $item->id,
+                        'item_name' => $item->item_name,
+                        'quantity' => $item->quantity,
+                        'unit' => $item->unit,
+                        'price' => $item->price,
+                        'total' => $item->total,
+                    ];
+                }),
+                'subtotal' => $items->sum('total')
+            ];
+
+            return response()->json([
+                'pr' => $pr,
+                'items_by_outlet' => $itemsByOutlet,
+                'total_amount' => $items->sum('total'),
+                'pr_attachments' => $prAttachments->map(function ($attachment) {
+                    return [
+                        'id' => $attachment->id,
+                        'file_name' => $attachment->file_name,
+                        'file_path' => $attachment->file_path,
+                        'file_type' => $attachment->file_type,
+                        'file_size' => $attachment->file_size,
+                        'created_at' => $attachment->created_at
+                    ];
+                })
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'error' => 'Failed to load PR items: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
     public function store(Request $request)
     {
         $request->validate([
@@ -454,6 +570,11 @@ class NonFoodPaymentController extends Controller
         // Validate that at least one transaction is selected
         if (empty($request->purchase_order_ops_id) && empty($request->purchase_requisition_id)) {
             return back()->with('error', 'Pilih minimal satu transaksi (Purchase Order atau Purchase Requisition).');
+        }
+
+        // Validate supplier_id is required for all payments
+        if (empty($request->supplier_id)) {
+            return back()->with('error', 'Supplier harus dipilih untuk payment.');
         }
 
         // Check if PO already has a payment

@@ -250,9 +250,6 @@ onMounted(() => {
     fetchPRList();
     fetchSuppliers();
 });
-
-// Mode selector: 'pr_ops' or 'purchase_payment'
-const mode = ref('pr_ops');
 </script>
 
 <template>
@@ -279,28 +276,6 @@ const mode = ref('pr_ops');
       </div>
 
       <div class="bg-white rounded-xl shadow-lg p-6">
-        <!-- Mode Switch -->
-        <div class="mb-6 grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
-          <div class="md:col-span-1">
-            <label class="block text-sm font-medium text-gray-700 mb-2">Mode</label>
-            <select v-model="mode" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
-              <option value="pr_ops">Purchase Requisition Ops</option>
-              <option value="purchase_payment">Purchase Payment</option>
-            </select>
-          </div>
-          <div v-if="mode === 'purchase_payment'" class="md:col-span-2 p-3 bg-yellow-50 border border-yellow-200 rounded">
-            <div class="text-sm text-yellow-800">
-              Anda memilih mode Purchase Payment. Jika Anda ingin melakukan pembayaran atas PO yang sudah dibuat, silakan lanjutkan ke halaman pembayaran.
-            </div>
-            <div class="mt-2">
-              <a href="/purchase-payments" class="inline-flex items-center px-3 py-1 text-sm bg-yellow-600 text-white rounded hover:bg-yellow-700">
-                <i class="fa-solid fa-credit-card mr-2"></i> Buka Halaman Purchase Payment
-              </a>
-            </div>
-          </div>
-        </div>
-
-        <div v-if="mode === 'pr_ops'">
         <!-- PPN Toggle -->
         <div class="mb-6">
           <label class="flex items-center">
@@ -527,7 +502,6 @@ const mode = ref('pr_ops');
             <i v-else class="fas fa-plus mr-2"></i>
             {{ generatingPO ? 'Generating...' : 'Generate Purchase Orders' }}
           </button>
-        </div>
         </div>
       </div>
     </div>

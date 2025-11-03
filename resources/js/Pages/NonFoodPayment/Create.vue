@@ -42,23 +42,19 @@
         <div v-if="availablePRs.length > 0" class="bg-white rounded-2xl shadow-2xl p-6">
           <h2 class="text-xl font-bold text-gray-800 mb-4">Available Purchase Requisitions</h2>
           <div class="space-y-4">
-            <div v-for="pr in availablePRs" :key="pr.id" class="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 transition">
+            <div v-for="pr in availablePRs" :key="pr.id" class="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 transition cursor-pointer" @click="selectPR(pr)">
               <div class="flex items-center justify-between">
                 <div class="flex-1">
-                  <div class="flex items-center gap-4">
-                    <input 
-                      type="radio" 
-                      :id="`pr_${pr.id}`"
-                      :value="pr.id" 
-                      v-model="form.purchase_requisition_id"
-                      class="text-blue-600 focus:ring-blue-500"
-                    />
-                    <label :for="`pr_${pr.id}`" class="cursor-pointer flex-1">
-                      <div class="font-semibold text-gray-900">{{ pr.pr_number }}</div>
-                      <div class="text-sm text-gray-600">{{ pr.title }}</div>
-                      <div class="text-sm text-gray-500">{{ formatDate(pr.date) }} - {{ formatCurrency(pr.amount) }}</div>
-                    </label>
+                  <div class="font-semibold text-gray-900">{{ pr.pr_number }}</div>
+                  <div class="text-sm text-gray-600">{{ pr.title }}</div>
+                  <div class="text-sm text-gray-500">
+                    {{ formatDate(pr.date) }} - {{ formatCurrency(pr.amount) }}
                   </div>
+                </div>
+                <div class="text-right">
+                  <button type="button" class="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition">
+                    <i class="fa fa-arrow-right mr-1"></i> Pilih
+                  </button>
                 </div>
               </div>
             </div>
@@ -73,54 +69,58 @@
         </div>
       </div>
 
-      <!-- Step 2: Form Payment dengan Detail PO -->
-      <form v-if="selectedPO" @submit.prevent="submitForm" class="space-y-6">
-        <!-- PO Information -->
+      <!-- Step 2: Form Payment dengan Detail PO/PR -->
+      <form v-if="selectedPO || selectedPR" @submit.prevent="submitForm" class="space-y-6">
+        <!-- PO/PR Information -->
         <div class="bg-white rounded-2xl shadow-2xl p-6">
           <div class="flex justify-between items-center mb-4">
-            <h2 class="text-xl font-bold text-gray-800">Detail Purchase Order</h2>
-            <button type="button" @click="selectedPO = null" class="text-gray-500 hover:text-gray-700">
+            <h2 class="text-xl font-bold text-gray-800">{{ selectedPO ? 'Detail Purchase Order' : 'Detail Purchase Requisition' }}</h2>
+            <button type="button" @click="resetSelection" class="text-gray-500 hover:text-gray-700">
               <i class="fa fa-times"></i>
             </button>
           </div>
           
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
             <div>
-              <label class="block text-sm font-medium text-gray-700">PO Number</label>
-              <p class="mt-1 text-lg font-semibold text-gray-900">{{ selectedPO.number }}</p>
+              <label class="block text-sm font-medium text-gray-700">{{ selectedPO ? 'PO Number' : 'PR Number' }}</label>
+              <p class="mt-1 text-lg font-semibold text-gray-900">{{ selectedPO ? selectedPO.number : selectedPR.pr_number }}</p>
             </div>
-            <div>
+            <div v-if="selectedPO">
               <label class="block text-sm font-medium text-gray-700">Supplier</label>
               <p class="mt-1 text-gray-900">{{ selectedPO.supplier_name }}</p>
             </div>
             <div>
-              <label class="block text-sm font-medium text-gray-700">PO Date</label>
-              <p class="mt-1 text-gray-900">{{ formatDate(selectedPO.date) }}</p>
+              <label class="block text-sm font-medium text-gray-700">{{ selectedPO ? 'PO Date' : 'PR Date' }}</label>
+              <p class="mt-1 text-gray-900">{{ formatDate(selectedPO ? selectedPO.date : selectedPR.date) }}</p>
             </div>
             <div>
               <label class="block text-sm font-medium text-gray-700">Total Amount</label>
-              <p class="mt-1 text-lg font-bold text-green-600">{{ formatCurrency(selectedPO.grand_total) }}</p>
+              <p class="mt-1 text-lg font-bold text-green-600">{{ formatCurrency(selectedPO ? selectedPO.grand_total : selectedPR.amount) }}</p>
             </div>
-            <div v-if="selectedPO.source_pr_number">
+            <div v-if="selectedPO && selectedPO.source_pr_number">
               <label class="block text-sm font-medium text-gray-700">Source PR</label>
               <p class="mt-1 text-gray-900">{{ selectedPO.source_pr_number }}</p>
             </div>
-            <div v-if="selectedPO.pr_title">
-              <label class="block text-sm font-medium text-gray-700">PR Title</label>
-              <p class="mt-1 text-gray-900">{{ selectedPO.pr_title }}</p>
+            <div v-if="selectedPR && selectedPR.division_name">
+              <label class="block text-sm font-medium text-gray-700">Division</label>
+              <p class="mt-1 text-gray-900">{{ selectedPR.division_name }}</p>
             </div>
-            <div v-if="selectedPO.pr_description">
-              <label class="block text-sm font-medium text-gray-700">PR Description</label>
-              <p class="mt-1 text-gray-900">{{ selectedPO.pr_description }}</p>
+            <div v-if="(selectedPO && selectedPO.pr_title) || (selectedPR && selectedPR.title)">
+              <label class="block text-sm font-medium text-gray-700">Title</label>
+              <p class="mt-1 text-gray-900">{{ selectedPO ? selectedPO.pr_title : selectedPR.title }}</p>
+            </div>
+            <div v-if="(selectedPO && selectedPO.pr_description) || (selectedPR && selectedPR.description)">
+              <label class="block text-sm font-medium text-gray-700">Description</label>
+              <p class="mt-1 text-gray-900">{{ selectedPO ? selectedPO.pr_description : selectedPR.description }}</p>
             </div>
           </div>
 
           <!-- Attachments Section -->
-          <div v-if="poAttachments && poAttachments.length > 0" class="bg-white rounded-2xl shadow-2xl p-6">
+          <div v-if="(poAttachments && poAttachments.length > 0) || (prAttachments && prAttachments.length > 0)" class="bg-white rounded-2xl shadow-2xl p-6">
             <h3 class="text-lg font-semibold text-gray-800 mb-4">Attachments</h3>
             
             <!-- PO Attachments -->
-            <div v-if="poAttachments && poAttachments.length > 0" class="mb-6">
+            <div v-if="selectedPO && poAttachments && poAttachments.length > 0" class="mb-6">
               <h4 class="text-md font-medium text-gray-700 mb-3">Purchase Order Attachments</h4>
               <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 <div v-for="attachment in poAttachments" :key="`po-${attachment.id}`" class="border border-gray-200 rounded-lg p-3">
@@ -168,11 +168,60 @@
               </div>
             </div>
 
+            <!-- PR Attachments -->
+            <div v-if="selectedPR && prAttachments && prAttachments.length > 0" class="mb-6">
+              <h4 class="text-md font-medium text-gray-700 mb-3">Purchase Requisition Attachments</h4>
+              <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div v-for="attachment in prAttachments" :key="`pr-${attachment.id}`" class="border border-gray-200 rounded-lg p-3">
+                  <!-- Image Thumbnail -->
+                  <div v-if="isImageFile(attachment.file_name)" class="relative group cursor-pointer" @click="openLightbox(`/purchase-requisitions/attachments/${attachment.id}/view`, attachment.file_name)">
+                    <div class="aspect-square bg-gray-100 border border-gray-200 rounded-lg overflow-hidden hover:shadow-lg transition-all duration-200">
+                      <img
+                        :src="`/purchase-requisitions/attachments/${attachment.id}/view`"
+                        :alt="attachment.file_name"
+                        class="w-full h-full object-cover hover:scale-105 transition-transform duration-200"
+                        @click.stop="openLightbox(`/purchase-requisitions/attachments/${attachment.id}/view`, attachment.file_name)"
+                      />
+                    </div>
+                    <div class="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-all duration-200 flex items-center justify-center">
+                      <div class="opacity-0 group-hover:opacity-100 bg-white bg-opacity-90 text-gray-800 px-3 py-1 rounded-full text-sm transition-all duration-200 flex items-center gap-2">
+                        <i class="fas fa-search-plus"></i>
+                        <span>View</span>
+                      </div>
+                    </div>
+                    <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black to-transparent text-white p-2">
+                      <p class="text-xs truncate font-medium">{{ attachment.file_name }}</p>
+                    </div>
+                  </div>
+                  
+                  <!-- Non-Image Files -->
+                  <div v-else class="flex items-center gap-3">
+                    <div class="flex-shrink-0">
+                      <i class="fa fa-file text-gray-500 text-xl"></i>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                      <p class="text-sm font-medium text-gray-900 truncate">{{ attachment.file_name }}</p>
+                      <p class="text-xs text-gray-500">{{ formatFileSize(attachment.file_size) }}</p>
+                    </div>
+                    <div class="flex-shrink-0">
+                      <a 
+                        :href="attachment.file_path" 
+                        target="_blank" 
+                        class="text-blue-600 hover:text-blue-800 text-sm"
+                      >
+                        <i class="fa fa-download"></i>
+                      </a>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
           </div>
 
-          <!-- PO Items Grouped by Outlet -->
+          <!-- PO/PR Items Grouped by Outlet -->
           <div v-if="itemsByOutlet && Object.keys(itemsByOutlet).length > 0">
-            <h3 class="text-lg font-semibold text-gray-800 mb-4">Items per Outlet</h3>
+            <h3 class="text-lg font-semibold text-gray-800 mb-4">Items {{ selectedPO ? 'per Outlet' : '' }}</h3>
             
             <div v-for="(outletData, outletId) in itemsByOutlet" :key="outletId" class="mb-6">
               <!-- Outlet Header -->
@@ -292,7 +341,29 @@
           <h2 class="text-xl font-bold text-gray-800 mb-4">Informasi Payment</h2>
           
           <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <!-- Amount (Auto-filled from PO) -->
+            <!-- Supplier -->
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-2">Supplier *</label>
+              <select 
+                v-model="form.supplier_id" 
+                required 
+                :disabled="selectedPO"
+                class="w-full px-4 py-2 rounded-xl border border-gray-300 focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition disabled:bg-gray-100"
+              >
+                <option value="">Pilih Supplier</option>
+                <option v-for="supplier in suppliers" :key="supplier.id" :value="supplier.id">
+                  {{ supplier.name }}
+                </option>
+              </select>
+              <p v-if="selectedPO" class="mt-1 text-xs text-gray-500">
+                Supplier diambil dari Purchase Order
+              </p>
+              <p v-if="selectedPR" class="mt-1 text-xs text-gray-500">
+                Pilih supplier untuk payment ini
+              </p>
+            </div>
+
+            <!-- Amount (Auto-filled from PO/PR) -->
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-2">Amount *</label>
               <input 
@@ -420,10 +491,12 @@ const props = defineProps({
 
 const isSubmitting = ref(false);
 const selectedPO = ref(null);
+const selectedPR = ref(null);
 const poItems = ref([]);
 const itemsByOutlet = ref({});
 const loadingPOItems = ref(false);
 const poAttachments = ref([]);
+const prAttachments = ref([]);
 const lightboxImage = ref(null);
 const lightboxVisible = ref(false);
 
@@ -481,9 +554,11 @@ function closeLightbox() {
 
 function resetSelection() {
   selectedPO.value = null;
+  selectedPR.value = null;
   poItems.value = [];
   itemsByOutlet.value = {};
   poAttachments.value = [];
+  prAttachments.value = [];
   form.purchase_order_ops_id = null;
   form.purchase_requisition_id = null;
   form.supplier_id = '';
@@ -492,7 +567,9 @@ function resetSelection() {
 
 async function selectPO(po) {
   selectedPO.value = po;
+  selectedPR.value = null;
   form.purchase_order_ops_id = po.id;
+  form.purchase_requisition_id = null;
   form.supplier_id = po.supplier_id;
   form.amount = po.grand_total;
   
@@ -503,6 +580,7 @@ async function selectPO(po) {
     poItems.value = response.data.items || [];
     itemsByOutlet.value = response.data.items_by_outlet || {};
     poAttachments.value = response.data.po_attachments || [];
+    prAttachments.value = [];
     
     // Update amount with total from API if available
     if (response.data.total_amount) {
@@ -518,11 +596,54 @@ async function selectPO(po) {
   }
 }
 
+async function selectPR(pr) {
+  selectedPR.value = pr;
+  selectedPO.value = null;
+  form.purchase_requisition_id = pr.id;
+  form.purchase_order_ops_id = null;
+  form.supplier_id = ''; // PR tidak punya supplier, user harus pilih manual
+  form.amount = pr.amount;
+  
+  // Load PR items grouped by outlet
+  loadingPOItems.value = true;
+  try {
+    const response = await axios.get(`/non-food-payments/pr-items/${pr.id}`);
+    itemsByOutlet.value = response.data.items_by_outlet || {};
+    prAttachments.value = response.data.pr_attachments || [];
+    poAttachments.value = [];
+    
+    // Update amount with total from API if available
+    if (response.data.total_amount) {
+      form.amount = response.data.total_amount;
+    }
+    
+    // Update selectedPR with full data
+    if (response.data.pr) {
+      selectedPR.value = { ...selectedPR.value, ...response.data.pr };
+    }
+  } catch (error) {
+    console.error('Error loading PR items:', error);
+    import('sweetalert2').then(({ default: Swal }) => {
+      Swal.fire('Error', 'Gagal memuat detail Purchase Requisition', 'error');
+    });
+  } finally {
+    loadingPOItems.value = false;
+  }
+}
+
 function submitForm() {
   // Validate that at least one transaction is selected
   if (!form.purchase_order_ops_id && !form.purchase_requisition_id) {
     import('sweetalert2').then(({ default: Swal }) => {
       Swal.fire('Error', 'Pilih minimal satu transaksi (Purchase Order atau Purchase Requisition).', 'error');
+    });
+    return;
+  }
+
+  // Validate supplier_id is filled
+  if (!form.supplier_id) {
+    import('sweetalert2').then(({ default: Swal }) => {
+      Swal.fire('Error', 'Supplier harus dipilih.', 'error');
     });
     return;
   }

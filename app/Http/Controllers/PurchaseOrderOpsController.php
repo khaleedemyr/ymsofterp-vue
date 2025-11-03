@@ -120,6 +120,7 @@ class PurchaseOrderOpsController extends Controller
             ->join('purchase_requisition_items as items', 'pr.id', '=', 'items.purchase_requisition_id')
             ->leftJoin('purchase_order_ops_items as po_items', 'items.id', '=', 'po_items.pr_ops_item_id')
             ->where('pr.status', 'APPROVED')
+            ->where('pr.mode', 'pr_ops') // Only PR Ops mode
             ->groupBy('pr.id')
             ->havingRaw('COUNT(items.id) = COUNT(po_items.id)')
             ->pluck('pr.id')
@@ -130,6 +131,7 @@ class PurchaseOrderOpsController extends Controller
             ->join('purchase_requisition_items as items', 'pr.id', '=', 'items.purchase_requisition_id')
             ->leftJoin('tbl_data_divisi as d', 'pr.division_id', '=', 'd.id')
             ->where('pr.status', 'APPROVED') // Only approved PRs
+            ->where('pr.mode', 'pr_ops') // Only PR Ops mode
             ->whereNotIn('pr.id', $fullyProcessedPRs) // Exclude fully processed PRs
             ->whereNotIn('items.id', $poPrItemIds) // Exclude individual items already in PO
             ->select(
@@ -140,6 +142,8 @@ class PurchaseOrderOpsController extends Controller
                 'pr.title',
                 'pr.description',
                 'pr.amount',
+                'pr.mode',
+                'pr.status',
                 'items.id as item_id',
                 'items.item_name',
                 'items.qty',
@@ -190,6 +194,8 @@ class PurchaseOrderOpsController extends Controller
                     'title' => $first->title,
                     'description' => $first->description,
                     'amount' => $first->amount,
+                    'mode' => $first->mode ?? 'pr_ops',
+                    'status' => $first->status ?? 'APPROVED',
                     'attachments' => $attachments,
                     'items' => $group->map(function ($item) use ($first) {
                         return [
