@@ -8,6 +8,8 @@ use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
 use App\Services\ExtraOffService;
+use App\Services\LeaveManagementService;
+use App\Services\HolidayAttendanceService;
 
 class ApprovalController extends Controller
 {
@@ -542,13 +544,16 @@ class ApprovalController extends Controller
 
             DB::commit();
             
-            // After commit: deduct Extra Off balance if this is Extra Off leave
+            // After commit: deduct balance based on leave type
             try {
-                if ($approvalRequest->leave_type_name && strcasecmp(trim($approvalRequest->leave_type_name), 'Extra Off') === 0) {
+                $leaveTypeName = $approvalRequest->leave_type_name ? trim($approvalRequest->leave_type_name) : '';
+                $start = Carbon::parse($approvalRequest->date_from)->startOfDay();
+                $end = Carbon::parse($approvalRequest->date_to)->startOfDay();
+                $days = $start->diffInDays($end) + 1;
+                
+                if (strcasecmp($leaveTypeName, 'Extra Off') === 0) {
+                    // Deduct Extra Off balance
                     $extraOffService = app(ExtraOffService::class);
-                    $start = Carbon::parse($approvalRequest->date_from)->startOfDay();
-                    $end = Carbon::parse($approvalRequest->date_to)->startOfDay();
-                    $days = $start->diffInDays($end) + 1;
                     for ($i = 0; $i < $days; $i++) {
                         $useDate = $start->copy()->addDays($i)->format('Y-m-d');
                         try {
@@ -562,10 +567,57 @@ class ApprovalController extends Controller
                             ]);
                         }
                     }
+                } elseif (strcasecmp($leaveTypeName, 'Annual Leave') === 0) {
+                    // Deduct Annual Leave balance
+                    $leaveManagementService = app(LeaveManagementService::class);
+                    try {
+                        $result = $leaveManagementService->useLeave(
+                            $approvalRequest->user_id,
+                            $days,
+                            "Annual Leave approved HRD for period {$approvalRequest->date_from} - {$approvalRequest->date_to}",
+                            $userId
+                        );
+                        if (!$result['success']) {
+                            \Log::error('Failed to deduct annual leave balance on HRD approval', [
+                                'approval_request_id' => $id,
+                                'user_id' => $approvalRequest->user_id,
+                                'days' => $days,
+                                'error' => $result['error'] ?? 'Unknown error'
+                            ]);
+                        }
+                    } catch (\Throwable $t) {
+                        \Log::error('Exception when deducting annual leave balance on HRD approval', [
+                            'approval_request_id' => $id,
+                            'user_id' => $approvalRequest->user_id,
+                            'days' => $days,
+                            'error' => $t->getMessage()
+                        ]);
+                    }
+                } elseif (strcasecmp($leaveTypeName, 'Public Holiday') === 0) {
+                    // Deduct Public Holiday balance
+                    $holidayAttendanceService = app(HolidayAttendanceService::class);
+                    $useDate = $start->format('Y-m-d'); // Use the first date as reference
+                    try {
+                        $holidayAttendanceService->usePublicHolidayBalanceAuto(
+                            $approvalRequest->user_id,
+                            $days,
+                            $useDate,
+                            'fifo' // First In First Out strategy
+                        );
+                    } catch (\Throwable $t) {
+                        \Log::error('Failed to deduct public holiday balance on HRD approval', [
+                            'approval_request_id' => $id,
+                            'user_id' => $approvalRequest->user_id,
+                            'days' => $days,
+                            'use_date' => $useDate,
+                            'error' => $t->getMessage()
+                        ]);
+                    }
                 }
             } catch (\Throwable $e) {
-                \Log::error('Post-approval extra off deduction error', [
+                \Log::error('Post-approval balance deduction error', [
                     'approval_request_id' => $id,
+                    'leave_type' => $approvalRequest->leave_type_name ?? 'unknown',
                     'error' => $e->getMessage()
                 ]);
             }
