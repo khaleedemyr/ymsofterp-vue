@@ -15,7 +15,7 @@ class ContraBonController extends Controller
 {
     public function index(Request $request)
     {
-        $query = ContraBon::with(['supplier', 'purchaseOrder', 'retailFood', 'creator'])->orderByDesc('created_at');
+        $query = ContraBon::with(['supplier', 'purchaseOrder', 'retailFood', 'warehouseRetailFood', 'creator'])->orderByDesc('created_at');
 
         if ($request->search) {
             $search = $request->search;
@@ -89,9 +89,17 @@ class ContraBonController extends Controller
                     $contraBon->source_type_display = 'Unknown';
                 }
             } elseif ($contraBon->source_type === 'retail_food') {
-                $contraBon->source_numbers = [$contraBon->retailFood->retail_number ?? ''];
-                $contraBon->source_outlets = [$contraBon->retailFood->outlet_name ?? ''];
+                $retailFood = \App\Models\RetailFood::find($contraBon->source_id);
+                $contraBon->source_numbers = [$retailFood->retail_number ?? ''];
+                $contraBon->source_outlets = [$retailFood->outlet ? $retailFood->outlet->nama_outlet : ''];
                 $contraBon->source_type_display = 'Retail Food';
+            } elseif ($contraBon->source_type === 'warehouse_retail_food') {
+                $warehouseRetailFood = \App\Models\RetailWarehouseFood::find($contraBon->source_id);
+                $contraBon->source_numbers = [$warehouseRetailFood->retail_number ?? ''];
+                $warehouseName = $warehouseRetailFood->warehouse ? $warehouseRetailFood->warehouse->name : '';
+                $divisionName = $warehouseRetailFood->warehouseDivision ? $warehouseRetailFood->warehouseDivision->name : '';
+                $contraBon->source_outlets = [$warehouseName . ($divisionName ? ' - ' . $divisionName : '')];
+                $contraBon->source_type_display = 'Warehouse Retail Food';
             } else {
                 $contraBon->source_numbers = [];
                 $contraBon->source_outlets = [];
@@ -114,20 +122,31 @@ class ContraBonController extends Controller
 
     public function store(Request $request)
     {
-        $request->validate([
-            'po_id' => 'required',
+        $sourceType = $request->input('source_type', 'purchase_order');
+        
+        $rules = [
             'date' => 'required|date',
             'items' => 'required|array',
-            'items.*.item_id' => 'required|exists:items,id',
             'items.*.quantity' => 'required|numeric|min:0',
-            'items.*.unit_id' => 'required|exists:units,id',
             'items.*.price' => 'required|numeric|min:0',
             'notes' => 'nullable|string',
             'image' => 'nullable|image|max:2048',
             'supplier_invoice_number' => 'nullable|string|max:100',
-            'source_type' => 'nullable|in:purchase_order,retail_food',
-            'source_id' => 'nullable|integer',
-        ]);
+            'source_type' => 'nullable|in:purchase_order,retail_food,warehouse_retail_food',
+        ];
+        
+        // Conditional validation based on source_type
+        if ($sourceType === 'purchase_order') {
+            $rules['po_id'] = 'required|exists:purchase_order_foods,id';
+            $rules['gr_id'] = 'required|exists:food_good_receives,id';
+            $rules['items.*.item_id'] = 'required|exists:items,id';
+            $rules['items.*.unit_id'] = 'required|exists:units,id';
+        } else {
+            // For retail_food and warehouse_retail_food, item_id and unit_id are optional
+            $rules['source_id'] = 'required|integer';
+        }
+        
+        $request->validate($rules);
 
         DB::beginTransaction();
         try {
@@ -146,6 +165,11 @@ class ContraBonController extends Controller
             } elseif ($sourceType === 'retail_food') {
                 $retailFood = \App\Models\RetailFood::findOrFail($sourceId);
                 $supplierId = $retailFood->supplier_id;
+                $poId = null;
+                $grId = null;
+            } elseif ($sourceType === 'warehouse_retail_food') {
+                $warehouseRetailFood = \App\Models\RetailWarehouseFood::findOrFail($sourceId);
+                $supplierId = $warehouseRetailFood->supplier_id;
                 $poId = null;
                 $grId = null;
             }
@@ -192,16 +216,16 @@ class ContraBonController extends Controller
                 $itemId = $item['item_id'] ?? null;
                 $unitId = $item['unit_id'] ?? null;
                 
-                // Jika dari retail food dan tidak ada item_id, coba cari berdasarkan item_name
-                if ($sourceType === 'retail_food' && !$itemId && isset($item['item_name'])) {
+                // Jika dari retail food atau warehouse retail food dan tidak ada item_id, coba cari berdasarkan item_name
+                if (($sourceType === 'retail_food' || $sourceType === 'warehouse_retail_food') && !$itemId && isset($item['item_name'])) {
                     $foundItem = \DB::table('items')->where('name', $item['item_name'])->first();
                     if ($foundItem) {
                         $itemId = $foundItem->id;
                     }
                 }
                 
-                // Jika dari retail food dan tidak ada unit_id, coba cari berdasarkan unit_name
-                if ($sourceType === 'retail_food' && !$unitId && isset($item['unit_name'])) {
+                // Jika dari retail food atau warehouse retail food dan tidak ada unit_id, coba cari berdasarkan unit_name
+                if (($sourceType === 'retail_food' || $sourceType === 'warehouse_retail_food') && !$unitId && isset($item['unit_name'])) {
                     $foundUnit = \DB::table('units')->where('name', $item['unit_name'])->first();
                     if ($foundUnit) {
                         $unitId = $foundUnit->id;
@@ -306,9 +330,17 @@ class ContraBonController extends Controller
                 $contraBon->source_type_display = 'Unknown';
             }
         } elseif ($contraBon->source_type === 'retail_food') {
-            $contraBon->source_numbers = [$contraBon->retailFood->retail_number ?? ''];
-            $contraBon->source_outlets = [$contraBon->retailFood->outlet_name ?? ''];
+            $retailFood = \App\Models\RetailFood::find($contraBon->source_id);
+            $contraBon->source_numbers = [$retailFood->retail_number ?? ''];
+            $contraBon->source_outlets = [$retailFood->outlet ? $retailFood->outlet->nama_outlet : ''];
             $contraBon->source_type_display = 'Retail Food';
+        } elseif ($contraBon->source_type === 'warehouse_retail_food') {
+            $warehouseRetailFood = \App\Models\RetailWarehouseFood::find($contraBon->source_id);
+            $contraBon->source_numbers = [$warehouseRetailFood->retail_number ?? ''];
+            $warehouseName = $warehouseRetailFood->warehouse ? $warehouseRetailFood->warehouse->name : '';
+            $divisionName = $warehouseRetailFood->warehouseDivision ? $warehouseRetailFood->warehouseDivision->name : '';
+            $contraBon->source_outlets = [$warehouseName . ($divisionName ? ' - ' . $divisionName : '')];
+            $contraBon->source_type_display = 'Warehouse Retail Food';
         } else {
             $contraBon->source_numbers = [];
             $contraBon->source_outlets = [];
@@ -636,6 +668,73 @@ class ContraBonController extends Controller
         } catch (\Exception $e) {
             \Log::error('Error in getRetailFoodContraBon: ' . $e->getMessage());
             return response()->json(['error' => 'Gagal mengambil data Retail Food: ' . $e->getMessage()], 500);
+        }
+    }
+
+    // API: Get Warehouse Retail Food with contra bon payment method
+    public function getWarehouseRetailFoodContraBon()
+    {
+        try {
+            // Ambil semua retail_warehouse_food_id yang sudah ada di contra bon
+            $usedWarehouseRetailFoods = \DB::table('food_contra_bons')
+                ->where('source_type', 'warehouse_retail_food')
+                ->whereNotNull('source_id')
+                ->pluck('source_id')
+                ->toArray();
+
+            $warehouseRetailFoods = \DB::table('retail_warehouse_food as rwf')
+                ->join('suppliers as s', 'rwf.supplier_id', '=', 's.id')
+                ->join('users as creator', 'rwf.created_by', '=', 'creator.id')
+                ->leftJoin('warehouses as w', 'rwf.warehouse_id', '=', 'w.id')
+                ->leftJoin('warehouse_division as wd', 'rwf.warehouse_division_id', '=', 'wd.id')
+                ->where('rwf.payment_method', 'contra_bon')
+                ->where('rwf.status', 'approved')
+                ->whereNotIn('rwf.id', $usedWarehouseRetailFoods)
+                ->select(
+                    'rwf.id as retail_warehouse_food_id',
+                    'rwf.retail_number',
+                    'rwf.transaction_date',
+                    'rwf.total_amount',
+                    'rwf.notes',
+                    's.id as supplier_id',
+                    's.name as supplier_name',
+                    'creator.nama_lengkap as creator_name',
+                    'w.name as warehouse_name',
+                    'wd.name as warehouse_division_name'
+                )
+                ->orderByDesc('rwf.transaction_date')
+                ->get();
+
+            $result = [];
+            foreach ($warehouseRetailFoods as $row) {
+                $items = \DB::table('retail_warehouse_food_items as rwfi')
+                    ->where('rwfi.retail_warehouse_food_id', $row->retail_warehouse_food_id)
+                    ->select(
+                        'rwfi.id',
+                        'rwfi.item_name',
+                        'rwfi.unit as unit_name',
+                        'rwfi.qty',
+                        'rwfi.price'
+                    )
+                    ->get();
+                $result[] = [
+                    'retail_warehouse_food_id' => $row->retail_warehouse_food_id,
+                    'retail_number' => $row->retail_number,
+                    'transaction_date' => $row->transaction_date,
+                    'total_amount' => $row->total_amount,
+                    'notes' => $row->notes,
+                    'supplier_id' => $row->supplier_id,
+                    'supplier_name' => $row->supplier_name,
+                    'creator_name' => $row->creator_name,
+                    'warehouse_name' => $row->warehouse_name,
+                    'warehouse_division_name' => $row->warehouse_division_name,
+                    'items' => $items,
+                ];
+            }
+            return response()->json($result);
+        } catch (\Exception $e) {
+            \Log::error('Error in getWarehouseRetailFoodContraBon: ' . $e->getMessage());
+            return response()->json(['error' => 'Gagal mengambil data Warehouse Retail Food: ' . $e->getMessage()], 500);
         }
     }
 

@@ -24,15 +24,25 @@ const retailFoodList = ref([]);
 const selectedRetailFood = ref(null);
 const loadingRetailFood = ref(false);
 const selectedRetailFoodKey = ref('');
-const sourceType = ref('purchase_order'); // 'purchase_order' or 'retail_food'
+
+// Warehouse Retail Food variables
+const warehouseRetailFoodList = ref([]);
+const selectedWarehouseRetailFood = ref(null);
+const loadingWarehouseRetailFood = ref(false);
+const selectedWarehouseRetailFoodKey = ref('');
+
+const sourceType = ref('purchase_order'); // 'purchase_order', 'retail_food', or 'warehouse_retail_food'
 
 // Modal search functionality
 const showPOListModal = ref(false);
 const showRetailFoodModal = ref(false);
+const showWarehouseRetailFoodModal = ref(false);
 const poSearchQuery = ref('');
 const retailFoodSearchQuery = ref('');
+const warehouseRetailFoodSearchQuery = ref('');
 const filteredPOList = ref([]);
 const filteredRetailFoodList = ref([]);
+const filteredWarehouseRetailFoodList = ref([]);
 
 const form = useForm({
   date: props.contraBon?.date ? props.contraBon.date.substring(0, 10) : '',
@@ -86,6 +96,18 @@ onMounted(async () => {
       } finally {
         loadingRetailFood.value = false;
       }
+    
+    // Load Warehouse Retail Food data
+    loadingWarehouseRetailFood.value = true;
+    try {
+      const res = await axios.get('/api/contra-bon/warehouse-retail-food-contra-bon');
+      warehouseRetailFoodList.value = res.data;
+    } catch (e) {
+      console.error('Error loading warehouse retail food:', e);
+      Swal.fire('Error', 'Gagal mengambil data Warehouse Retail Food', 'error');
+    } finally {
+      loadingWarehouseRetailFood.value = false;
+    }
   } else {
     // Mode edit: set preview image jika ada
     if (props.contraBon?.image_path) {
@@ -125,6 +147,21 @@ function filterRetailFoodList() {
   );
 }
 
+function filterWarehouseRetailFoodList() {
+  if (!warehouseRetailFoodSearchQuery.value.trim()) {
+    filteredWarehouseRetailFoodList.value = warehouseRetailFoodList.value;
+    return;
+  }
+  
+  const query = warehouseRetailFoodSearchQuery.value.toLowerCase();
+  filteredWarehouseRetailFoodList.value = warehouseRetailFoodList.value.filter(rwf => 
+    rwf.retail_number.toLowerCase().includes(query) ||
+    rwf.supplier_name.toLowerCase().includes(query) ||
+    (rwf.warehouse_name && rwf.warehouse_name.toLowerCase().includes(query)) ||
+    (rwf.warehouse_division_name && rwf.warehouse_division_name.toLowerCase().includes(query))
+  );
+}
+
 // Modal functions
 function openPOListModal() {
   showPOListModal.value = true;
@@ -138,6 +175,12 @@ function openRetailFoodModal() {
   filteredRetailFoodList.value = retailFoodList.value;
 }
 
+function openWarehouseRetailFoodModal() {
+  showWarehouseRetailFoodModal.value = true;
+  warehouseRetailFoodSearchQuery.value = '';
+  filteredWarehouseRetailFoodList.value = warehouseRetailFoodList.value;
+}
+
 function closePOListModal() {
   showPOListModal.value = false;
   poSearchQuery.value = '';
@@ -146,6 +189,11 @@ function closePOListModal() {
 function closeRetailFoodModal() {
   showRetailFoodModal.value = false;
   retailFoodSearchQuery.value = '';
+}
+
+function closeWarehouseRetailFoodModal() {
+  showWarehouseRetailFoodModal.value = false;
+  warehouseRetailFoodSearchQuery.value = '';
 }
 
 function selectPOFromModal(po) {
@@ -212,6 +260,39 @@ function selectRetailFoodFromModal(rf) {
   }
   
   closeRetailFoodModal();
+}
+
+function selectWarehouseRetailFoodFromModal(rwf) {
+  selectedWarehouseRetailFood.value = rwf;
+  selectedWarehouseRetailFoodKey.value = rwf.retail_warehouse_food_id;
+  
+  if (rwf.items) {
+    form.items = rwf.items.map(item => ({
+      gr_item_id: null,
+      item_id: null,
+      po_item_id: null,
+      unit_id: null,
+      quantity: item.qty,
+      price: item.price,
+      notes: '',
+      item_name: item.item_name,
+      unit_name: item.unit_name,
+      _rowKey: Date.now() + '-' + Math.random(),
+    }));
+  } else {
+    form.items = [];
+  }
+  
+  // Fetch supplier detail
+  if (rwf.supplier_id) {
+    axios.get(`/api/suppliers/${rwf.supplier_id}`)
+      .then(res => supplierDetail.value = res.data)
+      .catch(() => supplierDetail.value = null);
+  } else {
+    supplierDetail.value = null;
+  }
+  
+  closeWarehouseRetailFoodModal();
 }
 
 async function onPOGRChange() {
@@ -327,15 +408,16 @@ function onSourceTypeChange() {
   // Reset selections when switching source type
   selectedPOGRKey.value = '';
   selectedRetailFoodKey.value = '';
+  selectedWarehouseRetailFoodKey.value = '';
   selectedPOGR.value = null;
   selectedRetailFood.value = null;
+  selectedWarehouseRetailFood.value = null;
   form.po_id = '';
   form.gr_id = '';
   form.items = [];
   supplierDetail.value = null;
   fileImage.value = null;
   fileImagePreview.value = null;
-  
 }
 
 function onFileChange(e) {
@@ -372,9 +454,15 @@ async function onSubmit() {
     fd.append('gr_id', form.gr_id);
     fd.append('notes', form.notes);
     fd.append('supplier_invoice_number', form.supplier_invoice_number);
-    fd.append('source_type', sourceType.value);
-    fd.append('source_id', sourceType.value === 'retail_food' ? selectedRetailFoodKey.value : '');
-    fd.append('image', fileImage.value);
+      fd.append('source_type', sourceType.value);
+      if (sourceType.value === 'retail_food') {
+        fd.append('source_id', selectedRetailFoodKey.value);
+      } else if (sourceType.value === 'warehouse_retail_food') {
+        fd.append('source_id', selectedWarehouseRetailFoodKey.value);
+      } else {
+        fd.append('source_id', '');
+      }
+      fd.append('image', fileImage.value);
     form.items.forEach((item, idx) => {
       Object.keys(item).forEach(key => {
         fd.append(`items[${idx}][${key}]`, item[key]);
@@ -403,7 +491,13 @@ async function onSubmit() {
   // Tanpa file, pakai inertia
   // Set source_type dan source_id ke form
   form.source_type = sourceType.value;
-  form.source_id = sourceType.value === 'retail_food' ? selectedRetailFoodKey.value : '';
+  if (sourceType.value === 'retail_food') {
+    form.source_id = selectedRetailFoodKey.value;
+  } else if (sourceType.value === 'warehouse_retail_food') {
+    form.source_id = selectedWarehouseRetailFoodKey.value;
+  } else {
+    form.source_id = '';
+  }
   
   if (isEdit.value) {
     form.put(`/contra-bons/${props.contraBon.id}`, {
@@ -446,7 +540,11 @@ function goBack() {
             </label>
             <label class="flex items-center">
               <input type="radio" v-model="sourceType" value="retail_food" @change="onSourceTypeChange" class="mr-2">
-              <span>Retail Food (Contra Bon)</span>
+              <span>Retail Food Outlet (Contra Bon)</span>
+            </label>
+            <label class="flex items-center">
+              <input type="radio" v-model="sourceType" value="warehouse_retail_food" @change="onSourceTypeChange" class="mr-2">
+              <span>Warehouse Retail Food (Contra Bon)</span>
             </label>
           </div>
         </div>
@@ -511,6 +609,36 @@ function goBack() {
           </div>
         </div>
 
+        <!-- Warehouse Retail Food Selection -->
+        <div v-if="sourceType === 'warehouse_retail_food'" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700">Warehouse Retail Food</label>
+            <div class="flex gap-2">
+              <input 
+                :value="selectedWarehouseRetailFood ? `${selectedWarehouseRetailFood.retail_number} - ${selectedWarehouseRetailFood.supplier_name}` : ''"
+                readonly
+                class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm bg-gray-50"
+                placeholder="Pilih Warehouse Retail Food - Supplier"
+              />
+              <button 
+                type="button" 
+                @click="openWarehouseRetailFoodModal"
+                class="mt-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 focus:ring-2 focus:ring-indigo-500"
+              >
+                <i class="fa fa-search"></i> Cari
+              </button>
+            </div>
+            <input type="hidden" v-model="form.po_id" />
+            <input type="hidden" v-model="form.gr_id" />
+            <div v-if="form.errors.po_id" class="text-xs text-red-500 mt-1">{{ form.errors.po_id }}</div>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700">Tanggal</label>
+            <input type="date" v-model="form.date" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500" />
+            <div v-if="form.errors.date" class="text-xs text-red-500 mt-1">{{ form.errors.date }}</div>
+          </div>
+        </div>
+
         <!-- Card Info PO & GR -->
         <div v-if="selectedPOGR" class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
           <div class="bg-blue-50 rounded-lg p-4 shadow">
@@ -558,6 +686,19 @@ function goBack() {
            <div v-if="selectedRetailFood.notes">Notes: {{ selectedRetailFood.notes }}</div>
          </div>
 
+        <!-- Card Info Warehouse Retail Food -->
+        <div v-if="selectedWarehouseRetailFood" class="bg-indigo-50 rounded-lg p-4 shadow mb-4">
+          <h3 class="font-bold mb-2">Info Warehouse Retail Food</h3>
+          <div>No. Warehouse Retail Food: {{ selectedWarehouseRetailFood.retail_number }}</div>
+          <div>Tanggal Transaksi: {{ selectedWarehouseRetailFood.transaction_date }}</div>
+          <div>Warehouse: <b>{{ selectedWarehouseRetailFood.warehouse_name || '-' }}</b></div>
+          <div>Warehouse Division: <b>{{ selectedWarehouseRetailFood.warehouse_division_name || '-' }}</b></div>
+          <div>Supplier: <b>{{ selectedWarehouseRetailFood.supplier_name }}</b></div>
+          <div>Dibuat oleh: {{ selectedWarehouseRetailFood.creator_name }}</div>
+          <div>Total Amount: <b>{{ formatCurrency(selectedWarehouseRetailFood.total_amount) }}</b></div>
+          <div v-if="selectedWarehouseRetailFood.notes">Notes: {{ selectedWarehouseRetailFood.notes }}</div>
+        </div>
+
         <!-- Card Info Supplier -->
         <div v-if="supplierDetail" class="bg-yellow-50 rounded-lg p-4 shadow mb-4">
           <h3 class="font-bold mb-2">Info Supplier</h3>
@@ -591,7 +732,7 @@ function goBack() {
            <label class="block text-sm font-medium text-gray-700 mb-2">Detail Item</label>
            <div class="overflow-x-auto">
              <!-- Loading spinner for items -->
-             <div v-if="loadingRetailFood" class="flex justify-center items-center py-8">
+             <div v-if="loadingRetailFood || loadingWarehouseRetailFood" class="flex justify-center items-center py-8">
                <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
                <span class="ml-2 text-gray-600">Memuat data item...</span>
              </div>
@@ -614,13 +755,13 @@ function goBack() {
                  </tr>
                  <tr v-for="(item, idx) in form.items" :key="item._rowKey || idx">
                    <td class="px-3 py-2 min-w-[200px]">
-                     {{ isEdit ? (item.item?.name || '-') : (sourceType === 'retail_food' ? (item.item_name || '-') : (selectedPOGR?.items.find(i => i.item_id === item.item_id)?.item_name || '-')) }}
+                     {{ isEdit ? (item.item?.name || '-') : (sourceType === 'retail_food' || sourceType === 'warehouse_retail_food' ? (item.item_name || '-') : (selectedPOGR?.items.find(i => i.item_id === item.item_id)?.item_name || '-')) }}
                    </td>
                    <td class="px-3 py-2 min-w-[100px]">
                      {{ item.quantity }}
                    </td>
                    <td class="px-3 py-2 min-w-[100px]">
-                     {{ sourceType === 'retail_food' ? (item.unit_name || '-') : (selectedPOGR?.items.find(i => i.item_id === item.item_id)?.unit_name || item.unit?.name || '-') }}
+                     {{ (sourceType === 'retail_food' || sourceType === 'warehouse_retail_food') ? (item.unit_name || '-') : (selectedPOGR?.items.find(i => i.item_id === item.item_id)?.unit_name || item.unit?.name || '-') }}
                    </td>
                    <td class="px-3 py-2 min-w-[100px]">
                      {{ formatCurrency(item.price) }}
@@ -746,6 +887,57 @@ function goBack() {
                 <div class="text-right">
                   <div class="text-sm text-gray-500">Retail Food</div>
                   <div class="text-sm text-gray-500">{{ rf.transaction_date }}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal Warehouse Retail Food List -->
+    <div v-if="showWarehouseRetailFoodModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div class="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[80vh] flex flex-col">
+        <div class="p-6 border-b">
+          <div class="flex justify-between items-center">
+            <h3 class="text-lg font-semibold">Pilih Warehouse Retail Food</h3>
+            <button @click="closeWarehouseRetailFoodModal" class="text-gray-500 hover:text-gray-700">
+              <i class="fa fa-times"></i>
+            </button>
+          </div>
+          <div class="mt-4">
+            <input 
+              v-model="warehouseRetailFoodSearchQuery" 
+              @input="filterWarehouseRetailFoodList"
+              type="text" 
+              class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" 
+              placeholder="Cari Warehouse Retail Food, Supplier, atau Warehouse..."
+            />
+          </div>
+        </div>
+        <div class="flex-1 overflow-y-auto">
+          <div v-if="filteredWarehouseRetailFoodList.length === 0" class="p-8 text-center text-gray-500">
+            Tidak ada data yang ditemukan
+          </div>
+          <div v-else class="divide-y divide-gray-200">
+            <div 
+              v-for="rwf in filteredWarehouseRetailFoodList" 
+              :key="rwf.retail_warehouse_food_id" 
+              @click="selectWarehouseRetailFoodFromModal(rwf)"
+              class="p-4 cursor-pointer hover:bg-indigo-50 transition-colors"
+            >
+              <div class="flex items-center gap-3">
+                <span class="text-indigo-500 text-xl">🟦</span>
+                <div class="flex-1">
+                  <div class="font-semibold text-lg">{{ rwf.retail_number }}</div>
+                  <div class="text-gray-600">{{ rwf.supplier_name }}</div>
+                  <div v-if="rwf.warehouse_name || rwf.warehouse_division_name" class="text-sm text-indigo-600 mt-1">
+                    <i class="fa fa-map-marker-alt"></i> {{ rwf.warehouse_name || '' }}{{ rwf.warehouse_name && rwf.warehouse_division_name ? ' - ' : '' }}{{ rwf.warehouse_division_name || '' }}
+                  </div>
+                </div>
+                <div class="text-right">
+                  <div class="text-sm text-gray-500">Warehouse Retail Food</div>
+                  <div class="text-sm text-gray-500">{{ rwf.transaction_date }}</div>
                 </div>
               </div>
             </div>
