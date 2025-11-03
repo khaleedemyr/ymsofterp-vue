@@ -37,14 +37,47 @@ const modalStatusFilter = ref('');
 const modalDateFrom = ref('');
 const modalDateTo = ref('');
 
+const dataLoaded = ref(false);
+const loadingData = ref(false);
+
+const loadData = async () => {
+  if (loadingData.value) return;
+  
+  loadingData.value = true;
+  dataLoaded.value = true;
+  
+  try {
+    const filterState = {
+      search: search.value,
+      status: selectedStatus.value,
+      from: from.value,
+      to: to.value,
+      perPage: perPage.value,
+      load: 'true'
+    };
+    
+    sessionStorage.setItem('po-foods-filters', JSON.stringify(filterState));
+    
+    router.get('/po-foods', filterState, { preserveState: true, replace: true });
+  } catch (error) {
+    console.error('Error loading data:', error);
+    Swal.fire('Error', 'Gagal memuat data', 'error');
+  } finally {
+    loadingData.value = false;
+  }
+};
+
 const debouncedSearch = debounce(() => {
+  if (!dataLoaded.value) return; // Jangan auto-search jika belum load data
+  
   // Simpan filter state ke sessionStorage
   const filterState = {
     search: search.value,
     status: selectedStatus.value,
     from: from.value,
     to: to.value,
-    perPage: perPage.value
+    perPage: perPage.value,
+    load: 'true'
   };
   sessionStorage.setItem('po-foods-filters', JSON.stringify(filterState));
   
@@ -71,7 +104,7 @@ function clearFilters() {
   from.value = '';
   to.value = '';
   perPage.value = 10;
-  debouncedSearch();
+  dataLoaded.value = false;
 }
 
 // Fetch PO yang pending GM Finance approval
@@ -463,9 +496,21 @@ watch(() => props.filters, (newFilters) => {
     from.value = newFilters.from || '';
     to.value = newFilters.to || '';
     perPage.value = newFilters.perPage || 10;
+    
+    // Jika ada purchaseOrders di props, berarti data sudah loaded
+    if (props.purchaseOrders) {
+      dataLoaded.value = true;
+    }
   } else {
     // Jika tidak ada filter dari props, coba pulihkan dari sessionStorage
     restoreFilterState();
+  }
+}, { immediate: true });
+
+// Watch untuk purchaseOrders props
+watch(() => props.purchaseOrders, (newData) => {
+  if (newData) {
+    dataLoaded.value = true;
   }
 }, { immediate: true });
 
@@ -489,6 +534,11 @@ onMounted(() => {
     // Jika tidak ada filter dari props, coba pulihkan dari sessionStorage
     if (!props.filters || Object.keys(props.filters).length === 0) {
         restoreFilterState();
+    }
+    
+    // Jika ada purchaseOrders di props, berarti data sudah loaded
+    if (props.purchaseOrders) {
+        dataLoaded.value = true;
     }
     
     // Simpan filter state awal
@@ -547,6 +597,16 @@ onMounted(() => {
                         <i class="fas fa-undo mr-2"></i>
                         Clear Filter
                     </button>
+                    <!-- Tombol Load Data -->
+                    <button 
+                        @click="loadData"
+                        :disabled="loadingData"
+                        class="px-4 py-2 rounded-xl bg-gradient-to-r from-green-500 to-green-700 text-white hover:from-green-600 hover:to-green-800 transition font-semibold shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                    >
+                        <i v-if="loadingData" class="fa fa-spinner fa-spin"></i>
+                        <i v-else class="fas fa-database mr-1"></i>
+                        {{ loadingData ? 'Loading...' : 'Load Data' }}
+                    </button>
                     <!-- Tombol Pending GM Finance -->
                     <button 
                         v-if="canApproveGMFinance()"
@@ -562,11 +622,28 @@ onMounted(() => {
                 <div class="w-full px-0">
                     <div class="bg-white overflow-hidden shadow-xl rounded-none p-0">
                         <!-- PO List -->
-                        <div v-if="loading" class="flex justify-center items-center py-8">
-                            <svg class="animate-spin h-8 w-8 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                            </svg>
+                        <div v-if="loadingData" class="flex justify-center items-center py-8">
+                            <div class="text-center">
+                                <svg class="animate-spin h-8 w-8 text-blue-600 mx-auto mb-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                <p class="text-gray-600">Memuat data...</p>
+                            </div>
+                        </div>
+                        <div v-else-if="!dataLoaded" class="flex justify-center items-center py-12">
+                            <div class="text-center">
+                                <i class="fas fa-database text-6xl text-gray-300 mb-4"></i>
+                                <p class="text-gray-600 text-lg mb-2">Data belum dimuat</p>
+                                <p class="text-gray-500 text-sm mb-4">Silakan isi filter dan klik tombol "Load Data" untuk menampilkan data</p>
+                                <button 
+                                    @click="loadData"
+                                    class="px-6 py-2 rounded-xl bg-gradient-to-r from-green-500 to-green-700 text-white hover:from-green-600 hover:to-green-800 transition font-semibold shadow-lg"
+                                >
+                                    <i class="fas fa-database mr-2"></i>
+                                    Load Data
+                                </button>
+                            </div>
                         </div>
                         <div v-else>
                             <div class="bg-white rounded-2xl shadow-2xl overflow-x-auto transition-all">

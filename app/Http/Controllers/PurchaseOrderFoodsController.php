@@ -19,99 +19,107 @@ class PurchaseOrderFoodsController extends Controller
 {
     public function index()
     {
-        $query = DB::table('purchase_order_foods as po')
-            ->leftJoin('food_good_receives as gr', 'po.id', '=', 'gr.po_id')
-            ->leftJoin('suppliers as s', 'po.supplier_id', '=', 's.id')
-            ->leftJoin('users as creator', 'po.created_by', '=', 'creator.id')
-            ->leftJoin('users as pm', 'po.purchasing_manager_approved_by', '=', 'pm.id')
-            ->leftJoin('users as gm', 'po.gm_finance_approved_by', '=', 'gm.id')
-            ->select(
-                'po.*',
-                'gr.gr_number',
-                's.name as supplier_name',
-                'creator.nama_lengkap as creator_name',
-                'pm.nama_lengkap as purchasing_manager_name',
-                'gm.nama_lengkap as gm_finance_name'
-            )
-            ->orderBy('po.created_at', 'desc');
+        // Jika ada parameter load=true, baru query data
+        // Jika tidak, hanya return form kosong dengan purchaseOrders = null
+        $shouldLoad = request('load') === 'true';
+        
+        $purchaseOrders = null;
+        
+        if ($shouldLoad) {
+            $query = DB::table('purchase_order_foods as po')
+                ->leftJoin('food_good_receives as gr', 'po.id', '=', 'gr.po_id')
+                ->leftJoin('suppliers as s', 'po.supplier_id', '=', 's.id')
+                ->leftJoin('users as creator', 'po.created_by', '=', 'creator.id')
+                ->leftJoin('users as pm', 'po.purchasing_manager_approved_by', '=', 'pm.id')
+                ->leftJoin('users as gm', 'po.gm_finance_approved_by', '=', 'gm.id')
+                ->select(
+                    'po.*',
+                    'gr.gr_number',
+                    's.name as supplier_name',
+                    'creator.nama_lengkap as creator_name',
+                    'pm.nama_lengkap as purchasing_manager_name',
+                    'gm.nama_lengkap as gm_finance_name'
+                )
+                ->orderBy('po.created_at', 'desc');
 
-        if (request('search')) {
-            $search = request('search');
-            $query->where(function($q) use ($search) {
-                $q->where('po.number', 'like', '%' . $search . '%')
-                  ->orWhere('s.name', 'like', '%' . $search . '%')
-                  ->orWhere('gr.gr_number', 'like', '%' . $search . '%');
+            if (request('search')) {
+                $search = request('search');
+                $query->where(function($q) use ($search) {
+                    $q->where('po.number', 'like', '%' . $search . '%')
+                      ->orWhere('s.name', 'like', '%' . $search . '%')
+                      ->orWhere('gr.gr_number', 'like', '%' . $search . '%');
+                });
+            }
+            if (request('status')) {
+                $query->where('po.status', request('status'));
+            }
+            if (request('from')) {
+                $query->whereDate('po.date', '>=', request('from'));
+            }
+            if (request('to')) {
+                $query->whereDate('po.date', '<=', request('to'));
+            }
+
+            $perPage = request('perPage', 10);
+            $purchaseOrders = $query->paginate($perPage)->withQueryString();
+            $purchaseOrders->getCollection()->transform(function ($po) {
+                // Convert to object if it's an array
+                if (is_array($po)) {
+                    $po = (object) $po;
+                }
+                
+                // Get source information
+                if ($po->source_type === 'pr_foods' || !$po->source_type) {
+                    // For PR Foods or legacy PO without source_type, get PR numbers
+                    $prNumbers = DB::table('pr_foods as pr')
+                        ->join('pr_food_items as pri', 'pr.id', '=', 'pri.pr_food_id')
+                        ->join('purchase_order_food_items as poi', 'pri.id', '=', 'poi.pr_food_item_id')
+                        ->where('poi.purchase_order_food_id', $po->id)
+                        ->distinct()
+                        ->pluck('pr.pr_number')
+                        ->toArray();
+                    $po->source_numbers = $prNumbers;
+                    $po->source_outlets = []; // PR Foods tidak punya outlet
+                } elseif ($po->source_type === 'ro_supplier') {
+                    // Get RO Supplier numbers and outlet names
+                    $roData = DB::table('food_floor_orders as fo')
+                        ->join('purchase_order_food_items as poi', 'fo.id', '=', 'poi.ro_id')
+                        ->leftJoin('tbl_data_outlet as o', 'fo.id_outlet', '=', 'o.id_outlet')
+                        ->where('poi.purchase_order_food_id', $po->id)
+                        ->select('fo.order_number', 'o.nama_outlet')
+                        ->distinct()
+                        ->get();
+                    
+                    $po->source_numbers = $roData->pluck('order_number')->unique()->filter()->toArray();
+                    $po->source_outlets = $roData->pluck('nama_outlet')->unique()->filter()->toArray();
+                } else {
+                    $po->source_numbers = [];
+                    $po->source_outlets = [];
+                }
+                
+                // Format supplier data
+                $po->supplier = (object) [
+                    'name' => $po->supplier_name
+                ];
+                
+                // Format creator data
+                $po->creator = (object) [
+                    'nama_lengkap' => $po->creator_name
+                ];
+                
+                // Format purchasing manager data
+                $po->purchasing_manager = $po->purchasing_manager_name ? (object) [
+                    'nama_lengkap' => $po->purchasing_manager_name
+                ] : null;
+                
+                // Format GM finance data
+                $po->gm_finance = $po->gm_finance_name ? (object) [
+                    'nama_lengkap' => $po->gm_finance_name
+                ] : null;
+                
+                return $po;
             });
         }
-        if (request('status')) {
-            $query->where('po.status', request('status'));
-        }
-        if (request('from')) {
-            $query->whereDate('po.date', '>=', request('from'));
-        }
-        if (request('to')) {
-            $query->whereDate('po.date', '<=', request('to'));
-        }
-
-        $perPage = request('perPage', 10);
-        $purchaseOrders = $query->paginate($perPage)->withQueryString();
-        $purchaseOrders->getCollection()->transform(function ($po) {
-            // Convert to object if it's an array
-            if (is_array($po)) {
-                $po = (object) $po;
-            }
-            
-            // Get source information
-            if ($po->source_type === 'pr_foods' || !$po->source_type) {
-                // For PR Foods or legacy PO without source_type, get PR numbers
-                $prNumbers = DB::table('pr_foods as pr')
-                    ->join('pr_food_items as pri', 'pr.id', '=', 'pri.pr_food_id')
-                    ->join('purchase_order_food_items as poi', 'pri.id', '=', 'poi.pr_food_item_id')
-                    ->where('poi.purchase_order_food_id', $po->id)
-                    ->distinct()
-                    ->pluck('pr.pr_number')
-                    ->toArray();
-                $po->source_numbers = $prNumbers;
-                $po->source_outlets = []; // PR Foods tidak punya outlet
-            } elseif ($po->source_type === 'ro_supplier') {
-                // Get RO Supplier numbers and outlet names
-                $roData = DB::table('food_floor_orders as fo')
-                    ->join('purchase_order_food_items as poi', 'fo.id', '=', 'poi.ro_id')
-                    ->leftJoin('tbl_data_outlet as o', 'fo.id_outlet', '=', 'o.id_outlet')
-                    ->where('poi.purchase_order_food_id', $po->id)
-                    ->select('fo.order_number', 'o.nama_outlet')
-                    ->distinct()
-                    ->get();
-                
-                $po->source_numbers = $roData->pluck('order_number')->unique()->filter()->toArray();
-                $po->source_outlets = $roData->pluck('nama_outlet')->unique()->filter()->toArray();
-            } else {
-                $po->source_numbers = [];
-                $po->source_outlets = [];
-            }
-            
-            // Format supplier data
-            $po->supplier = (object) [
-                'name' => $po->supplier_name
-            ];
-            
-            // Format creator data
-            $po->creator = (object) [
-                'nama_lengkap' => $po->creator_name
-            ];
-            
-            // Format purchasing manager data
-            $po->purchasing_manager = $po->purchasing_manager_name ? (object) [
-                'nama_lengkap' => $po->purchasing_manager_name
-            ] : null;
-            
-            // Format GM finance data
-            $po->gm_finance = $po->gm_finance_name ? (object) [
-                'nama_lengkap' => $po->gm_finance_name
-            ] : null;
-            
-            return $po;
-        });
 
         return inertia('PurchaseOrder/PurchaseOrderFoods', [
             'purchaseOrders' => $purchaseOrders,
