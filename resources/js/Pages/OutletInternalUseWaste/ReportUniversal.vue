@@ -210,6 +210,7 @@ function typeLabel(type) {
   if (type === 'marketing') return 'Marketing';
   if (type === 'non_commodity') return 'Non Commodity';
   if (type === 'guest_supplies') return 'Guest Supplies';
+  if (type === 'wrong_maker') return 'Wrong Maker';
   return type;
 }
 function goBack() {

@@ -323,6 +323,14 @@
             <h3 class="text-lg font-medium text-gray-900 mb-4">Approval Flow</h3>
             <p class="text-sm text-gray-600 mb-4">Add approvers in order from lowest to highest level. The first approver will be the lowest level, and the last approver will be the highest level.</p>
             
+            <!-- Warning for Purchase Payment Mode -->
+            <div v-if="form.mode === 'purchase_payment'" class="mb-4 p-3 bg-yellow-50 border border-yellow-300 rounded-lg">
+              <p class="text-sm font-medium text-yellow-800">
+                <i class="fa fa-exclamation-triangle mr-2"></i>
+                Wajib menyertakan GM Finance sebagai Approver
+              </p>
+            </div>
+            
             <!-- Add Approver Input -->
             <div class="mb-4">
               <div class="relative">

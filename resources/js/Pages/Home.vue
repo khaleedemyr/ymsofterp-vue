@@ -46,6 +46,13 @@ const pendingPoOpsApprovals = ref([]);
 const loadingPoOpsApprovals = ref(false);
 const showPoOpsApprovalModal = ref(false);
 const selectedPoOpsApproval = ref(null);
+
+// Category Cost Outlet approvals
+const pendingCategoryCostApprovals = ref([]);
+const loadingCategoryCostApprovals = ref(false);
+const showCategoryCostApprovalModal = ref(false);
+const selectedCategoryCostApproval = ref(null);
+const categoryCostApprovalRejectionReason = ref('');
 const poOpsApprovalBudgetInfo = ref(null);
 // PO Ops - All list modal
 const showAllPoOpsModal = ref(false);
@@ -627,6 +634,21 @@ async function loadPendingPrApprovals() {
     }
 }
 
+// Load Category Cost Outlet approvals
+async function loadPendingCategoryCostApprovals() {
+    loadingCategoryCostApprovals.value = true;
+    try {
+        const response = await axios.get('/outlet-internal-use-waste/approvals/pending');
+        if (response.data.success) {
+            pendingCategoryCostApprovals.value = response.data.headers;
+        }
+    } catch (error) {
+        console.error('Error loading pending Category Cost approvals:', error);
+    } finally {
+        loadingCategoryCostApprovals.value = false;
+    }
+}
+
 // Load Purchase Order Ops approvals
 async function loadPendingPoOpsApprovals() {
     loadingPoOpsApprovals.value = true;
@@ -822,6 +844,92 @@ async function rejectPr(prId, reason) {
         console.error('Error rejecting PR:', error);
         Swal.fire('Error', 'Gagal menolak Purchase Requisition', 'error');
     }
+}
+
+// Category Cost Outlet approval functions
+async function showCategoryCostApprovalDetails(headerId) {
+    try {
+        const response = await axios.get(`/api/outlet-internal-use-waste/${headerId}/approval-details`);
+        if (response.data.success) {
+            selectedCategoryCostApproval.value = response.data;
+            showCategoryCostApprovalModal.value = true;
+        }
+    } catch (error) {
+        console.error('Error loading Category Cost approval details:', error);
+        Swal.fire('Error', 'Gagal memuat detail Category Cost Outlet', 'error');
+    }
+}
+
+async function approveCategoryCost(headerId) {
+    try {
+        const response = await axios.post(`/outlet-internal-use-waste/${headerId}/approve`);
+        if (response.data.success) {
+            Swal.fire('Success', response.data.message, 'success');
+            showCategoryCostApprovalModal.value = false;
+            loadPendingCategoryCostApprovals(); // Reload the list
+        } else {
+            Swal.fire('Error', response.data.message || 'Gagal menyetujui Category Cost Outlet', 'error');
+        }
+    } catch (error) {
+        console.error('Error approving Category Cost:', error);
+        Swal.fire('Error', error.response?.data?.message || 'Gagal menyetujui Category Cost Outlet', 'error');
+    }
+}
+
+async function rejectCategoryCost(headerId, reason) {
+    try {
+        const response = await axios.post(`/outlet-internal-use-waste/${headerId}/reject`, {
+            rejection_reason: reason
+        });
+        if (response.data.success) {
+            Swal.fire('Success', 'Category Cost Outlet berhasil ditolak', 'success');
+            showCategoryCostApprovalModal.value = false;
+            loadPendingCategoryCostApprovals(); // Reload the list
+        } else {
+            Swal.fire('Error', response.data.message || 'Gagal menolak Category Cost Outlet', 'error');
+        }
+    } catch (error) {
+        console.error('Error rejecting Category Cost:', error);
+        Swal.fire('Error', error.response?.data?.message || 'Gagal menolak Category Cost Outlet', 'error');
+    }
+}
+
+function showRejectCategoryCostModal(headerId) {
+    Swal.fire({
+        title: 'Tolak Category Cost Outlet',
+        input: 'textarea',
+        inputLabel: 'Alasan Penolakan',
+        inputPlaceholder: 'Masukkan alasan penolakan...',
+        inputAttributes: {
+            'aria-label': 'Masukkan alasan penolakan'
+        },
+        showCancelButton: true,
+        confirmButtonText: 'Tolak',
+        cancelButtonText: 'Batal',
+        confirmButtonColor: '#EF4444',
+        cancelButtonColor: '#6B7280',
+        inputValidator: (value) => {
+            if (!value) {
+                return 'Anda harus mengisi alasan penolakan!';
+            }
+        }
+    }).then((result) => {
+        if (result.isConfirmed) {
+            rejectCategoryCost(headerId, result.value);
+        }
+    });
+}
+
+function typeLabelCategoryCost(type) {
+    if (type === 'internal_use') return 'Internal Use';
+    if (type === 'spoil') return 'Spoil';
+    if (type === 'waste') return 'Waste';
+    if (type === 'r_and_d') return 'R & D';
+    if (type === 'marketing') return 'Marketing';
+    if (type === 'non_commodity') return 'Non Commodity';
+    if (type === 'guest_supplies') return 'Guest Supplies';
+    if (type === 'wrong_maker') return 'Wrong Maker';
+    return type;
 }
 
 // File operations for attachments
@@ -3228,6 +3336,7 @@ onMounted(() => {
     loadPendingApprovals();
     loadPendingPrApprovals();
     loadPendingPoOpsApprovals();
+    loadPendingCategoryCostApprovals();
     loadPendingMovementApprovals();
     loadLeaveNotifications();
     loadPendingHrdApprovals();
@@ -3834,6 +3943,68 @@ watch(locale, () => {
                     </div>
                 </div>
 
+                <!-- Category Cost Outlet Approval Section -->
+                <div v-if="pendingCategoryCostApprovals.length > 0" class="flex-shrink-0 mb-4">
+                    <div class="backdrop-blur-md rounded-2xl shadow-2xl border p-4 transition-all duration-500 animate-fade-in hover:shadow-3xl"
+                        :class="isNight ? 'bg-slate-800/90 border-slate-600/50' : 'bg-white/90 border-white/20'">
+                        <div class="flex items-center justify-between mb-3">
+                            <div class="flex items-center gap-2">
+                                <div class="w-3 h-3 rounded-full bg-purple-500 animate-pulse"></div>
+                                <h3 class="text-lg font-bold" :class="isNight ? 'text-white' : 'text-slate-800'">
+                                    <i class="fa fa-recycle mr-2 text-purple-500"></i>
+                                    Category Cost Outlet Approval
+                                </h3>
+                            </div>
+                            <div class="bg-purple-500 text-white text-xs font-bold px-2 py-1 rounded-full">
+                                {{ pendingCategoryCostApprovals.length }}
+                            </div>
+                        </div>
+                        
+                        <div v-if="loadingCategoryCostApprovals" class="text-center py-4">
+                            <div class="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-purple-500"></div>
+                            <p class="text-sm mt-2" :class="isNight ? 'text-slate-300' : 'text-slate-600'">Memuat data...</p>
+                        </div>
+                        
+                        <div v-else class="space-y-2">
+                            <!-- Category Cost Outlet Approvals -->
+                            <div v-for="header in pendingCategoryCostApprovals.slice(0, 3)" :key="'category-cost-approval-' + header.id"
+                                @click="showCategoryCostApprovalDetails(header.id)"
+                                class="p-3 rounded-lg cursor-pointer transition-all duration-200 hover:scale-105"
+                                :class="isNight ? 'bg-slate-700/50 hover:bg-slate-600/50' : 'bg-purple-50 hover:bg-purple-100'">
+                                <div class="flex items-center justify-between">
+                                    <div class="flex-1">
+                                        <div class="font-semibold text-sm" :class="isNight ? 'text-white' : 'text-slate-800'">
+                                            {{ header.number || 'N/A' }}
+                                        </div>
+                                        <div class="text-xs" :class="isNight ? 'text-slate-300' : 'text-slate-600'">
+                                            {{ typeLabelCategoryCost(header.type) }}
+                                        </div>
+                                        <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
+                                            <i class="fa fa-map-marker-alt mr-1 text-blue-500"></i>{{ header.outlet_name }}
+                                        </div>
+                                        <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
+                                            <i class="fa fa-user mr-1 text-blue-500"></i>{{ header.creator_name }}
+                                        </div>
+                                        <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
+                                            {{ formatDate(header.date) }}
+                                        </div>
+                                    </div>
+                                    <div class="text-xs text-purple-500 font-medium">
+                                        <i class="fa fa-recycle mr-1"></i>Approval
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Show more button if there are more than 3 -->
+                            <div v-if="pendingCategoryCostApprovals.length > 3" class="text-center pt-2">
+                                <button @click="loadPendingCategoryCostApprovals" class="text-sm text-purple-500 hover:text-purple-700 font-medium">
+                                    Lihat {{ pendingCategoryCostApprovals.length - 3 }} lainnya...
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Bottom Section: Clock, Weather, Calendar, Notes, Birthday, and Announcements -->
                 <div class="flex-1 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 gap-4 mb-6 items-start px-4 md:px-6">
                     <!-- Left: Clock and Weather -->
@@ -4340,6 +4511,145 @@ watch(locale, () => {
                         <i class="fa fa-check mr-2"></i>Approve
                     </button>
                     <button @click="showRejectPrModal(selectedPrApproval.id)" 
+                            class="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors">
+                        <i class="fa fa-times mr-2"></i>Reject
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Category Cost Outlet Approval Detail Modal -->
+        <div v-if="showCategoryCostApprovalModal && selectedCategoryCostApproval" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click="showCategoryCostApprovalModal = false">
+            <div class="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-4xl mx-4 max-h-[90vh] overflow-y-auto" @click.stop>
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-lg font-medium text-gray-900 dark:text-white">
+                        <i class="fa fa-recycle mr-2 text-purple-500"></i>
+                        Detail Category Cost Outlet
+                    </h3>
+                    <button @click="showCategoryCostApprovalModal = false" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                        <i class="fa-solid fa-times text-xl"></i>
+                    </button>
+                </div>
+
+                <div class="space-y-6" v-if="selectedCategoryCostApproval.header">
+                    <!-- Basic Information -->
+                    <div class="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
+                        <h4 class="text-md font-semibold text-gray-900 dark:text-white mb-3">Informasi Dasar</h4>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <div class="text-sm font-medium text-gray-700 dark:text-gray-300">Number</div>
+                                <div class="text-lg font-semibold text-gray-900 dark:text-white">{{ selectedCategoryCostApproval.header.number || 'N/A' }}</div>
+                            </div>
+                            <div>
+                                <div class="text-sm font-medium text-gray-700 dark:text-gray-300">Tipe</div>
+                                <div class="text-gray-900 dark:text-white">{{ typeLabelCategoryCost(selectedCategoryCostApproval.header.type) }}</div>
+                            </div>
+                            <div>
+                                <div class="text-sm font-medium text-gray-700 dark:text-gray-300">Tanggal</div>
+                                <div class="text-gray-900 dark:text-white">{{ formatDate(selectedCategoryCostApproval.header.date) }}</div>
+                            </div>
+                            <div>
+                                <div class="text-sm font-medium text-gray-700 dark:text-gray-300">Outlet</div>
+                                <div class="text-gray-900 dark:text-white">{{ selectedCategoryCostApproval.header.outlet_name }}</div>
+                            </div>
+                            <div>
+                                <div class="text-sm font-medium text-gray-700 dark:text-gray-300">Warehouse Outlet</div>
+                                <div class="text-gray-900 dark:text-white">{{ selectedCategoryCostApproval.header.warehouse_outlet_name }}</div>
+                            </div>
+                            <div>
+                                <div class="text-sm font-medium text-gray-700 dark:text-gray-300">Dibuat Oleh</div>
+                                <div class="text-gray-900 dark:text-white">{{ selectedCategoryCostApproval.header.creator_name }}</div>
+                            </div>
+                        </div>
+                        <div v-if="selectedCategoryCostApproval.header.notes" class="mt-4">
+                            <div class="text-sm font-medium text-gray-700 dark:text-gray-300">Catatan</div>
+                            <div class="text-gray-900 dark:text-white mt-1">{{ selectedCategoryCostApproval.header.notes }}</div>
+                        </div>
+                    </div>
+
+                    <!-- Items -->
+                    <div v-if="selectedCategoryCostApproval.details && selectedCategoryCostApproval.details.length > 0" class="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
+                        <h4 class="text-md font-semibold text-gray-900 dark:text-white mb-3">Items</h4>
+                        <div class="overflow-x-auto">
+                            <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-600">
+                                <thead class="bg-gray-100 dark:bg-gray-600">
+                                    <tr>
+                                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Item Name</th>
+                                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Qty</th>
+                                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Unit</th>
+                                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Note</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-600">
+                                    <tr v-for="item in selectedCategoryCostApproval.details" :key="item.id">
+                                        <td class="px-4 py-2 text-sm text-gray-900 dark:text-white">{{ item.item_name }}</td>
+                                        <td class="px-4 py-2 text-sm text-gray-900 dark:text-white">{{ item.qty }}</td>
+                                        <td class="px-4 py-2 text-sm text-gray-900 dark:text-white">{{ item.unit_name }}</td>
+                                        <td class="px-4 py-2 text-sm text-gray-900 dark:text-white">{{ item.note || '-' }}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Approval Flow -->
+                    <div v-if="selectedCategoryCostApproval.approval_flows && selectedCategoryCostApproval.approval_flows.length > 0" class="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
+                        <h4 class="text-md font-semibold text-gray-900 dark:text-white mb-3">
+                            <i class="fa fa-users mr-2 text-blue-500"></i>
+                            Approval Flow
+                        </h4>
+                        <div class="space-y-3">
+                            <div v-for="flow in selectedCategoryCostApproval.approval_flows" :key="flow.id"
+                                class="flex items-center justify-between p-3 bg-white dark:bg-gray-800 rounded-lg border"
+                                :class="{
+                                    'border-green-500': flow.status === 'APPROVED',
+                                    'border-red-500': flow.status === 'REJECTED',
+                                    'border-yellow-500': flow.status === 'PENDING'
+                                }">
+                                <div class="flex items-center space-x-3">
+                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                        Level {{ flow.approval_level }}
+                                    </span>
+                                    <div>
+                                        <div class="font-medium text-gray-900 dark:text-white">{{ flow.approver_name }}</div>
+                                        <div class="text-sm text-gray-600 dark:text-gray-400">{{ flow.approver_email }}</div>
+                                        <div v-if="flow.approver_jabatan" class="text-xs text-blue-600 font-medium">{{ flow.approver_jabatan }}</div>
+                                    </div>
+                                </div>
+                                <div class="text-right">
+                                    <div class="text-sm font-medium" :class="{
+                                        'text-green-600': flow.status === 'APPROVED',
+                                        'text-red-600': flow.status === 'REJECTED',
+                                        'text-yellow-600': flow.status === 'PENDING'
+                                    }">
+                                        {{ flow.status }}
+                                    </div>
+                                    <div v-if="flow.approved_at" class="text-xs text-gray-500">
+                                        Approved: {{ new Date(flow.approved_at).toLocaleDateString('id-ID') }}
+                                    </div>
+                                    <div v-if="flow.rejected_at" class="text-xs text-gray-500">
+                                        Rejected: {{ new Date(flow.rejected_at).toLocaleDateString('id-ID') }}
+                                    </div>
+                                    <div v-if="flow.comments" class="text-xs text-gray-500 mt-1">
+                                        {{ flow.comments }}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="flex justify-end gap-3 mt-6 pt-4 border-t border-gray-200 dark:border-gray-600">
+                    <button @click="showCategoryCostApprovalModal = false" 
+                            class="px-4 py-2 text-gray-600 dark:text-gray-400 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                        Tutup
+                    </button>
+                    <button @click="approveCategoryCost(selectedCategoryCostApproval.header.id)" 
+                            class="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors">
+                        <i class="fa fa-check mr-2"></i>Approve
+                    </button>
+                    <button @click="showRejectCategoryCostModal(selectedCategoryCostApproval.header.id)" 
                             class="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors">
                         <i class="fa fa-times mr-2"></i>Reject
                     </button>

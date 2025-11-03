@@ -18,6 +18,7 @@
                 <option value="marketing">Marketing</option>
                 <option value="non_commodity">Non Commodity</option>
                 <option value="guest_supplies">Guest Supplies</option>
+                <option value="wrong_maker">Wrong Maker</option>
               </select>
             </div>
             <div>
@@ -118,6 +119,94 @@
             <label class="block text-xs font-bold text-gray-600 mb-1">Catatan Umum</label>
             <textarea v-model="form.notes" class="input input-bordered w-full" rows="2" placeholder="Catatan tambahan"></textarea>
           </div>
+
+          <!-- Approval Flow Section (Only for r_and_d, marketing, wrong_maker) -->
+          <div v-if="form.type === 'r_and_d' || form.type === 'marketing' || form.type === 'wrong_maker'" class="mb-6">
+            <h3 class="text-lg font-medium text-gray-900 mb-4">Approval Flow</h3>
+            <p class="text-sm text-gray-600 mb-4">Tambahkan approver dalam urutan dari level terendah ke tertinggi. Approver pertama akan menjadi level terendah, dan approver terakhir akan menjadi level tertinggi.</p>
+            
+            <!-- Add Approver Input -->
+            <div class="mb-4">
+              <div class="relative">
+                <input
+                  v-model="approverSearch"
+                  type="text"
+                  placeholder="Cari user berdasarkan nama, email, atau jabatan..."
+                  class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  @input="handleApproverSearch"
+                  @focus="handleApproverFocus"
+                  @blur="handleApproverBlur"
+                />
+                
+                <!-- Dropdown Results -->
+                <div v-if="showApproverDropdown && approverResults.length > 0" class="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                  <div
+                    v-for="user in approverResults"
+                    :key="user.id"
+                    @mousedown.prevent="addApprover(user)"
+                    class="px-3 py-2 hover:bg-gray-100 cursor-pointer border-b border-gray-200 last:border-b-0"
+                  >
+                    <div class="font-medium">{{ user.name }}</div>
+                    <div class="text-sm text-gray-600">{{ user.email }}</div>
+                    <div v-if="user.jabatan" class="text-xs text-blue-600 font-medium">{{ user.jabatan }}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Approvers List -->
+            <div v-if="form.approvers.length > 0" class="space-y-2">
+              <h4 class="font-medium text-gray-700">Urutan Approval (Terendah ke Tertinggi):</h4>
+              <div
+                v-for="(approver, index) in form.approvers"
+                :key="approver.id"
+                class="flex items-center justify-between p-3 bg-gray-50 border border-gray-200 rounded-md"
+              >
+                <div class="flex items-center space-x-3">
+                  <div class="flex items-center space-x-2">
+                    <button
+                      v-if="index > 0"
+                      @click="reorderApprover(index, index - 1)"
+                      class="p-1 text-gray-500 hover:text-gray-700"
+                      title="Pindah ke atas"
+                    >
+                      <i class="fa fa-arrow-up"></i>
+                    </button>
+                    <button
+                      v-if="index < form.approvers.length - 1"
+                      @click="reorderApprover(index, index + 1)"
+                      class="p-1 text-gray-500 hover:text-gray-700"
+                      title="Pindah ke bawah"
+                    >
+                      <i class="fa fa-arrow-down"></i>
+                    </button>
+                  </div>
+                  <div class="flex items-center space-x-2">
+                    <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                      Level {{ index + 1 }}
+                    </span>
+                    <div>
+                      <div class="font-medium">{{ approver.name }}</div>
+                      <div class="text-sm text-gray-600">{{ approver.email }}</div>
+                      <div v-if="approver.jabatan" class="text-xs text-blue-600 font-medium">{{ approver.jabatan }}</div>
+                    </div>
+                  </div>
+                </div>
+                <button
+                  @click="removeApprover(index)"
+                  class="text-red-600 hover:text-red-800"
+                  title="Hapus"
+                >
+                  <i class="fa fa-trash"></i>
+                </button>
+              </div>
+            </div>
+            <div v-else class="text-sm text-amber-600 bg-amber-50 border border-amber-200 rounded-md p-3">
+              <i class="fa fa-exclamation-triangle mr-2"></i>
+              Wajib menambahkan minimal 1 approver untuk tipe ini.
+            </div>
+          </div>
+
           <div class="flex justify-end gap-2 mt-8">
             <button type="button" class="btn btn-ghost px-6 py-2 rounded-lg" @click="goBack">Batal</button>
             <button type="submit" class="btn bg-gradient-to-r from-green-500 to-green-700 text-white px-8 py-2 rounded-lg font-bold shadow hover:shadow-xl transition-all" :disabled="loading">
@@ -175,8 +264,13 @@ const form = ref({
   outlet_id: userOutletId.value == 1 ? '' : userOutletId.value,
   notes: '',
   items: [newItem()],
-  warehouse_outlet_id: ''
+  warehouse_outlet_id: '',
+  approvers: []
 })
+
+const approverSearch = ref('')
+const approverResults = ref([])
+const showApproverDropdown = ref(false)
 
 const outletDisabled = computed(() => userOutletId.value != 1)
 const loading = ref(false)
@@ -300,10 +394,28 @@ function onItemKeydown(idx, e) {
 }
 
 async function submit() {
+  // Validation: check if approval required and approvers are set
+  const requiresApproval = form.value.type === 'r_and_d' || form.value.type === 'marketing' || form.value.type === 'wrong_maker'
+  if (requiresApproval && (!form.value.approvers || form.value.approvers.length === 0)) {
+    Swal.fire({
+      icon: 'error',
+      title: 'Validasi Gagal',
+      text: 'Tipe ini wajib memiliki minimal 1 approver',
+    })
+    return
+  }
+
   loading.value = true
   console.log('Submitting form data:', form.value)
+  
+  // Prepare form data - convert approvers array to IDs array for backend
+  const formData = {
+    ...form.value,
+    approvers: form.value.approvers.map(a => a.id)
+  }
+  
   try {
-    await router.post(route('outlet-internal-use-waste.store'), form.value, {
+    await router.post(route('outlet-internal-use-waste.store'), formData, {
       onSuccess: () => {
         console.log('Form submitted successfully')
         Swal.fire({
@@ -356,6 +468,88 @@ function getDropdownStyle(idx) {
   };
 }
 
+// Approval functions
+let approverSearchTimeout = null
+
+const handleApproverSearch = () => {
+  // Clear previous timeout
+  if (approverSearchTimeout) {
+    clearTimeout(approverSearchTimeout)
+  }
+  
+  // Only search if at least 2 characters
+  if (approverSearch.value.length >= 2) {
+    approverSearchTimeout = setTimeout(() => {
+      loadApprovers(approverSearch.value)
+    }, 300) // Debounce 300ms
+  } else {
+    approverResults.value = []
+    showApproverDropdown.value = false
+  }
+}
+
+const handleApproverFocus = () => {
+  // If already has search text, show results
+  if (approverSearch.value.length >= 2) {
+    loadApprovers(approverSearch.value)
+  }
+}
+
+const handleApproverBlur = () => {
+  // Delay closing dropdown to allow click on results
+  setTimeout(() => {
+    showApproverDropdown.value = false
+  }, 200)
+}
+
+const loadApprovers = async (search = '') => {
+  if (!search || search.length < 2) {
+    approverResults.value = []
+    showApproverDropdown.value = false
+    return
+  }
+  
+  try {
+    const response = await axios.get('/outlet-internal-use-waste/approvers', {
+      params: { search },
+      headers: {
+        'X-Requested-With': 'XMLHttpRequest',
+        'Accept': 'application/json'
+      }
+    })
+    
+    if (response.data.success) {
+      approverResults.value = response.data.users
+      showApproverDropdown.value = true
+    } else {
+      approverResults.value = []
+      showApproverDropdown.value = false
+    }
+  } catch (error) {
+    console.error('Failed to load approvers:', error)
+    approverResults.value = []
+    showApproverDropdown.value = false
+  }
+}
+
+const addApprover = (user) => {
+  // Check if user already exists
+  if (!form.value.approvers.find(approver => approver.id === user.id)) {
+    form.value.approvers.push(user)
+  }
+  approverSearch.value = ''
+  showApproverDropdown.value = false
+  approverResults.value = []
+}
+
+const removeApprover = (index) => {
+  form.value.approvers.splice(index, 1)
+}
+
+const reorderApprover = (fromIndex, toIndex) => {
+  const approver = form.value.approvers.splice(fromIndex, 1)[0]
+  form.value.approvers.splice(toIndex, 0, approver)
+}
 
 </script>
 
