@@ -20,7 +20,7 @@
         <!-- Filter Section -->
         <div class="bg-white rounded-xl shadow-lg p-6 mb-6">
           <h3 class="text-lg font-semibold text-gray-800 mb-4">Filter</h3>
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-2">Outlet</label>
               <select v-model="selectedOutlet" @change="applyFilters" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
@@ -33,6 +33,13 @@
               <select v-model="selectedDivision" @change="applyFilters" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
                 <option value="">Semua Divisi</option>
                 <option v-for="division in divisions" :key="division.id" :value="division.id">{{ division.name }}</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-2">Role</label>
+              <select v-model="selectedRole" @change="applyFilters" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
+                <option value="">Semua Role</option>
+                <option v-for="role in roles" :key="role.id" :value="role.id">{{ role.name }}</option>
               </select>
             </div>
             <div class="flex items-end">
@@ -197,6 +204,7 @@ const perPage = ref(15);
 const userRole = ref({});
 const selectedOutlet = ref(props.filters.outlet_id || '');
 const selectedDivision = ref(props.filters.division_id || '');
+const selectedRole = ref(props.filters.role_id || '');
 
 // Bulk selection
 const selectedUsers = ref([]);
@@ -239,6 +247,7 @@ function applyFilters() {
   const params = {};
   if (selectedOutlet.value) params.outlet_id = selectedOutlet.value;
   if (selectedDivision.value) params.division_id = selectedDivision.value;
+  if (selectedRole.value) params.role_id = selectedRole.value;
   
   router.get('/user-roles', params, {
     preserveState: true,
@@ -249,6 +258,7 @@ function applyFilters() {
 function clearFilters() {
   selectedOutlet.value = '';
   selectedDivision.value = '';
+  selectedRole.value = '';
   router.get('/user-roles', {}, {
     preserveState: true,
     preserveScroll: true

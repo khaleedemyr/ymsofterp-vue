@@ -16,6 +16,7 @@ class UserRoleController extends Controller
     {
         $outletId = $request->input('outlet_id');
         $divisionId = $request->input('division_id');
+        $roleId = $request->input('role_id');
         
         // Dropdown data
         $outlets = DB::table('tbl_data_outlet')
@@ -50,6 +51,10 @@ class UserRoleController extends Controller
             $query->where('u.division_id', $divisionId);
         }
         
+        if ($roleId) {
+            $query->where('ur.role_id', $roleId);
+        }
+        
         $users = $query->select(
             'u.id', 
             'u.nama_lengkap', 
@@ -69,7 +74,8 @@ class UserRoleController extends Controller
             'divisions' => $divisions,
             'filters' => [
                 'outlet_id' => $outletId,
-                'division_id' => $divisionId
+                'division_id' => $divisionId,
+                'role_id' => $roleId
             ]
         ]);
     }
