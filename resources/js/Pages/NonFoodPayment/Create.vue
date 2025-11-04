@@ -363,18 +363,40 @@
               </p>
             </div>
 
-            <!-- Amount (Auto-filled from PO/PR) -->
+            <!-- Amount (Auto-filled from PO/PR, but editable) -->
             <div>
-              <label class="block text-sm font-medium text-gray-700 mb-2">Amount *</label>
-              <input 
-                type="number" 
-                v-model="form.amount" 
-                step="0.01"
-                min="0"
-                required 
-                class="w-full px-4 py-2 rounded-xl border border-gray-300 focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition"
-                placeholder="0.00"
-              />
+              <label class="block text-sm font-medium text-gray-700 mb-2">
+                Amount * 
+                <span class="text-xs font-normal text-gray-500">(Dapat diubah)</span>
+              </label>
+              <div class="relative">
+                <input 
+                  type="number" 
+                  v-model="form.amount" 
+                  step="0.01"
+                  min="0"
+                  required 
+                  class="w-full px-4 py-2 pr-24 rounded-xl border border-gray-300 focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition"
+                  placeholder="0.00"
+                />
+                <button
+                  v-if="selectedPO || selectedPR"
+                  type="button"
+                  @click="resetAmountToOriginal"
+                  class="absolute right-2 top-1/2 -translate-y-1/2 px-3 py-1 text-xs bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition"
+                  title="Reset ke nilai PO/PR"
+                >
+                  <i class="fa fa-undo mr-1"></i>
+                  Reset
+                </button>
+              </div>
+              <p class="mt-1 text-xs text-gray-500">
+                <i class="fa fa-info-circle mr-1"></i>
+                Nilai otomatis diisi dari {{ selectedPO ? 'PO' : 'PR' }}, namun dapat diubah sesuai kebutuhan
+              </p>
+              <p v-if="selectedPO || selectedPR" class="mt-1 text-xs text-gray-600">
+                Nilai {{ selectedPO ? 'PO' : 'PR' }}: <strong>{{ formatCurrency(originalAmount || (selectedPO ? selectedPO.grand_total : selectedPR.amount)) }}</strong>
+              </p>
             </div>
 
             <!-- Payment Method -->
@@ -499,6 +521,7 @@ const poAttachments = ref([]);
 const prAttachments = ref([]);
 const lightboxImage = ref(null);
 const lightboxVisible = ref(false);
+const originalAmount = ref(null);
 
 const form = reactive({
   purchase_order_ops_id: null,
@@ -563,6 +586,17 @@ function resetSelection() {
   form.purchase_requisition_id = null;
   form.supplier_id = '';
   form.amount = '';
+  originalAmount.value = null;
+}
+
+function resetAmountToOriginal() {
+  if (originalAmount.value !== null) {
+    form.amount = originalAmount.value;
+  } else if (selectedPO.value) {
+    form.amount = selectedPO.value.grand_total;
+  } else if (selectedPR.value) {
+    form.amount = selectedPR.value.amount;
+  }
 }
 
 async function selectPO(po) {
@@ -572,6 +606,7 @@ async function selectPO(po) {
   form.purchase_requisition_id = null;
   form.supplier_id = po.supplier_id;
   form.amount = po.grand_total;
+  originalAmount.value = po.grand_total;
   
   // Load PO items grouped by outlet
   loadingPOItems.value = true;
@@ -582,9 +617,10 @@ async function selectPO(po) {
     poAttachments.value = response.data.po_attachments || [];
     prAttachments.value = [];
     
-    // Update amount with total from API if available
+    // Update amount with total from API if available, and save as original
     if (response.data.total_amount) {
       form.amount = response.data.total_amount;
+      originalAmount.value = response.data.total_amount;
     }
   } catch (error) {
     console.error('Error loading PO items:', error);
@@ -603,6 +639,7 @@ async function selectPR(pr) {
   form.purchase_order_ops_id = null;
   form.supplier_id = ''; // PR tidak punya supplier, user harus pilih manual
   form.amount = pr.amount;
+  originalAmount.value = pr.amount;
   
   // Load PR items grouped by outlet
   loadingPOItems.value = true;
@@ -612,9 +649,10 @@ async function selectPR(pr) {
     prAttachments.value = response.data.pr_attachments || [];
     poAttachments.value = [];
     
-    // Update amount with total from API if available
+    // Update amount with total from API if available, and save as original
     if (response.data.total_amount) {
       form.amount = response.data.total_amount;
+      originalAmount.value = response.data.total_amount;
     }
     
     // Update selectedPR with full data
