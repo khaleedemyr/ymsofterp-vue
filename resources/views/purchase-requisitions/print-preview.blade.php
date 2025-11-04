@@ -179,15 +179,15 @@
             margin-bottom: 8px;
         }
         .approver-signature {
-            height: 80px;
+            height: 120px;
             margin-bottom: 5px;
             display: flex;
             align-items: center;
             justify-content: center;
         }
         .approver-signature img {
-            max-height: 80px;
-            max-width: 200px;
+            max-height: 120px;
+            max-width: 300px;
             object-fit: contain;
         }
         .approver-date {
@@ -254,11 +254,11 @@
                 padding: 6px;
             }
             .approver-signature {
-                height: 70px;
+                height: 100px;
             }
             .approver-signature img {
-                max-height: 70px;
-                max-width: 180px;
+                max-height: 100px;
+                max-width: 250px;
             }
         }
     </style>
@@ -417,7 +417,7 @@
                                             <img src="{{ asset('storage/' . $approvalFlow->approver->signature_path) }}" alt="Signature">
                                         </div>
                                     @else
-                                        <div class="approver-signature" style="border-bottom: 1px solid #ccc; height: 80px;"></div>
+                                        <div class="approver-signature" style="border-bottom: 1px solid #ccc; height: 120px;"></div>
                                     @endif
                                     
                                     <div class="approver-date">
