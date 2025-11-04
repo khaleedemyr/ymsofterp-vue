@@ -1,9 +1,9 @@
 <template>
-  <AppLayout title="Edit Purchase Requisition">
+  <AppLayout title="Edit Payment">
     <div class="w-full py-8 px-4">
       <div class="flex justify-between items-center mb-6">
         <h1 class="text-2xl font-bold text-gray-800 flex items-center gap-2">
-          <i class="fa-solid fa-edit text-blue-500"></i> Edit Purchase Requisition
+          <i class="fa-solid fa-edit text-blue-500"></i> Edit Payment
         </h1>
         <div class="flex space-x-2">
           <Link
@@ -34,7 +34,7 @@
                 type="text"
                 required
                 class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="Enter purchase requisition title"
+                placeholder="Enter payment title"
               />
             </div>
 
@@ -308,7 +308,7 @@
                 <!-- Warning Messages -->
                 <div v-if="budgetInfo.exceeds_budget" class="mt-4 p-3 bg-red-100 border border-red-300 rounded text-red-800 text-sm">
                   <i class="fa fa-exclamation-triangle mr-2"></i>
-                  <strong>Budget Exceeded!</strong> Total amount ({{ formatCurrency(budgetInfo.total_with_current) }}) exceeds category budget limit ({{ formatCurrency(budgetInfo.category_budget) }}) for this month. You cannot save this purchase requisition.
+                  <strong>Budget Exceeded!</strong> Total amount ({{ formatCurrency(budgetInfo.total_with_current) }}) exceeds category budget limit ({{ formatCurrency(budgetInfo.category_budget) }}) for this month. You cannot save this payment.
                 </div>
                 <div v-else-if="budgetInfo.remaining_after_current < (budgetInfo.category_budget * 0.1)" class="mt-4 p-3 bg-yellow-100 border border-yellow-300 rounded text-yellow-800 text-sm">
                   <i class="fa fa-exclamation-circle mr-2"></i>
@@ -348,7 +348,7 @@
               <span v-if="loading">Updating...</span>
               <span v-else-if="budgetInfo && budgetInfo.exceeds_budget">Budget Exceeded - Cannot Save</span>
               <span v-else-if="selectedCategoryDetails && selectedCategoryDetails.budget_type === 'PER_OUTLET' && !form.outlet_id">Select Outlet First</span>
-              <span v-else>Update Purchase Requisition</span>
+              <span v-else>Update Payment</span>
             </button>
           </div>
         </form>

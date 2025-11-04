@@ -1,10 +1,10 @@
 <template>
-  <AppLayout title="Purchase Requisition Details">
+  <AppLayout title="Payment Details">
     <div class="w-full py-8 px-4">
       <div class="flex justify-between items-center mb-6">
         <h1 class="text-2xl font-bold text-gray-800 flex items-center gap-2">
           <i class="fa-solid fa-shopping-cart text-blue-500"></i> 
-          Purchase Requisition: {{ purchaseRequisition.pr_number }}
+          Payment: {{ purchaseRequisition.pr_number }}
         </h1>
         <div class="flex space-x-2">
           <Link

@@ -1,13 +1,13 @@
 <template>
-  <AppLayout title="Purchase Requisition Ops">
+  <AppLayout title="Payment">
     <div class="w-full py-8 px-4">
       <div class="flex justify-between items-center mb-6">
         <h1 class="text-2xl font-bold text-gray-800 flex items-center gap-2">
-          <i class="fa-solid fa-shopping-cart text-blue-500"></i> Purchase Requisition Ops
+          <i class="fa-solid fa-shopping-cart text-blue-500"></i> Payment
         </h1>
         <div class="flex gap-3">
           <button @click="openCreate" class="bg-gradient-to-r from-blue-500 to-blue-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold">
-            + Buat Purchase Requisition Baru
+            + Buat Payment Baru
           </button>
         </div>
       </div>
@@ -208,11 +208,11 @@
           <div class="w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
             <i class="fa-solid fa-shopping-cart text-3xl text-gray-400"></i>
           </div>
-          <h3 class="text-lg font-medium text-gray-600 mb-2">No Purchase Requisitions Found</h3>
-          <p class="text-gray-500 mb-6">Start by creating your first purchase requisition</p>
+          <h3 class="text-lg font-medium text-gray-600 mb-2">No Payments Found</h3>
+          <p class="text-gray-500 mb-6">Start by creating your first payment</p>
           <button @click="openCreate" class="bg-blue-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-blue-700 transition-colors">
             <i class="fa-solid fa-plus mr-2"></i>
-            Create New Purchase Requisition
+            Create New Payment
           </button>
         </div>
       </div>
@@ -221,7 +221,7 @@
       <div class="mt-4 flex flex-col sm:flex-row justify-between items-center gap-4">
         <!-- Pagination Info -->
         <div class="text-sm text-gray-600">
-          Menampilkan {{ data.from || 0 }} sampai {{ data.to || 0 }} dari {{ data.total || 0 }} purchase requisitions
+          Menampilkan {{ data.from || 0 }} sampai {{ data.to || 0 }} dari {{ data.total || 0 }} payments
         </div>
         
         <!-- Pagination Navigation -->
@@ -303,7 +303,7 @@
           <i class="fas fa-times text-lg"></i>
         </button>
         <div class="flex justify-between items-center mb-4">
-          <h3 class="text-lg font-medium">Preview Purchase Requisition</h3>
+          <h3 class="text-lg font-medium">Preview Payment</h3>
           <div class="flex gap-2">
             <button 
               @click="printPreview"
@@ -437,7 +437,7 @@ function deletePR(pr) {
   const statusText = pr.status === 'DRAFT' ? 'Draft' : 'Submitted (belum di-approve)';
   
   Swal.fire({
-    title: 'Hapus Purchase Requisition?',
+    title: 'Hapus Payment?',
     html: `
       <div class="text-left">
         <p class="mb-2"><strong>PR Number:</strong> ${pr.pr_number}</p>
@@ -459,7 +459,7 @@ function deletePR(pr) {
       // Show loading
       Swal.fire({
         title: 'Menghapus...',
-        text: 'Sedang menghapus Purchase Requisition',
+        text: 'Sedang menghapus Payment',
         allowOutsideClick: false,
         showConfirmButton: false,
         willOpen: () => {
@@ -472,7 +472,7 @@ function deletePR(pr) {
         .then(response => {
           Swal.fire({
             title: 'Berhasil!',
-            text: 'Purchase Requisition berhasil dihapus',
+            text: 'Payment berhasil dihapus',
             icon: 'success',
             confirmButtonColor: '#10B981'
           }).then(() => {
@@ -482,7 +482,7 @@ function deletePR(pr) {
         })
         .catch(error => {
           console.error('Error deleting PR:', error);
-          let errorMessage = 'Gagal menghapus Purchase Requisition';
+          let errorMessage = 'Gagal menghapus Payment';
           
           if (error.response?.data?.message) {
             errorMessage = error.response.data.message;

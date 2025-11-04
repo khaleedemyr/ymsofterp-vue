@@ -1,9 +1,9 @@
 <template>
-  <AppLayout title="Create Purchase Requisition">
+  <AppLayout title="Create Payment">
     <div class="w-full py-8 px-4">
       <div class="flex justify-between items-center mb-6">
         <h1 class="text-2xl font-bold text-gray-800 flex items-center gap-2">
-          <i class="fa-solid fa-plus text-blue-500"></i> Create Purchase Requisition
+          <i class="fa-solid fa-plus text-blue-500"></i> Create Payment
         </h1>
         <Link
           :href="'/purchase-requisitions'"
@@ -20,7 +20,7 @@
           <div class="md:col-span-1">
             <label class="block text-sm font-medium text-gray-700 mb-2">Mode</label>
             <select v-model="form.mode" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
-              <option value="pr_ops">Purchase Requisition Ops</option>
+              <option value="pr_ops">Payment</option>
               <option value="purchase_payment">Purchase Payment</option>
             </select>
           </div>
@@ -37,7 +37,7 @@
                 type="text"
                 required
                 class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="Enter purchase requisition title"
+                placeholder="Enter payment title"
               />
             </div>
 
@@ -488,7 +488,7 @@
                 <span v-else>
                   Total amount ({{ formatCurrency(budgetInfo.total_with_current) }}) exceeds category budget limit ({{ formatCurrency(budgetInfo.category_budget) }}) for this month.
                 </span>
-                You cannot save this purchase requisition.
+                You cannot save this payment.
               </div>
               <div v-else-if="budgetInfo.remaining_after_current < ((budgetInfo.budget_type === 'PER_OUTLET' ? budgetInfo.outlet_budget : budgetInfo.category_budget) * 0.1)" class="mt-4 p-3 bg-yellow-100 border border-yellow-300 rounded text-yellow-800 text-sm">
                 <i class="fa fa-exclamation-circle mr-2"></i>
@@ -527,7 +527,7 @@
               <span v-if="loading">Creating...</span>
               <span v-else-if="budgetInfo && budgetInfo.exceeds_budget">Budget Exceeded - Cannot Save</span>
               <span v-else-if="selectedCategoryDetails && selectedCategoryDetails.budget_type === 'PER_OUTLET' && !form.outlet_id">Select Outlet First</span>
-              <span v-else>Create Purchase Requisition</span>
+              <span v-else>Create Payment</span>
             </button>
           </div>
         </form>
@@ -746,7 +746,7 @@ const submitForm = async () => {
   }
   
   try {
-    // First, create the purchase requisition
+    // First, create the payment
     const response = await axios.post('/purchase-requisitions', formData)
     
     // If PR created successfully and we have attachments, upload them
@@ -859,7 +859,7 @@ const downloadFile = (attachment) => {
   // For temporary files, we can't download them yet
   // This will be available after the PR is created
   if (attachment.temp_id) {
-    alert('File will be available for download after the purchase requisition is created.')
+    alert('File will be available for download after the payment is created.')
     return
   }
   
