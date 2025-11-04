@@ -220,14 +220,23 @@ const menuGroups = [
         ],
     },
     {
+        title: () => 'Purchasing',
+        icon: 'fa-solid fa-shopping-bag',
+        collapsible: true,
+        open: ref(false),
+        menus: [
+            { name: () => 'Purchase Order Foods', icon: 'fa-solid fa-file-invoice-dollar', route: '/po-foods', code: 'po_foods' },
+            { name: () => 'Purchase Order Ops', icon: 'fa-solid fa-file-invoice', route: '/po-ops', code: 'purchase_order_ops' },
+            { name: () => 'Report PO GR', icon: 'fa-solid fa-chart-line', route: '/po-report', code: 'po_report' },
+        ],
+    },
+    {
         title: () => 'Warehouse Management',
         icon: 'fa-solid fa-warehouse',
         collapsible: true,
         open: ref(false),
         menus: [
             { name: () => 'Purchase Requisition Foods', icon: 'fa-solid fa-file-invoice', route: '/pr-foods', code: 'pr_foods' },
-            { name: () => 'Purchase Order Foods', icon: 'fa-solid fa-file-invoice-dollar', route: '/po-foods', code: 'po_foods' },
-            { name: () => 'Report PO GR', icon: 'fa-solid fa-chart-line', route: '/po-report', code: 'po_report' },
             { name: () => 'Good Receive', icon: 'fa-solid fa-truck', route: '/food-good-receive', code: 'food_good_receive' },
             { name: () => 'Food Good Receive Report', icon: 'fa-solid fa-chart-bar', route: '/food-good-receive-report', code: 'food_good_receive_report' },
             { name: () => 'Pindah Gudang', icon: 'fa-solid fa-right-left', route: '/warehouse-transfer', code: 'warehouse_transfer' },
@@ -248,7 +257,6 @@ const menuGroups = [
             { name: () => 'Internal Use & Waste', icon: 'fa-solid fa-recycle', route: '/internal-use-waste', code: 'internal_use_waste' },
             { name: () => 'Penjualan Antar Gudang', icon: 'fas fa-exchange-alt', route: '/warehouse-sales', code: 'warehouse_sales' },
             { name: () => 'Outlet Rejection', icon: 'fas fa-undo', route: '/outlet-rejections', code: 'outlet_rejection' },
-            { name: () => 'Purchase Order Ops', icon: 'fa-solid fa-file-invoice', route: '/po-ops', code: 'purchase_order_ops' },
             { name: () => 'Kelola Return Outlet', icon: 'fa-solid fa-building', route: '/head-office-return', code: 'head_office_return' },
         ],
     },
