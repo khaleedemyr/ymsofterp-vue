@@ -1227,19 +1227,20 @@ class OutletPaymentController extends Controller
                 ->join('items as i', 'gri.item_id', '=', 'i.id')
                 ->join('units as u', 'gri.unit_id', '=', 'u.id')
                 ->join('outlet_food_good_receives as gr', 'gri.outlet_food_good_receive_id', '=', 'gr.id')
-                ->join('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
-                ->join('food_floor_order_items as ffoi', function($join) {
+                ->leftJoin('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
+                ->leftJoin('food_floor_order_items as ffoi', function($join) {
                     $join->on('do.floor_order_id', '=', 'ffoi.floor_order_id')
                          ->on('gri.item_id', '=', 'ffoi.item_id');
                 })
                 ->whereIn('gri.outlet_food_good_receive_id', $grIds)
+                ->whereNull('gr.deleted_at')
                 ->select(
                     'gri.outlet_food_good_receive_id as gr_id',
                     'i.name as item_name',
                     'gri.received_qty as qty',
                     'u.name as unit_name',
-                    'ffoi.price as price',
-                    DB::raw('(gri.received_qty * ffoi.price) as subtotal')
+                    DB::raw('COALESCE(ffoi.price, 0) as price'),
+                    DB::raw('(gri.received_qty * COALESCE(ffoi.price, 0)) as subtotal')
                 )
                 ->get();
             foreach ($grItemRows as $row) {
@@ -1267,15 +1268,68 @@ class OutletPaymentController extends Controller
             }
         }
         
-        // Update payment_total untuk GR berdasarkan total items
-        foreach ($data as $row) {
-            if ($row->transaction_type === 'GR' && isset($details[$row->gr_id])) {
-                $row->payment_total = collect($details[$row->gr_id])->sum('subtotal');
+        // Update payment_total untuk GR berdasarkan total items (hanya untuk data yang di-paginate)
+        $paginatedItems = collect($paginatedData->items());
+        $dataArray = [];
+        
+        foreach ($paginatedItems as $row) {
+            // Convert to array first
+            $rowData = (array) $row;
+            
+            // Update payment_total untuk GR dari detail items
+            if ($rowData['transaction_type'] === 'GR') {
+                if (isset($details[$rowData['gr_id']]) && count($details[$rowData['gr_id']]) > 0) {
+                    $rowData['payment_total'] = collect($details[$rowData['gr_id']])->sum('subtotal');
+                } else {
+                    // Jika tidak ada detail items, coba hitung langsung dari database
+                    $grTotal = DB::table('outlet_food_good_receive_items as gri')
+                        ->join('outlet_food_good_receives as gr', 'gri.outlet_food_good_receive_id', '=', 'gr.id')
+                        ->join('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
+                        ->join('food_floor_order_items as ffoi', function($join) {
+                            $join->on('do.floor_order_id', '=', 'ffoi.floor_order_id')
+                                 ->on('gri.item_id', '=', 'ffoi.item_id');
+                        })
+                        ->where('gri.outlet_food_good_receive_id', $rowData['gr_id'])
+                        ->whereNull('gr.deleted_at')
+                        ->sum(DB::raw('gri.received_qty * ffoi.price'));
+                    $rowData['payment_total'] = $grTotal ?: 0;
+                }
             }
+            
+            // Pastikan RWS juga punya payment_total yang valid
+            if ($rowData['transaction_type'] === 'RWS') {
+                // payment_total sudah diambil dari rws.total_amount di query
+                if (!isset($rowData['payment_total']) || $rowData['payment_total'] === null) {
+                    // Jika tidak ada, ambil dari total items
+                    if (isset($details[$rowData['gr_id']]) && count($details[$rowData['gr_id']]) > 0) {
+                        $rowData['payment_total'] = collect($details[$rowData['gr_id']])->sum('subtotal');
+                    } else {
+                        // Fallback: hitung dari database
+                        $rwsTotal = DB::table('retail_warehouse_sale_items')
+                            ->where('retail_warehouse_sale_id', $rowData['gr_id'])
+                            ->sum('subtotal');
+                        $rowData['payment_total'] = $rwsTotal ?: 0;
+                    }
+                }
+            }
+            
+            $dataArray[] = $rowData;
         }
         
         return Inertia::render('OutletPayment/ReportInvoiceOutlet', [
-            'data' => $data,
+            'data' => $dataArray,
+            'pagination' => [
+                'current_page' => $paginatedData->currentPage(),
+                'last_page' => $paginatedData->lastPage(),
+                'per_page' => $paginatedData->perPage(),
+                'total' => $paginatedData->total(),
+                'from' => $paginatedData->firstItem(),
+                'to' => $paginatedData->lastItem(),
+                'first_page_url' => $paginatedData->url(1),
+                'last_page_url' => $paginatedData->url($paginatedData->lastPage()),
+                'prev_page_url' => $paginatedData->previousPageUrl(),
+                'next_page_url' => $paginatedData->nextPageUrl(),
+            ],
             'details' => $details,
             'outlets' => $outlets,
             'roModes' => $roModes,
