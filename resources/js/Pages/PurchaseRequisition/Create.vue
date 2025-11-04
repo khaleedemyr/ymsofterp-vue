@@ -20,8 +20,8 @@
           <div class="md:col-span-1">
             <label class="block text-sm font-medium text-gray-700 mb-2">Mode</label>
             <select v-model="form.mode" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
-              <option value="pr_ops">Payment</option>
-              <option value="purchase_payment">Purchase Payment</option>
+              <option value="pr_ops">Purchase Requisition</option>
+              <option value="purchase_payment">Payment Application</option>
             </select>
           </div>
         </div>
