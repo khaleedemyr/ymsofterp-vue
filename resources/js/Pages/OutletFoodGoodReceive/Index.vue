@@ -83,12 +83,40 @@
 
       <!-- Pagination -->
       <div v-if="props.goodReceives && props.goodReceives.data && props.goodReceives.last_page > 1" class="flex justify-center mt-6">
-        <nav class="inline-flex rounded-md shadow-sm">
-          <button :disabled="props.goodReceives.current_page === 1" @click="goToPage(props.goodReceives.current_page - 1)" class="px-3 py-1 border bg-white text-blue-700 hover:bg-blue-100 rounded-l disabled:opacity-50">&lt;</button>
-          <button v-for="page in paginationPages" :key="page" @click="goToPage(page)" :class="['px-3 py-1 border', page === props.goodReceives.current_page ? 'bg-blue-600 text-white' : 'bg-white text-blue-700 hover:bg-blue-100']">
-            {{ page }}
+        <nav class="inline-flex rounded-md shadow-sm items-center gap-1">
+          <button 
+            :disabled="props.goodReceives.current_page === 1" 
+            @click="goToPage(props.goodReceives.current_page - 1)" 
+            class="px-3 py-1 border bg-white text-blue-700 hover:bg-blue-100 rounded-l disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <i class="fas fa-chevron-left"></i> Previous
           </button>
-          <button :disabled="props.goodReceives.current_page === props.goodReceives.last_page" @click="goToPage(props.goodReceives.current_page + 1)" class="px-3 py-1 border bg-white text-blue-700 hover:bg-blue-100 rounded-r disabled:opacity-50">&gt;</button>
+          
+          <div class="flex items-center gap-1">
+            <template v-for="page in getPageNumbers()" :key="page">
+              <button
+                v-if="page !== '...'"
+                @click="goToPage(page)"
+                :class="[
+                  'px-3 py-1 border font-medium transition',
+                  page === props.goodReceives.current_page
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-white text-blue-700 hover:bg-blue-100'
+                ]"
+              >
+                {{ page }}
+              </button>
+              <span v-else class="px-2 text-gray-400">...</span>
+            </template>
+          </div>
+          
+          <button 
+            :disabled="props.goodReceives.current_page === props.goodReceives.last_page" 
+            @click="goToPage(props.goodReceives.current_page + 1)" 
+            class="px-3 py-1 border bg-white text-blue-700 hover:bg-blue-100 rounded-r disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Next <i class="fas fa-chevron-right"></i>
+          </button>
         </nav>
       </div>
     </div>
@@ -125,17 +153,52 @@ function applyFilter() {
 
 function goToPage(page) {
   router.visit(route('outlet-food-good-receives.index', {
-    ...props.filters,
-    page
+    outlet_id: filterOutlet.value || undefined,
+    search: filterSearch.value || undefined,
+    from: filterFrom.value || undefined,
+    to: filterTo.value || undefined,
+    page: page
   }))
 }
 
-const paginationPages = computed(() => {
+function getPageNumbers() {
   if (!props.goodReceives || !props.goodReceives.last_page) return []
+  
+  const current = props.goodReceives.current_page
+  const last = props.goodReceives.last_page
   const pages = []
-  for (let i = 1; i <= props.goodReceives.last_page; i++) pages.push(i)
+  
+  if (last <= 7) {
+    // Show all pages if 7 or less
+    for (let i = 1; i <= last; i++) {
+      pages.push(i)
+    }
+  } else {
+    // Show first page
+    pages.push(1)
+    
+    if (current > 3) {
+      pages.push('...')
+    }
+    
+    // Show pages around current
+    const start = Math.max(2, current - 1)
+    const end = Math.min(last - 1, current + 1)
+    
+    for (let i = start; i <= end; i++) {
+      pages.push(i)
+    }
+    
+    if (current < last - 2) {
+      pages.push('...')
+    }
+    
+    // Show last page
+    pages.push(last)
+  }
+  
   return pages
-})
+}
 
 function goCreate() {
   router.visit(route('outlet-food-good-receives.create'))
