@@ -186,21 +186,15 @@
                       <i class="fas fa-print"></i>
                     </button>
                     <button
-                      v-if="canDelete(pr)"
                       @click="deletePR(pr)"
-                      class="text-red-600 hover:text-red-900"
-                      title="Delete"
+                      :disabled="!canDelete(pr)"
+                      :class="[
+                        'text-red-600 hover:text-red-900',
+                        !canDelete(pr) ? 'opacity-50 cursor-not-allowed' : ''
+                      ]"
+                      :title="canDelete(pr) ? 'Delete' : 'Hanya bisa dihapus jika status DRAFT atau SUBMITTED dan Anda adalah pembuat PR'"
                     >
                       <i class="fas fa-trash"></i>
-                    </button>
-                    <!-- Debug: Show delete button for all SUBMITTED status for testing -->
-                    <button
-                      v-if="pr.status === 'SUBMITTED' && !canDelete(pr)"
-                      @click="console.log('Debug delete button clicked for:', pr)"
-                      class="text-orange-600 hover:text-orange-900"
-                      title="Debug Delete (SUBMITTED)"
-                    >
-                      <i class="fas fa-bug"></i>
                     </button>
                   </div>
                 </td>

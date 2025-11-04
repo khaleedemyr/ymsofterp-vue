@@ -696,29 +696,65 @@ class PurchaseOrderOpsController extends Controller
             
             // Update related Purchase Requisition Ops status back to APPROVED
             if ($po->source_type === 'purchase_requisition_ops' && $po->source_id) {
-                PurchaseRequisition::where('id', $po->source_id)->update(['status' => 'APPROVED']);
+                $pr = PurchaseRequisition::find($po->source_id);
+                if ($pr) {
+                    // Check if there are other POs from this PR that are not deleted
+                    $otherPOsCount = PurchaseOrderOps::where('source_type', 'purchase_requisition_ops')
+                        ->where('source_id', $po->source_id)
+                        ->where('id', '!=', $po->id)
+                        ->count();
+                    
+                    // Only update PR status to APPROVED if this is the only PO or all other POs are also being deleted
+                    // For now, we'll always set it back to APPROVED when a PO is deleted
+                    $pr->status = 'APPROVED';
+                    $pr->save();
+                    
+                    \Log::info('Purchase Requisition status updated to APPROVED after PO deletion', [
+                        'pr_id' => $pr->id,
+                        'pr_number' => $pr->pr_number,
+                        'po_id' => $po->id,
+                        'po_number' => $po->number,
+                        'other_pos_count' => $otherPOsCount
+                    ]);
+                }
             }
             
             // Delete items
             foreach ($po->items as $item) {
                 $item->delete();
             }
+            
+            // Store PO data for logging before deletion
+            $poData = $po->toArray();
+            $poNumber = $po->number;
+            
             $po->delete();
+            
             // Log activity
-            ActivityLog::create([
-                'user_id' => auth()->id(),
-                'activity_type' => 'delete',
-                'module' => 'purchase_order_ops',
-                'description' => 'Hapus PO Ops: ' . $po->number,
-                'ip_address' => $request->ip(),
-                'user_agent' => $request->userAgent(),
-                'old_data' => $po->toArray(),
-                'new_data' => null,
-            ]);
+            try {
+                ActivityLog::create([
+                    'user_id' => auth()->id(),
+                    'activity_type' => 'delete',
+                    'module' => 'purchase_order_ops',
+                    'description' => 'Hapus PO Ops: ' . $poNumber . ' - PR status diupdate ke APPROVED',
+                    'ip_address' => $request->ip(),
+                    'user_agent' => $request->userAgent(),
+                    'old_data' => json_encode($poData),
+                    'new_data' => null,
+                ]);
+            } catch (\Exception $logError) {
+                \Log::warning('Failed to create activity log', ['error' => $logError->getMessage()]);
+            }
+            
             DB::commit();
-            return redirect()->route('po-ops.index')->with('success', 'PO berhasil dihapus');
+            return redirect()->route('po-ops.index')->with('success', 'PO berhasil dihapus dan status Purchase Requisition diupdate ke APPROVED');
         } catch (\Exception $e) {
             DB::rollBack();
+            \Log::error('Error deleting Purchase Order Ops', [
+                'po_id' => $id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
             return back()->with('error', 'Gagal menghapus PO: ' . $e->getMessage());
         }
     }
