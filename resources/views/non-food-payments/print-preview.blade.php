@@ -371,33 +371,59 @@
                 @endif
 
                 <!-- Purchase Requisition Information -->
-                @if($payment->purchase_requisition)
+                @php
+                    $pr = $payment->purchase_requisition ?? ($payment->pr_from_po ?? null);
+                @endphp
+                @if($pr)
                 <div style="margin-top: 15px; padding: 10px; background-color: #f8f9fa; border-left: 3px solid #17a2b8;">
                     <h4 style="margin: 0 0 10px 0; color: #17a2b8;">Purchase Requisition Information</h4>
                     <div class="info-grid">
                         <div>
                             <div class="info-item">
                                 <div class="info-label">PR Number:</div>
-                                <div class="info-value">{{ $payment->purchase_requisition->pr_number }}</div>
+                                <div class="info-value">{{ $pr->pr_number }}</div>
                             </div>
                             <div class="info-item">
                                 <div class="info-label">PR Date:</div>
-                                <div class="info-value">{{ $payment->purchase_requisition->date->format('d M Y') }}</div>
+                                <div class="info-value">
+                                    @if($pr->date instanceof \Carbon\Carbon)
+                                        {{ $pr->date->format('d M Y') }}
+                                    @elseif(is_string($pr->date))
+                                        {{ \Carbon\Carbon::parse($pr->date)->format('d M Y') }}
+                                    @else
+                                        {{ $pr->date ?? '-' }}
+                                    @endif
+                                </div>
                             </div>
+                            @if($pr->outlet)
+                            <div class="info-item">
+                                <div class="info-label">Outlet:</div>
+                                <div class="info-value">{{ $pr->outlet->nama_outlet ?? '-' }}</div>
+                            </div>
+                            @endif
                         </div>
                         <div>
                             <div class="info-item">
                                 <div class="info-label">Title:</div>
-                                <div class="info-value">{{ $payment->purchase_requisition->title ?? '-' }}</div>
+                                <div class="info-value">{{ $pr->title ?? '-' }}</div>
                             </div>
                             <div class="info-item">
                                 <div class="info-label">Amount:</div>
-                                <div class="info-value">Rp {{ number_format($payment->purchase_requisition->amount, 0, ',', '.') }}</div>
+                                <div class="info-value">Rp {{ number_format($pr->amount, 0, ',', '.') }}</div>
                             </div>
+                            @if($pr->description)
+                            <div class="info-item">
+                                <div class="info-label">Description:</div>
+                                <div class="info-value">{{ $pr->description }}</div>
+                            </div>
+                            @endif
                         </div>
                     </div>
 
-                    @if($payment->purchase_requisition->items && count($payment->purchase_requisition->items) > 0)
+                    @php
+                        $prItems = $pr->items ?? collect();
+                    @endphp
+                    @if($prItems && count($prItems) > 0)
                     <h5 style="margin: 15px 0 10px 0; font-weight: bold; color: #333;">PR Items:</h5>
                     <table class="items-table" style="margin-top: 15px;">
                         <thead>
@@ -411,7 +437,7 @@
                             </tr>
                         </thead>
                         <tbody>
-                            @foreach($payment->purchase_requisition->items as $itemIndex => $item)
+                            @foreach($prItems as $itemIndex => $item)
                                 <tr>
                                     <td>{{ $itemIndex + 1 }}</td>
                                     <td>{{ $item->item_name }}</td>

@@ -763,7 +763,7 @@ class NonFoodPaymentController extends Controller
         ]);
 
         try {
-            $nonFoodPayment->update([
+            $updateData = [
                 'supplier_id' => $request->supplier_id,
                 'amount' => $request->amount,
                 'payment_method' => $request->payment_method,
@@ -772,7 +772,9 @@ class NonFoodPaymentController extends Controller
                 'description' => $request->description,
                 'reference_number' => $request->reference_number,
                 'notes' => $request->notes,
-            ]);
+            ];
+
+            $nonFoodPayment->update($updateData);
 
             return redirect()->route('non-food-payments.show', $nonFoodPayment->id)
                 ->with('success', 'Non Food Payment berhasil diperbarui.');
@@ -903,7 +905,9 @@ class NonFoodPaymentController extends Controller
                 'creator',
                 'purchaseOrderOps.supplier',
                 'purchaseOrderOps.items',
-                'purchaseRequisition.items'
+                'purchaseOrderOps.purchase_requisition.outlet',
+                'purchaseRequisition.items',
+                'purchaseRequisition.outlet'
             ])->whereIn('id', $paymentIds)->get();
 
             // Ensure items are loaded for each payment - use direct DB query to guarantee items are loaded
@@ -922,6 +926,27 @@ class NonFoodPaymentController extends Controller
                         // Also set to relationship for consistency
                         if ($payment->purchaseOrderOps) {
                             $payment->purchaseOrderOps->setRelation('items', $poItems);
+                            
+                            // Load PR from PO if PO has source_type and source_id
+                            if ($payment->purchaseOrderOps->source_type === 'purchase_requisition_ops' && $payment->purchaseOrderOps->source_id) {
+                                $pr = \App\Models\PurchaseRequisition::with(['outlet', 'items'])
+                                    ->find($payment->purchaseOrderOps->source_id);
+                                if ($pr) {
+                                    // Ensure date is cast to Carbon
+                                    if ($pr->date && is_string($pr->date)) {
+                                        $pr->date = \Carbon\Carbon::parse($pr->date);
+                                    }
+                                    // Load PR items if not already loaded
+                                    if (!$pr->items || $pr->items->isEmpty()) {
+                                        $prItems = DB::table('purchase_requisition_items')
+                                            ->where('purchase_requisition_id', $pr->id)
+                                            ->get();
+                                        $pr->setRelation('items', $prItems);
+                                    }
+                                    // Set PR to payment for easy access in view
+                                    $payment->setAttribute('pr_from_po', $pr);
+                                }
+                            }
                         }
                     }
                 }

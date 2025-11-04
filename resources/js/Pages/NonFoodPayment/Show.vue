@@ -417,7 +417,7 @@ function goBack() {
 }
 
 function editPayment() {
-  router.get(`/non-food-payments/${payment.id}/edit`);
+  router.visit(`/non-food-payments/${payment.id}/edit`);
 }
 
 function approvePayment() {

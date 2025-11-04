@@ -36,6 +36,7 @@ class PurchaseRequisition extends Model
     ];
 
     protected $casts = [
+        'date' => 'date',
         'amount' => 'decimal:2',
         'approved_ssd_at' => 'datetime',
         'approved_cc_at' => 'datetime',
