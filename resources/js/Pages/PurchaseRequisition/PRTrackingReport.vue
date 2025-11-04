@@ -102,6 +102,26 @@ const getStatusColor = (status) => {
   return colors[status] || 'bg-gray-100 text-gray-800';
 };
 
+// Get mode label
+const getModeLabel = (mode) => {
+  if (!mode) return '-';
+  const labels = {
+    'pr_ops': 'Purchase Requisition',
+    'purchase_payment': 'Payment Application',
+  };
+  return labels[mode] || mode;
+};
+
+// Get mode badge class
+const getModeBadgeClass = (mode) => {
+  if (!mode) return 'bg-gray-100 text-gray-800';
+  const classes = {
+    'pr_ops': 'bg-blue-100 text-blue-800',
+    'purchase_payment': 'bg-green-100 text-green-800',
+  };
+  return classes[mode] || 'bg-gray-100 text-gray-800';
+};
+
 // Get timeline status color
 const getTimelineStatusColor = (status) => {
   const colors = {
@@ -659,6 +679,11 @@ onMounted(() => {
                       <h3 class="text-lg font-semibold text-gray-900">{{ pr.pr_number }}</h3>
                       <p class="text-sm text-gray-600">{{ pr.title }}</p>
                       <p class="text-sm text-gray-500">{{ pr.division?.nama_divisi || 'Unknown Division' }}</p>
+                      <p class="text-xs text-gray-400 mt-1">
+                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium" :class="getModeBadgeClass(pr.mode)">
+                          {{ getModeLabel(pr.mode) }}
+                        </span>
+                      </p>
                     </div>
                   </div>
                   <div class="text-right">

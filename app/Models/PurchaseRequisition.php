@@ -27,6 +27,7 @@ class PurchaseRequisition extends Model
         'status',
         'priority',
         'notes',
+        'mode',
         'created_by',
         'updated_by',
         'approved_ssd_by',

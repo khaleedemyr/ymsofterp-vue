@@ -108,6 +108,7 @@
                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Division</th>
                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Outlet</th>
                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Mode</th>
                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Creator</th>
                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created</th>
@@ -137,6 +138,12 @@
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                   <span class="font-semibold text-green-600">
                     {{ formatCurrency(pr.amount) }}
+                  </span>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                  <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
+                        :class="getModeBadgeClass(pr.mode)">
+                    {{ getModeLabel(pr.mode) }}
                   </span>
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap">
@@ -520,6 +527,24 @@ function getDivisionBadgeClass(division) {
     'PROJECT_ENHANCEMENT': 'bg-purple-100 text-purple-800',
   };
   return classes[division] || 'bg-gray-100 text-gray-800';
+}
+
+function getModeLabel(mode) {
+  if (!mode) return '-';
+  const labels = {
+    'pr_ops': 'Purchase Requisition',
+    'purchase_payment': 'Payment Application',
+  };
+  return labels[mode] || mode;
+}
+
+function getModeBadgeClass(mode) {
+  if (!mode) return 'bg-gray-100 text-gray-800';
+  const classes = {
+    'pr_ops': 'bg-blue-100 text-blue-800',
+    'purchase_payment': 'bg-green-100 text-green-800',
+  };
+  return classes[mode] || 'bg-gray-100 text-gray-800';
 }
 
 function formatCurrency(amount) {
