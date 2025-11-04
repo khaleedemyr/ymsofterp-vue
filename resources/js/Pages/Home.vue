@@ -5293,15 +5293,15 @@ watch(locale, () => {
                             </div>
                             <div>
                                 <label class="text-sm font-medium text-gray-600 dark:text-gray-400">Jabatan Saat Ini</label>
-                                <p class="text-gray-900 dark:text-white">{{ selectedMovement.employee_jabatan || '-' }}</p>
+                                <p class="text-gray-900 dark:text-white">{{ selectedMovement.employee?.jabatan?.nama_jabatan || selectedMovement.employee_jabatan || '-' }}</p>
                             </div>
                             <div>
                                 <label class="text-sm font-medium text-gray-600 dark:text-gray-400">Divisi Saat Ini</label>
-                                <p class="text-gray-900 dark:text-white">{{ selectedMovement.employee_divisi || '-' }}</p>
+                                <p class="text-gray-900 dark:text-white">{{ selectedMovement.employee?.divisi?.nama_divisi || selectedMovement.employee_divisi || '-' }}</p>
                             </div>
                             <div class="md:col-span-2">
                                 <label class="text-sm font-medium text-gray-600 dark:text-gray-400">Outlet/Unit Saat Ini</label>
-                                <p class="text-gray-900 dark:text-white">{{ selectedMovement.employee_outlet || '-' }}</p>
+                                <p class="text-gray-900 dark:text-white">{{ selectedMovement.employee?.outlet?.nama_outlet || selectedMovement.employee_outlet || '-' }}</p>
                             </div>
                         </div>
                     </div>

@@ -320,43 +320,31 @@ class EmployeeMovementController extends Controller
      */
     public function debugMovement($id)
     {
-        $movement = EmployeeMovement::query()
-            ->leftJoin('users', 'employee_movements.employee_id', '=', 'users.id')
-            ->leftJoin('tbl_data_jabatan', 'users.id_jabatan', '=', 'tbl_data_jabatan.id_jabatan')
-            ->leftJoin('tbl_data_outlet', 'users.id_outlet', '=', 'tbl_data_outlet.id_outlet')
-            ->leftJoin('tbl_data_divisi', 'users.division_id', '=', 'tbl_data_divisi.id')
-            ->with([
-                'hodApprover:id,nama_lengkap',
-                'gmApprover:id,nama_lengkap',
-                'gmHrApprover:id,nama_lengkap',
-                'bodApprover:id,nama_lengkap'
-            ])
-            ->select([
-                'employee_movements.*',
-                'hod_approver_id', 'hod_approval', 'hod_approval_date',
-                'gm_approver_id', 'gm_approval', 'gm_approval_date',
-                'gm_hr_approver_id', 'gm_hr_approval', 'gm_hr_approval_date',
-                'bod_approver_id', 'bod_approval', 'bod_approval_date',
-                // change flags and fields
-                'position_change', 'position_from', 'position_to',
-                'level_change', 'level_from', 'level_to',
-                'department_change', 'department_from', 'department_to',
-                'division_change', 'division_from', 'division_to',
-                'unit_property_change', 'unit_property_from', 'unit_property_to',
-                'salary_change', 'salary_from', 'salary_to',
-                'employment_effective_date', 'kpi_required', 'kpi_date',
-                'employee_movements.created_at', 'employee_movements.updated_at',
-                // employee meta
-                'users.nama_lengkap as employee_nama_lengkap',
-                'tbl_data_jabatan.nama_jabatan as employee_jabatan',
-                'tbl_data_outlet.nama_outlet as employee_outlet',
-                'tbl_data_divisi.nama_divisi as employee_divisi'
-            ])
+        $movement = EmployeeMovement::with([
+            'employee:id,nama_lengkap,nik,id_jabatan,id_outlet,division_id',
+            'employee.jabatan:id_jabatan,nama_jabatan',
+            'employee.outlet:id_outlet,nama_outlet',
+            'employee.divisi:id,nama_divisi',
+            'hodApprover:id,nama_lengkap',
+            'gmApprover:id,nama_lengkap',
+            'gmHrApprover:id,nama_lengkap',
+            'bodApprover:id,nama_lengkap'
+        ])
             ->where('employee_movements.id', $id)
             ->first();
 
         if (!$movement) {
             return response()->json(['success' => false, 'message' => 'Not found'], 404);
+        }
+
+        // Get current employee data from users table
+        $employee = $movement->employee;
+        if ($employee) {
+            // Add employee current data to movement object for frontend
+            $movement->employee_jabatan = $employee->jabatan ? $employee->jabatan->nama_jabatan : null;
+            $movement->employee_outlet = $employee->outlet ? $employee->outlet->nama_outlet : null;
+            $movement->employee_divisi = $employee->divisi ? $employee->divisi->nama_divisi : null;
+            $movement->employee_nama_lengkap = $employee->nama_lengkap;
         }
 
         return response()->json(['success' => true, 'data' => $movement]);
