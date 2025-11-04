@@ -16,7 +16,9 @@ class MemberAppsChallenge extends Model
         'points_reward',
         'is_active',
         'start_date',
-        'end_date'
+        'end_date',
+        'challenge_type_id',
+        'validity_period_days'
     ];
 
     protected $casts = [

@@ -101,9 +101,21 @@
               (dengan filter aktif)
             </span>
           </div>
-          <div v-if="hasActiveFilters" class="text-xs text-blue-600">
-            <i class="fa-solid fa-filter mr-1"></i>
-            Filter: {{ activeFiltersCount }} aktif
+          <div class="flex items-center gap-3">
+            <button 
+              v-if="hasActiveFilters && props.retailFoods.total > 0"
+              @click="exportToExcel"
+              :disabled="exporting"
+              class="px-4 py-2 text-sm font-medium text-white bg-green-600 border border-green-600 rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <i class="fa-solid fa-file-excel mr-1"></i>
+              <span v-if="exporting">Exporting...</span>
+              <span v-else>Export Excel</span>
+            </button>
+            <div v-if="hasActiveFilters" class="text-xs text-blue-600">
+              <i class="fa-solid fa-filter mr-1"></i>
+              Filter: {{ activeFiltersCount }} aktif
+            </div>
           </div>
         </div>
       </div>
@@ -206,6 +218,7 @@ import { router } from '@inertiajs/vue3'
 import Swal from 'sweetalert2'
 import { ref, computed, watch } from 'vue'
 import { debounce } from 'lodash'
+import axios from 'axios'
 
 const props = defineProps({
   user: Object,
@@ -214,6 +227,7 @@ const props = defineProps({
 })
 
 const loadingId = ref(null)
+const exporting = ref(false)
 
 // Filter state
 const filters = ref({
@@ -341,5 +355,39 @@ function formatDate(date) {
 function formatRupiah(val) {
   if (!val) return 'Rp 0'
   return 'Rp ' + Number(val).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+async function exportToExcel() {
+  if (exporting.value) return
+  
+  exporting.value = true
+  try {
+    // Build query parameters from current filters
+    const params = new URLSearchParams()
+    if (filters.value.search) params.append('search', filters.value.search)
+    if (filters.value.date_from) params.append('date_from', filters.value.date_from)
+    if (filters.value.date_to) params.append('date_to', filters.value.date_to)
+    if (filters.value.payment_method) params.append('payment_method', filters.value.payment_method)
+    
+    // Create download link
+    const url = `/retail-food/export?${params.toString()}`
+    window.open(url, '_blank')
+    
+    Swal.fire({
+      icon: 'success',
+      title: 'Export Dimulai',
+      text: 'File Excel sedang didownload...',
+      timer: 2000,
+      showConfirmButton: false
+    })
+  } catch (error) {
+    Swal.fire({
+      icon: 'error',
+      title: 'Gagal Export',
+      text: error.response?.data?.error || 'Gagal melakukan export data'
+    })
+  } finally {
+    exporting.value = false
+  }
 }
 </script> 

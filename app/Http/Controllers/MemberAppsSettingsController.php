@@ -218,7 +218,9 @@ class MemberAppsSettingsController extends Controller
             'image' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
             'points_reward' => 'required|integer|min:0',
             'start_date' => 'nullable|date',
-            'end_date' => 'nullable|date|after:start_date'
+            'end_date' => 'nullable|date|after:start_date',
+            'challenge_type_id' => 'nullable|string',
+            'validity_period_days' => 'nullable|integer|min:1'
         ]);
 
         if ($validator->fails()) {
@@ -234,6 +236,15 @@ class MemberAppsSettingsController extends Controller
             'end_date' => $request->end_date,
             'is_active' => true
         ];
+        
+        // Always set challenge_type_id if provided (even if empty string)
+        if ($request->filled('challenge_type_id')) {
+            $data['challenge_type_id'] = $request->challenge_type_id;
+        }
+        
+        if ($request->filled('validity_period_days')) {
+            $data['validity_period_days'] = $request->validity_period_days;
+        }
 
         if ($request->hasFile('image')) {
             $data['image'] = $request->file('image')->store('member-apps/challenges', 'public');
@@ -242,6 +253,30 @@ class MemberAppsSettingsController extends Controller
         MemberAppsChallenge::create($data);
 
         return redirect()->back()->with('success', 'Challenge berhasil ditambahkan');
+    }
+
+    public function showChallenge($id)
+    {
+        $challenge = MemberAppsChallenge::findOrFail($id);
+        
+        // Parse rules JSON if it's a string
+        $rules = $challenge->rules;
+        if (is_string($rules)) {
+            $rules = json_decode($rules, true) ?? [];
+        }
+        
+        // Load item if reward_type is item and item_id exists
+        $item = null;
+        if (isset($rules['reward_type']) && $rules['reward_type'] === 'item' && isset($rules['item_id'])) {
+            $item = Item::find($rules['item_id']);
+        }
+        
+        $challenge->rules = $rules;
+        $challenge->reward_item = $item;
+        
+        return Inertia::render('MemberAppsSettings/ChallengeShow', [
+            'challenge' => $challenge
+        ]);
     }
 
     public function updateChallenge(Request $request, $id)
@@ -256,7 +291,9 @@ class MemberAppsSettingsController extends Controller
             'points_reward' => 'required|integer|min:0',
             'start_date' => 'nullable|date',
             'end_date' => 'nullable|date|after:start_date',
-            'is_active' => 'nullable|boolean'
+            'is_active' => 'nullable|boolean',
+            'challenge_type_id' => 'nullable|string',
+            'validity_period_days' => 'nullable|integer|min:1'
         ]);
 
         if ($validator->fails()) {
@@ -272,6 +309,15 @@ class MemberAppsSettingsController extends Controller
             'end_date' => $request->end_date,
             'is_active' => $request->has('is_active')
         ];
+        
+        // Always set challenge_type_id if provided (even if empty string)
+        if ($request->filled('challenge_type_id')) {
+            $data['challenge_type_id'] = $request->challenge_type_id;
+        }
+        
+        if ($request->filled('validity_period_days')) {
+            $data['validity_period_days'] = $request->validity_period_days;
+        }
 
         if ($request->hasFile('image')) {
             // Delete old image

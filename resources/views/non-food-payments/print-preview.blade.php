@@ -240,6 +240,77 @@
                 </div>
                 @endif
 
+                <!-- Items Section - Show items from PO or PR -->
+                @php
+                    $items = $paymentItems[$payment->id] ?? collect();
+                    $itemsSource = null;
+                    
+                    if ($items->isNotEmpty()) {
+                        // Determine source based on which ID exists
+                        if ($payment->purchase_order_ops_id) {
+                            $itemsSource = 'PO';
+                        } elseif ($payment->purchase_requisition_id) {
+                            $itemsSource = 'PR';
+                        }
+                    }
+                @endphp
+
+                @if($items && $items->count() > 0)
+                <div style="margin-top: 20px;">
+                    <h4 style="margin: 0 0 15px 0; font-weight: bold; color: #333; border-bottom: 2px solid #007bff; padding-bottom: 5px;">
+                        Payment Items ({{ $itemsSource }})
+                    </h4>
+                    <table class="items-table">
+                        <thead>
+                            <tr>
+                                <th>No</th>
+                                <th>Item Name</th>
+                                <th>Qty</th>
+                                <th>Unit</th>
+                                <th>Price</th>
+                                <th>Total</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach($items as $itemIndex => $item)
+                                @php
+                                    $itemName = is_object($item) ? ($item->item_name ?? 'N/A') : (is_array($item) ? ($item['item_name'] ?? 'N/A') : 'N/A');
+                                    $itemQty = $itemsSource === 'PO' 
+                                        ? (is_object($item) ? ($item->quantity ?? 0) : (is_array($item) ? ($item['quantity'] ?? 0) : 0))
+                                        : (is_object($item) ? ($item->qty ?? 0) : (is_array($item) ? ($item['qty'] ?? 0) : 0));
+                                    $itemUnit = is_object($item) ? ($item->unit ?? 'N/A') : (is_array($item) ? ($item['unit'] ?? 'N/A') : 'N/A');
+                                    $itemPrice = $itemsSource === 'PO'
+                                        ? (is_object($item) ? ($item->price ?? 0) : (is_array($item) ? ($item['price'] ?? 0) : 0))
+                                        : (is_object($item) ? ($item->unit_price ?? 0) : (is_array($item) ? ($item['unit_price'] ?? 0) : 0));
+                                    $itemTotal = $itemsSource === 'PO'
+                                        ? (is_object($item) ? ($item->total ?? 0) : (is_array($item) ? ($item['total'] ?? 0) : 0))
+                                        : (is_object($item) ? ($item->subtotal ?? 0) : (is_array($item) ? ($item['subtotal'] ?? 0) : 0));
+                                @endphp
+                                <tr>
+                                    <td>{{ $itemIndex + 1 }}</td>
+                                    <td>{{ $itemName }}</td>
+                                    <td>{{ $itemQty }}</td>
+                                    <td>{{ $itemUnit }}</td>
+                                    <td>Rp {{ number_format($itemPrice, 0, ',', '.') }}</td>
+                                    <td>Rp {{ number_format($itemTotal, 0, ',', '.') }}</td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
+                @else
+                <!-- Debug info (remove in production) -->
+                <div style="margin-top: 20px; padding: 10px; background-color: #fff3cd; border-left: 3px solid #ffc107;">
+                    <p style="margin: 0; color: #856404;">
+                        <strong>Debug Info:</strong><br>
+                        PO ID: {{ $payment->purchase_order_ops_id ?? 'N/A' }}<br>
+                        PR ID: {{ $payment->purchase_requisition_id ?? 'N/A' }}<br>
+                        PO Items Count: {{ $payment->purchaseOrderOps && $payment->purchaseOrderOps->items ? $payment->purchaseOrderOps->items->count() : 'N/A' }}<br>
+                        PR Items Count: {{ $payment->purchaseRequisition && $payment->purchaseRequisition->items ? $payment->purchaseRequisition->items->count() : 'N/A' }}
+                    </p>
+                </div>
+                @endif
+
                 <!-- Purchase Order Information -->
                 @if($payment->purchase_order_ops)
                 <div style="margin-top: 15px; padding: 10px; background-color: #f8f9fa; border-left: 3px solid #28a745;">
@@ -268,6 +339,7 @@
                     </div>
 
                     @if($payment->purchase_order_ops->items && count($payment->purchase_order_ops->items) > 0)
+                    <h5 style="margin: 15px 0 10px 0; font-weight: bold; color: #333;">PO Items:</h5>
                     <table class="items-table">
                         <thead>
                             <tr>
@@ -292,6 +364,8 @@
                             @endforeach
                         </tbody>
                     </table>
+                    @else
+                    <p style="margin: 15px 0; color: #666; font-style: italic;">No items found for this Purchase Order.</p>
                     @endif
                 </div>
                 @endif
@@ -322,6 +396,36 @@
                             </div>
                         </div>
                     </div>
+
+                    @if($payment->purchase_requisition->items && count($payment->purchase_requisition->items) > 0)
+                    <h5 style="margin: 15px 0 10px 0; font-weight: bold; color: #333;">PR Items:</h5>
+                    <table class="items-table" style="margin-top: 15px;">
+                        <thead>
+                            <tr>
+                                <th>No</th>
+                                <th>Item Name</th>
+                                <th>Qty</th>
+                                <th>Unit</th>
+                                <th>Price</th>
+                                <th>Total</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach($payment->purchase_requisition->items as $itemIndex => $item)
+                                <tr>
+                                    <td>{{ $itemIndex + 1 }}</td>
+                                    <td>{{ $item->item_name }}</td>
+                                    <td>{{ $item->qty }}</td>
+                                    <td>{{ $item->unit }}</td>
+                                    <td>Rp {{ number_format($item->unit_price, 0, ',', '.') }}</td>
+                                    <td>Rp {{ number_format($item->subtotal, 0, ',', '.') }}</td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                    @else
+                    <p style="margin: 15px 0; color: #666; font-style: italic;">No items found for this Purchase Requisition.</p>
+                    @endif
                 </div>
                 @endif
 

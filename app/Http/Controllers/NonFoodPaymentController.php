@@ -903,11 +903,50 @@ class NonFoodPaymentController extends Controller
                 'creator',
                 'purchaseOrderOps.supplier',
                 'purchaseOrderOps.items',
-                'purchaseRequisition'
+                'purchaseRequisition.items'
             ])->whereIn('id', $paymentIds)->get();
+
+            // Ensure items are loaded for each payment - use direct DB query to guarantee items are loaded
+            $paymentItems = [];
+            foreach ($payments as $payment) {
+                $items = collect();
+                
+                // Load PO items if payment has PO
+                if ($payment->purchase_order_ops_id) {
+                    $poItems = DB::table('purchase_order_ops_items')
+                        ->where('purchase_order_ops_id', $payment->purchase_order_ops_id)
+                        ->get();
+                    
+                    if ($poItems && $poItems->count() > 0) {
+                        $items = $poItems;
+                        // Also set to relationship for consistency
+                        if ($payment->purchaseOrderOps) {
+                            $payment->purchaseOrderOps->setRelation('items', $poItems);
+                        }
+                    }
+                }
+                
+                // Load PR items if payment has PR and no PO items
+                if ($items->isEmpty() && $payment->purchase_requisition_id) {
+                    $prItems = DB::table('purchase_requisition_items')
+                        ->where('purchase_requisition_id', $payment->purchase_requisition_id)
+                        ->get();
+                    
+                    if ($prItems && $prItems->count() > 0) {
+                        $items = $prItems;
+                        // Also set to relationship for consistency
+                        if ($payment->purchaseRequisition) {
+                            $payment->purchaseRequisition->setRelation('items', $prItems);
+                        }
+                    }
+                }
+                
+                $paymentItems[$payment->id] = $items;
+            }
 
             return view('non-food-payments.print-preview', [
                 'payments' => $payments,
+                'paymentItems' => $paymentItems,
             ]);
             
         } catch (\Exception $e) {

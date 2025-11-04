@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\RetailFood;
 use App\Models\RetailFoodItem;
 use App\Models\Outlet;
+use App\Exports\RetailFoodExport;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
@@ -1021,5 +1022,77 @@ class RetailFoodController extends Controller
                 'total_combined' => $retailFoodTotal + $foodFloorOrderTotal
             ]
         ]);
+    }
+
+    public function export(Request $request)
+    {
+        try {
+            $user = auth()->user()->load('outlet');
+            $userOutletId = $user->id_outlet;
+            
+            // Get filter parameters (same as index)
+            $search = $request->get('search', '');
+            $dateFrom = $request->get('date_from', '');
+            $dateTo = $request->get('date_to', '');
+            $paymentMethod = $request->get('payment_method', '');
+
+            // Query dengan join warehouse outlet dan supplier (same as index, but without pagination)
+            $query = RetailFood::query()
+                ->with(['outlet', 'creator', 'items', 'supplier'])
+                ->leftJoin('warehouse_outlets as wo', 'retail_food.warehouse_outlet_id', '=', 'wo.id')
+                ->leftJoin('suppliers as s', 'retail_food.supplier_id', '=', 's.id')
+                ->addSelect('retail_food.*', 'wo.name as warehouse_outlet_name', 's.name as supplier_name')
+                ->orderByDesc('retail_food.created_at');
+
+            // Apply outlet filter
+            if ($userOutletId != 1) {
+                $query->where('retail_food.outlet_id', $userOutletId);
+            }
+
+            // Apply search filter
+            if ($search) {
+                $query->where(function($q) use ($search) {
+                    $q->where('retail_food.retail_number', 'like', "%{$search}%")
+                      ->orWhere('s.name', 'like', "%{$search}%")
+                      ->orWhere('wo.name', 'like', "%{$search}%")
+                      ->orWhereHas('outlet', function($outletQuery) use ($search) {
+                          $outletQuery->where('nama_outlet', 'like', "%{$search}%");
+                      });
+                });
+            }
+
+            // Apply date filter
+            if ($dateFrom) {
+                $query->whereDate('retail_food.transaction_date', '>=', $dateFrom);
+            }
+            if ($dateTo) {
+                $query->whereDate('retail_food.transaction_date', '<=', $dateTo);
+            }
+
+            // Apply payment method filter
+            if ($paymentMethod) {
+                $query->where('retail_food.payment_method', $paymentMethod);
+            }
+
+            // Get all data (no pagination)
+            $retailFoods = $query->get();
+
+            // Prepare filters for export
+            $filters = [];
+            if ($dateFrom) $filters['date_from'] = $dateFrom;
+            if ($dateTo) $filters['date_to'] = $dateTo;
+            if ($search) $filters['search'] = $search;
+            if ($paymentMethod) $filters['payment_method'] = $paymentMethod;
+
+            // Export to Excel
+            $export = new RetailFoodExport($retailFoods, $filters);
+            $export->export();
+
+        } catch (\Exception $e) {
+            \Log::error('Retail Food Export Error: ' . $e->getMessage());
+            return response()->json([
+                'error' => 'Gagal export data: ' . $e->getMessage()
+            ], 500);
+        }
     }
 } 

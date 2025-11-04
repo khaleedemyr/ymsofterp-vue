@@ -1066,6 +1066,7 @@ Route::post('/outlet-rejections/{outletRejection}/cancel', [\App\Http\Controller
 });
 
 Route::middleware(['auth', 'verified'])->group(function () {
+    Route::get('retail-food/export', [\App\Http\Controllers\RetailFoodController::class, 'export'])->name('retail-food.export');
     Route::resource('retail-food', RetailFoodController::class);
     Route::get('retail-food/get-item-units/{itemId}', [\App\Http\Controllers\RetailFoodController::class, 'getItemUnits']);
     Route::post('retail-food/get-budget-info', [\App\Http\Controllers\RetailFoodController::class, 'getBudgetInfo']);
@@ -1180,10 +1181,11 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
 // Non Food Payments
 Route::middleware(['auth', 'verified'])->group(function () {
+    // Print preview must be before resource routes
+    Route::get('non-food-payments/print-preview', [\App\Http\Controllers\NonFoodPaymentController::class, 'printPreview'])->name('non-food-payments.print-preview');
     Route::resource('non-food-payments', \App\Http\Controllers\NonFoodPaymentController::class);
     Route::get('non-food-payments/po-items/{poId}', [\App\Http\Controllers\NonFoodPaymentController::class, 'getPOItems'])->name('non-food-payments.po-items');
     Route::get('non-food-payments/pr-items/{prId}', [\App\Http\Controllers\NonFoodPaymentController::class, 'getPRItems'])->name('non-food-payments.pr-items');
-    Route::get('non-food-payments/print-preview', [\App\Http\Controllers\NonFoodPaymentController::class, 'printPreview'])->name('non-food-payments.print-preview');
     Route::post('non-food-payments/{nonFoodPayment}/approve', [\App\Http\Controllers\NonFoodPaymentController::class, 'approve'])->name('non-food-payments.approve');
     Route::post('non-food-payments/{nonFoodPayment}/reject', [\App\Http\Controllers\NonFoodPaymentController::class, 'reject'])->name('non-food-payments.reject');
     Route::post('non-food-payments/{nonFoodPayment}/mark-as-paid', [\App\Http\Controllers\NonFoodPaymentController::class, 'markAsPaid'])->name('non-food-payments.mark-as-paid');
@@ -1354,6 +1356,7 @@ Route::post('/retail-warehouse-sale/store-customer', [App\Http\Controllers\Retai
 Route::get('/api/retail-warehouse-sale/item-price', [App\Http\Controllers\RetailWarehouseSaleController::class, 'getItemPrice']);
 
 Route::get('/report-invoice-outlet', [App\Http\Controllers\OutletPaymentController::class, 'reportInvoiceOutlet'])->name('report-invoice-outlet');
+Route::get('/report-invoice-outlet/export', [App\Http\Controllers\OutletPaymentController::class, 'exportInvoiceOutlet'])->name('report-invoice-outlet.export');
 
 Route::post('/stock-cut/order-items', [\App\Http\Controllers\StockCutController::class, 'potongStockOrderItems']);
 Route::post('/stock-cut/engineering', [\App\Http\Controllers\StockCutController::class, 'engineering']);
@@ -2175,6 +2178,7 @@ Route::middleware(['auth'])->prefix('admin')->group(function () {
     Route::get('/api/challenge-type-config', [App\Http\Controllers\ChallengeController::class, 'getChallengeTypeConfig'])->name('api.challenge-type-config');
     
     // Legacy challenge routes (keep for backward compatibility)
+    Route::get('/member-apps-settings/challenge/{id}', [App\Http\Controllers\MemberAppsSettingsController::class, 'showChallenge'])->name('member-apps-settings.challenge.show');
     Route::post('/member-apps-settings/challenge', [App\Http\Controllers\MemberAppsSettingsController::class, 'storeChallenge'])->name('member-apps-settings.challenge.store');
     Route::put('/member-apps-settings/challenge/{id}', [App\Http\Controllers\MemberAppsSettingsController::class, 'updateChallenge'])->name('member-apps-settings.challenge.update');
     Route::delete('/member-apps-settings/challenge/{id}', [App\Http\Controllers\MemberAppsSettingsController::class, 'deleteChallenge'])->name('member-apps-settings.challenge.delete');

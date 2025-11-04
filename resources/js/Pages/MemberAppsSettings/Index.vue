@@ -163,10 +163,13 @@
                     {{ challenge.is_active ? 'Active' : 'Inactive' }}
                   </span>
                   <div class="flex gap-2">
-                    <button @click="editChallenge(challenge)" class="text-blue-600 hover:text-blue-800">
+                    <button @click="viewChallenge(challenge.id)" class="text-green-600 hover:text-green-800" title="View Detail">
+                      <i class="fa-solid fa-eye"></i>
+                    </button>
+                    <button @click="editChallenge(challenge)" class="text-blue-600 hover:text-blue-800" title="Edit">
                       <i class="fa-solid fa-edit"></i>
                     </button>
-                    <button @click="deleteChallenge(challenge.id)" class="text-red-600 hover:text-red-800">
+                    <button @click="deleteChallenge(challenge.id)" class="text-red-600 hover:text-red-800" title="Delete">
                       <i class="fa-solid fa-trash"></i>
                     </button>
                   </div>
@@ -468,7 +471,48 @@
                 </div>
                 <div v-if="challengeForm.rules.reward_type">
                   <label class="block text-sm font-medium text-gray-700 mb-2">Reward Value *</label>
-                  <input v-model="challengeForm.rules.reward_value" type="text" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="Free Iced Coffee / 100 points / IDR 100.000" required>
+                  <!-- Item Autocomplete (for item reward type) -->
+                  <div v-if="challengeForm.rules.reward_type === 'item'">
+                    <Multiselect
+                      v-model="challengeForm.rules.reward_item"
+                      :options="items"
+                      :searchable="true"
+                      :clear-on-select="false"
+                      :close-on-select="true"
+                      :show-labels="false"
+                      track-by="id"
+                      label="name"
+                      placeholder="Select Item"
+                      :allow-empty="false"
+                      :multiple="false"
+                      :select-label="''"
+                      :selected-label="''"
+                      :deselect-label="''"
+                      :custom-label="(option) => option.name"
+                      required
+                    >
+                      <template #option="{ option }">
+                        <div class="flex justify-between items-center">
+                          <span>{{ option.name }}</span>
+                        </div>
+                      </template>
+                      <template #singleLabel="{ value }">
+                        <div class="flex justify-between items-center">
+                          <span>{{ value?.name || '' }}</span>
+                        </div>
+                      </template>
+                    </Multiselect>
+                    <div v-if="challengeForm.rules.reward_item && challengeForm.rules.reward_item.name" class="mt-2 p-2 bg-green-50 border border-green-200 rounded-lg">
+                      <div class="flex items-center gap-2">
+                        <i class="fa-solid fa-check-circle text-green-600"></i>
+                        <span class="text-sm text-green-800">
+                          Selected: <strong>{{ challengeForm.rules.reward_item?.name || 'Unknown Item' }}</strong>
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  <!-- Text Input (for other reward types) -->
+                  <input v-else v-model="challengeForm.rules.reward_value" type="text" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" :placeholder="challengeForm.rules.reward_type === 'points' ? '100 points' : challengeForm.rules.reward_type === 'voucher' ? 'IDR 100.000' : 'Reward Value'" required>
                 </div>
                 <div class="flex items-center">
                   <input v-model="challengeForm.rules.immediate" type="checkbox" class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded">
@@ -969,17 +1013,37 @@ const editReward = (reward) => {
 
 const editChallenge = (challenge) => {
   editingChallenge.value = challenge
+  
+  // Parse rules JSON if it's a string
+  let rules = challenge.rules || {}
+  if (typeof rules === 'string') {
+    try {
+      rules = JSON.parse(rules)
+    } catch (e) {
+      console.error('Error parsing rules JSON:', e)
+      rules = {}
+    }
+  }
+  
+  // If reward_type is 'item' and item_id exists, find the item and set as reward_item
+  if (rules.reward_type === 'item' && rules.item_id) {
+    const selectedItem = items.value.find(item => item.id === rules.item_id)
+    if (selectedItem) {
+      rules.reward_item = selectedItem
+    }
+  }
+  
   challengeForm.value = {
     challenge_type_id: challenge.challenge_type_id || '',
     title: challenge.title,
     description: challenge.description || '',
-    rules: challenge.rules || {},
+    rules: rules,
     validity_period_days: challenge.validity_period_days || 30,
     image: null,
-    points_reward: challenge.points_reward,
+    points_reward: challenge.points_reward || 0,
     start_date: challenge.start_date || '',
     end_date: challenge.end_date || '',
-    is_active: challenge.is_active
+    is_active: challenge.is_active !== undefined ? challenge.is_active : true
   }
   showChallengeModal.value = true
 }
@@ -1125,14 +1189,31 @@ const saveChallenge = () => {
   
   savingChallenge.value = true
   
+  // Prepare rules: if reward_type is 'item' and reward_item is selected, set reward_value and item_id
+  const rules = { ...challengeForm.value.rules }
+  if (rules.reward_type === 'item' && rules.reward_item) {
+    rules.reward_value = rules.reward_item.name
+    rules.item_id = rules.reward_item.id
+    // Remove reward_item object from rules (keep only necessary data)
+    delete rules.reward_item
+  }
+  
   const formData = new FormData()
   formData.append('title', challengeForm.value.title)
   formData.append('description', challengeForm.value.description)
-  formData.append('rules', challengeForm.value.rules)
+  formData.append('rules', JSON.stringify(rules))
   formData.append('points_reward', challengeForm.value.points_reward)
   formData.append('start_date', challengeForm.value.start_date)
   formData.append('end_date', challengeForm.value.end_date)
-  formData.append('is_active', challengeForm.value.is_active)
+  formData.append('is_active', challengeForm.value.is_active ? '1' : '0')
+  // Always send challenge_type_id if it exists (even if empty string)
+  if (challengeForm.value.challenge_type_id !== undefined && challengeForm.value.challenge_type_id !== null) {
+    formData.append('challenge_type_id', challengeForm.value.challenge_type_id || '')
+  }
+  // Always send validity_period_days if it exists
+  if (challengeForm.value.validity_period_days !== undefined && challengeForm.value.validity_period_days !== null) {
+    formData.append('validity_period_days', challengeForm.value.validity_period_days)
+  }
   
   if (challengeForm.value.image) {
     formData.append('image', challengeForm.value.image)
@@ -1334,6 +1415,10 @@ const deleteReward = (id) => {
       })
     }
   })
+}
+
+const viewChallenge = (id) => {
+  router.visit(`/admin/member-apps-settings/challenge/${id}`)
 }
 
 const deleteChallenge = (id) => {
