@@ -155,8 +155,19 @@
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                   <div class="flex items-center">
                     <div class="flex-shrink-0 h-8 w-8">
-                      <div class="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center">
-                        <i class="fas fa-user text-blue-600 text-xs"></i>
+                      <!-- Avatar User Creator -->
+                      <div v-if="pr.creator?.avatar" class="w-8 h-8 rounded-full overflow-hidden cursor-pointer hover:scale-110 transition-transform border-2 border-gray-200" @click="openImageModal(`/storage/${pr.creator.avatar}`)">
+                        <img 
+                          :src="`/storage/${pr.creator.avatar}`" 
+                          :alt="pr.creator?.nama_lengkap || 'User'"
+                          class="w-full h-full object-cover"
+                        />
+                      </div>
+                      <div 
+                        v-else 
+                        class="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-xs font-bold border-2 border-gray-200"
+                      >
+                        {{ getInitials(pr.creator?.nama_lengkap || 'U') }}
                       </div>
                     </div>
                     <div class="ml-3">
@@ -330,6 +341,21 @@
         </div>
       </div>
     </div>
+
+    <!-- Image Modal -->
+    <div v-if="showImageModal" class="fixed inset-0 z-[100001] flex items-center justify-center bg-black/80" @click="closeImageModal">
+      <div class="relative max-w-4xl max-h-[90vh] p-4">
+        <button @click="closeImageModal" class="absolute top-2 right-2 text-white hover:text-gray-300 z-10 bg-black/50 rounded-full p-2">
+          <i class="fas fa-times text-xl"></i>
+        </button>
+        <img 
+          :src="imageModalUrl" 
+          alt="Avatar" 
+          class="max-w-full max-h-[90vh] object-contain rounded-lg shadow-2xl"
+          @click.stop
+        />
+      </div>
+    </div>
   </AppLayout>
 </template>
 
@@ -367,6 +393,25 @@ const showPrintModal = ref(false);
 const printData = ref([]);
 const previewUrl = ref('');
 const previewFrame = ref(null);
+
+// Image modal functionality
+const showImageModal = ref(false);
+const imageModalUrl = ref('');
+
+function getInitials(name) {
+  if (!name) return 'U';
+  return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+}
+
+function openImageModal(imageUrl) {
+  imageModalUrl.value = imageUrl;
+  showImageModal.value = true;
+}
+
+function closeImageModal() {
+  showImageModal.value = false;
+  imageModalUrl.value = '';
+}
 
 const debouncedSearch = debounce(() => {
   router.get('/purchase-requisitions', {
