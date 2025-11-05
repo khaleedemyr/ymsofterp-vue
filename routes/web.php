@@ -384,17 +384,17 @@ Route::get('/api/purchase-requisitions/{id}/approval-details', [\App\Http\Contro
     // Test print method
     Route::get('/purchase-requisitions/test-print', [\App\Http\Controllers\PurchaseRequisitionController::class, 'testPrint'])->name('purchase-requisitions.test-print');
     
-    Route::get('/purchase-requisitions/{purchaseRequisition}', [\App\Http\Controllers\PurchaseRequisitionController::class, 'show'])->name('purchase-requisitions.show');
-    Route::get('/purchase-requisitions/{purchaseRequisition}/edit', [\App\Http\Controllers\PurchaseRequisitionController::class, 'edit'])->name('purchase-requisitions.edit');
-    Route::put('/purchase-requisitions/{purchaseRequisition}', [\App\Http\Controllers\PurchaseRequisitionController::class, 'update'])->name('purchase-requisitions.update');
-    Route::delete('/purchase-requisitions/{purchaseRequisition}', [\App\Http\Controllers\PurchaseRequisitionController::class, 'destroy'])->name('purchase-requisitions.destroy');
-    
-    // Purchase Requisition Actions
+    // Purchase Requisition Actions (must be before resource routes with same pattern)
     Route::post('/purchase-requisitions/{purchaseRequisition}/submit', [\App\Http\Controllers\PurchaseRequisitionController::class, 'submit'])->name('purchase-requisitions.submit');
     Route::post('/purchase-requisitions/{purchaseRequisition}/approve', [\App\Http\Controllers\PurchaseRequisitionController::class, 'approve'])->name('purchase-requisitions.approve');
     Route::post('/purchase-requisitions/{purchaseRequisition}/reject', [\App\Http\Controllers\PurchaseRequisitionController::class, 'reject'])->name('purchase-requisitions.reject');
     Route::post('/purchase-requisitions/{purchaseRequisition}/process', [\App\Http\Controllers\PurchaseRequisitionController::class, 'process'])->name('purchase-requisitions.process');
     Route::post('/purchase-requisitions/{purchaseRequisition}/complete', [\App\Http\Controllers\PurchaseRequisitionController::class, 'complete'])->name('purchase-requisitions.complete');
+    
+    // Purchase Requisition Resource routes
+    Route::get('/purchase-requisitions/{purchaseRequisition}', [\App\Http\Controllers\PurchaseRequisitionController::class, 'show'])->name('purchase-requisitions.show');
+    Route::get('/purchase-requisitions/{purchaseRequisition}/edit', [\App\Http\Controllers\PurchaseRequisitionController::class, 'edit'])->name('purchase-requisitions.edit');
+    Route::put('/purchase-requisitions/{purchaseRequisition}', [\App\Http\Controllers\PurchaseRequisitionController::class, 'update'])->name('purchase-requisitions.update');
     Route::delete('/purchase-requisitions/{purchaseRequisition}', [\App\Http\Controllers\PurchaseRequisitionController::class, 'destroy'])->name('purchase-requisitions.destroy');
     
     // Purchase Requisition Comments
