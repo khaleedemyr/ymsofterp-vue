@@ -1179,6 +1179,12 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::delete('/outlet-payments/{outletPayment}', [OutletPaymentController::class, 'destroy'])->name('outlet-payments.destroy');
 });
 
+// Cashflow Outlet Dashboard
+Route::middleware(['auth', 'verified'])->group(function () {
+    Route::get('/cashflow-outlet-dashboard', [\App\Http\Controllers\CashflowOutletDashboardController::class, 'index'])->name('cashflow-outlet-dashboard.index');
+    Route::get('/cashflow-outlet-dashboard/detail', [\App\Http\Controllers\CashflowOutletDashboardController::class, 'getDetail'])->name('cashflow-outlet-dashboard.detail');
+});
+
 // Non Food Payments
 Route::middleware(['auth', 'verified'])->group(function () {
     // Print preview must be before resource routes

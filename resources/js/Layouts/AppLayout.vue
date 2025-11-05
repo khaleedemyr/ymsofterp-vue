@@ -22,6 +22,7 @@ const menuGroups = [
         menus: [
             { name: () => t('sidebar.dashboard'), icon: 'fa-solid fa-home', route: '/home', code: 'dashboard' },
             { name: () => 'Sales Outlet Dashboard', icon: 'fa-solid fa-chart-line', route: '/sales-outlet-dashboard', code: 'sales_outlet_dashboard' },
+            { name: () => 'Cashflow Outlet Dashboard', icon: 'fa-solid fa-chart-pie', route: route('cashflow-outlet-dashboard.index'), code: 'cashflow_outlet_dashboard' },
             { name: () => 'My Attendance', icon: 'fa-solid fa-user-clock', route: '/attendance', code: 'my_attendance' },
             { name: () => 'Payment', icon: 'fa-solid fa-shopping-cart', route: '/purchase-requisitions', code: 'purchase_requisition_ops' },
             { name: () => 'Video Tutorial Gallery', icon: 'fa-solid fa-play-circle', route: '/video-tutorials/gallery' },
@@ -202,7 +203,7 @@ const menuGroups = [
             { name: () => 'OPEX Report', icon: 'fa-solid fa-chart-line', route: '/opex-report', code: 'opex_report' },
             //{ name: () => 'MT PO Payment', icon: 'fa-solid fa-money-bill-wave', route: route('mt-po-payment.index'), code: 'mt_po_payment' },
             { name: () => 'Outlet Payments', icon: 'fa-solid fa-money-bill', route: route('outlet-payments.index'), code: 'outlet_payments' },
-            { name: () => 'Outlet Payment Supplier', icon: 'fa-solid fa-money-bill', route: route('outlet-payment-suppliers.index'), code: 'outlet_payment_suppliers' },
+            //{ name: () => 'Outlet Payment Supplier', icon: 'fa-solid fa-money-bill', route: route('outlet-payment-suppliers.index'), code: 'outlet_payment_suppliers' },
            
             //{ name: () => 'PR Payment', icon: 'fa-solid fa-credit-card', route: '/payments', code: 'pr_payment' },
             {

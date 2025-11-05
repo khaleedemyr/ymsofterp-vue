@@ -508,38 +508,38 @@ function deletePR(pr) {
     reverseButtons: true
   }).then((result) => {
     if (result.isConfirmed) {
-      // Show loading
-      Swal.fire({
-        title: 'Menghapus...',
-        text: 'Sedang menghapus Payment',
-        allowOutsideClick: false,
-        showConfirmButton: false,
-        willOpen: () => {
-          Swal.showLoading();
-        }
-      });
-
-      // Make delete request
-      axios.delete(`/purchase-requisitions/${pr.id}`)
-        .then(response => {
+      // Make delete request using Inertia router
+      router.delete(route('purchase-requisitions.destroy', pr.id), {
+        onStart: () => {
+          Swal.fire({
+            title: 'Menghapus...',
+            text: 'Sedang menghapus Payment',
+            allowOutsideClick: false,
+            showConfirmButton: false,
+            didOpen: () => {
+              Swal.showLoading();
+            }
+          });
+        },
+        onSuccess: () => {
           Swal.fire({
             title: 'Berhasil!',
             text: 'Payment berhasil dihapus',
             icon: 'success',
             confirmButtonColor: '#10B981'
-          }).then(() => {
-            // Reload the page to refresh the data
-            router.reload();
           });
-        })
-        .catch(error => {
-          console.error('Error deleting PR:', error);
+        },
+        onError: (errors) => {
+          Swal.close();
+          console.error('Error deleting PR:', errors);
           let errorMessage = 'Gagal menghapus Payment';
           
-          if (error.response?.data?.message) {
-            errorMessage = error.response.data.message;
-          } else if (error.response?.data?.error) {
-            errorMessage = error.response.data.error;
+          if (errors.message) {
+            errorMessage = errors.message;
+          } else if (errors.error) {
+            errorMessage = errors.error;
+          } else if (typeof errors === 'string') {
+            errorMessage = errors;
           }
           
           Swal.fire({
@@ -548,7 +548,11 @@ function deletePR(pr) {
             icon: 'error',
             confirmButtonColor: '#EF4444'
           });
-        });
+        },
+        onFinish: () => {
+          // Swal will be closed in onSuccess or onError
+        }
+      });
     }
   });
 }
