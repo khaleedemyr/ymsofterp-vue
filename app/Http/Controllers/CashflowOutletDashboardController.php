@@ -107,6 +107,9 @@ class CashflowOutletDashboardController extends Controller
         $totalCashOut = $cashOut['total'];
         $netCashflow = $totalCashIn - $totalCashOut;
 
+        // Calculate cash out percentage against cash in
+        $cashOutPercentage = $totalCashIn > 0 ? ($totalCashOut / $totalCashIn) * 100 : 0;
+
         // Get opening balance (saldo akhir periode sebelumnya)
         // For simplicity, we'll use 0 as opening balance for now
         // In production, this should be calculated from previous period's closing balance
@@ -119,6 +122,7 @@ class CashflowOutletDashboardController extends Controller
             'net_cashflow' => $netCashflow,
             'opening_balance' => $openingBalance,
             'closing_balance' => $closingBalance,
+            'cash_out_percentage' => round($cashOutPercentage, 2),
             'cash_in_details' => [
                 'total_revenue' => $totalCashIn
             ],

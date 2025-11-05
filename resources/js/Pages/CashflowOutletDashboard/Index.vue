@@ -44,6 +44,25 @@ const formatNumber = (value) => {
     return new Intl.NumberFormat('id-ID').format(value);
 };
 
+// Get color class for cash out percentage (semakin besar semakin merah)
+const getCashOutPercentageColor = (percentage) => {
+    if (percentage === undefined || percentage === null) return 'text-gray-600';
+    
+    if (percentage >= 90) {
+        return 'text-red-700'; // Sangat merah (buruk)
+    } else if (percentage >= 75) {
+        return 'text-red-600'; // Merah (perhatian tinggi)
+    } else if (percentage >= 60) {
+        return 'text-orange-600'; // Orange-merah (perhatian)
+    } else if (percentage >= 50) {
+        return 'text-yellow-600'; // Kuning (warning)
+    } else if (percentage >= 40) {
+        return 'text-yellow-500'; // Kuning muda (hati-hati)
+    } else {
+        return 'text-green-600'; // Hijau (baik)
+    }
+};
+
 // Apply filters
 const applyFilters = () => {
     loading.value = true;
@@ -414,6 +433,13 @@ watch(() => props.filters, (newFilters) => {
                             <p class="text-sm font-medium text-gray-600">Total Cash Out</p>
                             <p class="text-2xl font-bold text-red-600 mt-1">
                                 {{ formatCurrency(overview.total_cash_out || 0) }}
+                            </p>
+                            <p 
+                                v-if="overview.cash_out_percentage !== undefined"
+                                class="text-sm font-semibold mt-1"
+                                :class="getCashOutPercentageColor(overview.cash_out_percentage)"
+                            >
+                                {{ overview.cash_out_percentage.toFixed(1) }}% dari Cash In
                             </p>
                             <button
                                 @click="showDetail('cash_out')"
