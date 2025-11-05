@@ -477,22 +477,6 @@ watch(() => props.filters, (newFilters) => {
                     </div>
                 </div>
 
-                <div class="bg-white rounded-lg shadow p-6">
-                    <div class="flex items-center justify-between">
-                        <div>
-                            <p class="text-sm font-medium text-gray-600">Closing Balance</p>
-                            <p class="text-2xl font-bold text-blue-600 mt-1">
-                                {{ formatCurrency(overview.closing_balance || 0) }}
-                            </p>
-                            <p class="text-xs text-gray-500 mt-1">
-                                Opening: {{ formatCurrency(overview.opening_balance || 0) }}
-                            </p>
-                        </div>
-                        <div class="bg-blue-100 rounded-full p-3">
-                            <i class="fas fa-wallet text-blue-600 text-xl"></i>
-                        </div>
-                    </div>
-                </div>
             </div>
 
             <!-- Comparison Cards (if comparison enabled) -->
@@ -501,8 +485,7 @@ watch(() => props.filters, (newFilters) => {
                     v-for="(metric, index) in [
                         { label: 'Cash In', key: 'total_cash_in', color: 'green' },
                         { label: 'Cash Out', key: 'total_cash_out', color: 'red' },
-                        { label: 'Net Cashflow', key: 'net_cashflow', color: 'blue' },
-                        { label: 'Closing Balance', key: 'closing_balance', color: 'purple' }
+                        { label: 'Net Cashflow', key: 'net_cashflow', color: 'blue' }
                     ]"
                     :key="index"
                     class="bg-white rounded-lg shadow p-4"
