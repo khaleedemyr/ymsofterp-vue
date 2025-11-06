@@ -537,6 +537,32 @@ class PurchaseRequisitionController extends Controller
             return back()->withErrors(['error' => 'Only approved purchase requisitions can be processed.']);
         }
 
+        // For PR Ops and Payment modes, check if all items are in PO before allowing status change
+        if (in_array($purchaseRequisition->mode, ['pr_ops', 'purchase_payment'])) {
+            // Get all items for this PR
+            $allPrItems = \App\Models\PurchaseRequisitionItem::where('purchase_requisition_id', $purchaseRequisition->id)->get();
+            
+            if ($allPrItems->isNotEmpty()) {
+                // Get all PR item IDs that are already in PO
+                $prItemIdsInPO = \Illuminate\Support\Facades\DB::table('purchase_order_ops_items')
+                    ->whereNotNull('pr_ops_item_id')
+                    ->whereIn('pr_ops_item_id', $allPrItems->pluck('id')->toArray())
+                    ->pluck('pr_ops_item_id')
+                    ->toArray();
+
+                // Check if all items are in PO
+                $allItemsInPO = $allPrItems->every(function ($item) use ($prItemIdsInPO) {
+                    return in_array($item->id, $prItemIdsInPO);
+                });
+
+                if (!$allItemsInPO) {
+                    return back()->withErrors([
+                        'error' => 'Tidak dapat mengubah status ke PROCESSED. Belum semua item dari PR ini dibuat menjadi Purchase Order. Silakan buat PO untuk semua item terlebih dahulu.'
+                    ]);
+                }
+            }
+        }
+
         try {
             $purchaseRequisition->update(['status' => 'PROCESSED']);
             

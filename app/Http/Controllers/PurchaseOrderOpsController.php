@@ -357,11 +357,6 @@ class PurchaseOrderOpsController extends Controller
                     PurchaseOrderOpsItem::create($poItemData);
                 }
 
-                // Update PR status to 'PROCESSED' (since it's now in PO)
-                foreach ($prIds as $prId) {
-                    PurchaseRequisition::where('id', $prId)->update(['status' => 'PROCESSED']);
-                }
-
                 // Log activity
                 ActivityLog::create([
                     'user_id' => Auth::id(),
@@ -373,6 +368,58 @@ class PurchaseOrderOpsController extends Controller
                     'old_data' => null,
                     'new_data' => $po->toArray(),
                 ]);
+            }
+
+            // Check and update PR status only if ALL items have been made into PO
+            // Only update PR status to 'PROCESSED' when all items are in PO
+            foreach ($prIds as $prId) {
+                $pr = PurchaseRequisition::find($prId);
+                if (!$pr) {
+                    continue;
+                }
+
+                // Only process PR Ops and Payment modes
+                if (!in_array($pr->mode, ['pr_ops', 'purchase_payment'])) {
+                    continue;
+                }
+
+                // Get all items for this PR
+                $allPrItems = PurchaseRequisitionItem::where('purchase_requisition_id', $prId)->get();
+                
+                if ($allPrItems->isEmpty()) {
+                    continue;
+                }
+
+                // Get all PR item IDs that are already in PO
+                $prItemIdsInPO = DB::table('purchase_order_ops_items')
+                    ->whereNotNull('pr_ops_item_id')
+                    ->whereIn('pr_ops_item_id', $allPrItems->pluck('id')->toArray())
+                    ->pluck('pr_ops_item_id')
+                    ->toArray();
+
+                // Check if all items are in PO
+                $allItemsInPO = $allPrItems->every(function ($item) use ($prItemIdsInPO) {
+                    return in_array($item->id, $prItemIdsInPO);
+                });
+
+                // Only update to PROCESSED if all items are in PO
+                if ($allItemsInPO && $pr->status === 'APPROVED') {
+                    $pr->update(['status' => 'PROCESSED']);
+                    \Log::info('PR status updated to PROCESSED - all items are in PO', [
+                        'pr_id' => $prId,
+                        'pr_number' => $pr->pr_number,
+                        'total_items' => $allPrItems->count(),
+                        'items_in_po' => count($prItemIdsInPO)
+                    ]);
+                } else {
+                    \Log::info('PR status kept as APPROVED - not all items are in PO yet', [
+                        'pr_id' => $prId,
+                        'pr_number' => $pr->pr_number,
+                        'total_items' => $allPrItems->count(),
+                        'items_in_po' => count($prItemIdsInPO),
+                        'current_status' => $pr->status
+                    ]);
+                }
             }
 
             DB::commit();
@@ -694,34 +741,56 @@ class PurchaseOrderOpsController extends Controller
         try {
             DB::beginTransaction();
             
-            // Update related Purchase Requisition Ops status back to APPROVED
-            if ($po->source_type === 'purchase_requisition_ops' && $po->source_id) {
-                $pr = PurchaseRequisition::find($po->source_id);
-                if ($pr) {
-                    // Check if there are other POs from this PR that are not deleted
-                    $otherPOsCount = PurchaseOrderOps::where('source_type', 'purchase_requisition_ops')
-                        ->where('source_id', $po->source_id)
-                        ->where('id', '!=', $po->id)
-                        ->count();
-                    
-                    // Only update PR status to APPROVED if this is the only PO or all other POs are also being deleted
-                    // For now, we'll always set it back to APPROVED when a PO is deleted
-                    $pr->status = 'APPROVED';
-                    $pr->save();
-                    
-                    \Log::info('Purchase Requisition status updated to APPROVED after PO deletion', [
-                        'pr_id' => $pr->id,
-                        'pr_number' => $pr->pr_number,
-                        'po_id' => $po->id,
-                        'po_number' => $po->number,
-                        'other_pos_count' => $otherPOsCount
-                    ]);
-                }
-            }
-            
-            // Delete items
+            // Delete items first
             foreach ($po->items as $item) {
                 $item->delete();
+            }
+            
+            // Update related Purchase Requisition Ops status based on remaining items in PO
+            if ($po->source_type === 'purchase_requisition_ops' && $po->source_id) {
+                $pr = PurchaseRequisition::find($po->source_id);
+                if ($pr && in_array($pr->mode, ['pr_ops', 'purchase_payment'])) {
+                    // Get all items for this PR
+                    $allPrItems = PurchaseRequisitionItem::where('purchase_requisition_id', $pr->id)->get();
+                    
+                    if ($allPrItems->isNotEmpty()) {
+                        // Get all PR item IDs that are still in PO (after this deletion)
+                        $prItemIdsInPO = DB::table('purchase_order_ops_items')
+                            ->whereNotNull('pr_ops_item_id')
+                            ->whereIn('pr_ops_item_id', $allPrItems->pluck('id')->toArray())
+                            ->pluck('pr_ops_item_id')
+                            ->toArray();
+
+                        // Check if all items are still in PO
+                        $allItemsInPO = $allPrItems->every(function ($item) use ($prItemIdsInPO) {
+                            return in_array($item->id, $prItemIdsInPO);
+                        });
+
+                        // Only update to APPROVED if not all items are in PO anymore
+                        if (!$allItemsInPO && $pr->status === 'PROCESSED') {
+                            $pr->status = 'APPROVED';
+                            $pr->save();
+                            
+                            \Log::info('Purchase Requisition status updated to APPROVED after PO deletion - not all items in PO', [
+                                'pr_id' => $pr->id,
+                                'pr_number' => $pr->pr_number,
+                                'po_id' => $po->id,
+                                'po_number' => $po->number,
+                                'total_items' => $allPrItems->count(),
+                                'items_in_po' => count($prItemIdsInPO)
+                            ]);
+                        } else if ($allItemsInPO) {
+                            \Log::info('Purchase Requisition status kept as PROCESSED - all items still in PO', [
+                                'pr_id' => $pr->id,
+                                'pr_number' => $pr->pr_number,
+                                'po_id' => $po->id,
+                                'po_number' => $po->number,
+                                'total_items' => $allPrItems->count(),
+                                'items_in_po' => count($prItemIdsInPO)
+                            ]);
+                        }
+                    }
+                }
             }
             
             // Store PO data for logging before deletion
