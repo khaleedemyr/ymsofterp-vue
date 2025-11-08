@@ -272,6 +272,7 @@
                             </thead>
                             <tbody class="bg-white divide-y divide-gray-200">
                               <template v-for="item in subCategoryData" :key="item.item_id + '-' + item.warehouse_id + '-' + item.unit_id">
+                                <!-- Row Small Unit (always shown) -->
                                 <tr class="hover:bg-gray-50">
                                   <td class="px-4 py-3 text-sm font-medium text-gray-900">
                                     <div class="flex items-center">
@@ -281,11 +282,14 @@
                                       {{ item.item_name }}
                                     </div>
                                   </td>
-                                  <td class="px-4 py-3 text-sm text-gray-500">{{ item.unit_name }}</td>
-                                  <td class="px-4 py-3 text-sm text-right font-semibold text-gray-900">{{ formatQuantity(item.kebutuhan) }}</td>
-                                  <td class="px-4 py-3 text-sm text-right font-semibold text-gray-900">{{ formatQuantity(item.stock_tersedia) }}</td>
-                                  <td class="px-4 py-3 text-sm text-right font-semibold" :class="item.selisih > 0 ? 'text-red-600' : 'text-green-600'">
-                                    {{ item.selisih > 0 ? '+' + formatQuantity(item.selisih) : formatQuantity(item.selisih) }}
+                                  <td class="px-4 py-3 text-sm text-gray-500">
+                                    <span class="font-semibold">{{ item.unit_small_name || item.unit_name }}</span>
+                                    <span class="text-xs text-gray-400 ml-1">(Small)</span>
+                                  </td>
+                                  <td class="px-4 py-3 text-sm text-right font-semibold text-gray-900">{{ formatQuantity(item.kebutuhan_small || item.kebutuhan) }}</td>
+                                  <td class="px-4 py-3 text-sm text-right font-semibold text-gray-900">{{ formatQuantity(item.stock_tersedia_small || item.stock_tersedia) }}</td>
+                                  <td class="px-4 py-3 text-sm text-right font-semibold" :class="(item.selisih_small || item.selisih) > 0 ? 'text-red-600' : 'text-green-600'">
+                                    {{ (item.selisih_small || item.selisih) > 0 ? '+' + formatQuantity(item.selisih_small || item.selisih) : formatQuantity(item.selisih_small || item.selisih) }}
                                   </td>
                                   <td class="px-4 py-3 text-sm text-center">
                                     <span v-if="item.status === 'cukup'" class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
@@ -294,6 +298,40 @@
                                     <span v-else class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
                                       Kurang
                                     </span>
+                                  </td>
+                                </tr>
+                                
+                                <!-- Row Medium Unit (if available) -->
+                                <tr v-if="item.has_medium_unit && item.unit_medium_name" class="hover:bg-gray-50 bg-blue-50/30">
+                                  <td class="px-4 py-3 text-sm text-gray-500"></td>
+                                  <td class="px-4 py-3 text-sm text-gray-500">
+                                    <span class="font-semibold">{{ item.unit_medium_name }}</span>
+                                    <span class="text-xs text-gray-400 ml-1">(Medium)</span>
+                                  </td>
+                                  <td class="px-4 py-3 text-sm text-right font-semibold text-gray-700">{{ formatQuantity(item.kebutuhan_medium) }}</td>
+                                  <td class="px-4 py-3 text-sm text-right font-semibold text-gray-700">{{ formatQuantity(item.stock_tersedia_medium) }}</td>
+                                  <td class="px-4 py-3 text-sm text-right font-semibold" :class="item.selisih_medium > 0 ? 'text-red-600' : 'text-green-600'">
+                                    {{ item.selisih_medium > 0 ? '+' + formatQuantity(item.selisih_medium) : formatQuantity(item.selisih_medium) }}
+                                  </td>
+                                  <td class="px-4 py-3 text-sm text-center">
+                                    <span class="text-xs text-gray-500">-</span>
+                                  </td>
+                                </tr>
+                                
+                                <!-- Row Large Unit (if available) -->
+                                <tr v-if="item.has_large_unit && item.unit_large_name" class="hover:bg-gray-50 bg-purple-50/30">
+                                  <td class="px-4 py-3 text-sm text-gray-500"></td>
+                                  <td class="px-4 py-3 text-sm text-gray-500">
+                                    <span class="font-semibold">{{ item.unit_large_name }}</span>
+                                    <span class="text-xs text-gray-400 ml-1">(Large)</span>
+                                  </td>
+                                  <td class="px-4 py-3 text-sm text-right font-semibold text-gray-700">{{ formatQuantity(item.kebutuhan_large) }}</td>
+                                  <td class="px-4 py-3 text-sm text-right font-semibold text-gray-700">{{ formatQuantity(item.stock_tersedia_large) }}</td>
+                                  <td class="px-4 py-3 text-sm text-right font-semibold" :class="item.selisih_large > 0 ? 'text-red-600' : 'text-green-600'">
+                                    {{ item.selisih_large > 0 ? '+' + formatQuantity(item.selisih_large) : formatQuantity(item.selisih_large) }}
+                                  </td>
+                                  <td class="px-4 py-3 text-sm text-center">
+                                    <span class="text-xs text-gray-500">-</span>
                                   </td>
                                 </tr>
                                 

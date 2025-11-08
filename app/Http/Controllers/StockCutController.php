@@ -851,12 +851,37 @@ class StockCutController extends Controller
                 ->where('outlet_food_inventory_stocks.warehouse_outlet_id', $warehouse_id)
                 ->first();
             
-            $stockTersedia = $stock ? $stock->qty_small : 0;
-            $selisih = $aggregatedData['total_qty'] - $stockTersedia;
+            // Stock tersedia dalam unit small (base unit)
+            $stockTersediaSmall = $stock ? $stock->qty_small : 0;
             
-            if ($selisih > 0) {
+            // Kebutuhan dalam unit small (dari BOM)
+            $kebutuhanSmall = $aggregatedData['total_qty'];
+            
+            // Konversi kebutuhan ke medium dan large
+            $smallConv = $item ? ($item->small_conversion_qty ?: 1) : 1;
+            $mediumConv = $item ? ($item->medium_conversion_qty ?: 1) : 1;
+            
+            $kebutuhanMedium = $smallConv > 0 ? $kebutuhanSmall / $smallConv : 0;
+            $kebutuhanLarge = ($smallConv > 0 && $mediumConv > 0) ? $kebutuhanSmall / ($smallConv * $mediumConv) : 0;
+            
+            // Stock tersedia dalam medium dan large
+            // Hitung dari small untuk konsistensi dengan kebutuhan (yang juga dihitung dari small)
+            $stockTersediaMedium = ($smallConv > 0 && $stockTersediaSmall > 0) ? $stockTersediaSmall / $smallConv : 0;
+            $stockTersediaLarge = ($smallConv > 0 && $mediumConv > 0 && $stockTersediaSmall > 0) ? $stockTersediaSmall / ($smallConv * $mediumConv) : 0;
+            
+            // Selisih dalam semua unit
+            $selisihSmall = $kebutuhanSmall - $stockTersediaSmall;
+            $selisihMedium = $kebutuhanMedium - $stockTersediaMedium;
+            $selisihLarge = $kebutuhanLarge - $stockTersediaLarge;
+            
+            if ($selisihSmall > 0) {
                 $totalKurang++;
             }
+            
+            // Ambil unit names
+            $unitSmall = DB::table('units')->where('id', $item->small_unit_id ?? null)->value('name') ?? 'Unit';
+            $unitMedium = DB::table('units')->where('id', $item->medium_unit_id ?? null)->value('name') ?? null;
+            $unitLarge = DB::table('units')->where('id', $item->large_unit_id ?? null)->value('name') ?? null;
             
             // Use the first unit as primary unit for display
             $primaryUnitId = array_keys($aggregatedData['units'])[0];
@@ -871,11 +896,31 @@ class StockCutController extends Controller
                 'warehouse_name' => $warehouse ? $warehouse->name : 'Unknown Warehouse',
                 'unit_id' => $primaryUnitId,
                 'unit_name' => $primaryUnitName,
-                'kebutuhan' => $aggregatedData['total_qty'],
-                'stock_tersedia' => $stockTersedia,
-                'selisih' => $selisih,
-                'status' => $selisih > 0 ? 'kurang' : 'cukup',
-                'contributing_menus' => $aggregatedData['contributing_menus']
+                'kebutuhan' => $kebutuhanSmall,
+                'stock_tersedia' => $stockTersediaSmall,
+                'selisih' => $selisihSmall,
+                'status' => $selisihSmall > 0 ? 'kurang' : 'cukup',
+                'contributing_menus' => $aggregatedData['contributing_menus'],
+                // Konversi unit - Small
+                'kebutuhan_small' => $kebutuhanSmall,
+                'stock_tersedia_small' => $stockTersediaSmall,
+                'selisih_small' => $selisihSmall,
+                'unit_small_name' => $unitSmall,
+                // Konversi unit - Medium
+                'kebutuhan_medium' => $kebutuhanMedium,
+                'stock_tersedia_medium' => $stockTersediaMedium,
+                'selisih_medium' => $selisihMedium,
+                'unit_medium_name' => $unitMedium,
+                'has_medium_unit' => $item && $item->medium_unit_id && $smallConv > 0,
+                // Konversi unit - Large
+                'kebutuhan_large' => $kebutuhanLarge,
+                'stock_tersedia_large' => $stockTersediaLarge,
+                'selisih_large' => $selisihLarge,
+                'unit_large_name' => $unitLarge,
+                'has_large_unit' => $item && $item->large_unit_id && $smallConv > 0 && $mediumConv > 0,
+                // Conversion factors
+                'small_conversion_qty' => $smallConv,
+                'medium_conversion_qty' => $mediumConv
             ];
         }
 
