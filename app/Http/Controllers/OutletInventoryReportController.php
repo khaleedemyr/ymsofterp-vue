@@ -67,6 +67,7 @@ class OutletInventoryReportController extends Controller
             ->join('outlet_food_inventory_items as fi', 's.inventory_item_id', '=', 'fi.id')
             ->join('items as i', 'fi.item_id', '=', 'i.id')
             ->join('tbl_data_outlet as o', 's.id_outlet', '=', 'o.id_outlet')
+            ->leftJoin('categories as c', 'i.category_id', '=', 'c.id')
             ->leftJoin('units as us', 'i.small_unit_id', '=', 'us.id')
             ->leftJoin('units as um', 'i.medium_unit_id', '=', 'um.id')
             ->leftJoin('units as ul', 'i.large_unit_id', '=', 'ul.id')
@@ -74,6 +75,8 @@ class OutletInventoryReportController extends Controller
             ->select(
                 'i.id as item_id',
                 'i.name as item_name',
+                'c.id as category_id',
+                'c.name as category_name',
                 'o.id_outlet as outlet_id',
                 'o.nama_outlet as outlet_name',
                 's.qty_small',
@@ -101,7 +104,7 @@ class OutletInventoryReportController extends Controller
             $query->where('s.warehouse_outlet_id', $warehouseOutletId);
         }
         
-        $data = $query->orderBy('o.nama_outlet')->orderBy('i.name')->get();
+        $data = $query->orderBy('c.name')->orderBy('i.name')->get();
         
         // Get filter options
         $outletsQuery = DB::table('tbl_data_outlet')

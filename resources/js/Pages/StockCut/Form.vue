@@ -56,7 +56,7 @@
           </form>
 
           <!-- Stock Cut Status -->
-          <div v-if="stockCutStatus && stockCutStatus.has_stock_cut" class="mt-6">
+            <div v-if="stockCutStatus && stockCutStatus.has_stock_cut" class="mt-6">
             <div v-if="stockCutStatus.log.status === 'success'" class="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded">
               <strong class="font-bold">Stock Cut Sudah Dilakukan!</strong>
               <div class="mt-2 text-sm">
@@ -64,6 +64,7 @@
                 <p>Total item dipotong: {{ stockCutStatus.log.total_items_cut }}</p>
                 <p>Total modifier dipotong: {{ stockCutStatus.log.total_modifiers_cut }}</p>
                 <p>Dilakukan pada: {{ new Date(stockCutStatus.log.created_at).toLocaleString('id-ID') }}</p>
+                <p class="mt-2 font-semibold text-red-600">⚠️ Stock cut tidak dapat dilakukan lagi untuk tanggal ini.</p>
               </div>
             </div>
             <div v-else class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
@@ -72,6 +73,7 @@
                 <p>Outlet ini pernah mencoba potong stock pada tanggal {{ tanggal }} tetapi gagal.</p>
                 <p>Error: {{ stockCutStatus.log.error_message }}</p>
                 <p>Dilakukan pada: {{ new Date(stockCutStatus.log.created_at).toLocaleString('id-ID') }}</p>
+                <p class="mt-2 font-semibold">Anda dapat mencoba stock cut lagi.</p>
               </div>
             </div>
           </div>
@@ -180,7 +182,7 @@
                 <span v-if="loading" class="animate-spin mr-2">⏳</span>
                 Cek Kebutuhan Stock Engineering
               </button>
-              <button v-if="bolehPotong" @click="potongStockAsync" :disabled="loadingPotong" class="ml-2 bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 transition">
+              <button v-if="bolehPotong && !isAlreadyCut" @click="potongStockAsync" :disabled="loadingPotong" class="ml-2 bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 transition">
                 <span v-if="loadingPotong" class="animate-spin mr-2">⏳</span>
                 Potong Stock Sekarang (Queue)
               </button>
@@ -434,6 +436,12 @@ const expandedItems = ref({}) // New ref for item expansion
 
 // Computed
 const userOutletName = computed(() => user.value.outlet_name)
+const isAlreadyCut = computed(() => {
+  return stockCutStatus.value && 
+         stockCutStatus.value.has_stock_cut && 
+         stockCutStatus.value.log && 
+         stockCutStatus.value.log.status === 'success'
+})
 
 // Group laporan stock by warehouse, category, and sub-category
 const groupedLaporanStock = computed(() => {
@@ -504,6 +512,27 @@ watch(selectedOutlet, async (val) => {
   if (user.value.id_outlet === 1 && val) {
     const whRes = await axios.get('/api/warehouse-outlets', { params: { outlet_id: val } })
     warehouseMaster.value = Object.fromEntries(whRes.data.map(w => [w.id, w.name]))
+  }
+  // Reset stock cut status saat outlet berubah
+  if (tanggal.value) {
+    stockCutStatus.value = null
+    await cekStockCutStatus()
+  }
+})
+
+watch(tanggal, async (val) => {
+  // Reset stock cut status saat tanggal berubah
+  if (val && (selectedOutlet.value || user.value.id_outlet)) {
+    stockCutStatus.value = null
+    await cekStockCutStatus()
+  }
+})
+
+watch(selectedType, async (val) => {
+  // Reset stock cut status saat type berubah
+  if (tanggal.value && (selectedOutlet.value || user.value.id_outlet)) {
+    stockCutStatus.value = null
+    await cekStockCutStatus()
   }
 })
 
@@ -637,41 +666,35 @@ async function potongStockAsync() {
   errorMsg.value = ''
   successMsg.value = ''
   try {
-    // Dispatch async job
+    // Process stock cut directly (synchronous, no queue needed)
     const res = await axios.post('/stock-cut/dispatch', {
       tanggal: tanggal.value,
       id_outlet: selectedOutlet.value || user.value.id_outlet,
       type: selectedType.value || null
     })
-    if (res.data.status === 'queued') {
-      successMsg.value = 'Stock cut masuk antrian. Memproses...'
-      // Start polling status
-      if (pollTimer) clearInterval(pollTimer)
-      pollTimer = setInterval(async () => {
-        try {
-          const st = await axios.post('/stock-cut/status', {
-            tanggal: tanggal.value,
-            id_outlet: selectedOutlet.value || user.value.id_outlet,
-            type: selectedType.value || null
-          })
-          const status = st.data?.status
-          if (status === 'running' || status === 'queued' || status === 'skipped_locked') return
-          clearInterval(pollTimer)
-          if (status === 'success') {
-            successMsg.value = 'Potong stock berhasil.'
-            bolehPotong.value = false
-          } else if (status === 'failed') {
-            errorMsg.value = 'Potong stock gagal. Cek log.'
-          }
-        } catch (e) {
-          console.error('Polling error', e)
-        }
-      }, 3000)
+    if (res.data.status === 'success') {
+      successMsg.value = res.data.message || 'Potong stock berhasil.'
+      bolehPotong.value = false
+      // Refresh stock cut status setelah berhasil
+      await cekStockCutStatus()
     } else if (res.data.kurang) {
       errorMsg.value = 'Stock kurang, tidak bisa potong stock!'
+    } else if (res.data.already_cut) {
+      errorMsg.value = res.data.message || 'Stock cut sudah pernah dilakukan untuk tanggal ini.'
+      // Refresh stock cut status
+      await cekStockCutStatus()
+    } else {
+      errorMsg.value = res.data.message || 'Terjadi kesalahan saat memproses stock cut.'
     }
   } catch (e) {
-    errorMsg.value = e.response?.data?.message || e.message
+    const errorData = e.response?.data
+    if (errorData?.already_cut) {
+      errorMsg.value = errorData.message || 'Stock cut sudah pernah dilakukan untuk tanggal ini.'
+      // Refresh stock cut status
+      await cekStockCutStatus()
+    } else {
+      errorMsg.value = errorData?.message || e.message || 'Terjadi kesalahan saat memproses stock cut.'
+    }
   } finally {
     loadingPotong.value = false
   }

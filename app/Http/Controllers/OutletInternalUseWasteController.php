@@ -199,6 +199,12 @@ class OutletInternalUseWasteController extends Controller
             
             DB::beginTransaction();
             
+            // Determine if approval is required based on type
+            // Types that require approval: internal_use, r_and_d, marketing, non_commodity, guest_supplies, wrong_maker
+            // Types that don't require approval: spoil, waste
+            $typesRequiringApproval = ['internal_use', 'r_and_d', 'marketing', 'non_commodity', 'guest_supplies', 'wrong_maker'];
+            $requiresApproval = in_array($request->type, $typesRequiringApproval);
+            
             // Determine status
             $status = 'PROCESSED'; // Default for types that don't need approval
             if ($requiresApproval) {
@@ -325,17 +331,42 @@ class OutletInternalUseWasteController extends Controller
                         'updated_at' => now(),
                     ]);
                 }
-                
-                // Send notification to the lowest level approver
-                $this->sendNotificationToNextApprover($headerId);
             }
             
             DB::commit();
+            
+            \Log::info('OutletInternalUseWaste store - Successfully saved:', [
+                'header_id' => $headerId,
+                'type' => $request->type,
+                'outlet_id' => $request->outlet_id,
+                'date' => $request->date,
+                'status' => $status
+            ]);
+            
+            // Send notification after commit (so it doesn't cause rollback if it fails)
+            if ($requiresApproval && !empty($request->approvers)) {
+                try {
+                    $this->sendNotificationToNextApprover($headerId);
+                } catch (\Exception $notifError) {
+                    \Log::warning('OutletInternalUseWaste store - Notification failed (but data saved):', [
+                        'header_id' => $headerId,
+                        'error' => $notifError->getMessage()
+                    ]);
+                    // Don't throw - data is already saved
+                }
+            }
+            
             return redirect()->route('outlet-internal-use-waste.index')->with('success', 'Data berhasil disimpan');
         } catch (\Exception $e) {
-            \Log::error('Error in OutletInternalUseWaste store method: ' . $e->getMessage());
+            \Log::error('Error in OutletInternalUseWaste store method:', [
+                'message' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => $e->getTraceAsString(),
+                'request_data' => $request->except(['items']) // Exclude items to avoid log spam
+            ]);
             DB::rollBack();
-            return redirect()->back()->with('error', 'Terjadi kesalahan sistem.');
+            return redirect()->back()->with('error', 'Terjadi kesalahan sistem: ' . $e->getMessage());
         }
     }
 

@@ -46,6 +46,7 @@
         <table class="min-w-full divide-y divide-gray-200">
           <thead class="bg-gray-50">
             <tr>
+              <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Kategori</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Nama Barang</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Outlet</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Warehouse Outlet</th>
@@ -56,38 +57,55 @@
             </tr>
           </thead>
           <tbody class="bg-white divide-y divide-gray-200">
-            <tr v-if="!filteredStocks.length">
-              <td colspan="6" class="text-center py-10 text-gray-400">Tidak ada data stok.</td>
-            </tr>
-            <tr v-for="row in paginatedStocks" :key="row.item_id + '-' + row.outlet_id" class="hover:bg-gray-50 transition">
-              <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ row.item_name }}</td>
-              <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{{ row.outlet_name }}</td>
-              <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{{ row.warehouse_outlet_name || '-' }}</td>
-              <td class="px-6 py-4 whitespace-nowrap text-sm text-right">
-                <span v-if="row.qty_small > 0">{{ Number(row.qty_small).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }} <span v-if="row.small_unit_name">{{ row.small_unit_name }}</span></span>
-                <span v-else>-</span>
-              </td>
-              <td class="px-6 py-4 whitespace-nowrap text-sm text-right">
-                <span v-if="row.qty_medium > 0">{{ Number(row.qty_medium).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }} <span v-if="row.medium_unit_name">{{ row.medium_unit_name }}</span></span>
-                <span v-else>-</span>
-              </td>
-              <td class="px-6 py-4 whitespace-nowrap text-sm text-right">
-                <span v-if="row.qty_large > 0">{{ Number(row.qty_large).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }} <span v-if="row.large_unit_name">{{ row.large_unit_name }}</span></span>
-                <span v-else>-</span>
-              </td>
-              <td class="px-6 py-4 whitespace-nowrap text-sm">{{ row.updated_at ? new Date(row.updated_at).toLocaleString() : '-' }}</td>
-            </tr>
+            <template v-if="Object.keys(groupedStocks).length === 0">
+              <tr>
+                <td colspan="8" class="text-center py-10 text-gray-400">Tidak ada data stok.</td>
+              </tr>
+            </template>
+            <template v-else>
+              <template v-for="(categoryGroup, categoryName) in groupedStocks" :key="categoryName || 'no-category'">
+                <!-- Category Header Row -->
+                <tr class="bg-blue-50 hover:bg-blue-100 cursor-pointer" @click="toggleCategory(categoryName || 'no-category')">
+                  <td class="px-6 py-3 font-semibold text-blue-700" colspan="8">
+                    <div class="flex items-center gap-2">
+                      <i :class="expandedCategories.includes(categoryName || 'no-category') ? 'fa-solid fa-chevron-down' : 'fa-solid fa-chevron-right'"></i>
+                      <span>{{ categoryName || 'Tanpa Kategori' }}</span>
+                      <span class="text-xs font-normal text-gray-600">({{ categoryGroup.length }} item)</span>
+                    </div>
+                  </td>
+                </tr>
+                <!-- Item Rows (shown when expanded) -->
+                <template v-if="expandedCategories.includes(categoryName || 'no-category')">
+                  <tr v-for="row in categoryGroup" :key="row.item_id + '-' + row.outlet_id + '-' + row.warehouse_outlet_id" class="hover:bg-gray-50 transition">
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500"></td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ row.item_name }}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{{ row.outlet_name }}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{{ row.warehouse_outlet_name || '-' }}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-right">
+                      <span v-if="row.qty_small > 0">{{ Number(row.qty_small).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }} <span v-if="row.small_unit_name">{{ row.small_unit_name }}</span></span>
+                      <span v-else>-</span>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-right">
+                      <span v-if="row.qty_medium > 0">{{ Number(row.qty_medium).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }} <span v-if="row.medium_unit_name">{{ row.medium_unit_name }}</span></span>
+                      <span v-else>-</span>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-right">
+                      <span v-if="row.qty_large > 0">{{ Number(row.qty_large).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }} <span v-if="row.large_unit_name">{{ row.large_unit_name }}</span></span>
+                      <span v-else>-</span>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm">{{ row.updated_at ? new Date(row.updated_at).toLocaleString() : '-' }}</td>
+                  </tr>
+                </template>
+              </template>
+            </template>
           </tbody>
         </table>
       </div>
-      <div class="flex justify-between items-center mt-4" v-if="filteredStocks.length">
+      <div class="flex justify-between items-center mt-4" v-if="Object.keys(groupedStocks).length > 0">
         <div class="text-sm text-gray-600">
-          Menampilkan {{ startIndex + 1 }} - {{ endIndex }} dari {{ filteredStocks.length }} data
-        </div>
-        <div class="flex gap-1">
-          <button @click="prevPage" :disabled="page === 1" class="px-3 py-1 rounded border text-sm" :class="page === 1 ? 'bg-gray-200 text-gray-400' : 'bg-white text-blue-700 hover:bg-blue-50'">&lt;</button>
-          <span class="px-2">Halaman {{ page }} / {{ totalPages }}</span>
-          <button @click="nextPage" :disabled="page === totalPages" class="px-3 py-1 rounded border text-sm" :class="page === totalPages ? 'bg-gray-200 text-gray-400' : 'bg-white text-blue-700 hover:bg-blue-50'">&gt;</button>
+          Total {{ Object.keys(groupedStocks).length }} kategori, {{ filteredStocks.length }} item
+          <button @click="expandAll" class="ml-4 text-blue-600 hover:text-blue-800 text-sm">Expand All</button>
+          <button @click="collapseAll" class="ml-2 text-blue-600 hover:text-blue-800 text-sm">Collapse All</button>
         </div>
       </div>
     </div>
@@ -156,22 +174,54 @@ const filteredStocks = computed(() => {
   const s = search.value.toLowerCase();
   return data.filter(row =>
     (row.item_name && row.item_name.toLowerCase().includes(s)) ||
-    (row.outlet_name && row.outlet_name.toLowerCase().includes(s))
+    (row.outlet_name && row.outlet_name.toLowerCase().includes(s)) ||
+    (row.category_name && row.category_name.toLowerCase().includes(s))
   );
 });
 
-const totalPages = computed(() => Math.ceil(filteredStocks.value.length / perPage.value) || 1);
-const startIndex = computed(() => (page.value - 1) * perPage.value);
-const endIndex = computed(() => Math.min(startIndex.value + perPage.value, filteredStocks.value.length));
-const paginatedStocks = computed(() => filteredStocks.value.slice(startIndex.value, endIndex.value));
+// Group stocks by category
+const groupedStocks = computed(() => {
+  const grouped = {};
+  filteredStocks.value.forEach(row => {
+    const categoryName = row.category_name || null;
+    if (!grouped[categoryName]) {
+      grouped[categoryName] = [];
+    }
+    grouped[categoryName].push(row);
+  });
+  return grouped;
+});
 
-function prevPage() {
-  if (page.value > 1) page.value--;
+// Expanded categories state
+const expandedCategories = ref([]);
+
+// Toggle category expansion
+function toggleCategory(categoryName) {
+  const index = expandedCategories.value.indexOf(categoryName);
+  if (index > -1) {
+    expandedCategories.value.splice(index, 1);
+  } else {
+    expandedCategories.value.push(categoryName);
+  }
 }
-function nextPage() {
-  if (page.value < totalPages.value) page.value++;
+
+// Auto-expand all categories on mount or when data changes
+watch(() => props.stocks, () => {
+  if (props.stocks && props.stocks.length > 0) {
+    const categories = Object.keys(groupedStocks.value);
+    expandedCategories.value = categories;
+  }
+}, { immediate: true });
+
+// Expand/Collapse all functions
+function expandAll() {
+  const categories = Object.keys(groupedStocks.value);
+  expandedCategories.value = categories;
 }
-watch([perPage, search], () => { page.value = 1; });
+
+function collapseAll() {
+  expandedCategories.value = [];
+}
 
 // Clear warehouse outlet selection when outlet changes
 watch(selectedOutlet, () => {

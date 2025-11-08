@@ -20,18 +20,18 @@
         <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-2">Outlet</label>
-            <select v-model="filters.outlet_id" @change="loadMenuCosts" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <select v-model="filters.outlet_id" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
               <option value="">Pilih Outlet</option>
               <option v-for="outlet in outlets" :key="outlet.id" :value="outlet.id">{{ outlet.name }}</option>
             </select>
           </div>
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-2">Tanggal</label>
-            <input type="date" v-model="filters.tanggal" @change="loadMenuCosts" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <input type="date" v-model="filters.tanggal" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
           </div>
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-2">Type</label>
-            <select v-model="filters.type" @change="loadMenuCosts" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <select v-model="filters.type" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
               <option value="">Semua</option>
               <option value="food">Food</option>
               <option value="beverages">Beverages</option>
@@ -207,11 +207,20 @@
       </div>
 
       <!-- Empty State -->
-      <div v-else-if="!loading" class="bg-white rounded-xl shadow-xl p-6 text-center">
+      <div v-else-if="!loading && !hasSearched" class="bg-white rounded-xl shadow-xl p-6 text-center">
+        <div class="text-gray-500">
+          <i class="fa-solid fa-calculator text-4xl mb-4"></i>
+          <p class="text-lg font-medium">Pilih filter dan klik tombol "Cari" untuk melihat report cost per menu</p>
+          <p class="text-sm mt-2">Pastikan outlet dan tanggal sudah dipilih sebelum mencari</p>
+        </div>
+      </div>
+
+      <!-- No Data State -->
+      <div v-else-if="!loading && hasSearched && menuCosts.length === 0" class="bg-white rounded-xl shadow-xl p-6 text-center">
         <div class="text-gray-500">
           <i class="fa-solid fa-calculator text-4xl mb-4"></i>
           <p class="text-lg font-medium">Tidak ada data cost menu</p>
-          <p class="text-sm">Pilih outlet dan tanggal untuk melihat report cost per menu</p>
+          <p class="text-sm">Tidak ada order items yang sudah dipotong stock untuk periode yang dipilih</p>
         </div>
       </div>
 
@@ -243,6 +252,7 @@ const menuCosts = ref([])
 const summary = ref(null)
 const loading = ref(false)
 const expandedMenus = ref([])
+const hasSearched = ref(false)
 
 onMounted(async () => {
   await loadOutlets()
@@ -264,10 +274,12 @@ async function loadOutlets() {
 
 async function loadMenuCosts() {
   if (!filters.value.outlet_id || !filters.value.tanggal) {
+    alert('Silakan pilih outlet dan tanggal terlebih dahulu')
     return
   }
 
   loading.value = true
+  hasSearched.value = true
   try {
     const params = {
       id_outlet: filters.value.outlet_id,
