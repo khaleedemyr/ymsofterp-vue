@@ -223,25 +223,25 @@
         <!-- Pagination Navigation -->
         <nav class="flex rounded-lg shadow-sm -space-x-px" aria-label="Pagination">
           <button 
-            @click="goToPage(data.first_page_url)" 
+            @click.stop.prevent="goToPage(data.first_page_url)" 
             :disabled="!data.first_page_url"
             :class="[
               'px-3 py-2 text-sm border border-gray-300 rounded-l-lg transition-colors',
               !data.first_page_url 
                 ? 'bg-gray-100 text-gray-400 cursor-not-allowed' 
-                : 'bg-white text-gray-700 hover:bg-gray-50'
+                : 'bg-white text-gray-700 hover:bg-gray-50 cursor-pointer'
             ]"
           >
             First
           </button>
           <button 
-            @click="goToPage(data.prev_page_url)" 
+            @click.stop.prevent="goToPage(data.prev_page_url)" 
             :disabled="!data.prev_page_url"
             :class="[
               'px-3 py-2 text-sm border border-gray-300 transition-colors',
               !data.prev_page_url 
                 ? 'bg-gray-100 text-gray-400 cursor-not-allowed' 
-                : 'bg-white text-gray-700 hover:bg-gray-50'
+                : 'bg-white text-gray-700 hover:bg-gray-50 cursor-pointer'
             ]"
           >
             Previous
@@ -249,41 +249,42 @@
           <template v-for="(link, i) in data.links" :key="i">
             <button 
               v-if="link.url" 
-              @click="goToPage(link.url)" 
+              @click.stop.prevent="goToPage(link.url)" 
+              :disabled="link.active"
               :class="[
                 'px-3 py-2 text-sm border border-gray-300 transition-colors',
                 link.active 
-                  ? 'bg-blue-600 text-white border-blue-600' 
-                  : 'bg-white text-gray-700 hover:bg-gray-50 border-gray-300'
+                  ? 'bg-blue-600 text-white border-blue-600 cursor-default' 
+                  : 'bg-white text-gray-700 hover:bg-gray-50 border-gray-300 cursor-pointer'
               ]" 
               v-html="link.label"
             ></button>
             <span 
               v-else 
-              class="px-3 py-2 text-sm border border-gray-200 text-gray-400 bg-gray-50" 
+              class="px-3 py-2 text-sm border border-gray-200 text-gray-400 bg-gray-50 cursor-not-allowed" 
               v-html="link.label"
             ></span>
           </template>
           <button 
-            @click="goToPage(data.next_page_url)" 
+            @click.stop.prevent="goToPage(data.next_page_url)" 
             :disabled="!data.next_page_url"
             :class="[
               'px-3 py-2 text-sm border border-gray-300 transition-colors',
               !data.next_page_url 
                 ? 'bg-gray-100 text-gray-400 cursor-not-allowed' 
-                : 'bg-white text-gray-700 hover:bg-gray-50'
+                : 'bg-white text-gray-700 hover:bg-gray-50 cursor-pointer'
             ]"
           >
             Next
           </button>
           <button 
-            @click="goToPage(data.last_page_url)" 
+            @click.stop.prevent="goToPage(data.last_page_url)" 
             :disabled="!data.last_page_url"
             :class="[
               'px-3 py-2 text-sm border border-gray-300 rounded-r-lg transition-colors',
               !data.last_page_url 
                 ? 'bg-gray-100 text-gray-400 cursor-not-allowed' 
-                : 'bg-white text-gray-700 hover:bg-gray-50'
+                : 'bg-white text-gray-700 hover:bg-gray-50 cursor-pointer'
             ]"
           >
             Last
@@ -338,15 +339,35 @@ function onSearchInput() {
 }
 
 function goToPage(url) {
-  if (url) {
-    const urlObj = new URL(url);
+  if (!url) return;
+  
+  try {
+    // Handle relative URLs
+    const fullUrl = url.startsWith('http') ? url : window.location.origin + url;
+    const urlObj = new URL(fullUrl);
+    
+    // Preserve current filters
     urlObj.searchParams.set('search', search.value);
     urlObj.searchParams.set('status', status.value);
     urlObj.searchParams.set('priority', priority.value);
-    urlObj.searchParams.set('divisi', divisi.value);
+    urlObj.searchParams.set('division', division.value);
     urlObj.searchParams.set('per_page', perPage.value);
     
-    router.visit(urlObj.toString(), { preserveState: true, replace: true });
+    // Extract pathname and query string
+    const path = urlObj.pathname + '?' + urlObj.searchParams.toString();
+    
+    router.visit(path, { preserveState: true, replace: true });
+  } catch (error) {
+    console.error('Error in goToPage:', error);
+    // Fallback: use router.get with query params
+    router.get('/tickets', {
+      page: url.match(/page=(\d+)/)?.[1] || 1,
+      search: search.value,
+      status: status.value,
+      priority: priority.value,
+      division: division.value,
+      per_page: perPage.value,
+    }, { preserveState: true, replace: true });
   }
 }
 
