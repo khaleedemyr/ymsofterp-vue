@@ -244,6 +244,15 @@
           <!-- Description -->
           <div class="mb-6">
             <label class="block text-sm font-medium text-gray-700 mb-2">Description</label>
+            
+            <!-- Note for Payment Application Mode -->
+            <div v-if="form.mode === 'purchase_payment'" class="mb-3 p-3 bg-yellow-50 border border-yellow-300 rounded-lg">
+              <p class="text-sm font-medium text-yellow-800">
+                <i class="fa fa-info-circle mr-2"></i>
+                Untuk Travel Application wajib isi tanggal keberangkatan, Agenda kerja dan no rekening di Description
+              </p>
+            </div>
+            
             <textarea
               v-model="form.description"
               rows="4"
