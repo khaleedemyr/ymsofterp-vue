@@ -249,7 +249,7 @@
             <div v-if="form.mode === 'purchase_payment'" class="mb-3 p-3 bg-yellow-50 border border-yellow-300 rounded-lg">
               <p class="text-sm font-medium text-yellow-800">
                 <i class="fa fa-info-circle mr-2"></i>
-                Untuk Travel Application wajib isi tanggal keberangkatan, Agenda kerja dan no rekening di Description
+                Untuk Travel Application wajib isi periode perjalanan dinas (contoh: 1-5 Januari 2025), Agenda kerja dan no rekening di Description
               </p>
             </div>
             
@@ -334,9 +334,16 @@
             
             <!-- Warning for Purchase Payment Mode -->
             <div v-if="form.mode === 'purchase_payment'" class="mb-4 p-3 bg-yellow-50 border border-yellow-300 rounded-lg">
-              <p class="text-sm font-medium text-yellow-800">
+              <p class="text-sm font-medium text-yellow-800 mb-2">
                 <i class="fa fa-exclamation-triangle mr-2"></i>
-                Wajib menyertakan GM Finance sebagai Approver
+                Untuk Payment Application wajib sertakan GM Finance sebagai Approver
+              </p>
+              <p class="text-sm font-medium text-yellow-800 mb-2">
+                <i class="fa fa-exclamation-triangle mr-2"></i>
+                Untuk Travel Application Wajib menyertakan GA Supervisor sebagai Approver pertama
+              </p>
+              <p class="text-xs text-yellow-700 ml-6">
+                Contoh urutan approver: GA Supervisor → GM HR → GM Finance → BOD
               </p>
             </div>
             
@@ -370,10 +377,28 @@
             <!-- Approvers List -->
             <div v-if="form.approvers.length > 0" class="space-y-2">
               <h4 class="font-medium text-gray-700">Approval Order (Lowest to Highest):</h4>
+              
+              <!-- Warning if GA Supervisor not first or GM Finance missing for Payment Application -->
+              <div v-if="form.mode === 'purchase_payment' && (!hasGMFinance || (isTravelApplication && !hasGASupervisorAsFirst))" class="mb-2 p-2 bg-red-50 border border-red-300 rounded-md">
+                <p v-if="!hasGMFinance" class="text-xs text-red-800 mb-1">
+                  <i class="fa fa-exclamation-circle mr-1"></i>
+                  GM Finance wajib disertakan sebagai Approver untuk Payment Application
+                </p>
+                <p v-if="isTravelApplication && !hasGASupervisorAsFirst" class="text-xs text-red-800">
+                  <i class="fa fa-exclamation-circle mr-1"></i>
+                  GA Supervisor harus menjadi approver pertama untuk Travel Application
+                </p>
+              </div>
+              
               <div
                 v-for="(approver, index) in form.approvers"
                 :key="approver.id"
-                class="flex items-center justify-between p-3 bg-gray-50 border border-gray-200 rounded-md"
+                :class="[
+                  'flex items-center justify-between p-3 rounded-md',
+                  (isTravelApplication && index === 0 && isGASupervisor(approver)) || (form.mode === 'purchase_payment' && isGMFinance(approver))
+                    ? 'bg-green-50 border-2 border-green-300' 
+                    : 'bg-gray-50 border border-gray-200'
+                ]"
               >
                 <div class="flex items-center space-x-3">
                   <div class="flex items-center space-x-2">
@@ -403,12 +428,26 @@
                       <div class="text-sm text-gray-600">{{ approver.email }}</div>
                       <div v-if="approver.jabatan" class="text-xs text-blue-600 font-medium">{{ approver.jabatan }}</div>
                     </div>
+                    <span v-if="isTravelApplication && index === 0 && isGASupervisor(approver)" class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                      <i class="fa fa-check-circle mr-1"></i>
+                      GA Supervisor
+                    </span>
+                    <span v-if="form.mode === 'purchase_payment' && isGMFinance(approver)" class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                      <i class="fa fa-check-circle mr-1"></i>
+                      GM Finance
+                    </span>
                   </div>
                 </div>
                 <button
                   @click="removeApprover(index)"
-                  class="p-1 text-red-500 hover:text-red-700"
-                  title="Remove Approver"
+                  :disabled="isTravelApplication && index === 0 && isGASupervisor(approver)"
+                  :class="[
+                    'p-1',
+                    isTravelApplication && index === 0 && isGASupervisor(approver)
+                      ? 'text-gray-400 cursor-not-allowed'
+                      : 'text-red-500 hover:text-red-700'
+                  ]"
+                  :title="isTravelApplication && index === 0 && isGASupervisor(approver) ? 'GA Supervisor tidak dapat dihapus' : 'Remove Approver'"
                 >
                   <i class="fa fa-times"></i>
                 </button>
@@ -529,13 +568,15 @@
             </Link>
             <button
               type="submit"
-              :disabled="loading || (budgetInfo && budgetInfo.exceeds_budget) || (selectedCategoryDetails && selectedCategoryDetails.budget_type === 'PER_OUTLET' && !form.outlet_id)"
+              :disabled="loading || (budgetInfo && budgetInfo.exceeds_budget) || (selectedCategoryDetails && selectedCategoryDetails.budget_type === 'PER_OUTLET' && !form.outlet_id) || (form.mode === 'purchase_payment' && (!hasGMFinance || (isTravelApplication && !hasGASupervisorAsFirst)))"
               class="px-4 py-2 text-white rounded-md disabled:opacity-50"
-              :class="(budgetInfo && budgetInfo.exceeds_budget) ? 'bg-red-600 hover:bg-red-700' : (selectedCategoryDetails && selectedCategoryDetails.budget_type === 'PER_OUTLET' && !form.outlet_id) ? 'bg-gray-400' : 'bg-blue-600 hover:bg-blue-700'"
+              :class="(budgetInfo && budgetInfo.exceeds_budget) ? 'bg-red-600 hover:bg-red-700' : (selectedCategoryDetails && selectedCategoryDetails.budget_type === 'PER_OUTLET' && !form.outlet_id) ? 'bg-gray-400' : (form.mode === 'purchase_payment' && (!hasGMFinance || (isTravelApplication && !hasGASupervisorAsFirst))) ? 'bg-gray-400' : 'bg-blue-600 hover:bg-blue-700'"
             >
               <span v-if="loading">Creating...</span>
               <span v-else-if="budgetInfo && budgetInfo.exceeds_budget">Budget Exceeded - Cannot Save</span>
               <span v-else-if="selectedCategoryDetails && selectedCategoryDetails.budget_type === 'PER_OUTLET' && !form.outlet_id">Select Outlet First</span>
+              <span v-else-if="form.mode === 'purchase_payment' && !hasGMFinance">GM Finance Required as Approver</span>
+              <span v-else-if="isTravelApplication && !hasGASupervisorAsFirst">GA Supervisor Required as First Approver</span>
               <span v-else>Create Payment</span>
             </button>
           </div>
@@ -594,6 +635,49 @@ const form = reactive({
 
 const totalAmount = computed(() => {
   return form.items.reduce((sum, item) => sum + (item.subtotal || 0), 0)
+})
+
+// Check if approver is GA Supervisor
+const isGASupervisor = (approver) => {
+  if (!approver) return false
+  const jabatan = approver.jabatan?.toLowerCase() || ''
+  const name = approver.name?.toLowerCase() || ''
+  return jabatan.includes('ga supervisor') || name.includes('ga supervisor')
+}
+
+// Check if approver is GM Finance
+const isGMFinance = (approver) => {
+  if (!approver) return false
+  const jabatan = approver.jabatan?.toLowerCase() || ''
+  const name = approver.name?.toLowerCase() || ''
+  return jabatan.includes('gm finance') || name.includes('gm finance')
+}
+
+// Check if GA Supervisor is first approver (only required for Travel Application)
+const hasGASupervisorAsFirst = computed(() => {
+  if (!isTravelApplication.value || form.approvers.length === 0) {
+    return true // Not required for non-travel applications
+  }
+  return isGASupervisor(form.approvers[0])
+})
+
+// Check if GM Finance is in approvers list
+const hasGMFinance = computed(() => {
+  if (form.mode !== 'purchase_payment') {
+    return true // Not required for other modes
+  }
+  return form.approvers.some(approver => isGMFinance(approver))
+})
+
+// Check if this is Travel Application (detected from title or description)
+const isTravelApplication = computed(() => {
+  if (form.mode !== 'purchase_payment') {
+    return false
+  }
+  const title = form.title?.toLowerCase() || ''
+  const description = form.description?.toLowerCase() || ''
+  const travelKeywords = ['travel', 'perjalanan', 'dinas', 'trip', 'business trip']
+  return travelKeywords.some(keyword => title.includes(keyword) || description.includes(keyword))
 })
 
 // Watch totalAmount changes to update budget info
@@ -721,10 +805,43 @@ const addApprover = (user) => {
 }
 
 const removeApprover = (index) => {
+  // Prevent removing GA Supervisor from first position in Travel Application
+  if (isTravelApplication.value && index === 0 && isGASupervisor(form.approvers[index])) {
+    Swal.fire({
+      icon: 'warning',
+      title: 'Tidak Dapat Dihapus',
+      text: 'GA Supervisor tidak dapat dihapus karena wajib menjadi approver pertama untuk Travel Application',
+      confirmButtonText: 'OK',
+      confirmButtonColor: '#F59E0B'
+    })
+    return
+  }
   form.approvers.splice(index, 1)
 }
 
 const reorderApprover = (fromIndex, toIndex) => {
+  // Prevent moving GA Supervisor from first position in Travel Application
+  if (isTravelApplication.value && fromIndex === 0 && isGASupervisor(form.approvers[fromIndex])) {
+    Swal.fire({
+      icon: 'warning',
+      title: 'Tidak Dapat Dipindahkan',
+      text: 'GA Supervisor harus tetap menjadi approver pertama untuk Travel Application',
+      confirmButtonText: 'OK',
+      confirmButtonColor: '#F59E0B'
+    })
+    return
+  }
+  // Prevent moving other approvers to first position if GA Supervisor is required
+  if (isTravelApplication.value && toIndex === 0 && form.approvers.length > 0 && isGASupervisor(form.approvers[0])) {
+    Swal.fire({
+      icon: 'warning',
+      title: 'Tidak Dapat Dipindahkan',
+      text: 'GA Supervisor harus tetap menjadi approver pertama untuk Travel Application',
+      confirmButtonText: 'OK',
+      confirmButtonColor: '#F59E0B'
+    })
+    return
+  }
   const approver = form.approvers.splice(fromIndex, 1)[0]
   form.approvers.splice(toIndex, 0, approver)
 }
@@ -743,6 +860,53 @@ const submitForm = async () => {
       confirmButtonColor: '#F59E0B'
     })
     return
+  }
+  
+  // Validate approvers for Payment Application mode
+  if (form.mode === 'purchase_payment') {
+    // Always require GM Finance for Payment Application
+    const hasGMFinanceApprover = form.approvers.some(approver => {
+      const jabatan = approver?.jabatan?.toLowerCase() || ''
+      const name = approver?.name?.toLowerCase() || ''
+      return jabatan.includes('gm finance') || name.includes('gm finance')
+    })
+    
+    // Check if this is Travel Application
+    const title = form.title?.toLowerCase() || ''
+    const description = form.description?.toLowerCase() || ''
+    const travelKeywords = ['travel', 'perjalanan', 'dinas', 'trip', 'business trip']
+    const isTravel = travelKeywords.some(keyword => title.includes(keyword) || description.includes(keyword))
+    
+    // For Travel Application, also require GA Supervisor as first
+    let isGASupervisorFirst = true
+    if (isTravel) {
+      const firstApprover = form.approvers[0]
+      isGASupervisorFirst = firstApprover?.jabatan?.toLowerCase().includes('ga supervisor') || 
+                            firstApprover?.name?.toLowerCase().includes('ga supervisor')
+    }
+    
+    if (!hasGMFinanceApprover || (isTravel && !isGASupervisorFirst)) {
+      loading.value = false
+      let errorMessage = ''
+      if (!hasGMFinanceApprover) {
+        errorMessage += 'Untuk Payment Application wajib sertakan GM Finance sebagai Approver\n'
+      }
+      if (isTravel && !isGASupervisorFirst) {
+        errorMessage += 'Untuk Travel Application wajib menyertakan GA Supervisor sebagai Approver pertama\n'
+      }
+      if (isTravel) {
+        errorMessage += '\nContoh urutan: GA Supervisor → GM HR → GM Finance → BOD'
+      }
+      
+      await Swal.fire({
+        icon: 'warning',
+        title: 'Approver Diperlukan',
+        text: errorMessage,
+        confirmButtonText: 'OK',
+        confirmButtonColor: '#F59E0B'
+      })
+      return
+    }
   }
   
   // Calculate total amount from items
