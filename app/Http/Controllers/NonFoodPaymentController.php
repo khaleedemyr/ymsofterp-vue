@@ -22,6 +22,19 @@ class NonFoodPaymentController extends Controller
         $search = $request->input('search');
         $perPage = $request->input('per_page', 10);
 
+        // Check if user has role with id '5af56935b011a' (can see all payments)
+        $user = Auth::user();
+        $canSeeAllPayments = false;
+        
+        if ($user) {
+            $userRole = DB::table('erp_user_role')
+                ->where('user_id', $user->id)
+                ->where('role_id', '5af56935b011a')
+                ->first();
+            
+            $canSeeAllPayments = $userRole !== null;
+        }
+
         // Build query with search and filters
         $query = NonFoodPayment::query()
             ->leftJoin('suppliers as s', 'non_food_payments.supplier_id', '=', 's.id')
@@ -37,6 +50,11 @@ class NonFoodPaymentController extends Controller
                 'pr.pr_number as pr_number',
                 'pr.date as pr_date'
             );
+
+        // Filter by created_by if user doesn't have special role
+        if (!$canSeeAllPayments && $user) {
+            $query->where('non_food_payments.created_by', $user->id);
+        }
 
         // Apply filters
         if ($supplier) {
