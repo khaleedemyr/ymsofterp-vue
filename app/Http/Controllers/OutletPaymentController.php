@@ -312,8 +312,8 @@ class OutletPaymentController extends Controller
             foreach ($grIds as $grId) {
                 $gr = OutletFoodGoodReceive::findOrFail($grId);
                 
-                // Calculate individual GR total amount (from outlet_food_good_receives)
-                $grTotalAmount = DB::table('outlet_food_good_receive_items as gri')
+                // Calculate individual GR total amount (from outlet_food_good_receives only, same as Rekap FJ)
+                $totalAmount = DB::table('outlet_food_good_receive_items as gri')
                     ->join('outlet_food_good_receives as gr', 'gri.outlet_food_good_receive_id', '=', 'gr.id')
                     ->join('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
                     ->leftJoin('food_floor_order_items as foi', function($join) {
@@ -323,39 +323,6 @@ class OutletPaymentController extends Controller
                     ->where('gri.outlet_food_good_receive_id', $grId)
                     ->whereNull('gr.deleted_at')
                     ->sum(DB::raw('COALESCE(gri.received_qty * foi.price, 0)'));
-
-                // Calculate total_amount from GR Supplier (good_receive_outlet_suppliers) 
-                // Find GR Supplier with same floor_order_id (through delivery_order)
-                $grRecord = DB::table('outlet_food_good_receives')
-                    ->where('id', $grId)
-                    ->whereNull('deleted_at')
-                    ->first();
-                
-                $grSupplierTotalAmount = 0;
-                if ($grRecord && $grRecord->delivery_order_id) {
-                    // Get floor_order_id from delivery_order
-                    $floorOrderId = DB::table('delivery_orders')
-                        ->where('id', $grRecord->delivery_order_id)
-                        ->value('floor_order_id');
-                    
-                    if ($floorOrderId) {
-                        // Find GR Supplier that has delivery_order with same floor_order_id
-                        $grSupplierTotalAmount = DB::table('good_receive_outlet_suppliers as grs')
-                            ->join('good_receive_outlet_supplier_items as grsi', 'grs.id', '=', 'grsi.good_receive_id')
-                            ->leftJoin('delivery_orders as do', 'grs.delivery_order_id', '=', 'do.id')
-                            ->leftJoin('food_floor_order_items as foi', function($join) {
-                                $join->on('grsi.item_id', '=', 'foi.item_id')
-                                     ->on('do.floor_order_id', '=', 'foi.floor_order_id');
-                            })
-                            ->where('do.floor_order_id', $floorOrderId)
-                            ->where('grs.outlet_id', $request->outlet_id)
-                            ->whereDate('grs.receive_date', $grRecord->receive_date)
-                            ->sum(DB::raw('COALESCE(grsi.qty_received * COALESCE(foi.price, 0), 0)'));
-                    }
-                }
-
-                // Combine both totals
-                $totalAmount = ($grTotalAmount ?: 0) + ($grSupplierTotalAmount ?: 0);
                 
                 $dataToInsert = [
                     'outlet_id' => $request->outlet_id,
@@ -577,12 +544,9 @@ class OutletPaymentController extends Controller
             ->limit(50) // Reduced to 50 for faster loading
             ->get();
 
-        // Format data with total_amount calculation
-        // Note: GR Supplier will be calculated separately for the entire outlet and date range (like Rekap FJ)
-        // So we only calculate GR amount per GR, not including GR Supplier
+        // Format data with total_amount calculation (only GR, no GR Supplier, same as Rekap FJ)
         $groupedGrList = $grList->map(function($gr) {
             // Calculate total_amount for each GR (from outlet_food_good_receives only)
-            // GR Supplier will be added separately to the total
             $grTotalAmount = DB::table('outlet_food_good_receive_items as gri')
                 ->join('outlet_food_good_receives as gr', 'gri.outlet_food_good_receive_id', '=', 'gr.id')
                 ->join('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
@@ -602,32 +566,15 @@ class OutletPaymentController extends Controller
                 'outlet_id' => $gr->outlet_id,
                 'outlet_name' => $gr->outlet_name,
                 'warehouse_outlet_name' => $gr->warehouse_outlet_name,
-                'total_amount' => (float) ($grTotalAmount ?: 0), // Only GR amount, GR Supplier added separately
+                'total_amount' => (float) ($grTotalAmount ?: 0), // Only GR amount (same as Rekap FJ)
                 'items' => [] // Will be loaded via API when needed
             ];
         });
-
-        // Calculate total GR Supplier amount for the selected outlet and date range (like Rekap FJ)
-        $grSupplierTotalAmount = 0;
-        if ($outletId && $dateFrom && $dateTo) {
-            $grSupplierTotalAmount = DB::table('good_receive_outlet_suppliers as grs')
-                ->join('good_receive_outlet_supplier_items as grsi', 'grs.id', '=', 'grsi.good_receive_id')
-                ->leftJoin('delivery_orders as do', 'grs.delivery_order_id', '=', 'do.id')
-                ->leftJoin('food_floor_order_items as foi', function($join) {
-                    $join->on('grsi.item_id', '=', 'foi.item_id')
-                         ->on('do.floor_order_id', '=', 'foi.floor_order_id');
-                })
-                ->where('grs.outlet_id', $outletId)
-                ->whereDate('grs.receive_date', '>=', $dateFrom)
-                ->whereDate('grs.receive_date', '<=', $dateTo)
-                ->sum(DB::raw('COALESCE(grsi.qty_received * COALESCE(foi.price, 0), 0)'));
-        }
 
         return Inertia::render('OutletPayment/Form', [
             'mode' => 'create',
             'outlets' => $outlets,
             'grList' => $groupedGrList,
-            'grSupplierTotalAmount' => $grSupplierTotalAmount, // Total GR Supplier untuk outlet dan tanggal yang dipilih
         ]);
     }
 
@@ -674,12 +621,9 @@ class OutletPaymentController extends Controller
             ->limit(50)
             ->get();
 
-        // Format data with total_amount calculation
-        // Note: GR Supplier will be calculated separately for the entire outlet and date range (like Rekap FJ)
-        // So we only calculate GR amount per GR, not including GR Supplier
+        // Format data with total_amount calculation (only GR, no GR Supplier, same as Rekap FJ)
         $groupedGrList = $grList->map(function($gr) {
             // Calculate total_amount for each GR (from outlet_food_good_receives only)
-            // GR Supplier will be added separately to the total
             $grTotalAmount = DB::table('outlet_food_good_receive_items as gri')
                 ->join('outlet_food_good_receives as gr', 'gri.outlet_food_good_receive_id', '=', 'gr.id')
                 ->join('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
@@ -699,32 +643,15 @@ class OutletPaymentController extends Controller
                 'outlet_id' => $gr->outlet_id,
                 'outlet_name' => $gr->outlet_name,
                 'warehouse_outlet_name' => $gr->warehouse_outlet_name,
-                'total_amount' => (float) ($grTotalAmount ?: 0), // Only GR amount, GR Supplier added separately
+                'total_amount' => (float) ($grTotalAmount ?: 0), // Only GR amount (same as Rekap FJ)
                 'items' => [], // Will be loaded via API when needed
                 'type' => 'gr' // Add type identifier
             ];
         });
 
-        // Calculate total GR Supplier amount for the selected outlet and date range (like Rekap FJ)
-        $grSupplierTotalAmount = 0;
-        if ($outletId && $dateFrom && $dateTo) {
-            $grSupplierTotalAmount = DB::table('good_receive_outlet_suppliers as grs')
-                ->join('good_receive_outlet_supplier_items as grsi', 'grs.id', '=', 'grsi.good_receive_id')
-                ->leftJoin('delivery_orders as do', 'grs.delivery_order_id', '=', 'do.id')
-                ->leftJoin('food_floor_order_items as foi', function($join) {
-                    $join->on('grsi.item_id', '=', 'foi.item_id')
-                         ->on('do.floor_order_id', '=', 'foi.floor_order_id');
-                })
-                ->where('grs.outlet_id', $outletId)
-                ->whereDate('grs.receive_date', '>=', $dateFrom)
-                ->whereDate('grs.receive_date', '<=', $dateTo)
-                ->sum(DB::raw('COALESCE(grsi.qty_received * COALESCE(foi.price, 0), 0)'));
-        }
-
         return response()->json([
             'success' => true,
             'grList' => $groupedGrList,
-            'grSupplierTotalAmount' => $grSupplierTotalAmount // Total GR Supplier untuk outlet dan tanggal yang dipilih
         ]);
     }
 

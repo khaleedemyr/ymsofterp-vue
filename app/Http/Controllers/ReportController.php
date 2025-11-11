@@ -760,6 +760,7 @@ class ReportController extends Controller
 
     public function reportSalesPivotSpecial(Request $request)
     {
+        // Use same logic as detail: group by item first, then sum by outlet (to avoid double counting)
         $query = DB::table('outlet_food_good_receives as gr')
             ->join('outlet_food_good_receive_items as i', 'gr.id', '=', 'i.outlet_food_good_receive_id')
             ->join('items as it', 'i.item_id', '=', 'it.id')
@@ -768,20 +769,19 @@ class ReportController extends Controller
             ->join('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
             ->leftJoin('food_floor_order_items as fo', function($join) {
                 $join->on('i.item_id', '=', 'fo.item_id')
-                     ->on('fo.floor_order_id', '=', 'do.floor_order_id'); // Use do.floor_order_id directly
+                     ->on('fo.floor_order_id', '=', 'do.floor_order_id');
             })
-            ->leftJoin('warehouse_division as wd', 'it.warehouse_division_id', '=', 'wd.id') // Use item's warehouse_division_id
+            ->leftJoin('warehouse_division as wd', 'it.warehouse_division_id', '=', 'wd.id')
             ->leftJoin('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
             ->join('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
             ->select(
                 'o.nama_outlet as customer',
                 'o.is_outlet',
-                DB::raw("SUM(CASE WHEN w.name IN ('MK1 Hot Kitchen', 'MK2 Cold Kitchen') THEN i.received_qty * COALESCE(fo.price, 0) ELSE 0 END) as main_kitchen"),
-                DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name NOT IN ('Chemical', 'Stationary', 'Marketing') THEN i.received_qty * COALESCE(fo.price, 0) ELSE 0 END) as main_store"),
-                DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Chemical' THEN i.received_qty * COALESCE(fo.price, 0) ELSE 0 END) as chemical"),
-                DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Stationary' THEN i.received_qty * COALESCE(fo.price, 0) ELSE 0 END) as stationary"),
-                DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Marketing' THEN i.received_qty * COALESCE(fo.price, 0) ELSE 0 END) as marketing"),
-                DB::raw("SUM(i.received_qty * COALESCE(fo.price, 0)) as line_total")
+                'it.id as item_id',
+                'it.name as item_name',
+                'sc.name as sub_category',
+                'w.name as warehouse',
+                DB::raw('SUM(i.received_qty * COALESCE(fo.price, 0)) as item_subtotal')
             );
 
         if ($request->filled('from')) {
@@ -793,57 +793,60 @@ class ReportController extends Controller
         
         // Filter GR yang belum dihapus
         $query->whereNull('gr.deleted_at');
+        
+        // Filter only items with valid warehouse (to ensure proper categorization)
+        $query->whereNotNull('w.name');
 
-        $report1 = $query->groupBy('o.nama_outlet', 'o.is_outlet')
-            ->orderBy('o.is_outlet', 'desc')
-            ->orderBy('o.nama_outlet')
+        // Group by item first (like detail) to avoid double counting
+        $report1Items = $query->groupBy('o.nama_outlet', 'o.is_outlet', 'it.id', 'it.name', 'sc.name', 'w.name')
             ->get();
 
-        // Query untuk good_receive_outlet_suppliers (menggunakan relasi RO Supplier yang benar)
-        $query2 = DB::table('good_receive_outlet_suppliers as gr')
-            ->join('good_receive_outlet_supplier_items as i', 'gr.id', '=', 'i.good_receive_id')
-            ->join('items as it', 'i.item_id', '=', 'it.id')
-            ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
-            ->join('units as u', 'i.unit_id', '=', 'u.id')
-            ->leftJoin('warehouse_division as wd', 'it.warehouse_division_id', '=', 'wd.id') // Use item's warehouse_division_id
-            ->leftJoin('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
-            ->leftJoin('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
-            ->leftJoin('food_floor_order_items as fo', function($join) {
-                $join->on('i.item_id', '=', 'fo.item_id')
-                     ->on('fo.floor_order_id', '=', 'do.floor_order_id'); // Use do.floor_order_id directly
-            })
-            ->join('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
-            ->select(
-                'o.nama_outlet as customer',
-                'o.is_outlet',
-                DB::raw("SUM(CASE WHEN w.name IN ('MK1 Hot Kitchen', 'MK2 Cold Kitchen') THEN i.qty_received * COALESCE(fo.price, 0) ELSE 0 END) as main_kitchen"),
-                DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name NOT IN ('Chemical', 'Stationary', 'Marketing') THEN i.qty_received * COALESCE(fo.price, 0) ELSE 0 END) as main_store"),
-                DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Chemical' THEN i.qty_received * COALESCE(fo.price, 0) ELSE 0 END) as chemical"),
-                DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Stationary' THEN i.qty_received * COALESCE(fo.price, 0) ELSE 0 END) as stationary"),
-                DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Marketing' THEN i.qty_received * COALESCE(fo.price, 0) ELSE 0 END) as marketing"),
-                DB::raw("SUM(i.qty_received * COALESCE(fo.price, 0)) as line_total")
-            );
-
-        if ($request->filled('from')) {
-            $query2->whereDate('gr.receive_date', '>=', $request->from);
-        }
-        if ($request->filled('to')) {
-            $query2->whereDate('gr.receive_date', '<=', $request->to);
+        // Now aggregate by outlet (same logic as detail)
+        $report1 = [];
+        foreach ($report1Items as $item) {
+            $key = $item->customer;
+            if (!isset($report1[$key])) {
+                $report1[$key] = (object)[
+                    'customer' => $item->customer,
+                    'is_outlet' => $item->is_outlet,
+                    'main_kitchen' => 0,
+                    'main_store' => 0,
+                    'chemical' => 0,
+                    'stationary' => 0,
+                    'marketing' => 0,
+                    'line_total' => 0
+                ];
+            }
+            
+            $subtotal = $item->item_subtotal;
+            $warehouse = $item->warehouse ? trim($item->warehouse) : null;
+            $subCategory = $item->sub_category ? trim($item->sub_category) : null;
+            
+            // Categorize by warehouse and sub-category (same logic as detail)
+            if ($warehouse && in_array($warehouse, ['MK1 Hot Kitchen', 'MK2 Cold Kitchen'])) {
+                $report1[$key]->main_kitchen += $subtotal;
+            } elseif ($warehouse && strtoupper($warehouse) === 'MAIN STORE') {
+                if ($subCategory && strtoupper($subCategory) === 'CHEMICAL') {
+                    $report1[$key]->chemical += $subtotal;
+                } elseif ($subCategory && strtoupper($subCategory) === 'STATIONARY') {
+                    $report1[$key]->stationary += $subtotal;
+                } elseif ($subCategory && strtoupper($subCategory) === 'MARKETING') {
+                    $report1[$key]->marketing += $subtotal;
+                } else {
+                    $report1[$key]->main_store += $subtotal;
+                }
+            } else {
+                // If warehouse is null or doesn't match, still add to line_total but don't categorize
+                // This shouldn't happen normally, but handle it gracefully
+            }
+            
+            $report1[$key]->line_total += $subtotal;
         }
         
-        // Filter GR yang belum dihapus (untuk good_receive_outlet_suppliers, tidak ada soft delete)
-        // Tabel ini menggunakan hard delete, jadi tidak perlu whereNull('gr.deleted_at')
+        $report1 = collect(array_values($report1))->sortByDesc('is_outlet')->sortBy('customer')->values();
 
-        $report2 = $query2->groupBy('o.nama_outlet', 'o.is_outlet')
-            ->orderBy('o.is_outlet', 'desc')
-            ->orderBy('o.nama_outlet')
-            ->get();
-
-        // Gabungkan kedua report dan group by outlet
-        $combinedReport = collect();
+        // Convert report1 to outletData format (only GR, no GR Supplier to match detail calculation)
         $outletData = [];
-        
-        // Process report1 (outlet_food_good_receives)
         foreach ($report1 as $row) {
             $key = $row->customer;
             if (!isset($outletData[$key])) {
@@ -866,30 +869,8 @@ class ReportController extends Controller
             $outletData[$key]['line_total'] += $row->line_total;
         }
         
-        // Process report2 (good_receive_outlet_suppliers)
-        foreach ($report2 as $row) {
-            $key = $row->customer;
-            if (!isset($outletData[$key])) {
-                $outletData[$key] = [
-                    'customer' => $row->customer,
-                    'is_outlet' => $row->is_outlet,
-                    'main_kitchen' => 0,
-                    'main_store' => 0,
-                    'chemical' => 0,
-                    'stationary' => 0,
-                    'marketing' => 0,
-                    'line_total' => 0
-                ];
-            }
-            $outletData[$key]['main_kitchen'] += $row->main_kitchen;
-            $outletData[$key]['main_store'] += $row->main_store;
-            $outletData[$key]['chemical'] += $row->chemical;
-            $outletData[$key]['stationary'] += $row->stationary;
-            $outletData[$key]['marketing'] += $row->marketing;
-            $outletData[$key]['line_total'] += $row->line_total;
-        }
-        
         // Convert to objects
+        $combinedReport = collect();
         foreach ($outletData as $outlet) {
             $obj = new \stdClass();
             $obj->customer = $outlet['customer'];
@@ -1021,6 +1002,7 @@ class ReportController extends Controller
             }
             
             // Use EXACTLY the same logic as reportSalesPivotSpecial method
+            // Use same logic as detail: group by item first, then sum by outlet (to avoid double counting)
             $query = DB::table('outlet_food_good_receives as gr')
                 ->join('outlet_food_good_receive_items as i', 'gr.id', '=', 'i.outlet_food_good_receive_id')
                 ->join('items as it', 'i.item_id', '=', 'it.id')
@@ -1029,20 +1011,19 @@ class ReportController extends Controller
                 ->join('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
                 ->leftJoin('food_floor_order_items as fo', function($join) {
                     $join->on('i.item_id', '=', 'fo.item_id')
-                         ->on('fo.floor_order_id', '=', 'do.floor_order_id'); // Use do.floor_order_id directly
+                         ->on('fo.floor_order_id', '=', 'do.floor_order_id');
                 })
-                ->leftJoin('warehouse_division as wd', 'it.warehouse_division_id', '=', 'wd.id') // Use item's warehouse_division_id
+                ->leftJoin('warehouse_division as wd', 'it.warehouse_division_id', '=', 'wd.id')
                 ->leftJoin('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
                 ->join('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
                 ->select(
                     'o.nama_outlet as customer',
                     'o.is_outlet',
-                    DB::raw("SUM(CASE WHEN w.name IN ('MK1 Hot Kitchen', 'MK2 Cold Kitchen') THEN i.received_qty * COALESCE(fo.price, 0) ELSE 0 END) as main_kitchen"),
-                    DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name NOT IN ('Chemical', 'Stationary', 'Marketing') THEN i.received_qty * COALESCE(fo.price, 0) ELSE 0 END) as main_store"),
-                    DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Chemical' THEN i.received_qty * COALESCE(fo.price, 0) ELSE 0 END) as chemical"),
-                    DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Stationary' THEN i.received_qty * COALESCE(fo.price, 0) ELSE 0 END) as stationary"),
-                    DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Marketing' THEN i.received_qty * COALESCE(fo.price, 0) ELSE 0 END) as marketing"),
-                    DB::raw("SUM(i.received_qty * COALESCE(fo.price, 0)) as line_total")
+                    'it.id as item_id',
+                    'it.name as item_name',
+                    'sc.name as sub_category',
+                    'w.name as warehouse',
+                    DB::raw('SUM(i.received_qty * COALESCE(fo.price, 0)) as item_subtotal')
                 );
 
             if ($request->filled('from')) {
@@ -1054,54 +1035,60 @@ class ReportController extends Controller
             
             // Filter GR yang belum dihapus
             $query->whereNull('gr.deleted_at');
-
-            $report1 = $query->groupBy('o.nama_outlet', 'o.is_outlet')
-                ->orderBy('o.is_outlet', 'desc')
-                ->orderBy('o.nama_outlet')
-                ->get();
-
-            // Query untuk good_receive_outlet_suppliers (menggunakan relasi RO Supplier yang benar)
-            $query2 = DB::table('good_receive_outlet_suppliers as gr')
-                ->join('good_receive_outlet_supplier_items as i', 'gr.id', '=', 'i.good_receive_id')
-                ->join('items as it', 'i.item_id', '=', 'it.id')
-                ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
-                ->join('units as u', 'i.unit_id', '=', 'u.id')
-                ->leftJoin('warehouse_division as wd', 'it.warehouse_division_id', '=', 'wd.id') // Use item's warehouse_division_id
-                ->leftJoin('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
-                ->leftJoin('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
-                ->leftJoin('food_floor_order_items as fo', function($join) {
-                    $join->on('i.item_id', '=', 'fo.item_id')
-                         ->on('fo.floor_order_id', '=', 'do.floor_order_id'); // Use do.floor_order_id directly
-                })
-                ->join('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
-                ->select(
-                    'o.nama_outlet as customer',
-                    'o.is_outlet',
-                    DB::raw("SUM(CASE WHEN w.name IN ('MK1 Hot Kitchen', 'MK2 Cold Kitchen') THEN i.qty_received * COALESCE(fo.price, 0) ELSE 0 END) as main_kitchen"),
-                    DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name NOT IN ('Chemical', 'Stationary', 'Marketing') THEN i.qty_received * COALESCE(fo.price, 0) ELSE 0 END) as main_store"),
-                    DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Chemical' THEN i.qty_received * COALESCE(fo.price, 0) ELSE 0 END) as chemical"),
-                    DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Stationary' THEN i.qty_received * COALESCE(fo.price, 0) ELSE 0 END) as stationary"),
-                    DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Marketing' THEN i.qty_received * COALESCE(fo.price, 0) ELSE 0 END) as marketing"),
-                    DB::raw("SUM(i.qty_received * COALESCE(fo.price, 0)) as line_total")
-                );
-
-            if ($request->filled('from')) {
-                $query2->whereDate('gr.receive_date', '>=', $request->from);
-            }
-            if ($request->filled('to')) {
-                $query2->whereDate('gr.receive_date', '<=', $request->to);
-            }
-
-            $report2 = $query2->groupBy('o.nama_outlet', 'o.is_outlet')
-                ->orderBy('o.is_outlet', 'desc')
-                ->orderBy('o.nama_outlet')
-                ->get();
-
-            // Gabungkan kedua report dan group by outlet
-            $combinedReport = collect();
-            $outletData = [];
             
-            // Process report1 (outlet_food_good_receives)
+            // Filter only items with valid warehouse (to ensure proper categorization)
+            $query->whereNotNull('w.name');
+
+            // Group by item first (like detail) to avoid double counting
+            $report1Items = $query->groupBy('o.nama_outlet', 'o.is_outlet', 'it.id', 'it.name', 'sc.name', 'w.name')
+                ->get();
+
+            // Now aggregate by outlet (same logic as detail)
+            $report1 = [];
+            foreach ($report1Items as $item) {
+                $key = $item->customer;
+                if (!isset($report1[$key])) {
+                    $report1[$key] = (object)[
+                        'customer' => $item->customer,
+                        'is_outlet' => $item->is_outlet,
+                        'main_kitchen' => 0,
+                        'main_store' => 0,
+                        'chemical' => 0,
+                        'stationary' => 0,
+                        'marketing' => 0,
+                        'line_total' => 0
+                    ];
+                }
+                
+                $subtotal = $item->item_subtotal;
+                $warehouse = $item->warehouse ? trim($item->warehouse) : null;
+                $subCategory = $item->sub_category ? trim($item->sub_category) : null;
+                
+                // Categorize by warehouse and sub-category (same logic as detail)
+                if ($warehouse && in_array($warehouse, ['MK1 Hot Kitchen', 'MK2 Cold Kitchen'])) {
+                    $report1[$key]->main_kitchen += $subtotal;
+                } elseif ($warehouse && strtoupper($warehouse) === 'MAIN STORE') {
+                    if ($subCategory && strtoupper($subCategory) === 'CHEMICAL') {
+                        $report1[$key]->chemical += $subtotal;
+                    } elseif ($subCategory && strtoupper($subCategory) === 'STATIONARY') {
+                        $report1[$key]->stationary += $subtotal;
+                    } elseif ($subCategory && strtoupper($subCategory) === 'MARKETING') {
+                        $report1[$key]->marketing += $subtotal;
+                    } else {
+                        $report1[$key]->main_store += $subtotal;
+                    }
+                } else {
+                    // If warehouse is null or doesn't match, still add to line_total but don't categorize
+                    // This shouldn't happen normally, but handle it gracefully
+                }
+                
+                $report1[$key]->line_total += $subtotal;
+            }
+            
+            $report1 = collect(array_values($report1))->sortByDesc('is_outlet')->sortBy('customer')->values();
+
+            // Convert report1 to outletData format (only GR, no GR Supplier to match detail calculation)
+            $outletData = [];
             foreach ($report1 as $row) {
                 $key = $row->customer;
                 if (!isset($outletData[$key])) {
@@ -1124,30 +1111,8 @@ class ReportController extends Controller
                 $outletData[$key]['line_total'] += $row->line_total;
             }
             
-            // Process report2 (good_receive_outlet_suppliers)
-            foreach ($report2 as $row) {
-                $key = $row->customer;
-                if (!isset($outletData[$key])) {
-                    $outletData[$key] = [
-                        'customer' => $row->customer,
-                        'is_outlet' => $row->is_outlet,
-                        'main_kitchen' => 0,
-                        'main_store' => 0,
-                        'chemical' => 0,
-                        'stationary' => 0,
-                        'marketing' => 0,
-                        'line_total' => 0
-                    ];
-                }
-                $outletData[$key]['main_kitchen'] += $row->main_kitchen;
-                $outletData[$key]['main_store'] += $row->main_store;
-                $outletData[$key]['chemical'] += $row->chemical;
-                $outletData[$key]['stationary'] += $row->stationary;
-                $outletData[$key]['marketing'] += $row->marketing;
-                $outletData[$key]['line_total'] += $row->line_total;
-            }
-            
             // Convert to objects
+            $combinedReport = collect();
             foreach ($outletData as $outlet) {
                 $obj = new \stdClass();
                 $obj->customer = $outlet['customer'];
@@ -2664,88 +2629,65 @@ class ReportController extends Controller
                 ->get();
         };
 
-        // Get data from outlet_food_good_receives
-        $mainKitchenGR = $getGRData(['MK1 Hot Kitchen', 'MK2 Cold Kitchen']);
-        $mainStoreGR = $getGRData('MAIN STORE', null, ['Chemical', 'Stationary', 'Marketing']);
-        $chemicalGR = $getGRData('MAIN STORE', 'Chemical');
-        $stationaryGR = $getGRData('MAIN STORE', 'Stationary');
-        $marketingGR = $getGRData('MAIN STORE', 'Marketing');
+            // Get data from outlet_food_good_receives (only GR, no GR Supplier to match main report)
+            $mainKitchenGR = $getGRData(['MK1 Hot Kitchen', 'MK2 Cold Kitchen']);
+            $mainStoreGR = $getGRData('MAIN STORE', null, ['Chemical', 'Stationary', 'Marketing']);
+            $chemicalGR = $getGRData('MAIN STORE', 'Chemical');
+            $stationaryGR = $getGRData('MAIN STORE', 'Stationary');
+            $marketingGR = $getGRData('MAIN STORE', 'Marketing');
 
-        // Get data from good_receive_outlet_suppliers
-        $mainKitchenGRSupplier = $getGRSupplierData(['MK1 Hot Kitchen', 'MK2 Cold Kitchen']);
-        $mainStoreGRSupplier = $getGRSupplierData('MAIN STORE', null, ['Chemical', 'Stationary', 'Marketing']);
-        $chemicalGRSupplier = $getGRSupplierData('MAIN STORE', 'Chemical');
-        $stationaryGRSupplier = $getGRSupplierData('MAIN STORE', 'Stationary');
-        $marketingGRSupplier = $getGRSupplierData('MAIN STORE', 'Marketing');
+            // Add source identifier to each dataset
+            $mainKitchenGR->each(function($item) {
+                $item->source = 'GR';
+            });
+            $mainStoreGR->each(function($item) {
+                $item->source = 'GR';
+            });
+            $chemicalGR->each(function($item) {
+                $item->source = 'GR';
+            });
+            $stationaryGR->each(function($item) {
+                $item->source = 'GR';
+            });
+            $marketingGR->each(function($item) {
+                $item->source = 'GR';
+            });
 
-        // Add source identifier to each dataset
-        $mainKitchenGR->each(function($item) {
-            $item->source = 'GR';
-        });
-        $mainStoreGR->each(function($item) {
-            $item->source = 'GR';
-        });
-        $chemicalGR->each(function($item) {
-            $item->source = 'GR';
-        });
-        $stationaryGR->each(function($item) {
-            $item->source = 'GR';
-        });
-        $marketingGR->each(function($item) {
-            $item->source = 'GR';
-        });
-
-        $mainKitchenGRSupplier->each(function($item) {
-            $item->source = 'GR Supplier';
-        });
-        $mainStoreGRSupplier->each(function($item) {
-            $item->source = 'GR Supplier';
-        });
-        $chemicalGRSupplier->each(function($item) {
-            $item->source = 'GR Supplier';
-        });
-        $stationaryGRSupplier->each(function($item) {
-            $item->source = 'GR Supplier';
-        });
-        $marketingGRSupplier->each(function($item) {
-            $item->source = 'GR Supplier';
-        });
-
-        // Combine data
-        $mainKitchen = $mainKitchenGR->concat($mainKitchenGRSupplier);
-        $mainStore = $mainStoreGR->concat($mainStoreGRSupplier);
-        $chemical = $chemicalGR->concat($chemicalGRSupplier);
-        $stationary = $stationaryGR->concat($stationaryGRSupplier);
-        $marketing = $marketingGR->concat($marketingGRSupplier);
+            // Use only GR data (no GR Supplier to match main report)
+            $mainKitchen = $mainKitchenGR;
+            $mainStore = $mainStoreGR;
+            $chemical = $chemicalGR;
+            $stationary = $stationaryGR;
+            $marketing = $marketingGR;
 
         return response()->json([
             'main_kitchen' => [
                 'gr' => $mainKitchenGR,
-                'gr_supplier' => $mainKitchenGRSupplier,
+                'gr_supplier' => collect(),
                 'retail_food' => collect(),
                 'all' => $mainKitchen
             ],
             'main_store' => [
                 'gr' => $mainStoreGR,
-                'gr_supplier' => $mainStoreGRSupplier,
+                'gr_supplier' => collect(),
                 'retail_food' => collect(),
                 'all' => $mainStore
             ],
             'chemical' => [
                 'gr' => $chemicalGR,
-                'gr_supplier' => $chemicalGRSupplier,
+                'gr_supplier' => collect(),
                 'retail_food' => collect(),
                 'all' => $chemical
             ],
             'stationary' => [
                 'gr' => $stationaryGR,
-                'gr_supplier' => $stationaryGRSupplier,
+                'gr_supplier' => collect(),
                 'retail_food' => collect(),
                 'all' => $stationary
             ],
             'marketing' => [
                 'gr' => $marketingGR,
-                'gr_supplier' => $marketingGRSupplier,
+                'gr_supplier' => collect(),
                 'retail_food' => collect(),
                 'all' => $marketing
             ],
@@ -2879,19 +2821,12 @@ class ReportController extends Controller
                 ->get();
         };
 
-        // Get data from outlet_food_good_receives
+        // Get data from outlet_food_good_receives (only GR, no GR Supplier to match main report)
         $mainKitchenGR = $getGRData(['MK1 Hot Kitchen', 'MK2 Cold Kitchen']);
         $mainStoreGR = $getGRData('MAIN STORE', null, ['Chemical', 'Stationary', 'Marketing']);
         $chemicalGR = $getGRData('MAIN STORE', 'Chemical');
         $stationaryGR = $getGRData('MAIN STORE', 'Stationary');
         $marketingGR = $getGRData('MAIN STORE', 'Marketing');
-
-        // Get data from good_receive_outlet_suppliers
-        $mainKitchenGRSupplier = $getGRSupplierData(['MK1 Hot Kitchen', 'MK2 Cold Kitchen']);
-        $mainStoreGRSupplier = $getGRSupplierData('MAIN STORE', null, ['Chemical', 'Stationary', 'Marketing']);
-        $chemicalGRSupplier = $getGRSupplierData('MAIN STORE', 'Chemical');
-        $stationaryGRSupplier = $getGRSupplierData('MAIN STORE', 'Stationary');
-        $marketingGRSupplier = $getGRSupplierData('MAIN STORE', 'Marketing');
 
         // Add source identifier to each dataset
         $mainKitchenGR->each(function($item) {
@@ -2910,48 +2845,26 @@ class ReportController extends Controller
             $item->source = 'GR';
         });
 
-        $mainKitchenGRSupplier->each(function($item) {
-            $item->source = 'GR Supplier';
-        });
-        $mainStoreGRSupplier->each(function($item) {
-            $item->source = 'GR Supplier';
-        });
-        $chemicalGRSupplier->each(function($item) {
-            $item->source = 'GR Supplier';
-        });
-        $stationaryGRSupplier->each(function($item) {
-            $item->source = 'GR Supplier';
-        });
-        $marketingGRSupplier->each(function($item) {
-            $item->source = 'GR Supplier';
-        });
+        // Use only GR data (no GR Supplier to match main report)
+        $mainKitchen = $mainKitchenGR;
+        $mainStore = $mainStoreGR;
+        $chemical = $chemicalGR;
+        $stationary = $stationaryGR;
+        $marketing = $marketingGR;
 
-        // Combine data
-        $mainKitchen = $mainKitchenGR->concat($mainKitchenGRSupplier);
-        $mainStore = $mainStoreGR->concat($mainStoreGRSupplier);
-        $chemical = $chemicalGR->concat($chemicalGRSupplier);
-        $stationary = $stationaryGR->concat($stationaryGRSupplier);
-        $marketing = $marketingGR->concat($marketingGRSupplier);
-
-        // Calculate totals for each source
+        // Calculate totals (only GR, no GR Supplier)
         $mainKitchenGrTotal = $mainKitchenGR->sum('subtotal');
         $mainStoreGrTotal = $mainStoreGR->sum('subtotal');
         $chemicalGrTotal = $chemicalGR->sum('subtotal');
         $stationaryGrTotal = $stationaryGR->sum('subtotal');
         $marketingGrTotal = $marketingGR->sum('subtotal');
 
-        $mainKitchenGrSupplierTotal = $mainKitchenGRSupplier->sum('subtotal');
-        $mainStoreGrSupplierTotal = $mainStoreGRSupplier->sum('subtotal');
-        $chemicalGrSupplierTotal = $chemicalGRSupplier->sum('subtotal');
-        $stationaryGrSupplierTotal = $stationaryGRSupplier->sum('subtotal');
-        $marketingGrSupplierTotal = $marketingGRSupplier->sum('subtotal');
-
-        // Calculate grand totals (GR + GR Supplier)
-        $mainKitchenTotal = $mainKitchenGrTotal + $mainKitchenGrSupplierTotal;
-        $mainStoreTotal = $mainStoreGrTotal + $mainStoreGrSupplierTotal;
-        $chemicalTotal = $chemicalGrTotal + $chemicalGrSupplierTotal;
-        $stationaryTotal = $stationaryGrTotal + $stationaryGrSupplierTotal;
-        $marketingTotal = $marketingGrTotal + $marketingGrSupplierTotal;
+        // Calculate grand totals (only GR)
+        $mainKitchenTotal = $mainKitchenGrTotal;
+        $mainStoreTotal = $mainStoreGrTotal;
+        $chemicalTotal = $chemicalGrTotal;
+        $stationaryTotal = $stationaryGrTotal;
+        $marketingTotal = $marketingGrTotal;
         $grandTotal = $mainKitchenTotal + $mainStoreTotal + $chemicalTotal + $stationaryTotal + $marketingTotal;
 
         // Generate PDF with optimized settings
@@ -2961,31 +2874,31 @@ class ReportController extends Controller
             'to' => $to,
             'mainKitchen' => [
                 'gr' => $mainKitchenGR,
-                'gr_supplier' => $mainKitchenGRSupplier,
+                'gr_supplier' => collect(),
                 'retail_food' => collect(),
                 'all' => $mainKitchen
             ],
             'mainStore' => [
                 'gr' => $mainStoreGR,
-                'gr_supplier' => $mainStoreGRSupplier,
+                'gr_supplier' => collect(),
                 'retail_food' => collect(),
                 'all' => $mainStore
             ],
             'chemical' => [
                 'gr' => $chemicalGR,
-                'gr_supplier' => $chemicalGRSupplier,
+                'gr_supplier' => collect(),
                 'retail_food' => collect(),
                 'all' => $chemical
             ],
             'stationary' => [
                 'gr' => $stationaryGR,
-                'gr_supplier' => $stationaryGRSupplier,
+                'gr_supplier' => collect(),
                 'retail_food' => collect(),
                 'all' => $stationary
             ],
             'marketing' => [
                 'gr' => $marketingGR,
-                'gr_supplier' => $marketingGRSupplier,
+                'gr_supplier' => collect(),
                 'retail_food' => collect(),
                 'all' => $marketing
             ],
@@ -3352,26 +3265,19 @@ class ReportController extends Controller
                     ->get();
             };
 
-            // Get data from outlet_food_good_receives
+            // Get data from outlet_food_good_receives (only GR, no GR Supplier to match main report)
             $mainKitchenGR = $getGRData(['MK1 Hot Kitchen', 'MK2 Cold Kitchen']);
             $mainStoreGR = $getGRData('MAIN STORE', null, ['Chemical', 'Stationary', 'Marketing']);
             $chemicalGR = $getGRData('MAIN STORE', 'Chemical');
             $stationaryGR = $getGRData('MAIN STORE', 'Stationary');
             $marketingGR = $getGRData('MAIN STORE', 'Marketing');
 
-            // Get data from good_receive_outlet_suppliers
-            $mainKitchenGRSupplier = $getGRSupplierData(['MK1 Hot Kitchen', 'MK2 Cold Kitchen']);
-            $mainStoreGRSupplier = $getGRSupplierData('MAIN STORE', null, ['Chemical', 'Stationary', 'Marketing']);
-            $chemicalGRSupplier = $getGRSupplierData('MAIN STORE', 'Chemical');
-            $stationaryGRSupplier = $getGRSupplierData('MAIN STORE', 'Stationary');
-            $marketingGRSupplier = $getGRSupplierData('MAIN STORE', 'Marketing');
-
-            // Combine data
-            $mainKitchen = $mainKitchenGR->concat($mainKitchenGRSupplier);
-            $mainStore = $mainStoreGR->concat($mainStoreGRSupplier);
-            $chemical = $chemicalGR->concat($chemicalGRSupplier);
-            $stationary = $stationaryGR->concat($stationaryGRSupplier);
-            $marketing = $marketingGR->concat($marketingGRSupplier);
+            // Use only GR data (no GR Supplier to match main report)
+            $mainKitchen = $mainKitchenGR;
+            $mainStore = $mainStoreGR;
+            $chemical = $chemicalGR;
+            $stationary = $stationaryGR;
+            $marketing = $marketingGR;
 
             // Prepare data for Excel
             $excelData = [];

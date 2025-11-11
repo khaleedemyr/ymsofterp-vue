@@ -30,6 +30,19 @@ class PurchaseRequisitionController extends Controller
         $division = $request->get('division', 'all');
         $perPage = $request->get('per_page', 15);
 
+        // Check if user has role with id '5af56935b011a' (can see all payments)
+        $user = auth()->user();
+        $canSeeAllPayments = false;
+        
+        if ($user) {
+            $userRole = DB::table('erp_user_role')
+                ->where('user_id', $user->id)
+                ->where('role_id', '5af56935b011a')
+                ->first();
+            
+            $canSeeAllPayments = $userRole !== null;
+        }
+
         $query = PurchaseRequisition::with([
             'division',
             'outlet',
@@ -37,6 +50,11 @@ class PurchaseRequisitionController extends Controller
             'category',
             'creator'
         ]);
+
+        // Filter by created_by if user doesn't have special role
+        if (!$canSeeAllPayments && $user) {
+            $query->where('created_by', $user->id);
+        }
 
         // Apply filters
         if ($search) {
@@ -62,12 +80,17 @@ class PurchaseRequisitionController extends Controller
         // Get filter options
         $divisions = Divisi::whereHas('purchaseRequisitions')->active()->orderBy('nama_divisi')->get();
         
-        // Statistics
+        // Statistics - apply same filter for statistics
+        $statsQuery = PurchaseRequisition::query();
+        if (!$canSeeAllPayments && $user) {
+            $statsQuery->where('created_by', $user->id);
+        }
+        
         $statistics = [
-            'total' => PurchaseRequisition::count(),
-            'draft' => PurchaseRequisition::where('status', 'DRAFT')->count(),
-            'submitted' => PurchaseRequisition::where('status', 'SUBMITTED')->count(),
-            'approved' => PurchaseRequisition::where('status', 'APPROVED')->count(),
+            'total' => (clone $statsQuery)->count(),
+            'draft' => (clone $statsQuery)->where('status', 'DRAFT')->count(),
+            'submitted' => (clone $statsQuery)->where('status', 'SUBMITTED')->count(),
+            'approved' => (clone $statsQuery)->where('status', 'APPROVED')->count(),
         ];
 
         return Inertia::render('PurchaseRequisition/Index', [

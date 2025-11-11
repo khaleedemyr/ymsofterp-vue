@@ -328,7 +328,6 @@ const props = defineProps({
   payment: Object,
   outlets: Array,
   grList: Array,
-  grSupplierTotalAmount: { type: Number, default: 0 }, // Total GR Supplier untuk outlet dan tanggal yang dipilih
 });
 
 // State for refresh functionality
@@ -336,7 +335,6 @@ const refreshingGR = ref(false);
 const refreshingRetailSales = ref(false);
 const localGRList = ref(props.grList);
 const localRetailSalesList = ref([]);
-const localGrSupplierTotalAmount = ref(parseFloat(props.grSupplierTotalAmount) || 0);
 
 // State for Load Data button
 const loadingData = ref(false);
@@ -374,13 +372,15 @@ const form = ref({
 });
 
 const grListFiltered = computed(() => {
-  if (!form.value.outlet_id) return [];
-  return localGRList.value.filter(gr => gr.outlet_id == form.value.outlet_id);
+  // Data sudah di-filter di backend berdasarkan outlet_id, date_from, date_to
+  // Jadi kita hanya perlu return localGRList langsung
+  return localGRList.value;
 });
 
 const retailSalesListFiltered = computed(() => {
-  if (!form.value.outlet_id) return [];
-  return localRetailSalesList.value.filter(retail => retail.outlet_id == form.value.outlet_id);
+  // Data sudah di-filter di backend berdasarkan outlet_id, date_from, date_to
+  // Jadi kita hanya perlu return localRetailSalesList langsung
+  return localRetailSalesList.value;
 });
 
 // Computed for total amount from selected GRs
@@ -443,9 +443,8 @@ const totalAmountFromSelectedTransactions = computed(() => {
   // Ensure all values are numbers, not strings
   const grTotal = parseFloat(totalAmountFromSelectedGRs.value) || 0;
   const retailTotal = parseFloat(totalAmountFromSelectedRetailSales.value) || 0;
-  const grSupplierTotal = parseFloat(localGrSupplierTotalAmount.value) || 0;
   
-  return grTotal + retailTotal + grSupplierTotal;
+  return grTotal + retailTotal;
 });
 // Watch for selected GRs changes to update total amount
 watch(selectedGRs, (newSelectedGRs) => {
@@ -587,19 +586,14 @@ async function refreshGRList() {
     const response = await fetch(`/outlet-payments/gr-list?${params.toString()}`);
     const data = await response.json();
     
-    if (data.success) {
-      // Update local GR list with fresh data
-      localGRList.value = data.grList;
-      
-      // Update GR Supplier total amount (ensure it's a number)
-      if (data.grSupplierTotalAmount !== undefined) {
-        localGrSupplierTotalAmount.value = parseFloat(data.grSupplierTotalAmount) || 0;
-      }
-      
-      // Clear selected GRs that are no longer in the list
-      selectedGRs.value = selectedGRs.value.filter(grId => 
-        data.grList.find(gr => gr.id == grId)
-      );
+        if (data.success) {
+          // Update local GR list with fresh data
+          localGRList.value = data.grList;
+
+          // Clear selected GRs that are no longer in the list
+          selectedGRs.value = selectedGRs.value.filter(grId =>
+            data.grList.find(gr => gr.id == grId)
+          );
       
       // Update select all state
       selectAllGR.value = selectedGRs.value.length === data.grList.length && data.grList.length > 0;
@@ -619,10 +613,13 @@ async function refreshGRList() {
         showConfirmButton: false
       });
     } else {
-      throw new Error('Failed to fetch GR data');
+      // If no data, set empty array
+      localGRList.value = [];
     }
   } catch (error) {
     console.error('Error refreshing GR list:', error);
+    // On error, set empty array
+    localGRList.value = [];
     const Swal = (await import('sweetalert2')).default;
     Swal.fire({
       icon: 'error',
