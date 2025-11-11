@@ -204,6 +204,7 @@
                       <i class="fas fa-print"></i>
                     </button>
                     <button
+                      v-if="pr.status === 'DRAFT' || pr.status === 'SUBMITTED'"
                       @click="deletePR(pr)"
                       :disabled="!canDelete(pr)"
                       :class="[
