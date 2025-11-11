@@ -568,15 +568,13 @@
             </Link>
             <button
               type="submit"
-              :disabled="loading || (budgetInfo && budgetInfo.exceeds_budget) || (selectedCategoryDetails && selectedCategoryDetails.budget_type === 'PER_OUTLET' && !form.outlet_id) || (form.mode === 'purchase_payment' && (!hasGMFinance || (isTravelApplication && !hasGASupervisorAsFirst)))"
+              :disabled="loading || (budgetInfo && budgetInfo.exceeds_budget) || (selectedCategoryDetails && selectedCategoryDetails.budget_type === 'PER_OUTLET' && !form.outlet_id)"
               class="px-4 py-2 text-white rounded-md disabled:opacity-50"
-              :class="(budgetInfo && budgetInfo.exceeds_budget) ? 'bg-red-600 hover:bg-red-700' : (selectedCategoryDetails && selectedCategoryDetails.budget_type === 'PER_OUTLET' && !form.outlet_id) ? 'bg-gray-400' : (form.mode === 'purchase_payment' && (!hasGMFinance || (isTravelApplication && !hasGASupervisorAsFirst))) ? 'bg-gray-400' : 'bg-blue-600 hover:bg-blue-700'"
+              :class="(budgetInfo && budgetInfo.exceeds_budget) ? 'bg-red-600 hover:bg-red-700' : (selectedCategoryDetails && selectedCategoryDetails.budget_type === 'PER_OUTLET' && !form.outlet_id) ? 'bg-gray-400' : 'bg-blue-600 hover:bg-blue-700'"
             >
               <span v-if="loading">Creating...</span>
               <span v-else-if="budgetInfo && budgetInfo.exceeds_budget">Budget Exceeded - Cannot Save</span>
               <span v-else-if="selectedCategoryDetails && selectedCategoryDetails.budget_type === 'PER_OUTLET' && !form.outlet_id">Select Outlet First</span>
-              <span v-else-if="form.mode === 'purchase_payment' && !hasGMFinance">GM Finance Required as Approver</span>
-              <span v-else-if="isTravelApplication && !hasGASupervisorAsFirst">GA Supervisor Required as First Approver</span>
               <span v-else>Create Payment</span>
             </button>
           </div>
