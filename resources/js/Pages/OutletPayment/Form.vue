@@ -328,6 +328,7 @@ const props = defineProps({
   payment: Object,
   outlets: Array,
   grList: Array,
+  grSupplierTotalAmount: { type: Number, default: 0 }, // Total GR Supplier untuk outlet dan tanggal yang dipilih
 });
 
 // State for refresh functionality
@@ -335,6 +336,7 @@ const refreshingGR = ref(false);
 const refreshingRetailSales = ref(false);
 const localGRList = ref(props.grList);
 const localRetailSalesList = ref([]);
+const localGrSupplierTotalAmount = ref(parseFloat(props.grSupplierTotalAmount) || 0);
 
 // State for Load Data button
 const loadingData = ref(false);
@@ -436,8 +438,14 @@ const totalAmountFromSelectedRetailSales = computed(() => {
 });
 
 // Computed for total amount from all selected transactions
+// Include GR Supplier total amount (calculated for outlet and date range, like Rekap FJ)
 const totalAmountFromSelectedTransactions = computed(() => {
-  return totalAmountFromSelectedGRs.value + totalAmountFromSelectedRetailSales.value;
+  // Ensure all values are numbers, not strings
+  const grTotal = parseFloat(totalAmountFromSelectedGRs.value) || 0;
+  const retailTotal = parseFloat(totalAmountFromSelectedRetailSales.value) || 0;
+  const grSupplierTotal = parseFloat(localGrSupplierTotalAmount.value) || 0;
+  
+  return grTotal + retailTotal + grSupplierTotal;
 });
 // Watch for selected GRs changes to update total amount
 watch(selectedGRs, (newSelectedGRs) => {
@@ -582,6 +590,11 @@ async function refreshGRList() {
     if (data.success) {
       // Update local GR list with fresh data
       localGRList.value = data.grList;
+      
+      // Update GR Supplier total amount (ensure it's a number)
+      if (data.grSupplierTotalAmount !== undefined) {
+        localGrSupplierTotalAmount.value = parseFloat(data.grSupplierTotalAmount) || 0;
+      }
       
       // Clear selected GRs that are no longer in the list
       selectedGRs.value = selectedGRs.value.filter(grId => 
