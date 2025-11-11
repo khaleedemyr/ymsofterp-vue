@@ -452,6 +452,9 @@ class PurchaseOrderOpsController extends Controller
             'purchasing_manager',
             'gm_finance',
             'source_pr.category',
+            'source_pr.division',
+            'source_pr.outlet',
+            'source_pr.creator',
             'source_pr.attachments.uploader',
             'approvalFlows.approver',
             'attachments.uploader'

@@ -4861,11 +4861,11 @@ watch(locale, () => {
                             </div>
                             <div>
                                 <label class="text-sm font-medium text-gray-600 dark:text-gray-400">Title</label>
-                                <p class="text-gray-900 dark:text-white">{{ selectedPoOpsApproval.purchase_requisition.title }}</p>
+                                <p class="text-gray-900 dark:text-white">{{ selectedPoOpsApproval.purchase_requisition.title || '-' }}</p>
                             </div>
                             <div>
-                                <label class="text-sm font-medium text-gray-600 dark:text-gray-400">Division</label>
-                                <p class="text-gray-900 dark:text-white">{{ selectedPoOpsApproval.purchase_requisition.division?.nama_divisi || '-' }}</p>
+                                <label class="text-sm font-medium text-gray-600 dark:text-gray-400">Tanggal PR</label>
+                                <p class="text-gray-900 dark:text-white">{{ selectedPoOpsApproval.purchase_requisition.date ? new Date(selectedPoOpsApproval.purchase_requisition.date).toLocaleDateString('id-ID') : (selectedPoOpsApproval.purchase_requisition.created_at ? new Date(selectedPoOpsApproval.purchase_requisition.created_at).toLocaleDateString('id-ID') : '-') }}</p>
                             </div>
                             <div>
                                 <label class="text-sm font-medium text-gray-600 dark:text-gray-400">Category</label>
@@ -4876,10 +4876,12 @@ watch(locale, () => {
                                 <p class="text-gray-900 dark:text-white">{{ selectedPoOpsApproval.purchase_requisition.outlet?.nama_outlet || '-' }}</p>
                             </div>
                             <div>
-                                <label class="text-sm font-medium text-gray-600 dark:text-gray-400">Amount</label>
-                                <p class="text-gray-900 dark:text-white font-semibold text-lg">
-                                    Rp {{ new Intl.NumberFormat('id-ID').format(selectedPoOpsApproval.purchase_requisition.amount) }}
-                                </p>
+                                <label class="text-sm font-medium text-gray-600 dark:text-gray-400">Pembuat PR</label>
+                                <p class="text-gray-900 dark:text-white">{{ selectedPoOpsApproval.purchase_requisition.creator?.nama_lengkap || '-' }}</p>
+                            </div>
+                            <div>
+                                <label class="text-sm font-medium text-gray-600 dark:text-gray-400">Division</label>
+                                <p class="text-gray-900 dark:text-white">{{ selectedPoOpsApproval.purchase_requisition.division?.nama_divisi || '-' }}</p>
                             </div>
                         </div>
                         <div v-if="selectedPoOpsApproval.purchase_requisition.description" class="mt-4">

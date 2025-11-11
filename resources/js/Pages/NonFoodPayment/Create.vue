@@ -105,13 +105,23 @@
               <label class="block text-sm font-medium text-gray-700">Division</label>
               <p class="mt-1 text-gray-900">{{ selectedPR.division_name }}</p>
             </div>
-            <div v-if="(selectedPO && selectedPO.pr_title) || (selectedPR && selectedPR.title)">
-              <label class="block text-sm font-medium text-gray-700">Title</label>
-              <p class="mt-1 text-gray-900">{{ selectedPO ? selectedPO.pr_title : selectedPR.title }}</p>
-            </div>
-            <div v-if="(selectedPO && selectedPO.pr_description) || (selectedPR && selectedPR.description)">
-              <label class="block text-sm font-medium text-gray-700">Description</label>
-              <p class="mt-1 text-gray-900">{{ selectedPO ? selectedPO.pr_description : selectedPR.description }}</p>
+          </div>
+
+          <!-- PR Information Section (Title & Description) -->
+          <div v-if="(selectedPO && (selectedPO.pr_title || selectedPO.pr_description)) || (selectedPR && (selectedPR.title || selectedPR.description))" class="bg-white rounded-2xl shadow-2xl p-6 mb-6">
+            <h3 class="text-lg font-semibold text-gray-800 mb-4">
+              <i class="fa fa-shopping-cart mr-2 text-green-500"></i>
+              Informasi Purchase Requisition
+            </h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div v-if="(selectedPO && selectedPO.pr_title) || (selectedPR && selectedPR.title)" class="md:col-span-2">
+                <label class="block text-sm font-medium text-gray-700 mb-1">Title</label>
+                <p class="text-gray-900 font-medium">{{ selectedPO ? selectedPO.pr_title : selectedPR.title }}</p>
+              </div>
+              <div v-if="(selectedPO && selectedPO.pr_description) || (selectedPR && selectedPR.description)" class="md:col-span-2">
+                <label class="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                <p class="text-gray-900 whitespace-pre-wrap">{{ selectedPO ? selectedPO.pr_description : selectedPR.description }}</p>
+              </div>
             </div>
           </div>
 
@@ -245,15 +255,29 @@
                     </div>
                     <div class="text-xs text-gray-600 mt-1">
                       <span v-if="outletData.pr_number">PR: {{ outletData.pr_number }}</span>
-                      <span v-if="outletData.pr_title" class="ml-2">{{ outletData.pr_title }}</span>
-                    </div>
-                    <div v-if="outletData.pr_description" class="text-xs text-gray-700 mt-2 bg-gray-100 p-2 rounded">
-                      <strong>Description:</strong> {{ outletData.pr_description }}
                     </div>
                   </div>
                   <div class="text-right">
                     <div class="text-lg font-bold text-green-600">{{ formatCurrency(outletData.subtotal) }}</div>
                     <div class="text-xs text-gray-500">Subtotal</div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- PR Title & Description for this outlet (separate from attachments) -->
+              <div v-if="outletData.pr_title || outletData.pr_description" class="mt-4 bg-green-50 rounded-lg p-4 mb-4">
+                <h5 class="text-sm font-semibold text-green-800 mb-3">
+                  <i class="fa fa-shopping-cart mr-2"></i>
+                  Informasi Purchase Requisition
+                </h5>
+                <div class="space-y-2">
+                  <div v-if="outletData.pr_title">
+                    <label class="block text-xs font-medium text-gray-700 mb-1">Title</label>
+                    <p class="text-sm text-gray-900 font-medium">{{ outletData.pr_title }}</p>
+                  </div>
+                  <div v-if="outletData.pr_description">
+                    <label class="block text-xs font-medium text-gray-700 mb-1">Description</label>
+                    <p class="text-sm text-gray-900 whitespace-pre-wrap">{{ outletData.pr_description }}</p>
                   </div>
                 </div>
               </div>
@@ -305,7 +329,6 @@
                       </div>
                       <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black to-transparent text-white p-2">
                         <p class="text-xs truncate font-medium">{{ attachment.file_name }}</p>
-                        <p v-if="attachment.pr_description" class="text-xs text-green-300">{{ attachment.pr_description }}</p>
                       </div>
                     </div>
                     
@@ -317,7 +340,6 @@
                       <div class="flex-1 min-w-0">
                         <p class="text-sm font-medium text-gray-900 truncate">{{ attachment.file_name }}</p>
                         <p class="text-xs text-gray-500">{{ formatFileSize(attachment.file_size) }}</p>
-                        <p v-if="attachment.pr_description" class="text-xs text-green-600 mt-1">{{ attachment.pr_description }}</p>
                       </div>
                       <div class="flex-shrink-0">
                         <a 

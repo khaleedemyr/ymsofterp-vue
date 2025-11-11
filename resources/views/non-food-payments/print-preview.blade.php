@@ -372,53 +372,78 @@
 
                 <!-- Purchase Requisition Information -->
                 @php
-                    $pr = $payment->purchase_requisition ?? ($payment->pr_from_po ?? null);
+                    // Try to get PR from different sources
+                    $pr = null;
+                    // First priority: direct PR relation (for direct PR payments)
+                    if ($payment->purchase_requisition_id) {
+                        // Try both camelCase and snake_case
+                        $pr = $payment->purchaseRequisition ?? $payment->purchase_requisition ?? null;
+                    }
+                    // Second priority: PR from PO (set in controller)
+                    if (!$pr && isset($payment->pr_from_po)) {
+                        $pr = $payment->pr_from_po;
+                    }
+                    // Third priority: PR from PO source_pr relation
+                    if (!$pr && $payment->purchaseOrderOps && $payment->purchaseOrderOps->source_pr) {
+                        $pr = $payment->purchaseOrderOps->source_pr;
+                    }
                 @endphp
                 @if($pr)
-                <div style="margin-top: 15px; padding: 10px; background-color: #f8f9fa; border-left: 3px solid #17a2b8;">
-                    <h4 style="margin: 0 0 10px 0; color: #17a2b8;">Purchase Requisition Information</h4>
+                <div style="margin-top: 15px; padding: 10px; background-color: #e7f3ff; border-left: 3px solid #17a2b8;">
+                    <h4 style="margin: 0 0 10px 0; color: #17a2b8; font-weight: bold;">
+                        <i class="fa fa-shopping-cart" style="margin-right: 5px;"></i>
+                        Purchase Requisition Information
+                    </h4>
                     <div class="info-grid">
                         <div>
                             <div class="info-item">
                                 <div class="info-label">PR Number:</div>
-                                <div class="info-value">{{ $pr->pr_number }}</div>
+                                <div class="info-value" style="font-weight: bold;">{{ $pr->pr_number ?? '-' }}</div>
                             </div>
                             <div class="info-item">
                                 <div class="info-label">PR Date:</div>
                                 <div class="info-value">
-                                    @if($pr->date instanceof \Carbon\Carbon)
-                                        {{ $pr->date->format('d M Y') }}
-                                    @elseif(is_string($pr->date))
-                                        {{ \Carbon\Carbon::parse($pr->date)->format('d M Y') }}
+                                    @if(isset($pr->date))
+                                        @if($pr->date instanceof \Carbon\Carbon)
+                                            {{ $pr->date->format('d M Y') }}
+                                        @elseif(is_string($pr->date))
+                                            {{ \Carbon\Carbon::parse($pr->date)->format('d M Y') }}
+                                        @else
+                                            {{ $pr->date ?? '-' }}
+                                        @endif
+                                    @elseif(isset($pr->created_at))
+                                        {{ \Carbon\Carbon::parse($pr->created_at)->format('d M Y') }}
                                     @else
-                                        {{ $pr->date ?? '-' }}
+                                        -
                                     @endif
                                 </div>
                             </div>
-                            @if($pr->outlet)
-                            <div class="info-item">
-                                <div class="info-label">Outlet:</div>
-                                <div class="info-value">{{ $pr->outlet->nama_outlet ?? '-' }}</div>
-                            </div>
-                            @endif
                         </div>
                         <div>
+                            @if(!empty($pr->title))
                             <div class="info-item">
                                 <div class="info-label">Title:</div>
-                                <div class="info-value">{{ $pr->title ?? '-' }}</div>
-                            </div>
-                            <div class="info-item">
-                                <div class="info-label">Amount:</div>
-                                <div class="info-value">Rp {{ number_format($pr->amount, 0, ',', '.') }}</div>
-                            </div>
-                            @if($pr->description)
-                            <div class="info-item">
-                                <div class="info-label">Description:</div>
-                                <div class="info-value">{{ $pr->description }}</div>
+                                <div class="info-value" style="font-weight: 600;">{{ $pr->title }}</div>
                             </div>
                             @endif
+                            @if(isset($pr->outlet) && $pr->outlet)
+                            <div class="info-item">
+                                <div class="info-label">Outlet:</div>
+                                <div class="info-value" style="font-weight: 600;">{{ is_object($pr->outlet) ? ($pr->outlet->nama_outlet ?? '-') : '-' }}</div>
+                            </div>
+                            @endif
+                            <div class="info-item">
+                                <div class="info-label">Amount:</div>
+                                <div class="info-value">Rp {{ number_format($pr->amount ?? 0, 0, ',', '.') }}</div>
+                            </div>
                         </div>
                     </div>
+                    @if(isset($pr->description) && $pr->description)
+                    <div class="info-item" style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #ddd;">
+                        <div class="info-label">Description:</div>
+                        <div class="info-value" style="white-space: pre-wrap; margin-top: 5px;">{{ $pr->description }}</div>
+                    </div>
+                    @endif
 
                     @php
                         $prItems = $pr->items ?? collect();

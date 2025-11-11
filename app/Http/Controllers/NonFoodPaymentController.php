@@ -636,8 +636,10 @@ class NonFoodPaymentController extends Controller
         $nonFoodPayment->load([
             'purchaseOrderOps.supplier',
             'purchaseOrderOps.items',
+            'purchaseOrderOps.source_pr.outlet',
             'purchaseRequisition.division',
             'purchaseRequisition.creator',
+            'purchaseRequisition.outlet',
             'supplier',
             'creator',
             'approver',
@@ -905,9 +907,11 @@ class NonFoodPaymentController extends Controller
                 'creator',
                 'purchaseOrderOps.supplier',
                 'purchaseOrderOps.items',
-                'purchaseOrderOps.purchase_requisition.outlet',
+                'purchaseOrderOps.source_pr.outlet',
                 'purchaseRequisition.items',
-                'purchaseRequisition.outlet'
+                'purchaseRequisition.outlet',
+                'purchaseRequisition.division',
+                'purchaseRequisition.category'
             ])->whereIn('id', $paymentIds)->get();
 
             // Ensure items are loaded for each payment - use direct DB query to guarantee items are loaded
@@ -929,7 +933,7 @@ class NonFoodPaymentController extends Controller
                             
                             // Load PR from PO if PO has source_type and source_id
                             if ($payment->purchaseOrderOps->source_type === 'purchase_requisition_ops' && $payment->purchaseOrderOps->source_id) {
-                                $pr = \App\Models\PurchaseRequisition::with(['outlet', 'items'])
+                                $pr = \App\Models\PurchaseRequisition::with(['outlet', 'items', 'division', 'category'])
                                     ->find($payment->purchaseOrderOps->source_id);
                                 if ($pr) {
                                     // Ensure date is cast to Carbon

@@ -127,42 +127,46 @@
           </div>
 
           <!-- Purchase Requisition Information -->
-          <div v-if="payment.purchase_requisition" class="bg-white rounded-2xl shadow-2xl p-6">
+          <div v-if="payment.purchase_requisition || (payment.purchase_order_ops && payment.purchase_order_ops.source_pr)" class="bg-white rounded-2xl shadow-2xl p-6">
             <h2 class="text-xl font-bold text-gray-800 mb-4">Purchase Requisition Information</h2>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label class="block text-sm font-medium text-gray-700">PR Number</label>
-                <p class="mt-1 text-lg font-semibold text-gray-900">{{ payment.purchase_requisition.pr_number }}</p>
+                <p class="mt-1 text-lg font-semibold text-gray-900">{{ (payment.purchase_requisition || payment.purchase_order_ops?.source_pr)?.pr_number || '-' }}</p>
               </div>
               <div>
                 <label class="block text-sm font-medium text-gray-700">PR Date</label>
-                <p class="mt-1 text-gray-900">{{ formatDate(payment.purchase_requisition.date) }}</p>
+                <p class="mt-1 text-gray-900">{{ formatDate((payment.purchase_requisition || payment.purchase_order_ops?.source_pr)?.date) }}</p>
               </div>
               <div>
                 <label class="block text-sm font-medium text-gray-700">Title</label>
-                <p class="mt-1 text-gray-900">{{ payment.purchase_requisition.title || '-' }}</p>
+                <p class="mt-1 text-gray-900">{{ (payment.purchase_requisition || payment.purchase_order_ops?.source_pr)?.title || '-' }}</p>
+              </div>
+              <div v-if="(payment.purchase_requisition?.outlet) || (payment.purchase_order_ops?.source_pr?.outlet)">
+                <label class="block text-sm font-medium text-gray-700">Outlet</label>
+                <p class="mt-1 text-gray-900">{{ (payment.purchase_requisition?.outlet || payment.purchase_order_ops?.source_pr?.outlet)?.nama_outlet || '-' }}</p>
               </div>
               <div>
                 <label class="block text-sm font-medium text-gray-700">Amount</label>
-                <p class="mt-1 text-lg font-bold text-green-600">{{ formatCurrency(payment.purchase_requisition.amount) }}</p>
+                <p class="mt-1 text-lg font-bold text-green-600">{{ formatCurrency((payment.purchase_requisition || payment.purchase_order_ops?.source_pr)?.amount || 0) }}</p>
               </div>
               <div>
                 <label class="block text-sm font-medium text-gray-700">Status</label>
                 <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold bg-green-100 text-green-800">
-                  {{ payment.purchase_requisition.status }}
+                  {{ (payment.purchase_requisition || payment.purchase_order_ops?.source_pr)?.status || '-' }}
                 </span>
               </div>
               <div>
                 <label class="block text-sm font-medium text-gray-700">Priority</label>
                 <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold bg-yellow-100 text-yellow-800">
-                  {{ payment.purchase_requisition.priority }}
+                  {{ (payment.purchase_requisition || payment.purchase_order_ops?.source_pr)?.priority || '-' }}
                 </span>
               </div>
             </div>
             
-            <div v-if="payment.purchase_requisition.description" class="mt-4">
+            <div v-if="(payment.purchase_requisition || payment.purchase_order_ops?.source_pr)?.description" class="mt-4">
               <label class="block text-sm font-medium text-gray-700">Description</label>
-              <p class="mt-1 text-gray-900">{{ payment.purchase_requisition.description }}</p>
+              <p class="mt-1 text-gray-900">{{ (payment.purchase_requisition || payment.purchase_order_ops?.source_pr)?.description }}</p>
             </div>
           </div>
 
