@@ -138,8 +138,8 @@ class OpexReportController extends Controller
                 ];
             }
 
-            // Initialize PO if not exists
-            if ($poId && !isset($outlets[$outletId]['categories'][$categoryId]['purchase_orders'][$poId])) {
+            // Initialize PO if not exists (only if category exists)
+            if ($poId && $categoryId && isset($outlets[$outletId]['categories'][$categoryId]) && !isset($outlets[$outletId]['categories'][$categoryId]['purchase_orders'][$poId])) {
                 $outlets[$outletId]['categories'][$categoryId]['purchase_orders'][$poId] = [
                     'po_id' => $poId,
                     'po_number' => $row->po_number,
@@ -156,8 +156,8 @@ class OpexReportController extends Controller
                 ];
             }
 
-            // Add item to PO
-            if ($poId && $row->po_item_id) {
+            // Add item to PO (only if category exists)
+            if ($poId && $categoryId && isset($outlets[$outletId]['categories'][$categoryId]) && $row->po_item_id) {
                 $outlets[$outletId]['categories'][$categoryId]['purchase_orders'][$poId]['items'][] = [
                     'po_item_id' => $row->po_item_id,
                     'item_name' => $row->item_name,
@@ -170,17 +170,41 @@ class OpexReportController extends Controller
                 // Update totals
                 $itemTotal = $row->po_item_total;
                 $outlets[$outletId]['categories'][$categoryId]['purchase_orders'][$poId]['total_amount'] += $itemTotal;
+                // Ensure category total_amount is initialized
+                if (!isset($outlets[$outletId]['categories'][$categoryId]['total_amount'])) {
+                    $outlets[$outletId]['categories'][$categoryId]['total_amount'] = 0;
+                }
                 $outlets[$outletId]['categories'][$categoryId]['total_amount'] += $itemTotal;
+                // Ensure outlet total_amount is initialized
+                if (!isset($outlets[$outletId]['total_amount'])) {
+                    $outlets[$outletId]['total_amount'] = 0;
+                }
                 $outlets[$outletId]['total_amount'] += $itemTotal;
 
                 // Update paid/unpaid amounts
                 if ($row->payment_id) {
                     $outlets[$outletId]['categories'][$categoryId]['purchase_orders'][$poId]['paid_amount'] = $row->payment_amount;
+                    // Ensure category paid_amount is initialized
+                    if (!isset($outlets[$outletId]['categories'][$categoryId]['paid_amount'])) {
+                        $outlets[$outletId]['categories'][$categoryId]['paid_amount'] = 0;
+                    }
                     $outlets[$outletId]['categories'][$categoryId]['paid_amount'] += $itemTotal;
+                    // Ensure outlet paid_amount is initialized
+                    if (!isset($outlets[$outletId]['paid_amount'])) {
+                        $outlets[$outletId]['paid_amount'] = 0;
+                    }
                     $outlets[$outletId]['paid_amount'] += $itemTotal;
                 } else {
                     $outlets[$outletId]['categories'][$categoryId]['purchase_orders'][$poId]['unpaid_amount'] = $itemTotal;
+                    // Ensure category unpaid_amount is initialized
+                    if (!isset($outlets[$outletId]['categories'][$categoryId]['unpaid_amount'])) {
+                        $outlets[$outletId]['categories'][$categoryId]['unpaid_amount'] = 0;
+                    }
                     $outlets[$outletId]['categories'][$categoryId]['unpaid_amount'] += $itemTotal;
+                    // Ensure outlet unpaid_amount is initialized
+                    if (!isset($outlets[$outletId]['unpaid_amount'])) {
+                        $outlets[$outletId]['unpaid_amount'] = 0;
+                    }
                     $outlets[$outletId]['unpaid_amount'] += $itemTotal;
                 }
             }
@@ -347,6 +371,11 @@ class OpexReportController extends Controller
     {
         foreach ($outletArray as &$outlet) {
             foreach ($outlet['categories'] as &$category) {
+                // Skip if category_id is not set
+                if (!isset($category['category_id']) || empty($category['category_id'])) {
+                    continue;
+                }
+                
                 // Get budget limit for this category
                 $budgetData = DB::table('purchase_requisition_categories')
                     ->where('id', $category['category_id'])
