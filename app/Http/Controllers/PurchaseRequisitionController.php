@@ -31,16 +31,12 @@ class PurchaseRequisitionController extends Controller
         $perPage = $request->get('per_page', 15);
 
         // Check if user has role with id '5af56935b011a' (can see all payments)
+        // Check from users table id_role column
         $user = auth()->user();
         $canSeeAllPayments = false;
         
-        if ($user) {
-            $userRole = DB::table('erp_user_role')
-                ->where('user_id', $user->id)
-                ->where('role_id', '5af56935b011a')
-                ->first();
-            
-            $canSeeAllPayments = $userRole !== null;
+        if ($user && $user->id_role === '5af56935b011a') {
+            $canSeeAllPayments = true;
         }
 
         $query = PurchaseRequisition::with([
