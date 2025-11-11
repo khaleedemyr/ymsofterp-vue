@@ -907,6 +907,22 @@ class PurchaseRequisitionController extends Controller
                             'current_month' => $currentMonth,
                             'current_year' => $currentYear,
                         ];
+                        
+                        // Calculate outlet used amount if PR has outlet_id (regardless of budget type)
+                        if ($purchaseRequisition->outlet_id) {
+                            $outletUsedAmount = PurchaseRequisition::where('category_id', $purchaseRequisition->category_id)
+                                ->where('outlet_id', $purchaseRequisition->outlet_id)
+                                ->whereYear('created_at', $currentYear)
+                                ->whereMonth('created_at', $currentMonth)
+                                ->whereIn('status', ['SUBMITTED', 'APPROVED', 'PROCESSED', 'COMPLETED'])
+                                ->sum('amount');
+                            
+                            $budgetInfo['outlet_used_amount'] = $outletUsedAmount;
+                            $budgetInfo['outlet_info'] = [
+                                'id' => $purchaseRequisition->outlet_id,
+                                'name' => $purchaseRequisition->outlet->nama_outlet ?? 'Unknown Outlet',
+                            ];
+                        }
                     } else if ($category->isPerOutletBudget() && $purchaseRequisition->outlet_id) {
                         // PER_OUTLET BUDGET: Calculate per specific outlet
                         $outletBudget = PurchaseRequisitionOutletBudget::where('category_id', $purchaseRequisition->category_id)

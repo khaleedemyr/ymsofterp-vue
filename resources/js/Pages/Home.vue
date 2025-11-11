@@ -4335,12 +4335,26 @@ watch(locale, () => {
                             </span>
                         </h4>
                         
-                        <!-- Outlet Info for PER_OUTLET -->
-                        <div v-if="prApprovalBudgetInfo.budget_type === 'PER_OUTLET' && prApprovalBudgetInfo.outlet_info" class="mb-4 p-3 bg-blue-100 dark:bg-blue-800/30 border border-blue-200 dark:border-blue-700 rounded-lg">
-                            <p class="text-sm text-blue-600 dark:text-blue-400">
-                                <i class="fa fa-store mr-2"></i>
-                                <strong>Outlet:</strong> {{ prApprovalBudgetInfo.outlet_info.name }}
-                            </p>
+                        <!-- Outlet Budget Usage Info (for all budget types if outlet exists) -->
+                        <div v-if="prApprovalBudgetInfo.outlet_info && prApprovalBudgetInfo.outlet_used_amount !== undefined" class="mb-4 p-4 bg-blue-100 dark:bg-blue-800/30 border border-blue-200 dark:border-blue-700 rounded-lg">
+                            <div class="flex items-center justify-between mb-3">
+                                <p class="text-sm font-semibold text-blue-600 dark:text-blue-400">
+                                    <i class="fa fa-store mr-2"></i>
+                                    <strong>Outlet:</strong> {{ prApprovalBudgetInfo.outlet_info.name }}
+                                </p>
+                            </div>
+                            <div class="bg-white dark:bg-gray-800 p-3 rounded-lg border border-purple-300 dark:border-purple-600">
+                                <div class="text-xs font-medium text-purple-600 dark:text-purple-400 mb-1">
+                                    <i class="fa fa-chart-bar mr-1"></i>
+                                    Budget Terpakai oleh Outlet Ini
+                                </div>
+                                <div class="text-lg font-bold text-purple-800 dark:text-purple-200">
+                                    Rp {{ new Intl.NumberFormat('id-ID').format(prApprovalBudgetInfo.outlet_used_amount || 0) }}
+                                </div>
+                                <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                    Total penggunaan budget kategori ini oleh outlet {{ prApprovalBudgetInfo.outlet_info.name }} di bulan {{ getMonthName(prApprovalBudgetInfo.current_month) }} {{ prApprovalBudgetInfo.current_year }}
+                                </div>
+                            </div>
                         </div>
                         
                         <!-- Main Budget Summary -->

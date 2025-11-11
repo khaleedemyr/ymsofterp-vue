@@ -156,7 +156,7 @@
                     </div>
                     <div class="flex-shrink-0">
                       <a 
-                        :href="attachment.file_path" 
+                        :href="`/po-ops/attachments/${attachment.id}/download`" 
                         target="_blank" 
                         class="text-blue-600 hover:text-blue-800 text-sm"
                       >
@@ -205,7 +205,7 @@
                     </div>
                     <div class="flex-shrink-0">
                       <a 
-                        :href="attachment.file_path" 
+                        :href="`/purchase-requisitions/attachments/${attachment.id}/download`" 
                         target="_blank" 
                         class="text-blue-600 hover:text-blue-800 text-sm"
                       >
@@ -321,7 +321,7 @@
                       </div>
                       <div class="flex-shrink-0">
                         <a 
-                          :href="attachment.file_path" 
+                          :href="`/purchase-requisitions/attachments/${attachment.id}/download`" 
                           target="_blank" 
                           class="text-green-600 hover:text-green-800 text-sm"
                         >
