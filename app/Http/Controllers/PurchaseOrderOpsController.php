@@ -1250,6 +1250,10 @@ class PurchaseOrderOpsController extends Controller
         ->with([
             'supplier', 
             'creator', 
+            'source_pr.category',
+            'source_pr.division',
+            'source_pr.outlet',
+            'source_pr.creator',
             'source_pr.attachments.uploader',
             'attachments.uploader',
             // include all flows to allow server-side filtering by level order

@@ -4849,7 +4849,7 @@ watch(locale, () => {
                     </div>
 
                     <!-- Purchase Requisition Ops Information -->
-                    <div v-if="selectedPoOpsApproval.purchase_requisition" class="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg">
+                    <div v-if="selectedPoOpsApproval.source_pr || selectedPoOpsApproval.purchase_requisition" class="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg">
                         <h4 class="text-md font-semibold text-gray-900 dark:text-white mb-3">
                             <i class="fa fa-shopping-cart mr-2 text-green-500"></i>
                             Informasi Purchase Requisition Ops
@@ -4857,36 +4857,36 @@ watch(locale, () => {
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
                                 <label class="text-sm font-medium text-gray-600 dark:text-gray-400">PR Number</label>
-                                <p class="text-gray-900 dark:text-white font-semibold">{{ selectedPoOpsApproval.purchase_requisition.pr_number }}</p>
+                                <p class="text-gray-900 dark:text-white font-semibold">{{ (selectedPoOpsApproval.source_pr || selectedPoOpsApproval.purchase_requisition)?.pr_number }}</p>
                             </div>
                             <div>
                                 <label class="text-sm font-medium text-gray-600 dark:text-gray-400">Title</label>
-                                <p class="text-gray-900 dark:text-white">{{ selectedPoOpsApproval.purchase_requisition.title || '-' }}</p>
+                                <p class="text-gray-900 dark:text-white">{{ (selectedPoOpsApproval.source_pr || selectedPoOpsApproval.purchase_requisition)?.title || '-' }}</p>
                             </div>
                             <div>
                                 <label class="text-sm font-medium text-gray-600 dark:text-gray-400">Tanggal PR</label>
-                                <p class="text-gray-900 dark:text-white">{{ selectedPoOpsApproval.purchase_requisition.date ? new Date(selectedPoOpsApproval.purchase_requisition.date).toLocaleDateString('id-ID') : (selectedPoOpsApproval.purchase_requisition.created_at ? new Date(selectedPoOpsApproval.purchase_requisition.created_at).toLocaleDateString('id-ID') : '-') }}</p>
+                                <p class="text-gray-900 dark:text-white">{{ ((selectedPoOpsApproval.source_pr || selectedPoOpsApproval.purchase_requisition)?.date ? new Date((selectedPoOpsApproval.source_pr || selectedPoOpsApproval.purchase_requisition).date).toLocaleDateString('id-ID') : ((selectedPoOpsApproval.source_pr || selectedPoOpsApproval.purchase_requisition)?.created_at ? new Date((selectedPoOpsApproval.source_pr || selectedPoOpsApproval.purchase_requisition).created_at).toLocaleDateString('id-ID') : '-')) }}</p>
                             </div>
                             <div>
                                 <label class="text-sm font-medium text-gray-600 dark:text-gray-400">Category</label>
-                                <p class="text-gray-900 dark:text-white">{{ selectedPoOpsApproval.purchase_requisition.category?.name || '-' }}</p>
+                                <p class="text-gray-900 dark:text-white">{{ (selectedPoOpsApproval.source_pr || selectedPoOpsApproval.purchase_requisition)?.category?.name || '-' }}</p>
                             </div>
                             <div>
                                 <label class="text-sm font-medium text-gray-600 dark:text-gray-400">Outlet</label>
-                                <p class="text-gray-900 dark:text-white">{{ selectedPoOpsApproval.purchase_requisition.outlet?.nama_outlet || '-' }}</p>
+                                <p class="text-gray-900 dark:text-white">{{ (selectedPoOpsApproval.source_pr || selectedPoOpsApproval.purchase_requisition)?.outlet?.nama_outlet || '-' }}</p>
                             </div>
                             <div>
                                 <label class="text-sm font-medium text-gray-600 dark:text-gray-400">Pembuat PR</label>
-                                <p class="text-gray-900 dark:text-white">{{ selectedPoOpsApproval.purchase_requisition.creator?.nama_lengkap || '-' }}</p>
+                                <p class="text-gray-900 dark:text-white">{{ (selectedPoOpsApproval.source_pr || selectedPoOpsApproval.purchase_requisition)?.creator?.nama_lengkap || '-' }}</p>
                             </div>
                             <div>
                                 <label class="text-sm font-medium text-gray-600 dark:text-gray-400">Division</label>
-                                <p class="text-gray-900 dark:text-white">{{ selectedPoOpsApproval.purchase_requisition.division?.nama_divisi || '-' }}</p>
+                                <p class="text-gray-900 dark:text-white">{{ (selectedPoOpsApproval.source_pr || selectedPoOpsApproval.purchase_requisition)?.division?.nama_divisi || '-' }}</p>
                             </div>
                         </div>
-                        <div v-if="selectedPoOpsApproval.purchase_requisition.description" class="mt-4">
+                        <div v-if="(selectedPoOpsApproval.source_pr || selectedPoOpsApproval.purchase_requisition)?.description" class="mt-4">
                             <label class="text-sm font-medium text-gray-600 dark:text-gray-400">Description</label>
-                            <p class="text-gray-900 dark:text-white mt-1">{{ selectedPoOpsApproval.purchase_requisition.description }}</p>
+                            <p class="text-gray-900 dark:text-white mt-1">{{ (selectedPoOpsApproval.source_pr || selectedPoOpsApproval.purchase_requisition)?.description }}</p>
                         </div>
                     </div>
 
@@ -4991,18 +4991,18 @@ watch(locale, () => {
                     </div>
 
                     <!-- Purchase Requisition Attachments -->
-                    <div v-if="selectedPoOpsApproval.purchase_requisition && selectedPoOpsApproval.purchase_requisition.attachments && selectedPoOpsApproval.purchase_requisition.attachments.length > 0" class="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
+                    <div v-if="(selectedPoOpsApproval.source_pr || selectedPoOpsApproval.purchase_requisition) && ((selectedPoOpsApproval.source_pr || selectedPoOpsApproval.purchase_requisition)?.attachments?.length > 0)" class="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
                         <h4 class="text-md font-semibold text-gray-900 dark:text-white mb-3 flex items-center">
                             <i class="fa fa-paperclip mr-2 text-blue-500"></i>
                             Purchase Requisition Attachments
                             <span class="ml-2 bg-blue-100 text-blue-800 text-xs font-medium px-2.5 py-0.5 rounded-full">
-                                {{ selectedPoOpsApproval.purchase_requisition.attachments.length }}
+                                {{ ((selectedPoOpsApproval.source_pr || selectedPoOpsApproval.purchase_requisition)?.attachments || []).length }}
                             </span>
                         </h4>
                         
                         <div class="space-y-3">
                             <div
-                                v-for="attachment in selectedPoOpsApproval.purchase_requisition.attachments"
+                                v-for="attachment in ((selectedPoOpsApproval.source_pr || selectedPoOpsApproval.purchase_requisition)?.attachments || [])"
                                 :key="attachment.id"
                                 class="flex items-center justify-between p-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
                             >
