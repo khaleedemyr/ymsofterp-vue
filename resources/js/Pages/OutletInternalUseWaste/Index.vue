@@ -124,6 +124,7 @@
             <thead class="bg-gray-50">
               <tr>
                 <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Tanggal</th>
+                <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Jam</th>
                 <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Tipe</th>
                 <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Status</th>
                 <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Approval</th>
@@ -135,10 +136,11 @@
             </thead>
             <tbody class="bg-white divide-y divide-gray-200">
               <tr v-if="!props.data || !props.data.data || props.data.data.length === 0">
-                <td colspan="8" class="text-center py-10 text-green-300">Tidak ada data.</td>
+                <td colspan="9" class="text-center py-10 text-green-300">Tidak ada data.</td>
               </tr>
               <tr v-for="row in props.data.data" :key="row.id">
                 <td class="px-6 py-3">{{ formatDate(row.date) }}</td>
+                <td class="px-6 py-3">{{ formatTime(row.created_at) }}</td>
                 <td class="px-6 py-3">{{ typeLabel(row.type) }}</td>
                 <td class="px-6 py-3">
                   <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium" :class="getStatusBadgeClass(row.status)">
@@ -313,6 +315,15 @@ function onDelete(id) {
 function formatDate(date) {
   if (!date) return '-';
   return new Date(date).toLocaleDateString('id-ID')
+}
+
+function formatTime(date) {
+  if (!date) return '-';
+  return new Date(date).toLocaleTimeString('id-ID', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  });
 }
 
 function formatNumber(val) {

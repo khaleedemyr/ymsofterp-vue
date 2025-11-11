@@ -96,6 +96,7 @@
           <thead class="bg-gradient-to-r from-blue-50 to-blue-100">
             <tr>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider rounded-tl-2xl">Tanggal</th>
+              <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Jam</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Batch</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Item</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Qty</th>
@@ -108,10 +109,11 @@
           </thead>
           <tbody>
             <tr v-if="productions.data.length === 0">
-              <td colspan="9" class="text-center py-10 text-blue-300">Tidak ada data produksi.</td>
+              <td colspan="10" class="text-center py-10 text-blue-300">Tidak ada data produksi.</td>
             </tr>
             <tr v-for="prod in productions.data" :key="prod.id" class="hover:bg-blue-50 transition shadow-sm">
               <td class="px-6 py-3">{{ formatDate(prod.production_date) }}</td>
+              <td class="px-6 py-3">{{ formatTime(prod.created_at) }}</td>
               <td class="px-6 py-3">{{ prod.batch_number }}</td>
               <td class="px-6 py-3">{{ prod.item_name }}</td>
               <td class="px-6 py-3">{{ Number(prod.qty).toFixed(2) }}</td>
@@ -271,7 +273,17 @@ function clearFilters() {
 }
 
 function formatDate(date) {
+  if (!date) return '-';
   return new Date(date).toLocaleDateString('id-ID');
+}
+
+function formatTime(date) {
+  if (!date) return '-';
+  return new Date(date).toLocaleTimeString('id-ID', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  });
 }
 function onFormSuccess() {
   showForm.value = false;

@@ -53,6 +53,7 @@ class ButcherProcessController extends Controller
                 'id' => $process->id,
                 'number' => $process->number,
                 'process_date' => $process->process_date,
+                'created_at' => $process->created_at,
                 'gr_number' => $process->goodReceive->gr_number ?? '-',
                 'warehouse_name' => $process->warehouse->name ?? '-',
                 'created_by_name' => $process->createdBy->nama_lengkap ?? '-',

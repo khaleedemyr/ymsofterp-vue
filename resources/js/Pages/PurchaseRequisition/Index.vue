@@ -177,7 +177,8 @@
                   </div>
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  {{ formatDate(pr.created_at) }}
+                  <div>{{ formatDate(pr.created_at) }}</div>
+                  <div class="text-xs text-gray-400 mt-0.5">{{ formatTime(pr.created_at) }}</div>
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
                   <div class="flex space-x-2">
@@ -612,6 +613,15 @@ function formatDate(date) {
     year: 'numeric',
     month: 'short',
     day: 'numeric',
+  });
+}
+
+function formatTime(date) {
+  if (!date) return '-';
+  return new Date(date).toLocaleTimeString('id-ID', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
   });
 }
 

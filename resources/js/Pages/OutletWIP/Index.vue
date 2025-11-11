@@ -19,6 +19,7 @@
           <thead class="bg-gradient-to-r from-blue-50 to-blue-100">
             <tr>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider rounded-tl-2xl">Tanggal</th>
+              <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Jam</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Batch</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Outlet</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Warehouse</th>
@@ -34,6 +35,7 @@
           <tbody>
             <tr v-for="production in productions.data" :key="production.id" class="bg-white hover:bg-gray-50 transition-colors">
               <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ formatDate(production.production_date) }}</td>
+              <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ formatTime(production.created_at) }}</td>
               <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ production.batch_number || '-' }}</td>
               <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ production.outlet_name }}</td>
               <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ production.warehouse_outlet_name }}</td>
@@ -88,7 +90,17 @@ const props = defineProps({
 });
 
 function formatDate(date) {
+  if (!date) return '-';
   return new Date(date).toLocaleDateString('id-ID');
+}
+
+function formatTime(date) {
+  if (!date) return '-';
+  return new Date(date).toLocaleTimeString('id-ID', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  });
 }
 
 function formatNumber(value) {

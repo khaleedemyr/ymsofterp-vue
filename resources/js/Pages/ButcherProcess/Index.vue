@@ -31,6 +31,7 @@
             <tr>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider rounded-tl-2xl">Number</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Process Date</th>
+              <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Jam</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">GR Number</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Warehouse</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Created By</th>
@@ -39,11 +40,12 @@
           </thead>
           <tbody>
             <tr v-if="butcherProcesses.data.length === 0">
-              <td colspan="6" class="text-center py-10 text-blue-300">No butcher process data.</td>
+              <td colspan="7" class="text-center py-10 text-blue-300">No butcher process data.</td>
             </tr>
             <tr v-for="process in butcherProcesses.data" :key="process.id" class="hover:bg-blue-50 transition shadow-sm">
               <td class="px-6 py-3 font-mono font-semibold text-blue-700">{{ process.number }}</td>
               <td class="px-6 py-3">{{ formatDate(process.process_date) }}</td>
+              <td class="px-6 py-3">{{ formatTime(process.created_at) }}</td>
               <td class="px-6 py-3">{{ process.gr_number }}</td>
               <td class="px-6 py-3">{{ process.warehouse_name }}</td>
               <td class="px-6 py-3">{{ process.created_by_name }}</td>
@@ -115,7 +117,17 @@ watch([search, filters], () => {
 })
 
 const formatDate = (date) => {
+  if (!date) return '-';
   return new Date(date).toLocaleDateString('id-ID')
+}
+
+const formatTime = (date) => {
+  if (!date) return '-';
+  return new Date(date).toLocaleTimeString('id-ID', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  });
 }
 
 const loadingDelete = ref(false)
