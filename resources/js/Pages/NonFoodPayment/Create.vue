@@ -24,6 +24,9 @@
                   <div class="text-sm text-gray-500">
                     {{ formatDate(po.date) }} - {{ formatCurrency(po.grand_total) }}
                   </div>
+                  <div v-if="po.pr_outlet_name" class="text-xs text-gray-600 mt-1">
+                    <i class="fa fa-store mr-1"></i>Outlet: {{ po.pr_outlet_name }}
+                  </div>
                   <div v-if="po.source_pr_number" class="text-xs text-blue-600 mt-1">
                     <i class="fa fa-link mr-1"></i>Source: {{ po.source_pr_number }}
                   </div>

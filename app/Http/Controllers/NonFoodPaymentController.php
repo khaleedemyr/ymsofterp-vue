@@ -155,6 +155,7 @@ class NonFoodPaymentController extends Controller
         $poQuery = DB::table('purchase_order_ops as poo')
             ->leftJoin('suppliers as s', 'poo.supplier_id', '=', 's.id')
             ->leftJoin('purchase_requisitions as pr', 'poo.source_id', '=', 'pr.id')
+            ->leftJoin('tbl_data_outlet as o', 'pr.outlet_id', '=', 'o.id_outlet')
             ->leftJoin('non_food_payments as nfp', function($join) {
                 $join->on('poo.id', '=', 'nfp.purchase_order_ops_id')
                      ->where('nfp.status', '!=', 'cancelled');
@@ -170,7 +171,8 @@ class NonFoodPaymentController extends Controller
                 'poo.notes',
                 's.name as supplier_name',
                 'pr.pr_number as source_pr_number',
-                'pr.title as pr_title'
+                'pr.title as pr_title',
+                'o.nama_outlet as pr_outlet_name'
             );
 
         // Apply filters
