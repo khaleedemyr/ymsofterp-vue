@@ -860,52 +860,9 @@ const submitForm = async () => {
     return
   }
   
-  // Validate approvers for Payment Application mode
-  if (form.mode === 'purchase_payment') {
-    // Always require GM Finance for Payment Application
-    const hasGMFinanceApprover = form.approvers.some(approver => {
-      const jabatan = approver?.jabatan?.toLowerCase() || ''
-      const name = approver?.name?.toLowerCase() || ''
-      return jabatan.includes('gm finance') || name.includes('gm finance')
-    })
-    
-    // Check if this is Travel Application
-    const title = form.title?.toLowerCase() || ''
-    const description = form.description?.toLowerCase() || ''
-    const travelKeywords = ['travel', 'perjalanan', 'dinas', 'trip', 'business trip']
-    const isTravel = travelKeywords.some(keyword => title.includes(keyword) || description.includes(keyword))
-    
-    // For Travel Application, also require GA Supervisor as first
-    let isGASupervisorFirst = true
-    if (isTravel) {
-      const firstApprover = form.approvers[0]
-      isGASupervisorFirst = firstApprover?.jabatan?.toLowerCase().includes('ga supervisor') || 
-                            firstApprover?.name?.toLowerCase().includes('ga supervisor')
-    }
-    
-    if (!hasGMFinanceApprover || (isTravel && !isGASupervisorFirst)) {
-      loading.value = false
-      let errorMessage = ''
-      if (!hasGMFinanceApprover) {
-        errorMessage += 'Untuk Payment Application wajib sertakan GM Finance sebagai Approver\n'
-      }
-      if (isTravel && !isGASupervisorFirst) {
-        errorMessage += 'Untuk Travel Application wajib menyertakan GA Supervisor sebagai Approver pertama\n'
-      }
-      if (isTravel) {
-        errorMessage += '\nContoh urutan: GA Supervisor → GM HR → GM Finance → BOD'
-      }
-      
-      await Swal.fire({
-        icon: 'warning',
-        title: 'Approver Diperlukan',
-        text: errorMessage,
-        confirmButtonText: 'OK',
-        confirmButtonColor: '#F59E0B'
-      })
-      return
-    }
-  }
+  // Note: Validasi GM Finance dan GA Supervisor hanya sebagai warning di UI,
+  // tidak menghalangi penyimpanan data. User tetap bisa simpan meskipun
+  // tidak memenuhi requirement tersebut.
   
   // Calculate total amount from items
   form.amount = totalAmount.value

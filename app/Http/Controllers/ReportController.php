@@ -766,7 +766,7 @@ class ReportController extends Controller
             ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
             ->join('units as u', 'i.unit_id', '=', 'u.id')
             ->join('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
-            ->join('food_floor_order_items as fo', function($join) {
+            ->leftJoin('food_floor_order_items as fo', function($join) {
                 $join->on('i.item_id', '=', 'fo.item_id')
                      ->on('fo.floor_order_id', '=', 'do.floor_order_id'); // Use do.floor_order_id directly
             })
@@ -776,18 +776,12 @@ class ReportController extends Controller
             ->select(
                 'o.nama_outlet as customer',
                 'o.is_outlet',
-                DB::raw("SUM(CASE WHEN w.name IN ('MK1 Hot Kitchen', 'MK2 Cold Kitchen') THEN i.received_qty * fo.price ELSE 0 END) as main_kitchen"),
-                DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name NOT IN ('Chemical', 'Stationary', 'Marketing') THEN i.received_qty * fo.price ELSE 0 END) as main_store"),
-                DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Chemical' THEN i.received_qty * fo.price ELSE 0 END) as chemical"),
-                DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Stationary' THEN i.received_qty * fo.price ELSE 0 END) as stationary"),
-                DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Marketing' THEN i.received_qty * fo.price ELSE 0 END) as marketing"),
-                DB::raw("(
-                    SUM(CASE WHEN w.name IN ('MK1 Hot Kitchen', 'MK2 Cold Kitchen') THEN i.received_qty * fo.price ELSE 0 END) +
-                    SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name NOT IN ('Chemical', 'Stationary', 'Marketing') THEN i.received_qty * fo.price ELSE 0 END) +
-                    SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Chemical' THEN i.received_qty * fo.price ELSE 0 END) +
-                    SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Stationary' THEN i.received_qty * fo.price ELSE 0 END) +
-                    SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Marketing' THEN i.received_qty * fo.price ELSE 0 END)
-                ) as line_total")
+                DB::raw("SUM(CASE WHEN w.name IN ('MK1 Hot Kitchen', 'MK2 Cold Kitchen') THEN i.received_qty * COALESCE(fo.price, 0) ELSE 0 END) as main_kitchen"),
+                DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name NOT IN ('Chemical', 'Stationary', 'Marketing') THEN i.received_qty * COALESCE(fo.price, 0) ELSE 0 END) as main_store"),
+                DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Chemical' THEN i.received_qty * COALESCE(fo.price, 0) ELSE 0 END) as chemical"),
+                DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Stationary' THEN i.received_qty * COALESCE(fo.price, 0) ELSE 0 END) as stationary"),
+                DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Marketing' THEN i.received_qty * COALESCE(fo.price, 0) ELSE 0 END) as marketing"),
+                DB::raw("SUM(i.received_qty * COALESCE(fo.price, 0)) as line_total")
             );
 
         if ($request->filled('from')) {
@@ -827,13 +821,7 @@ class ReportController extends Controller
                 DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Chemical' THEN i.qty_received * COALESCE(fo.price, 0) ELSE 0 END) as chemical"),
                 DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Stationary' THEN i.qty_received * COALESCE(fo.price, 0) ELSE 0 END) as stationary"),
                 DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Marketing' THEN i.qty_received * COALESCE(fo.price, 0) ELSE 0 END) as marketing"),
-                DB::raw("(
-                    SUM(CASE WHEN w.name IN ('MK1 Hot Kitchen', 'MK2 Cold Kitchen') THEN i.qty_received * COALESCE(fo.price, 0) ELSE 0 END) +
-                    SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name NOT IN ('Chemical', 'Stationary', 'Marketing') THEN i.qty_received * COALESCE(fo.price, 0) ELSE 0 END) +
-                    SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Chemical' THEN i.qty_received * COALESCE(fo.price, 0) ELSE 0 END) +
-                    SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Stationary' THEN i.qty_received * COALESCE(fo.price, 0) ELSE 0 END) +
-                    SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Marketing' THEN i.qty_received * COALESCE(fo.price, 0) ELSE 0 END)
-                ) as line_total")
+                DB::raw("SUM(i.qty_received * COALESCE(fo.price, 0)) as line_total")
             );
 
         if ($request->filled('from')) {
@@ -965,13 +953,7 @@ class ReportController extends Controller
                 DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Chemical' THEN rwsi.subtotal ELSE 0 END) as chemical"),
                 DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Stationary' THEN rwsi.subtotal ELSE 0 END) as stationary"),
                 DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Marketing' THEN rwsi.subtotal ELSE 0 END) as marketing"),
-                DB::raw("(
-                    SUM(CASE WHEN w.name IN ('MK1 Hot Kitchen', 'MK2 Cold Kitchen') THEN rwsi.subtotal ELSE 0 END) +
-                    SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name NOT IN ('Chemical', 'Stationary', 'Marketing') THEN rwsi.subtotal ELSE 0 END) +
-                    SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Chemical' THEN rwsi.subtotal ELSE 0 END) +
-                    SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Stationary' THEN rwsi.subtotal ELSE 0 END) +
-                    SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Marketing' THEN rwsi.subtotal ELSE 0 END)
-                ) as line_total")
+                DB::raw("SUM(rwsi.subtotal) as line_total")
             );
 
         if ($request->filled('from')) {
@@ -1000,13 +982,7 @@ class ReportController extends Controller
                 DB::raw("SUM(CASE WHEN w_source.name = 'MAIN STORE' AND sc.name = 'Chemical' THEN wsi.total ELSE 0 END) as chemical"),
                 DB::raw("SUM(CASE WHEN w_source.name = 'MAIN STORE' AND sc.name = 'Stationary' THEN wsi.total ELSE 0 END) as stationary"),
                 DB::raw("SUM(CASE WHEN w_source.name = 'MAIN STORE' AND sc.name = 'Marketing' THEN wsi.total ELSE 0 END) as marketing"),
-                DB::raw("(
-                    SUM(CASE WHEN w_source.name IN ('MK1 Hot Kitchen', 'MK2 Cold Kitchen') THEN wsi.total ELSE 0 END) +
-                    SUM(CASE WHEN w_source.name = 'MAIN STORE' AND sc.name NOT IN ('Chemical', 'Stationary', 'Marketing') THEN wsi.total ELSE 0 END) +
-                    SUM(CASE WHEN w_source.name = 'MAIN STORE' AND sc.name = 'Chemical' THEN wsi.total ELSE 0 END) +
-                    SUM(CASE WHEN w_source.name = 'MAIN STORE' AND sc.name = 'Stationary' THEN wsi.total ELSE 0 END) +
-                    SUM(CASE WHEN w_source.name = 'MAIN STORE' AND sc.name = 'Marketing' THEN wsi.total ELSE 0 END)
-                ) as line_total")
+                DB::raw("SUM(wsi.total) as line_total")
             );
 
         if ($request->filled('from')) {
@@ -1051,7 +1027,7 @@ class ReportController extends Controller
                 ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
                 ->join('units as u', 'i.unit_id', '=', 'u.id')
                 ->join('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
-                ->join('food_floor_order_items as fo', function($join) {
+                ->leftJoin('food_floor_order_items as fo', function($join) {
                     $join->on('i.item_id', '=', 'fo.item_id')
                          ->on('fo.floor_order_id', '=', 'do.floor_order_id'); // Use do.floor_order_id directly
                 })
@@ -1061,18 +1037,12 @@ class ReportController extends Controller
                 ->select(
                     'o.nama_outlet as customer',
                     'o.is_outlet',
-                    DB::raw("SUM(CASE WHEN w.name IN ('MK1 Hot Kitchen', 'MK2 Cold Kitchen') THEN i.received_qty * fo.price ELSE 0 END) as main_kitchen"),
-                    DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name NOT IN ('Chemical', 'Stationary', 'Marketing') THEN i.received_qty * fo.price ELSE 0 END) as main_store"),
-                    DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Chemical' THEN i.received_qty * fo.price ELSE 0 END) as chemical"),
-                    DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Stationary' THEN i.received_qty * fo.price ELSE 0 END) as stationary"),
-                    DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Marketing' THEN i.received_qty * fo.price ELSE 0 END) as marketing"),
-                    DB::raw("(
-                        SUM(CASE WHEN w.name IN ('MK1 Hot Kitchen', 'MK2 Cold Kitchen') THEN i.received_qty * fo.price ELSE 0 END) +
-                        SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name NOT IN ('Chemical', 'Stationary', 'Marketing') THEN i.received_qty * fo.price ELSE 0 END) +
-                        SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Chemical' THEN i.received_qty * fo.price ELSE 0 END) +
-                        SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Stationary' THEN i.received_qty * fo.price ELSE 0 END) +
-                        SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Marketing' THEN i.received_qty * fo.price ELSE 0 END)
-                    ) as line_total")
+                    DB::raw("SUM(CASE WHEN w.name IN ('MK1 Hot Kitchen', 'MK2 Cold Kitchen') THEN i.received_qty * COALESCE(fo.price, 0) ELSE 0 END) as main_kitchen"),
+                    DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name NOT IN ('Chemical', 'Stationary', 'Marketing') THEN i.received_qty * COALESCE(fo.price, 0) ELSE 0 END) as main_store"),
+                    DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Chemical' THEN i.received_qty * COALESCE(fo.price, 0) ELSE 0 END) as chemical"),
+                    DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Stationary' THEN i.received_qty * COALESCE(fo.price, 0) ELSE 0 END) as stationary"),
+                    DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Marketing' THEN i.received_qty * COALESCE(fo.price, 0) ELSE 0 END) as marketing"),
+                    DB::raw("SUM(i.received_qty * COALESCE(fo.price, 0)) as line_total")
                 );
 
             if ($request->filled('from')) {
@@ -1112,13 +1082,7 @@ class ReportController extends Controller
                     DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Chemical' THEN i.qty_received * COALESCE(fo.price, 0) ELSE 0 END) as chemical"),
                     DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Stationary' THEN i.qty_received * COALESCE(fo.price, 0) ELSE 0 END) as stationary"),
                     DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Marketing' THEN i.qty_received * COALESCE(fo.price, 0) ELSE 0 END) as marketing"),
-                    DB::raw("(
-                        SUM(CASE WHEN w.name IN ('MK1 Hot Kitchen', 'MK2 Cold Kitchen') THEN i.qty_received * COALESCE(fo.price, 0) ELSE 0 END) +
-                        SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name NOT IN ('Chemical', 'Stationary', 'Marketing') THEN i.qty_received * COALESCE(fo.price, 0) ELSE 0 END) +
-                        SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Chemical' THEN i.qty_received * COALESCE(fo.price, 0) ELSE 0 END) +
-                        SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Stationary' THEN i.qty_received * COALESCE(fo.price, 0) ELSE 0 END) +
-                        SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Marketing' THEN i.qty_received * COALESCE(fo.price, 0) ELSE 0 END)
-                    ) as line_total")
+                    DB::raw("SUM(i.qty_received * COALESCE(fo.price, 0)) as line_total")
                 );
 
             if ($request->filled('from')) {
@@ -1247,13 +1211,7 @@ class ReportController extends Controller
                     DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Chemical' THEN rwsi.subtotal ELSE 0 END) as chemical"),
                     DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Stationary' THEN rwsi.subtotal ELSE 0 END) as stationary"),
                     DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Marketing' THEN rwsi.subtotal ELSE 0 END) as marketing"),
-                    DB::raw("(
-                        SUM(CASE WHEN w.name IN ('MK1 Hot Kitchen', 'MK2 Cold Kitchen') THEN rwsi.subtotal ELSE 0 END) +
-                        SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name NOT IN ('Chemical', 'Stationary', 'Marketing') THEN rwsi.subtotal ELSE 0 END) +
-                        SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Chemical' THEN rwsi.subtotal ELSE 0 END) +
-                        SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Stationary' THEN rwsi.subtotal ELSE 0 END) +
-                        SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Marketing' THEN rwsi.subtotal ELSE 0 END)
-                    ) as line_total")
+                    DB::raw("SUM(rwsi.subtotal) as line_total")
                 );
 
             if ($request->filled('from')) {
@@ -1282,13 +1240,7 @@ class ReportController extends Controller
                     DB::raw("SUM(CASE WHEN w_source.name = 'MAIN STORE' AND sc.name = 'Chemical' THEN wsi.total ELSE 0 END) as chemical"),
                     DB::raw("SUM(CASE WHEN w_source.name = 'MAIN STORE' AND sc.name = 'Stationary' THEN wsi.total ELSE 0 END) as stationary"),
                     DB::raw("SUM(CASE WHEN w_source.name = 'MAIN STORE' AND sc.name = 'Marketing' THEN wsi.total ELSE 0 END) as marketing"),
-                    DB::raw("(
-                        SUM(CASE WHEN w_source.name IN ('MK1 Hot Kitchen', 'MK2 Cold Kitchen') THEN wsi.total ELSE 0 END) +
-                        SUM(CASE WHEN w_source.name = 'MAIN STORE' AND sc.name NOT IN ('Chemical', 'Stationary', 'Marketing') THEN wsi.total ELSE 0 END) +
-                        SUM(CASE WHEN w_source.name = 'MAIN STORE' AND sc.name = 'Chemical' THEN wsi.total ELSE 0 END) +
-                        SUM(CASE WHEN w_source.name = 'MAIN STORE' AND sc.name = 'Stationary' THEN wsi.total ELSE 0 END) +
-                        SUM(CASE WHEN w_source.name = 'MAIN STORE' AND sc.name = 'Marketing' THEN wsi.total ELSE 0 END)
-                    ) as line_total")
+                    DB::raw("SUM(wsi.total) as line_total")
                 );
 
             if ($request->filled('from')) {
@@ -2601,7 +2553,7 @@ class ReportController extends Controller
         $from = $request->from;
         $to = $request->to;
 
-        // Helper function to get GR data from outlet_food_good_receives
+        // Helper function to get GR data from outlet_food_good_receives (sama dengan rekap FJ)
         $getGRData = function($warehouseCondition, $subCategoryCondition = null, $excludeSubCategories = null) use ($customer, $from, $to) {
             $query = DB::table('outlet_food_good_receives as gr')
                 ->join('outlet_food_good_receive_items as i', 'gr.id', '=', 'i.outlet_food_good_receive_id')
@@ -2610,13 +2562,12 @@ class ReportController extends Controller
                 ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
                 ->join('units as u', 'i.unit_id', '=', 'u.id')
                 ->join('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
-                ->join('food_packing_lists as pl', 'do.packing_list_id', '=', 'pl.id')
-                ->join('warehouse_division as wd', 'pl.warehouse_division_id', '=', 'wd.id')
-                ->join('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
-                ->join('food_floor_order_items as fo', function($join) {
+                ->leftJoin('food_floor_order_items as fo', function($join) {
                     $join->on('i.item_id', '=', 'fo.item_id')
-                         ->on('fo.floor_order_id', '=', 'pl.food_floor_order_id');
+                         ->on('fo.floor_order_id', '=', 'do.floor_order_id');
                 })
+                ->leftJoin('warehouse_division as wd', 'it.warehouse_division_id', '=', 'wd.id')
+                ->leftJoin('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
                 ->join('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
                 ->where('o.nama_outlet', $customer)
                 ->whereDate('gr.receive_date', '>=', $from)
@@ -2649,8 +2600,8 @@ class ReportController extends Controller
                     'cat.name as category',
                     'u.name as unit',
                     DB::raw('SUM(i.received_qty) as received_qty'),
-                    DB::raw('AVG(fo.price) as price'),
-                    DB::raw('SUM(i.received_qty * fo.price) as subtotal')
+                    DB::raw('AVG(COALESCE(fo.price, 0)) as price'),
+                    DB::raw('SUM(i.received_qty * COALESCE(fo.price, 0)) as subtotal')
                 )
                 ->groupBy('it.name', 'cat.name', 'u.name')
                 ->orderBy('cat.name')
@@ -2817,7 +2768,7 @@ class ReportController extends Controller
             $from = $request->from;
             $to = $request->to;
 
-        // Helper function to get GR data with grouping to avoid duplicates
+        // Helper function to get GR data with grouping to avoid duplicates (sama dengan rekap FJ)
         $getGRData = function($warehouseCondition, $subCategoryCondition = null, $excludeSubCategories = null) use ($customer, $from, $to) {
             $query = DB::table('outlet_food_good_receives as gr')
                 ->join('outlet_food_good_receive_items as i', 'gr.id', '=', 'i.outlet_food_good_receive_id')
@@ -2826,11 +2777,11 @@ class ReportController extends Controller
                 ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
                 ->join('units as u', 'i.unit_id', '=', 'u.id')
                 ->join('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
-                ->join('food_floor_order_items as fo', function($join) {
+                ->leftJoin('food_floor_order_items as fo', function($join) {
                     $join->on('i.item_id', '=', 'fo.item_id')
-                         ->on('fo.floor_order_id', '=', 'do.floor_order_id'); // Use do.floor_order_id directly
+                         ->on('fo.floor_order_id', '=', 'do.floor_order_id');
                 })
-                ->leftJoin('warehouse_division as wd', 'it.warehouse_division_id', '=', 'wd.id') // Use item's warehouse_division_id
+                ->leftJoin('warehouse_division as wd', 'it.warehouse_division_id', '=', 'wd.id')
                 ->leftJoin('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
                 ->join('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
                 ->where('o.nama_outlet', $customer)
@@ -2864,8 +2815,8 @@ class ReportController extends Controller
                     'cat.name as category',
                     'u.name as unit',
                     DB::raw('SUM(i.received_qty) as received_qty'),
-                    DB::raw('AVG(fo.price) as price'),
-                    DB::raw('SUM(i.received_qty * fo.price) as subtotal')
+                    DB::raw('AVG(COALESCE(fo.price, 0)) as price'),
+                    DB::raw('SUM(i.received_qty * COALESCE(fo.price, 0)) as subtotal')
                 )
                 ->groupBy('it.name', 'cat.name', 'u.name')
                 ->orderBy('cat.name')
@@ -2873,45 +2824,134 @@ class ReportController extends Controller
                 ->get();
         };
 
-        // Get data using helper functions
-        $mainKitchen = $getGRData(['MK1 Hot Kitchen', 'MK2 Cold Kitchen']);
-        $mainStore = $getGRData('MAIN STORE', null, ['Chemical', 'Stationary', 'Marketing']);
-        $chemical = $getGRData('MAIN STORE', 'Chemical');
-        $stationary = $getGRData('MAIN STORE', 'Stationary');
-        $marketing = $getGRData('MAIN STORE', 'Marketing');
+        // Helper function to get GR Supplier data (sama dengan fjDetail)
+        $getGRSupplierData = function($warehouseCondition, $subCategoryCondition = null, $excludeSubCategories = null) use ($customer, $from, $to) {
+            $query = DB::table('good_receive_outlet_suppliers as gr')
+                ->join('good_receive_outlet_supplier_items as i', 'gr.id', '=', 'i.good_receive_id')
+                ->join('items as it', 'i.item_id', '=', 'it.id')
+                ->join('categories as cat', 'it.category_id', '=', 'cat.id')
+                ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
+                ->join('units as u', 'i.unit_id', '=', 'u.id')
+                ->leftJoin('warehouse_division as wd', 'it.warehouse_division_id', '=', 'wd.id')
+                ->leftJoin('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
+                ->leftJoin('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
+                ->leftJoin('food_floor_order_items as fo', function($join) {
+                    $join->on('i.item_id', '=', 'fo.item_id')
+                         ->on('fo.floor_order_id', '=', 'do.floor_order_id');
+                })
+                ->join('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
+                ->where('o.nama_outlet', $customer)
+                ->whereDate('gr.receive_date', '>=', $from)
+                ->whereDate('gr.receive_date', '<=', $to);
+
+            // Apply warehouse condition
+            if (is_array($warehouseCondition)) {
+                $query->whereIn('w.name', $warehouseCondition);
+            } else {
+                $query->where('w.name', $warehouseCondition);
+            }
+
+            // Apply sub-category condition if provided
+            if ($subCategoryCondition) {
+                if (is_array($subCategoryCondition)) {
+                    $query->whereIn('sc.name', $subCategoryCondition);
+                } else {
+                    $query->where('sc.name', $subCategoryCondition);
+                }
+            }
+
+            // Apply exclude sub-categories if provided
+            if ($excludeSubCategories) {
+                $query->whereNotIn('sc.name', $excludeSubCategories);
+            }
+
+            return $query->select(
+                    'it.name as item_name',
+                    'cat.name as category',
+                    'u.name as unit',
+                    DB::raw('SUM(i.qty_received) as received_qty'),
+                    DB::raw('AVG(COALESCE(fo.price, 0)) as price'),
+                    DB::raw('SUM(i.qty_received * COALESCE(fo.price, 0)) as subtotal')
+                )
+                ->groupBy('it.name', 'cat.name', 'u.name')
+                ->orderBy('cat.name')
+                ->orderBy('it.name')
+                ->get();
+        };
+
+        // Get data from outlet_food_good_receives
+        $mainKitchenGR = $getGRData(['MK1 Hot Kitchen', 'MK2 Cold Kitchen']);
+        $mainStoreGR = $getGRData('MAIN STORE', null, ['Chemical', 'Stationary', 'Marketing']);
+        $chemicalGR = $getGRData('MAIN STORE', 'Chemical');
+        $stationaryGR = $getGRData('MAIN STORE', 'Stationary');
+        $marketingGR = $getGRData('MAIN STORE', 'Marketing');
+
+        // Get data from good_receive_outlet_suppliers
+        $mainKitchenGRSupplier = $getGRSupplierData(['MK1 Hot Kitchen', 'MK2 Cold Kitchen']);
+        $mainStoreGRSupplier = $getGRSupplierData('MAIN STORE', null, ['Chemical', 'Stationary', 'Marketing']);
+        $chemicalGRSupplier = $getGRSupplierData('MAIN STORE', 'Chemical');
+        $stationaryGRSupplier = $getGRSupplierData('MAIN STORE', 'Stationary');
+        $marketingGRSupplier = $getGRSupplierData('MAIN STORE', 'Marketing');
 
         // Add source identifier to each dataset
-        $mainKitchen->each(function($item) {
+        $mainKitchenGR->each(function($item) {
             $item->source = 'GR';
         });
-        $mainStore->each(function($item) {
+        $mainStoreGR->each(function($item) {
             $item->source = 'GR';
         });
-        $chemical->each(function($item) {
+        $chemicalGR->each(function($item) {
             $item->source = 'GR';
         });
-        $stationary->each(function($item) {
+        $stationaryGR->each(function($item) {
             $item->source = 'GR';
         });
-        $marketing->each(function($item) {
+        $marketingGR->each(function($item) {
             $item->source = 'GR';
         });
 
+        $mainKitchenGRSupplier->each(function($item) {
+            $item->source = 'GR Supplier';
+        });
+        $mainStoreGRSupplier->each(function($item) {
+            $item->source = 'GR Supplier';
+        });
+        $chemicalGRSupplier->each(function($item) {
+            $item->source = 'GR Supplier';
+        });
+        $stationaryGRSupplier->each(function($item) {
+            $item->source = 'GR Supplier';
+        });
+        $marketingGRSupplier->each(function($item) {
+            $item->source = 'GR Supplier';
+        });
 
+        // Combine data
+        $mainKitchen = $mainKitchenGR->concat($mainKitchenGRSupplier);
+        $mainStore = $mainStoreGR->concat($mainStoreGRSupplier);
+        $chemical = $chemicalGR->concat($chemicalGRSupplier);
+        $stationary = $stationaryGR->concat($stationaryGRSupplier);
+        $marketing = $marketingGR->concat($marketingGRSupplier);
 
         // Calculate totals for each source
-        $mainKitchenGrTotal = $mainKitchen->sum('subtotal');
-        $mainStoreGrTotal = $mainStore->sum('subtotal');
-        $chemicalGrTotal = $chemical->sum('subtotal');
-        $stationaryGrTotal = $stationary->sum('subtotal');
-        $marketingGrTotal = $marketing->sum('subtotal');
+        $mainKitchenGrTotal = $mainKitchenGR->sum('subtotal');
+        $mainStoreGrTotal = $mainStoreGR->sum('subtotal');
+        $chemicalGrTotal = $chemicalGR->sum('subtotal');
+        $stationaryGrTotal = $stationaryGR->sum('subtotal');
+        $marketingGrTotal = $marketingGR->sum('subtotal');
 
-        // Calculate grand totals (only GR data)
-        $mainKitchenTotal = $mainKitchenGrTotal;
-        $mainStoreTotal = $mainStoreGrTotal;
-        $chemicalTotal = $chemicalGrTotal;
-        $stationaryTotal = $stationaryGrTotal;
-        $marketingTotal = $marketingGrTotal;
+        $mainKitchenGrSupplierTotal = $mainKitchenGRSupplier->sum('subtotal');
+        $mainStoreGrSupplierTotal = $mainStoreGRSupplier->sum('subtotal');
+        $chemicalGrSupplierTotal = $chemicalGRSupplier->sum('subtotal');
+        $stationaryGrSupplierTotal = $stationaryGRSupplier->sum('subtotal');
+        $marketingGrSupplierTotal = $marketingGRSupplier->sum('subtotal');
+
+        // Calculate grand totals (GR + GR Supplier)
+        $mainKitchenTotal = $mainKitchenGrTotal + $mainKitchenGrSupplierTotal;
+        $mainStoreTotal = $mainStoreGrTotal + $mainStoreGrSupplierTotal;
+        $chemicalTotal = $chemicalGrTotal + $chemicalGrSupplierTotal;
+        $stationaryTotal = $stationaryGrTotal + $stationaryGrSupplierTotal;
+        $marketingTotal = $marketingGrTotal + $marketingGrSupplierTotal;
         $grandTotal = $mainKitchenTotal + $mainStoreTotal + $chemicalTotal + $stationaryTotal + $marketingTotal;
 
         // Generate PDF with optimized settings
@@ -2920,27 +2960,32 @@ class ReportController extends Controller
             'from' => $from,
             'to' => $to,
             'mainKitchen' => [
-                'gr' => $mainKitchen,
+                'gr' => $mainKitchenGR,
+                'gr_supplier' => $mainKitchenGRSupplier,
                 'retail_food' => collect(),
                 'all' => $mainKitchen
             ],
             'mainStore' => [
-                'gr' => $mainStore,
+                'gr' => $mainStoreGR,
+                'gr_supplier' => $mainStoreGRSupplier,
                 'retail_food' => collect(),
                 'all' => $mainStore
             ],
             'chemical' => [
-                'gr' => $chemical,
+                'gr' => $chemicalGR,
+                'gr_supplier' => $chemicalGRSupplier,
                 'retail_food' => collect(),
                 'all' => $chemical
             ],
             'stationary' => [
-                'gr' => $stationary,
+                'gr' => $stationaryGR,
+                'gr_supplier' => $stationaryGRSupplier,
                 'retail_food' => collect(),
                 'all' => $stationary
             ],
             'marketing' => [
-                'gr' => $marketing,
+                'gr' => $marketingGR,
+                'gr_supplier' => $marketingGRSupplier,
                 'retail_food' => collect(),
                 'all' => $marketing
             ],
@@ -3196,7 +3241,7 @@ class ReportController extends Controller
             $from = $request->from;
             $to = $request->to;
 
-            // Helper function to get GR data with grouping to avoid duplicates
+            // Helper function to get GR data with grouping to avoid duplicates (sama dengan rekap FJ)
             $getGRData = function($warehouseCondition, $subCategoryCondition = null, $excludeSubCategories = null) use ($customer, $from, $to) {
                 $query = DB::table('outlet_food_good_receives as gr')
                     ->join('outlet_food_good_receive_items as i', 'gr.id', '=', 'i.outlet_food_good_receive_id')
@@ -3205,7 +3250,7 @@ class ReportController extends Controller
                     ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
                     ->join('units as u', 'i.unit_id', '=', 'u.id')
                     ->join('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
-                    ->join('food_floor_order_items as fo', function($join) {
+                    ->leftJoin('food_floor_order_items as fo', function($join) {
                         $join->on('i.item_id', '=', 'fo.item_id')
                              ->on('fo.floor_order_id', '=', 'do.floor_order_id');
                     })
@@ -3243,8 +3288,8 @@ class ReportController extends Controller
                         'cat.name as category',
                         'u.name as unit',
                         DB::raw('SUM(i.received_qty) as received_qty'),
-                        DB::raw('AVG(fo.price) as price'),
-                        DB::raw('SUM(i.received_qty * fo.price) as subtotal')
+                        DB::raw('AVG(COALESCE(fo.price, 0)) as price'),
+                        DB::raw('SUM(i.received_qty * COALESCE(fo.price, 0)) as subtotal')
                     )
                     ->groupBy('it.name', 'cat.name', 'u.name')
                     ->orderBy('cat.name')
@@ -3252,12 +3297,81 @@ class ReportController extends Controller
                     ->get();
             };
 
-            // Get data using helper functions
-            $mainKitchen = $getGRData(['MK1 Hot Kitchen', 'MK2 Cold Kitchen']);
-            $mainStore = $getGRData('MAIN STORE', null, ['Chemical', 'Stationary', 'Marketing']);
-            $chemical = $getGRData('MAIN STORE', 'Chemical');
-            $stationary = $getGRData('MAIN STORE', 'Stationary');
-            $marketing = $getGRData('MAIN STORE', 'Marketing');
+            // Helper function to get GR Supplier data (sama dengan fjDetail)
+            $getGRSupplierData = function($warehouseCondition, $subCategoryCondition = null, $excludeSubCategories = null) use ($customer, $from, $to) {
+                $query = DB::table('good_receive_outlet_suppliers as gr')
+                    ->join('good_receive_outlet_supplier_items as i', 'gr.id', '=', 'i.good_receive_id')
+                    ->join('items as it', 'i.item_id', '=', 'it.id')
+                    ->join('categories as cat', 'it.category_id', '=', 'cat.id')
+                    ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
+                    ->join('units as u', 'i.unit_id', '=', 'u.id')
+                    ->leftJoin('warehouse_division as wd', 'it.warehouse_division_id', '=', 'wd.id')
+                    ->leftJoin('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
+                    ->leftJoin('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
+                    ->leftJoin('food_floor_order_items as fo', function($join) {
+                        $join->on('i.item_id', '=', 'fo.item_id')
+                             ->on('fo.floor_order_id', '=', 'do.floor_order_id');
+                    })
+                    ->join('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
+                    ->where('o.nama_outlet', $customer)
+                    ->whereDate('gr.receive_date', '>=', $from)
+                    ->whereDate('gr.receive_date', '<=', $to);
+
+                // Apply warehouse condition
+                if (is_array($warehouseCondition)) {
+                    $query->whereIn('w.name', $warehouseCondition);
+                } else {
+                    $query->where('w.name', $warehouseCondition);
+                }
+
+                // Apply sub-category condition if provided
+                if ($subCategoryCondition) {
+                    if (is_array($subCategoryCondition)) {
+                        $query->whereIn('sc.name', $subCategoryCondition);
+                    } else {
+                        $query->where('sc.name', $subCategoryCondition);
+                    }
+                }
+
+                // Apply exclude sub-categories if provided
+                if ($excludeSubCategories) {
+                    $query->whereNotIn('sc.name', $excludeSubCategories);
+                }
+
+                return $query->select(
+                        'it.name as item_name',
+                        'cat.name as category',
+                        'u.name as unit',
+                        DB::raw('SUM(i.qty_received) as received_qty'),
+                        DB::raw('AVG(COALESCE(fo.price, 0)) as price'),
+                        DB::raw('SUM(i.qty_received * COALESCE(fo.price, 0)) as subtotal')
+                    )
+                    ->groupBy('it.name', 'cat.name', 'u.name')
+                    ->orderBy('cat.name')
+                    ->orderBy('it.name')
+                    ->get();
+            };
+
+            // Get data from outlet_food_good_receives
+            $mainKitchenGR = $getGRData(['MK1 Hot Kitchen', 'MK2 Cold Kitchen']);
+            $mainStoreGR = $getGRData('MAIN STORE', null, ['Chemical', 'Stationary', 'Marketing']);
+            $chemicalGR = $getGRData('MAIN STORE', 'Chemical');
+            $stationaryGR = $getGRData('MAIN STORE', 'Stationary');
+            $marketingGR = $getGRData('MAIN STORE', 'Marketing');
+
+            // Get data from good_receive_outlet_suppliers
+            $mainKitchenGRSupplier = $getGRSupplierData(['MK1 Hot Kitchen', 'MK2 Cold Kitchen']);
+            $mainStoreGRSupplier = $getGRSupplierData('MAIN STORE', null, ['Chemical', 'Stationary', 'Marketing']);
+            $chemicalGRSupplier = $getGRSupplierData('MAIN STORE', 'Chemical');
+            $stationaryGRSupplier = $getGRSupplierData('MAIN STORE', 'Stationary');
+            $marketingGRSupplier = $getGRSupplierData('MAIN STORE', 'Marketing');
+
+            // Combine data
+            $mainKitchen = $mainKitchenGR->concat($mainKitchenGRSupplier);
+            $mainStore = $mainStoreGR->concat($mainStoreGRSupplier);
+            $chemical = $chemicalGR->concat($chemicalGRSupplier);
+            $stationary = $stationaryGR->concat($stationaryGRSupplier);
+            $marketing = $marketingGR->concat($marketingGRSupplier);
 
             // Prepare data for Excel
             $excelData = [];
