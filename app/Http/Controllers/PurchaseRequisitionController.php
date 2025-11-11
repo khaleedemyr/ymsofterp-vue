@@ -1411,6 +1411,15 @@ class PurchaseRequisitionController extends Controller
     public function getPRTrackingReport(Request $request)
     {
         try {
+            // Check if user has role with id '5af56935b011a' (can see all payments)
+            // Check from users table id_role column
+            $user = auth()->user();
+            $canSeeAllPayments = false;
+            
+            if ($user && $user->id_role === '5af56935b011a') {
+                $canSeeAllPayments = true;
+            }
+
             $query = PurchaseRequisition::with([
                 'division',
                 'creator',
@@ -1423,6 +1432,11 @@ class PurchaseRequisitionController extends Controller
                     $q->select('id', 'payment_number', 'amount', 'status', 'payment_date', 'purchase_requisition_id');
                 }
             ]);
+
+            // Filter by created_by if user doesn't have special role
+            if (!$canSeeAllPayments && $user) {
+                $query->where('created_by', $user->id);
+            }
 
             // Apply filters
             if ($request->filled('search')) {
