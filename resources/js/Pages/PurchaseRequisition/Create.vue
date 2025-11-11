@@ -15,6 +15,20 @@
       </div>
 
       <div class="bg-white rounded-xl shadow-lg p-6">
+        <!-- Notes about Mode Selection (Always Visible) -->
+        <div class="mb-6 p-4 bg-blue-50 border-l-4 border-blue-500 rounded-lg">
+          <div class="flex items-start">
+            <i class="fa fa-info-circle text-blue-500 mr-3 mt-1"></i>
+            <div>
+              <p class="text-sm font-semibold text-blue-800 mb-1">Panduan Pemilihan Mode:</p>
+              <ul class="text-sm text-blue-700 space-y-1 list-disc list-inside">
+                <li><strong>Purchase Payment:</strong> Gunakan untuk pengajuan pembelian barang/jasa yang memerlukan proses pembelian melalui Purchase Order (PO)</li>
+                <li><strong>Payment Application:</strong> Gunakan untuk pengajuan Reimbursement, Travel Application, dan pembayaran lainnya yang tidak memerlukan proses pembelian</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
         <!-- Mode Switch -->
         <div class="mb-6 grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
           <div class="md:col-span-1">
@@ -156,6 +170,20 @@
           <!-- Items Section -->
           <div class="mb-6">
             <label class="block text-sm font-medium text-gray-700 mb-2">Items *</label>
+            
+            <!-- Note for Payment Application Mode about Allowance -->
+            <div v-if="form.mode === 'purchase_payment'" class="mb-3 p-3 bg-amber-50 border-l-4 border-amber-500 rounded-lg">
+              <div class="flex items-start">
+                <i class="fa fa-exclamation-triangle text-amber-600 mr-2 mt-0.5"></i>
+                <div>
+                  <p class="text-sm font-semibold text-amber-800 mb-1">Catatan Penting:</p>
+                  <p class="text-sm text-amber-700">
+                    Jika menginput <strong>Allowance</strong>, wajib mencantumkan nama penerima. Contoh: <strong>"Allowance Hendi"</strong>, <strong>"Allowance Dendi"</strong>, dll.
+                  </p>
+                </div>
+              </div>
+            </div>
+            
             <div class="overflow-x-auto">
               <table class="min-w-full divide-y divide-gray-200">
                 <thead class="bg-gray-50">
