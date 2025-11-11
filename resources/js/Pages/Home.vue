@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, watch, nextTick, onBeforeUnmount } from 'vue';
+import { ref, computed, onMounted, watch, nextTick, onBeforeUnmount, Teleport } from 'vue';
 import { Head, usePage, router } from '@inertiajs/vue3';
 import AnalogClock from '@/Components/AnalogClock.vue';
 import CalendarWidget from '@/Components/CalendarWidget.vue';
@@ -4771,28 +4771,31 @@ watch(locale, () => {
             </div>
         </div>
 
-        <!-- Lightbox Modal for Images -->
-        <div v-if="showLightbox" class="fixed inset-0 z-[9999] flex items-center justify-center bg-black bg-opacity-75" @click="closeLightbox">
-            <div class="relative max-w-4xl max-h-full p-4" @click.stop>
-                <button
-                    @click="closeLightbox"
-                    class="absolute top-2 right-2 z-[10000] p-2 text-white bg-black bg-opacity-50 rounded-full hover:bg-opacity-75 transition-colors"
-                >
-                    <i class="fa fa-times text-xl"></i>
-                </button>
-                <img
-                    v-if="lightboxImage"
-                    :src="lightboxType === 'po' ? `/po-ops/attachments/${lightboxImage.id}/view` : `/purchase-requisitions/attachments/${lightboxImage.id}/view`"
-                    :alt="lightboxImage.file_name"
-                    class="max-w-full max-h-full object-contain rounded-lg"
-                />
-                <div class="absolute bottom-4 left-4 right-4 text-center z-[10000]">
-                    <p class="text-white bg-black bg-opacity-50 px-3 py-1 rounded-lg text-sm">
-                        {{ lightboxImage?.file_name }}
-                    </p>
+        <!-- Lightbox Modal for Images - Using Teleport to body to ensure it's above all modals -->
+        <Teleport to="body">
+            <div v-if="showLightbox" class="fixed inset-0 flex items-center justify-center bg-black bg-opacity-75" @click="closeLightbox" style="z-index: 99999 !important;">
+                <div class="relative max-w-4xl max-h-full p-4" @click.stop style="z-index: 99999;">
+                    <button
+                        @click="closeLightbox"
+                        class="absolute top-2 right-2 p-2 text-white bg-black bg-opacity-50 rounded-full hover:bg-opacity-75 transition-colors"
+                        style="z-index: 100000;"
+                    >
+                        <i class="fa fa-times text-xl"></i>
+                    </button>
+                    <img
+                        v-if="lightboxImage"
+                        :src="lightboxType === 'po' ? `/po-ops/attachments/${lightboxImage.id}/view` : `/purchase-requisitions/attachments/${lightboxImage.id}/view`"
+                        :alt="lightboxImage.file_name"
+                        class="max-w-full max-h-full object-contain rounded-lg"
+                    />
+                    <div class="absolute bottom-4 left-4 right-4 text-center" style="z-index: 100000;">
+                        <p class="text-white bg-black bg-opacity-50 px-3 py-1 rounded-lg text-sm">
+                            {{ lightboxImage?.file_name }}
+                        </p>
+                    </div>
                 </div>
             </div>
-        </div>
+        </Teleport>
 
         <!-- Purchase Order Ops Approval Detail Modal -->
         <div v-if="showPoOpsApprovalModal && selectedPoOpsApproval" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click="showPoOpsApprovalModal = false">
@@ -4869,7 +4872,13 @@ watch(locale, () => {
                             </div>
                             <div>
                                 <label class="text-sm font-medium text-gray-600 dark:text-gray-400">Category</label>
-                                <p class="text-gray-900 dark:text-white">{{ (selectedPoOpsApproval.source_pr || selectedPoOpsApproval.purchase_requisition)?.category?.name || '-' }}</p>
+                                <p class="text-gray-900 dark:text-white">
+                                    <span v-if="(selectedPoOpsApproval.source_pr || selectedPoOpsApproval.purchase_requisition)?.category">
+                                        <span v-if="(selectedPoOpsApproval.source_pr || selectedPoOpsApproval.purchase_requisition)?.category?.division">[{{ (selectedPoOpsApproval.source_pr || selectedPoOpsApproval.purchase_requisition)?.category?.division }}] </span>
+                                        {{ (selectedPoOpsApproval.source_pr || selectedPoOpsApproval.purchase_requisition)?.category?.name }}
+                                    </span>
+                                    <span v-else>-</span>
+                                </p>
                             </div>
                             <div>
                                 <label class="text-sm font-medium text-gray-600 dark:text-gray-400">Outlet</label>
