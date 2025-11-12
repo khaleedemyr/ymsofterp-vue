@@ -1642,6 +1642,7 @@ Route::middleware(['auth'])->group(function () {
     Route::post('push-notification', [\App\Http\Controllers\PushNotificationController::class, 'store'])->name('push-notification.store');
     Route::post('push-notification/{id}/send', [\App\Http\Controllers\PushNotificationController::class, 'send'])->name('push-notification.send');
     Route::post('push-notification/test', [\App\Http\Controllers\PushNotificationController::class, 'test'])->name('push-notification.test');
+    Route::get('push-notification/search-members', [\App\Http\Controllers\PushNotificationController::class, 'searchMembers'])->name('push-notification.search-members');
 });
 
 // Shared Documents Routes

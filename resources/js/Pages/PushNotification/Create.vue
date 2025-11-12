@@ -22,18 +22,65 @@
           <!-- Target Email -->
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-2">
-              Target Email Member <span class="text-red-500">*</span>
+              Target Member <span class="text-red-500">*</span>
             </label>
-            <input
-              v-model="form.txt_target"
-              type="text"
-              class="w-full px-4 py-2 rounded-xl border border-gray-300 focus:ring-2 focus:ring-purple-400 focus:border-purple-400"
+            <Multiselect
+              v-model="selectedMembers"
+              :options="memberOptions"
+              :multiple="true"
+              :searchable="true"
+              :loading="searchLoading"
+              :internal-search="false"
+              :options-limit="20"
+              :limit="20"
+              :limit-text="count => `dan ${count} member lainnya`"
+              placeholder="Cari dan pilih member atau pilih 'All' untuk semua member"
+              label="label"
+              track-by="email"
+              @search-change="searchMembers"
+              @select="onMemberSelect"
+              @remove="onMemberRemove"
               :class="{ 'border-red-500': errors.txt_target }"
-              placeholder="Masukkan email (pisahkan dengan koma) atau ketik 'all' untuk semua devices"
-              required
-            />
+            >
+              <template slot="option" slot-scope="props">
+                <div class="flex items-center">
+                  <div class="flex-1">
+                    <div v-if="props.option.isAll" class="font-bold text-purple-600">
+                      <i class="fa-solid fa-users mr-2"></i>All - Kirim ke Semua Member
+                    </div>
+                    <div v-else>
+                      <div class="font-medium text-gray-900">{{ props.option.name }}</div>
+                      <div class="text-sm text-gray-600">{{ props.option.email }}</div>
+                      <div v-if="props.option.telepon" class="text-xs text-gray-500">{{ props.option.telepon }}</div>
+                    </div>
+                  </div>
+                </div>
+              </template>
+              <template slot="tag" slot-scope="props">
+                <span v-if="props.option.isAll" class="multiselect__tag bg-purple-600">
+                  <span>All</span>
+                  <i class="multiselect__tag-icon" @click.stop="removeMember(props.option)"></i>
+                </span>
+                <span v-else class="multiselect__tag">
+                  <span>{{ props.option.name }}</span>
+                  <i class="multiselect__tag-icon" @click.stop="removeMember(props.option)"></i>
+                </span>
+              </template>
+              <template slot="noOptions">
+                <div class="text-center py-2 text-gray-500">
+                  <i class="fa-solid fa-search mr-2"></i>
+                  Ketik minimal 2 karakter untuk mencari member...
+                </div>
+              </template>
+              <template slot="noResult">
+                <div class="text-center py-2 text-gray-500">
+                  <i class="fa-solid fa-user-slash mr-2"></i>
+                  Tidak ada member ditemukan
+                </div>
+              </template>
+            </Multiselect>
             <p class="mt-1 text-sm text-gray-500">
-              Tambahkan koma untuk multi target, ketik "all" untuk blast ke semua Devices.
+              Pilih member secara individual atau pilih "All" untuk mengirim ke semua member yang memiliki firebase token.
             </p>
             <p v-if="errors.txt_target" class="text-red-500 text-sm mt-1">{{ errors.txt_target }}</p>
           </div>
@@ -115,10 +162,13 @@
 </template>
 
 <script setup>
-import { ref } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { router, useForm } from '@inertiajs/vue3';
 import Swal from 'sweetalert2';
 import AppLayout from '@/Layouts/AppLayout.vue';
+import Multiselect from 'vue-multiselect';
+import 'vue-multiselect/dist/vue-multiselect.min.css';
+import axios from 'axios';
 
 const props = defineProps({
   errors: Object,
@@ -126,6 +176,12 @@ const props = defineProps({
 
 const loading = ref(false);
 const previewImage = ref(null);
+const selectedMembers = ref([]);
+const memberOptions = ref([
+  { email: 'all', name: 'All', label: 'All - Kirim ke Semua Member', isAll: true }
+]);
+const searchLoading = ref(false);
+const searchTimeout = ref(null);
 
 const form = useForm({
   txt_target: '',
@@ -133,6 +189,76 @@ const form = useForm({
   txt_body: '',
   file_foto: null,
 });
+
+// Watch selectedMembers and update form.txt_target
+watch(selectedMembers, (newVal) => {
+  if (newVal.length === 0) {
+    form.txt_target = '';
+    return;
+  }
+  
+  // Check if "all" is selected
+  const hasAll = newVal.some(m => m.isAll);
+  if (hasAll) {
+    form.txt_target = 'all';
+  } else {
+    // Get emails from selected members
+    const emails = newVal.map(m => m.email).filter(email => email && email !== 'all');
+    form.txt_target = emails.join(',');
+  }
+}, { deep: true });
+
+async function searchMembers(query) {
+  if (!query || query.length < 2) {
+    memberOptions.value = [
+      { email: 'all', name: 'All', label: 'All - Kirim ke Semua Member', isAll: true }
+    ];
+    return;
+  }
+
+  clearTimeout(searchTimeout.value);
+  searchLoading.value = true;
+
+  searchTimeout.value = setTimeout(async () => {
+    try {
+      const response = await axios.get('/push-notification/search-members', {
+        params: { search: query }
+      });
+
+      // Add "All" option at the beginning
+      memberOptions.value = [
+        { email: 'all', name: 'All', label: 'All - Kirim ke Semua Member', isAll: true },
+        ...response.data
+      ];
+    } catch (error) {
+      console.error('Error searching members:', error);
+      memberOptions.value = [
+        { email: 'all', name: 'All', label: 'All - Kirim ke Semua Member', isAll: true }
+      ];
+    } finally {
+      searchLoading.value = false;
+    }
+  }, 300);
+}
+
+function onMemberSelect(option) {
+  // If "All" is selected, clear other selections and only keep "All"
+  if (option.isAll) {
+    selectedMembers.value = [option];
+  } else {
+    // If selecting a specific member, remove "All" if it exists
+    selectedMembers.value = selectedMembers.value.filter(m => !m.isAll);
+  }
+}
+
+function onMemberRemove(option) {
+  // Remove the member from selection
+  selectedMembers.value = selectedMembers.value.filter(m => m.email !== option.email);
+}
+
+function removeMember(option) {
+  onMemberRemove(option);
+}
 
 function handleFileChange(event) {
   const file = event.target.files[0];
@@ -163,6 +289,13 @@ function handleFileChange(event) {
 }
 
 function submit() {
+  // Validate that at least one member is selected
+  if (selectedMembers.value.length === 0 || !form.txt_target) {
+    Swal.fire('Error', 'Silakan pilih minimal 1 member atau pilih "All"', 'error');
+    loading.value = false;
+    return;
+  }
+
   loading.value = true;
   
   form.post('/push-notification', {
@@ -185,5 +318,106 @@ function goBack() {
   router.visit('/push-notification');
 }
 </script>
+
+<style scoped>
+/* Custom styling for multiselect */
+::v-deep(.multiselect) {
+  min-height: 42px;
+  border-radius: 0.75rem;
+}
+
+::v-deep(.multiselect__tags) {
+  min-height: 42px;
+  border: 1px solid #d1d5db;
+  border-radius: 0.75rem;
+  padding: 8px 40px 0 8px;
+}
+
+::v-deep(.multiselect__tags:focus-within) {
+  border-color: #a855f7;
+  box-shadow: 0 0 0 2px rgba(168, 85, 247, 0.2);
+}
+
+::v-deep(.multiselect__input) {
+  border: none;
+  padding: 0;
+  margin: 0;
+  min-height: 30px;
+}
+
+::v-deep(.multiselect__placeholder) {
+  color: #9ca3af;
+  padding-top: 8px;
+  margin-bottom: 0;
+}
+
+::v-deep(.multiselect__single) {
+  padding-top: 8px;
+  margin-bottom: 0;
+}
+
+::v-deep(.multiselect__content-wrapper) {
+  border-radius: 0.5rem;
+  border: 1px solid #e5e7eb;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+  margin-top: 4px;
+}
+
+::v-deep(.multiselect__option) {
+  padding: 12px;
+  min-height: auto;
+}
+
+::v-deep(.multiselect__option--highlight) {
+  background: #f3e8ff;
+  color: #7c3aed;
+}
+
+::v-deep(.multiselect__option--selected) {
+  background: #ede9fe;
+  color: #6d28d9;
+  font-weight: 500;
+}
+
+::v-deep(.multiselect__tag) {
+  background: #7c3aed;
+  color: white;
+  border-radius: 0.5rem;
+  padding: 4px 8px;
+  margin: 2px;
+}
+
+::v-deep(.multiselect__tag-icon) {
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 50%;
+  width: 18px;
+  height: 18px;
+  line-height: 18px;
+  margin-left: 4px;
+}
+
+::v-deep(.multiselect__tag-icon:hover) {
+  background: rgba(255, 255, 255, 0.5);
+}
+
+::v-deep(.multiselect__tag.bg-purple-600) {
+  background: #9333ea !important;
+}
+
+::v-deep(.multiselect--active .multiselect__tags) {
+  border-color: #a855f7;
+  box-shadow: 0 0 0 2px rgba(168, 85, 247, 0.2);
+}
+
+/* Error state */
+.border-red-500 ::v-deep(.multiselect__tags) {
+  border-color: #ef4444;
+}
+
+.border-red-500 ::v-deep(.multiselect__tags:focus-within) {
+  border-color: #ef4444;
+  box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.2);
+}
+</style>
 
 

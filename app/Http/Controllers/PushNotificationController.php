@@ -111,7 +111,7 @@ class PushNotificationController extends Controller
         $validator = Validator::make($request->all(), [
             'txt_title' => 'required|string|max:255',
             'txt_body' => 'required|string',
-            'txt_target' => 'required|string',
+            'txt_target' => 'required',
             'file_foto' => 'nullable|image|mimes:jpeg,jpg,png|max:2048',
         ]);
 
@@ -138,10 +138,19 @@ class PushNotificationController extends Controller
             
             // status_send is enum('0','1','2') as string
             // First insert always use '0'
+            // Format target for storage
+            // If array, convert to comma-separated string
+            $targetValue = $request->txt_target;
+            if (is_array($targetValue)) {
+                $targetString = implode(',', $targetValue);
+            } else {
+                $targetString = $targetValue;
+            }
+            
             $notificationData = [
                 'title' => $cleanTitle,
                 'body' => $cleanBody,
-                'target' => $request->txt_target,
+                'target' => $targetString,
                 'status_send' => '0', // Always '0' (string) for first insert
             ];
 
@@ -179,33 +188,43 @@ class PushNotificationController extends Controller
             }
 
             // Process targets
-            $arr_txt_target = explode(",", $request->txt_target);
+            // txt_target can be:
+            // 1. String "all" - send to all members
+            // 2. Comma-separated emails - send to specific members
+            // 3. Array of emails (from multiselect)
             $targets = [];
+            $targetValue = $request->txt_target;
             
-            foreach ($arr_txt_target as $email) {
-                $email = trim($email);
+            // Check if it's "all"
+            if (is_string($targetValue) && strtolower(trim($targetValue)) === 'all') {
+                // Get all customers with firebase token
+                $customers = DB::connection('mysql_second')
+                    ->table('costumers')
+                    ->where('firebase_token_device', '!=', '')
+                    ->whereNotNull('firebase_token_device')
+                    ->get();
                 
-                if (empty($email)) {
-                    continue;
+                foreach ($customers as $customer) {
+                    $targets[] = [
+                        'email_member' => $customer->email ?? '',
+                        'token' => $customer->firebase_token_device,
+                        'id_pushnotification' => $notificationId,
+                    ];
                 }
-
-                // If target is "all", get all customers with firebase token
-                if (strtolower($email) === 'all') {
-                    $customers = DB::connection('mysql_second')
-                        ->table('costumers')
-                        ->where('firebase_token_device', '!=', '')
-                        ->whereNotNull('firebase_token_device')
-                        ->get();
-                    
-                    foreach ($customers as $customer) {
-                        $targets[] = [
-                            'email_member' => $customer->email ?? '',
-                            'token' => $customer->firebase_token_device,
-                            'id_pushnotification' => $notificationId,
-                        ];
-                    }
-                    break; // Exit loop after processing "all"
+            } else {
+                // Handle array or comma-separated string
+                $emails = [];
+                if (is_array($targetValue)) {
+                    $emails = $targetValue;
                 } else {
+                    $emails = array_filter(array_map('trim', explode(",", $targetValue)));
+                }
+                
+                foreach ($emails as $email) {
+                    if (empty($email)) {
+                        continue;
+                    }
+                    
                     // Get customer by email
                     $customer = DB::connection('mysql_second')
                         ->table('costumers')
@@ -416,6 +435,45 @@ class PushNotificationController extends Controller
             'message' => 'Test notification sent',
             'result' => $result
         ]);
+    }
+
+    /**
+     * Search members for autocomplete
+     */
+    public function searchMembers(Request $request)
+    {
+        $search = $request->get('search', '');
+
+        if (strlen($search) < 2) {
+            return response()->json([]);
+        }
+
+        $members = DB::connection('mysql_second')
+            ->table('costumers')
+            ->select('id', 'name', 'email', 'telepon', 'costumers_id')
+            ->where('status_aktif', '1')
+            ->where(function($query) use ($search) {
+                $query->where('name', 'like', "%{$search}%")
+                      ->orWhere('email', 'like', "%{$search}%")
+                      ->orWhere('telepon', 'like', "%{$search}%")
+                      ->orWhere('costumers_id', 'like', "%{$search}%");
+            })
+            ->whereNotNull('firebase_token_device')
+            ->where('firebase_token_device', '!=', '')
+            ->limit(20)
+            ->get()
+            ->map(function($member) {
+                return [
+                    'id' => $member->id,
+                    'email' => $member->email ?? '',
+                    'name' => $member->name ?? '',
+                    'telepon' => $member->telepon ?? '',
+                    'costumers_id' => $member->costumers_id ?? '',
+                    'label' => ($member->name ?? '') . ' (' . ($member->email ?? '') . ')',
+                ];
+            });
+
+        return response()->json($members);
     }
 }
 
