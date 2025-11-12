@@ -379,6 +379,7 @@ const menuGroups = [
         open: ref(false),
         menus: [
             { name: () => 'Data Member', icon: 'fa-solid fa-users', route: '/members', code: 'crm_members' },
+            { name: () => 'Push Notification', icon: 'fa-solid fa-bell', route: '/push-notification', code: 'push_notification' },
             { name: () => 'Dashboard CRM', icon: 'fa-solid fa-chart-line', route: '/crm/dashboard', code: 'crm_dashboard' },
             { name: () => 'Customer Analytics', icon: 'fa-solid fa-chart-pie', route: '/crm/customer-analytics', code: 'crm_analytics' },
             { name: () => 'Member Reports', icon: 'fa-solid fa-file-lines', route: '/crm/member-reports', code: 'crm_reports' },

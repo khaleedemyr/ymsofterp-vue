@@ -1635,6 +1635,13 @@ Route::middleware(['auth'])->group(function () {
                 Route::get('members/export', [MemberController::class, 'export'])->name('members.export');
                 Route::get('api/members/{id}/transactions', [MemberController::class, 'getTransactions'])->name('members.transactions');
                 Route::get('api/members/{id}/preferences', [MemberController::class, 'getPreferences'])->name('members.preferences');
+    
+    // Push Notification Routes
+    Route::get('push-notification', [\App\Http\Controllers\PushNotificationController::class, 'index'])->name('push-notification.index');
+    Route::get('push-notification/create', [\App\Http\Controllers\PushNotificationController::class, 'create'])->name('push-notification.create');
+    Route::post('push-notification', [\App\Http\Controllers\PushNotificationController::class, 'store'])->name('push-notification.store');
+    Route::post('push-notification/{id}/send', [\App\Http\Controllers\PushNotificationController::class, 'send'])->name('push-notification.send');
+    Route::post('push-notification/test', [\App\Http\Controllers\PushNotificationController::class, 'test'])->name('push-notification.test');
 });
 
 // Shared Documents Routes
