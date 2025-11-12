@@ -51,7 +51,7 @@ class PushNotification extends Model
      * @var array
      */
     protected $casts = [
-        'status_send' => 'integer',
+        // status_send is enum('0','1','2') as string, not integer
     ];
 
     /**
@@ -72,13 +72,14 @@ class PushNotification extends Model
 
     /**
      * Get status text
+     * status_send is enum('0','1','2') as string
      */
     public function getStatusTextAttribute()
     {
         $statusMessages = [
-            0 => 'belum terkirim',
-            1 => 'terkirim',
-            2 => 'sedang di proses',
+            '0' => 'belum terkirim',
+            '1' => 'terkirim',
+            '2' => 'sedang di proses',
         ];
         
         return $statusMessages[$this->status_send] ?? 'status tidak diketahui';

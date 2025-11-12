@@ -40,14 +40,15 @@ class PushNotificationController extends Controller
         }
 
         // Filter by status
+        // status_send is enum('0','1','2') as string
         if ($request->filled('status')) {
             $status = $request->status;
             if ($status === 'sent') {
-                $query->where('pn.status_send', '=', 1);
+                $query->where('pn.status_send', '=', '1');
             } elseif ($status === 'pending') {
-                $query->where('pn.status_send', '=', 0);
+                $query->where('pn.status_send', '=', '0');
             } elseif ($status === 'processing') {
-                $query->where('pn.status_send', '=', 2);
+                $query->where('pn.status_send', '=', '2');
             }
         }
 
@@ -79,10 +80,11 @@ class PushNotificationController extends Controller
             ->count();
 
         // Get statistics
+        // status_send is enum('0','1','2') as string
         $stats = [
             'total_notifications' => DB::connection('mysql_second')->table('pushnotification')->count(),
-            'sent_notifications' => DB::connection('mysql_second')->table('pushnotification')->where('status_send', 1)->count(),
-            'pending_notifications' => DB::connection('mysql_second')->table('pushnotification')->where('status_send', 0)->count(),
+            'sent_notifications' => DB::connection('mysql_second')->table('pushnotification')->where('status_send', '1')->count(),
+            'pending_notifications' => DB::connection('mysql_second')->table('pushnotification')->where('status_send', '0')->count(),
         ];
 
         return Inertia::render('PushNotification/Index', [
@@ -134,11 +136,13 @@ class PushNotificationController extends Controller
             $cleanTitle = preg_replace('/[\x{200E}\x{200F}\x{202A}-\x{202E}\x{FEFF}]/u', '', $request->txt_title);
             $cleanTitle = mb_convert_encoding($cleanTitle, 'UTF-8', 'UTF-8');
             
+            // status_send is enum('0','1','2') as string
+            // First insert always use '0'
             $notificationData = [
                 'title' => $cleanTitle,
                 'body' => $cleanBody,
                 'target' => $request->txt_target,
-                'status_send' => $request->txt_target != "all" ? 1 : 0,
+                'status_send' => '0', // Always '0' (string) for first insert
             ];
 
             $notification = PushNotification::create($notificationData);
@@ -369,12 +373,12 @@ class PushNotificationController extends Controller
             }
 
             // Update notification status
+            // status_send is enum('0','1','2') as string
             DB::connection('mysql_second')
                 ->table('pushnotification')
                 ->where('id', $id)
                 ->update([
-                    'status_send' => 1,
-                    'updated_at' => now(),
+                    'status_send' => '1', // Use string '1' for enum
                 ]);
 
             return back()->with('success', "Notifikasi terkirim: {$successCount} berhasil, {$failCount} gagal");
