@@ -29,6 +29,8 @@ class PurchaseRequisitionController extends Controller
         $search = $request->get('search', '');
         $status = $request->get('status', 'all');
         $division = $request->get('division', 'all');
+        $category = $request->get('category', 'all');
+        $isHeld = $request->get('is_held', 'all');
         $dateFrom = $request->get('date_from', '');
         $dateTo = $request->get('date_to', '');
         $perPage = $request->get('per_page', 15);
@@ -99,6 +101,18 @@ class PurchaseRequisitionController extends Controller
 
         if ($division !== 'all') {
             $query->where('division_id', $division);
+        }
+
+        if ($category !== 'all') {
+            $query->where('category_id', $category);
+        }
+
+        if ($isHeld !== 'all') {
+            if ($isHeld === 'held') {
+                $query->where('is_held', true);
+            } elseif ($isHeld === 'not_held') {
+                $query->where('is_held', false);
+            }
         }
 
         // Date range filter
@@ -270,6 +284,7 @@ class PurchaseRequisitionController extends Controller
 
         // Get filter options
         $divisions = Divisi::whereHas('purchaseRequisitions')->active()->orderBy('nama_divisi')->get();
+        $categories = PurchaseRequisitionCategory::whereHas('purchaseRequisitions')->orderBy('name')->get();
         
         // Statistics - apply same filter for statistics
         $statsQuery = PurchaseRequisition::query();
@@ -290,12 +305,15 @@ class PurchaseRequisitionController extends Controller
                 'search' => $search,
                 'status' => $status,
                 'division' => $division,
+                'category' => $category,
+                'is_held' => $isHeld,
                 'date_from' => $dateFrom,
                 'date_to' => $dateTo,
                 'per_page' => $perPage,
             ],
             'filterOptions' => [
                 'divisions' => $divisions,
+                'categories' => $categories,
             ],
             'statistics' => $statistics,
             'auth' => [

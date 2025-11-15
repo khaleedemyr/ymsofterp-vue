@@ -90,6 +90,25 @@
             <option v-for="d in filterOptions.divisions" :key="d.id" :value="d.id">{{ d.nama_divisi }}</option>
           </select>
           <select
+            v-model="category"
+            @change="debouncedSearch"
+            class="w-full md:w-auto px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition"
+          >
+            <option value="all">Semua Category</option>
+            <option v-for="c in filterOptions.categories" :key="c.id" :value="c.id">
+              [{{ c.division }}] {{ c.name }}
+            </option>
+          </select>
+          <select
+            v-model="isHeld"
+            @change="debouncedSearch"
+            class="w-full md:w-auto px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition"
+          >
+            <option value="all">Semua Status Hold</option>
+            <option value="held">Hold</option>
+            <option value="not_held">Tidak Hold</option>
+          </select>
+          <select
             v-model="perPage"
             @change="debouncedSearch"
             class="w-full md:w-auto px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition"
@@ -615,6 +634,8 @@ const props = defineProps({
 const search = ref(props.filters?.search || '');
 const status = ref(props.filters?.status || 'all');
 const division = ref(props.filters?.division || 'all');
+const category = ref(props.filters?.category || 'all');
+const isHeld = ref(props.filters?.is_held || 'all');
 // Set default date range to current month if not provided
 const getDefaultDateFrom = () => {
   if (props.filters?.date_from) return props.filters.date_from;
@@ -712,6 +733,8 @@ const debouncedSearch = debounce(() => {
     search: search.value,
     status: status.value,
     division: division.value,
+    category: category.value,
+    is_held: isHeld.value,
     date_from: dateFrom.value,
     date_to: dateTo.value,
     per_page: perPage.value,
@@ -723,6 +746,8 @@ function loadData() {
     search: search.value,
     status: status.value,
     division: division.value,
+    category: category.value,
+    is_held: isHeld.value,
     date_from: dateFrom.value,
     date_to: dateTo.value,
     per_page: perPage.value,
@@ -745,6 +770,8 @@ function goToPage(url) {
     urlObj.searchParams.set('search', search.value);
     urlObj.searchParams.set('status', status.value);
     urlObj.searchParams.set('division', division.value);
+    urlObj.searchParams.set('category', category.value);
+    urlObj.searchParams.set('is_held', isHeld.value);
     urlObj.searchParams.set('date_from', dateFrom.value);
     urlObj.searchParams.set('date_to', dateTo.value);
     urlObj.searchParams.set('per_page', perPage.value);
@@ -1189,7 +1216,7 @@ function printPreview() {
 }
 
 // Watch for changes
-watch([search, status, division, perPage], () => {
+watch([search, status, division, category, isHeld, perPage], () => {
   debouncedSearch();
 });
 
