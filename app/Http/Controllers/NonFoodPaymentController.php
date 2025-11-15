@@ -172,6 +172,9 @@ class NonFoodPaymentController extends Controller
                 's.name as supplier_name',
                 'pr.pr_number as source_pr_number',
                 'pr.title as pr_title',
+                'pr.description as pr_description',
+                'pr.is_held',
+                'pr.hold_reason',
                 'o.nama_outlet as pr_outlet_name'
             );
 
@@ -205,7 +208,10 @@ class NonFoodPaymentController extends Controller
                 'pr.date',
                 'pr.amount',
                 'pr.title',
-                'pr.description'
+                'pr.description',
+                'pr.is_held',
+                'pr.hold_reason',
+                'pr.division_id'
             );
 
         // Apply filters

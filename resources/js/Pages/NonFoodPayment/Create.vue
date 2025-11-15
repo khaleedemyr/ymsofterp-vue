@@ -13,13 +13,22 @@
       <!-- Step 1: Pilih Purchase Order -->
       <div v-if="!selectedPO" class="space-y-6">
         <!-- Available Purchase Orders -->
-        <div v-if="availablePOs.length > 0" class="bg-white rounded-2xl shadow-2xl p-6">
+        <div v-if="mappedPOs.length > 0" class="bg-white rounded-2xl shadow-2xl p-6">
           <h2 class="text-xl font-bold text-gray-800 mb-4">Pilih Purchase Order untuk Dibayar</h2>
           <div class="space-y-4">
-            <div v-for="po in availablePOs" :key="po.id" class="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 transition cursor-pointer" @click="selectPO(po)">
+            <div v-for="po in mappedPOs" :key="po.id" 
+                 class="border rounded-lg p-4 transition" 
+                 :class="po.is_held ? 'border-red-300 bg-red-50 opacity-60 cursor-not-allowed' : 'border-gray-200 hover:bg-gray-50 cursor-pointer'"
+                 @click="po.is_held ? null : selectPO(po)">
               <div class="flex items-center justify-between">
                 <div class="flex-1">
-                  <div class="font-semibold text-gray-900">{{ po.number }}</div>
+                  <div class="flex items-center gap-2 mb-1">
+                    <div class="font-semibold text-gray-900">{{ po.number }}</div>
+                    <span v-if="po.is_held" class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                      <i class="fas fa-lock mr-1"></i>
+                      ON HOLD
+                    </span>
+                  </div>
                   <div class="text-sm text-gray-600">{{ po.supplier_name }}</div>
                   <div class="text-sm text-gray-500">
                     {{ formatDate(po.date) }} - {{ formatCurrency(po.grand_total) }}
@@ -30,9 +39,15 @@
                   <div v-if="po.source_pr_number" class="text-xs text-blue-600 mt-1">
                     <i class="fa fa-link mr-1"></i>Source: {{ po.source_pr_number }}
                   </div>
+                  <p v-if="po.is_held && po.hold_reason" class="text-sm text-red-600 mt-1">
+                    <i class="fas fa-info-circle mr-1"></i>
+                    {{ po.hold_reason }}
+                  </p>
                 </div>
                 <div class="text-right">
-                  <button type="button" class="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition">
+                  <button type="button" 
+                          :class="po.is_held ? 'bg-gray-400 text-white px-4 py-2 rounded-lg cursor-not-allowed' : 'bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition'"
+                          :disabled="po.is_held">
                     <i class="fa fa-arrow-right mr-1"></i> Pilih
                   </button>
                 </div>
@@ -42,20 +57,35 @@
         </div>
 
         <!-- Available Purchase Requisitions -->
-        <div v-if="availablePRs.length > 0" class="bg-white rounded-2xl shadow-2xl p-6">
+        <div v-if="mappedPRs.length > 0" class="bg-white rounded-2xl shadow-2xl p-6">
           <h2 class="text-xl font-bold text-gray-800 mb-4">Available Purchase Requisitions</h2>
           <div class="space-y-4">
-            <div v-for="pr in availablePRs" :key="pr.id" class="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 transition cursor-pointer" @click="selectPR(pr)">
+            <div v-for="pr in mappedPRs" :key="pr.id" 
+                 class="border rounded-lg p-4 transition" 
+                 :class="pr.is_held ? 'border-red-300 bg-red-50 opacity-60 cursor-not-allowed' : 'border-gray-200 hover:bg-gray-50 cursor-pointer'"
+                 @click="pr.is_held ? null : selectPR(pr)">
               <div class="flex items-center justify-between">
                 <div class="flex-1">
-                  <div class="font-semibold text-gray-900">{{ pr.pr_number }}</div>
+                  <div class="flex items-center gap-2 mb-1">
+                    <div class="font-semibold text-gray-900">{{ pr.pr_number }}</div>
+                    <span v-if="pr.is_held" class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                      <i class="fas fa-lock mr-1"></i>
+                      ON HOLD
+                    </span>
+                  </div>
                   <div class="text-sm text-gray-600">{{ pr.title }}</div>
                   <div class="text-sm text-gray-500">
                     {{ formatDate(pr.date) }} - {{ formatCurrency(pr.amount) }}
                   </div>
+                  <p v-if="pr.is_held && pr.hold_reason" class="text-sm text-red-600 mt-1">
+                    <i class="fas fa-info-circle mr-1"></i>
+                    {{ pr.hold_reason }}
+                  </p>
                 </div>
                 <div class="text-right">
-                  <button type="button" class="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition">
+                  <button type="button" 
+                          :class="pr.is_held ? 'bg-gray-400 text-white px-4 py-2 rounded-lg cursor-not-allowed' : 'bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition'"
+                          :disabled="pr.is_held">
                     <i class="fa fa-arrow-right mr-1"></i> Pilih
                   </button>
                 </div>
@@ -64,7 +94,7 @@
           </div>
         </div>
 
-        <div v-if="availablePOs.length === 0 && availablePRs.length === 0" class="bg-white rounded-2xl shadow-2xl p-6 text-center">
+        <div v-if="mappedPOs.length === 0 && mappedPRs.length === 0" class="bg-white rounded-2xl shadow-2xl p-6 text-center">
           <div class="text-gray-500">
             <i class="fa fa-inbox text-4xl mb-4"></i>
             <p>Tidak ada Purchase Order atau Purchase Requisition yang tersedia untuk dibayar.</p>
@@ -524,7 +554,7 @@
 </template>
 
 <script setup>
-import { ref, reactive } from 'vue';
+import { ref, reactive, computed } from 'vue';
 import { router } from '@inertiajs/vue3';
 import axios from 'axios';
 import AppLayout from '@/Layouts/AppLayout.vue';
@@ -534,6 +564,24 @@ const props = defineProps({
   availablePOs: Array,
   availablePRs: Array,
   filters: Object
+});
+
+// Map PO data to ensure is_held is boolean
+const mappedPOs = computed(() => {
+  return (props.availablePOs || []).map(po => ({
+    ...po,
+    is_held: po.is_held === true || po.is_held === 1 || po.is_held === '1' || po.is_held === 'true',
+    hold_reason: po.hold_reason || null
+  }));
+});
+
+// Map PR data to ensure is_held is boolean
+const mappedPRs = computed(() => {
+  return (props.availablePRs || []).map(pr => ({
+    ...pr,
+    is_held: pr.is_held === true || pr.is_held === 1 || pr.is_held === '1' || pr.is_held === 'true',
+    hold_reason: pr.hold_reason || null
+  }));
 });
 
 const isSubmitting = ref(false);
@@ -625,6 +673,15 @@ function resetAmountToOriginal() {
 }
 
 async function selectPO(po) {
+  // Prevent selection if PO's source PR is on hold
+  const isHeld = po.is_held === true || po.is_held === 1 || po.is_held === '1' || po.is_held === 'true';
+  if (isHeld) {
+    import('sweetalert2').then(({ default: Swal }) => {
+      Swal.fire('Warning', 'Purchase Order tidak dapat dipilih karena PR source-nya sedang di-hold. Silakan release PR terlebih dahulu.', 'warning');
+    });
+    return;
+  }
+  
   selectedPO.value = po;
   selectedPR.value = null;
   form.purchase_order_ops_id = po.id;
@@ -658,6 +715,15 @@ async function selectPO(po) {
 }
 
 async function selectPR(pr) {
+  // Prevent selection if PR is on hold
+  const isHeld = pr.is_held === true || pr.is_held === 1 || pr.is_held === '1' || pr.is_held === 'true';
+  if (isHeld) {
+    import('sweetalert2').then(({ default: Swal }) => {
+      Swal.fire('Warning', 'Purchase Requisition tidak dapat dipilih karena sedang di-hold. Silakan release PR terlebih dahulu.', 'warning');
+    });
+    return;
+  }
+  
   selectedPR.value = pr;
   selectedPO.value = null;
   form.purchase_requisition_id = pr.id;

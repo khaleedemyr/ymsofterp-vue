@@ -127,6 +127,7 @@ class PurchaseOrderOpsController extends Controller
             ->toArray();
 
         // Get available PRs that are approved and not fully processed
+        // Note: PRs that are on hold will still be shown but cannot be expanded/selected
         $prs = DB::table('purchase_requisitions as pr')
             ->join('purchase_requisition_items as items', 'pr.id', '=', 'items.purchase_requisition_id')
             ->leftJoin('tbl_data_divisi as d', 'pr.division_id', '=', 'd.id')
@@ -148,6 +149,8 @@ class PurchaseOrderOpsController extends Controller
                 'pr.amount',
                 'pr.mode',
                 'pr.status',
+                'pr.is_held',
+                'pr.hold_reason',
                 'pr.outlet_id as pr_outlet_id',
                 'pr.category_id as pr_category_id',
                 'items.id as item_id',
@@ -236,6 +239,8 @@ class PurchaseOrderOpsController extends Controller
                     'amount' => $first->amount,
                     'mode' => $first->mode ?? 'pr_ops',
                     'status' => $first->status ?? 'APPROVED',
+                    'is_held' => (bool)($first->is_held ?? false),
+                    'hold_reason' => $first->hold_reason ?? null,
                     'outlet' => $prOutlet, // PR outlet for reference
                     'category' => $prCategory, // PR category for reference
                     'attachments' => $attachments,

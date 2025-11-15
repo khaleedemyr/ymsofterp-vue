@@ -30,23 +30,34 @@ const fetchPRList = async () => {
             const status = (pr.status || '').toString().toUpperCase();
             return mode === 'pr_ops' && status === 'APPROVED';
         });
-        prList.value = filtered.map(pr => ({
-            ...pr,
-            items: pr.items.map(item => {
-                if (!poForm.items_by_supplier[item.id]) {
-                    // Default: satu baris, qty penuh
-                    poForm.items_by_supplier[item.id] = [{
-                        supplier_id: null,
-                        qty: item.qty,
-                        price: '',
-                        last_price: '',
-                        min_price: '',
-                        max_price: ''
-                    }];
-                }
-                return { ...item };
-            })
-        }));
+        prList.value = filtered.map(pr => {
+            // Ensure is_held and hold_reason are properly set
+            const isHeld = pr.is_held === true || pr.is_held === 1 || pr.is_held === '1' || pr.is_held === 'true';
+            const prData = {
+                ...pr,
+                is_held: isHeld,
+                hold_reason: pr.hold_reason || null,
+                items: pr.items.map(item => {
+                    if (!poForm.items_by_supplier[item.id]) {
+                        // Default: satu baris, qty penuh
+                        poForm.items_by_supplier[item.id] = [{
+                            supplier_id: null,
+                            qty: item.qty,
+                            price: '',
+                            last_price: '',
+                            min_price: '',
+                            max_price: ''
+                        }];
+                    }
+                    return { ...item };
+                })
+            };
+            // Debug log for held PRs
+            if (isHeld) {
+                console.log('Held PR found:', prData.number, 'Reason:', prData.hold_reason);
+            }
+            return prData;
+        });
     } catch (error) {
         console.error('Error fetching PR list:', error);
         Swal.fire('Error', 'Failed to fetch PR list', 'error');
@@ -67,6 +78,12 @@ const fetchSuppliers = async () => {
 
 // Toggle expand/collapse PR
 const togglePR = (prId) => {
+    // Prevent expanding PRs that are on hold
+    const pr = prList.value.find(p => p.id === prId);
+    if (pr && pr.is_held) {
+        Swal.fire('Warning', 'PR yang sedang di-hold tidak dapat di-expand. Silakan release PR terlebih dahulu.', 'warning');
+        return;
+    }
     expandedPRs.value[prId] = !expandedPRs.value[prId];
 };
 
@@ -134,6 +151,21 @@ const submitForm = async () => {
         Object.keys(poForm.items_by_supplier).forEach(itemId => {
             poForm.items_by_supplier[itemId].forEach(item => {
                 if (item.supplier_id && item.qty && item.price) {
+                    // Find original item data and check if PR is held
+                    const originalItem = prList.value
+                        .flatMap(pr => pr.items)
+                        .find(i => i.id == itemId);
+                    
+                    // Find PR that contains this item
+                    const parentPR = prList.value.find(pr => 
+                        pr.items && pr.items.some(i => i.id == itemId)
+                    );
+                    
+                    // Skip items from held PRs
+                    if (parentPR && parentPR.is_held) {
+                        return;
+                    }
+                    
                     hasItems = true;
                     // Extract supplier ID (handle both object and integer)
                     const supplierId = typeof item.supplier_id === 'object' ? item.supplier_id.id : item.supplier_id;
@@ -141,11 +173,6 @@ const submitForm = async () => {
                     if (!itemsBySupplier[supplierId]) {
                         itemsBySupplier[supplierId] = [];
                     }
-                    
-                    // Find original item data
-                    const originalItem = prList.value
-                        .flatMap(pr => pr.items)
-                        .find(i => i.id == itemId);
                     
                     itemsBySupplier[supplierId].push({
                         id: itemId,
@@ -334,21 +361,32 @@ onMounted(() => {
         </div>
 
         <div v-else class="space-y-6">
-          <div v-for="pr in prList" :key="pr.id" class="border border-gray-200 rounded-lg">
+          <div v-for="pr in prList" :key="pr.id" class="border border-gray-200 rounded-lg" :class="pr.is_held ? 'opacity-60' : ''">
             <!-- PR Header -->
-            <div class="bg-gray-50 px-4 py-3 border-b border-gray-200">
+            <div class="bg-gray-50 px-4 py-3 border-b border-gray-200" :class="pr.is_held ? 'bg-red-50' : ''">
               <div class="flex items-center justify-between">
-                <div class="flex items-center space-x-4">
+                <div class="flex items-center space-x-4 flex-1">
                   <button
-                    @click="togglePR(pr.id)"
-                    class="text-blue-600 hover:text-blue-800"
+                    @click="pr.is_held ? null : togglePR(pr.id)"
+                    :class="pr.is_held ? 'text-gray-400 cursor-not-allowed' : 'text-blue-600 hover:text-blue-800'"
+                    :disabled="pr.is_held"
                   >
                     <i :class="expandedPRs[pr.id] ? 'fas fa-chevron-down' : 'fas fa-chevron-right'"></i>
                   </button>
-                  <div>
-                    <h3 class="text-lg font-semibold text-gray-900">{{ pr.number }}</h3>
+                  <div class="flex-1">
+                    <div class="flex items-center gap-2 mb-1">
+                      <h3 class="text-lg font-semibold text-gray-900">{{ pr.number }}</h3>
+                      <span v-if="pr.is_held" class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                        <i class="fas fa-lock mr-1"></i>
+                        ON HOLD
+                      </span>
+                    </div>
                     <p class="text-sm text-gray-600">{{ pr.title }} - {{ pr.division_name }}</p>
                     <p class="text-sm text-gray-500">Amount: {{ new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(pr.amount) }}</p>
+                    <p v-if="pr.is_held && pr.hold_reason" class="text-sm text-red-600 mt-1">
+                      <i class="fas fa-info-circle mr-1"></i>
+                      {{ pr.hold_reason }}
+                    </p>
                   </div>
                 </div>
                 <div class="text-sm text-gray-500">
@@ -480,7 +518,7 @@ onMounted(() => {
                 </div>
               </div>
 
-              <div class="space-y-4">
+              <div v-if="!pr.is_held" class="space-y-4">
                 <div v-for="item in pr.items" :key="item.id" class="border border-gray-200 rounded-lg p-4">
                   <div class="flex items-center justify-between mb-3">
                     <div class="flex-1">
