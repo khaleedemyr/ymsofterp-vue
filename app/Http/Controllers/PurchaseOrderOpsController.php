@@ -314,6 +314,19 @@ class PurchaseOrderOpsController extends Controller
                 ->unique()
                 ->values();
 
+            // Check if any PR is on hold
+            $heldPRs = PurchaseRequisition::whereIn('id', $prIds)
+                ->where('is_held', true)
+                ->get();
+            
+            if ($heldPRs->isNotEmpty()) {
+                $heldPRNumbers = $heldPRs->pluck('pr_number')->join(', ');
+                return response()->json([
+                    'success' => false,
+                    'message' => "Tidak dapat membuat PO karena PR berikut sedang di-hold: {$heldPRNumbers}. Silakan release PR terlebih dahulu."
+                ], 400);
+            }
+
 
             // Group items by supplier - frontend sends {itemId: [rows]}, we need to group by supplier
             $itemsBySupplier = [];

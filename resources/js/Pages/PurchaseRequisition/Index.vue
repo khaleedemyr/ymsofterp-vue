@@ -77,6 +77,7 @@
           <option value="REJECTED">Rejected</option>
           <option value="PROCESSED">Processed</option>
           <option value="COMPLETED">Completed</option>
+          <option value="PAID">Paid</option>
         </select>
         <select
           v-model="division"
@@ -110,6 +111,8 @@
                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Mode</th>
                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">PO/Payment</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Hold/Release</th>
                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Creator</th>
                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created</th>
                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
@@ -145,17 +148,109 @@
                     {{ formatCurrency(pr.amount) }}
                   </span>
                 </td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                  <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
-                        :class="getModeBadgeClass(pr.mode)">
-                    {{ getModeLabel(pr.mode) }}
-                  </span>
+                <td class="px-6 py-4 text-sm text-gray-900">
+                  <div class="flex flex-col gap-1">
+                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
+                          :class="getModeBadgeClass(pr.mode)">
+                      {{ getModeLabel(pr.mode) }}
+                    </span>
+                    <!-- Category Information -->
+                    <div v-if="pr.category" class="flex flex-col gap-0.5 mt-1">
+                      <span class="text-xs font-medium text-gray-700">{{ pr.category.name }}</span>
+                      <div class="flex items-center gap-1 flex-wrap">
+                        <span v-if="pr.category.division" class="text-xs text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">
+                          {{ pr.category.division }}
+                        </span>
+                        <span v-if="pr.category.subcategory" class="text-xs text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">
+                          {{ pr.category.subcategory }}
+                        </span>
+                      </div>
+                    </div>
+                    <span v-else class="text-xs text-gray-400 italic">No category</span>
+                  </div>
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap">
-                  <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
-                        :class="getStatusColor(pr.status)">
-                    {{ pr.status }}
-                  </span>
+                  <div class="flex flex-col gap-1">
+                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
+                          :class="getStatusColor(pr.status)">
+                      {{ pr.status }}
+                    </span>
+                    <!-- Hold Indicator -->
+                    <span v-if="pr.is_held" class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-gradient-to-r from-red-500 to-red-600 text-white shadow-md">
+                      <i class="fas fa-lock mr-1"></i>
+                      ON HOLD
+                    </span>
+                    <div v-if="pr.is_held && pr.hold_reason" class="text-xs text-red-600 mt-1 italic" :title="pr.hold_reason">
+                      {{ pr.hold_reason.length > 30 ? pr.hold_reason.substring(0, 30) + '...' : pr.hold_reason }}
+                    </div>
+                    <!-- Pending Approval Info -->
+                    <div v-if="getPendingApprover(pr)" class="mt-1">
+                      <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-1.5">
+                        <div class="flex items-center gap-1.5">
+                          <i class="fas fa-clock text-yellow-600 text-xs"></i>
+                          <div class="text-xs">
+                            <p class="font-medium text-yellow-800 leading-tight">Menunggu Approval</p>
+                            <p class="text-yellow-700 leading-tight">{{ getPendingApprover(pr) }}</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                  <div class="flex flex-col gap-2">
+                    <!-- PO Status Indicator -->
+                    <button
+                      v-if="pr.has_po"
+                      @click="openPODetailModal(pr)"
+                      class="inline-flex items-center px-3 py-1.5 rounded-lg text-sm font-bold bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-md hover:shadow-lg hover:from-blue-600 hover:to-blue-700 transition-all cursor-pointer"
+                      title="Klik untuk melihat detail PO"
+                    >
+                      <i class="fas fa-file-invoice mr-2 text-lg"></i>
+                      <span class="font-semibold">PO: {{ pr.po_count }} {{ pr.po_count > 1 ? 'POs' : 'PO' }}</span>
+                    </button>
+                    <div v-else class="text-xs text-gray-400 italic">Belum ada PO</div>
+                    
+                    <!-- Payment Status Indicator -->
+                    <button
+                      v-if="pr.has_payment"
+                      @click="openPaymentDetailModal(pr)"
+                      class="inline-flex items-center px-3 py-1.5 rounded-lg text-sm font-bold bg-gradient-to-r from-green-500 to-green-600 text-white shadow-md hover:shadow-lg hover:from-green-600 hover:to-green-700 transition-all cursor-pointer"
+                      title="Klik untuk melihat detail Payment"
+                    >
+                      <i class="fas fa-check-circle mr-2 text-lg"></i>
+                      <span class="font-semibold">Paid: {{ pr.payment_count }} {{ pr.payment_count > 1 ? 'payments' : 'payment' }}</span>
+                    </button>
+                    <div v-else-if="pr.has_po" class="text-xs text-orange-500 italic">Belum dibayar</div>
+                  </div>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                  <div class="flex justify-center">
+                    <!-- Hold Button -->
+                    <button
+                      v-if="!pr.is_held && pr.status !== 'PAID' && (pr.status === 'APPROVED' || pr.status === 'PROCESSED' || pr.status === 'SUBMITTED')"
+                      @click="holdPR(pr)"
+                      class="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold bg-gradient-to-r from-orange-500 to-orange-600 text-white shadow-md hover:shadow-lg hover:from-orange-600 hover:to-orange-700 transition-all"
+                      title="Hold PR"
+                    >
+                      <i class="fas fa-lock text-base"></i>
+                      <span>Hold</span>
+                    </button>
+                    <!-- Release Button -->
+                    <button
+                      v-if="pr.is_held && pr.status !== 'PAID'"
+                      @click="releasePR(pr)"
+                      class="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold bg-gradient-to-r from-green-500 to-green-600 text-white shadow-md hover:shadow-lg hover:from-green-600 hover:to-green-700 transition-all"
+                      title="Release PR"
+                    >
+                      <i class="fas fa-unlock text-base"></i>
+                      <span>Release</span>
+                    </button>
+                    <!-- No Action Available -->
+                    <span v-if="pr.status === 'PAID' || (pr.is_held === false && !(pr.status === 'APPROVED' || pr.status === 'PROCESSED' || pr.status === 'SUBMITTED'))" class="text-xs text-gray-400 italic">
+                      -
+                    </span>
+                  </div>
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                   <div class="flex items-center">
@@ -363,6 +458,96 @@
         />
       </div>
     </div>
+
+    <!-- PO Detail Modal -->
+    <div v-if="showPODetailModal" class="fixed inset-0 z-[100002] flex items-center justify-center bg-black/40" @click="closePODetailModal">
+      <div class="bg-white rounded-xl shadow-lg w-full max-w-2xl p-6 relative max-h-[90vh] overflow-y-auto" @click.stop>
+        <button @click="closePODetailModal" class="absolute top-3 right-3 text-gray-400 hover:text-gray-600">
+          <i class="fas fa-times text-lg"></i>
+        </button>
+        <div class="mb-4">
+          <h3 class="text-lg font-semibold text-gray-800 flex items-center gap-2">
+            <i class="fas fa-file-invoice text-blue-500"></i>
+            Detail Purchase Order
+          </h3>
+          <p class="text-sm text-gray-500 mt-1">PR Number: {{ selectedPR?.pr_number }}</p>
+        </div>
+        <div v-if="selectedPR && selectedPR.po_details && selectedPR.po_details.length > 0" class="space-y-3">
+          <div v-for="(po, index) in selectedPR.po_details" :key="index" 
+               class="bg-blue-50 border border-blue-200 rounded-lg p-4 hover:bg-blue-100 transition-colors">
+            <div class="flex items-start gap-3">
+              <div class="w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center text-white font-bold flex-shrink-0">
+                {{ index + 1 }}
+              </div>
+              <div class="flex-1">
+                <div class="font-semibold text-blue-900 mb-1">{{ po.number }}</div>
+                <div class="text-xs text-blue-600 mb-2">Purchase Order</div>
+                <div class="space-y-1 text-xs text-gray-600">
+                  <div class="flex items-center gap-2">
+                    <i class="fas fa-calendar text-gray-400"></i>
+                    <span>{{ formatDate(po.created_at) }} {{ formatTime(po.created_at) }}</span>
+                  </div>
+                  <div v-if="po.creator_name" class="flex items-center gap-2">
+                    <i class="fas fa-user text-gray-400"></i>
+                    <span>{{ po.creator_name }}</span>
+                    <span v-if="po.creator_email" class="text-gray-400">({{ po.creator_email }})</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div v-else class="text-center py-8 text-gray-500">
+          <i class="fas fa-file-invoice text-4xl mb-4 text-gray-300"></i>
+          <p>Tidak ada Purchase Order</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Payment Detail Modal -->
+    <div v-if="showPaymentDetailModal" class="fixed inset-0 z-[100002] flex items-center justify-center bg-black/40" @click="closePaymentDetailModal">
+      <div class="bg-white rounded-xl shadow-lg w-full max-w-2xl p-6 relative max-h-[90vh] overflow-y-auto" @click.stop>
+        <button @click="closePaymentDetailModal" class="absolute top-3 right-3 text-gray-400 hover:text-gray-600">
+          <i class="fas fa-times text-lg"></i>
+        </button>
+        <div class="mb-4">
+          <h3 class="text-lg font-semibold text-gray-800 flex items-center gap-2">
+            <i class="fas fa-check-circle text-green-500"></i>
+            Detail Payment
+          </h3>
+          <p class="text-sm text-gray-500 mt-1">PR Number: {{ selectedPR?.pr_number }}</p>
+        </div>
+        <div v-if="selectedPR && selectedPR.payment_details && selectedPR.payment_details.length > 0" class="space-y-3">
+          <div v-for="(payment, index) in selectedPR.payment_details" :key="index" 
+               class="bg-green-50 border border-green-200 rounded-lg p-4 hover:bg-green-100 transition-colors">
+            <div class="flex items-start gap-3">
+              <div class="w-10 h-10 bg-green-500 rounded-full flex items-center justify-center text-white font-bold flex-shrink-0">
+                {{ index + 1 }}
+              </div>
+              <div class="flex-1">
+                <div class="font-semibold text-green-900 mb-1">{{ payment.payment_number }}</div>
+                <div class="text-xs text-green-600 mb-2">Non-Food Payment</div>
+                <div class="space-y-1 text-xs text-gray-600">
+                  <div class="flex items-center gap-2">
+                    <i class="fas fa-calendar text-gray-400"></i>
+                    <span>{{ formatDate(payment.created_at) }} {{ formatTime(payment.created_at) }}</span>
+                  </div>
+                  <div v-if="payment.creator_name" class="flex items-center gap-2">
+                    <i class="fas fa-user text-gray-400"></i>
+                    <span>{{ payment.creator_name }}</span>
+                    <span v-if="payment.creator_email" class="text-gray-400">({{ payment.creator_email }})</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div v-else class="text-center py-8 text-gray-500">
+          <i class="fas fa-check-circle text-4xl mb-4 text-gray-300"></i>
+          <p>Tidak ada Payment</p>
+        </div>
+      </div>
+    </div>
   </AppLayout>
 </template>
 
@@ -405,6 +590,11 @@ const previewFrame = ref(null);
 const showImageModal = ref(false);
 const imageModalUrl = ref('');
 
+// PO and Payment Detail Modals
+const showPODetailModal = ref(false);
+const showPaymentDetailModal = ref(false);
+const selectedPR = ref(null);
+
 function getInitials(name) {
   if (!name) return 'U';
   return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
@@ -418,6 +608,52 @@ function openImageModal(imageUrl) {
 function closeImageModal() {
   showImageModal.value = false;
   imageModalUrl.value = '';
+}
+
+// PO and Payment Detail Modal Functions
+function openPODetailModal(pr) {
+  selectedPR.value = pr;
+  showPODetailModal.value = true;
+}
+
+function closePODetailModal() {
+  showPODetailModal.value = false;
+  selectedPR.value = null;
+}
+
+function openPaymentDetailModal(pr) {
+  selectedPR.value = pr;
+  showPaymentDetailModal.value = true;
+}
+
+function closePaymentDetailModal() {
+  showPaymentDetailModal.value = false;
+  selectedPR.value = null;
+}
+
+// Get pending approver info (similar to PR Tracking Report)
+function getPendingApprover(pr) {
+  // Check PR approval flows first
+  if (pr.approval_flows && pr.approval_flows.length > 0) {
+    const pendingFlow = pr.approval_flows.find(flow => flow.status === 'PENDING');
+    if (pendingFlow) {
+      return pendingFlow.approver?.nama_lengkap || 'Unknown';
+    }
+  }
+  
+  // Check PO approval flows if PR has PO
+  if (pr.purchase_orders && pr.purchase_orders.length > 0) {
+    for (const po of pr.purchase_orders) {
+      if (po.approval_flows && po.approval_flows.length > 0) {
+        const pendingPOFlow = po.approval_flows.find(flow => flow.status === 'PENDING');
+        if (pendingPOFlow) {
+          return `PO: ${pendingPOFlow.approver?.nama_lengkap || 'Unknown'}`;
+        }
+      }
+    }
+  }
+  
+  return null;
 }
 
 const debouncedSearch = debounce(() => {
@@ -583,6 +819,7 @@ function getStatusColor(status) {
     'REJECTED': 'bg-red-100 text-red-800',
     'PROCESSED': 'bg-blue-100 text-blue-800',
     'COMPLETED': 'bg-purple-100 text-purple-800',
+    'PAID': 'bg-emerald-100 text-emerald-800',
   }[status] || 'bg-gray-100 text-gray-800';
 }
 
@@ -702,6 +939,147 @@ function formatTime(date) {
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit'
+  });
+}
+
+function holdPR(pr) {
+  Swal.fire({
+    title: 'Hold Purchase Requisition?',
+    html: `
+      <div class="text-left">
+        <p class="mb-2"><strong>PR Number:</strong> ${pr.pr_number}</p>
+        <p class="mb-2"><strong>Title:</strong> ${pr.title}</p>
+        <p class="mb-4 text-gray-600">PR yang di-hold tidak dapat dibuat PO atau Payment sampai di-release.</p>
+        <div class="mb-2">
+          <label class="block text-sm font-medium text-gray-700 mb-1">Alasan Hold (Opsional):</label>
+          <textarea id="hold_reason" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500" rows="3" placeholder="Masukkan alasan hold..."></textarea>
+        </div>
+      </div>
+    `,
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonColor: '#F97316',
+    cancelButtonColor: '#6B7280',
+    confirmButtonText: 'Ya, Hold!',
+    cancelButtonText: 'Batal',
+    reverseButtons: true,
+    preConfirm: () => {
+      const reason = document.getElementById('hold_reason').value;
+      return { hold_reason: reason };
+    }
+  }).then((result) => {
+    if (result.isConfirmed) {
+      const holdReason = result.value?.hold_reason || '';
+      
+      router.post(route('purchase-requisitions.hold', pr.id), {
+        hold_reason: holdReason
+      }, {
+        onStart: () => {
+          Swal.fire({
+            title: 'Memproses...',
+            text: 'Sedang meng-hold PR',
+            allowOutsideClick: false,
+            showConfirmButton: false,
+            didOpen: () => {
+              Swal.showLoading();
+            }
+          });
+        },
+        onSuccess: () => {
+          Swal.fire({
+            title: 'Berhasil!',
+            text: 'PR berhasil di-hold',
+            icon: 'success',
+            confirmButtonColor: '#10B981'
+          });
+        },
+        onError: (errors) => {
+          Swal.close();
+          console.error('Error holding PR:', errors);
+          let errorMessage = 'Gagal meng-hold PR';
+          
+          if (errors.message) {
+            errorMessage = errors.message;
+          } else if (errors.error) {
+            errorMessage = errors.error;
+          } else if (typeof errors === 'string') {
+            errorMessage = errors;
+          }
+          
+          Swal.fire({
+            title: 'Error!',
+            text: errorMessage,
+            icon: 'error',
+            confirmButtonColor: '#EF4444'
+          });
+        }
+      });
+    }
+  });
+}
+
+function releasePR(pr) {
+  Swal.fire({
+    title: 'Release Purchase Requisition?',
+    html: `
+      <div class="text-left">
+        <p class="mb-2"><strong>PR Number:</strong> ${pr.pr_number}</p>
+        <p class="mb-2"><strong>Title:</strong> ${pr.title}</p>
+        <p class="mb-2 text-gray-600">PR akan di-release dan dapat dibuat PO atau Payment kembali.</p>
+        ${pr.hold_reason ? `<p class="mt-2 text-sm text-gray-500"><strong>Alasan Hold:</strong> ${pr.hold_reason}</p>` : ''}
+      </div>
+    `,
+    icon: 'question',
+    showCancelButton: true,
+    confirmButtonColor: '#10B981',
+    cancelButtonColor: '#6B7280',
+    confirmButtonText: 'Ya, Release!',
+    cancelButtonText: 'Batal',
+    reverseButtons: true
+  }).then((result) => {
+    if (result.isConfirmed) {
+      router.post(route('purchase-requisitions.release', pr.id), {}, {
+        onStart: () => {
+          Swal.fire({
+            title: 'Memproses...',
+            text: 'Sedang me-release PR',
+            allowOutsideClick: false,
+            showConfirmButton: false,
+            didOpen: () => {
+              Swal.showLoading();
+            }
+          });
+        },
+        onSuccess: () => {
+          Swal.fire({
+            title: 'Berhasil!',
+            text: 'PR berhasil di-release',
+            icon: 'success',
+            confirmButtonColor: '#10B981'
+          });
+        },
+        onError: (errors) => {
+          Swal.close();
+          console.error('Error releasing PR:', errors);
+          let errorMessage = 'Gagal me-release PR';
+          
+          if (errors.message) {
+            errorMessage = errors.message;
+          } else if (errors.error) {
+            errorMessage = errors.error;
+          } else if (typeof errors === 'string') {
+            errorMessage = errors;
+          }
+          
+          Swal.fire({
+            title: 'Error!',
+            text: errorMessage,
+            icon: 'error',
+            confirmButtonColor: '#EF4444'
+          });
+        }
+      });
+    }
   });
 }
 

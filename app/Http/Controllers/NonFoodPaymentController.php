@@ -704,6 +704,23 @@ class NonFoodPaymentController extends Controller
             if ($existingPayment) {
                 return back()->with('error', 'Purchase Requisition ini sudah memiliki payment yang aktif.');
             }
+            
+            // Check if PR is on hold
+            $pr = \App\Models\PurchaseRequisition::find($request->purchase_requisition_id);
+            if ($pr && $pr->is_held) {
+                return back()->with('error', "Purchase Requisition {$pr->pr_number} sedang di-hold. Silakan release PR terlebih dahulu sebelum membuat payment.");
+            }
+        }
+
+        // Check if PO's PR is on hold
+        if ($request->purchase_order_ops_id) {
+            $po = \App\Models\PurchaseOrderOps::find($request->purchase_order_ops_id);
+            if ($po && $po->source_type === 'purchase_requisition_ops' && $po->source_id) {
+                $pr = \App\Models\PurchaseRequisition::find($po->source_id);
+                if ($pr && $pr->is_held) {
+                    return back()->with('error', "Purchase Requisition {$pr->pr_number} yang terkait dengan PO ini sedang di-hold. Silakan release PR terlebih dahulu sebelum membuat payment.");
+                }
+            }
         }
 
         try {
@@ -722,12 +739,17 @@ class NonFoodPaymentController extends Controller
                 'payment_method' => $request->payment_method,
                 'payment_date' => $request->payment_date,
                 'due_date' => $request->due_date,
-                'status' => 'pending',
+                'status' => $request->status ?? 'pending', // Allow status to be set directly
                 'description' => $request->description,
                 'reference_number' => $request->reference_number,
                 'notes' => $request->notes,
                 'created_by' => Auth::id(),
             ]);
+
+            // If payment is created with approved/paid status, update PR status
+            if (in_array($payment->status, ['approved', 'paid'])) {
+                $this->updatePRStatusIfAllPaid($payment);
+            }
 
             DB::commit();
 
@@ -919,15 +941,23 @@ class NonFoodPaymentController extends Controller
         }
 
         try {
+            DB::beginTransaction();
+            
             $nonFoodPayment->update([
                 'status' => 'approved',
                 'approved_by' => Auth::id(),
                 'approved_at' => now(),
             ]);
 
+            // Update PR status to PAID if all payments are completed
+            $this->updatePRStatusIfAllPaid($nonFoodPayment);
+
+            DB::commit();
+
             return back()->with('success', 'Non Food Payment berhasil disetujui.');
 
         } catch (\Exception $e) {
+            DB::rollBack();
             return back()->with('error', 'Gagal menyetujui Non Food Payment: ' . $e->getMessage());
         }
     }
@@ -959,14 +989,124 @@ class NonFoodPaymentController extends Controller
         }
 
         try {
+            DB::beginTransaction();
+            
             $nonFoodPayment->update([
                 'status' => 'paid',
             ]);
 
+            // Update PR status to PAID if all payments are completed
+            $this->updatePRStatusIfAllPaid($nonFoodPayment);
+
+            DB::commit();
+
             return back()->with('success', 'Non Food Payment berhasil ditandai sebagai dibayar.');
 
         } catch (\Exception $e) {
+            DB::rollBack();
             return back()->with('error', 'Gagal menandai Non Food Payment sebagai dibayar: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Update PR status to PAID if all related POs have been paid
+     */
+    private function updatePRStatusIfAllPaid(NonFoodPayment $payment)
+    {
+        // Get PR IDs related to this payment
+        $prIds = collect();
+
+        // If payment is directly linked to PR
+        if ($payment->purchase_requisition_id) {
+            $prIds->push($payment->purchase_requisition_id);
+        }
+
+        // If payment is linked to PO, get PRs from PO items
+        if ($payment->purchase_order_ops_id) {
+            $po = \App\Models\PurchaseOrderOps::find($payment->purchase_order_ops_id);
+            if ($po) {
+                // Get PR IDs from PO items
+                $prIdsFromPO = DB::table('purchase_order_ops_items')
+                    ->where('purchase_order_ops_id', $po->id)
+                    ->where('source_type', 'purchase_requisition_ops')
+                    ->distinct()
+                    ->pluck('source_id')
+                    ->toArray();
+                
+                $prIds = $prIds->merge($prIdsFromPO);
+            }
+        }
+
+        // Remove duplicates
+        $prIds = $prIds->unique()->values();
+
+        // Check each PR if all POs are paid
+        foreach ($prIds as $prId) {
+            $pr = \App\Models\PurchaseRequisition::find($prId);
+            if (!$pr) {
+                continue;
+            }
+
+            // Get all PO IDs related to this PR
+            $poIds = DB::table('purchase_order_ops_items')
+                ->where('source_type', 'purchase_requisition_ops')
+                ->where('source_id', $prId)
+                ->distinct()
+                ->pluck('purchase_order_ops_id')
+                ->toArray();
+
+            // Update PR status to PAID if all POs are paid or if direct payment exists
+            $shouldUpdateToPaid = false;
+            $description = '';
+
+            if (!empty($poIds)) {
+                // PR has PO - check if all POs are paid
+                $allPOsPaid = true;
+                foreach ($poIds as $poId) {
+                    $hasPaidPayment = DB::table('non_food_payments')
+                        ->where('purchase_order_ops_id', $poId)
+                        ->whereIn('status', ['approved', 'paid'])
+                        ->where('status', '!=', 'cancelled')
+                        ->exists();
+
+                    if (!$hasPaidPayment) {
+                        $allPOsPaid = false;
+                        break;
+                    }
+                }
+
+                if ($allPOsPaid && in_array($pr->status, ['PROCESSED', 'COMPLETED', 'APPROVED'])) {
+                    $shouldUpdateToPaid = true;
+                    $description = 'PR status diubah menjadi PAID karena semua PO sudah dibayar';
+                }
+            } else {
+                // PR doesn't have PO - check if there's a direct payment
+                $hasDirectPayment = DB::table('non_food_payments')
+                    ->where('purchase_requisition_id', $prId)
+                    ->whereIn('status', ['approved', 'paid'])
+                    ->where('status', '!=', 'cancelled')
+                    ->exists();
+
+                if ($hasDirectPayment && in_array($pr->status, ['APPROVED', 'PROCESSED', 'COMPLETED'])) {
+                    $shouldUpdateToPaid = true;
+                    $description = 'PR status diubah menjadi PAID karena sudah dibayar';
+                }
+            }
+
+            if ($shouldUpdateToPaid) {
+                $oldStatus = $pr->status;
+                $pr->update(['status' => 'PAID']);
+
+                // Log history
+                \App\Models\PurchaseRequisitionHistory::create([
+                    'purchase_requisition_id' => $pr->id,
+                    'user_id' => Auth::id(),
+                    'action' => 'PAID',
+                    'old_status' => $oldStatus,
+                    'new_status' => 'PAID',
+                    'description' => $description
+                ]);
+            }
         }
     }
 

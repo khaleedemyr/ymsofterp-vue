@@ -391,6 +391,8 @@ Route::get('/api/purchase-requisitions/{id}/approval-details', [\App\Http\Contro
     Route::post('/purchase-requisitions/{purchaseRequisition}/reject', [\App\Http\Controllers\PurchaseRequisitionController::class, 'reject'])->name('purchase-requisitions.reject');
     Route::post('/purchase-requisitions/{purchaseRequisition}/process', [\App\Http\Controllers\PurchaseRequisitionController::class, 'process'])->name('purchase-requisitions.process');
     Route::post('/purchase-requisitions/{purchaseRequisition}/complete', [\App\Http\Controllers\PurchaseRequisitionController::class, 'complete'])->name('purchase-requisitions.complete');
+    Route::post('/purchase-requisitions/{purchaseRequisition}/hold', [\App\Http\Controllers\PurchaseRequisitionController::class, 'hold'])->name('purchase-requisitions.hold');
+    Route::post('/purchase-requisitions/{purchaseRequisition}/release', [\App\Http\Controllers\PurchaseRequisitionController::class, 'release'])->name('purchase-requisitions.release');
     
     // Purchase Requisition Resource routes
     Route::get('/purchase-requisitions/{purchaseRequisition}', [\App\Http\Controllers\PurchaseRequisitionController::class, 'show'])->name('purchase-requisitions.show');

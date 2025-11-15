@@ -34,6 +34,10 @@ class PurchaseRequisition extends Model
         'approved_ssd_at',
         'approved_cc_by',
         'approved_cc_at',
+        'is_held',
+        'held_at',
+        'held_by',
+        'hold_reason',
     ];
 
     protected $casts = [
@@ -41,6 +45,8 @@ class PurchaseRequisition extends Model
         'amount' => 'decimal:2',
         'approved_ssd_at' => 'datetime',
         'approved_cc_at' => 'datetime',
+        'is_held' => 'boolean',
+        'held_at' => 'datetime',
     ];
 
     // Relationships
@@ -92,6 +98,11 @@ class PurchaseRequisition extends Model
     public function approvedCcBy()
     {
         return $this->belongsTo(User::class, 'approved_cc_by');
+    }
+
+    public function heldBy()
+    {
+        return $this->belongsTo(User::class, 'held_by');
     }
 
     public function attachments()
@@ -165,6 +176,7 @@ class PurchaseRequisition extends Model
             'REJECTED' => 'bg-red-100 text-red-800',
             'PROCESSED' => 'bg-yellow-100 text-yellow-800',
             'COMPLETED' => 'bg-purple-100 text-purple-800',
+            'PAID' => 'bg-emerald-100 text-emerald-800',
             default => 'bg-gray-100 text-gray-800',
         };
     }
@@ -219,5 +231,20 @@ class PurchaseRequisition extends Model
     public function canBeCompleted()
     {
         return $this->status === 'PROCESSED';
+    }
+
+    public function isOnHold()
+    {
+        return $this->is_held === true;
+    }
+
+    public function canCreatePO()
+    {
+        return !$this->isOnHold() && in_array($this->status, ['APPROVED', 'PROCESSED']);
+    }
+
+    public function canCreatePayment()
+    {
+        return !$this->isOnHold();
     }
 }

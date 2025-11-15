@@ -46,6 +46,8 @@ class PurchaseRequisitionController extends Controller
             'ticket',
             'category',
             'creator',
+            'heldBy', // Load user who held the PR
+            'approvalFlows.approver', // Load approval flows with approver
             'items.outlet' // Load items with outlet for multi-outlet modes
         ]);
 
@@ -76,6 +78,7 @@ class PurchaseRequisitionController extends Controller
                                     ->withQueryString();
 
         // Transform purchase requisitions to include outlet information for multi-outlet modes
+        // and PO/Payment status information
         $purchaseRequisitions->getCollection()->transform(function($pr) {
             // For travel_application mode, try to get outlet names from notes
             if ($pr->mode === 'travel_application' && $pr->notes) {
@@ -92,6 +95,139 @@ class PurchaseRequisitionController extends Controller
                     $pr->travel_outlets = [];
                 }
             }
+            
+            // Check if PR has been converted to PO
+            $poIds = DB::table('purchase_order_ops_items')
+                ->where('source_type', 'purchase_requisition_ops')
+                ->where('source_id', $pr->id)
+                ->distinct()
+                ->pluck('purchase_order_ops_id')
+                ->toArray();
+            
+            $poCount = count($poIds);
+            
+            $pr->has_po = $poCount > 0;
+            $pr->po_count = $poCount;
+            
+            // Get PO details if exists
+            if ($poCount > 0 && !empty($poIds)) {
+                $poDetails = DB::table('purchase_order_ops_items as poi')
+                    ->join('purchase_order_ops as po', 'poi.purchase_order_ops_id', '=', 'po.id')
+                    ->leftJoin('users as creator', 'po.created_by', '=', 'creator.id')
+                    ->where('poi.source_type', 'purchase_requisition_ops')
+                    ->where('poi.source_id', $pr->id)
+                    ->select(
+                        'po.number',
+                        'po.created_at',
+                        'creator.nama_lengkap as creator_name',
+                        'creator.email as creator_email'
+                    )
+                    ->distinct()
+                    ->get()
+                    ->map(function($po) {
+                        return [
+                            'number' => $po->number,
+                            'created_at' => $po->created_at,
+                            'creator_name' => $po->creator_name,
+                            'creator_email' => $po->creator_email,
+                        ];
+                    })
+                    ->toArray();
+                $pr->po_details = $poDetails;
+                $pr->po_numbers = array_column($poDetails, 'number');
+            } else {
+                $pr->po_details = [];
+                $pr->po_numbers = [];
+            }
+            
+            // Check if any PO from this PR has been paid
+            $hasPayment = false;
+            $paymentCount = 0;
+            $totalPaidAmount = 0;
+            
+            if ($poCount > 0 && !empty($poIds)) {
+                $payments = DB::table('non_food_payments as nfp')
+                    ->leftJoin('users as creator', 'nfp.created_by', '=', 'creator.id')
+                    ->whereIn('nfp.purchase_order_ops_id', $poIds)
+                    ->whereIn('nfp.status', ['paid', 'approved'])
+                    ->where('nfp.status', '!=', 'cancelled')
+                    ->select(
+                        'nfp.payment_number',
+                        'nfp.created_at',
+                        'creator.nama_lengkap as creator_name',
+                        'creator.email as creator_email'
+                    )
+                    ->get();
+                
+                $hasPayment = $payments->count() > 0;
+                $paymentCount = $payments->count();
+                $totalPaidAmount = DB::table('non_food_payments')
+                    ->whereIn('purchase_order_ops_id', $poIds)
+                    ->whereIn('status', ['paid', 'approved'])
+                    ->where('status', '!=', 'cancelled')
+                    ->sum('amount');
+                
+                if ($hasPayment) {
+                    $paymentDetails = $payments->map(function($payment) {
+                        return [
+                            'payment_number' => $payment->payment_number,
+                            'created_at' => $payment->created_at,
+                            'creator_name' => $payment->creator_name,
+                            'creator_email' => $payment->creator_email,
+                        ];
+                    })->toArray();
+                    $pr->payment_details = $paymentDetails;
+                    $paymentNumbers = $payments->pluck('payment_number')->filter()->toArray();
+                    $pr->payment_numbers = array_unique($paymentNumbers);
+                } else {
+                    $pr->payment_details = [];
+                    $pr->payment_numbers = [];
+                }
+            } else {
+                // Check for direct payment (without PO)
+                $directPayments = DB::table('non_food_payments as nfp')
+                    ->leftJoin('users as creator', 'nfp.created_by', '=', 'creator.id')
+                    ->where('nfp.purchase_requisition_id', $pr->id)
+                    ->whereIn('nfp.status', ['paid', 'approved'])
+                    ->where('nfp.status', '!=', 'cancelled')
+                    ->select(
+                        'nfp.payment_number',
+                        'nfp.created_at',
+                        'creator.nama_lengkap as creator_name',
+                        'creator.email as creator_email'
+                    )
+                    ->get();
+                
+                if ($directPayments->count() > 0) {
+                    $hasPayment = true;
+                    $paymentCount = $directPayments->count();
+                    $totalPaidAmount = DB::table('non_food_payments')
+                        ->where('purchase_requisition_id', $pr->id)
+                        ->whereIn('status', ['paid', 'approved'])
+                        ->where('status', '!=', 'cancelled')
+                        ->sum('amount');
+                    
+                    $paymentDetails = $directPayments->map(function($payment) {
+                        return [
+                            'payment_number' => $payment->payment_number,
+                            'created_at' => $payment->created_at,
+                            'creator_name' => $payment->creator_name,
+                            'creator_email' => $payment->creator_email,
+                        ];
+                    })->toArray();
+                    $pr->payment_details = $paymentDetails;
+                    $paymentNumbers = $directPayments->pluck('payment_number')->filter()->toArray();
+                    $pr->payment_numbers = array_unique($paymentNumbers);
+                } else {
+                    $pr->payment_details = [];
+                    $pr->payment_numbers = [];
+                }
+            }
+            
+            $pr->has_payment = $hasPayment;
+            $pr->payment_count = $paymentCount;
+            $pr->total_paid_amount = $totalPaidAmount;
+            
             return $pr;
         });
 
@@ -2771,5 +2907,75 @@ class PurchaseRequisitionController extends Controller
             'exists' => false,
             'message' => 'No existing kasbon found for this outlet in the period'
         ]);
+    }
+
+    /**
+     * Hold a purchase requisition
+     */
+    public function hold(Request $request, PurchaseRequisition $purchaseRequisition)
+    {
+        $request->validate([
+            'hold_reason' => 'nullable|string|max:1000'
+        ]);
+
+        if ($purchaseRequisition->is_held) {
+            return back()->withErrors(['error' => 'Purchase Requisition is already on hold.']);
+        }
+
+        try {
+            $purchaseRequisition->update([
+                'is_held' => true,
+                'held_at' => now(),
+                'held_by' => auth()->id(),
+                'hold_reason' => $request->hold_reason
+            ]);
+
+            // Log history
+            \App\Models\PurchaseRequisitionHistory::create([
+                'purchase_requisition_id' => $purchaseRequisition->id,
+                'user_id' => auth()->id(),
+                'action' => 'HOLD',
+                'old_status' => $purchaseRequisition->status,
+                'new_status' => $purchaseRequisition->status,
+                'description' => 'PR di-hold' . ($request->hold_reason ? ': ' . $request->hold_reason : '')
+            ]);
+
+            return back()->with('success', 'Purchase Requisition berhasil di-hold.');
+        } catch (\Exception $e) {
+            return back()->withErrors(['error' => 'Gagal meng-hold Purchase Requisition: ' . $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Release a purchase requisition from hold
+     */
+    public function release(PurchaseRequisition $purchaseRequisition)
+    {
+        if (!$purchaseRequisition->is_held) {
+            return back()->withErrors(['error' => 'Purchase Requisition is not on hold.']);
+        }
+
+        try {
+            $purchaseRequisition->update([
+                'is_held' => false,
+                'held_at' => null,
+                'held_by' => null,
+                'hold_reason' => null
+            ]);
+
+            // Log history
+            \App\Models\PurchaseRequisitionHistory::create([
+                'purchase_requisition_id' => $purchaseRequisition->id,
+                'user_id' => auth()->id(),
+                'action' => 'RELEASE',
+                'old_status' => $purchaseRequisition->status,
+                'new_status' => $purchaseRequisition->status,
+                'description' => 'PR di-release dari hold'
+            ]);
+
+            return back()->with('success', 'Purchase Requisition berhasil di-release dari hold.');
+        } catch (\Exception $e) {
+            return back()->withErrors(['error' => 'Gagal me-release Purchase Requisition: ' . $e->getMessage()]);
+        }
     }
 }
