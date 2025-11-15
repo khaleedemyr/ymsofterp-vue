@@ -202,7 +202,12 @@
                       <div class="flex items-center gap-4">
                         <div class="text-right">
                           <div class="text-sm font-medium text-gray-900">{{ formatCurrency(po.total_amount) }}</div>
-                          <div class="text-xs text-gray-500">{{ po.supplier_name }}</div>
+                          <div class="text-xs text-gray-500">
+                            <span class="text-green-600">{{ formatCurrency(po.paid_amount || 0) }} paid</span>
+                            <span v-if="(po.paid_amount || 0) > 0 && (po.unpaid_amount || 0) > 0"> • </span>
+                            <span v-if="(po.unpaid_amount || 0) > 0" class="text-red-600">{{ formatCurrency(po.unpaid_amount) }} unpaid</span>
+                          </div>
+                          <div class="text-xs text-gray-500 mt-1">{{ po.supplier_name }}</div>
                         </div>
                         <div class="flex items-center gap-2">
                           <span class="bg-purple-100 text-purple-800 px-2 py-1 rounded-full text-xs font-medium">
@@ -302,17 +307,78 @@
                     </div>
                     
                     <!-- Paid Amount -->
-                    <div class="bg-green-50 rounded-lg p-3">
-                      <div class="text-xs text-gray-500 mb-1">Paid Amount</div>
+                    <div class="bg-green-50 rounded-lg p-3 relative">
+                      <div class="flex items-center justify-between mb-1">
+                        <div class="text-xs text-gray-500">Paid Amount</div>
+                        <button 
+                          v-if="categoryGroup.transactions && categoryGroup.transactions.paid && categoryGroup.transactions.paid.length > 0"
+                          @click="toggleBudgetCard(categoryGroup.category_id, 'paid')"
+                          class="text-gray-400 hover:text-gray-600 transition-colors"
+                        >
+                          <i :class="isBudgetCardExpanded(categoryGroup.category_id, 'paid') ? 'fa fa-chevron-up' : 'fa fa-chevron-down'" class="text-xs"></i>
+                        </button>
+                      </div>
                       <div class="text-lg font-bold text-green-600">{{ formatCurrency(categoryGroup.total_paid_amount) }}</div>
                       <div class="text-xs text-gray-500">{{ getPercentage(categoryGroup.total_paid_amount, categoryGroup.budget_limit) }}% of budget</div>
+                      
+                      <!-- Transaction Details -->
+                      <div v-if="isBudgetCardExpanded(categoryGroup.category_id, 'paid') && categoryGroup.transactions && categoryGroup.transactions.paid" class="mt-3 pt-3 border-t border-green-200">
+                        <div class="text-xs font-medium text-gray-700 mb-2">Transaction Details:</div>
+                        <div class="max-h-60 overflow-y-auto space-y-2">
+                          <div v-for="(transaction, idx) in categoryGroup.transactions.paid" :key="idx" class="bg-white rounded p-2 text-xs">
+                            <div class="flex items-center justify-between">
+                              <div class="flex items-center gap-2 flex-wrap">
+                                <span :class="transaction.type === 'retail_non_food' ? 'bg-teal-100 text-teal-800' : 'bg-blue-100 text-blue-800'" class="px-2 py-0.5 rounded text-xs font-medium">
+                                  {{ transaction.type === 'retail_non_food' ? 'RNF' : 'PR' }}
+                                </span>
+                                <span class="font-medium">{{ transaction.number }}</span>
+                                <span v-if="transaction.payment_number" class="text-gray-500 text-xs">
+                                  (Payment: {{ transaction.payment_number }})
+                                </span>
+                              </div>
+                              <span class="font-bold text-green-600">{{ formatCurrency(transaction.amount) }}</span>
+                            </div>
+                            <div class="text-gray-500 mt-1">
+                              {{ transaction.outlet }} • {{ formatDate(transaction.date) }}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
                     </div>
                     
                     <!-- Unpaid Amount -->
-                    <div class="bg-red-50 rounded-lg p-3">
-                      <div class="text-xs text-gray-500 mb-1">Unpaid Amount</div>
+                    <div class="bg-red-50 rounded-lg p-3 relative">
+                      <div class="flex items-center justify-between mb-1">
+                        <div class="text-xs text-gray-500">Unpaid Amount</div>
+                        <button 
+                          v-if="categoryGroup.transactions && categoryGroup.transactions.unpaid && categoryGroup.transactions.unpaid.length > 0"
+                          @click="toggleBudgetCard(categoryGroup.category_id, 'unpaid')"
+                          class="text-gray-400 hover:text-gray-600 transition-colors"
+                        >
+                          <i :class="isBudgetCardExpanded(categoryGroup.category_id, 'unpaid') ? 'fa fa-chevron-up' : 'fa fa-chevron-down'" class="text-xs"></i>
+                        </button>
+                      </div>
                       <div class="text-lg font-bold text-red-600">{{ formatCurrency(categoryGroup.total_unpaid_amount) }}</div>
                       <div class="text-xs text-gray-500">{{ getPercentage(categoryGroup.total_unpaid_amount, categoryGroup.budget_limit) }}% of budget</div>
+                      
+                      <!-- Transaction Details -->
+                      <div v-if="isBudgetCardExpanded(categoryGroup.category_id, 'unpaid') && categoryGroup.transactions && categoryGroup.transactions.unpaid" class="mt-3 pt-3 border-t border-red-200">
+                        <div class="text-xs font-medium text-gray-700 mb-2">Transaction Details:</div>
+                        <div class="max-h-60 overflow-y-auto space-y-2">
+                          <div v-for="(transaction, idx) in categoryGroup.transactions.unpaid" :key="idx" class="bg-white rounded p-2 text-xs">
+                            <div class="flex items-center justify-between">
+                              <div class="flex items-center gap-2">
+                                <span class="bg-blue-100 text-blue-800 px-2 py-0.5 rounded text-xs font-medium">PR</span>
+                                <span class="font-medium">{{ transaction.number }}</span>
+                              </div>
+                              <span class="font-bold text-red-600">{{ formatCurrency(transaction.amount) }}</span>
+                            </div>
+                            <div class="text-gray-500 mt-1">
+                              {{ transaction.outlet }} • {{ formatDate(transaction.date) }}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
                     </div>
                     
                     <!-- Remaining Budget -->
@@ -331,13 +397,13 @@
                   <div class="mt-4">
                     <div class="flex justify-between text-xs text-gray-600 mb-1">
                       <span>Budget Usage</span>
-                      <span>{{ getPercentage(categoryGroup.total_paid_amount, categoryGroup.budget_limit) }}%</span>
+                      <span>{{ getPercentage((categoryGroup.total_paid_amount || 0) + (categoryGroup.total_unpaid_amount || 0), categoryGroup.budget_limit) }}%</span>
                     </div>
                     <div class="w-full bg-gray-200 rounded-full h-2">
                       <div 
                         class="h-2 rounded-full transition-all duration-300"
-                        :class="getProgressBarColor(categoryGroup.total_paid_amount, categoryGroup.budget_limit)"
-                        :style="{ width: `${Math.min(getPercentage(categoryGroup.total_paid_amount, categoryGroup.budget_limit), 100)}%` }"
+                        :class="getProgressBarColor((categoryGroup.total_paid_amount || 0) + (categoryGroup.total_unpaid_amount || 0), categoryGroup.budget_limit)"
+                        :style="{ width: `${Math.min(getPercentage((categoryGroup.total_paid_amount || 0) + (categoryGroup.total_unpaid_amount || 0), categoryGroup.budget_limit), 100)}%` }"
                       ></div>
                     </div>
                   </div>
@@ -354,11 +420,13 @@
                           <span class="font-semibold text-gray-800">{{ outlet.outlet_name }}</span>
                         </div>
                         <div class="text-right">
-                          <div class="text-sm font-medium" :class="outlet.remaining_budget > 0 ? 'text-green-600' : 'text-red-600'">
-                            {{ formatCurrency(outlet.remaining_budget) }} remaining
+                          <div class="text-sm font-medium" :class="outlet.remaining_budget >= 0 ? 'text-green-600' : 'text-red-600'">
+                            {{ formatCurrency(outlet.remaining_budget) }}
+                            <span v-if="outlet.remaining_budget >= 0">remaining</span>
+                            <span v-else>exceeded</span>
                           </div>
                           <div class="text-xs text-gray-500">
-                            {{ getPercentage(outlet.paid_amount, outlet.budget_limit) }}% used
+                            {{ getPercentage((outlet.paid_amount || 0) + (outlet.unpaid_amount || 0), outlet.budget_limit) }}% used
                           </div>
                         </div>
                       </div>
@@ -374,8 +442,8 @@
                         <!-- Used Budget -->
                         <div class="bg-green-50 rounded-lg p-3">
                           <div class="text-xs text-gray-500 mb-1">Used Budget</div>
-                          <div class="text-lg font-bold text-green-600">{{ formatCurrency(outlet.paid_amount) }}</div>
-                          <div class="text-xs text-gray-500">{{ getPercentage(outlet.paid_amount, outlet.budget_limit) }}% of allocated</div>
+                          <div class="text-lg font-bold text-green-600">{{ formatCurrency((outlet.paid_amount || 0) + (outlet.unpaid_amount || 0)) }}</div>
+                          <div class="text-xs text-gray-500">{{ getPercentage((outlet.paid_amount || 0) + (outlet.unpaid_amount || 0), outlet.budget_limit) }}% of allocated</div>
                         </div>
                         
                         <!-- Remaining Budget -->
@@ -394,13 +462,13 @@
                       <div class="mt-3">
                         <div class="flex justify-between text-xs text-gray-600 mb-1">
                           <span>Budget Usage</span>
-                          <span>{{ getPercentage(outlet.paid_amount, outlet.budget_limit) }}%</span>
+                          <span>{{ getPercentage((outlet.paid_amount || 0) + (outlet.unpaid_amount || 0), outlet.budget_limit) }}%</span>
                         </div>
                         <div class="w-full bg-gray-200 rounded-full h-2">
                           <div 
                             class="h-2 rounded-full transition-all duration-300"
-                            :class="getProgressBarColor(outlet.paid_amount, outlet.budget_limit)"
-                            :style="{ width: `${Math.min(getPercentage(outlet.paid_amount, outlet.budget_limit), 100)}%` }"
+                            :class="getProgressBarColor((outlet.paid_amount || 0) + (outlet.unpaid_amount || 0), outlet.budget_limit)"
+                            :style="{ width: `${Math.min(getPercentage((outlet.paid_amount || 0) + (outlet.unpaid_amount || 0), outlet.budget_limit), 100)}%` }"
                           ></div>
                         </div>
                       </div>
@@ -440,6 +508,7 @@ const expandedOutlets = ref([]);
 const expandedCategories = ref([]);
 const expandedPOs = ref([]);
 const expandedPerOutletCategories = ref([]);
+const expandedBudgetCards = ref({});
 
 const filters = reactive({
   date_from: props.filters.date_from || new Date().toISOString().slice(0, 7) + '-01',
@@ -485,6 +554,20 @@ function togglePerOutletCategory(categoryId) {
   } else {
     expandedPerOutletCategories.value.push(categoryId);
   }
+}
+
+function toggleBudgetCard(categoryId, cardType) {
+  const key = `${categoryId}-${cardType}`;
+  if (expandedBudgetCards.value[key]) {
+    delete expandedBudgetCards.value[key];
+  } else {
+    expandedBudgetCards.value[key] = true;
+  }
+}
+
+function isBudgetCardExpanded(categoryId, cardType) {
+  const key = `${categoryId}-${cardType}`;
+  return !!expandedBudgetCards.value[key];
 }
 
 function getPercentage(amount, total) {

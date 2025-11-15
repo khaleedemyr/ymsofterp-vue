@@ -360,6 +360,7 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/purchase-requisitions/tickets', [\App\Http\Controllers\PurchaseRequisitionController::class, 'getTickets'])->name('purchase-requisitions.tickets')->middleware('auth');
     Route::get('/purchase-requisitions/budget-info', [\App\Http\Controllers\PurchaseRequisitionController::class, 'getBudgetInfo'])->name('purchase-requisitions.budget-info')->middleware('auth');
     Route::get('/purchase-requisitions/approvers', [\App\Http\Controllers\PurchaseRequisitionController::class, 'getApprovers'])->name('purchase-requisitions.approvers')->middleware('auth');
+    Route::get('/purchase-requisitions/check-kasbon-period', [\App\Http\Controllers\PurchaseRequisitionController::class, 'checkKasbonPeriod'])->name('purchase-requisitions.check-kasbon-period')->middleware('auth');
     
     // Purchase Requisition Print (must be before resource routes)
     Route::get('/purchase-requisitions/print-preview', [\App\Http\Controllers\PurchaseRequisitionController::class, 'printPreview'])->name('purchase-requisitions.print-preview')->middleware('auth');
@@ -989,11 +990,16 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/outlet-food-inventory-adjustment', [OutletFoodInventoryAdjustmentController::class, 'index'])->name('outlet-food-inventory-adjustment.index');
     Route::get('/outlet-food-inventory-adjustment/create', [OutletFoodInventoryAdjustmentController::class, 'create'])->name('outlet-food-inventory-adjustment.create');
     Route::post('/outlet-food-inventory-adjustment', [OutletFoodInventoryAdjustmentController::class, 'store'])->name('outlet-food-inventory-adjustment.store');
+    // Routes dengan path spesifik harus didefinisikan sebelum route dengan parameter {id}
+    Route::get('/outlet-food-inventory-adjustment/approvers', [OutletFoodInventoryAdjustmentController::class, 'getApprovers'])->name('outlet-food-inventory-adjustment.approvers')->middleware('auth');
+    Route::get('/api/outlet-food-inventory-adjustment/warehouse-outlets', [OutletFoodInventoryAdjustmentController::class, 'getWarehouseOutlets'])->name('outlet-food-inventory-adjustment.warehouse-outlets');
+    Route::get('/api/outlet-food-inventory-adjustment/pending-approvals', [OutletFoodInventoryAdjustmentController::class, 'getPendingApprovals'])->name('outlet-food-inventory-adjustment.pending-approvals')->middleware('auth');
+    Route::get('/api/outlet-food-inventory-adjustment/{id}/approval-details', [OutletFoodInventoryAdjustmentController::class, 'getApprovalDetails'])->name('outlet-food-inventory-adjustment.approval-details')->middleware('auth');
+    // Route dengan parameter {id} harus didefinisikan setelah route spesifik
     Route::get('/outlet-food-inventory-adjustment/{id}', [OutletFoodInventoryAdjustmentController::class, 'show'])->name('outlet-food-inventory-adjustment.show');
     Route::post('/outlet-food-inventory-adjustment/{id}/approve', [OutletFoodInventoryAdjustmentController::class, 'approve'])->name('outlet-food-inventory-adjustment.approve');
     Route::post('/outlet-food-inventory-adjustment/{id}/reject', [OutletFoodInventoryAdjustmentController::class, 'reject'])->name('outlet-food-inventory-adjustment.reject');
     Route::delete('/outlet-food-inventory-adjustment/{id}', [OutletFoodInventoryAdjustmentController::class, 'destroy'])->name('outlet-food-inventory-adjustment.destroy');
-Route::get('/api/outlet-food-inventory-adjustment/warehouse-outlets', [OutletFoodInventoryAdjustmentController::class, 'getWarehouseOutlets'])->name('outlet-food-inventory-adjustment.warehouse-outlets');
 });
 
 // Laporan Stok Akhir Outlet

@@ -37,6 +37,7 @@ const loadingPrApprovals = ref(false);
 const showPrApprovalModal = ref(false);
 const selectedPrApproval = ref(null);
 const prApprovalBudgetInfo = ref(null);
+const prModeSpecificData = ref(null);
 const showLightbox = ref(false);
 const lightboxImage = ref(null);
 const lightboxType = ref('pr'); // 'pr' or 'po'
@@ -53,6 +54,12 @@ const loadingCategoryCostApprovals = ref(false);
 const showCategoryCostApprovalModal = ref(false);
 const selectedCategoryCostApproval = ref(null);
 const categoryCostApprovalRejectionReason = ref('');
+
+// Outlet Stock Adjustment approvals
+const pendingStockAdjustmentApprovals = ref([]);
+const loadingStockAdjustmentApprovals = ref(false);
+const showStockAdjustmentApprovalModal = ref(false);
+const selectedStockAdjustmentApproval = ref(null);
 const poOpsApprovalBudgetInfo = ref(null);
 // PO Ops - All list modal
 const showAllPoOpsModal = ref(false);
@@ -452,6 +459,11 @@ const poOpsApprovalCount = computed(() => {
     return count > 0 ? count : 0;
 });
 
+const stockAdjustmentApprovalCount = computed(() => {
+    const count = pendingStockAdjustmentApprovals.value.length;
+    return count > 0 ? count : 0;
+});
+
 const availableTrainingsStats = computed(() => {
     const total = availableTrainings.value.length;
     const completed = availableTrainings.value.filter(t => t.is_completed).length;
@@ -665,6 +677,21 @@ async function loadPendingPoOpsApprovals() {
     }
 }
 
+// Load Outlet Stock Adjustment approvals
+async function loadPendingStockAdjustmentApprovals() {
+    loadingStockAdjustmentApprovals.value = true;
+    try {
+        const response = await axios.get('/api/outlet-food-inventory-adjustment/pending-approvals');
+        if (response.data.success) {
+            pendingStockAdjustmentApprovals.value = response.data.adjustments || [];
+        }
+    } catch (error) {
+        console.error('Error loading pending Stock Adjustment approvals:', error);
+    } finally {
+        loadingStockAdjustmentApprovals.value = false;
+    }
+}
+
 async function loadAllPendingPoOps() {
     loadingAllPoOps.value = true;
     try {
@@ -802,9 +829,13 @@ async function showPrApprovalDetails(prId) {
         const response = await axios.get(`/api/purchase-requisitions/${prId}/approval-details`);
         if (response.data.success) {
             selectedPrApproval.value = response.data.purchase_requisition;
-            prApprovalBudgetInfo.value = response.data.budget_info;
+            prApprovalBudgetInfo.value = response.data.budget_info || null;
+            prModeSpecificData.value = response.data.mode_specific_data || null;
             
             // Debug logging
+            console.log('Budget Info:', prApprovalBudgetInfo.value);
+            console.log('PR Mode:', selectedPrApproval.value?.mode);
+            console.log('Category ID:', selectedPrApproval.value?.category_id);
             
             showPrApprovalModal.value = true;
         }
@@ -812,6 +843,87 @@ async function showPrApprovalDetails(prId) {
         console.error('Error loading PR approval details:', error);
         Swal.fire('Error', 'Gagal memuat detail Purchase Requisition', 'error');
     }
+}
+
+// Get mode label
+function getPrModeLabel(mode) {
+    const labels = {
+        'pr_ops': 'Purchase Requisition',
+        'purchase_payment': 'Payment Application',
+        'travel_application': 'Travel Application',
+        'kasbon': 'Kasbon'
+    };
+    return labels[mode] || mode;
+}
+
+// Get mode badge class
+function getPrModeBadgeClass(mode) {
+    const classes = {
+        'pr_ops': 'bg-blue-100 text-blue-800',
+        'purchase_payment': 'bg-green-100 text-green-800',
+        'travel_application': 'bg-purple-100 text-purple-800',
+        'kasbon': 'bg-orange-100 text-orange-800'
+    };
+    return classes[mode] || 'bg-gray-100 text-gray-800';
+}
+
+// Group items by outlet and category for pr_ops and purchase_payment modes
+function getGroupedItems(items) {
+    if (!items || items.length === 0) return {};
+    
+    const grouped = {};
+    items.forEach(item => {
+        // For legacy data without outlet_id, use main PR outlet or 'General'
+        const outletId = item.outlet_id || 'no-outlet';
+        const outletName = item.outlet?.nama_outlet || (selectedPrApproval.value?.outlet?.nama_outlet || 'General');
+        // For legacy data without category_id, use main PR category or 'General'
+        const categoryId = item.category_id || 'no-category';
+        const categoryName = item.category?.name || (selectedPrApproval.value?.category?.name || 'General');
+        
+        if (!grouped[outletId]) {
+            grouped[outletId] = {
+                outlet_id: outletId,
+                outlet_name: outletName,
+                categories: {}
+            };
+        }
+        
+        if (!grouped[outletId].categories[categoryId]) {
+            grouped[outletId].categories[categoryId] = {
+                category_id: categoryId,
+                category_name: categoryName,
+                items: []
+            };
+        }
+        
+        grouped[outletId].categories[categoryId].items.push(item);
+    });
+    
+    return grouped;
+}
+
+// Group attachments by outlet
+function getGroupedAttachments(attachments) {
+    if (!attachments || attachments.length === 0) return {};
+    
+    const grouped = {};
+    attachments.forEach(attachment => {
+        // For legacy data without outlet_id, use main PR outlet or 'General'
+        const outletId = attachment.outlet_id || 'no-outlet';
+        const outletName = attachment.outlet?.nama_outlet || (selectedPrApproval.value?.outlet?.nama_outlet || 'General');
+        
+        if (!grouped[outletId]) {
+            grouped[outletId] = {
+                outlet_id: outletId,
+                outlet_name: outletName,
+                attachments: []
+            };
+        }
+        
+        grouped[outletId].attachments.push(attachment);
+    });
+    
+    return grouped;
 }
 
 // Approve PR
@@ -844,6 +956,93 @@ async function rejectPr(prId, reason) {
         console.error('Error rejecting PR:', error);
         Swal.fire('Error', 'Gagal menolak Purchase Requisition', 'error');
     }
+}
+
+// Outlet Stock Adjustment approval functions
+async function showStockAdjustmentApprovalDetails(adjustmentId) {
+    try {
+        const response = await axios.get(`/api/outlet-food-inventory-adjustment/${adjustmentId}/approval-details`);
+        if (response.data.success) {
+            selectedStockAdjustmentApproval.value = response.data;
+            showStockAdjustmentApprovalModal.value = true;
+        }
+    } catch (error) {
+        console.error('Error loading Stock Adjustment approval details:', error);
+        Swal.fire('Error', 'Gagal memuat detail Outlet Stock Adjustment', 'error');
+    }
+}
+
+async function approveStockAdjustment(adjustmentId) {
+    try {
+        const result = await Swal.fire({
+            title: 'Setujui Outlet Stock Adjustment?',
+            text: 'Tindakan ini akan meneruskan ke approver berikutnya.',
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonText: 'Ya, Setujui',
+            cancelButtonText: 'Batal',
+            confirmButtonColor: '#10B981',
+            cancelButtonColor: '#6B7280'
+        });
+        
+        if (!result.isConfirmed) return;
+        
+        const response = await axios.post(`/outlet-food-inventory-adjustment/${adjustmentId}/approve`, {
+            note: ''
+        });
+        
+        if (response.status === 200 || response.data?.success) {
+            Swal.fire('Success', 'Outlet Stock Adjustment berhasil disetujui', 'success');
+            showStockAdjustmentApprovalModal.value = false;
+            loadPendingStockAdjustmentApprovals(); // Reload the list
+        }
+    } catch (error) {
+        console.error('Error approving Stock Adjustment:', error);
+        Swal.fire('Error', error.response?.data?.message || 'Gagal menyetujui Outlet Stock Adjustment', 'error');
+    }
+}
+
+async function rejectStockAdjustment(adjustmentId, reason) {
+    try {
+        const response = await axios.post(`/outlet-food-inventory-adjustment/${adjustmentId}/reject`, {
+            rejection_reason: reason
+        });
+        
+        if (response.status === 200 || response.data?.success) {
+            Swal.fire('Success', 'Outlet Stock Adjustment berhasil ditolak', 'success');
+            showStockAdjustmentApprovalModal.value = false;
+            loadPendingStockAdjustmentApprovals(); // Reload the list
+        }
+    } catch (error) {
+        console.error('Error rejecting Stock Adjustment:', error);
+        Swal.fire('Error', error.response?.data?.message || 'Gagal menolak Outlet Stock Adjustment', 'error');
+    }
+}
+
+function showRejectStockAdjustmentModal(adjustmentId) {
+    Swal.fire({
+        title: 'Tolak Outlet Stock Adjustment?',
+        input: 'textarea',
+        inputLabel: 'Alasan Penolakan',
+        inputPlaceholder: 'Masukkan alasan penolakan...',
+        inputAttributes: {
+            'aria-label': 'Masukkan alasan penolakan'
+        },
+        showCancelButton: true,
+        confirmButtonText: 'Tolak',
+        cancelButtonText: 'Batal',
+        confirmButtonColor: '#EF4444',
+        cancelButtonColor: '#6B7280',
+        inputValidator: (value) => {
+            if (!value) {
+                return 'Alasan penolakan harus diisi!';
+            }
+        }
+    }).then((result) => {
+        if (result.isConfirmed) {
+            rejectStockAdjustment(adjustmentId, result.value);
+        }
+    });
 }
 
 // Category Cost Outlet approval functions
@@ -3342,6 +3541,7 @@ onMounted(() => {
     loadPendingPrApprovals();
     loadPendingPoOpsApprovals();
     loadPendingCategoryCostApprovals();
+    loadPendingStockAdjustmentApprovals();
     loadPendingMovementApprovals();
     loadLeaveNotifications();
     loadPendingHrdApprovals();
@@ -4010,6 +4210,71 @@ watch(locale, () => {
                     </div>
                 </div>
 
+                <!-- Outlet Stock Adjustment Approval Section -->
+                <div v-if="stockAdjustmentApprovalCount > 0" class="flex-shrink-0 mb-4">
+                    <div class="backdrop-blur-md rounded-2xl shadow-2xl border p-4 transition-all duration-500 animate-fade-in hover:shadow-3xl"
+                        :class="isNight ? 'bg-slate-800/90 border-slate-600/50' : 'bg-white/90 border-white/20'">
+                        <div class="flex items-center justify-between mb-3">
+                            <div class="flex items-center gap-2">
+                                <div class="w-3 h-3 rounded-full bg-teal-500 animate-pulse"></div>
+                                <h3 class="text-lg font-bold" :class="isNight ? 'text-white' : 'text-slate-800'">
+                                    <i class="fa fa-adjust mr-2 text-teal-500"></i>
+                                    Outlet Stock Adjustment Approval
+                                </h3>
+                            </div>
+                            <div class="bg-teal-500 text-white text-xs font-bold px-2 py-1 rounded-full">
+                                {{ stockAdjustmentApprovalCount }}
+                            </div>
+                        </div>
+                        
+                        <div v-if="loadingStockAdjustmentApprovals" class="text-center py-4">
+                            <div class="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-teal-500"></div>
+                            <p class="text-sm mt-2" :class="isNight ? 'text-slate-300' : 'text-slate-600'">Memuat data...</p>
+                        </div>
+                        
+                        <div v-else class="space-y-2">
+                            <!-- Outlet Stock Adjustment Approvals -->
+                            <div v-for="adj in pendingStockAdjustmentApprovals.slice(0, 3)" :key="'stock-adj-approval-' + adj.id"
+                                @click="showStockAdjustmentApprovalDetails(adj.id)"
+                                class="p-3 rounded-lg cursor-pointer transition-all duration-200 hover:scale-105"
+                                :class="isNight ? 'bg-slate-700/50 hover:bg-slate-600/50' : 'bg-teal-50 hover:bg-teal-100'">
+                                <div class="flex items-center justify-between">
+                                    <div class="flex-1">
+                                        <div class="font-semibold text-sm" :class="isNight ? 'text-white' : 'text-slate-800'">
+                                            {{ adj.number }}
+                                        </div>
+                                        <div class="text-xs" :class="isNight ? 'text-slate-300' : 'text-slate-600'">
+                                            {{ adj.type === 'in' ? 'Stock In' : 'Stock Out' }}
+                                        </div>
+                                        <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
+                                            <i class="fa fa-map-marker-alt mr-1 text-blue-500"></i>{{ adj.nama_outlet }}
+                                        </div>
+                                        <div v-if="adj.warehouse_outlet_name" class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
+                                            <i class="fa fa-warehouse mr-1 text-blue-500"></i>{{ adj.warehouse_outlet_name }}
+                                        </div>
+                                        <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
+                                            <i class="fa fa-user mr-1 text-blue-500"></i>{{ adj.creator_name }}
+                                        </div>
+                                        <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
+                                            {{ formatDate(adj.date) }}
+                                        </div>
+                                    </div>
+                                    <div class="text-xs text-teal-500 font-medium">
+                                        <i class="fa fa-adjust mr-1"></i>Approval
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Show more button if there are more than 3 -->
+                            <div v-if="pendingStockAdjustmentApprovals.length > 3" class="text-center pt-2">
+                                <button class="text-sm text-teal-500 hover:text-teal-700 font-medium">
+                                    Lihat {{ pendingStockAdjustmentApprovals.length - 3 }} lainnya...
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Bottom Section: Clock, Weather, Calendar, Notes, Birthday, and Announcements -->
                 <div class="flex-1 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 gap-4 mb-6 items-start px-4 md:px-6">
                     <!-- Left: Clock and Weather -->
@@ -4272,10 +4537,20 @@ watch(locale, () => {
         <div v-if="showPrApprovalModal && selectedPrApproval" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click="showPrApprovalModal = false">
             <div class="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-4xl mx-4 max-h-[90vh] overflow-y-auto" @click.stop>
                 <div class="flex items-center justify-between mb-4">
-                    <h3 class="text-lg font-medium text-gray-900 dark:text-white">
-                        <i class="fa fa-shopping-cart mr-2 text-green-500"></i>
-                        Detail Purchase Requisition
-                    </h3>
+                    <div class="flex items-center space-x-3">
+                        <h3 class="text-lg font-medium text-gray-900 dark:text-white">
+                            <i class="fa fa-shopping-cart mr-2 text-green-500"></i>
+                            Detail Purchase Requisition
+                        </h3>
+                        <span v-if="selectedPrApproval.mode" 
+                              :class="['inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium', getPrModeBadgeClass(selectedPrApproval.mode)]">
+                            {{ getPrModeLabel(selectedPrApproval.mode) }}
+                        </span>
+                        <span v-else 
+                              class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                            Legacy Data
+                        </span>
+                    </div>
                     <button @click="showPrApprovalModal = false" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
                         <i class="fa-solid fa-times text-xl"></i>
                     </button>
@@ -4304,11 +4579,12 @@ watch(locale, () => {
                                 <div class="text-sm font-medium text-gray-700 dark:text-gray-300">Division</div>
                                 <div class="text-gray-900 dark:text-white">{{ selectedPrApproval.division?.nama_divisi }}</div>
                             </div>
-                            <div>
+                            <!-- Category and Outlet: Show for legacy data (no mode) or non-multi-outlet modes -->
+                            <div v-if="!selectedPrApproval.mode || !['pr_ops', 'purchase_payment', 'travel_application'].includes(selectedPrApproval.mode)">
                                 <div class="text-sm font-medium text-gray-700 dark:text-gray-300">Category</div>
-                                <div class="text-gray-900 dark:text-white">{{ selectedPrApproval.category?.name }}</div>
+                                <div class="text-gray-900 dark:text-white">{{ selectedPrApproval.category?.name || '-' }}</div>
                             </div>
-                            <div>
+                            <div v-if="!selectedPrApproval.mode || !['pr_ops', 'purchase_payment', 'travel_application'].includes(selectedPrApproval.mode)">
                                 <div class="text-sm font-medium text-gray-700 dark:text-gray-300">Outlet</div>
                                 <div class="text-gray-900 dark:text-white">{{ selectedPrApproval.outlet?.nama_outlet || '-' }}</div>
                             </div>
@@ -4318,6 +4594,13 @@ watch(locale, () => {
                                     Rp {{ new Intl.NumberFormat('id-ID').format(selectedPrApproval.amount) }}
                                 </div>
                             </div>
+                            <div>
+                                <div class="text-sm font-medium text-gray-700 dark:text-gray-300">Tanggal Dibuat</div>
+                                <div class="text-gray-900 dark:text-white">
+                                    <i class="fa fa-calendar mr-1 text-gray-400"></i>
+                                    {{ formatDate(selectedPrApproval.created_at) }}
+                                </div>
+                            </div>
                         </div>
                         <div class="mt-4">
                             <div class="text-sm font-medium text-gray-700 dark:text-gray-300">Description</div>
@@ -4325,8 +4608,8 @@ watch(locale, () => {
                         </div>
                     </div>
 
-                    <!-- Budget Information -->
-                    <div v-if="prApprovalBudgetInfo" class="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
+                    <!-- Budget Information (hidden for kasbon, shown for legacy data) -->
+                    <div v-if="prApprovalBudgetInfo && selectedPrApproval && selectedPrApproval.mode !== 'kasbon'" class="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
                         <h4 class="text-md font-semibold text-gray-900 dark:text-white mb-3">
                             <i class="fa fa-chart-pie mr-2 text-blue-500"></i>
                             {{ prApprovalBudgetInfo.budget_type === 'PER_OUTLET' ? 'Informasi Budget Outlet' : 'Informasi Budget Category' }} - {{ getMonthName(prApprovalBudgetInfo.current_month) }} {{ prApprovalBudgetInfo.current_year }}
@@ -4381,6 +4664,10 @@ watch(locale, () => {
                                 </div>
                                 <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
                                     (Budget - Approved - Unapproved)
+                                    <br v-if="prApprovalBudgetInfo.retail_non_food_approved || prApprovalBudgetInfo.retail_non_food_pending" />
+                                    <span v-if="prApprovalBudgetInfo.retail_non_food_approved || prApprovalBudgetInfo.retail_non_food_pending" class="text-xs">
+                                        Termasuk Purchase Requisition & Retail Non Food
+                                    </span>
                                 </div>
                             </div>
                             <div class="bg-white dark:bg-gray-800 p-4 rounded-lg border-2 border-orange-300 dark:border-orange-600">
@@ -4417,6 +4704,9 @@ watch(locale, () => {
                                         <div class="text-sm font-bold text-green-800 dark:text-green-200">
                                             Rp {{ new Intl.NumberFormat('id-ID').format(prApprovalBudgetInfo.approved_amount || 0) }}
                                         </div>
+                                        <div v-if="prApprovalBudgetInfo.retail_non_food_approved" class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                                            (Termasuk Retail Non Food)
+                                        </div>
                                     </div>
                                 </div>
 
@@ -4429,6 +4719,35 @@ watch(locale, () => {
                                     <div class="text-right">
                                         <div class="text-sm font-bold text-yellow-800 dark:text-yellow-200">
                                             Rp {{ new Intl.NumberFormat('id-ID').format(prApprovalBudgetInfo.unapproved_amount || 0) }}
+                                        </div>
+                                        <div v-if="prApprovalBudgetInfo.retail_non_food_pending" class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                                            (Termasuk Retail Non Food)
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Retail Non Food Approved -->
+                                <div v-if="prApprovalBudgetInfo.retail_non_food_approved" class="flex items-center justify-between p-3 bg-teal-50 dark:bg-teal-900/20 rounded-lg border border-teal-200 dark:border-teal-700">
+                                    <div class="flex items-center">
+                                        <i class="fa fa-store text-teal-600 dark:text-teal-400 mr-2"></i>
+                                        <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Retail Non Food (Approved)</span>
+                                    </div>
+                                    <div class="text-right">
+                                        <div class="text-sm font-bold text-teal-800 dark:text-teal-200">
+                                            Rp {{ new Intl.NumberFormat('id-ID').format(prApprovalBudgetInfo.retail_non_food_approved || 0) }}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Retail Non Food Pending -->
+                                <div v-if="prApprovalBudgetInfo.retail_non_food_pending" class="flex items-center justify-between p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg border border-amber-200 dark:border-amber-700">
+                                    <div class="flex items-center">
+                                        <i class="fa fa-store text-amber-600 dark:text-amber-400 mr-2"></i>
+                                        <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Retail Non Food (Pending)</span>
+                                    </div>
+                                    <div class="text-right">
+                                        <div class="text-sm font-bold text-amber-800 dark:text-amber-200">
+                                            Rp {{ new Intl.NumberFormat('id-ID').format(prApprovalBudgetInfo.retail_non_food_pending || 0) }}
                                         </div>
                                     </div>
                                 </div>
@@ -4491,8 +4810,111 @@ watch(locale, () => {
                         </div>
                     </div>
 
-                    <!-- Items -->
-                    <div v-if="selectedPrApproval.items && selectedPrApproval.items.length > 0" class="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
+                    <!-- Travel Application Specific Fields -->
+                    <div v-if="selectedPrApproval.mode === 'travel_application' && prModeSpecificData" class="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
+                        <h4 class="text-md font-semibold text-gray-900 dark:text-white mb-3">
+                            <i class="fa fa-plane mr-2 text-purple-500"></i>
+                            Informasi Perjalanan Dinas
+                        </h4>
+                        <div class="space-y-4">
+                            <div v-if="prModeSpecificData.travel_outlets && prModeSpecificData.travel_outlets.length > 0">
+                                <div class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Outlet Tujuan Perjalanan Dinas</div>
+                                <div class="flex flex-wrap gap-2">
+                                    <span v-for="outlet in prModeSpecificData.travel_outlets" :key="outlet.id"
+                                          class="inline-flex items-center px-3 py-1 rounded-full text-sm bg-purple-100 text-purple-800">
+                                        <i class="fa fa-store mr-2"></i>
+                                        {{ outlet.name }}
+                                    </span>
+                                </div>
+                            </div>
+                            <div v-if="prModeSpecificData.travel_agenda">
+                                <div class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Agenda Kerja</div>
+                                <div class="text-gray-900 dark:text-white bg-white dark:bg-gray-800 p-3 rounded-lg border border-gray-200 dark:border-gray-600 whitespace-pre-wrap">{{ prModeSpecificData.travel_agenda }}</div>
+                            </div>
+                            <div v-if="prModeSpecificData.travel_notes">
+                                <div class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Notes</div>
+                                <div class="text-gray-900 dark:text-white bg-white dark:bg-gray-800 p-3 rounded-lg border border-gray-200 dark:border-gray-600 whitespace-pre-wrap">{{ prModeSpecificData.travel_notes }}</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Kasbon Specific Fields -->
+                    <div v-if="selectedPrApproval.mode === 'kasbon' && prModeSpecificData" class="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
+                        <h4 class="text-md font-semibold text-gray-900 dark:text-white mb-3">
+                            <i class="fa fa-money-bill-wave mr-2 text-orange-500"></i>
+                            Informasi Kasbon
+                        </h4>
+                        <div class="space-y-4">
+                            <div>
+                                <div class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Nilai Kasbon</div>
+                                <div class="text-lg font-semibold text-gray-900 dark:text-white">
+                                    Rp {{ new Intl.NumberFormat('id-ID').format(prModeSpecificData.kasbon_amount || 0) }}
+                                </div>
+                            </div>
+                            <div v-if="prModeSpecificData.kasbon_reason">
+                                <div class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Reason / Alasan Kasbon</div>
+                                <div class="text-gray-900 dark:text-white bg-white dark:bg-gray-800 p-3 rounded-lg border border-gray-200 dark:border-gray-600 whitespace-pre-wrap">{{ prModeSpecificData.kasbon_reason }}</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Items - Grouped by Outlet and Category for pr_ops and purchase_payment -->
+                    <!-- Also handle old data: if mode is null/undefined, check if items have outlet_id/category_id to determine display -->
+                    <div v-if="selectedPrApproval.items && selectedPrApproval.items.length > 0 && (['pr_ops', 'purchase_payment'].includes(selectedPrApproval.mode) || (!selectedPrApproval.mode && selectedPrApproval.items.some(item => item.outlet_id || item.category_id)))" class="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
+                        <h4 class="text-md font-semibold text-gray-900 dark:text-white mb-3">Items</h4>
+                        <div class="space-y-6">
+                            <div v-for="(outletGroup, outletId) in getGroupedItems(selectedPrApproval.items)" :key="outletId" class="bg-white dark:bg-gray-800 p-4 rounded-lg border border-gray-200 dark:border-gray-600">
+                                <h5 class="text-sm font-semibold text-gray-900 dark:text-white mb-3 flex items-center">
+                                    <i class="fa fa-store mr-2 text-blue-500"></i>
+                                    Outlet: {{ outletGroup.outlet_name }}
+                                </h5>
+                                <div class="space-y-4">
+                                    <div v-for="(categoryGroup, categoryId) in outletGroup.categories" :key="categoryId" class="ml-4 border-l-2 border-gray-300 dark:border-gray-600 pl-4">
+                                        <h6 class="text-xs font-semibold text-gray-700 dark:text-gray-400 mb-2">
+                                            <i class="fa fa-tag mr-1"></i>
+                                            Category: {{ categoryGroup.category_name }}
+                                        </h6>
+                                        <div class="overflow-x-auto">
+                                            <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-600">
+                                                <thead class="bg-gray-100 dark:bg-gray-600">
+                                                    <tr>
+                                                        <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Item Name</th>
+                                                        <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Qty</th>
+                                                        <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Unit</th>
+                                                        <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Unit Price</th>
+                                                        <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Subtotal</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-600">
+                                                    <tr v-for="item in categoryGroup.items" :key="item.id">
+                                                        <td class="px-3 py-2 text-sm text-gray-900 dark:text-white">
+                                                            {{ item.item_name }}
+                                                            <div v-if="item.item_type === 'allowance' && item.allowance_recipient_name" class="text-xs text-gray-500 mt-1">
+                                                                <i class="fa fa-user mr-1"></i>
+                                                                Penerima: {{ item.allowance_recipient_name }}
+                                                                <span v-if="item.allowance_account_number"> | No. Rek: {{ item.allowance_account_number }}</span>
+                                                            </div>
+                                                            <div v-if="item.item_type === 'others' && item.others_notes" class="text-xs text-gray-500 mt-1">
+                                                                <i class="fa fa-sticky-note mr-1"></i>
+                                                                Notes: {{ item.others_notes }}
+                                                            </div>
+                                                        </td>
+                                                        <td class="px-3 py-2 text-sm text-gray-900 dark:text-white">{{ item.qty }}</td>
+                                                        <td class="px-3 py-2 text-sm text-gray-900 dark:text-white">{{ item.unit }}</td>
+                                                        <td class="px-3 py-2 text-sm text-gray-900 dark:text-white">Rp {{ new Intl.NumberFormat('id-ID').format(item.unit_price) }}</td>
+                                                        <td class="px-3 py-2 text-sm text-gray-900 dark:text-white text-right">Rp {{ new Intl.NumberFormat('id-ID').format(item.subtotal) }}</td>
+                                                    </tr>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Items - Simple table for other modes (travel_application) or old data without mode -->
+                    <div v-if="selectedPrApproval.items && selectedPrApproval.items.length > 0 && !['pr_ops', 'purchase_payment', 'kasbon'].includes(selectedPrApproval.mode) && (!selectedPrApproval.mode || !selectedPrApproval.items.some(item => item.outlet_id || item.category_id))" class="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
                         <h4 class="text-md font-semibold text-gray-900 dark:text-white mb-3">Items</h4>
                         <div class="overflow-x-auto">
                             <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-600">
@@ -4507,7 +4929,18 @@ watch(locale, () => {
                                 </thead>
                                 <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-600">
                                     <tr v-for="item in selectedPrApproval.items" :key="item.id">
-                                        <td class="px-4 py-2 text-sm text-gray-900 dark:text-white">{{ item.item_name }}</td>
+                                        <td class="px-4 py-2 text-sm text-gray-900 dark:text-white">
+                                            {{ item.item_name }}
+                                            <div v-if="item.item_type === 'allowance' && item.allowance_recipient_name" class="text-xs text-gray-500 mt-1">
+                                                <i class="fa fa-user mr-1"></i>
+                                                Penerima: {{ item.allowance_recipient_name }}
+                                                <span v-if="item.allowance_account_number"> | No. Rek: {{ item.allowance_account_number }}</span>
+                                            </div>
+                                            <div v-if="item.item_type === 'others' && item.others_notes" class="text-xs text-gray-500 mt-1">
+                                                <i class="fa fa-sticky-note mr-1"></i>
+                                                Notes: {{ item.others_notes }}
+                                            </div>
+                                        </td>
                                         <td class="px-4 py-2 text-sm text-gray-900 dark:text-white">{{ item.qty }}</td>
                                         <td class="px-4 py-2 text-sm text-gray-900 dark:text-white">{{ item.unit }}</td>
                                         <td class="px-4 py-2 text-sm text-gray-900 dark:text-white">Rp {{ new Intl.NumberFormat('id-ID').format(item.unit_price) }}</td>
@@ -4518,8 +4951,83 @@ watch(locale, () => {
                         </div>
                     </div>
 
-                    <!-- Attachments -->
-                    <div v-if="selectedPrApproval.attachments && selectedPrApproval.attachments.length > 0" class="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
+                    <!-- Attachments - Grouped by Outlet for pr_ops and purchase_payment -->
+                    <!-- Also handle old data: if mode is null/undefined, check if attachments have outlet_id to determine display -->
+                    <div v-if="selectedPrApproval.attachments && selectedPrApproval.attachments.length > 0 && (['pr_ops', 'purchase_payment'].includes(selectedPrApproval.mode) || (!selectedPrApproval.mode && selectedPrApproval.attachments.some(att => att.outlet_id)))" class="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
+                        <h4 class="text-md font-semibold text-gray-900 dark:text-white mb-3 flex items-center">
+                            <i class="fa fa-paperclip mr-2 text-blue-500"></i>
+                            Attachments
+                            <span class="ml-2 bg-blue-100 text-blue-800 text-xs font-medium px-2.5 py-0.5 rounded-full">
+                                {{ selectedPrApproval.attachments.length }}
+                            </span>
+                        </h4>
+                        
+                        <div class="space-y-4">
+                            <div v-for="(outletGroup, outletId) in getGroupedAttachments(selectedPrApproval.attachments)" :key="outletId" class="bg-white dark:bg-gray-800 p-4 rounded-lg border border-gray-200 dark:border-gray-600">
+                                <h5 class="text-sm font-semibold text-gray-900 dark:text-white mb-3 flex items-center">
+                                    <i class="fa fa-store mr-2 text-blue-500"></i>
+                                    Outlet: {{ outletGroup.outlet_name }}
+                                    <span class="ml-2 bg-gray-100 text-gray-800 text-xs font-medium px-2 py-0.5 rounded-full">
+                                        {{ outletGroup.attachments.length }}
+                                    </span>
+                                </h5>
+                                <div class="space-y-3">
+                                    <div
+                                        v-for="attachment in outletGroup.attachments"
+                                        :key="attachment.id"
+                                        class="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors"
+                                    >
+                                        <div class="flex items-center space-x-3">
+                                            <!-- Image Thumbnail -->
+                                            <div v-if="isImageFile(attachment.file_name)" class="relative">
+                                                <img
+                                                    :src="`/purchase-requisitions/attachments/${attachment.id}/view`"
+                                                    :alt="attachment.file_name"
+                                                    class="w-12 h-12 object-cover rounded-lg border border-gray-300 dark:border-gray-600 cursor-pointer hover:opacity-80 transition-opacity"
+                                                    @click="openLightbox(attachment)"
+                                                    @error="$event.target.style.display='none'; $event.target.nextElementSibling.style.display='block'"
+                                                />
+                                                <i :class="getFileIcon(attachment.file_name)" class="text-lg absolute inset-0 flex items-center justify-center bg-gray-100 dark:bg-gray-700 rounded-lg" style="display: none;"></i>
+                                            </div>
+                                            <!-- File Icon for non-images -->
+                                            <i v-else :class="getFileIcon(attachment.file_name)" class="text-lg"></i>
+                                            
+                                            <div>
+                                                <p class="text-sm font-medium text-gray-900 dark:text-white">{{ attachment.file_name }}</p>
+                                                <div class="flex items-center space-x-4 text-xs text-gray-500 dark:text-gray-400">
+                                                    <span>{{ formatFileSize(attachment.file_size) }}</span>
+                                                    <span>•</span>
+                                                    <span>Uploaded by {{ attachment.uploader?.nama_lengkap || 'Unknown User' }}</span>
+                                                    <span>•</span>
+                                                    <span>{{ formatDate(attachment.created_at) }}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="flex items-center space-x-2">
+                                            <button
+                                                v-if="isImageFile(attachment.file_name)"
+                                                @click="openLightbox(attachment)"
+                                                class="p-2 text-green-600 hover:text-green-800 hover:bg-green-100 dark:hover:bg-green-900 rounded-md transition-colors"
+                                                title="View Image"
+                                            >
+                                                <i class="fa fa-eye"></i>
+                                            </button>
+                                            <button
+                                                @click="downloadFile(attachment)"
+                                                class="p-2 text-blue-600 hover:text-blue-800 hover:bg-blue-100 dark:hover:bg-blue-900 rounded-md transition-colors"
+                                                title="Download"
+                                            >
+                                                <i class="fa fa-download"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Attachments - Simple list for other modes or old data without outlet_id -->
+                    <div v-if="selectedPrApproval.attachments && selectedPrApproval.attachments.length > 0 && !['pr_ops', 'purchase_payment'].includes(selectedPrApproval.mode) && (!selectedPrApproval.mode || !selectedPrApproval.attachments.some(att => att.outlet_id))" class="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
                         <h4 class="text-md font-semibold text-gray-900 dark:text-white mb-3 flex items-center">
                             <i class="fa fa-paperclip mr-2 text-blue-500"></i>
                             Attachments
@@ -4764,6 +5272,155 @@ watch(locale, () => {
                         <i class="fa fa-check mr-2"></i>Approve
                     </button>
                     <button @click="showRejectCategoryCostModal(selectedCategoryCostApproval.header.id)" 
+                            class="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors">
+                        <i class="fa fa-times mr-2"></i>Reject
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Outlet Stock Adjustment Approval Detail Modal -->
+        <div v-if="showStockAdjustmentApprovalModal && selectedStockAdjustmentApproval && selectedStockAdjustmentApproval.adjustment" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click="showStockAdjustmentApprovalModal = false">
+            <div class="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-4xl mx-4 max-h-[90vh] overflow-y-auto" @click.stop>
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-lg font-medium text-gray-900 dark:text-white">
+                        <i class="fa fa-adjust mr-2 text-teal-500"></i>
+                        Detail Outlet Stock Adjustment
+                    </h3>
+                    <button @click="showStockAdjustmentApprovalModal = false" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                        <i class="fa-solid fa-times text-xl"></i>
+                    </button>
+                </div>
+
+                <div class="space-y-6" v-if="selectedStockAdjustmentApproval.adjustment">
+                    <!-- Basic Information -->
+                    <div class="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
+                        <h4 class="text-md font-semibold text-gray-900 dark:text-white mb-3">Informasi Dasar</h4>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <div class="text-sm font-medium text-gray-700 dark:text-gray-300">Number</div>
+                                <div class="text-lg font-semibold text-gray-900 dark:text-white">{{ selectedStockAdjustmentApproval.adjustment.number }}</div>
+                            </div>
+                            <div>
+                                <div class="text-sm font-medium text-gray-700 dark:text-gray-300">Tanggal</div>
+                                <div class="text-gray-900 dark:text-white">{{ formatDate(selectedStockAdjustmentApproval.adjustment.date) }}</div>
+                            </div>
+                            <div>
+                                <div class="text-sm font-medium text-gray-700 dark:text-gray-300">Tipe</div>
+                                <div class="text-gray-900 dark:text-white">
+                                    <span :class="selectedStockAdjustmentApproval.adjustment.type === 'in' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'" class="px-2 py-1 rounded-full text-xs font-medium">
+                                        {{ selectedStockAdjustmentApproval.adjustment.type === 'in' ? 'Stock In' : 'Stock Out' }}
+                                    </span>
+                                </div>
+                            </div>
+                            <div>
+                                <div class="text-sm font-medium text-gray-700 dark:text-gray-300">Status</div>
+                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                                    {{ selectedStockAdjustmentApproval.adjustment.status }}
+                                </span>
+                            </div>
+                            <div>
+                                <div class="text-sm font-medium text-gray-700 dark:text-gray-300">Outlet</div>
+                                <div class="text-gray-900 dark:text-white">{{ selectedStockAdjustmentApproval.adjustment.nama_outlet }}</div>
+                            </div>
+                            <div>
+                                <div class="text-sm font-medium text-gray-700 dark:text-gray-300">Warehouse Outlet</div>
+                                <div class="text-gray-900 dark:text-white">{{ selectedStockAdjustmentApproval.adjustment.warehouse_outlet_name }}</div>
+                            </div>
+                            <div>
+                                <div class="text-sm font-medium text-gray-700 dark:text-gray-300">Dibuat Oleh</div>
+                                <div class="text-gray-900 dark:text-white">{{ selectedStockAdjustmentApproval.adjustment.creator_name }}</div>
+                            </div>
+                        </div>
+                        <div v-if="selectedStockAdjustmentApproval.adjustment.reason" class="mt-4">
+                            <div class="text-sm font-medium text-gray-700 dark:text-gray-300">Alasan / Catatan</div>
+                            <div class="text-gray-900 dark:text-white mt-1">{{ selectedStockAdjustmentApproval.adjustment.reason }}</div>
+                        </div>
+                    </div>
+
+                    <!-- Items -->
+                    <div v-if="selectedStockAdjustmentApproval.items && selectedStockAdjustmentApproval.items.length > 0" class="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
+                        <h4 class="text-md font-semibold text-gray-900 dark:text-white mb-3">Items</h4>
+                        <div class="overflow-x-auto">
+                            <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-600">
+                                <thead class="bg-gray-100 dark:bg-gray-600">
+                                    <tr>
+                                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Item Name</th>
+                                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Qty</th>
+                                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Unit</th>
+                                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Note</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-600">
+                                    <tr v-for="item in selectedStockAdjustmentApproval.items" :key="item.id">
+                                        <td class="px-4 py-2 text-sm text-gray-900 dark:text-white">{{ item.item_name }}</td>
+                                        <td class="px-4 py-2 text-sm text-gray-900 dark:text-white">{{ item.qty }}</td>
+                                        <td class="px-4 py-2 text-sm text-gray-900 dark:text-white">{{ item.unit }}</td>
+                                        <td class="px-4 py-2 text-sm text-gray-900 dark:text-white">{{ item.note || '-' }}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Approval Flow -->
+                    <div v-if="selectedStockAdjustmentApproval.approval_flows && selectedStockAdjustmentApproval.approval_flows.length > 0" class="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
+                        <h4 class="text-md font-semibold text-gray-900 dark:text-white mb-3">
+                            <i class="fa fa-users mr-2 text-blue-500"></i>
+                            Approval Flow
+                        </h4>
+                        <div class="space-y-3">
+                            <div v-for="flow in selectedStockAdjustmentApproval.approval_flows" :key="flow.id"
+                                class="flex items-center justify-between p-3 bg-white dark:bg-gray-800 rounded-lg border"
+                                :class="{
+                                    'border-green-500': flow.status === 'APPROVED',
+                                    'border-red-500': flow.status === 'REJECTED',
+                                    'border-yellow-500': flow.status === 'PENDING'
+                                }">
+                                <div class="flex items-center space-x-3">
+                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                        Level {{ flow.approval_level }}
+                                    </span>
+                                    <div>
+                                        <div class="font-medium text-gray-900 dark:text-white">{{ flow.nama_lengkap }}</div>
+                                        <div class="text-sm text-gray-600 dark:text-gray-400">{{ flow.email }}</div>
+                                        <div v-if="flow.nama_jabatan" class="text-xs text-blue-600 font-medium">{{ flow.nama_jabatan }}</div>
+                                    </div>
+                                </div>
+                                <div class="text-right">
+                                    <div class="text-sm font-medium" :class="{
+                                        'text-green-600': flow.status === 'APPROVED',
+                                        'text-red-600': flow.status === 'REJECTED',
+                                        'text-yellow-600': flow.status === 'PENDING'
+                                    }">
+                                        {{ flow.status }}
+                                    </div>
+                                    <div v-if="flow.approved_at" class="text-xs text-gray-500">
+                                        Approved: {{ new Date(flow.approved_at).toLocaleDateString('id-ID') }}
+                                    </div>
+                                    <div v-if="flow.rejected_at" class="text-xs text-gray-500">
+                                        Rejected: {{ new Date(flow.rejected_at).toLocaleDateString('id-ID') }}
+                                    </div>
+                                    <div v-if="flow.comments" class="text-xs text-gray-500 mt-1">
+                                        {{ flow.comments }}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="flex justify-end gap-3 mt-6 pt-4 border-t border-gray-200 dark:border-gray-600">
+                    <button @click="showStockAdjustmentApprovalModal = false" 
+                            class="px-4 py-2 text-gray-600 dark:text-gray-400 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                        Tutup
+                    </button>
+                    <button @click="approveStockAdjustment(selectedStockAdjustmentApproval.adjustment.id)" 
+                            class="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors">
+                        <i class="fa fa-check mr-2"></i>Approve
+                    </button>
+                    <button @click="showRejectStockAdjustmentModal(selectedStockAdjustmentApproval.adjustment.id)" 
                             class="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors">
                         <i class="fa fa-times mr-2"></i>Reject
                     </button>

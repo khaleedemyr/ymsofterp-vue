@@ -147,6 +147,101 @@
                 <input type="text" v-model="form.reason" class="mt-1 block w-full rounded-md border-gray-300" required />
               </div>
 
+              <!-- Approval Flow Section -->
+              <div class="mb-6">
+                <h3 class="text-lg font-medium text-gray-900 mb-4">Approval Flow <span class="text-red-500">*</span></h3>
+                <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-4">
+                  <div class="flex">
+                    <div class="flex-shrink-0">
+                      <i class="fa fa-info-circle text-yellow-400"></i>
+                    </div>
+                    <div class="ml-3">
+                      <p class="text-sm text-yellow-700">
+                        <strong>Catatan:</strong> Tambahkan Nama Regional dan Cost Control Manager sebagai approver.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                <p class="text-sm text-gray-600 mb-4">Tambahkan approvers minimal 1 orang. Urutan approval dari bawah ke atas (Level 1 = terendah, Level terakhir = tertinggi).</p>
+                
+                <!-- Add Approver Input -->
+                <div class="mb-4">
+                  <div class="relative">
+                    <input
+                      v-model="approverSearch"
+                      type="text"
+                      placeholder="Search users by name, email, or jabatan..."
+                      class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      @input="loadApprovers(approverSearch)"
+                      @focus="approverSearch.length >= 2 && loadApprovers(approverSearch)"
+                    />
+                    
+                    <!-- Dropdown Results -->
+                    <div v-if="showApproverDropdown && approverResults.length > 0" class="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                      <div
+                        v-for="user in approverResults"
+                        :key="user.id"
+                        @click="addApprover(user)"
+                        class="px-3 py-2 hover:bg-gray-100 cursor-pointer border-b border-gray-200 last:border-b-0"
+                      >
+                        <div class="font-medium">{{ user.name }}</div>
+                        <div class="text-sm text-gray-600">{{ user.email }}</div>
+                        <div v-if="user.jabatan" class="text-xs text-blue-600 font-medium">{{ user.jabatan }}</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Approvers List -->
+                <div v-if="form.approvers.length > 0" class="space-y-2">
+                  <h4 class="font-medium text-gray-700">Approval Order (Lowest to Highest):</h4>
+                  
+                  <div
+                    v-for="(approver, index) in form.approvers"
+                    :key="approver.id"
+                    class="flex items-center justify-between p-3 rounded-md bg-gray-50 border border-gray-200"
+                  >
+                    <div class="flex items-center space-x-3">
+                      <div class="flex items-center space-x-2">
+                        <button
+                          v-if="index > 0"
+                          @click="reorderApprover(index, index - 1)"
+                          class="p-1 text-gray-500 hover:text-gray-700"
+                          title="Move Up"
+                        >
+                          <i class="fa fa-arrow-up"></i>
+                        </button>
+                        <button
+                          v-if="index < form.approvers.length - 1"
+                          @click="reorderApprover(index, index + 1)"
+                          class="p-1 text-gray-500 hover:text-gray-700"
+                          title="Move Down"
+                        >
+                          <i class="fa fa-arrow-down"></i>
+                        </button>
+                      </div>
+                      <div class="flex items-center space-x-2">
+                        <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                          Level {{ index + 1 }}
+                        </span>
+                        <div>
+                          <div class="font-medium">{{ approver.name }}</div>
+                          <div class="text-sm text-gray-600">{{ approver.email }}</div>
+                          <div v-if="approver.jabatan" class="text-xs text-blue-600 font-medium">{{ approver.jabatan }}</div>
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      @click="removeApprover(index)"
+                      class="p-1 text-red-500 hover:text-red-700"
+                      title="Remove Approver"
+                    >
+                      <i class="fa fa-times"></i>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
               <div class="flex justify-end gap-3">
                 <Link
                   :href="route('outlet-food-inventory-adjustment.index')"
@@ -181,6 +276,8 @@ import AppLayout from '@/Layouts/AppLayout.vue'
 import Swal from 'sweetalert2'
 import axios from 'axios'
 
+const page = usePage()
+
 const props = defineProps({
   outlets: Array,
   items: Array,
@@ -205,11 +302,10 @@ const form = useForm({
   reason: '',
   items: [newItem()],
   warehouse_outlet_id: '',
+  approvers: [],
 })
 
 console.log('Form initialized with outlet_id:', form.outlet_id);
-
-const page = usePage();
 
 console.log('Page props auth user:', page.props.auth.user);
 console.log('Region ID from page props:', page.props.auth.user.region_id);
@@ -231,6 +327,55 @@ function newItem() {
 }
 
 const loading = ref(false);
+
+// Approvers
+const approverSearch = ref('')
+const approverResults = ref([])
+const showApproverDropdown = ref(false)
+
+const loadApprovers = async (search = '') => {
+  if (search.length < 2) {
+    approverResults.value = []
+    showApproverDropdown.value = false
+    return
+  }
+  
+  try {
+    const response = await axios.get('/outlet-food-inventory-adjustment/approvers', {
+      params: { search },
+      headers: {
+        'X-Requested-With': 'XMLHttpRequest',
+        'Accept': 'application/json'
+      }
+    })
+    
+    if (response.data.success) {
+      approverResults.value = response.data.users
+      showApproverDropdown.value = true
+    }
+  } catch (error) {
+    console.error('Failed to load approvers:', error)
+    approverResults.value = []
+  }
+}
+
+const addApprover = (user) => {
+  // Check if user already exists
+  if (!form.approvers.find(approver => approver.id === user.id)) {
+    form.approvers.push(user)
+  }
+  approverSearch.value = ''
+  showApproverDropdown.value = false
+}
+
+const removeApprover = (index) => {
+  form.approvers.splice(index, 1)
+}
+
+const reorderApprover = (fromIndex, toIndex) => {
+  const approver = form.approvers.splice(fromIndex, 1)[0]
+  form.approvers.splice(toIndex, 0, approver)
+}
 
 // Watch for outlet_id changes and load warehouse outlets
 watch(() => form.outlet_id, async (newOutletId) => {
@@ -413,6 +558,14 @@ function validateAndSubmit() {
     });
     return;
   }
+  if (!form.approvers || form.approvers.length === 0) {
+    Swal.fire({
+      icon: 'error',
+      title: 'Validasi Gagal',
+      text: 'Approver wajib diisi minimal 1 orang.'
+    });
+    return;
+  }
   Swal.fire({
     title: 'Konfirmasi Simpan',
     text: 'Apakah Anda yakin ingin menyimpan outlet stock adjustment ini?',
@@ -423,12 +576,59 @@ function validateAndSubmit() {
     showLoaderOnConfirm: true,
     preConfirm: () => {
       loading.value = true;
-      return form.post(route('outlet-food-inventory-adjustment.store'), {
-        onSuccess: () => {
+      // Prepare form data - convert approvers array to IDs array for backend
+      const formData = {
+        ...form.data(),
+        approvers: form.approvers.map(a => a.id)
+      };
+      return form.transform(() => formData).post(route('outlet-food-inventory-adjustment.store'), {
+        onSuccess: (page) => {
+          // Check for error in flash message (in case of validation errors)
+          if (page.props.flash?.error) {
+            Swal.fire({
+              icon: 'error',
+              title: 'Gagal Menyimpan Data',
+              html: page.props.flash.error,
+              confirmButtonText: 'OK',
+              confirmButtonColor: '#EF4444',
+              width: '600px'
+            });
+            loading.value = false;
+            return;
+          }
           Swal.fire('Berhasil', 'Outlet stock adjustment berhasil disimpan!', 'success');
         },
-        onError: (err) => {
-          Swal.fire('Gagal', err?.error || 'Gagal menyimpan data', 'error');
+        onError: (errors) => {
+          // Construct error message from validation errors or general error
+          let errorMessage = 'Gagal menyimpan data.';
+          
+          if (errors.error) {
+            errorMessage = errors.error;
+          } else if (typeof errors === 'string') {
+            errorMessage = errors;
+          } else if (typeof errors === 'object') {
+            // Handle validation errors
+            const errorMessages = [];
+            for (const key in errors) {
+              if (Array.isArray(errors[key])) {
+                errorMessages.push(...errors[key]);
+              } else {
+                errorMessages.push(errors[key]);
+              }
+            }
+            if (errorMessages.length > 0) {
+              errorMessage = errorMessages.join('<br>');
+            }
+          }
+          
+          Swal.fire({
+            icon: 'error',
+            title: 'Gagal Menyimpan Data',
+            html: errorMessage,
+            confirmButtonText: 'OK',
+            confirmButtonColor: '#EF4444',
+            width: '600px'
+          });
         },
         onFinish: () => {
           loading.value = false;
@@ -438,6 +638,20 @@ function validateAndSubmit() {
     allowOutsideClick: () => !Swal.isLoading()
   });
 }
+
+// Handle flash messages from backend
+watch(() => page.props.flash, (flash) => {
+  if (flash?.error) {
+    Swal.fire({
+      icon: 'error',
+      title: 'Gagal Menyimpan Data',
+      html: flash.error,
+      confirmButtonText: 'OK',
+      confirmButtonColor: '#EF4444',
+      width: '600px'
+    });
+  }
+}, { immediate: true })
 </script>
 
 <style scoped>

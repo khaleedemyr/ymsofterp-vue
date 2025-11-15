@@ -234,17 +234,17 @@
 
           <!-- PO/PR Items Grouped by Outlet -->
           <div v-if="itemsByOutlet && Object.keys(itemsByOutlet).length > 0">
-            <h3 class="text-lg font-semibold text-gray-800 mb-4">Items {{ selectedPO ? 'per Outlet' : '' }}</h3>
+            <h3 class="text-lg font-semibold text-gray-800 mb-4">Items {{ selectedPO ? 'per Outlet' : (selectedPR ? 'per Outlet & Category' : '') }}</h3>
             
-            <div v-for="(outletData, outletId) in itemsByOutlet" :key="outletId" class="mb-6">
+            <div v-for="(outletData, outletKey) in itemsByOutlet" :key="outletKey" class="mb-6">
               <!-- Outlet Header -->
               <div class="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-4 mb-3">
                 <div class="flex justify-between items-start">
                   <div>
-                    <h4 class="text-lg font-semibold text-blue-800">{{ outletData.outlet_name }}</h4>
+                    <h4 class="text-lg font-semibold text-blue-800">{{ outletData.outlet_name || 'Global / All Outlets' }}</h4>
                     <div class="text-sm text-blue-600 mt-1">
                       <span v-if="outletData.category_name" class="inline-block bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-xs mr-2">
-                        {{ outletData.category_name }}
+                        Category: {{ outletData.category_name }}
                       </span>
                       <span v-if="outletData.category_division" class="inline-block bg-indigo-100 text-indigo-800 px-2 py-1 rounded-full text-xs mr-2">
                         {{ outletData.category_division }}

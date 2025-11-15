@@ -190,14 +190,14 @@ class NonFoodPaymentController extends Controller
             ->limit(50)
             ->get();
 
-        // Get available Purchase Requisitions (mode purchase_payment) that don't have payments yet
+        // Get available Purchase Requisitions (mode purchase_payment, travel_application, kasbon) that don't have payments yet
         $prQuery = DB::table('purchase_requisitions as pr')
             ->leftJoin('non_food_payments as nfp', function($join) {
                 $join->on('pr.id', '=', 'nfp.purchase_requisition_id')
                      ->where('nfp.status', '!=', 'cancelled');
             })
             ->where('pr.status', 'APPROVED')
-            ->where('pr.mode', 'purchase_payment')
+            ->whereIn('pr.mode', ['purchase_payment', 'travel_application', 'kasbon'])
             ->whereNull('nfp.id')
             ->select(
                 'pr.id',
@@ -462,8 +462,10 @@ class NonFoodPaymentController extends Controller
                 return response()->json(['error' => 'Purchase Requisition not found'], 404);
             }
 
-            // Get PR items
+            // Get PR items with outlet and category info (for new structure)
             $items = DB::table('purchase_requisition_items as pri')
+                ->leftJoin('tbl_data_outlet as o', 'pri.outlet_id', '=', 'o.id_outlet')
+                ->leftJoin('purchase_requisition_categories as prc', 'pri.category_id', '=', 'prc.id')
                 ->where('pri.purchase_requisition_id', $prId)
                 ->select(
                     'pri.id',
@@ -471,13 +473,25 @@ class NonFoodPaymentController extends Controller
                     'pri.qty as quantity',
                     'pri.unit',
                     'pri.unit_price as price',
-                    'pri.subtotal as total'
+                    'pri.subtotal as total',
+                    'pri.outlet_id',
+                    'pri.category_id',
+                    'pri.item_type',
+                    'pri.allowance_recipient_name',
+                    'pri.allowance_account_number',
+                    'pri.others_notes',
+                    'o.nama_outlet as item_outlet_name',
+                    'prc.name as item_category_name',
+                    'prc.division as item_category_division',
+                    'prc.subcategory as item_category_subcategory',
+                    'prc.budget_type as item_category_budget_type'
                 )
                 ->get();
 
-            // Get PR attachments
+            // Get PR attachments with outlet info (for new structure)
             $prAttachments = DB::table('purchase_requisition_attachments as pra')
                 ->leftJoin('users as u', 'pra.uploaded_by', '=', 'u.id')
+                ->leftJoin('tbl_data_outlet as o', 'pra.outlet_id', '=', 'o.id_outlet')
                 ->where('pra.purchase_requisition_id', $prId)
                 ->select(
                     'pra.id',
@@ -486,50 +500,143 @@ class NonFoodPaymentController extends Controller
                     'pra.mime_type as file_type',
                     'pra.file_size',
                     'pra.created_at',
-                    'u.nama_lengkap as uploader_name'
+                    'pra.outlet_id as attachment_outlet_id',
+                    'u.nama_lengkap as uploader_name',
+                    'o.nama_outlet as attachment_outlet_name'
                 )
                 ->get();
 
-            // Group items by outlet (for PR, typically single outlet or global)
+            // Check if this is new structure (items have outlet_id/category_id) or old structure
+            $hasNewStructure = $items->whereNotNull('outlet_id')->count() > 0 || 
+                              $items->whereNotNull('category_id')->count() > 0;
+            
             $itemsByOutlet = [];
             
-            $outletId = $pr->outlet_id ?? 'global';
-            $outletName = $pr->outlet_name ?? 'Global / All Outlets';
-            
-            $itemsByOutlet[$outletId] = [
-                'outlet_id' => $pr->outlet_id,
-                'outlet_name' => $outletName,
-                'category_id' => $pr->category_id,
-                'category_name' => $pr->category_name,
-                'category_division' => $pr->category_division,
-                'category_subcategory' => $pr->category_subcategory,
-                'category_budget_type' => $pr->category_budget_type,
-                'pr_number' => $pr->pr_number,
-                'pr_title' => $pr->title,
-                'pr_description' => $pr->description,
-                'pr_attachments' => $prAttachments->map(function ($attachment) {
-                    return [
-                        'id' => $attachment->id,
-                        'file_name' => $attachment->file_name,
-                        'file_path' => $attachment->file_path,
-                        'file_type' => $attachment->file_type,
-                        'file_size' => $attachment->file_size,
-                        'created_at' => $attachment->created_at,
-                        'uploader_name' => $attachment->uploader_name
+            if ($hasNewStructure && in_array($pr->mode, ['pr_ops', 'purchase_payment'])) {
+                // New structure: Group items by outlet and category
+                $grouped = $items->groupBy(function($item) {
+                    $outletId = $item->outlet_id ?? 'no-outlet';
+                    $categoryId = $item->category_id ?? 'no-category';
+                    return $outletId . '-' . $categoryId;
+                });
+                
+                foreach ($grouped as $key => $groupItems) {
+                    $firstItem = $groupItems->first();
+                    $outletId = $firstItem->outlet_id ?? $pr->outlet_id ?? 'global';
+                    $categoryId = $firstItem->category_id ?? $pr->category_id;
+                    
+                    // Get outlet name
+                    $outletName = $firstItem->item_outlet_name ?? $pr->outlet_name ?? 'Global / All Outlets';
+                    
+                    // Get category info
+                    $categoryName = $firstItem->item_category_name ?? $pr->category_name;
+                    $categoryDivision = $firstItem->item_category_division ?? $pr->category_division;
+                    $categorySubcategory = $firstItem->item_category_subcategory ?? $pr->category_subcategory;
+                    $categoryBudgetType = $firstItem->item_category_budget_type ?? $pr->category_budget_type;
+                    
+                    // Get attachments for this outlet
+                    $outletAttachments = $prAttachments->where('attachment_outlet_id', $outletId)->values();
+                    
+                    $itemsByOutlet[$outletId . '-' . $categoryId] = [
+                        'outlet_id' => $outletId,
+                        'outlet_name' => $outletName,
+                        'category_id' => $categoryId,
+                        'category_name' => $categoryName,
+                        'category_division' => $categoryDivision,
+                        'category_subcategory' => $categorySubcategory,
+                        'category_budget_type' => $categoryBudgetType,
+                        'pr_number' => $pr->pr_number,
+                        'pr_title' => $pr->title,
+                        'pr_description' => $pr->description,
+                        'pr_attachments' => $outletAttachments->map(function ($attachment) {
+                            return [
+                                'id' => $attachment->id,
+                                'file_name' => $attachment->file_name,
+                                'file_path' => $attachment->file_path,
+                                'file_type' => $attachment->file_type,
+                                'file_size' => $attachment->file_size,
+                                'created_at' => $attachment->created_at,
+                                'uploader_name' => $attachment->uploader_name
+                            ];
+                        }),
+                        'items' => $groupItems->map(function ($item) {
+                            // Format item_name for allowance type
+                            $itemName = $item->item_name;
+                            if ($item->item_type === 'allowance' && $item->allowance_recipient_name && $item->allowance_account_number) {
+                                $itemName = 'Allowance - ' . $item->allowance_recipient_name . ' - ' . $item->allowance_account_number;
+                            } elseif ($item->item_type === 'allowance' && $item->allowance_recipient_name) {
+                                $itemName = 'Allowance - ' . $item->allowance_recipient_name;
+                            }
+                            
+                            return [
+                                'id' => $item->id,
+                                'item_name' => $itemName,
+                                'quantity' => $item->quantity,
+                                'unit' => $item->unit,
+                                'price' => $item->price,
+                                'total' => $item->total,
+                                'item_type' => $item->item_type,
+                                'allowance_recipient_name' => $item->allowance_recipient_name,
+                                'allowance_account_number' => $item->allowance_account_number,
+                            ];
+                        }),
+                        'subtotal' => $groupItems->sum('total')
                     ];
-                }),
-                'items' => $items->map(function ($item) {
-                    return [
-                        'id' => $item->id,
-                        'item_name' => $item->item_name,
-                        'quantity' => $item->quantity,
-                        'unit' => $item->unit,
-                        'price' => $item->price,
-                        'total' => $item->total,
-                    ];
-                }),
-                'subtotal' => $items->sum('total')
-            ];
+                }
+            } else {
+                // Old structure or other modes: Group by main PR outlet/category
+                $outletId = $pr->outlet_id ?? 'global';
+                $outletName = $pr->outlet_name ?? 'Global / All Outlets';
+                
+                // Get all attachments (for old structure, no outlet_id in attachments)
+                $allAttachments = $prAttachments->values();
+                
+                $itemsByOutlet[$outletId] = [
+                    'outlet_id' => $pr->outlet_id,
+                    'outlet_name' => $outletName,
+                    'category_id' => $pr->category_id,
+                    'category_name' => $pr->category_name,
+                    'category_division' => $pr->category_division,
+                    'category_subcategory' => $pr->category_subcategory,
+                    'category_budget_type' => $pr->category_budget_type,
+                    'pr_number' => $pr->pr_number,
+                    'pr_title' => $pr->title,
+                    'pr_description' => $pr->description,
+                    'pr_attachments' => $allAttachments->map(function ($attachment) {
+                        return [
+                            'id' => $attachment->id,
+                            'file_name' => $attachment->file_name,
+                            'file_path' => $attachment->file_path,
+                            'file_type' => $attachment->file_type,
+                            'file_size' => $attachment->file_size,
+                            'created_at' => $attachment->created_at,
+                            'uploader_name' => $attachment->uploader_name
+                        ];
+                    }),
+                    'items' => $items->map(function ($item) {
+                        // Format item_name for allowance type
+                        $itemName = $item->item_name;
+                        if (isset($item->item_type) && $item->item_type === 'allowance' && $item->allowance_recipient_name && $item->allowance_account_number) {
+                            $itemName = 'Allowance - ' . $item->allowance_recipient_name . ' - ' . $item->allowance_account_number;
+                        } elseif (isset($item->item_type) && $item->item_type === 'allowance' && $item->allowance_recipient_name) {
+                            $itemName = 'Allowance - ' . $item->allowance_recipient_name;
+                        }
+                        
+                        return [
+                            'id' => $item->id,
+                            'item_name' => $itemName,
+                            'quantity' => $item->quantity,
+                            'unit' => $item->unit,
+                            'price' => $item->price,
+                            'total' => $item->total,
+                            'item_type' => $item->item_type ?? null,
+                            'allowance_recipient_name' => $item->allowance_recipient_name ?? null,
+                            'allowance_account_number' => $item->allowance_account_number ?? null,
+                        ];
+                    }),
+                    'subtotal' => $items->sum('total')
+                ];
+            }
 
             return response()->json([
                 'pr' => $pr,
@@ -946,7 +1053,30 @@ class NonFoodPaymentController extends Controller
                                     if (!$pr->items || $pr->items->isEmpty()) {
                                         $prItems = DB::table('purchase_requisition_items')
                                             ->where('purchase_requisition_id', $pr->id)
+                                            ->select('*', 'qty', 'unit_price', 'subtotal', 'item_type', 'allowance_recipient_name', 'allowance_account_number', 'others_notes')
                                             ->get();
+                                        
+                                        // Format item_name for allowance type
+                                        $prItems = $prItems->map(function ($item) {
+                                            if ($item->item_type === 'allowance' && $item->allowance_recipient_name && $item->allowance_account_number) {
+                                                $item->item_name = 'Allowance - ' . $item->allowance_recipient_name . ' - ' . $item->allowance_account_number;
+                                            } elseif ($item->item_type === 'allowance' && $item->allowance_recipient_name) {
+                                                $item->item_name = 'Allowance - ' . $item->allowance_recipient_name;
+                                            }
+                                            return $item;
+                                        });
+                                        
+                                        $pr->setRelation('items', $prItems);
+                                    } else {
+                                        // Format existing items if already loaded
+                                        $prItems = $pr->items->map(function ($item) {
+                                            if (isset($item->item_type) && $item->item_type === 'allowance' && isset($item->allowance_recipient_name) && isset($item->allowance_account_number) && $item->allowance_recipient_name && $item->allowance_account_number) {
+                                                $item->item_name = 'Allowance - ' . $item->allowance_recipient_name . ' - ' . $item->allowance_account_number;
+                                            } elseif (isset($item->item_type) && $item->item_type === 'allowance' && isset($item->allowance_recipient_name) && $item->allowance_recipient_name) {
+                                                $item->item_name = 'Allowance - ' . $item->allowance_recipient_name;
+                                            }
+                                            return $item;
+                                        });
                                         $pr->setRelation('items', $prItems);
                                     }
                                     // Set PR to payment for easy access in view
@@ -961,7 +1091,18 @@ class NonFoodPaymentController extends Controller
                 if ($items->isEmpty() && $payment->purchase_requisition_id) {
                     $prItems = DB::table('purchase_requisition_items')
                         ->where('purchase_requisition_id', $payment->purchase_requisition_id)
+                        ->select('*', 'qty', 'unit_price', 'subtotal', 'item_type', 'allowance_recipient_name', 'allowance_account_number', 'others_notes')
                         ->get();
+                    
+                    // Format item_name for allowance type
+                    $prItems = $prItems->map(function ($item) {
+                        if ($item->item_type === 'allowance' && $item->allowance_recipient_name && $item->allowance_account_number) {
+                            $item->item_name = 'Allowance - ' . $item->allowance_recipient_name . ' - ' . $item->allowance_account_number;
+                        } elseif ($item->item_type === 'allowance' && $item->allowance_recipient_name) {
+                            $item->item_name = 'Allowance - ' . $item->allowance_recipient_name;
+                        }
+                        return $item;
+                    });
                     
                     if ($prItems && $prItems->count() > 0) {
                         $items = $prItems;

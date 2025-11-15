@@ -12,6 +12,7 @@ use App\Models\OutletFoodInventoryItem;
 use App\Models\OutletFoodInventoryCard;
 use App\Models\Outlet;
 use App\Models\Item;
+use App\Models\User;
 
 class OutletFoodInventoryAdjustmentController extends Controller
 {
@@ -49,6 +50,9 @@ class OutletFoodInventoryAdjustmentController extends Controller
             'adjustments' => $adjustments,
             'filters' => $request->only(['search', 'outlet_id', 'from', 'to']),
             'user_outlet_id' => $user->id_outlet,
+            'auth' => [
+                'user' => $user
+            ],
         ]);
     }
 
@@ -119,8 +123,37 @@ class OutletFoodInventoryAdjustmentController extends Controller
 
     public function store(Request $request)
     {
-        DB::beginTransaction();
+        \Log::info('OutletFoodInventoryAdjustment store method called with data:', $request->all());
+        
         try {
+            // Validasi dasar
+            $request->validate([
+                'date' => 'required|date',
+                'outlet_id' => 'required|exists:tbl_data_outlet,id_outlet',
+                'warehouse_outlet_id' => 'required|exists:warehouse_outlets,id',
+                'type' => 'required|in:in,out',
+                'reason' => 'required|string',
+                'items' => 'required|array|min:1',
+                'items.*.item_id' => 'required|exists:items,id',
+                'items.*.qty' => 'required|numeric|min:0.0001',
+                'items.*.selected_unit' => 'required|string',
+                'items.*.note' => 'nullable|string',
+                'approvers' => 'required|array|min:1',
+                'approvers.*' => 'required|exists:users,id'
+            ]);
+            
+            // Get user ID
+            $userId = Auth::id() ?? auth()->id();
+            if (!$userId) {
+                \Log::error('OutletFoodInventoryAdjustment store - No user ID found!');
+                throw new \Exception('User tidak terautentikasi. Silakan login ulang.');
+            }
+            
+            DB::beginTransaction();
+            
+            // Approvers is now required, so status will always be waiting_approval
+            $status = 'waiting_approval';
+            
             $number = $this->generateAdjustmentNumber();
             $headerId = DB::table('outlet_food_inventory_adjustments')->insertGetId([
                 'number' => $number,
@@ -129,48 +162,291 @@ class OutletFoodInventoryAdjustmentController extends Controller
                 'warehouse_outlet_id' => $request->warehouse_outlet_id,
                 'type' => $request->type,
                 'reason' => $request->reason,
-                'status' => 'waiting_cost_control',
-                'created_by' => auth()->id(),
+                'status' => $status,
+                'created_by' => $userId,
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);
-            foreach ($request->items as $item) {
-                DB::table('outlet_food_inventory_adjustment_items')->insert([
+            
+            \Log::info('OutletFoodInventoryAdjustment store - Header created:', [
+                'header_id' => $headerId,
+                'created_by' => $userId
+            ]);
+            
+            // Process items with validation
+            foreach ($request->items as $itemIndex => $item) {
+                try {
+                    // Validasi item data
+                    if (empty($item['item_id'])) {
+                        throw new \Exception("Item ID tidak boleh kosong untuk item ke-" . ($itemIndex + 1));
+                    }
+                    if (empty($item['qty']) || $item['qty'] <= 0) {
+                        throw new \Exception("Quantity harus lebih dari 0 untuk item ke-" . ($itemIndex + 1));
+                    }
+                    if (empty($item['selected_unit'])) {
+                        throw new \Exception("Unit tidak boleh kosong untuk item ke-" . ($itemIndex + 1));
+                    }
+                    
+                    // Cek item master
+                    $itemMaster = DB::table('items')->where('id', $item['item_id'])->first();
+                    if (!$itemMaster) {
+                        throw new \Exception("Item master tidak ditemukan untuk item ke-" . ($itemIndex + 1));
+                    }
+                    
+                    // Insert item
+                    $itemInserted = DB::table('outlet_food_inventory_adjustment_items')->insert([
+                        'adjustment_id' => $headerId,
+                        'item_id' => $item['item_id'],
+                        'qty' => $item['qty'],
+                        'unit' => $item['selected_unit'],
+                        'note' => $item['note'] ?? null,
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+                    
+                    if (!$itemInserted) {
+                        throw new \Exception("Gagal menyimpan item ke-" . ($itemIndex + 1));
+                    }
+                } catch (\Exception $itemError) {
+                    // Re-throw dengan informasi item index
+                    throw new \Exception("Error pada item ke-" . ($itemIndex + 1) . ": " . $itemError->getMessage());
+                }
+            }
+            
+            // Create approval flows (approvers is required)
+            if (!is_array($request->approvers)) {
+                throw new \Exception("Format approvers tidak valid. Harus berupa array.");
+            }
+            
+            foreach ($request->approvers as $index => $approverId) {
+                if (empty($approverId)) {
+                    throw new \Exception("Approver ID tidak boleh kosong untuk approver ke-" . ($index + 1));
+                }
+                
+                // Validasi approver exists
+                $approverExists = DB::table('users')->where('id', $approverId)->exists();
+                if (!$approverExists) {
+                    throw new \Exception("Approver dengan ID {$approverId} tidak ditemukan untuk approver ke-" . ($index + 1));
+                }
+                
+                $flowInserted = DB::table('outlet_food_inventory_adjustment_approval_flows')->insert([
                     'adjustment_id' => $headerId,
-                    'item_id' => $item['item_id'],
-                    'qty' => $item['qty'],
-                    'unit' => $item['selected_unit'],
-                    'note' => $item['note'] ?? null,
+                    'approver_id' => $approverId,
+                    'approval_level' => $index + 1,
+                    'status' => 'PENDING',
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+                
+                if (!$flowInserted) {
+                    throw new \Exception("Gagal menyimpan approval flow untuk approver ke-" . ($index + 1));
+                }
+            }
+            
+            // Send notification to first approver
+            try {
+                $this->sendNotificationToNextApprover($headerId);
+            } catch (\Exception $notifError) {
+                \Log::warning('OutletFoodInventoryAdjustment store - Notification failed:', [
+                    'header_id' => $headerId,
+                    'error' => $notifError->getMessage()
+                ]);
+                // Tidak throw error karena notification bukan critical
+            }
+            
+            DB::commit();
+            
+            // Verifikasi data tersimpan dengan baik
+            $headerExists = DB::table('outlet_food_inventory_adjustments')->where('id', $headerId)->exists();
+            if (!$headerExists) {
+                throw new \Exception("Header tidak ditemukan setelah commit. Kemungkinan terjadi error saat insert.");
+            }
+            
+            $itemsCount = DB::table('outlet_food_inventory_adjustment_items')->where('adjustment_id', $headerId)->count();
+            if ($itemsCount !== count($request->items)) {
+                throw new \Exception("Jumlah item yang tersimpan ({$itemsCount}) tidak sesuai dengan jumlah item yang dikirim (" . count($request->items) . ").");
+            }
+            
+            \Log::info('OutletFoodInventoryAdjustment store - Successfully saved:', [
+                'header_id' => $headerId,
+                'type' => $request->type,
+                'outlet_id' => $request->outlet_id,
+                'date' => $request->date,
+                'status' => $status
+            ]);
+            
+            // Activity log CREATE
+            try {
+                $outletName = DB::table('tbl_data_outlet')->where('id_outlet', $request->outlet_id)->value('nama_outlet') ?? 'Unknown';
+                $warehouseName = DB::table('warehouse_outlets')->where('id', $request->warehouse_outlet_id)->value('name') ?? 'Unknown';
+                $typeLabel = $request->type === 'in' ? 'Stock In' : 'Stock Out';
+                
+                DB::table('activity_logs')->insert([
+                    'user_id' => $userId,
+                    'activity_type' => 'create',
+                    'module' => 'outlet_stock_adjustment',
+                    'description' => "Membuat Outlet Stock Adjustment: {$typeLabel} - {$outletName} ({$warehouseName})",
+                    'ip_address' => $request->ip(),
+                    'user_agent' => $request->userAgent(),
+                    'old_data' => null,
+                    'new_data' => json_encode([
+                        'header_id' => $headerId,
+                        'number' => $number,
+                        'type' => $request->type,
+                        'outlet_id' => $request->outlet_id,
+                        'warehouse_outlet_id' => $request->warehouse_outlet_id,
+                        'date' => $request->date,
+                        'status' => $status,
+                        'item_count' => count($request->items)
+                    ]),
+                    'created_at' => now(),
+                    'updated_at' => now()
+                ]);
+            } catch (\Exception $logError) {
+                // Tidak throw error karena activity log bukan critical
+                \Log::warning('OutletFoodInventoryAdjustment store - Activity log failed (but data saved):', [
+                    'header_id' => $headerId,
+                    'error' => $logError->getMessage()
                 ]);
             }
-            DB::table('activity_logs')->insert([
-                'user_id' => auth()->id(),
-                'activity_type' => 'create',
-                'module' => 'outlet_stock_adjustment',
-                'description' => 'Membuat outlet stock adjustment baru: ' . $number,
-                'ip_address' => $request->ip(),
-                'user_agent' => $request->userAgent(),
-                'old_data' => null,
-                'new_data' => json_encode($request->all()),
-                'created_at' => now(),
-            ]);
-            // Notifikasi hanya ke Cost Control Manager
-            $notifUsers = DB::table('users')
-                ->where('id_jabatan', 167)
-                ->where('status', 'A')
-                ->pluck('id');
-            // (opsional) insert notifikasi ke tabel notifications jika ada
-            DB::commit();
+            
             return redirect()->route('outlet-food-inventory-adjustment.show', $headerId)
                 ->with('success', 'Outlet stock adjustment berhasil dibuat!');
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            DB::rollBack();
+            \Log::error('OutletFoodInventoryAdjustment store - Validation error:', [
+                'errors' => $e->errors(),
+                'request' => $request->all()
+            ]);
+            return back()->withErrors($e->errors())->withInput()
+                ->with('error', 'Validasi gagal: ' . implode(', ', array_map(function($errors) {
+                    return implode(', ', $errors);
+                }, $e->errors())));
         } catch (\Exception $e) {
             DB::rollBack();
-            return back()->with('error', 'Gagal membuat outlet stock adjustment: ' . $e->getMessage());
+            \Log::error('OutletFoodInventoryAdjustment store - Error:', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'request' => $request->all()
+            ]);
+            
+            // Check for specific database errors
+            $errorMessage = $e->getMessage();
+            if (strpos($e->getMessage(), 'SQLSTATE') !== false) {
+                if (strpos($e->getMessage(), 'foreign key') !== false) {
+                    $errorMessage = 'Data yang dipilih tidak valid atau tidak ditemukan. Pastikan outlet, warehouse outlet, dan item yang dipilih benar.';
+                } elseif (strpos($e->getMessage(), 'duplicate entry') !== false) {
+                    $errorMessage = 'Data sudah ada di database. Silakan refresh halaman dan coba lagi.';
+                } else {
+                    $errorMessage = 'Terjadi kesalahan database. Silakan hubungi administrator jika masalah berlanjut.';
+                }
+            }
+            
+            return back()->withInput()->with('error', 'Gagal membuat outlet stock adjustment: ' . $errorMessage);
+        }
+    }
+    
+    /**
+     * Get approvers for approval flow
+     */
+    public function getApprovers(Request $request)
+    {
+        $search = $request->get('search', '');
+        
+        $users = User::where('users.status', 'A')
+            ->join('tbl_data_jabatan', 'users.id_jabatan', '=', 'tbl_data_jabatan.id_jabatan')
+            ->where(function($query) use ($search) {
+                $query->where('users.nama_lengkap', 'like', "%{$search}%")
+                      ->orWhere('users.email', 'like', "%{$search}%")
+                      ->orWhere('tbl_data_jabatan.nama_jabatan', 'like', "%{$search}%");
+            })
+            ->select('users.id', 'users.nama_lengkap as name', 'users.email', 'tbl_data_jabatan.nama_jabatan as jabatan')
+            ->orderBy('users.nama_lengkap')
+            ->limit(20)
+            ->get();
+        
+        return response()->json(['success' => true, 'users' => $users]);
+    }
+    
+    /**
+     * Send notification to the next approver in line
+     */
+    private function sendNotificationToNextApprover($adjustmentId)
+    {
+        try {
+            // Get the lowest level approver that is still pending
+            $nextApprovalFlow = DB::table('outlet_food_inventory_adjustment_approval_flows')
+                ->where('adjustment_id', $adjustmentId)
+                ->where('status', 'PENDING')
+                ->orderBy('approval_level', 'asc')
+                ->first();
+            
+            if (!$nextApprovalFlow) {
+                return; // No pending approvers
+            }
+            
+            // Get adjustment details
+            $adjustment = DB::table('outlet_food_inventory_adjustments as adj')
+                ->leftJoin('tbl_data_outlet as o', 'adj.id_outlet', '=', 'o.id_outlet')
+                ->leftJoin('users as u', 'adj.created_by', '=', 'u.id')
+                ->leftJoin('warehouse_outlets as wo', 'adj.warehouse_outlet_id', '=', 'wo.id')
+                ->select(
+                    'adj.*',
+                    'o.nama_outlet',
+                    'u.nama_lengkap as creator_name',
+                    'wo.name as warehouse_outlet_name'
+                )
+                ->where('adj.id', $adjustmentId)
+                ->first();
+            
+            if (!$adjustment) {
+                return;
+            }
+            
+            // Get creator details
+            $creatorName = $adjustment->creator_name ?? 'Unknown User';
+            $outletName = $adjustment->nama_outlet ?? 'Unknown Outlet';
+            $warehouseName = $adjustment->warehouse_outlet_name ?? 'Unknown Warehouse';
+            $typeLabel = $adjustment->type === 'in' ? 'Stock In' : 'Stock Out';
+            
+            // Create notification message
+            $message = "Outlet Stock Adjustment baru memerlukan persetujuan Anda:\n\n";
+            $message .= "No: {$adjustment->number}\n";
+            $message .= "Tanggal: " . date('d/m/Y', strtotime($adjustment->date)) . "\n";
+            $message .= "Outlet: {$outletName}\n";
+            $message .= "Warehouse: {$warehouseName}\n";
+            $message .= "Tipe: {$typeLabel}\n";
+            $message .= "Level Approval: {$nextApprovalFlow->approval_level}\n";
+            $message .= "Diajukan oleh: {$creatorName}\n\n";
+            $message .= "Silakan segera lakukan review dan approval.";
+            
+            // Insert notification (using same format as Purchase Requisition)
+            DB::table('notifications')->insert([
+                'user_id' => $nextApprovalFlow->approver_id,
+                'task_id' => $adjustmentId,
+                'type' => 'outlet_stock_adjustment_approval',
+                'message' => $message,
+                'url' => config('app.url') . '/outlet-food-inventory-adjustment/' . $adjustmentId,
+                'is_read' => 0,
+                'created_at' => now(),
+                'updated_at' => now()
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Failed to send notification to next approver', [
+                'adjustment_id' => $adjustmentId,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
         }
     }
 
     public function show($id)
     {
+        // Validate that $id is numeric (not a string like 'approvers')
+        if (!is_numeric($id)) {
+            abort(404, 'Adjustment not found');
+        }
+        
         $adjustment = DB::table('outlet_food_inventory_adjustments as adj')
             ->leftJoin('tbl_data_outlet as o', 'adj.id_outlet', '=', 'o.id_outlet')
             ->leftJoin('users as u', 'adj.created_by', '=', 'u.id')
@@ -184,16 +460,151 @@ class OutletFoodInventoryAdjustmentController extends Controller
             )
             ->where('adj.id', $id)
             ->first();
+        
+        if (!$adjustment) {
+            abort(404, 'Adjustment not found');
+        }
+        
         $items = DB::table('outlet_food_inventory_adjustment_items as i')
             ->leftJoin('items as it', 'i.item_id', '=', 'it.id')
             ->select('i.*', 'it.name as item_name')
             ->where('i.adjustment_id', $id)
             ->get();
         $adjustment->items = $items;
+        
+        // Load approval flows if exists
+        $approvalFlows = DB::table('outlet_food_inventory_adjustment_approval_flows as af')
+            ->leftJoin('users as u', 'af.approver_id', '=', 'u.id')
+            ->leftJoin('tbl_data_jabatan as j', 'u.id_jabatan', '=', 'j.id_jabatan')
+            ->select(
+                'af.*',
+                'u.id as approver_id',
+                'u.nik',
+                'u.nama_lengkap',
+                'u.email',
+                'j.id_jabatan',
+                'j.nama_jabatan'
+            )
+            ->where('af.adjustment_id', $id)
+            ->orderBy('af.approval_level', 'asc')
+            ->get();
+        
+        $adjustment->approval_flows = $approvalFlows;
+        
         $user = auth()->user();
         return inertia('OutletFoodInventoryAdjustment/Show', [
             'adjustment' => $adjustment,
             'user' => $user,
+        ]);
+    }
+    
+    /**
+     * Get pending approvals for current user
+     */
+    public function getPendingApprovals()
+    {
+        $user = auth()->user();
+        
+        // Get all adjustments where user is an approver
+        $allPendingApprovals = DB::table('outlet_food_inventory_adjustment_approval_flows as af')
+            ->join('outlet_food_inventory_adjustments as adj', 'af.adjustment_id', '=', 'adj.id')
+            ->leftJoin('tbl_data_outlet as o', 'adj.id_outlet', '=', 'o.id_outlet')
+            ->leftJoin('warehouse_outlets as wo', 'adj.warehouse_outlet_id', '=', 'wo.id')
+            ->leftJoin('users as creator', 'adj.created_by', '=', 'creator.id')
+            ->where('af.approver_id', $user->id)
+            ->where('af.status', 'PENDING')
+            ->where('adj.status', 'waiting_approval')
+            ->select(
+                'adj.id',
+                'adj.number',
+                'adj.date',
+                'adj.type',
+                'adj.reason',
+                'adj.status',
+                'adj.created_at',
+                'o.nama_outlet',
+                'wo.name as warehouse_outlet_name',
+                'creator.nama_lengkap as creator_name',
+                'af.approval_level'
+            )
+            ->orderBy('adj.created_at', 'desc')
+            ->get();
+        
+        // Filter to only show adjustments where current user is next in line
+        $filteredApprovals = $allPendingApprovals->filter(function($adj) use ($user) {
+            // Get all pending approval flows for this adjustment
+            $pendingFlows = DB::table('outlet_food_inventory_adjustment_approval_flows')
+                ->where('adjustment_id', $adj->id)
+                ->where('status', 'PENDING')
+                ->orderBy('approval_level', 'asc')
+                ->get();
+            
+            if ($pendingFlows->isEmpty()) return false;
+            
+            // Get the next approver (lowest approval level)
+            $nextApprover = $pendingFlows->first();
+            return $nextApprover->approver_id === $user->id;
+        });
+        
+        return response()->json([
+            'success' => true,
+            'adjustments' => $filteredApprovals->values()
+        ]);
+    }
+    
+    /**
+     * Get adjustment details for approval
+     */
+    public function getApprovalDetails($id)
+    {
+        $adjustment = DB::table('outlet_food_inventory_adjustments as adj')
+            ->leftJoin('tbl_data_outlet as o', 'adj.id_outlet', '=', 'o.id_outlet')
+            ->leftJoin('warehouse_outlets as wo', 'adj.warehouse_outlet_id', '=', 'wo.id')
+            ->leftJoin('users as creator', 'adj.created_by', '=', 'creator.id')
+            ->select(
+                'adj.*',
+                'o.nama_outlet',
+                'wo.name as warehouse_outlet_name',
+                'creator.nama_lengkap as creator_name',
+                'creator.email as creator_email'
+            )
+            ->where('adj.id', $id)
+            ->first();
+        
+        if (!$adjustment) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Adjustment not found'
+            ], 404);
+        }
+        
+        $items = DB::table('outlet_food_inventory_adjustment_items as i')
+            ->leftJoin('items as it', 'i.item_id', '=', 'it.id')
+            ->select('i.*', 'it.name as item_name')
+            ->where('i.adjustment_id', $id)
+            ->get();
+        
+        $approvalFlows = DB::table('outlet_food_inventory_adjustment_approval_flows as af')
+            ->leftJoin('users as u', 'af.approver_id', '=', 'u.id')
+            ->leftJoin('tbl_data_jabatan as j', 'u.id_jabatan', '=', 'j.id_jabatan')
+            ->select(
+                'af.*',
+                'u.id as approver_id',
+                'u.nik',
+                'u.nama_lengkap',
+                'u.email',
+                'j.id_jabatan',
+                'j.nama_jabatan'
+            )
+            ->where('af.adjustment_id', $id)
+            ->orderBy('af.approval_level', 'asc')
+            ->get();
+        
+        return response()->json([
+            'success' => true,
+            'adjustment' => $adjustment,
+            'items' => $items,
+            'approval_flows' => $approvalFlows
         ]);
     }
 
@@ -202,62 +613,158 @@ class OutletFoodInventoryAdjustmentController extends Controller
         DB::beginTransaction();
         try {
             $user = auth()->user();
-            $isSuperadmin = $user->id_role === '5af56935b011a' && $user->status === 'A';
             $adj = DB::table('outlet_food_inventory_adjustments')->where('id', $id)->first();
             if (!$adj) throw new \Exception('Adjustment not found');
-            $update = [];
-            $desc = '';
-            if ($isSuperadmin) {
-                // Superadmin bisa approve di semua tahap
-                if ($adj->status == 'waiting_cost_control') {
+            
+            // Check if using new approval flow system
+            $hasApprovalFlows = DB::table('outlet_food_inventory_adjustment_approval_flows')
+                ->where('adjustment_id', $id)
+                ->exists();
+            
+            if ($hasApprovalFlows && $adj->status === 'waiting_approval') {
+                // New approval flow system
+                $currentApprovalFlow = DB::table('outlet_food_inventory_adjustment_approval_flows')
+                    ->where('adjustment_id', $id)
+                    ->where('approver_id', $user->id)
+                    ->where('status', 'PENDING')
+                    ->first();
+                
+                if (!$currentApprovalFlow) {
+                    throw new \Exception('Anda tidak memiliki hak untuk approve data ini');
+                }
+                
+                $currentLevel = $currentApprovalFlow->approval_level;
+                
+                // Check if lower levels are approved
+                $lowerLevelsPending = DB::table('outlet_food_inventory_adjustment_approval_flows')
+                    ->where('adjustment_id', $id)
+                    ->where('approval_level', '<', $currentLevel)
+                    ->where('status', 'PENDING')
+                    ->count();
+                
+                if ($lowerLevelsPending > 0) {
+                    throw new \Exception('Tunggu approval dari level yang lebih rendah terlebih dahulu');
+                }
+                
+                // Update approval flow
+                DB::table('outlet_food_inventory_adjustment_approval_flows')
+                    ->where('id', $currentApprovalFlow->id)
+                    ->update([
+                        'status' => 'APPROVED',
+                        'approved_at' => now(),
+                        'comments' => $request->note ?? null,
+                        'updated_at' => now(),
+                    ]);
+                
+                // Check if there are more approvers pending
+                $pendingApprovers = DB::table('outlet_food_inventory_adjustment_approval_flows')
+                    ->where('adjustment_id', $id)
+                    ->where('status', 'PENDING')
+                    ->count();
+                
+                if ($pendingApprovers > 0) {
+                    // Still have pending approvers
+                    DB::commit();
+                    $this->sendNotificationToNextApprover($id);
+                    
+                    DB::table('activity_logs')->insert([
+                        'user_id' => $user->id,
+                        'activity_type' => 'approve',
+                        'module' => 'outlet_stock_adjustment',
+                        'description' => 'Approve outlet stock adjustment ID: ' . $id . ' (Partial)',
+                        'ip_address' => $request->ip(),
+                        'user_agent' => $request->userAgent(),
+                        'created_at' => now(),
+                    ]);
+                    
+                    if ($request->expectsJson() || $request->wantsJson()) {
+                        return response()->json(['success' => true, 'message' => 'Approval berhasil! Notifikasi dikirim ke approver berikutnya.']);
+                    } else {
+                        return redirect()->route('outlet-food-inventory-adjustment.show', $id)
+                            ->with('success', 'Approval berhasil! Notifikasi dikirim ke approver berikutnya.');
+                    }
+                } else {
+                    // All approvers have approved, process inventory
+                    DB::table('outlet_food_inventory_adjustments')
+                        ->where('id', $id)
+                        ->update([
+                            'status' => 'approved',
+                            'updated_at' => now(),
+                        ]);
+                    
+                    $this->processInventory($id);
+                    DB::commit();
+                    
+                    DB::table('activity_logs')->insert([
+                        'user_id' => $user->id,
+                        'activity_type' => 'approve',
+                        'module' => 'outlet_stock_adjustment',
+                        'description' => 'Approve outlet stock adjustment ID: ' . $id . ' (Complete)',
+                        'ip_address' => $request->ip(),
+                        'user_agent' => $request->userAgent(),
+                        'created_at' => now(),
+                    ]);
+                    
+                    if ($request->expectsJson() || $request->wantsJson()) {
+                        return response()->json(['success' => true, 'message' => 'Semua approval telah selesai! Stock telah diproses.']);
+                    } else {
+                        return redirect()->route('outlet-food-inventory-adjustment.show', $id)
+                            ->with('success', 'Semua approval telah selesai! Stock telah diproses.');
+                    }
+                }
+            } else {
+                // Old approval system (backward compatibility)
+                $isSuperadmin = $user->id_role === '5af56935b011a' && $user->status === 'A';
+                $update = [];
+                $desc = '';
+                if ($isSuperadmin) {
+                    if ($adj->status == 'waiting_cost_control') {
+                        $update['status'] = 'approved';
+                        $update['approved_by_cost_control_manager'] = $user->id;
+                        $update['approved_at_cost_control_manager'] = now();
+                        $update['cost_control_manager_note'] = $request->note;
+                        $desc = 'Superadmin approve tahap Cost Control Manager outlet stock adjustment ID: ' . $id;
+                    } else if ($adj->status == 'waiting_approval') {
+                        $update['status'] = 'waiting_cost_control';
+                        $update['approved_by_ssd_manager'] = $user->id;
+                        $update['approved_at_ssd_manager'] = now();
+                        $update['ssd_manager_note'] = $request->note;
+                        $desc = 'Superadmin approve tahap SSD Manager outlet stock adjustment ID: ' . $id;
+                    } else {
+                        throw new \Exception('Status dokumen tidak valid untuk approval');
+                    }
+                } else if ($user->id_jabatan == 167 && $adj->status == 'waiting_cost_control') {
                     $update['status'] = 'approved';
                     $update['approved_by_cost_control_manager'] = $user->id;
                     $update['approved_at_cost_control_manager'] = now();
                     $update['cost_control_manager_note'] = $request->note;
-                    $desc = 'Superadmin approve tahap Cost Control Manager outlet stock adjustment ID: ' . $id;
-                } else if ($adj->status == 'waiting_approval') {
-                    $update['status'] = 'waiting_cost_control';
-                    $update['approved_by_ssd_manager'] = $user->id;
-                    $update['approved_at_ssd_manager'] = now();
-                    $update['ssd_manager_note'] = $request->note;
-                    $desc = 'Superadmin approve tahap SSD Manager outlet stock adjustment ID: ' . $id;
+                    $desc = 'Cost Control Manager approve outlet stock adjustment ID: ' . $id;
                 } else {
-                    throw new \Exception('Status dokumen tidak valid untuk approval');
+                    throw new \Exception('Anda tidak berhak approve pada tahap ini');
                 }
-            } else if ($user->id_jabatan == 167 && $adj->status == 'waiting_cost_control') {
-                $update['status'] = 'approved';
-                $update['approved_by_cost_control_manager'] = $user->id;
-                $update['approved_at_cost_control_manager'] = now();
-                $update['cost_control_manager_note'] = $request->note;
-                $desc = 'Cost Control Manager approve outlet stock adjustment ID: ' . $id;
-            } else {
-                throw new \Exception('Anda tidak berhak approve pada tahap ini');
-            }
-            // Update status dan approval field
-            DB::table('outlet_food_inventory_adjustments')->where('id', $id)->update($update);
-            // Insert activity log
-            DB::table('activity_logs')->insert([
-                'user_id' => $user->id,
-                'activity_type' => 'approve',
-                'module' => 'outlet_stock_adjustment',
-                'description' => $desc,
-                'ip_address' => $request->ip(),
-                'user_agent' => $request->userAgent(),
-                'created_at' => now(),
-            ]);
-            // Jika status sudah approved, proses inventory
-            if (
-                ($isSuperadmin && $adj->status == 'waiting_cost_control') ||
-                ($user->id_jabatan == 167 && $adj->status == 'waiting_cost_control')
-            ) {
-                $this->processInventory($id);
-            }
-            DB::commit();
-            if ($request->expectsJson() || $request->wantsJson()) {
-                return response()->json(['success' => true]);
-            } else {
-                return redirect()->route('outlet-food-inventory-adjustment.show', $id)
-                    ->with('success', 'Outlet stock adjustment berhasil di-approve!');
+                DB::table('outlet_food_inventory_adjustments')->where('id', $id)->update($update);
+                DB::table('activity_logs')->insert([
+                    'user_id' => $user->id,
+                    'activity_type' => 'approve',
+                    'module' => 'outlet_stock_adjustment',
+                    'description' => $desc,
+                    'ip_address' => $request->ip(),
+                    'user_agent' => $request->userAgent(),
+                    'created_at' => now(),
+                ]);
+                if (
+                    ($isSuperadmin && $adj->status == 'waiting_cost_control') ||
+                    ($user->id_jabatan == 167 && $adj->status == 'waiting_cost_control')
+                ) {
+                    $this->processInventory($id);
+                }
+                DB::commit();
+                if ($request->expectsJson() || $request->wantsJson()) {
+                    return response()->json(['success' => true]);
+                } else {
+                    return redirect()->route('outlet-food-inventory-adjustment.show', $id)
+                        ->with('success', 'Outlet stock adjustment berhasil di-approve!');
+                }
             }
         } catch (\Exception $e) {
             DB::rollBack();
@@ -271,31 +778,92 @@ class OutletFoodInventoryAdjustmentController extends Controller
 
     public function reject(Request $request, $id)
     {
+        $validated = $request->validate([
+            'rejection_reason' => 'required|string|max:500',
+        ]);
+        
         DB::beginTransaction();
         try {
             $user = auth()->user();
             $adj = DB::table('outlet_food_inventory_adjustments')->where('id', $id)->first();
             if (!$adj) throw new \Exception('Adjustment not found');
-            $update = ['status' => 'rejected', 'updated_at' => now()];
-            if ($user->id_jabatan == 167) {
-                $update['cost_control_manager_note'] = $request->note;
-            }
-            DB::table('outlet_food_inventory_adjustments')->where('id', $id)->update($update);
-            DB::table('activity_logs')->insert([
-                'user_id' => $user->id,
-                'activity_type' => 'reject',
-                'module' => 'outlet_stock_adjustment',
-                'description' => 'Reject outlet stock adjustment ID: ' . $id,
-                'ip_address' => $request->ip(),
-                'user_agent' => $request->userAgent(),
-                'created_at' => now(),
-            ]);
-            DB::commit();
-            if ($request->expectsJson() || $request->wantsJson()) {
-                return response()->json(['success' => true]);
+            
+            // Check if using new approval flow system
+            $hasApprovalFlows = DB::table('outlet_food_inventory_adjustment_approval_flows')
+                ->where('adjustment_id', $id)
+                ->exists();
+            
+            if ($hasApprovalFlows && $adj->status === 'waiting_approval') {
+                // New approval flow system
+                $currentApprovalFlow = DB::table('outlet_food_inventory_adjustment_approval_flows')
+                    ->where('adjustment_id', $id)
+                    ->where('approver_id', $user->id)
+                    ->where('status', 'PENDING')
+                    ->first();
+                
+                if (!$currentApprovalFlow) {
+                    throw new \Exception('Anda tidak memiliki hak untuk menolak data ini');
+                }
+                
+                // Update approval flow
+                DB::table('outlet_food_inventory_adjustment_approval_flows')
+                    ->where('id', $currentApprovalFlow->id)
+                    ->update([
+                        'status' => 'REJECTED',
+                        'rejected_at' => now(),
+                        'comments' => $validated['rejection_reason'],
+                        'updated_at' => now(),
+                    ]);
+                
+                // Update header status
+                DB::table('outlet_food_inventory_adjustments')
+                    ->where('id', $id)
+                    ->update([
+                        'status' => 'rejected',
+                        'updated_at' => now(),
+                    ]);
+                
+                DB::commit();
+                
+                DB::table('activity_logs')->insert([
+                    'user_id' => $user->id,
+                    'activity_type' => 'reject',
+                    'module' => 'outlet_stock_adjustment',
+                    'description' => 'Reject outlet stock adjustment ID: ' . $id,
+                    'ip_address' => $request->ip(),
+                    'user_agent' => $request->userAgent(),
+                    'created_at' => now(),
+                ]);
+                
+                if ($request->expectsJson() || $request->wantsJson()) {
+                    return response()->json(['success' => true, 'message' => 'Data berhasil ditolak']);
+                } else {
+                    return redirect()->route('outlet-food-inventory-adjustment.show', $id)
+                        ->with('success', 'Outlet stock adjustment berhasil direject!');
+                }
             } else {
-                return redirect()->route('outlet-food-inventory-adjustment.show', $id)
-                    ->with('success', 'Outlet stock adjustment berhasil direject!');
+                // Old approval system (backward compatibility)
+                $update = ['status' => 'rejected', 'updated_at' => now()];
+                if ($user->id_jabatan == 167) {
+                    $update['cost_control_manager_note'] = $request->note ?? $validated['rejection_reason'] ?? null;
+                }
+                DB::table('outlet_food_inventory_adjustments')->where('id', $id)->update($update);
+                DB::table('activity_logs')->insert([
+                    'user_id' => $user->id,
+                    'activity_type' => 'reject',
+                    'module' => 'outlet_stock_adjustment',
+                    'description' => 'Reject outlet stock adjustment ID: ' . $id,
+                    'ip_address' => $request->ip(),
+                    'user_agent' => $request->userAgent(),
+                    'created_at' => now(),
+                ]);
+                DB::commit();
+                if ($request->expectsJson() || $request->wantsJson()) {
+                    return response()->json(['success' => true]);
+                } else {
+                    return redirect()->route('outlet-food-inventory-adjustment.show', $id)
+                        ->with('success', 'Outlet stock adjustment berhasil direject!');
+                }
             }
         } catch (\Exception $e) {
             DB::rollBack();
@@ -311,7 +879,17 @@ class OutletFoodInventoryAdjustmentController extends Controller
     {
         DB::beginTransaction();
         try {
+            $user = auth()->user();
             $adj = OutletFoodInventoryAdjustment::with('items')->findOrFail($id);
+            
+            // Check if user can delete approved status
+            if ($adj->status === 'approved') {
+                // Only allow delete for approved status if user has special role
+                if ($user->id_role !== '5af56935b011a') {
+                    throw new \Exception('Anda tidak memiliki hak untuk menghapus data dengan status approved.');
+                }
+            }
+            
             if ($adj->status === 'approved') {
                 foreach ($adj->items as $item) {
                     $inventoryItem = OutletFoodInventoryItem::where('item_id', $item->item_id)->first();
@@ -341,9 +919,16 @@ class OutletFoodInventoryAdjustmentController extends Controller
                     } else {
                         $qty_small = $qty_input;
                     }
+                    // Rollback stock - harus menggunakan warehouse_outlet_id juga untuk konsistensi
                     $stock = OutletFoodInventoryStock::where('inventory_item_id', $inventory_item_id)
-                        ->where('id_outlet', $adj->id_outlet)->first();
+                        ->where('id_outlet', $adj->id_outlet)
+                        ->where('warehouse_outlet_id', $adj->warehouse_outlet_id)
+                        ->first();
+                    
                     if ($stock) {
+                        // Rollback logic: kebalikan dari processInventory
+                        // Jika type 'in' (stock ditambahkan saat approve), saat delete dikurangi
+                        // Jika type 'out' (stock dikurangi saat approve), saat delete ditambahkan
                         if ($adj->type === 'in') {
                             $stock->qty_small -= $qty_small;
                             $stock->qty_medium -= $qty_medium;
@@ -357,6 +942,13 @@ class OutletFoodInventoryAdjustmentController extends Controller
                             + ($stock->qty_medium * $stock->last_cost_medium)
                             + ($stock->qty_large * $stock->last_cost_large);
                         $stock->save();
+                    } else {
+                        \Log::warning('OutletFoodInventoryAdjustment destroy - Stock not found for rollback:', [
+                            'adjustment_id' => $id,
+                            'inventory_item_id' => $inventory_item_id,
+                            'outlet_id' => $adj->id_outlet,
+                            'warehouse_outlet_id' => $adj->warehouse_outlet_id
+                        ]);
                     }
                     OutletFoodInventoryCard::where('reference_type', 'outlet_stock_adjustment')
                         ->where('reference_id', $adj->id)
@@ -364,8 +956,59 @@ class OutletFoodInventoryAdjustmentController extends Controller
                         ->delete();
                 }
             }
+            
+            // Store data for activity log before deletion
+            $outletName = DB::table('tbl_data_outlet')->where('id_outlet', $adj->id_outlet)->value('nama_outlet') ?? 'Unknown';
+            $warehouseName = DB::table('warehouse_outlets')->where('id', $adj->warehouse_outlet_id)->value('name') ?? 'Unknown';
+            $typeLabel = $adj->type === 'in' ? 'Stock In' : 'Stock Out';
+            $itemsCount = $adj->items->count();
+            $adjustmentNumber = $adj->number;
+            $adjustmentStatus = $adj->status;
+            $adjustmentDate = $adj->date;
+            $adjustmentType = $adj->type;
+            $adjustmentOutletId = $adj->id_outlet;
+            $adjustmentWarehouseOutletId = $adj->warehouse_outlet_id;
+            
             $adj->items()->delete();
+            
+            // Delete approval flows if exists
+            DB::table('outlet_food_inventory_adjustment_approval_flows')
+                ->where('adjustment_id', $id)
+                ->delete();
+            
             $adj->delete();
+            
+            // Activity log DELETE
+            try {
+                DB::table('activity_logs')->insert([
+                    'user_id' => $user->id,
+                    'activity_type' => 'delete',
+                    'module' => 'outlet_stock_adjustment',
+                    'description' => "Menghapus Outlet Stock Adjustment: {$typeLabel} - {$outletName} ({$warehouseName}) - Status: {$adjustmentStatus}",
+                    'ip_address' => request()->ip(),
+                    'user_agent' => request()->userAgent(),
+                    'old_data' => json_encode([
+                        'adjustment_id' => $id,
+                        'number' => $adjustmentNumber,
+                        'type' => $adjustmentType,
+                        'outlet_id' => $adjustmentOutletId,
+                        'warehouse_outlet_id' => $adjustmentWarehouseOutletId,
+                        'date' => $adjustmentDate,
+                        'status' => $adjustmentStatus,
+                        'items_count' => $itemsCount
+                    ]),
+                    'new_data' => null,
+                    'created_at' => now(),
+                    'updated_at' => now()
+                ]);
+            } catch (\Exception $logError) {
+                // Tidak throw error karena activity log bukan critical
+                \Log::warning('OutletFoodInventoryAdjustment destroy - Activity log failed (but data deleted):', [
+                    'adjustment_id' => $id,
+                    'error' => $logError->getMessage()
+                ]);
+            }
+            
             DB::commit();
             return response()->json(['success' => true]);
         } catch (\Exception $e) {

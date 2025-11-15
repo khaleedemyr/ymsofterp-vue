@@ -246,6 +246,30 @@ const closeLightbox = () => {
     lightboxImage.value = null;
 };
 
+// Group attachments by outlet (for new structure with outlet_id)
+const getGroupedAttachments = (attachments) => {
+    if (!attachments || attachments.length === 0) return {};
+    
+    const grouped = {};
+    attachments.forEach(attachment => {
+        // For legacy data without outlet_id, use 'no-outlet'
+        const outletId = attachment.outlet_id || 'no-outlet';
+        const outletName = attachment.outlet?.nama_outlet || 'General';
+        
+        if (!grouped[outletId]) {
+            grouped[outletId] = {
+                outlet_id: outletId,
+                outlet_name: outletName,
+                attachments: []
+            };
+        }
+        
+        grouped[outletId].attachments.push(attachment);
+    });
+    
+    return grouped;
+};
+
 onMounted(() => {
     fetchPRList();
     fetchSuppliers();
@@ -345,7 +369,67 @@ onMounted(() => {
                   </span>
                 </h4>
                 
-                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                <!-- Group attachments by outlet if applicable -->
+                <template v-if="pr.attachments.some(att => att.outlet)">
+                  <div v-for="(outletGroup, outletId) in getGroupedAttachments(pr.attachments)" :key="outletId" class="mb-4 last:mb-0">
+                    <h5 v-if="outletId !== 'no-outlet'" class="text-sm font-semibold text-gray-700 mb-2 flex items-center">
+                      <i class="fa fa-store mr-2 text-blue-500"></i>
+                      Outlet: {{ outletGroup.outlet_name }}
+                    </h5>
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                      <div
+                        v-for="attachment in outletGroup.attachments"
+                        :key="attachment.id"
+                        class="flex items-center p-3 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+                      >
+                        <div class="flex items-center space-x-3 flex-1">
+                          <!-- Image Thumbnail -->
+                          <div v-if="isImageFile(attachment.file_name)" class="relative">
+                            <img
+                              :src="`/purchase-requisitions/attachments/${attachment.id}/view`"
+                              :alt="attachment.file_name"
+                              class="w-10 h-10 object-cover rounded border border-gray-300 cursor-pointer hover:opacity-80 transition-opacity"
+                              @click="openLightbox(attachment)"
+                              @error="$event.target.style.display='none'; $event.target.nextElementSibling.style.display='block'"
+                            />
+                            <i :class="getFileIcon(attachment.file_name)" class="text-sm absolute inset-0 flex items-center justify-center bg-gray-100 rounded" style="display: none;"></i>
+                          </div>
+                          <!-- File Icon for non-images -->
+                          <i v-else :class="getFileIcon(attachment.file_name)" class="text-lg text-gray-500"></i>
+                          
+                          <div class="flex-1 min-w-0">
+                            <p class="text-sm font-medium text-gray-900 truncate">{{ attachment.file_name }}</p>
+                            <div class="flex items-center space-x-2 text-xs text-gray-500">
+                              <span>{{ formatFileSize(attachment.file_size) }}</span>
+                              <span>•</span>
+                              <span>{{ attachment.uploader?.nama_lengkap || 'Unknown' }}</span>
+                            </div>
+                          </div>
+                        </div>
+                        <div class="flex items-center space-x-1">
+                          <button
+                            v-if="isImageFile(attachment.file_name)"
+                            @click="openLightbox(attachment)"
+                            class="p-1 text-green-600 hover:text-green-800 hover:bg-green-100 rounded transition-colors"
+                            title="View Image"
+                          >
+                            <i class="fa fa-eye text-xs"></i>
+                          </button>
+                          <button
+                            @click="downloadFile(attachment)"
+                            class="p-1 text-blue-600 hover:text-blue-800 hover:bg-blue-100 rounded transition-colors"
+                            title="Download"
+                          >
+                            <i class="fa fa-download text-xs"></i>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </template>
+                
+                <!-- Simple list for attachments without outlet grouping -->
+                <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                   <div
                     v-for="attachment in pr.attachments"
                     :key="attachment.id"
@@ -399,9 +483,20 @@ onMounted(() => {
               <div class="space-y-4">
                 <div v-for="item in pr.items" :key="item.id" class="border border-gray-200 rounded-lg p-4">
                   <div class="flex items-center justify-between mb-3">
-                    <div>
+                    <div class="flex-1">
                       <h4 class="font-medium text-gray-900">{{ item.item_name }}</h4>
                       <p class="text-sm text-gray-600">Qty: {{ item.qty }} {{ item.unit }} | Unit Price: {{ new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(item.unit_price) }}</p>
+                      <!-- Outlet and Category info (for new structure, with fallback to PR outlet/category for legacy data) -->
+                      <div v-if="item.outlet || item.category || pr.outlet || pr.category" class="flex flex-wrap gap-2 mt-2">
+                        <span v-if="item.outlet || pr.outlet" class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                          <i class="fa fa-store mr-1"></i>
+                          Outlet: {{ (item.outlet || pr.outlet)?.nama_outlet }}
+                        </span>
+                        <span v-if="item.category || pr.category" class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                          <i class="fa fa-tag mr-1"></i>
+                          Category: {{ (item.category || pr.category)?.name }}
+                        </span>
+                      </div>
                     </div>
                     <button
                       @click="addItemRow(item.id, null)"

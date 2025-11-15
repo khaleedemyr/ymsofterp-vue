@@ -71,13 +71,19 @@
                   <Link
                     :href="route('outlet-food-inventory-adjustment.show', adjustment.id)"
                     class="text-blue-600 hover:text-blue-800"
+                    title="View Details"
                   >
                     <i class="fa fa-eye"></i>
                   </Link>
                   <button
-                    v-if="['waiting_approval', 'waiting_cost_control'].includes(adjustment.status)"
+                    v-if="canDelete(adjustment)"
                     @click="confirmDelete(adjustment.id)"
-                    class="text-red-600 hover:text-red-800"
+                    :disabled="!canDelete(adjustment)"
+                    :class="[
+                      'text-red-600 hover:text-red-800',
+                      !canDelete(adjustment) ? 'opacity-50 cursor-not-allowed' : ''
+                    ]"
+                    :title="canDelete(adjustment) ? 'Delete' : getDeleteTooltip(adjustment)"
                   >
                     <i class="fa fa-trash"></i>
                   </button>
@@ -109,6 +115,7 @@ const props = defineProps({
   adjustments: Object,
   filters: Object,
   user_outlet_id: [String, Number],
+  auth: Object,
 })
 
 const search = ref(props.filters.search || '')
@@ -176,16 +183,56 @@ const statusLabel = (status) => {
 
 const loadingDelete = ref(false)
 
+function canDelete(adjustment) {
+  // Allow delete for waiting_approval and waiting_cost_control status
+  const deletableStatuses = ['waiting_approval', 'waiting_cost_control'];
+  const isDeletableStatus = deletableStatuses.includes(adjustment.status);
+  
+  // Allow delete for approved status if user has special role
+  const isApprovedStatus = adjustment.status === 'approved';
+  const hasSpecialRole = props.auth?.user?.id_role === '5af56935b011a';
+  
+  if (isApprovedStatus) {
+    return hasSpecialRole;
+  }
+  
+  return isDeletableStatus;
+}
+
+function getDeleteTooltip(adjustment) {
+  if (adjustment.status === 'approved') {
+    return 'Hanya bisa dihapus oleh user dengan role khusus';
+  }
+  return 'Hanya bisa dihapus jika status waiting_approval atau waiting_cost_control';
+}
+
 function confirmDelete(id) {
+  const adjustment = props.adjustments.data.find(adj => adj.id === id)
+  const statusText = adjustment?.status === 'approved' 
+    ? 'Approved (Hanya bisa dihapus oleh user dengan role khusus)' 
+    : adjustment?.status === 'waiting_approval' 
+    ? 'Waiting Approval' 
+    : 'Waiting Cost Control'
+  
   Swal.fire({
-    title: 'Delete Outlet Stock Adjustment?',
-    text: 'Data dan inventory akan di-rollback. Lanjutkan?',
+    title: 'Hapus Outlet Stock Adjustment?',
+    html: `
+      <div class="text-left">
+        <p class="mb-2"><strong>Number:</strong> ${adjustment?.number || 'N/A'}</p>
+        <p class="mb-2"><strong>Date:</strong> ${adjustment?.date ? formatDate(adjustment.date) : 'N/A'}</p>
+        <p class="mb-2"><strong>Outlet:</strong> ${adjustment?.outlet?.nama_outlet || 'N/A'}</p>
+        <p class="mb-2"><strong>Status:</strong> ${statusText}</p>
+        <p class="text-red-600 font-semibold">Tindakan ini tidak dapat dibatalkan!</p>
+        ${adjustment?.status === 'approved' ? '<p class="text-red-600 font-semibold">Data approved akan di-rollback dari inventory.</p>' : ''}
+      </div>
+    `,
     icon: 'warning',
     showCancelButton: true,
-    confirmButtonText: 'Yes, Delete',
-    cancelButtonText: 'No',
+    confirmButtonColor: '#EF4444',
+    cancelButtonColor: '#6B7280',
+    confirmButtonText: 'Ya, Hapus!',
+    cancelButtonText: 'Batal',
     reverseButtons: true,
-    focusCancel: true,
     showLoaderOnConfirm: true,
     preConfirm: () => {
       loadingDelete.value = true

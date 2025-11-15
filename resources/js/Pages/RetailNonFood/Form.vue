@@ -19,9 +19,9 @@
               </select>
             </div>
             <div>
-              <label class="block text-xs font-bold text-gray-600 mb-2">Category Budget <span class="text-gray-400 text-xs">(Opsional)</span></label>
-              <select v-model="form.category_budget_id" @change="fetchBudgetInfo" class="input input-bordered w-full shadow-inner rounded-xl focus:ring-2 focus:ring-green-300 transition-all duration-200">
-                <option value="">Pilih Category Budget (Opsional)</option>
+              <label class="block text-xs font-bold text-gray-600 mb-2">Category Budget <span class="text-red-500 text-xs">*</span></label>
+              <select v-model="form.category_budget_id" @change="fetchBudgetInfo" class="input input-bordered w-full shadow-inner rounded-xl focus:ring-2 focus:ring-green-300 transition-all duration-200" required>
+                <option value="">Pilih Category Budget</option>
                 <option v-for="cb in props.categoryBudgets" :key="cb.id" :value="cb.id">
                   {{ cb.name }} - {{ cb.division }} ({{ formatRupiah(cb.budget_limit) }})
                 </option>
@@ -167,8 +167,9 @@
             <button type="button" @click="goBack" class="btn px-6 py-2 rounded-lg font-bold bg-gradient-to-r from-gray-200 to-gray-400 text-gray-700 shadow-md hover:from-gray-300 hover:to-gray-500 active:scale-95 transition-all">
               Batal
             </button>
-            <button type="submit" class="btn px-6 py-2 rounded-lg font-bold bg-gradient-to-r from-green-500 to-green-700 text-white shadow-lg hover:from-green-600 hover:to-green-800 active:scale-95 transition-all flex items-center gap-2" :disabled="loading">
+            <button type="submit" class="btn px-6 py-2 rounded-lg font-bold bg-gradient-to-r from-green-500 to-green-700 text-white shadow-lg hover:from-green-600 hover:to-green-800 active:scale-95 transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed" :disabled="loading || !form.category_budget_id">
               <span v-if="loading"><i class="fa fa-spinner fa-spin"></i> Menyimpan...</span>
+              <span v-else-if="!form.category_budget_id"><i class="fa fa-exclamation-triangle"></i> Pilih Category Dulu</span>
               <span v-else><i class="fa fa-save"></i> Simpan</span>
             </button>
           </div>
@@ -316,14 +317,26 @@ async function submit() {
     reverseButtons: true
   })
   if (!confirm.isConfirmed) return
+  
+  // Validate category_budget_id is required
+  if (!form.value.category_budget_id) {
+    loading.value = false
+    await Swal.fire({
+      icon: 'warning',
+      title: 'Category Diperlukan',
+      text: 'Silakan pilih Category Budget sebelum menyimpan data.',
+      confirmButtonText: 'OK',
+      confirmButtonColor: '#F59E0B'
+    })
+    return
+  }
+  
   loading.value = true
   try {
     const formData = new FormData()
     formData.append('outlet_id', form.value.outlet_id)
     formData.append('transaction_date', form.value.transaction_date)
-    if (form.value.category_budget_id) {
-      formData.append('category_budget_id', form.value.category_budget_id)
-    }
+    formData.append('category_budget_id', form.value.category_budget_id)
     formData.append('notes', form.value.notes)
     form.value.items.forEach((item, idx) => {
       formData.append(`items[${idx}][item_name]`, item.item_name)

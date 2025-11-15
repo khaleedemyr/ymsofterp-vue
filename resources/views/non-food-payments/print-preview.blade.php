@@ -275,6 +275,20 @@
                             @foreach($items as $itemIndex => $item)
                                 @php
                                     $itemName = is_object($item) ? ($item->item_name ?? 'N/A') : (is_array($item) ? ($item['item_name'] ?? 'N/A') : 'N/A');
+                                    
+                                    // Format item_name for allowance type if not already formatted
+                                    if ($itemsSource === 'PR') {
+                                        $itemType = is_object($item) ? ($item->item_type ?? null) : (is_array($item) ? ($item['item_type'] ?? null) : null);
+                                        $allowanceRecipient = is_object($item) ? ($item->allowance_recipient_name ?? null) : (is_array($item) ? ($item['allowance_recipient_name'] ?? null) : null);
+                                        $allowanceAccount = is_object($item) ? ($item->allowance_account_number ?? null) : (is_array($item) ? ($item['allowance_account_number'] ?? null) : null);
+                                        
+                                        if ($itemType === 'allowance' && $allowanceRecipient && $allowanceAccount && strpos($itemName, 'Allowance -') === false) {
+                                            $itemName = 'Allowance - ' . $allowanceRecipient . ' - ' . $allowanceAccount;
+                                        } elseif ($itemType === 'allowance' && $allowanceRecipient && strpos($itemName, 'Allowance -') === false) {
+                                            $itemName = 'Allowance - ' . $allowanceRecipient;
+                                        }
+                                    }
+                                    
                                     $itemQty = $itemsSource === 'PO' 
                                         ? (is_object($item) ? ($item->quantity ?? 0) : (is_array($item) ? ($item['quantity'] ?? 0) : 0))
                                         : (is_object($item) ? ($item->qty ?? 0) : (is_array($item) ? ($item['qty'] ?? 0) : 0));
@@ -463,13 +477,28 @@
                         </thead>
                         <tbody>
                             @foreach($prItems as $itemIndex => $item)
+                                @php
+                                    $itemName = $item->item_name ?? 'N/A';
+                                    
+                                    // Format item_name for allowance type if not already formatted (fallback)
+                                    if (isset($item->item_type) && $item->item_type === 'allowance') {
+                                        $allowanceRecipient = $item->allowance_recipient_name ?? null;
+                                        $allowanceAccount = $item->allowance_account_number ?? null;
+                                        
+                                        if ($allowanceRecipient && $allowanceAccount && strpos($itemName, 'Allowance -') === false) {
+                                            $itemName = 'Allowance - ' . $allowanceRecipient . ' - ' . $allowanceAccount;
+                                        } elseif ($allowanceRecipient && strpos($itemName, 'Allowance -') === false) {
+                                            $itemName = 'Allowance - ' . $allowanceRecipient;
+                                        }
+                                    }
+                                @endphp
                                 <tr>
                                     <td>{{ $itemIndex + 1 }}</td>
-                                    <td>{{ $item->item_name }}</td>
-                                    <td>{{ $item->qty }}</td>
-                                    <td>{{ $item->unit }}</td>
-                                    <td>Rp {{ number_format($item->unit_price, 0, ',', '.') }}</td>
-                                    <td>Rp {{ number_format($item->subtotal, 0, ',', '.') }}</td>
+                                    <td>{{ $itemName }}</td>
+                                    <td>{{ $item->qty ?? 0 }}</td>
+                                    <td>{{ $item->unit ?? 'N/A' }}</td>
+                                    <td>Rp {{ number_format($item->unit_price ?? 0, 0, ',', '.') }}</td>
+                                    <td>Rp {{ number_format($item->subtotal ?? 0, 0, ',', '.') }}</td>
                                 </tr>
                             @endforeach
                         </tbody>

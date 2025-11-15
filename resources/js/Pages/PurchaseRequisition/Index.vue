@@ -132,8 +132,13 @@
                   </span>
                   <span v-else class="text-gray-400">-</span>
                 </td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                  {{ pr.outlet?.nama_outlet || '-' }}
+                <td class="px-6 py-4 text-sm text-gray-900">
+                  <div class="flex flex-col gap-1">
+                    <span v-for="(outlet, idx) in getOutletList(pr)" :key="idx" class="inline-block">
+                      {{ outlet }}
+                    </span>
+                    <span v-if="getOutletList(pr).length === 0" class="text-gray-400">-</span>
+                  </div>
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                   <span class="font-semibold text-green-600">
@@ -190,7 +195,7 @@
                       <i class="fas fa-eye"></i>
                     </button>
                     <button
-                      v-if="pr.status === 'DRAFT'"
+                      v-if="pr.status === 'DRAFT' || pr.status === 'SUBMITTED'"
                       @click="editPR(pr)"
                       class="text-green-600 hover:text-green-900"
                       title="Edit"
@@ -205,14 +210,14 @@
                       <i class="fas fa-print"></i>
                     </button>
                     <button
-                      v-if="pr.status === 'DRAFT' || pr.status === 'SUBMITTED'"
+                      v-if="pr.status === 'DRAFT' || pr.status === 'SUBMITTED' || (pr.status === 'APPROVED' && props.auth?.user?.id_role === '5af56935b011a')"
                       @click="deletePR(pr)"
                       :disabled="!canDelete(pr)"
                       :class="[
                         'text-red-600 hover:text-red-900',
                         !canDelete(pr) ? 'opacity-50 cursor-not-allowed' : ''
                       ]"
-                      :title="canDelete(pr) ? 'Delete' : 'Hanya bisa dihapus jika status DRAFT atau SUBMITTED dan Anda adalah pembuat PR'"
+                      :title="canDelete(pr) ? 'Delete' : getDeleteTooltip(pr)"
                     >
                       <i class="fas fa-trash"></i>
                     </button>
@@ -455,40 +460,51 @@ function editPR(pr) {
 function canDelete(pr) {
   // Allow delete for DRAFT status and if user is the creator
   // Also allow delete for SUBMITTED status (not yet approved) if user is the creator
+  // Allow delete for APPROVED status if user has id_role = '5af56935b011a'
+  // If user has special role (id_role='5af56935b011a'), allow delete all data without checking creator
   const deletableStatuses = ['DRAFT', 'SUBMITTED'];
   const isDeletableStatus = deletableStatuses.includes(pr.status);
+  const isApprovedStatus = pr.status === 'APPROVED';
+  const hasSpecialRole = props.auth?.user?.id_role === '5af56935b011a';
   
   // Convert to string for comparison to avoid type mismatch
   const createdBy = String(pr.created_by);
   const currentUserId = String(props.auth?.user?.id);
   const isCreator = createdBy === currentUserId;
   
-  // Debug log
-  console.log('canDelete debug:', {
-    prId: pr.id,
-    status: pr.status,
-    createdBy: pr.created_by,
-    currentUser: props.auth?.user?.id,
-    createdByStr: createdBy,
-    currentUserIdStr: currentUserId,
-    isDeletableStatus,
-    isCreator,
-    result: isDeletableStatus && isCreator,
-    authUser: props.auth?.user,
-    prData: pr
-  });
+  // For APPROVED status, only allow if user has special role
+  if (isApprovedStatus) {
+    return hasSpecialRole;
+  }
   
-  // Temporary fallback for testing - allow delete for SUBMITTED if auth check fails
-  if (isDeletableStatus && !isCreator && pr.status === 'SUBMITTED') {
-    console.log('Fallback: Allowing delete for SUBMITTED status due to auth check failure');
-    return true;
+  // For DRAFT and SUBMITTED, allow if user is the creator
+  // If user has special role, allow delete all data without checking creator
+  if (hasSpecialRole) {
+    return isDeletableStatus;
   }
   
   return isDeletableStatus && isCreator;
 }
 
+function getDeleteTooltip(pr) {
+  const hasSpecialRole = props.auth?.user?.id_role === '5af56935b011a';
+  
+  if (pr.status === 'APPROVED') {
+    return hasSpecialRole ? 'Hapus PR yang sudah di-approve' : 'Hanya bisa dihapus oleh user dengan role khusus';
+  }
+  
+  if (hasSpecialRole) {
+    return 'Hapus PR (Anda memiliki akses untuk menghapus semua PR)';
+  }
+  
+  return 'Hanya bisa dihapus jika status DRAFT atau SUBMITTED dan Anda adalah pembuat PR';
+}
+
 function deletePR(pr) {
-  const statusText = pr.status === 'DRAFT' ? 'Draft' : 'Submitted (belum di-approve)';
+  let statusText = pr.status === 'DRAFT' ? 'Draft' : pr.status === 'SUBMITTED' ? 'Submitted (belum di-approve)' : 'Approved';
+  if (pr.status === 'APPROVED') {
+    statusText += ' (Hanya bisa dihapus oleh user dengan role khusus)';
+  }
   
   Swal.fire({
     title: 'Hapus Payment?',
@@ -585,6 +601,8 @@ function getModeLabel(mode) {
   const labels = {
     'pr_ops': 'Purchase Requisition',
     'purchase_payment': 'Payment Application',
+    'travel_application': 'Travel Application',
+    'kasbon': 'Kasbon',
   };
   return labels[mode] || mode;
 }
@@ -594,6 +612,8 @@ function getModeBadgeClass(mode) {
   const classes = {
     'pr_ops': 'bg-blue-100 text-blue-800',
     'purchase_payment': 'bg-green-100 text-green-800',
+    'travel_application': 'bg-purple-100 text-purple-800',
+    'kasbon': 'bg-orange-100 text-orange-800',
   };
   return classes[mode] || 'bg-gray-100 text-gray-800';
 }
@@ -605,6 +625,66 @@ function formatCurrency(amount) {
     currency: 'IDR',
     minimumFractionDigits: 0,
   }).format(amount);
+}
+
+function getOutletList(pr) {
+  if (!pr) return [];
+  
+  // Untuk mode pr_ops dan purchase_payment: ambil outlet dari items
+  if (pr.mode === 'pr_ops' || pr.mode === 'purchase_payment') {
+    if (pr.items && pr.items.length > 0) {
+      // Ambil unique outlets dari items
+      const outlets = new Set();
+      pr.items.forEach(item => {
+        if (item.outlet && item.outlet.nama_outlet) {
+          outlets.add(item.outlet.nama_outlet);
+        }
+      });
+      
+      if (outlets.size > 0) {
+        return Array.from(outlets).sort(); // Sort untuk konsistensi
+      }
+    }
+    // Fallback ke main PR outlet untuk data lama
+    if (pr.outlet?.nama_outlet) {
+      return [pr.outlet.nama_outlet];
+    }
+    return [];
+  }
+  
+  // Untuk mode travel_application: ambil dari travel_outlets (dari backend) atau parse dari notes
+  if (pr.mode === 'travel_application') {
+    // Cek apakah backend sudah menyediakan travel_outlets
+    if (pr.travel_outlets && Array.isArray(pr.travel_outlets) && pr.travel_outlets.length > 0) {
+      return pr.travel_outlets.sort(); // Sort untuk konsistensi
+    }
+    
+    // Fallback: coba dari items
+    if (pr.items && pr.items.length > 0) {
+      const outlets = new Set();
+      pr.items.forEach(item => {
+        if (item.outlet && item.outlet.nama_outlet) {
+          outlets.add(item.outlet.nama_outlet);
+        }
+      });
+      if (outlets.size > 0) {
+        return Array.from(outlets).sort(); // Sort untuk konsistensi
+      }
+    }
+    
+    // Fallback: parse dari notes JSON (tapi tidak bisa dapat nama, jadi return empty)
+    // Atau fallback ke main PR outlet untuk data lama
+    if (pr.outlet?.nama_outlet) {
+      return [pr.outlet.nama_outlet];
+    }
+    return [];
+  }
+  
+  // Untuk mode kasbon dan data lama: ambil dari main PR outlet
+  if (pr.outlet?.nama_outlet) {
+    return [pr.outlet.nama_outlet];
+  }
+  return [];
 }
 
 function formatDate(date) {

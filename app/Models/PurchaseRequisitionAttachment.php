@@ -11,6 +11,7 @@ class PurchaseRequisitionAttachment extends Model
 
     protected $fillable = [
         'purchase_requisition_id',
+        'outlet_id',
         'file_name',
         'file_path',
         'file_size',
@@ -31,6 +32,11 @@ class PurchaseRequisitionAttachment extends Model
     public function uploader()
     {
         return $this->belongsTo(User::class, 'uploaded_by');
+    }
+
+    public function outlet()
+    {
+        return $this->belongsTo(Outlet::class, 'outlet_id', 'id_outlet');
     }
 
     // Accessors

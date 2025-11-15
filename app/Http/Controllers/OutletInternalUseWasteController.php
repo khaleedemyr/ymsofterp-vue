@@ -200,9 +200,9 @@ class OutletInternalUseWasteController extends Controller
             DB::beginTransaction();
             
             // Determine if approval is required based on type
-            // Types that require approval: internal_use, r_and_d, marketing, non_commodity, guest_supplies, wrong_maker
-            // Types that don't require approval: spoil, waste
-            $typesRequiringApproval = ['internal_use', 'r_and_d', 'marketing', 'non_commodity', 'guest_supplies', 'wrong_maker'];
+            // Types that require approval: r_and_d, marketing, wrong_maker
+            // Types that don't require approval: internal_use, non_commodity, guest_supplies, spoil, waste
+            $typesRequiringApproval = ['r_and_d', 'marketing', 'wrong_maker'];
             $requiresApproval = in_array($request->type, $typesRequiringApproval);
             
             // Determine status
@@ -228,101 +228,167 @@ class OutletInternalUseWasteController extends Controller
                 'created_by' => $userId
             ]);
 
-            foreach ($request->items as $item) {
-                $inventoryItem = DB::table('outlet_food_inventory_items')
-                    ->where('item_id', $item['item_id'])
-                    ->first();
-                if (!$inventoryItem) {
-                    throw new \Exception("Item tidak ditemukan di inventory outlet");
-                }
-                $itemMaster = DB::table('items')->where('id', $item['item_id'])->first();
-                $unit = DB::table('units')->where('id', $item['unit_id'])->value('name');
-                $qty_input = $item['qty'];
-                $qty_small = 0;
-                $qty_medium = 0;
-                $qty_large = 0;
-                $unitSmall = DB::table('units')->where('id', $itemMaster->small_unit_id)->value('name');
-                $unitMedium = DB::table('units')->where('id', $itemMaster->medium_unit_id)->value('name');
-                $unitLarge = DB::table('units')->where('id', $itemMaster->large_unit_id)->value('name');
-                $smallConv = $itemMaster->small_conversion_qty ?: 1;
-                $mediumConv = $itemMaster->medium_conversion_qty ?: 1;
-                if ($unit === $unitSmall) {
-                    $qty_small = $qty_input;
-                    $qty_medium = $smallConv > 0 ? $qty_small / $smallConv : 0;
-                    $qty_large = ($smallConv > 0 && $mediumConv > 0) ? $qty_small / ($smallConv * $mediumConv) : 0;
-                } elseif ($unit === $unitMedium) {
-                    $qty_medium = $qty_input;
-                    $qty_small = $qty_medium * $smallConv;
-                    $qty_large = $mediumConv > 0 ? $qty_medium / $mediumConv : 0;
-                } elseif ($unit === $unitLarge) {
-                    $qty_large = $qty_input;
-                    $qty_medium = $qty_large * $mediumConv;
-                    $qty_small = $qty_medium * $smallConv;
-                } else {
-                    $qty_small = $qty_input;
-                }
-                $stock = DB::table('outlet_food_inventory_stocks')
-                    ->where('inventory_item_id', $inventoryItem->id)
-                    ->where('id_outlet', $request->outlet_id)
-                    ->first();
-                if (!$stock) {
-                    throw new \Exception("Stok item tidak ditemukan");
-                }
-                if ($qty_small > $stock->qty_small) {
-                    throw new \Exception("Qty melebihi stok yang tersedia. Stok tersedia: {$stock->qty_small} {$unitSmall}");
-                }
-                DB::table('outlet_internal_use_waste_details')->insert([
-                    'header_id' => $headerId,
-                    'item_id' => $item['item_id'],
-                    'qty' => $item['qty'],
-                    'unit_id' => $item['unit_id'],
-                    'note' => $item['note'],
-                    'created_at' => now(),
-                    'updated_at' => now()
-                ]);
-                
-                // Only process stock if status is PROCESSED (no approval needed)
-                if ($status === 'PROCESSED') {
-                    // Update stok di outlet (kurangi)
-                    DB::table('outlet_food_inventory_stocks')
+            foreach ($request->items as $itemIndex => $item) {
+                try {
+                    // Validasi item data
+                    if (empty($item['item_id'])) {
+                        throw new \Exception("Item ID tidak boleh kosong untuk item ke-" . ($itemIndex + 1));
+                    }
+                    if (empty($item['qty']) || $item['qty'] <= 0) {
+                        throw new \Exception("Quantity harus lebih dari 0 untuk item ke-" . ($itemIndex + 1));
+                    }
+                    if (empty($item['unit_id'])) {
+                        throw new \Exception("Unit ID tidak boleh kosong untuk item ke-" . ($itemIndex + 1));
+                    }
+                    
+                    // Cek inventory item (table outlet_food_inventory_items tidak punya warehouse_outlet_id)
+                    $inventoryItem = DB::table('outlet_food_inventory_items')
+                        ->where('item_id', $item['item_id'])
+                        ->first();
+                    if (!$inventoryItem) {
+                        $itemName = DB::table('items')->where('id', $item['item_id'])->value('name') ?? 'Unknown';
+                        throw new \Exception("Item '{$itemName}' tidak ditemukan di inventory untuk item ke-" . ($itemIndex + 1));
+                    }
+                    
+                    // Cek item master
+                    $itemMaster = DB::table('items')->where('id', $item['item_id'])->first();
+                    if (!$itemMaster) {
+                        throw new \Exception("Item master tidak ditemukan untuk item ke-" . ($itemIndex + 1));
+                    }
+                    
+                    // Cek unit
+                    $unit = DB::table('units')->where('id', $item['unit_id'])->value('name');
+                    if (!$unit) {
+                        throw new \Exception("Unit tidak ditemukan untuk item ke-" . ($itemIndex + 1));
+                    }
+                    
+                    $qty_input = floatval($item['qty']);
+                    $qty_small = 0;
+                    $qty_medium = 0;
+                    $qty_large = 0;
+                    $unitSmall = DB::table('units')->where('id', $itemMaster->small_unit_id)->value('name');
+                    $unitMedium = DB::table('units')->where('id', $itemMaster->medium_unit_id)->value('name');
+                    $unitLarge = DB::table('units')->where('id', $itemMaster->large_unit_id)->value('name');
+                    $smallConv = floatval($itemMaster->small_conversion_qty ?: 1);
+                    $mediumConv = floatval($itemMaster->medium_conversion_qty ?: 1);
+                    
+                    if ($unit === $unitSmall) {
+                        $qty_small = $qty_input;
+                        $qty_medium = $smallConv > 0 ? $qty_small / $smallConv : 0;
+                        $qty_large = ($smallConv > 0 && $mediumConv > 0) ? $qty_small / ($smallConv * $mediumConv) : 0;
+                    } elseif ($unit === $unitMedium) {
+                        $qty_medium = $qty_input;
+                        $qty_small = $qty_medium * $smallConv;
+                        $qty_large = $mediumConv > 0 ? $qty_medium / $mediumConv : 0;
+                    } elseif ($unit === $unitLarge) {
+                        $qty_large = $qty_input;
+                        $qty_medium = $qty_large * $mediumConv;
+                        $qty_small = $qty_medium * $smallConv;
+                    } else {
+                        $qty_small = $qty_input;
+                    }
+                    
+                    // Cek stock
+                    $stock = DB::table('outlet_food_inventory_stocks')
                         ->where('inventory_item_id', $inventoryItem->id)
                         ->where('id_outlet', $request->outlet_id)
                         ->where('warehouse_outlet_id', $request->warehouse_outlet_id)
-                        ->update([
-                            'qty_small' => $stock->qty_small - $qty_small,
-                            'qty_medium' => $stock->qty_medium - $qty_medium,
-                            'qty_large' => $stock->qty_large - $qty_large,
-                            'updated_at' => now(),
-                        ]);
-                    // Insert kartu stok OUT
-                    DB::table('outlet_food_inventory_cards')->insert([
-                        'inventory_item_id' => $inventoryItem->id,
-                        'id_outlet' => $request->outlet_id,
-                        'warehouse_outlet_id' => $request->warehouse_outlet_id,
-                        'date' => $request->date,
-                        'reference_type' => 'outlet_internal_use_waste',
-                        'reference_id' => $headerId,
-                        'out_qty_small' => $qty_small,
-                        'out_qty_medium' => $qty_medium,
-                        'out_qty_large' => $qty_large,
-                        'cost_per_small' => $stock->last_cost_small,
-                        'cost_per_medium' => $stock->last_cost_medium,
-                        'cost_per_large' => $stock->last_cost_large,
-                        'value_out' => $qty_small * $stock->last_cost_small,
-                        'saldo_qty_small' => $stock->qty_small - $qty_small,
-                        'saldo_qty_medium' => $stock->qty_medium - $qty_medium,
-                        'saldo_qty_large' => $stock->qty_large - $qty_large,
-                        'saldo_value' => ($stock->qty_small - $qty_small) * $stock->last_cost_small,
-                        'description' => 'Stock Out - ' . $request->type,
+                        ->first();
+                    if (!$stock) {
+                        $itemName = $itemMaster->name ?? 'Unknown';
+                        throw new \Exception("Stok item '{$itemName}' tidak ditemukan di outlet dan warehouse outlet yang dipilih untuk item ke-" . ($itemIndex + 1));
+                    }
+                    
+                    // Validasi stock cukup
+                    if ($qty_small > $stock->qty_small) {
+                        $itemName = $itemMaster->name ?? 'Unknown';
+                        throw new \Exception("Quantity item '{$itemName}' melebihi stok yang tersedia. Stok tersedia: " . number_format($stock->qty_small, 2) . " {$unitSmall} untuk item ke-" . ($itemIndex + 1));
+                    }
+                    
+                    // Insert detail
+                    $detailInserted = DB::table('outlet_internal_use_waste_details')->insert([
+                        'header_id' => $headerId,
+                        'item_id' => $item['item_id'],
+                        'qty' => $item['qty'],
+                        'unit_id' => $item['unit_id'],
+                        'note' => $item['note'] ?? null,
                         'created_at' => now(),
+                        'updated_at' => now()
                     ]);
+                    
+                    if (!$detailInserted) {
+                        throw new \Exception("Gagal menyimpan detail item ke-" . ($itemIndex + 1));
+                    }
+                    
+                    // Only process stock if status is PROCESSED (no approval needed)
+                    if ($status === 'PROCESSED') {
+                        // Update stok di outlet (kurangi)
+                        $stockUpdated = DB::table('outlet_food_inventory_stocks')
+                            ->where('inventory_item_id', $inventoryItem->id)
+                            ->where('id_outlet', $request->outlet_id)
+                            ->where('warehouse_outlet_id', $request->warehouse_outlet_id)
+                            ->update([
+                                'qty_small' => $stock->qty_small - $qty_small,
+                                'qty_medium' => $stock->qty_medium - $qty_medium,
+                                'qty_large' => $stock->qty_large - $qty_large,
+                                'updated_at' => now(),
+                            ]);
+                        
+                        if ($stockUpdated === false) {
+                            throw new \Exception("Gagal mengupdate stok untuk item ke-" . ($itemIndex + 1));
+                        }
+                        
+                        // Insert kartu stok OUT
+                        $cardInserted = DB::table('outlet_food_inventory_cards')->insert([
+                            'inventory_item_id' => $inventoryItem->id,
+                            'id_outlet' => $request->outlet_id,
+                            'warehouse_outlet_id' => $request->warehouse_outlet_id,
+                            'date' => $request->date,
+                            'reference_type' => 'outlet_internal_use_waste',
+                            'reference_id' => $headerId,
+                            'out_qty_small' => $qty_small,
+                            'out_qty_medium' => $qty_medium,
+                            'out_qty_large' => $qty_large,
+                            'cost_per_small' => $stock->last_cost_small ?? 0,
+                            'cost_per_medium' => $stock->last_cost_medium ?? 0,
+                            'cost_per_large' => $stock->last_cost_large ?? 0,
+                            'value_out' => $qty_small * ($stock->last_cost_small ?? 0),
+                            'saldo_qty_small' => $stock->qty_small - $qty_small,
+                            'saldo_qty_medium' => $stock->qty_medium - $qty_medium,
+                            'saldo_qty_large' => $stock->qty_large - $qty_large,
+                            'saldo_value' => ($stock->qty_small - $qty_small) * ($stock->last_cost_small ?? 0),
+                            'description' => 'Stock Out - ' . $request->type,
+                            'created_at' => now(),
+                        ]);
+                        
+                        if (!$cardInserted) {
+                            throw new \Exception("Gagal menyimpan kartu stok untuk item ke-" . ($itemIndex + 1));
+                        }
+                    }
+                } catch (\Exception $itemError) {
+                    // Re-throw dengan informasi item index
+                    throw new \Exception("Error pada item ke-" . ($itemIndex + 1) . ": " . $itemError->getMessage());
                 }
             }
             
             // Create approval flows if approvers provided
             if ($requiresApproval && !empty($request->approvers)) {
+                if (!is_array($request->approvers)) {
+                    throw new \Exception("Format approvers tidak valid. Harus berupa array.");
+                }
+                
                 foreach ($request->approvers as $index => $approverId) {
-                    DB::table('outlet_internal_use_waste_approval_flows')->insert([
+                    if (empty($approverId)) {
+                        throw new \Exception("Approver ID tidak boleh kosong untuk approver ke-" . ($index + 1));
+                    }
+                    
+                    // Validasi approver exists
+                    $approverExists = DB::table('users')->where('id', $approverId)->exists();
+                    if (!$approverExists) {
+                        throw new \Exception("Approver dengan ID {$approverId} tidak ditemukan untuk approver ke-" . ($index + 1));
+                    }
+                    
+                    $flowInserted = DB::table('outlet_internal_use_waste_approval_flows')->insert([
                         'header_id' => $headerId,
                         'approver_id' => $approverId,
                         'approval_level' => $index + 1, // Level 1 = terendah, level terakhir = tertinggi
@@ -330,10 +396,25 @@ class OutletInternalUseWasteController extends Controller
                         'created_at' => now(),
                         'updated_at' => now(),
                     ]);
+                    
+                    if (!$flowInserted) {
+                        throw new \Exception("Gagal menyimpan approval flow untuk approver ke-" . ($index + 1));
+                    }
                 }
             }
             
             DB::commit();
+            
+            // Verifikasi data tersimpan dengan baik
+            $headerExists = DB::table('outlet_internal_use_waste_headers')->where('id', $headerId)->exists();
+            if (!$headerExists) {
+                throw new \Exception("Header tidak ditemukan setelah commit. Kemungkinan terjadi error saat insert.");
+            }
+            
+            $detailsCount = DB::table('outlet_internal_use_waste_details')->where('header_id', $headerId)->count();
+            if ($detailsCount !== count($request->items)) {
+                throw new \Exception("Jumlah detail yang tersimpan ({$detailsCount}) tidak sesuai dengan jumlah item yang dikirim (" . count($request->items) . ").");
+            }
             
             \Log::info('OutletInternalUseWaste store - Successfully saved:', [
                 'header_id' => $headerId,
@@ -342,6 +423,40 @@ class OutletInternalUseWasteController extends Controller
                 'date' => $request->date,
                 'status' => $status
             ]);
+            
+            // Activity log CREATE
+            try {
+                $outletName = DB::table('tbl_data_outlet')->where('id_outlet', $request->outlet_id)->value('nama_outlet') ?? 'Unknown';
+                $warehouseName = DB::table('warehouse_outlets')->where('id', $request->warehouse_outlet_id)->value('name') ?? 'Unknown';
+                $typeLabel = ucfirst(str_replace('_', ' ', $request->type));
+                
+                DB::table('activity_logs')->insert([
+                    'user_id' => $userId,
+                    'activity_type' => 'create',
+                    'module' => 'outlet_internal_use_waste',
+                    'description' => "Membuat Category Cost Outlet: {$typeLabel} - {$outletName} ({$warehouseName})",
+                    'ip_address' => $request->ip(),
+                    'user_agent' => $request->userAgent(),
+                    'old_data' => null,
+                    'new_data' => json_encode([
+                        'header_id' => $headerId,
+                        'type' => $request->type,
+                        'outlet_id' => $request->outlet_id,
+                        'warehouse_outlet_id' => $request->warehouse_outlet_id,
+                        'date' => $request->date,
+                        'status' => $status,
+                        'item_count' => count($request->items)
+                    ]),
+                    'created_at' => now(),
+                    'updated_at' => now()
+                ]);
+            } catch (\Exception $logError) {
+                // Tidak throw error karena activity log bukan critical
+                \Log::warning('OutletInternalUseWaste store - Activity log failed (but data saved):', [
+                    'header_id' => $headerId,
+                    'error' => $logError->getMessage()
+                ]);
+            }
             
             // Send notification after commit (so it doesn't cause rollback if it fails)
             if ($requiresApproval && !empty($request->approvers)) {
@@ -357,6 +472,17 @@ class OutletInternalUseWasteController extends Controller
             }
             
             return redirect()->route('outlet-internal-use-waste.index')->with('success', 'Data berhasil disimpan');
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            \Log::error('Validation error in OutletInternalUseWaste store method:', [
+                'errors' => $e->errors(),
+                'request_data' => $request->except(['items'])
+            ]);
+            DB::rollBack();
+            $errorMessage = 'Validasi gagal: ';
+            foreach ($e->errors() as $field => $messages) {
+                $errorMessage .= implode(', ', $messages) . ' ';
+            }
+            return redirect()->back()->withInput()->with('error', trim($errorMessage));
         } catch (\Exception $e) {
             \Log::error('Error in OutletInternalUseWaste store method:', [
                 'message' => $e->getMessage(),
@@ -365,8 +491,27 @@ class OutletInternalUseWasteController extends Controller
                 'trace' => $e->getTraceAsString(),
                 'request_data' => $request->except(['items']) // Exclude items to avoid log spam
             ]);
-            DB::rollBack();
-            return redirect()->back()->with('error', 'Terjadi kesalahan sistem: ' . $e->getMessage());
+            
+            // Rollback transaction jika masih aktif
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
+            
+            // Buat pesan error yang lebih informatif
+            $errorMessage = $e->getMessage();
+            
+            // Jika error terkait database constraint
+            if (strpos($e->getMessage(), 'SQLSTATE') !== false) {
+                if (strpos($e->getMessage(), 'foreign key constraint') !== false) {
+                    $errorMessage = 'Data yang dipilih tidak valid atau tidak ditemukan. Silakan refresh halaman dan coba lagi.';
+                } elseif (strpos($e->getMessage(), 'Duplicate entry') !== false) {
+                    $errorMessage = 'Data duplikat terdeteksi. Silakan cek data yang sudah ada.';
+                } else {
+                    $errorMessage = 'Terjadi kesalahan database. Silakan hubungi administrator jika masalah berlanjut.';
+                }
+            }
+            
+            return redirect()->back()->withInput()->with('error', $errorMessage);
         }
     }
 
@@ -478,18 +623,39 @@ class OutletInternalUseWasteController extends Controller
             DB::table('outlet_internal_use_waste_headers')->where('id', $id)->delete();
 
             // Activity log DELETE
-            DB::table('activity_logs')->insert([
-                'user_id' => Auth::id(),
-                'activity_type' => 'delete',
-                'module' => 'outlet_internal_use_waste',
-                'description' => 'Menghapus internal use/waste outlet: ' . $id,
-                'ip_address' => request()->ip(),
-                'user_agent' => request()->userAgent(),
-                'old_data' => json_encode(['header' => $header, 'details' => $details]),
-                'new_data' => null,
-                'created_at' => now(),
-                'updated_at' => now(),
-            ]);
+            try {
+                $outletName = DB::table('tbl_data_outlet')->where('id_outlet', $header->outlet_id)->value('nama_outlet') ?? 'Unknown';
+                $warehouseName = DB::table('warehouse_outlets')->where('id', $header->warehouse_outlet_id)->value('name') ?? 'Unknown';
+                $typeLabel = ucfirst(str_replace('_', ' ', $header->type));
+                
+                DB::table('activity_logs')->insert([
+                    'user_id' => Auth::id(),
+                    'activity_type' => 'delete',
+                    'module' => 'outlet_internal_use_waste',
+                    'description' => "Menghapus Category Cost Outlet: {$typeLabel} - {$outletName} ({$warehouseName})",
+                    'ip_address' => request()->ip(),
+                    'user_agent' => request()->userAgent(),
+                    'old_data' => json_encode([
+                        'header_id' => $header->id,
+                        'type' => $header->type,
+                        'outlet_id' => $header->outlet_id,
+                        'warehouse_outlet_id' => $header->warehouse_outlet_id,
+                        'date' => $header->date,
+                        'status' => $header->status,
+                        'details_count' => $details->count()
+                    ]),
+                    'new_data' => null,
+                    'created_at' => now(),
+                    'updated_at' => now()
+                ]);
+            } catch (\Exception $logError) {
+                // Tidak throw error karena activity log bukan critical
+                \Log::warning('OutletInternalUseWaste destroy - Activity log failed (but data deleted):', [
+                    'header_id' => $id,
+                    'error' => $logError->getMessage()
+                ]);
+            }
+            
             DB::commit();
             return response()->json(['success' => true]);
         } catch (\Exception $e) {
@@ -897,6 +1063,29 @@ class OutletInternalUseWasteController extends Controller
                 DB::commit();
                 $this->sendNotificationToNextApprover($id);
                 
+                // Activity log APPROVE (partial - masih ada approver lain)
+                try {
+                    $outletName = DB::table('tbl_data_outlet')->where('id_outlet', $header->outlet_id)->value('nama_outlet') ?? 'Unknown';
+                    $warehouseName = DB::table('warehouse_outlets')->where('id', $header->warehouse_outlet_id)->value('name') ?? 'Unknown';
+                    $typeLabel = ucfirst(str_replace('_', ' ', $header->type));
+                    $approverName = $currentApprover->nama_lengkap ?? $currentApprover->email ?? 'Unknown';
+                    
+                    DB::table('activity_logs')->insert([
+                        'user_id' => $currentApprover->id,
+                        'activity_type' => 'approve',
+                        'module' => 'outlet_internal_use_waste',
+                        'description' => "Approve Category Cost Outlet (Partial): {$typeLabel} - {$outletName} ({$warehouseName}) oleh {$approverName}",
+                        'ip_address' => $request->ip(),
+                        'user_agent' => $request->userAgent(),
+                        'old_data' => json_encode(['status' => 'SUBMITTED', 'approval_level' => $currentLevel]),
+                        'new_data' => json_encode(['status' => 'SUBMITTED', 'approval_level' => $currentLevel, 'approved_by' => $currentApprover->id, 'pending_approvers' => $pendingApprovers]),
+                        'created_at' => now(),
+                        'updated_at' => now()
+                    ]);
+                } catch (\Exception $logError) {
+                    \Log::warning('OutletInternalUseWaste approve - Activity log failed:', ['error' => $logError->getMessage()]);
+                }
+                
                 $message = 'Approval berhasil! Notifikasi dikirim ke approver berikutnya.';
             } else {
                 // All approvers have approved, process stock and update status
@@ -910,6 +1099,30 @@ class OutletInternalUseWasteController extends Controller
                     ]);
                 
                 DB::commit();
+                
+                // Activity log APPROVE (complete - semua approver sudah approve)
+                try {
+                    $outletName = DB::table('tbl_data_outlet')->where('id_outlet', $header->outlet_id)->value('nama_outlet') ?? 'Unknown';
+                    $warehouseName = DB::table('warehouse_outlets')->where('id', $header->warehouse_outlet_id)->value('name') ?? 'Unknown';
+                    $typeLabel = ucfirst(str_replace('_', ' ', $header->type));
+                    $approverName = $currentApprover->nama_lengkap ?? $currentApprover->email ?? 'Unknown';
+                    
+                    DB::table('activity_logs')->insert([
+                        'user_id' => $currentApprover->id,
+                        'activity_type' => 'approve',
+                        'module' => 'outlet_internal_use_waste',
+                        'description' => "Approve Category Cost Outlet (Complete): {$typeLabel} - {$outletName} ({$warehouseName}) oleh {$approverName}",
+                        'ip_address' => $request->ip(),
+                        'user_agent' => $request->userAgent(),
+                        'old_data' => json_encode(['status' => 'SUBMITTED', 'approval_level' => $currentLevel]),
+                        'new_data' => json_encode(['status' => 'APPROVED', 'approval_level' => $currentLevel, 'approved_by' => $currentApprover->id, 'stock_processed' => true]),
+                        'created_at' => now(),
+                        'updated_at' => now()
+                    ]);
+                } catch (\Exception $logError) {
+                    \Log::warning('OutletInternalUseWaste approve - Activity log failed:', ['error' => $logError->getMessage()]);
+                }
+                
                 $message = 'Semua approval telah selesai! Stock telah diproses.';
             }
             
@@ -989,6 +1202,35 @@ class OutletInternalUseWasteController extends Controller
                 ]);
             
             DB::commit();
+            
+            // Activity log REJECT
+            try {
+                $outletName = DB::table('tbl_data_outlet')->where('id_outlet', $header->outlet_id)->value('nama_outlet') ?? 'Unknown';
+                $warehouseName = DB::table('warehouse_outlets')->where('id', $header->warehouse_outlet_id)->value('name') ?? 'Unknown';
+                $typeLabel = ucfirst(str_replace('_', ' ', $header->type));
+                $approverName = $currentApprover->nama_lengkap ?? $currentApprover->email ?? 'Unknown';
+                
+                DB::table('activity_logs')->insert([
+                    'user_id' => $currentApprover->id,
+                    'activity_type' => 'reject',
+                    'module' => 'outlet_internal_use_waste',
+                    'description' => "Reject Category Cost Outlet: {$typeLabel} - {$outletName} ({$warehouseName}) oleh {$approverName}",
+                    'ip_address' => $request->ip(),
+                    'user_agent' => $request->userAgent(),
+                    'old_data' => json_encode(['status' => 'SUBMITTED', 'approval_level' => $currentApprovalFlow->approval_level]),
+                    'new_data' => json_encode([
+                        'status' => 'REJECTED',
+                        'approval_level' => $currentApprovalFlow->approval_level,
+                        'rejected_by' => $currentApprover->id,
+                        'rejection_reason' => $validated['rejection_reason']
+                    ]),
+                    'created_at' => now(),
+                    'updated_at' => now()
+                ]);
+            } catch (\Exception $logError) {
+                \Log::warning('OutletInternalUseWaste reject - Activity log failed:', ['error' => $logError->getMessage()]);
+            }
+            
             return response()->json([
                 'success' => true,
                 'message' => 'Data berhasil ditolak'

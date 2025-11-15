@@ -130,6 +130,10 @@ class PurchaseOrderOpsController extends Controller
         $prs = DB::table('purchase_requisitions as pr')
             ->join('purchase_requisition_items as items', 'pr.id', '=', 'items.purchase_requisition_id')
             ->leftJoin('tbl_data_divisi as d', 'pr.division_id', '=', 'd.id')
+            ->leftJoin('tbl_data_outlet as o', 'items.outlet_id', '=', 'o.id_outlet')
+            ->leftJoin('tbl_data_outlet as pr_o', 'pr.outlet_id', '=', 'pr_o.id_outlet') // PR outlet for fallback
+            ->leftJoin('purchase_requisition_categories as c', 'items.category_id', '=', 'c.id')
+            ->leftJoin('purchase_requisition_categories as pr_c', 'pr.category_id', '=', 'pr_c.id') // PR category for fallback
             ->where('pr.status', 'APPROVED') // Only approved PRs
             ->where('pr.mode', 'pr_ops') // Only PR Ops mode
             ->whereNotIn('pr.id', $fullyProcessedPRs) // Exclude fully processed PRs
@@ -144,12 +148,20 @@ class PurchaseOrderOpsController extends Controller
                 'pr.amount',
                 'pr.mode',
                 'pr.status',
+                'pr.outlet_id as pr_outlet_id',
+                'pr.category_id as pr_category_id',
                 'items.id as item_id',
                 'items.item_name',
                 'items.qty',
                 'items.unit',
                 'items.unit_price',
                 'items.subtotal',
+                'items.outlet_id',
+                'items.category_id',
+                'o.nama_outlet as outlet_name',
+                'pr_o.nama_outlet as pr_outlet_name',
+                'c.name as category_name',
+                'pr_c.name as pr_category_name',
                 'd.nama_divisi as division_name'
             )
             ->get()
@@ -157,9 +169,21 @@ class PurchaseOrderOpsController extends Controller
             ->map(function ($group) {
                 $first = $group->first();
                 
-                // Get attachments for this PR
+                // Get PR outlet and category for fallback
+                $prOutlet = $first->pr_outlet_id ? [
+                    'id' => $first->pr_outlet_id,
+                    'nama_outlet' => $first->pr_outlet_name
+                ] : null;
+                
+                $prCategory = $first->pr_category_id ? [
+                    'id' => $first->pr_category_id,
+                    'name' => $first->pr_category_name
+                ] : null;
+                
+                // Get attachments for this PR (with outlet info for new structure)
                 $attachments = DB::table('purchase_requisition_attachments as pra')
                     ->leftJoin('users as u', 'pra.uploaded_by', '=', 'u.id')
+                    ->leftJoin('tbl_data_outlet as o', 'pra.outlet_id', '=', 'o.id_outlet')
                     ->where('pra.purchase_requisition_id', $first->id)
                     ->select(
                         'pra.id',
@@ -168,10 +192,24 @@ class PurchaseOrderOpsController extends Controller
                         'pra.file_size',
                         'pra.mime_type',
                         'pra.created_at',
+                        'pra.outlet_id',
+                        'o.nama_outlet as outlet_name',
                         'u.nama_lengkap as uploader_name'
                     )
                     ->get()
-                    ->map(function ($attachment) {
+                    ->map(function ($attachment) use ($prOutlet) {
+                        // For legacy attachments without outlet_id, use PR outlet as fallback
+                        $outlet = null;
+                        if ($attachment->outlet_id && $attachment->outlet_name) {
+                            $outlet = [
+                                'id' => $attachment->outlet_id,
+                                'nama_outlet' => $attachment->outlet_name
+                            ];
+                        } elseif ($prOutlet) {
+                            // Fallback to PR outlet for legacy data
+                            $outlet = $prOutlet;
+                        }
+                        
                         return [
                             'id' => $attachment->id,
                             'file_name' => $attachment->file_name,
@@ -179,6 +217,8 @@ class PurchaseOrderOpsController extends Controller
                             'file_size' => $attachment->file_size,
                             'mime_type' => $attachment->mime_type,
                             'created_at' => $attachment->created_at,
+                            'outlet_id' => $attachment->outlet_id ?? ($prOutlet ? $prOutlet['id'] : null),
+                            'outlet' => $outlet,
                             'uploader' => [
                                 'nama_lengkap' => $attachment->uploader_name
                             ]
@@ -196,8 +236,34 @@ class PurchaseOrderOpsController extends Controller
                     'amount' => $first->amount,
                     'mode' => $first->mode ?? 'pr_ops',
                     'status' => $first->status ?? 'APPROVED',
+                    'outlet' => $prOutlet, // PR outlet for reference
+                    'category' => $prCategory, // PR category for reference
                     'attachments' => $attachments,
-                    'items' => $group->map(function ($item) use ($first) {
+                    'items' => $group->map(function ($item) use ($first, $prOutlet, $prCategory) {
+                        // For legacy items without outlet_id, use PR outlet as fallback
+                        $outlet = null;
+                        if ($item->outlet_id && $item->outlet_name) {
+                            $outlet = [
+                                'id' => $item->outlet_id,
+                                'nama_outlet' => $item->outlet_name
+                            ];
+                        } elseif ($prOutlet) {
+                            // Fallback to PR outlet for legacy data
+                            $outlet = $prOutlet;
+                        }
+                        
+                        // For legacy items without category_id, use PR category as fallback
+                        $category = null;
+                        if ($item->category_id && $item->category_name) {
+                            $category = [
+                                'id' => $item->category_id,
+                                'name' => $item->category_name
+                            ];
+                        } elseif ($prCategory) {
+                            // Fallback to PR category for legacy data
+                            $category = $prCategory;
+                        }
+                        
                         return [
                             'id' => $item->item_id,
                             'item_name' => $item->item_name,
@@ -205,6 +271,10 @@ class PurchaseOrderOpsController extends Controller
                             'unit' => $item->unit,
                             'unit_price' => $item->unit_price,
                             'subtotal' => $item->subtotal,
+                            'outlet_id' => $item->outlet_id ?? $prOutlet['id'] ?? null,
+                            'category_id' => $item->category_id ?? $prCategory['id'] ?? null,
+                            'outlet' => $outlet,
+                            'category' => $category,
                             'supplier_id' => null,
                             'price' => null,
                             'pr_id' => $first->id, // Add PR ID to each item
@@ -378,8 +448,8 @@ class PurchaseOrderOpsController extends Controller
                     continue;
                 }
 
-                // Only process PR Ops and Payment modes
-                if (!in_array($pr->mode, ['pr_ops', 'purchase_payment'])) {
+                // Only process PR Ops mode (PO only for purchase requisition, not for payment/travel/kasbon)
+                if ($pr->mode !== 'pr_ops') {
                     continue;
                 }
 
@@ -752,7 +822,7 @@ class PurchaseOrderOpsController extends Controller
             // Update related Purchase Requisition Ops status based on remaining items in PO
             if ($po->source_type === 'purchase_requisition_ops' && $po->source_id) {
                 $pr = PurchaseRequisition::find($po->source_id);
-                if ($pr && in_array($pr->mode, ['pr_ops', 'purchase_payment'])) {
+                if ($pr && $pr->mode === 'pr_ops') {
                     // Get all items for this PR
                     $allPrItems = PurchaseRequisitionItem::where('purchase_requisition_id', $pr->id)->get();
                     

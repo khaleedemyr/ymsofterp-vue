@@ -95,6 +95,12 @@
                         <div v-if="item.loading" class="absolute right-2 top-2">
                           <i class="fa fa-spinner fa-spin text-blue-400"></i>
                         </div>
+                        <div v-if="!form.warehouse_outlet_id" class="text-xs text-yellow-600 mt-1">
+                          Pilih warehouse outlet terlebih dahulu untuk melihat stok.
+                        </div>
+                        <div v-if="item.stock" class="text-xs text-gray-500 mt-1">
+                          Stok: {{ formatStockDisplay(item) }}
+                        </div>
                       </div>
                     </td>
                     <td class="px-3 py-2 min-w-[100px]">
@@ -226,7 +232,7 @@
 
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue'
-import { ref, watch, computed } from 'vue'
+import { ref, watch, computed, onMounted } from 'vue'
 import { router, usePage } from '@inertiajs/vue3'
 import axios from 'axios'
 import Swal from 'sweetalert2'
@@ -254,7 +260,8 @@ function newItem() {
     suggestions: [],
     showDropdown: false,
     highlightedIndex: -1,
-    loading: false
+    loading: false,
+    stock: null
   }
 }
 
@@ -345,6 +352,10 @@ function selectItem(idx, item) {
   form.value.items[idx].highlightedIndex = -1;
   // Set small unit directly
   setSmallUnit(idx, item.id);
+  // Fetch stock untuk item yang dipilih
+  if (form.value.warehouse_outlet_id) {
+    fetchStock(idx);
+  }
 }
 
 async function setSmallUnit(idx, itemId) {
@@ -395,6 +406,7 @@ function onItemKeydown(idx, e) {
 
 async function submit() {
   // Validation: check if approval required and approvers are set
+  // Only r_and_d, marketing, and wrong_maker require approval
   const requiresApproval = form.value.type === 'r_and_d' || form.value.type === 'marketing' || form.value.type === 'wrong_maker'
   if (requiresApproval && (!form.value.approvers || form.value.approvers.length === 0)) {
     Swal.fire({
@@ -416,23 +428,90 @@ async function submit() {
   
   try {
     await router.post(route('outlet-internal-use-waste.store'), formData, {
-      onSuccess: () => {
+      onSuccess: (page) => {
         console.log('Form submitted successfully')
-        Swal.fire({
-          icon: 'success',
-          title: 'Berhasil',
-          text: 'Data berhasil disimpan!',
-          timer: 1500,
-          showConfirmButton: false
-        })
+        
+        // Cek apakah ada pesan error dari backend
+        if (page.props.flash?.error) {
+          Swal.fire({
+            icon: 'error',
+            title: 'Gagal Menyimpan Data',
+            html: page.props.flash.error,
+            confirmButtonText: 'OK',
+            confirmButtonColor: '#EF4444'
+          })
+          loading.value = false
+          return
+        }
+        
+        // Cek apakah ada pesan success
+        if (page.props.flash?.success) {
+          Swal.fire({
+            icon: 'success',
+            title: 'Berhasil',
+            text: page.props.flash.success,
+            timer: 1500,
+            showConfirmButton: false
+          })
+        } else {
+          Swal.fire({
+            icon: 'success',
+            title: 'Berhasil',
+            text: 'Data berhasil disimpan!',
+            timer: 1500,
+            showConfirmButton: false
+          })
+        }
         loading.value = false
       },
       onError: (errors) => {
         console.error('Error submitting form:', errors)
+        
+        // Buat pesan error yang lebih detail
+        let errorMessage = 'Gagal menyimpan data. '
+        
+        if (errors.message) {
+          errorMessage = errors.message
+        } else if (typeof errors === 'string') {
+          errorMessage = errors
+        } else if (errors.error) {
+          errorMessage = errors.error
+        } else {
+          // Jika ada validation errors
+          const errorList = []
+          if (errors.items) {
+            errorList.push('Items: ' + (Array.isArray(errors.items) ? errors.items.join(', ') : errors.items))
+          }
+          if (errors.type) {
+            errorList.push('Type: ' + (Array.isArray(errors.type) ? errors.type.join(', ') : errors.type))
+          }
+          if (errors.outlet_id) {
+            errorList.push('Outlet: ' + (Array.isArray(errors.outlet_id) ? errors.outlet_id.join(', ') : errors.outlet_id))
+          }
+          if (errors.warehouse_outlet_id) {
+            errorList.push('Warehouse Outlet: ' + (Array.isArray(errors.warehouse_outlet_id) ? errors.warehouse_outlet_id.join(', ') : errors.warehouse_outlet_id))
+          }
+          if (errors.date) {
+            errorList.push('Tanggal: ' + (Array.isArray(errors.date) ? errors.date.join(', ') : errors.date))
+          }
+          if (errors.approvers) {
+            errorList.push('Approvers: ' + (Array.isArray(errors.approvers) ? errors.approvers.join(', ') : errors.approvers))
+          }
+          
+          if (errorList.length > 0) {
+            errorMessage += '<br><br>Detail error:<br>' + errorList.join('<br>')
+          } else {
+            errorMessage += 'Silakan cek input Anda dan pastikan semua data valid.'
+          }
+        }
+        
         Swal.fire({
           icon: 'error',
-          title: 'Gagal',
-          text: 'Gagal menyimpan data. Silakan cek input Anda.',
+          title: 'Gagal Menyimpan Data',
+          html: errorMessage,
+          confirmButtonText: 'OK',
+          confirmButtonColor: '#EF4444',
+          width: '600px'
         })
         loading.value = false
       },
@@ -446,7 +525,9 @@ async function submit() {
     Swal.fire({
       icon: 'error',
       title: 'Gagal',
-      text: 'Terjadi kesalahan sistem.',
+      text: 'Terjadi kesalahan sistem: ' + (e.message || 'Unknown error'),
+      confirmButtonText: 'OK',
+      confirmButtonColor: '#EF4444'
     })
   }
 }
@@ -550,6 +631,82 @@ const reorderApprover = (fromIndex, toIndex) => {
   const approver = form.value.approvers.splice(fromIndex, 1)[0]
   form.value.approvers.splice(toIndex, 0, approver)
 }
+
+// Handle flash messages from backend
+watch(() => page.props.flash, (flash) => {
+  if (flash?.error) {
+    Swal.fire({
+      icon: 'error',
+      title: 'Gagal Menyimpan Data',
+      html: flash.error,
+      confirmButtonText: 'OK',
+      confirmButtonColor: '#EF4444',
+      width: '600px'
+    })
+  }
+}, { immediate: true })
+
+// Tambahkan fungsi fetchStock untuk mengambil stok dari warehouse outlet
+async function fetchStock(idx) {
+  const item = form.value.items[idx];
+  if (!item.item_id || !form.value.warehouse_outlet_id) return;
+  try {
+    const res = await axios.get('/api/outlet-inventory/stock', {
+      params: { item_id: item.item_id, warehouse_outlet_id: form.value.warehouse_outlet_id }
+    });
+    // Simpan stok ke item
+    item.stock = res.data;
+  } catch (e) {
+    console.error('Error fetching stock:', e);
+    item.stock = { 
+      qty_small: 0, 
+      qty_medium: 0, 
+      qty_large: 0,
+      unit_small: '',
+      unit_medium: '',
+      unit_large: ''
+    };
+  }
+}
+
+function formatNumber(val) {
+  if (val == null) return 0;
+  if (Number(val) % 1 === 0) return Number(val);
+  return Number(val).toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+}
+
+function formatStockDisplay(item) {
+  if (!item.stock) return 'Stok: 0';
+  const small = Number(item.stock.qty_small || 0);
+  const medium = Number(item.stock.qty_medium || 0);
+  const large = Number(item.stock.qty_large || 0);
+  
+  let display = 'Stok: ';
+  const parts = [];
+  
+  if (small > 0 || item.stock.unit_small) {
+    parts.push(`${formatNumber(small)} ${item.stock.unit_small || ''}`);
+  }
+  if (medium > 0 || item.stock.unit_medium) {
+    parts.push(`${formatNumber(medium)} ${item.stock.unit_medium || ''}`);
+  }
+  if (large > 0 || item.stock.unit_large) {
+    parts.push(`${formatNumber(large)} ${item.stock.unit_large || ''}`);
+  }
+  
+  if (parts.length === 0) {
+    return 'Stok: 0';
+  }
+  
+  return display + parts.join(' | ');
+}
+
+// Panggil fetchStock setiap kali warehouse_outlet_id berubah
+watch(() => form.value.warehouse_outlet_id, (newVal) => {
+  form.value.items.forEach((item, idx) => {
+    if (item.item_id && newVal) fetchStock(idx);
+  });
+});
 
 </script>
 
