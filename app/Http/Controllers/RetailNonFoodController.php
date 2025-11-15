@@ -135,9 +135,9 @@ class RetailNonFoodController extends Controller
             // Generate nomor retail non food
             $retailNumber = $this->generateRetailNumber();
 
-            // Hitung total amount
+            // Hitung total amount dari items
             $totalAmount = collect($request->items)->sum(function ($item) {
-                return $item['qty'] * $item['price'];
+                return (float)($item['qty'] ?? 0) * (float)($item['price'] ?? 0);
             });
 
             // Validasi budget sebelum simpan (category_budget_id sudah required di validation)
@@ -250,8 +250,8 @@ class RetailNonFoodController extends Controller
                     
                     // If PR hasn't been converted to PO, use PR amount
                     // If PR has been converted to PO, use PO total
-                    $totalAmount = $poTotal > 0 ? $poTotal : $pr->amount;
-                    $unpaidAmount += max(0, $totalAmount - $totalPaid);
+                    $prTotalAmount = $poTotal > 0 ? $poTotal : $pr->amount;
+                    $unpaidAmount += max(0, $prTotalAmount - $totalPaid);
                 }
                 
                 // Calculate category used amount = Paid (from non_food_payments) + Unpaid PR + Retail Non Food pending
@@ -541,8 +541,8 @@ class RetailNonFoodController extends Controller
                 
                 // If PR hasn't been converted to PO, use PR amount
                 // If PR has been converted to PO, use PO total
-                $totalAmount = $poTotal > 0 ? $poTotal : $pr->amount;
-                $unpaidAmount += max(0, $totalAmount - $totalPaid);
+                $prTotalAmount = $poTotal > 0 ? $poTotal : $pr->amount;
+                $unpaidAmount += max(0, $prTotalAmount - $totalPaid);
             }
             
             // Calculate category used amount = Paid (from non_food_payments + RNF approved) + Unpaid PR

@@ -118,7 +118,7 @@
                       <input type="number" min="0" step="0.01" v-model.number="item.price" @input="calculateSubtotal(idx)" class="input input-bordered w-full" required />
                     </td>
                     <td class="px-3 py-2 min-w-[150px] text-right">
-                      {{ formatRupiah(item.subtotal) }}
+                      {{ formatRupiah((parseFloat(item.qty) || 0) * (parseFloat(item.price) || 0)) }}
                     </td>
                     <td class="px-3 py-2">
                       <button type="button" @click="removeItem(idx)" class="text-red-500 hover:text-red-700" :disabled="form.items.length === 1">
@@ -233,11 +233,18 @@ function removeItem(idx) {
 
 function calculateSubtotal(idx) {
   const item = form.value.items[idx]
-  item.subtotal = (item.qty || 0) * (item.price || 0)
+  const qty = parseFloat(item.qty) || 0
+  const price = parseFloat(item.price) || 0
+  item.subtotal = qty * price
 }
 
 const totalAmount = computed(() => {
-  return form.value.items.reduce((sum, item) => sum + (item.subtotal || 0), 0)
+  return form.value.items.reduce((sum, item) => {
+    const qty = parseFloat(item.qty) || 0
+    const price = parseFloat(item.price) || 0
+    const subtotal = qty * price
+    return sum + subtotal
+  }, 0)
 })
 
 function formatRupiah(val) {
@@ -298,6 +305,13 @@ watch([
   }
 }, { immediate: true })
 
+// Watch untuk update subtotal setiap kali qty atau price berubah
+watch(() => form.value.items, () => {
+  form.value.items.forEach((item, idx) => {
+    calculateSubtotal(idx)
+  })
+}, { deep: true })
+
 function onFileChange(e) {
   files.value = Array.from(e.target.files)
   filePreviews.value = files.value.map(file => URL.createObjectURL(file))
@@ -340,9 +354,9 @@ async function submit() {
     formData.append('notes', form.value.notes)
     form.value.items.forEach((item, idx) => {
       formData.append(`items[${idx}][item_name]`, item.item_name)
-      formData.append(`items[${idx}][qty]`, item.qty)
+      formData.append(`items[${idx}][qty]`, parseFloat(item.qty) || 0)
       formData.append(`items[${idx}][unit]`, item.unit)
-      formData.append(`items[${idx}][price]`, item.price)
+      formData.append(`items[${idx}][price]`, parseFloat(item.price) || 0)
     })
     files.value.forEach((file, idx) => {
       formData.append('invoices[]', file)
