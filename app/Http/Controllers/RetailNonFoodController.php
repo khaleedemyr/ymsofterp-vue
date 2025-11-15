@@ -195,18 +195,21 @@ class RetailNonFoodController extends Controller
                 // Add Retail Non Food approved amount (directly paid, same as Opex Report)
                 $paidAmount = $paidAmountFromPo + $retailNonFoodApproved;
                 
-                // Get all PRs in this category for the month
+                // Get all PRs in this category for the month (exclude held PRs)
                 $allPrs = PurchaseRequisition::where('category_id', $request->category_budget_id)
                     ->whereYear('created_at', $currentYear)
                     ->whereMonth('created_at', $currentMonth)
                     ->whereIn('status', ['SUBMITTED', 'APPROVED', 'PROCESSED', 'COMPLETED'])
+                    ->where('is_held', false) // Exclude held PRs
                     ->get();
                 
                 // Get PO totals per PR
+                // Exclude held PRs from unpaid calculation
                 $poTotalsByPr = DB::table('purchase_order_ops_items as poi')
                     ->leftJoin('purchase_order_ops as poo', 'poi.purchase_order_ops_id', '=', 'poo.id')
                     ->leftJoin('purchase_requisitions as pr', 'poi.source_id', '=', 'pr.id')
                     ->where('pr.category_id', $request->category_budget_id)
+                    ->where('pr.is_held', false) // Exclude held PRs
                     ->where('poi.source_type', 'purchase_requisition_ops')
                     ->where('poo.status', 'approved')
                     ->whereYear('poo.date', $currentYear)
@@ -217,11 +220,13 @@ class RetailNonFoodController extends Controller
                     ->toArray();
                 
                 // Get total paid per PR
+                // Exclude held PRs from unpaid calculation
                 $paidTotalsByPr = DB::table('non_food_payments as nfp')
                     ->leftJoin('purchase_order_ops as poo', 'nfp.purchase_order_ops_id', '=', 'poo.id')
                     ->leftJoin('purchase_order_ops_items as poi', 'poo.id', '=', 'poi.purchase_order_ops_id')
                     ->leftJoin('purchase_requisitions as pr', 'poi.source_id', '=', 'pr.id')
                     ->where('pr.category_id', $request->category_budget_id)
+                    ->where('pr.is_held', false) // Exclude held PRs
                     ->whereBetween('nfp.payment_date', [$dateFrom, $dateTo])
                     ->whereIn('nfp.status', ['paid', 'approved'])
                     ->where('nfp.status', '!=', 'cancelled')
@@ -231,9 +236,14 @@ class RetailNonFoodController extends Controller
                     ->pluck('total_paid', 'pr_id')
                     ->toArray();
                 
-                // Calculate unpaid for each PR
+                // Calculate unpaid for each PR (exclude held PRs)
                 $unpaidAmount = 0;
                 foreach ($allPrs as $pr) {
+                    // Skip held PRs
+                    if ($pr->is_held) {
+                        continue;
+                    }
+                    
                     $prId = $pr->id;
                     $poTotal = $poTotalsByPr[$prId] ?? 0;
                     $totalPaid = $paidTotalsByPr[$prId] ?? 0;
@@ -477,17 +487,21 @@ class RetailNonFoodController extends Controller
             $paidAmount = $paidAmountFromPo + $retailNonFoodApproved;
             
             // Get all PRs in this category for the month (same logic as Opex Report - use whereYear/whereMonth based on dateFrom)
+            // Exclude held PRs
             $allPrs = PurchaseRequisition::where('category_id', $request->category_budget_id)
                 ->whereYear('created_at', date('Y', strtotime($dateFrom)))
                 ->whereMonth('created_at', date('m', strtotime($dateFrom)))
                 ->whereIn('status', ['SUBMITTED', 'APPROVED', 'PROCESSED', 'COMPLETED'])
+                ->where('is_held', false) // Exclude held PRs
                 ->get();
             
             // Get PO totals per PR (same logic as Opex Report - use whereBetween for date filter)
+            // Exclude held PRs from unpaid calculation
             $poTotalsByPr = DB::table('purchase_order_ops_items as poi')
                 ->leftJoin('purchase_order_ops as poo', 'poi.purchase_order_ops_id', '=', 'poo.id')
                 ->leftJoin('purchase_requisitions as pr', 'poi.source_id', '=', 'pr.id')
                 ->where('pr.category_id', $request->category_budget_id)
+                ->where('pr.is_held', false) // Exclude held PRs
                 ->where('poi.source_type', 'purchase_requisition_ops')
                 ->where('poo.status', 'approved')
                 ->whereBetween('poo.date', [$dateFrom, $dateTo])
@@ -497,11 +511,13 @@ class RetailNonFoodController extends Controller
                 ->toArray();
             
             // Get total paid per PR
+            // Exclude held PRs from unpaid calculation
             $paidTotalsByPr = DB::table('non_food_payments as nfp')
                 ->leftJoin('purchase_order_ops as poo', 'nfp.purchase_order_ops_id', '=', 'poo.id')
                 ->leftJoin('purchase_order_ops_items as poi', 'poo.id', '=', 'poi.purchase_order_ops_id')
                 ->leftJoin('purchase_requisitions as pr', 'poi.source_id', '=', 'pr.id')
                 ->where('pr.category_id', $request->category_budget_id)
+                ->where('pr.is_held', false) // Exclude held PRs
                 ->whereBetween('nfp.payment_date', [$dateFrom, $dateTo])
                 ->whereIn('nfp.status', ['paid', 'approved'])
                 ->where('nfp.status', '!=', 'cancelled')
@@ -511,9 +527,14 @@ class RetailNonFoodController extends Controller
                 ->pluck('total_paid', 'pr_id')
                 ->toArray();
             
-            // Calculate unpaid for each PR
+            // Calculate unpaid for each PR (exclude held PRs)
             $unpaidAmount = 0;
             foreach ($allPrs as $pr) {
+                // Skip held PRs (double check)
+                if ($pr->is_held) {
+                    continue;
+                }
+                
                 $prId = $pr->id;
                 $poTotal = $poTotalsByPr[$prId] ?? 0;
                 $totalPaid = $paidTotalsByPr[$prId] ?? 0;

@@ -1608,16 +1608,18 @@ class PurchaseRequisitionController extends Controller
                         $paidAmount = $paidAmountFromPo + $paidAmountFromRnf;
                         
                         // Calculate unpaid: PO total - paid amount per PR
-                        // Get all PRs in this category for the month
-                        $allPrs = (clone $prQuery)->get();
+                        // Get all PRs in this category for the month (exclude held PRs)
+                        $allPrs = (clone $prQuery)->where('is_held', false)->get();
                         
                         // Get PO totals per PR (BUDGET IS MONTHLY - filter by PR created_at month)
+                        // Exclude held PRs from unpaid calculation
                         $poTotalsByPr = DB::table('purchase_order_ops_items as poi')
                             ->leftJoin('purchase_order_ops as poo', 'poi.purchase_order_ops_id', '=', 'poo.id')
                             ->leftJoin('purchase_requisitions as pr', 'poi.source_id', '=', 'pr.id')
                             ->where('pr.category_id', $category->id)
                             ->whereYear('pr.created_at', $currentYear)
                             ->whereMonth('pr.created_at', $currentMonth)
+                            ->where('pr.is_held', false) // Exclude held PRs
                             ->where('poi.source_type', 'purchase_requisition_ops')
                             ->where('poo.status', 'approved')
                             ->whereBetween('poo.date', [$dateFrom, $dateTo])
@@ -1627,6 +1629,7 @@ class PurchaseRequisitionController extends Controller
                             ->toArray();
                         
                         // Get total paid per PR (BUDGET IS MONTHLY - filter by PR created_at month and payment_date)
+                        // Exclude held PRs from unpaid calculation
                         $paidTotalsByPr = DB::table('non_food_payments as nfp')
                             ->leftJoin('purchase_order_ops as poo', 'nfp.purchase_order_ops_id', '=', 'poo.id')
                             ->leftJoin('purchase_order_ops_items as poi', 'poo.id', '=', 'poi.purchase_order_ops_id')
@@ -1634,6 +1637,7 @@ class PurchaseRequisitionController extends Controller
                             ->where('pr.category_id', $category->id)
                             ->whereYear('pr.created_at', $currentYear)
                             ->whereMonth('pr.created_at', $currentMonth)
+                            ->where('pr.is_held', false) // Exclude held PRs
                             ->whereBetween('nfp.payment_date', [$dateFrom, $dateTo])
                             ->whereIn('nfp.status', ['paid', 'approved'])
                             ->where('nfp.status', '!=', 'cancelled')
@@ -1704,15 +1708,17 @@ class PurchaseRequisitionController extends Controller
                                 ->where('nfp.status', '!=', 'cancelled')
                                 ->sum('nfp.amount');
                             
-                            // Get all PRs for this outlet
+                            // Get all PRs for this outlet (exclude held PRs)
                             $outletAllPrs = PurchaseRequisition::where('category_id', $category->id)
                                 ->where('outlet_id', $outletIdForBudget)
                                 ->whereYear('created_at', $currentYear)
                                 ->whereMonth('created_at', $currentMonth)
                                 ->whereIn('status', ['SUBMITTED', 'APPROVED', 'PROCESSED', 'COMPLETED'])
+                                ->where('is_held', false) // Exclude held PRs
                                 ->get();
                             
                             // Get PO totals per PR for this outlet (BUDGET IS MONTHLY - filter by PR created_at month)
+                            // Exclude held PRs from unpaid calculation
                             $outletPoTotalsByPr = DB::table('purchase_order_ops_items as poi')
                                 ->leftJoin('purchase_order_ops as poo', 'poi.purchase_order_ops_id', '=', 'poo.id')
                                 ->leftJoin('purchase_requisitions as pr', 'poi.source_id', '=', 'pr.id')
@@ -1720,6 +1726,7 @@ class PurchaseRequisitionController extends Controller
                                 ->where('pr.outlet_id', $outletIdForBudget)
                                 ->whereYear('pr.created_at', $currentYear)
                                 ->whereMonth('pr.created_at', $currentMonth)
+                                ->where('pr.is_held', false) // Exclude held PRs
                                 ->where('poi.source_type', 'purchase_requisition_ops')
                                 ->where('poo.status', 'approved')
                                 ->whereBetween('poo.date', [$dateFrom, $dateTo])
@@ -1729,6 +1736,7 @@ class PurchaseRequisitionController extends Controller
                                 ->toArray();
                             
                             // Get total paid per PR for this outlet (BUDGET IS MONTHLY - filter by PR created_at month and payment_date)
+                            // Exclude held PRs from unpaid calculation
                             $outletPaidTotalsByPr = DB::table('non_food_payments as nfp')
                                 ->leftJoin('purchase_order_ops as poo', 'nfp.purchase_order_ops_id', '=', 'poo.id')
                                 ->leftJoin('purchase_order_ops_items as poi', 'poo.id', '=', 'poi.purchase_order_ops_id')
@@ -1737,6 +1745,7 @@ class PurchaseRequisitionController extends Controller
                                 ->where('pr.outlet_id', $outletIdForBudget)
                                 ->whereYear('pr.created_at', $currentYear)
                                 ->whereMonth('pr.created_at', $currentMonth)
+                                ->where('pr.is_held', false) // Exclude held PRs
                                 ->whereBetween('nfp.payment_date', [$dateFrom, $dateTo])
                                 ->whereIn('nfp.status', ['paid', 'approved'])
                                 ->where('nfp.status', '!=', 'cancelled')
@@ -1849,10 +1858,11 @@ class PurchaseRequisitionController extends Controller
                             $paidAmount = $paidAmountFromPo + $paidAmountFromRnf;
                             
                             // Calculate unpaid: PO total - paid amount per PR
-                            // Get all PRs in this category and outlet for the month
-                            $allPrs = (clone $prQuery)->get();
+                            // Get all PRs in this category and outlet for the month (exclude held PRs)
+                            $allPrs = (clone $prQuery)->where('is_held', false)->get();
                             
                             // Get PO totals per PR (BUDGET IS MONTHLY - filter by PR created_at month)
+                            // Exclude held PRs from unpaid calculation
                             $poTotalsByPr = DB::table('purchase_order_ops_items as poi')
                                 ->leftJoin('purchase_order_ops as poo', 'poi.purchase_order_ops_id', '=', 'poo.id')
                                 ->leftJoin('purchase_requisitions as pr', 'poi.source_id', '=', 'pr.id')
@@ -1860,6 +1870,7 @@ class PurchaseRequisitionController extends Controller
                                 ->where('pr.outlet_id', $outletIdForBudget)
                                 ->whereYear('pr.created_at', $currentYear)
                                 ->whereMonth('pr.created_at', $currentMonth)
+                                ->where('pr.is_held', false) // Exclude held PRs
                                 ->where('poi.source_type', 'purchase_requisition_ops')
                                 ->where('poo.status', 'approved')
                                 ->whereBetween('poo.date', [$dateFrom, $dateTo])
@@ -1869,6 +1880,7 @@ class PurchaseRequisitionController extends Controller
                                 ->toArray();
                             
                             // Get total paid per PR (BUDGET IS MONTHLY - filter by PR created_at month and payment_date)
+                            // Exclude held PRs from unpaid calculation
                             $paidTotalsByPr = DB::table('non_food_payments as nfp')
                                 ->leftJoin('purchase_order_ops as poo', 'nfp.purchase_order_ops_id', '=', 'poo.id')
                                 ->leftJoin('purchase_order_ops_items as poi', 'poo.id', '=', 'poi.purchase_order_ops_id')
@@ -1877,6 +1889,7 @@ class PurchaseRequisitionController extends Controller
                                 ->where('pr.outlet_id', $outletIdForBudget)
                                 ->whereYear('pr.created_at', $currentYear)
                                 ->whereMonth('pr.created_at', $currentMonth)
+                                ->where('pr.is_held', false) // Exclude held PRs
                                 ->whereBetween('nfp.payment_date', [$dateFrom, $dateTo])
                                 ->whereIn('nfp.status', ['paid', 'approved'])
                                 ->where('nfp.status', '!=', 'cancelled')
@@ -2146,20 +2159,23 @@ class PurchaseRequisitionController extends Controller
                 ->where('status', 'pending')
                 ->sum('total_amount');
             
-            // Get all PRs for unpaid calculation
+            // Get all PRs for unpaid calculation (exclude held PRs)
             $allPrs = PurchaseRequisition::where('category_id', $categoryId)
                 ->whereYear('created_at', $year)
                 ->whereMonth('created_at', $month)
                 ->whereIn('status', ['SUBMITTED', 'APPROVED', 'PROCESSED', 'COMPLETED'])
+                ->where('is_held', false) // Exclude held PRs
                 ->get();
             
             // Get PO totals per PR (BUDGET IS MONTHLY - filter by PR created_at month)
+            // Exclude held PRs from unpaid calculation
             $poTotalsByPr = DB::table('purchase_order_ops_items as poi')
                 ->leftJoin('purchase_order_ops as poo', 'poi.purchase_order_ops_id', '=', 'poo.id')
                 ->leftJoin('purchase_requisitions as pr', 'poi.source_id', '=', 'pr.id')
                 ->where('pr.category_id', $categoryId)
                 ->whereYear('pr.created_at', $year)
                 ->whereMonth('pr.created_at', $month)
+                ->where('pr.is_held', false) // Exclude held PRs
                 ->where('poi.source_type', 'purchase_requisition_ops')
                 ->where('poo.status', 'approved')
                 ->whereBetween('poo.date', [$dateFrom, $dateTo])
@@ -2169,6 +2185,7 @@ class PurchaseRequisitionController extends Controller
                 ->toArray();
             
             // Get total paid per PR (BUDGET IS MONTHLY - filter by PR created_at month and payment_date)
+            // Exclude held PRs from unpaid calculation
             $paidTotalsByPr = DB::table('non_food_payments as nfp')
                 ->leftJoin('purchase_order_ops as poo', 'nfp.purchase_order_ops_id', '=', 'poo.id')
                 ->leftJoin('purchase_order_ops_items as poi', 'poo.id', '=', 'poi.purchase_order_ops_id')
@@ -2176,6 +2193,7 @@ class PurchaseRequisitionController extends Controller
                 ->where('pr.category_id', $categoryId)
                 ->whereYear('pr.created_at', $year)
                 ->whereMonth('pr.created_at', $month)
+                ->where('pr.is_held', false) // Exclude held PRs
                 ->whereBetween('nfp.payment_date', [$dateFrom, $dateTo])
                 ->whereIn('nfp.status', ['paid', 'approved'])
                 ->where('nfp.status', '!=', 'cancelled')
@@ -2268,15 +2286,17 @@ class PurchaseRequisitionController extends Controller
                 ->where('status', 'pending')
                 ->sum('total_amount');
             
-            // Get all PRs for this outlet
+            // Get all PRs for this outlet (exclude held PRs)
             $allPrs = PurchaseRequisition::where('category_id', $categoryId)
                 ->where('outlet_id', $outletId)
                 ->whereYear('created_at', $year)
                 ->whereMonth('created_at', $month)
                 ->whereIn('status', ['SUBMITTED', 'APPROVED', 'PROCESSED', 'COMPLETED'])
+                ->where('is_held', false) // Exclude held PRs
                 ->get();
             
             // Get PO totals per PR for this outlet (BUDGET IS MONTHLY - filter by PR created_at month)
+            // Exclude held PRs from unpaid calculation
             $poTotalsByPr = DB::table('purchase_order_ops_items as poi')
                 ->leftJoin('purchase_order_ops as poo', 'poi.purchase_order_ops_id', '=', 'poo.id')
                 ->leftJoin('purchase_requisitions as pr', 'poi.source_id', '=', 'pr.id')
@@ -2284,6 +2304,7 @@ class PurchaseRequisitionController extends Controller
                 ->where('pr.outlet_id', $outletId)
                 ->whereYear('pr.created_at', $year)
                 ->whereMonth('pr.created_at', $month)
+                ->where('pr.is_held', false) // Exclude held PRs
                 ->where('poi.source_type', 'purchase_requisition_ops')
                 ->where('poo.status', 'approved')
                 ->whereBetween('poo.date', [$dateFrom, $dateTo])
@@ -2293,6 +2314,7 @@ class PurchaseRequisitionController extends Controller
                 ->toArray();
             
             // Get total paid per PR for this outlet (BUDGET IS MONTHLY - filter by PR created_at month and payment_date)
+            // Exclude held PRs from unpaid calculation
             $paidTotalsByPr = DB::table('non_food_payments as nfp')
                 ->leftJoin('purchase_order_ops as poo', 'nfp.purchase_order_ops_id', '=', 'poo.id')
                 ->leftJoin('purchase_order_ops_items as poi', 'poo.id', '=', 'poi.purchase_order_ops_id')
@@ -2301,6 +2323,7 @@ class PurchaseRequisitionController extends Controller
                 ->where('pr.outlet_id', $outletId)
                 ->whereYear('pr.created_at', $year)
                 ->whereMonth('pr.created_at', $month)
+                ->where('pr.is_held', false) // Exclude held PRs
                 ->whereBetween('nfp.payment_date', [$dateFrom, $dateTo])
                 ->whereIn('nfp.status', ['paid', 'approved'])
                 ->where('nfp.status', '!=', 'cancelled')
@@ -2685,14 +2708,16 @@ class PurchaseRequisitionController extends Controller
                 ->where('status', 'pending')
                 ->sum('total_amount');
             
-            // Get all PRs for unpaid calculation
-            $allPrs = (clone $prQuery)->get();
+            // Get all PRs for unpaid calculation (exclude held PRs)
+            $allPrs = (clone $prQuery)->where('is_held', false)->get();
             
             // Get PO totals per PR
+            // Exclude held PRs from unpaid calculation
             $poTotalsByPr = DB::table('purchase_order_ops_items as poi')
                 ->leftJoin('purchase_order_ops as poo', 'poi.purchase_order_ops_id', '=', 'poo.id')
                 ->leftJoin('purchase_requisitions as pr', 'poi.source_id', '=', 'pr.id')
                 ->where('pr.category_id', $categoryId)
+                ->where('pr.is_held', false) // Exclude held PRs
                 ->where('poi.source_type', 'purchase_requisition_ops')
                 ->where('poo.status', 'approved')
                 ->whereYear('poo.date', $currentYear)
@@ -2708,11 +2733,13 @@ class PurchaseRequisitionController extends Controller
                 ->toArray();
             
             // Get total paid per PR
+            // Exclude held PRs from unpaid calculation
             $paidTotalsByPr = DB::table('non_food_payments as nfp')
                 ->leftJoin('purchase_order_ops as poo', 'nfp.purchase_order_ops_id', '=', 'poo.id')
                 ->leftJoin('purchase_order_ops_items as poi', 'poo.id', '=', 'poi.purchase_order_ops_id')
                 ->leftJoin('purchase_requisitions as pr', 'poi.source_id', '=', 'pr.id')
                 ->where('pr.category_id', $categoryId)
+                ->where('pr.is_held', false) // Exclude held PRs
                 ->whereYear('nfp.payment_date', $currentYear)
                 ->whereMonth('nfp.payment_date', $currentMonth)
                 ->whereIn('nfp.status', ['paid', 'approved'])
@@ -2819,15 +2846,17 @@ class PurchaseRequisitionController extends Controller
                 ->where('status', 'pending')
                 ->sum('total_amount');
             
-            // Get all PRs for this outlet
-            $allPrs = (clone $prQuery)->get();
+            // Get all PRs for this outlet (exclude held PRs)
+            $allPrs = (clone $prQuery)->where('is_held', false)->get();
             
             // Get PO totals per PR for this outlet
+            // Exclude held PRs from unpaid calculation
             $poTotalsByPrQuery = DB::table('purchase_order_ops_items as poi')
                 ->leftJoin('purchase_order_ops as poo', 'poi.purchase_order_ops_id', '=', 'poo.id')
                 ->leftJoin('purchase_requisitions as pr', 'poi.source_id', '=', 'pr.id')
                 ->where('pr.category_id', $categoryId)
                 ->where('pr.outlet_id', $outletId)
+                ->where('pr.is_held', false) // Exclude held PRs
                 ->where('poi.source_type', 'purchase_requisition_ops')
                 ->where('poo.status', 'approved')
                 ->whereYear('poo.date', $currentYear)
@@ -2843,12 +2872,14 @@ class PurchaseRequisitionController extends Controller
                 ->toArray();
             
             // Get total paid per PR for this outlet
+            // Exclude held PRs from unpaid calculation
             $paidTotalsByPrQuery = DB::table('non_food_payments as nfp')
                 ->leftJoin('purchase_order_ops as poo', 'nfp.purchase_order_ops_id', '=', 'poo.id')
                 ->leftJoin('purchase_order_ops_items as poi', 'poo.id', '=', 'poi.purchase_order_ops_id')
                 ->leftJoin('purchase_requisitions as pr', 'poi.source_id', '=', 'pr.id')
                 ->where('pr.category_id', $categoryId)
                 ->where('pr.outlet_id', $outletId)
+                ->where('pr.is_held', false) // Exclude held PRs
                 ->whereYear('nfp.payment_date', $currentYear)
                 ->whereMonth('nfp.payment_date', $currentMonth)
                 ->whereIn('nfp.status', ['paid', 'approved'])
@@ -2954,7 +2985,9 @@ class PurchaseRequisitionController extends Controller
     public function hold(Request $request, PurchaseRequisition $purchaseRequisition)
     {
         $request->validate([
-            'hold_reason' => 'nullable|string|max:1000'
+            'hold_reason' => 'required|string|max:1000'
+        ], [
+            'hold_reason.required' => 'Alasan hold harus diisi.'
         ]);
 
         if ($purchaseRequisition->is_held) {

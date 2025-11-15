@@ -1023,8 +1023,8 @@ function holdPR(pr) {
         <p class="mb-2"><strong>Title:</strong> ${pr.title}</p>
         <p class="mb-4 text-gray-600">PR yang di-hold tidak dapat dibuat PO atau Payment sampai di-release.</p>
         <div class="mb-2">
-          <label class="block text-sm font-medium text-gray-700 mb-1">Alasan Hold (Opsional):</label>
-          <textarea id="hold_reason" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500" rows="3" placeholder="Masukkan alasan hold..."></textarea>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Alasan Hold <span class="text-red-500">*</span>:</label>
+          <textarea id="hold_reason" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500" rows="3" placeholder="Masukkan alasan hold..." required></textarea>
         </div>
       </div>
     `,
@@ -1036,7 +1036,13 @@ function holdPR(pr) {
     cancelButtonText: 'Batal',
     reverseButtons: true,
     preConfirm: () => {
-      const reason = document.getElementById('hold_reason').value;
+      const reason = document.getElementById('hold_reason').value.trim();
+      
+      if (!reason || reason === '') {
+        Swal.showValidationMessage('Alasan hold harus diisi');
+        return false;
+      }
+      
       return { hold_reason: reason };
     }
   }).then((result) => {

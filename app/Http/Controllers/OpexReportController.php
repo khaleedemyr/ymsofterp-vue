@@ -486,11 +486,12 @@ class OpexReportController extends Controller
                     ->where('status', '!=', 'cancelled')
                     ->sum('amount');
                 
-                // Get PR unpaid amount
+                // Get PR unpaid amount (exclude held PRs)
                 $allPrs = DB::table('purchase_requisitions as pr')
                     ->where('pr.category_id', $category->id)
                     ->whereBetween('pr.created_at', [$dateFrom, $dateTo])
                     ->whereIn('pr.status', ['SUBMITTED', 'APPROVED', 'PROCESSED', 'COMPLETED'])
+                    ->where('pr.is_held', false) // Exclude held PRs
                     ->pluck('pr.id')
                     ->toArray();
                 
@@ -499,6 +500,7 @@ class OpexReportController extends Controller
                     ->leftJoin('purchase_requisitions as pr', 'poi.source_id', '=', 'pr.id')
                     ->where('pr.category_id', $category->id)
                     ->whereBetween('pr.created_at', [$dateFrom, $dateTo])
+                    ->where('pr.is_held', false) // Exclude held PRs
                     ->where('poi.source_type', 'purchase_requisition_ops')
                     ->where('poo.status', 'approved')
                     ->whereBetween('poo.date', [$dateFrom, $dateTo])
@@ -513,6 +515,7 @@ class OpexReportController extends Controller
                     ->leftJoin('purchase_requisitions as pr', 'poi.source_id', '=', 'pr.id')
                     ->where('pr.category_id', $category->id)
                     ->whereBetween('pr.created_at', [$dateFrom, $dateTo])
+                    ->where('pr.is_held', false) // Exclude held PRs
                     ->whereBetween('nfp.payment_date', [$dateFrom, $dateTo])
                     ->whereIn('nfp.status', ['paid', 'approved'])
                     ->where('nfp.status', '!=', 'cancelled')
@@ -603,11 +606,13 @@ class OpexReportController extends Controller
                 // Jika PR belum jadi PO, Unpaid = PR Amount
                 
                 // Get all PRs in this category for the selected date range (follow date filter from above)
+                // Exclude held PRs from unpaid calculation
                 $allPrs = DB::table('purchase_requisitions as pr')
                     ->leftJoin('tbl_data_outlet as o', 'pr.outlet_id', '=', 'o.id_outlet')
                     ->where('pr.category_id', $category->id)
                     ->whereBetween('pr.created_at', [$dateFrom, $dateTo])
                     ->whereIn('pr.status', ['SUBMITTED', 'APPROVED', 'PROCESSED', 'COMPLETED'])
+                    ->where('pr.is_held', false) // Exclude held PRs
                     ->select(
                         'pr.id as pr_id',
                         'o.id_outlet as outlet_id',
@@ -621,11 +626,13 @@ class OpexReportController extends Controller
 
                 // Get PO totals per PR (sum of all PO items for each PR)
                 // Follow date filter from above (use whereBetween for PR created_at)
+                // Exclude held PRs from unpaid calculation
                 $poTotalsByPr = DB::table('purchase_order_ops_items as poi')
                     ->leftJoin('purchase_order_ops as poo', 'poi.purchase_order_ops_id', '=', 'poo.id')
                     ->leftJoin('purchase_requisitions as pr', 'poi.source_id', '=', 'pr.id')
                     ->where('pr.category_id', $category->id)
                     ->whereBetween('pr.created_at', [$dateFrom, $dateTo])
+                    ->where('pr.is_held', false) // Exclude held PRs
                     ->where('poi.source_type', 'purchase_requisition_ops')
                     ->where('poo.status', 'approved')
                     ->whereBetween('poo.date', [$dateFrom, $dateTo])
@@ -639,12 +646,14 @@ class OpexReportController extends Controller
 
                 // Get total paid per PR (sum of all payments for each PR)
                 // Follow date filter from above (use whereBetween for PR created_at)
+                // Exclude held PRs from unpaid calculation
                 $paidTotalsByPr = DB::table('non_food_payments as nfp')
                     ->leftJoin('purchase_order_ops as poo', 'nfp.purchase_order_ops_id', '=', 'poo.id')
                     ->leftJoin('purchase_order_ops_items as poi', 'poo.id', '=', 'poi.purchase_order_ops_id')
                     ->leftJoin('purchase_requisitions as pr', 'poi.source_id', '=', 'pr.id')
                     ->where('pr.category_id', $category->id)
                     ->whereBetween('pr.created_at', [$dateFrom, $dateTo])
+                    ->where('pr.is_held', false) // Exclude held PRs
                     ->whereBetween('nfp.payment_date', [$dateFrom, $dateTo])
                     ->whereIn('nfp.status', ['paid', 'approved'])
                     ->where('nfp.status', '!=', 'cancelled')
