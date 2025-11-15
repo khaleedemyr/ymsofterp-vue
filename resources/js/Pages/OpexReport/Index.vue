@@ -393,6 +393,39 @@
                     </div>
                   </div>
                   
+                  <!-- Budget Breakdown by Source -->
+                  <div v-if="categoryGroup.budget_breakdown" class="mt-4 pt-4 border-t border-gray-200">
+                    <div class="text-xs font-medium text-gray-700 mb-3">Total Penggunaan Budget:</div>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      <!-- NFP Amount -->
+                      <div class="bg-blue-50 rounded-lg p-3">
+                        <div class="text-xs text-gray-500 mb-1">NFP (Non-Food Payment)</div>
+                        <div class="text-base font-bold text-blue-600">{{ formatCurrency(categoryGroup.budget_breakdown.nfp_amount || 0) }}</div>
+                        <div class="text-xs text-gray-500 mt-1">
+                          {{ getPercentage(categoryGroup.budget_breakdown.nfp_amount || 0, categoryGroup.total_budget_limit) }}% of budget
+                        </div>
+                      </div>
+                      
+                      <!-- PR Unpaid Amount -->
+                      <div class="bg-orange-50 rounded-lg p-3">
+                        <div class="text-xs text-gray-500 mb-1">PR Unpaid</div>
+                        <div class="text-base font-bold text-orange-600">{{ formatCurrency(categoryGroup.budget_breakdown.pr_unpaid_amount || 0) }}</div>
+                        <div class="text-xs text-gray-500 mt-1">
+                          {{ getPercentage(categoryGroup.budget_breakdown.pr_unpaid_amount || 0, categoryGroup.total_budget_limit) }}% of budget
+                        </div>
+                      </div>
+                      
+                      <!-- RNF Amount -->
+                      <div class="bg-teal-50 rounded-lg p-3">
+                        <div class="text-xs text-gray-500 mb-1">RNF (Retail Non-Food)</div>
+                        <div class="text-base font-bold text-teal-600">{{ formatCurrency(categoryGroup.budget_breakdown.rnf_amount || 0) }}</div>
+                        <div class="text-xs text-gray-500 mt-1">
+                          {{ getPercentage(categoryGroup.budget_breakdown.rnf_amount || 0, categoryGroup.total_budget_limit) }}% of budget
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  
                   <!-- Progress Bar -->
                   <div class="mt-4">
                     <div class="flex justify-between text-xs text-gray-600 mb-1">

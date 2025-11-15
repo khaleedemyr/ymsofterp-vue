@@ -397,7 +397,12 @@ class OpexReportController extends Controller
                 'total_paid_amount' => 0,
                 'total_unpaid_amount' => 0,
                 'total_remaining_budget' => 0,
-                'outlets' => []
+                'outlets' => [],
+                'budget_breakdown' => [
+                    'nfp_amount' => 0,
+                    'pr_unpaid_amount' => 0,
+                    'rnf_amount' => 0
+                ]
             ];
 
             // Get per outlet budget data if budget_type is PER_OUTLET
@@ -453,6 +458,94 @@ class OpexReportController extends Controller
 
                 $categoryGroup['outlets'] = $outletMap;
                 $categoryGroup['total_remaining_budget'] = $category->budget_limit - $categoryGroup['total_paid_amount'];
+                
+                // Calculate breakdown for PER_OUTLET budget type
+                $nfpAmount = 0;
+                $prUnpaidAmount = 0;
+                $rnfAmount = 0;
+                
+                // Get NFP amount for this category
+                $prIdsInCategory = DB::table('purchase_requisitions')
+                    ->where('category_id', $category->id)
+                    ->whereBetween('created_at', [$dateFrom, $dateTo])
+                    ->whereIn('status', ['SUBMITTED', 'APPROVED', 'PROCESSED', 'COMPLETED'])
+                    ->pluck('id')
+                    ->toArray();
+                
+                $poIdsInCategory = DB::table('purchase_order_ops_items as poi')
+                    ->where('poi.source_type', 'purchase_requisition_ops')
+                    ->whereIn('poi.source_id', $prIdsInCategory)
+                    ->distinct()
+                    ->pluck('poi.purchase_order_ops_id')
+                    ->toArray();
+                
+                $nfpAmount = DB::table('non_food_payments')
+                    ->whereIn('purchase_order_ops_id', $poIdsInCategory)
+                    ->whereBetween('payment_date', [$dateFrom, $dateTo])
+                    ->whereIn('status', ['paid', 'approved'])
+                    ->where('status', '!=', 'cancelled')
+                    ->sum('amount');
+                
+                // Get PR unpaid amount
+                $allPrs = DB::table('purchase_requisitions as pr')
+                    ->where('pr.category_id', $category->id)
+                    ->whereBetween('pr.created_at', [$dateFrom, $dateTo])
+                    ->whereIn('pr.status', ['SUBMITTED', 'APPROVED', 'PROCESSED', 'COMPLETED'])
+                    ->pluck('pr.id')
+                    ->toArray();
+                
+                $poTotalsByPr = DB::table('purchase_order_ops_items as poi')
+                    ->leftJoin('purchase_order_ops as poo', 'poi.purchase_order_ops_id', '=', 'poo.id')
+                    ->leftJoin('purchase_requisitions as pr', 'poi.source_id', '=', 'pr.id')
+                    ->where('pr.category_id', $category->id)
+                    ->whereBetween('pr.created_at', [$dateFrom, $dateTo])
+                    ->where('poi.source_type', 'purchase_requisition_ops')
+                    ->where('poo.status', 'approved')
+                    ->whereBetween('poo.date', [$dateFrom, $dateTo])
+                    ->groupBy('pr.id')
+                    ->select('pr.id as pr_id', DB::raw('SUM(poi.total) as po_total'))
+                    ->pluck('po_total', 'pr_id')
+                    ->toArray();
+                
+                $paidTotalsByPr = DB::table('non_food_payments as nfp')
+                    ->leftJoin('purchase_order_ops as poo', 'nfp.purchase_order_ops_id', '=', 'poo.id')
+                    ->leftJoin('purchase_order_ops_items as poi', 'poo.id', '=', 'poi.purchase_order_ops_id')
+                    ->leftJoin('purchase_requisitions as pr', 'poi.source_id', '=', 'pr.id')
+                    ->where('pr.category_id', $category->id)
+                    ->whereBetween('pr.created_at', [$dateFrom, $dateTo])
+                    ->whereBetween('nfp.payment_date', [$dateFrom, $dateTo])
+                    ->whereIn('nfp.status', ['paid', 'approved'])
+                    ->where('nfp.status', '!=', 'cancelled')
+                    ->where('poi.source_type', 'purchase_requisition_ops')
+                    ->groupBy('pr.id')
+                    ->select('pr.id as pr_id', DB::raw('SUM(nfp.amount) as total_paid'))
+                    ->pluck('total_paid', 'pr_id')
+                    ->toArray();
+                
+                $prUnpaidAmount = 0;
+                foreach ($allPrs as $prId) {
+                    $poTotal = $poTotalsByPr[$prId] ?? 0;
+                    $totalPaid = $paidTotalsByPr[$prId] ?? 0;
+                    $prAmount = DB::table('purchase_requisitions')->where('id', $prId)->value('amount') ?? 0;
+                    $totalAmount = $poTotal > 0 ? $poTotal : $prAmount;
+                    $unpaidAmount = $totalAmount - $totalPaid;
+                    if ($unpaidAmount > 0) {
+                        $prUnpaidAmount += $unpaidAmount;
+                    }
+                }
+                
+                // Get RNF amount
+                $rnfAmount = DB::table('retail_non_food')
+                    ->where('category_budget_id', $category->id)
+                    ->whereBetween('transaction_date', [$dateFrom, $dateTo])
+                    ->where('status', 'approved')
+                    ->sum('total_amount');
+                
+                $categoryGroup['budget_breakdown'] = [
+                    'nfp_amount' => $nfpAmount,
+                    'pr_unpaid_amount' => $prUnpaidAmount,
+                    'rnf_amount' => $rnfAmount
+                ];
             } else {
                 // For GLOBAL budget type, get paid amount from non_food_payments (actual payment amount)
                 // Ambil langsung dari non_food_payments tanpa join ke PO items untuk menghindari double counting
@@ -727,6 +820,13 @@ class OpexReportController extends Controller
                 $categoryGroup['transactions'] = [
                     'paid' => $paidTransactions,
                     'unpaid' => $unpaidTransactions
+                ];
+                
+                // Calculate breakdown by source type
+                $categoryGroup['budget_breakdown'] = [
+                    'nfp_amount' => $paidPaymentsData->sum('total_paid_amount'), // NFP (Non-Food Payment)
+                    'pr_unpaid_amount' => $prData->sum('po_item_total'), // PR Unpaid
+                    'rnf_amount' => $retailNonFoodData->sum('po_item_total') // RNF (Retail Non-Food)
                 ];
             }
 
