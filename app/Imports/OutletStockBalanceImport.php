@@ -110,9 +110,15 @@ class OutletStockBalanceImport implements ToCollection, WithHeadingRow, WithMult
                     $cost_medium = $cost_small * ($item->small_conversion_qty ?: 1);
                     $cost_large = $cost_medium * ($item->medium_conversion_qty ?: 1);
                     // 4. Insert/update ke outlet_food_inventory_stocks
+                    // Pastikan warehouse_outlet_id tersedia
+                    if (empty($row['warehouse_outlet_id'])) {
+                        throw new \Exception("Warehouse Outlet ID tidak boleh kosong");
+                    }
+                    
                     $existingStock = DB::table('outlet_food_inventory_stocks')
                         ->where('inventory_item_id', $inventoryItemId)
                         ->where('id_outlet', $outlet->id_outlet)
+                        ->where('warehouse_outlet_id', $row['warehouse_outlet_id'])
                         ->first();
                     $value = $qty_small * $cost_small;
                     if ($existingStock) {
@@ -127,7 +133,6 @@ class OutletStockBalanceImport implements ToCollection, WithHeadingRow, WithMult
                                 'last_cost_medium' => $cost_medium,
                                 'last_cost_large' => $cost_large,
                                 'updated_at' => now(),
-                                'warehouse_outlet_id' => $row['warehouse_outlet_id'],
                             ]);
                     } else {
                         DB::table('outlet_food_inventory_stocks')->insert([
