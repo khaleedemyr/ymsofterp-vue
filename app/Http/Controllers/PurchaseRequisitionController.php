@@ -29,7 +29,15 @@ class PurchaseRequisitionController extends Controller
         $search = $request->get('search', '');
         $status = $request->get('status', 'all');
         $division = $request->get('division', 'all');
+        $dateFrom = $request->get('date_from', '');
+        $dateTo = $request->get('date_to', '');
         $perPage = $request->get('per_page', 15);
+
+        // Set default date range to current month if no date filter is provided
+        if (empty($dateFrom) && empty($dateTo)) {
+            $dateFrom = date('Y-m-01'); // First day of current month
+            $dateTo = date('Y-m-t'); // Last day of current month
+        }
 
         // Check if user has role with id '5af56935b011a' (can see all payments)
         // Check from users table id_role column
@@ -61,7 +69,27 @@ class PurchaseRequisitionController extends Controller
             $query->where(function($q) use ($search) {
                 $q->where('pr_number', 'like', "%{$search}%")
                   ->orWhere('title', 'like', "%{$search}%")
-                  ->orWhere('description', 'like', "%{$search}%");
+                  ->orWhere('description', 'like', "%{$search}%")
+                  ->orWhere('notes', 'like', "%{$search}%")
+                  ->orWhere('amount', 'like', "%{$search}%")
+                  ->orWhereHas('division', function($q) use ($search) {
+                      $q->where('nama_divisi', 'like', "%{$search}%");
+                  })
+                  ->orWhereHas('outlet', function($q) use ($search) {
+                      $q->where('nama_outlet', 'like', "%{$search}%");
+                  })
+                  ->orWhereHas('category', function($q) use ($search) {
+                      $q->where('name', 'like', "%{$search}%")
+                        ->orWhere('subcategory', 'like', "%{$search}%");
+                  })
+                  ->orWhereHas('creator', function($q) use ($search) {
+                      $q->where('nama_lengkap', 'like', "%{$search}%")
+                        ->orWhere('email', 'like', "%{$search}%");
+                  })
+                  ->orWhereHas('ticket', function($q) use ($search) {
+                      $q->where('ticket_number', 'like', "%{$search}%")
+                        ->orWhere('title', 'like', "%{$search}%");
+                  });
             });
         }
 
@@ -71,6 +99,15 @@ class PurchaseRequisitionController extends Controller
 
         if ($division !== 'all') {
             $query->where('division_id', $division);
+        }
+
+        // Date range filter
+        if ($dateFrom) {
+            $query->whereDate('date', '>=', $dateFrom);
+        }
+
+        if ($dateTo) {
+            $query->whereDate('date', '<=', $dateTo);
         }
 
         $purchaseRequisitions = $query->orderBy('created_at', 'desc')
@@ -253,6 +290,8 @@ class PurchaseRequisitionController extends Controller
                 'search' => $search,
                 'status' => $status,
                 'division' => $division,
+                'date_from' => $dateFrom,
+                'date_to' => $dateTo,
                 'per_page' => $perPage,
             ],
             'filterOptions' => [

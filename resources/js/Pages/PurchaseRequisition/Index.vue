@@ -57,45 +57,82 @@
       </div>
 
       <!-- Filter and Search -->
-      <div class="flex flex-col md:flex-row gap-4 mb-6">
-        <input
-          type="text"
-          v-model="search"
-          @input="onSearchInput"
-          placeholder="Cari PR number, title..."
-          class="flex-1 px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition"
-        />
-        <select
-          v-model="status"
-          @change="debouncedSearch"
-          class="w-full md:w-auto px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition"
-        >
-          <option value="all">Semua Status</option>
-          <option value="DRAFT">Draft</option>
-          <option value="SUBMITTED">Submitted</option>
-          <option value="APPROVED">Approved</option>
-          <option value="REJECTED">Rejected</option>
-          <option value="PROCESSED">Processed</option>
-          <option value="COMPLETED">Completed</option>
-          <option value="PAID">Paid</option>
-        </select>
-        <select
-          v-model="division"
-          @change="debouncedSearch"
-          class="w-full md:w-auto px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition"
-        >
-          <option value="all">Semua Divisi</option>
-          <option v-for="d in filterOptions.divisions" :key="d.id" :value="d.id">{{ d.nama_divisi }}</option>
-        </select>
-        <select
-          v-model="perPage"
-          @change="debouncedSearch"
-          class="w-full md:w-auto px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition"
-        >
-          <option value="15">15 Per Halaman</option>
-          <option value="30">30 Per Halaman</option>
-          <option value="50">50 Per Halaman</option>
-        </select>
+      <div class="flex flex-col gap-4 mb-6">
+        <!-- Search and Basic Filters -->
+        <div class="flex flex-col md:flex-row gap-4">
+          <input
+            type="text"
+            v-model="search"
+            @input="onSearchInput"
+            placeholder="Cari semua kolom (PR number, title, creator, division, outlet, dll)..."
+            class="flex-1 px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition"
+          />
+          <select
+            v-model="status"
+            @change="debouncedSearch"
+            class="w-full md:w-auto px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition"
+          >
+            <option value="all">Semua Status</option>
+            <option value="DRAFT">Draft</option>
+            <option value="SUBMITTED">Submitted</option>
+            <option value="APPROVED">Approved</option>
+            <option value="REJECTED">Rejected</option>
+            <option value="PROCESSED">Processed</option>
+            <option value="COMPLETED">Completed</option>
+            <option value="PAID">Paid</option>
+          </select>
+          <select
+            v-model="division"
+            @change="debouncedSearch"
+            class="w-full md:w-auto px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition"
+          >
+            <option value="all">Semua Divisi</option>
+            <option v-for="d in filterOptions.divisions" :key="d.id" :value="d.id">{{ d.nama_divisi }}</option>
+          </select>
+          <select
+            v-model="perPage"
+            @change="debouncedSearch"
+            class="w-full md:w-auto px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition"
+          >
+            <option value="15">15 Per Halaman</option>
+            <option value="30">30 Per Halaman</option>
+            <option value="50">50 Per Halaman</option>
+          </select>
+        </div>
+        <!-- Date Range Filter -->
+        <div class="flex flex-col md:flex-row gap-4 items-end">
+          <div class="flex items-center gap-2">
+            <label class="text-sm font-medium text-gray-700 whitespace-nowrap">Dari Tanggal:</label>
+            <input
+              type="date"
+              v-model="dateFrom"
+              class="px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition"
+            />
+          </div>
+          <div class="flex items-center gap-2">
+            <label class="text-sm font-medium text-gray-700 whitespace-nowrap">Sampai Tanggal:</label>
+            <input
+              type="date"
+              v-model="dateTo"
+              class="px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition"
+            />
+          </div>
+          <button
+            @click="loadData"
+            class="px-6 py-2 rounded-xl bg-blue-600 text-white hover:bg-blue-700 transition text-sm font-medium shadow-md hover:shadow-lg flex items-center gap-2"
+          >
+            <i class="fas fa-search mr-1"></i>
+            Load Data
+          </button>
+          <button
+            v-if="dateFrom || dateTo"
+            @click="clearDateFilter"
+            class="px-4 py-2 rounded-xl border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 transition text-sm font-medium"
+          >
+            <i class="fas fa-times mr-1"></i>
+            Hapus Filter Tanggal
+          </button>
+        </div>
       </div>
 
       <!-- Table -->
@@ -552,7 +589,7 @@
 </template>
 
 <script setup>
-import { ref, watch } from 'vue';
+import { ref, watch, onMounted } from 'vue';
 import { router } from '@inertiajs/vue3';
 import { debounce } from 'lodash';
 import Swal from 'sweetalert2';
@@ -578,6 +615,20 @@ const props = defineProps({
 const search = ref(props.filters?.search || '');
 const status = ref(props.filters?.status || 'all');
 const division = ref(props.filters?.division || 'all');
+// Set default date range to current month if not provided
+const getDefaultDateFrom = () => {
+  if (props.filters?.date_from) return props.filters.date_from;
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+};
+const getDefaultDateTo = () => {
+  if (props.filters?.date_to) return props.filters.date_to;
+  const now = new Date();
+  const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  return `${lastDay.getFullYear()}-${String(lastDay.getMonth() + 1).padStart(2, '0')}-${String(lastDay.getDate()).padStart(2, '0')}`;
+};
+const dateFrom = ref(getDefaultDateFrom());
+const dateTo = ref(getDefaultDateTo());
 const perPage = ref(props.filters?.per_page || 15);
 
 // Print functionality
@@ -661,9 +712,28 @@ const debouncedSearch = debounce(() => {
     search: search.value,
     status: status.value,
     division: division.value,
+    date_from: dateFrom.value,
+    date_to: dateTo.value,
     per_page: perPage.value,
   }, { preserveState: true, replace: true });
 }, 400);
+
+function loadData() {
+  router.get('/purchase-requisitions', {
+    search: search.value,
+    status: status.value,
+    division: division.value,
+    date_from: dateFrom.value,
+    date_to: dateTo.value,
+    per_page: perPage.value,
+  }, { preserveState: true, replace: true });
+}
+
+function clearDateFilter() {
+  dateFrom.value = '';
+  dateTo.value = '';
+  loadData();
+}
 
 function onSearchInput() {
   debouncedSearch();
@@ -675,6 +745,8 @@ function goToPage(url) {
     urlObj.searchParams.set('search', search.value);
     urlObj.searchParams.set('status', status.value);
     urlObj.searchParams.set('division', division.value);
+    urlObj.searchParams.set('date_from', dateFrom.value);
+    urlObj.searchParams.set('date_to', dateTo.value);
     urlObj.searchParams.set('per_page', perPage.value);
     
     router.visit(urlObj.toString(), { preserveState: true, replace: true });
@@ -1113,5 +1185,13 @@ function printPreview() {
 // Watch for changes
 watch([search, status, division, perPage], () => {
   debouncedSearch();
+});
+
+// Auto-load data with default date filter on first access
+onMounted(() => {
+  // Only auto-load if no date filter is provided in URL (first access)
+  if (!props.filters?.date_from && !props.filters?.date_to) {
+    loadData();
+  }
 });
 </script>
