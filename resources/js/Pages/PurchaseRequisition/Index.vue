@@ -284,7 +284,7 @@
                   <div class="flex justify-center">
                     <!-- Hold Button -->
                     <button
-                      v-if="!pr.is_held && pr.status !== 'PAID' && (pr.status === 'APPROVED' || pr.status === 'PROCESSED' || pr.status === 'SUBMITTED')"
+                      v-if="!pr.is_held && pr.status !== 'PAID' && !pr.has_payment && (pr.status === 'APPROVED' || pr.status === 'PROCESSED' || pr.status === 'SUBMITTED')"
                       @click="holdPR(pr)"
                       class="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold bg-gradient-to-r from-orange-500 to-orange-600 text-white shadow-md hover:shadow-lg hover:from-orange-600 hover:to-orange-700 transition-all"
                       title="Hold PR"
@@ -294,7 +294,7 @@
                     </button>
                     <!-- Release Button -->
                     <button
-                      v-if="pr.is_held && pr.status !== 'PAID'"
+                      v-if="pr.is_held && pr.status !== 'PAID' && !pr.has_payment"
                       @click="releasePR(pr)"
                       class="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold bg-gradient-to-r from-green-500 to-green-600 text-white shadow-md hover:shadow-lg hover:from-green-600 hover:to-green-700 transition-all"
                       title="Release PR"
@@ -303,7 +303,7 @@
                       <span>Release</span>
                     </button>
                     <!-- No Action Available -->
-                    <span v-if="pr.status === 'PAID' || (pr.is_held === false && !(pr.status === 'APPROVED' || pr.status === 'PROCESSED' || pr.status === 'SUBMITTED'))" class="text-xs text-gray-400 italic">
+                    <span v-if="pr.status === 'PAID' || pr.has_payment || (pr.is_held === false && !(pr.status === 'APPROVED' || pr.status === 'PROCESSED' || pr.status === 'SUBMITTED'))" class="text-xs text-gray-400 italic">
                       -
                     </span>
                   </div>
