@@ -216,12 +216,34 @@
 import AppLayout from '@/Layouts/AppLayout.vue'
 import { router, Link, usePage } from '@inertiajs/vue3'
 import Swal from 'sweetalert2'
-import { ref, reactive, computed } from 'vue'
+import { ref, reactive, computed, watch } from 'vue'
 import axios from 'axios'
 
 const page = usePage()
 const user = computed(() => page.props.auth?.user || {})
 const isAdmin = computed(() => user.value.id_outlet == 1)
+
+// Handle flash messages from backend
+watch(() => page.props.flash, (flash) => {
+  if (flash?.error) {
+    Swal.fire({
+      icon: 'error',
+      title: 'Error',
+      html: flash.error,
+      confirmButtonText: 'OK',
+      confirmButtonColor: '#EF4444'
+    })
+  }
+  if (flash?.success) {
+    Swal.fire({
+      icon: 'success',
+      title: 'Berhasil',
+      text: flash.success,
+      timer: 2000,
+      showConfirmButton: false
+    })
+  }
+}, { immediate: true })
 
 const props = defineProps({
   data: Object,

@@ -12,38 +12,69 @@
         </div>
       </div>
       <!-- Filters -->
-      <div class="flex flex-col md:flex-row md:items-center gap-4 mb-4">
-        <div class="flex items-center gap-2">
-          <label class="text-sm">Tipe</label>
-          <select v-model="selectedType" class="border border-gray-300 rounded-lg px-2 py-2 focus:ring-blue-500 focus:border-blue-500">
-            <option v-for="t in props.types" :key="t.value" :value="t.value">{{ t.label }}</option>
-          </select>
+      <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
+        <p class="text-sm text-yellow-800 mb-3">
+          <i class="fa fa-info-circle mr-1"></i>
+          <strong>Penting:</strong> Filter tanggal (Dari dan Sampai) wajib diisi dan maksimal range 3 bulan untuk mencegah timeout server.
+        </p>
+        <div class="flex flex-col md:flex-row md:items-center gap-4">
+          <div class="flex items-center gap-2">
+            <label class="text-sm font-medium">Dari <span class="text-red-500">*</span></label>
+            <input 
+              type="date" 
+              v-model="from" 
+              required
+              class="border border-gray-300 rounded-lg px-2 py-2 focus:ring-blue-500 focus:border-blue-500" 
+            />
+          </div>
+          <div class="flex items-center gap-2">
+            <label class="text-sm font-medium">Sampai <span class="text-red-500">*</span></label>
+            <input 
+              type="date" 
+              v-model="to" 
+              required
+              class="border border-gray-300 rounded-lg px-2 py-2 focus:ring-blue-500 focus:border-blue-500" 
+            />
+          </div>
+          <div class="flex items-center gap-2">
+            <label class="text-sm">Tipe</label>
+            <select v-model="selectedType" class="border border-gray-300 rounded-lg px-2 py-2 focus:ring-blue-500 focus:border-blue-500">
+              <option v-for="t in props.types" :key="t.value" :value="t.value">{{ t.label }}</option>
+            </select>
+          </div>
+          <div class="flex items-center gap-2">
+            <label class="text-sm">Outlet</label>
+            <select 
+              v-model="selectedOutlet" 
+              :disabled="!isSuperuser"
+              class="border border-gray-300 rounded-lg px-2 py-2 focus:ring-blue-500 focus:border-blue-500"
+              :class="{ 'bg-gray-100 cursor-not-allowed': !isSuperuser }"
+            >
+              <option v-if="isSuperuser" value="">Semua</option>
+              <option v-for="o in props.outlets" :key="o.id" :value="o.id">{{ o.name }}</option>
+            </select>
+            <span v-if="!isSuperuser" class="text-xs text-gray-500">(Outlet Anda)</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <label class="text-sm">Warehouse Outlet</label>
+            <select v-model="selectedWarehouse" class="border border-gray-300 rounded-lg px-2 py-2 focus:ring-blue-500 focus:border-blue-500">
+              <option value="">Semua</option>
+              <option v-for="w in filteredWarehouseOutlets" :key="w.id" :value="w.id">{{ w.name }}</option>
+            </select>
+          </div>
         </div>
-        <div class="flex items-center gap-2">
-          <label class="text-sm">Warehouse Outlet</label>
-          <select v-model="selectedWarehouse" class="border border-gray-300 rounded-lg px-2 py-2 focus:ring-blue-500 focus:border-blue-500">
-            <option value="">Semua</option>
-            <option v-for="w in filteredWarehouseOutlets" :key="w.id" :value="w.id">{{ w.name }}</option>
-          </select>
-        </div>
-        <div v-if="isSuperuser" class="flex items-center gap-2">
-          <label class="text-sm">Outlet</label>
-          <select v-model="selectedOutlet" class="border border-gray-300 rounded-lg px-2 py-2 focus:ring-blue-500 focus:border-blue-500">
-            <option value="">Semua</option>
-            <option v-for="o in props.outlets" :key="o.id" :value="o.id">{{ o.name }}</option>
-          </select>
-        </div>
-        <div class="flex items-center gap-2">
-          <label class="text-sm">Dari</label>
-          <input type="date" v-model="from" class="border border-gray-300 rounded-lg px-2 py-2 focus:ring-blue-500 focus:border-blue-500" />
-        </div>
-        <div class="flex items-center gap-2">
-          <label class="text-sm">Sampai</label>
-          <input type="date" v-model="to" class="border border-gray-300 rounded-lg px-2 py-2 focus:ring-blue-500 focus:border-blue-500" />
+        <div class="mt-4 flex justify-end">
+          <button 
+            @click="applyFilters"
+            :disabled="!from || !to"
+            class="px-6 py-2 bg-blue-500 text-white rounded-lg font-semibold hover:bg-blue-600 transition disabled:bg-gray-300 disabled:cursor-not-allowed"
+          >
+            <i class="fa fa-search mr-1"></i> Load Data
+          </button>
         </div>
       </div>
       <!-- Report Table -->
-      <div class="overflow-x-auto bg-white rounded-xl shadow-lg">
+      <div v-if="props.data && props.data.length > 0" class="overflow-x-auto bg-white rounded-xl shadow-lg">
         <table class="min-w-full divide-y divide-gray-200">
           <thead class="bg-gray-50">
             <tr>
@@ -111,11 +142,16 @@
                 </tr>
               </transition>
             </template>
-            <tr v-if="!props.data.length">
-              <td colspan="6" class="text-center py-8 text-gray-400">Tidak ada data.</td>
-            </tr>
           </tbody>
         </table>
+      </div>
+      <div v-else-if="from && to" class="bg-white rounded-xl shadow-lg p-8 text-center">
+        <i class="fa fa-info-circle text-gray-400 text-4xl mb-4"></i>
+        <p class="text-gray-500">Tidak ada data untuk filter yang dipilih.</p>
+      </div>
+      <div v-else class="bg-white rounded-xl shadow-lg p-8 text-center">
+        <i class="fa fa-calendar-alt text-gray-400 text-4xl mb-4"></i>
+        <p class="text-gray-500">Silakan isi filter tanggal dan klik tombol "Load Data" untuk melihat data.</p>
       </div>
     </div>
   </AppLayout>
@@ -126,6 +162,7 @@ import AppLayout from '@/Layouts/AppLayout.vue';
 import { ref, watch, computed } from 'vue';
 import { router, usePage } from '@inertiajs/vue3';
 import axios from 'axios';
+import Swal from 'sweetalert2';
 
 const props = defineProps({
   data: Array,
@@ -133,18 +170,29 @@ const props = defineProps({
   warehouse_outlets: Array,
   outlets: Array,
   filters: Object,
-  total_per_type: Object
+  total_per_type: Object,
+  user_outlet_id: Number
 });
 
 const page = usePage();
 const user = computed(() => page.props.auth?.user || {});
-const isSuperuser = computed(() => user.value.id_outlet == 1);
+const isSuperuser = computed(() => props.user_outlet_id === 1);
 
-const selectedType = ref(props.filters.type || '');
-const selectedWarehouse = ref(props.filters.warehouse_outlet_id || '');
-const selectedOutlet = ref(props.filters.outlet_id || '');
-const from = ref(props.filters.from || '');
-const to = ref(props.filters.to || '');
+// Set default outlet untuk non-admin
+const defaultOutletId = computed(() => {
+  if (props.user_outlet_id && props.user_outlet_id !== 1 && props.outlets) {
+    const userOutlet = props.outlets.find(o => o.id === props.user_outlet_id);
+    return userOutlet ? userOutlet.id : '';
+  }
+  return '';
+});
+
+// Initialize filters from props, but don't auto-load data
+const selectedType = ref(props.filters?.type || '');
+const selectedWarehouse = ref(props.filters?.warehouse_outlet_id || '');
+const selectedOutlet = ref(isSuperuser.value ? (props.filters?.outlet_id || '') : defaultOutletId.value);
+const from = ref(props.filters?.from || '');
+const to = ref(props.filters?.to || '');
 
 // Add filtered warehouse outlets
 const filteredWarehouseOutlets = ref(props.warehouse_outlets || []);
@@ -171,22 +219,35 @@ watch(selectedOutlet, async (newOutletId) => {
     // For regular user, filter from existing warehouse outlets
     filteredWarehouseOutlets.value = props.warehouse_outlets.filter(wo => wo.outlet_id == newOutletId);
   } else {
-    // No outlet selected, show all warehouse outlets for superuser or empty for regular user
+    // No outlet selected, show all warehouse outlets for superuser or filter for regular user
     if (isSuperuser.value) {
       filteredWarehouseOutlets.value = props.warehouse_outlets;
     } else {
-      filteredWarehouseOutlets.value = props.warehouse_outlets.filter(wo => wo.outlet_id == user.value.id_outlet);
+      const userOutletId = props.user_outlet_id || user.value.id_outlet;
+      filteredWarehouseOutlets.value = props.warehouse_outlets.filter(wo => wo.outlet_id == userOutletId);
     }
   }
 }, { immediate: true });
 
-watch([selectedType, selectedWarehouse, selectedOutlet, from, to], () => {
+function applyFilters() {
+  // Only fetch if date range is provided
+  if (!from.value || !to.value) {
+    Swal.fire({
+      icon: 'warning',
+      title: 'Filter Wajib',
+      text: 'Filter tanggal (Dari dan Sampai) wajib diisi untuk melihat laporan.',
+      confirmButtonText: 'OK',
+      confirmButtonColor: '#F59E0B'
+    });
+    return;
+  }
+  
   router.get(
     route('outlet-internal-use-waste.report-universal'),
     {
       type: selectedType.value,
       warehouse_outlet_id: selectedWarehouse.value,
-      outlet_id: isSuperuser.value ? selectedOutlet.value : undefined,
+      outlet_id: isSuperuser.value ? selectedOutlet.value : selectedOutlet.value,
       from: from.value,
       to: to.value
     },
@@ -196,7 +257,7 @@ watch([selectedType, selectedWarehouse, selectedOutlet, from, to], () => {
       replace: true
     }
   );
-});
+}
 
 function formatDate(date) {
   if (!date) return '-';

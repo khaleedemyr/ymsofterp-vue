@@ -177,16 +177,18 @@ const menuGroups = [
         ],
     },
     {
-        title: () => 'Outlet Sales Report',
+        title: () => 'Outlet Report',
         icon: 'fa-solid fa-chart-line',
         collapsible: true,
         open: ref(false),
         menus: [
         { name: () => 'Sales Report', icon: 'fa-solid fa-chart-line', route: '/report-sales-simple', code: 'outlet_sales_report' },
+        { name: () => 'Opex Outlet Dashboard', icon: 'fa-solid fa-chart-pie', route: '/opex-outlet-dashboard', code: 'opex_outlet_dashboard' },
             { name: () => 'Daily Outlet Revenue', icon: 'fa-solid fa-chart-bar', route: '/report-daily-outlet-revenue', code: 'daily_outlet_revenue' },
             { name: () => 'Weekly Outlet FB Revenue', icon: 'fa-solid fa-calendar-week', route: '/report-weekly-outlet-fb-revenue', code: 'weekly_outlet_fb_revenue' },
             { name: () => 'Daily Revenue Forecast', icon: 'fa-solid fa-chart-line', route: '/report-daily-revenue-forecast', code: 'daily_revenue_forecast' },
             { name: () => 'Monthly FB Revenue Performance', icon: 'fa-solid fa-chart-bar', route: '/report-monthly-fb-revenue-performance', code: 'monthly_fb_revenue_performance' },
+         
             { name: () => 'Receiving Sheet', icon: 'fa-solid fa-receipt', route: '/report-receiving-sheet', code: 'receiving_sheet' },
             { name: () => 'Item Engineering', icon: 'fa-solid fa-cogs', route: '/item-engineering', code: 'item_engineering' },
         ],

@@ -784,6 +784,55 @@ class OutletInternalUseWasteController extends Controller
         $to = $request->input('to');
         $selected_outlet_id = $request->input('outlet_id');
 
+        // Jika belum ada filter, return view kosong dengan filter saja
+        if (!$from || !$to) {
+            $types = [
+                ['value' => '', 'label' => 'Semua'],
+                ['value' => 'internal_use', 'label' => 'Internal Use'],
+                ['value' => 'spoil', 'label' => 'Spoil'],
+                ['value' => 'waste', 'label' => 'Waste'],
+                ['value' => 'r_and_d', 'label' => 'R & D'],
+                ['value' => 'marketing', 'label' => 'Marketing'],
+                ['value' => 'non_commodity', 'label' => 'Non Commodity'],
+                ['value' => 'guest_supplies', 'label' => 'Guest Supplies'],
+            ];
+            
+            // Filter warehouse outlets based on user outlet
+            $warehouse_outlets_query = DB::table('warehouse_outlets')->where('status', 'active');
+            if ($user->id_outlet != 1) {
+                $warehouse_outlets_query->where('outlet_id', $user->id_outlet);
+            }
+            $warehouse_outlets = $warehouse_outlets_query->select('id', 'name', 'outlet_id')->orderBy('name')->get();
+            
+            $outlets = DB::table('tbl_data_outlet')->select('id_outlet as id', 'nama_outlet as name')->orderBy('nama_outlet')->get();
+
+            return inertia('OutletInternalUseWaste/ReportUniversal', [
+                'data' => [],
+                'types' => $types,
+                'warehouse_outlets' => $warehouse_outlets,
+                'outlets' => $outlets,
+                'filters' => $request->only(['type', 'warehouse_outlet_id', 'from', 'to', 'outlet_id']),
+                'total_per_type' => [],
+                'user_outlet_id' => $user->id_outlet,
+            ]);
+        }
+
+        // Validasi: Maksimal range 3 bulan untuk mencegah timeout
+        $fromDate = \Carbon\Carbon::parse($from);
+        $toDate = \Carbon\Carbon::parse($to);
+        $diffMonths = $fromDate->diffInMonths($toDate);
+        
+        if ($diffMonths > 3) {
+            return redirect()->route('outlet-internal-use-waste.report-universal')
+                ->with('error', 'Range tanggal maksimal 3 bulan. Silakan pilih range yang lebih kecil.')
+                ->withInput($request->only(['type', 'warehouse_outlet_id', 'from', 'to', 'outlet_id']));
+        }
+
+        // Validasi outlet: jika user bukan admin, gunakan outlet user
+        if ($user->id_outlet != 1) {
+            $selected_outlet_id = $user->id_outlet;
+        }
+
         $query = DB::table('outlet_internal_use_waste_headers as h')
             ->leftJoin('tbl_data_outlet as o', 'h.outlet_id', '=', 'o.id_outlet')
             ->leftJoin('warehouse_outlets as wo', 'h.warehouse_outlet_id', '=', 'wo.id')
@@ -805,18 +854,17 @@ class OutletInternalUseWasteController extends Controller
         if ($warehouse_outlet_id) {
             $query->where('h.warehouse_outlet_id', $warehouse_outlet_id);
         }
-        if ($from) {
-            $query->where('h.date', '>=', $from);
-        }
-        if ($to) {
-            $query->where('h.date', '<=', $to);
-        }
+        // Filter date wajib
+        $query->where('h.date', '>=', $from);
+        $query->where('h.date', '<=', $to);
+        
         $data = $query->orderByDesc('h.date')->orderByDesc('h.id')->get();
 
-        // Hitung total per type
+        // Hitung total per type - Optimasi dengan batch query
         $headerIds = $data->pluck('id')->all();
         $totalPerType = [];
-        if ($headerIds) {
+        if ($headerIds && count($headerIds) > 0) {
+            // Batch query untuk details
             $details = DB::table('outlet_internal_use_waste_details as d')
                 ->join('outlet_internal_use_waste_headers as h', 'd.header_id', '=', 'h.id')
                 ->leftJoin('items as i', 'd.item_id', '=', 'i.id')
@@ -824,25 +872,72 @@ class OutletInternalUseWasteController extends Controller
                 ->select('d.*', 'h.type as header_type', 'h.date as header_date', 'h.outlet_id as header_outlet_id', 'h.warehouse_outlet_id as header_warehouse_outlet_id', 'i.small_unit_id', 'i.medium_unit_id', 'i.large_unit_id', 'i.small_conversion_qty', 'i.medium_conversion_qty')
                 ->whereIn('d.header_id', $headerIds)
                 ->get();
-            foreach ($details as $item) {
-                // Cari inventory_item_id
-                $inventoryItem = DB::table('outlet_food_inventory_items')
-                    ->where('item_id', $item->item_id)
-                    ->first();
-                $mac = null;
-                if ($inventoryItem) {
+            
+            // Batch query untuk inventory items
+            $itemIds = $details->pluck('item_id')->unique()->all();
+            $inventoryItems = [];
+            if (count($itemIds) > 0) {
+                $inventoryItemsData = DB::table('outlet_food_inventory_items')
+                    ->whereIn('item_id', $itemIds)
+                    ->get()
+                    ->keyBy('item_id');
+                $inventoryItems = $inventoryItemsData->toArray();
+            }
+            
+            // Batch query untuk MAC histories - optimasi dengan subquery
+            $inventoryItemIds = collect($inventoryItems)->pluck('id')->unique()->all();
+            $macHistories = [];
+            if (count($inventoryItemIds) > 0 && count($headerIds) > 0) {
+                // Get unique combinations of outlet_id, warehouse_outlet_id, and dates
+                $headerData = $data->keyBy('id');
+                $macQueryConditions = [];
+                foreach ($details as $detail) {
+                    $header = $headerData->get($detail->header_id);
+                    if ($header && isset($inventoryItems[$detail->item_id])) {
+                        $inventoryItemId = $inventoryItems[$detail->item_id]->id;
+                        $key = "{$inventoryItemId}_{$header->outlet_id}_{$header->warehouse_outlet_id}_{$header->date}";
+                        if (!isset($macQueryConditions[$key])) {
+                            $macQueryConditions[$key] = [
+                                'inventory_item_id' => $inventoryItemId,
+                                'id_outlet' => $header->outlet_id,
+                                'warehouse_outlet_id' => $header->warehouse_outlet_id,
+                                'date' => $header->date
+                            ];
+                        }
+                    }
+                }
+                
+                // Batch query MAC histories
+                foreach ($macQueryConditions as $condition) {
                     $macRow = DB::table('outlet_food_inventory_cost_histories')
-                        ->where('inventory_item_id', $inventoryItem->id)
-                        ->where('id_outlet', $item->header_outlet_id)
-                        ->where('warehouse_outlet_id', $item->header_warehouse_outlet_id)
-                        ->where('date', '<=', $item->header_date)
+                        ->where('inventory_item_id', $condition['inventory_item_id'])
+                        ->where('id_outlet', $condition['id_outlet'])
+                        ->where('warehouse_outlet_id', $condition['warehouse_outlet_id'])
+                        ->where('date', '<=', $condition['date'])
                         ->orderByDesc('date')
                         ->orderByDesc('id')
                         ->first();
                     if ($macRow) {
-                        $mac = $macRow->mac;
+                        $macKey = "{$condition['inventory_item_id']}_{$condition['id_outlet']}_{$condition['warehouse_outlet_id']}_{$condition['date']}";
+                        $macHistories[$macKey] = $macRow->mac;
                     }
                 }
+            }
+            
+            // Calculate totals
+            foreach ($details as $item) {
+                $mac = null;
+                if (isset($inventoryItems[$item->item_id])) {
+                    $inventoryItem = $inventoryItems[$item->item_id];
+                    $header = $data->firstWhere('id', $item->header_id);
+                    if ($header) {
+                        $macKey = "{$inventoryItem->id}_{$header->outlet_id}_{$header->warehouse_outlet_id}_{$header->date}";
+                        if (isset($macHistories[$macKey])) {
+                            $mac = $macHistories[$macKey];
+                        }
+                    }
+                }
+                
                 $mac_converted = null;
                 if ($mac !== null) {
                     $mac_converted = $mac;
@@ -892,6 +987,7 @@ class OutletInternalUseWasteController extends Controller
             'outlets' => $outlets,
             'filters' => $request->only(['type', 'warehouse_outlet_id', 'from', 'to', 'outlet_id']),
             'total_per_type' => $totalPerType,
+            'user_outlet_id' => $user->id_outlet,
         ]);
     }
 

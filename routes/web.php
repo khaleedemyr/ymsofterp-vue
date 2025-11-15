@@ -1292,6 +1292,11 @@ Route::get('/retail-warehouse-sale/{id}/print', [App\Http\Controllers\RetailWare
 
 // Sales Outlet Dashboard Routes
 Route::get('/sales-outlet-dashboard', [App\Http\Controllers\SalesOutletDashboardController::class, 'index'])->name('sales-outlet-dashboard.index');
+Route::get('/opex-outlet-dashboard', [App\Http\Controllers\OpexOutletDashboardController::class, 'index'])->name('opex-outlet-dashboard.index');
+Route::get('/opex-outlet-dashboard/category-detail', [App\Http\Controllers\OpexOutletDashboardController::class, 'getCategoryDetail'])->name('opex-outlet-dashboard.category-detail');
+Route::get('/opex-outlet-dashboard/card-detail', [App\Http\Controllers\OpexOutletDashboardController::class, 'getCardDetail'])->name('opex-outlet-dashboard.card-detail');
+Route::get('/opex-outlet-dashboard/food-by-category', [App\Http\Controllers\OpexOutletDashboardController::class, 'getFoodByCategory'])->name('opex-outlet-dashboard.food-by-category');
+Route::get('/opex-outlet-dashboard/food-category-items', [App\Http\Controllers\OpexOutletDashboardController::class, 'getFoodCategoryItems'])->name('opex-outlet-dashboard.food-category-items');
 Route::get('/sales-outlet-dashboard/menu-region', [App\Http\Controllers\SalesOutletDashboardController::class, 'getMenuRegionData'])->name('sales-outlet-dashboard.menu-region');
 Route::get('/sales-outlet-dashboard/outlet-details', [App\Http\Controllers\SalesOutletDashboardController::class, 'getOutletDetailsByDate'])->name('sales-outlet-dashboard.outlet-details');
 
