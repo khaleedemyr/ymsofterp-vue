@@ -10,6 +10,16 @@ class PurchaseOrderReportController extends Controller
 {
     public function index(Request $request)
     {
+        // Set default date range to current month if not provided
+        $from = $request->from;
+        $to = $request->to;
+        
+        if (!$from && !$to) {
+            // Default to current month (first day of current month to today)
+            $from = now()->startOfMonth()->format('Y-m-d');
+            $to = now()->format('Y-m-d');
+        }
+
         $query = DB::table('food_good_receives as gr')
             ->join('purchase_order_foods as po', 'gr.po_id', '=', 'po.id')
             ->join('food_good_receive_items as gri', 'gr.id', '=', 'gri.good_receive_id')
@@ -39,11 +49,11 @@ class PurchaseOrderReportController extends Controller
             );
 
         // Filter by date range
-        if ($request->from) {
-            $query->whereDate('gr.receive_date', '>=', $request->from);
+        if ($from) {
+            $query->whereDate('gr.receive_date', '>=', $from);
         }
-        if ($request->to) {
-            $query->whereDate('gr.receive_date', '<=', $request->to);
+        if ($to) {
+            $query->whereDate('gr.receive_date', '<=', $to);
         }
 
         // Filter by supplier
@@ -136,16 +146,33 @@ class PurchaseOrderReportController extends Controller
             ->orderBy('name')
             ->get();
 
+        // Prepare filters with default dates if not provided
+        $filters = $request->only(['search', 'from', 'to', 'supplier_id', 'item_id', 'perPage', 'hasPriceChange', 'priceIncrease', 'priceDecrease']) ?: [];
+        if (!isset($filters['from']) && !isset($filters['to'])) {
+            $filters['from'] = $from;
+            $filters['to'] = $to;
+        }
+
         return Inertia::render('PurchaseOrder/Report', [
             'reports' => $results,
             'suppliers' => $suppliers,
             'items' => $items,
-            'filters' => $request->only(['search', 'from', 'to', 'supplier_id', 'item_id', 'perPage', 'hasPriceChange', 'priceIncrease', 'priceDecrease']) ?: [],
+            'filters' => $filters,
         ]);
     }
 
     public function export(Request $request)
     {
+        // Set default date range to current month if not provided
+        $from = $request->from;
+        $to = $request->to;
+        
+        if (!$from && !$to) {
+            // Default to current month (first day of current month to today)
+            $from = now()->startOfMonth()->format('Y-m-d');
+            $to = now()->format('Y-m-d');
+        }
+
         $query = DB::table('food_good_receives as gr')
             ->join('purchase_order_foods as po', 'gr.po_id', '=', 'po.id')
             ->join('food_good_receive_items as gri', 'gr.id', '=', 'gri.good_receive_id')
@@ -173,11 +200,11 @@ class PurchaseOrderReportController extends Controller
             );
 
         // Apply same filters as index
-        if ($request->from) {
-            $query->whereDate('gr.receive_date', '>=', $request->from);
+        if ($from) {
+            $query->whereDate('gr.receive_date', '>=', $from);
         }
-        if ($request->to) {
-            $query->whereDate('gr.receive_date', '<=', $request->to);
+        if ($to) {
+            $query->whereDate('gr.receive_date', '<=', $to);
         }
         if ($request->supplier_id && $request->supplier_id !== '') {
             $query->where('po.supplier_id', $request->supplier_id);

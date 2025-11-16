@@ -117,6 +117,7 @@ class PointManagementController extends Controller
             'jml_trans' => 'required|numeric|min:1',
             'no_bill' => 'required|string|max:255',
             'keterangan' => 'nullable|string|max:500',
+            'point' => 'nullable|numeric|min:0',
         ]);
 
         try {
@@ -124,11 +125,16 @@ class PointManagementController extends Controller
 
             $jmlTrans = $request->jml_trans;
             $type = $request->type;
-            $point = 0;
-
-            // Calculate points for top up
-            if ($type == '1') {
-                $point = floor($jmlTrans / 50000) * 1250;
+            
+            // Use point from request if provided, otherwise calculate
+            if ($request->has('point') && $request->point !== null) {
+                $point = (int) $request->point;
+            } else {
+                // Calculate points for top up if not provided
+                $point = 0;
+                if ($type == '1') {
+                    $point = floor($jmlTrans / 50000) * 1250;
+                }
             }
 
             // Insert into point table

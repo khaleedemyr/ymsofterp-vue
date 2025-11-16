@@ -350,7 +350,7 @@
 
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue';
-import { ref, watch } from 'vue';
+import { ref, watch, onMounted } from 'vue';
 import { Link, router } from '@inertiajs/vue3';
 import Multiselect from 'vue-multiselect';
 import 'vue-multiselect/dist/vue-multiselect.min.css';
@@ -374,10 +374,22 @@ const props = defineProps({
   }
 });
 
+// Helper function to get first day of current month and today
+const getDefaultDateRange = () => {
+  const today = new Date();
+  const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+  return {
+    from: firstDay.toISOString().split('T')[0],
+    to: today.toISOString().split('T')[0]
+  };
+};
+
+const defaultDates = getDefaultDateRange();
+
 const filters = ref({
   search: props.filters?.search || '',
-  from: props.filters?.from || '',
-  to: props.filters?.to || '',
+  from: props.filters?.from || defaultDates.from,
+  to: props.filters?.to || defaultDates.to,
   supplier_id: props.filters?.supplier_id ? props.suppliers?.find(s => s.id == props.filters.supplier_id) || null : null,
   item_id: props.filters?.item_id ? props.items?.find(i => i.id == props.filters.item_id) || null : null,
   perPage: props.filters?.perPage || 15,
@@ -393,8 +405,8 @@ watch(() => props.filters, (newFilters) => {
   if (newFilters && !loading.value) {
     filters.value = {
       search: newFilters.search || '',
-      from: newFilters.from || '',
-      to: newFilters.to || '',
+      from: newFilters.from || defaultDates.from,
+      to: newFilters.to || defaultDates.to,
       supplier_id: newFilters.supplier_id ? props.suppliers?.find(s => s.id == newFilters.supplier_id) || null : null,
       item_id: newFilters.item_id ? props.items?.find(i => i.id == newFilters.item_id) || null : null,
       perPage: newFilters.perPage || 15,
@@ -516,6 +528,18 @@ const getStablePriceCount = () => {
   if (!props.reports?.data) return 0;
   return props.reports.data.filter(item => item.price_change === 0 || item.price_change === null).length;
 };
+
+// Auto-load data on mount if no data or no date filters set
+onMounted(() => {
+  // If no data loaded and no date filters in URL, auto-load with default dates
+  const hasNoData = !props.reports?.data || props.reports.data.length === 0;
+  const hasNoDateFilters = !props.filters?.from && !props.filters?.to;
+  
+  if (hasNoData && hasNoDateFilters) {
+    // Auto-load with default date range (current month)
+    loadData();
+  }
+});
 </script>
 
 <style scoped>

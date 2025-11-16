@@ -403,18 +403,21 @@ class OutletInternalUseWasteController extends Controller
                 }
             }
             
-            DB::commit();
-            
-            // Verifikasi data tersimpan dengan baik
+            // Verifikasi data sebelum commit
             $headerExists = DB::table('outlet_internal_use_waste_headers')->where('id', $headerId)->exists();
             if (!$headerExists) {
-                throw new \Exception("Header tidak ditemukan setelah commit. Kemungkinan terjadi error saat insert.");
+                DB::rollBack();
+                throw new \Exception("Header tidak ditemukan setelah insert. Kemungkinan terjadi error saat insert.");
             }
             
             $detailsCount = DB::table('outlet_internal_use_waste_details')->where('header_id', $headerId)->count();
             if ($detailsCount !== count($request->items)) {
+                DB::rollBack();
                 throw new \Exception("Jumlah detail yang tersimpan ({$detailsCount}) tidak sesuai dengan jumlah item yang dikirim (" . count($request->items) . ").");
             }
+            
+            // Commit hanya jika semua verifikasi berhasil
+            DB::commit();
             
             \Log::info('OutletInternalUseWaste store - Successfully saved:', [
                 'header_id' => $headerId,

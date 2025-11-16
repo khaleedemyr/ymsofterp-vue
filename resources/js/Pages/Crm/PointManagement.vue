@@ -136,6 +136,7 @@
                 v-model="form.type"
                 class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 required
+                @change="updatePoint"
               >
                 <option value="">Pilih tipe...</option>
                 <option value="1">Top Up</option>
@@ -156,9 +157,10 @@
                 placeholder="Masukkan jumlah..."
                 class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 required
+                @input="updatePoint"
               />
               <div v-if="form.type === '1' && form.jml_trans" class="mt-1 text-sm text-blue-600">
-                Point yang didapat: {{ calculatePoints(form.jml_trans) }}
+                Point yang didapat: {{ formatNumber(form.point) }}
               </div>
             </div>
 
@@ -490,6 +492,7 @@ const form = ref({
   jml_trans: '',
   no_bill: '',
   keterangan: '',
+  point: 0, // Point yang sudah dihitung di frontend
 });
 
 const filters = ref({
@@ -519,6 +522,15 @@ function formatRupiah(value) {
 function calculatePoints(amount) {
   if (!amount) return 0;
   return Math.floor(amount / 50000) * 1250;
+}
+
+// Update point when jml_trans or type changes
+function updatePoint() {
+  if (form.value.type === '1' && form.value.jml_trans) {
+    form.value.point = calculatePoints(form.value.jml_trans);
+  } else {
+    form.value.point = 0;
+  }
 }
 
 function getPageNumbers() {
@@ -618,6 +630,9 @@ async function submitForm() {
     return;
   }
 
+  // Ensure point is calculated before submit
+  updatePoint();
+
   // Show confirmation dialog
   const result = await window.Swal.fire({
     title: 'Konfirmasi',
@@ -698,6 +713,7 @@ function resetForm() {
     jml_trans: '',
     no_bill: '',
     keterangan: '',
+    point: 0,
   };
   selectedCustomer.value = null;
 }

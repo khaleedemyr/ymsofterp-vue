@@ -429,16 +429,35 @@ async function submit() {
   try {
     await router.post(route('outlet-internal-use-waste.store'), formData, {
       onSuccess: (page) => {
-        console.log('Form submitted successfully')
+        console.log('Form submitted successfully', page.props)
         
-        // Cek apakah ada pesan error dari backend
+        // PRIORITAS: Cek error terlebih dahulu sebelum menampilkan sukses
         if (page.props.flash?.error) {
+          console.error('Error from backend:', page.props.flash.error)
           Swal.fire({
             icon: 'error',
             title: 'Gagal Menyimpan Data',
             html: page.props.flash.error,
             confirmButtonText: 'OK',
-            confirmButtonColor: '#EF4444'
+            confirmButtonColor: '#EF4444',
+            width: '600px'
+          })
+          loading.value = false
+          return
+        }
+        
+        // Hanya tampilkan sukses jika benar-benar tidak ada error
+        // Cek juga apakah ada error di response
+        if (page.props.errors && Object.keys(page.props.errors).length > 0) {
+          console.error('Validation errors:', page.props.errors)
+          const errorMessages = Object.values(page.props.errors).flat().join('<br>')
+          Swal.fire({
+            icon: 'error',
+            title: 'Gagal Menyimpan Data',
+            html: 'Terjadi kesalahan validasi:<br><br>' + errorMessages,
+            confirmButtonText: 'OK',
+            confirmButtonColor: '#EF4444',
+            width: '600px'
           })
           loading.value = false
           return
@@ -452,14 +471,20 @@ async function submit() {
             text: page.props.flash.success,
             timer: 1500,
             showConfirmButton: false
+          }).then(() => {
+            // Redirect ke index setelah sukses
+            router.visit(route('outlet-internal-use-waste.index'))
           })
         } else {
+          // Jika tidak ada flash message, tetap tampilkan sukses tapi dengan peringatan
           Swal.fire({
             icon: 'success',
             title: 'Berhasil',
             text: 'Data berhasil disimpan!',
             timer: 1500,
             showConfirmButton: false
+          }).then(() => {
+            router.visit(route('outlet-internal-use-waste.index'))
           })
         }
         loading.value = false
@@ -470,6 +495,7 @@ async function submit() {
         // Buat pesan error yang lebih detail
         let errorMessage = 'Gagal menyimpan data. '
         
+        // Cek apakah ada error message langsung
         if (errors.message) {
           errorMessage = errors.message
         } else if (typeof errors === 'string') {
@@ -477,31 +503,46 @@ async function submit() {
         } else if (errors.error) {
           errorMessage = errors.error
         } else {
-          // Jika ada validation errors
+          // Jika ada validation errors, format dengan lebih baik
           const errorList = []
-          if (errors.items) {
-            errorList.push('Items: ' + (Array.isArray(errors.items) ? errors.items.join(', ') : errors.items))
+          
+          // Loop semua field errors
+          if (typeof errors === 'object') {
+            for (const [field, messages] of Object.entries(errors)) {
+              if (Array.isArray(messages)) {
+                errorList.push(`<strong>${field}:</strong> ${messages.join(', ')}`)
+              } else if (typeof messages === 'string') {
+                errorList.push(`<strong>${field}:</strong> ${messages}`)
+              }
+            }
           }
-          if (errors.type) {
-            errorList.push('Type: ' + (Array.isArray(errors.type) ? errors.type.join(', ') : errors.type))
-          }
-          if (errors.outlet_id) {
-            errorList.push('Outlet: ' + (Array.isArray(errors.outlet_id) ? errors.outlet_id.join(', ') : errors.outlet_id))
-          }
-          if (errors.warehouse_outlet_id) {
-            errorList.push('Warehouse Outlet: ' + (Array.isArray(errors.warehouse_outlet_id) ? errors.warehouse_outlet_id.join(', ') : errors.warehouse_outlet_id))
-          }
-          if (errors.date) {
-            errorList.push('Tanggal: ' + (Array.isArray(errors.date) ? errors.date.join(', ') : errors.date))
-          }
-          if (errors.approvers) {
-            errorList.push('Approvers: ' + (Array.isArray(errors.approvers) ? errors.approvers.join(', ') : errors.approvers))
+          
+          // Fallback untuk field-field spesifik
+          if (errorList.length === 0) {
+            if (errors.items) {
+              errorList.push('Items: ' + (Array.isArray(errors.items) ? errors.items.join(', ') : errors.items))
+            }
+            if (errors.type) {
+              errorList.push('Type: ' + (Array.isArray(errors.type) ? errors.type.join(', ') : errors.type))
+            }
+            if (errors.outlet_id) {
+              errorList.push('Outlet: ' + (Array.isArray(errors.outlet_id) ? errors.outlet_id.join(', ') : errors.outlet_id))
+            }
+            if (errors.warehouse_outlet_id) {
+              errorList.push('Warehouse Outlet: ' + (Array.isArray(errors.warehouse_outlet_id) ? errors.warehouse_outlet_id.join(', ') : errors.warehouse_outlet_id))
+            }
+            if (errors.date) {
+              errorList.push('Tanggal: ' + (Array.isArray(errors.date) ? errors.date.join(', ') : errors.date))
+            }
+            if (errors.approvers) {
+              errorList.push('Approvers: ' + (Array.isArray(errors.approvers) ? errors.approvers.join(', ') : errors.approvers))
+            }
           }
           
           if (errorList.length > 0) {
-            errorMessage += '<br><br>Detail error:<br>' + errorList.join('<br>')
+            errorMessage += '<br><br><strong>Detail error:</strong><br>' + errorList.join('<br>')
           } else {
-            errorMessage += 'Silakan cek input Anda dan pastikan semua data valid.'
+            errorMessage += 'Silakan cek input Anda dan pastikan semua data valid. Jika masalah berlanjut, hubungi administrator.'
           }
         }
         
