@@ -84,7 +84,7 @@ class PurchaseOrderReportController extends Controller
 
             $item->previous_price = $previousPrice;
             $item->price_change = $previousPrice ? $item->po_price - $previousPrice : 0;
-            $item->price_change_percentage = $previousPrice ? round((($item->po_price - $previousPrice) / $previousPrice) * 100, 2) : 0;
+            $item->price_change_percentage = ($previousPrice !== null && $previousPrice != 0) ? round((($item->po_price - $previousPrice) / $previousPrice) * 100, 2) : 0;
 
             return $item;
         });
@@ -209,7 +209,7 @@ class PurchaseOrderReportController extends Controller
 
             $item->previous_price = $previousPrice;
             $item->price_change = $previousPrice ? $item->po_price - $previousPrice : 0;
-            $item->price_change_percentage = $previousPrice ? round((($item->po_price - $previousPrice) / $previousPrice) * 100, 2) : 0;
+            $item->price_change_percentage = ($previousPrice !== null && $previousPrice != 0) ? round((($item->po_price - $previousPrice) / $previousPrice) * 100, 2) : 0;
 
             return $item;
         });
