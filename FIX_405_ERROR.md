@@ -27,17 +27,41 @@ Ini berarti route sudah ditemukan, tapi **HTTP method yang digunakan salah**.
   Accept: application/json
   ```
 
-### 2. Test dengan curl (Paling Mudah):
+### 2. Test dengan PowerShell (Windows):
 
-```bash
+**⚠️ PENTING:** Di PowerShell, `curl` adalah alias untuk `Invoke-WebRequest` yang punya syntax berbeda!
+
+**Opsi A: Gunakan `curl.exe` (Paling Mudah):**
+```powershell
 # Test /auth/me (GET)
-curl -X GET "https://ymsofterp.com/api/mobile/member/auth/me" \
-  -H "Authorization: Bearer {TOKEN}" \
-  -H "Accept: application/json" \
-  -H "Content-Type: application/json"
+curl.exe -X GET "https://ymsofterp.com/api/mobile/member/auth/me" `
+  -H "Authorization: Bearer {TOKEN}" `
+  -H "Accept: application/json"
 ```
 
-**PENTING:** Gunakan `-X GET` atau tidak perlu `-X` sama sekali (default GET)
+**Opsi B: Gunakan `Invoke-RestMethod` (PowerShell Native):**
+```powershell
+$headers = @{
+    Authorization = "Bearer {TOKEN}"
+    Accept = "application/json"
+}
+
+$profile = Invoke-RestMethod -Uri "https://ymsofterp.com/api/mobile/member/auth/me" `
+    -Method GET `
+    -Headers $headers
+
+$profile | ConvertTo-Json -Depth 10
+```
+
+**Opsi C: Gunakan Script PowerShell (Paling Mudah):**
+Jalankan file `test-auth.ps1` yang sudah disediakan:
+```powershell
+.\test-auth.ps1
+```
+
+**PENTING:** 
+- Gunakan backtick `` ` `` untuk line continuation (bukan `\`)
+- Atau gunakan `curl.exe` dengan `.exe` di akhir
 
 ### 3. Test dengan Postman:
 
@@ -61,14 +85,29 @@ curl -X GET "https://ymsofterp.com/api/mobile/member/auth/me" \
 ## 🚀 Langkah Test Lengkap:
 
 ### Step 1: Login untuk dapat token
-```bash
-curl -X POST "https://ymsofterp.com/api/mobile/member/auth/login" \
-  -H "Content-Type: application/json" \
-  -H "Accept: application/json" \
-  -d '{
-    "email": "email_member@example.com",
-    "password": "password_member"
-  }'
+
+**PowerShell:**
+```powershell
+$loginBody = @{
+    email = "email_member@example.com"
+    password = "password_member"
+} | ConvertTo-Json
+
+$loginResponse = Invoke-RestMethod -Uri "https://ymsofterp.com/api/mobile/member/auth/login" `
+    -Method POST `
+    -ContentType "application/json" `
+    -Body $loginBody
+
+$token = $loginResponse.data.token
+Write-Host "Token: $token"
+```
+
+**Atau dengan curl.exe:**
+```powershell
+curl.exe -X POST "https://ymsofterp.com/api/mobile/member/auth/login" `
+  -H "Content-Type: application/json" `
+  -H "Accept: application/json" `
+  -d '{\"email\": \"email_member@example.com\", \"password\": \"password_member\"}'
 ```
 
 **Response:**
@@ -82,9 +121,25 @@ curl -X POST "https://ymsofterp.com/api/mobile/member/auth/login" \
 ```
 
 ### Step 2: Test /auth/me dengan token
-```bash
-curl -X GET "https://ymsofterp.com/api/mobile/member/auth/me" \
-  -H "Authorization: Bearer 1|abc123def456..." \
+
+**PowerShell:**
+```powershell
+$headers = @{
+    Authorization = "Bearer $token"
+    Accept = "application/json"
+}
+
+$profile = Invoke-RestMethod -Uri "https://ymsofterp.com/api/mobile/member/auth/me" `
+    -Method GET `
+    -Headers $headers
+
+$profile | ConvertTo-Json -Depth 10
+```
+
+**Atau dengan curl.exe:**
+```powershell
+curl.exe -X GET "https://ymsofterp.com/api/mobile/member/auth/me" `
+  -H "Authorization: Bearer $token" `
   -H "Accept: application/json"
 ```
 
