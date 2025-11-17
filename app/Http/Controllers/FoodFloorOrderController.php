@@ -380,35 +380,63 @@ class FoodFloorOrderController extends Controller
             abort(400, 'Tidak bisa approve order ini');
         }
 
-        // Budget checking untuk RO Khusus yang akan di-approve
+        // Check if this is a reject request
+        $isReject = $request->has('approved') && $request->approved === false;
         
-        $budgetCheckResult = $this->checkBudgetForFloorOrder($order);
-        if (!$budgetCheckResult['success']) {
-            \Log::error('FO_APPROVE: Budget check failed', [
-                'order_id' => $order->id,
-                'message' => $budgetCheckResult['message']
-            ]);
-            return redirect()->back()->withErrors(['budget' => $budgetCheckResult['message']]);
+        // Budget checking hanya untuk approve, bukan reject
+        if (!$isReject) {
+            $budgetCheckResult = $this->checkBudgetForFloorOrder($order);
+            if (!$budgetCheckResult['success']) {
+                \Log::error('FO_APPROVE: Budget check failed', [
+                    'order_id' => $order->id,
+                    'message' => $budgetCheckResult['message']
+                ]);
+                if ($request->expectsJson() || $request->ajax() || $request->wantsJson()) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => $budgetCheckResult['message']
+                    ], 422);
+                }
+                return redirect()->back()->withErrors(['budget' => $budgetCheckResult['message']]);
+            }
         }
         
-
         $order->update([
-            'status' => 'approved',
+            'status' => $isReject ? 'rejected' : 'approved',
             'approval_by' => $user->id,
             'approval_at' => now(),
             'approval_notes' => $request->notes,
         ]);
         \App\Models\ActivityLog::create([
             'user_id' => $user->id,
-            'activity_type' => 'approve',
+            'activity_type' => $isReject ? 'reject' : 'approve',
             'module' => 'food_floor_order',
-            'description' => 'Approve Floor Order: ' . $order->id,
+            'description' => ($isReject ? 'Reject' : 'Approve') . ' Floor Order: ' . $order->id,
             'ip_address' => $request->ip(),
             'user_agent' => $request->userAgent(),
             'old_data' => null,
             'new_data' => $order->fresh()->toArray(),
         ]);
-        return redirect()->back()->with('success', 'Floor Order berhasil di-approve');
+        
+        // Send notification to requester if rejected
+        if ($isReject && $order->user_id) {
+            $this->sendNotification(
+                [$order->user_id],
+                'floor_order_rejected',
+                'RO Khusus Ditolak',
+                "RO Khusus {$order->order_number} telah ditolak.",
+                route('floor-order.show', $order->id)
+            );
+        }
+        
+        if ($request->expectsJson() || $request->ajax() || $request->wantsJson()) {
+            return response()->json([
+                'success' => true,
+                'message' => $isReject ? 'RO Khusus berhasil ditolak' : 'RO Khusus berhasil di-approve'
+            ]);
+        }
+        
+        return redirect()->back()->with('success', $isReject ? 'Floor Order berhasil ditolak' : 'Floor Order berhasil di-approve');
     }
 
     // Method untuk mengecek apakah user bisa approve berdasarkan warehouse outlet
@@ -776,6 +804,121 @@ class FoodFloorOrderController extends Controller
                 'success' => false,
                 'message' => 'Terjadi kesalahan saat mengecek budget: ' . $e->getMessage()
             ];
+        }
+    }
+
+    // API: Get pending RO Khusus approvals
+    public function getPendingROKhususApprovals(Request $request)
+    {
+        try {
+            $user = Auth::user();
+            $isSuperadmin = $user->id_role === '5af56935b011a' && $user->status === 'A';
+            
+            $query = FoodFloorOrder::with(['outlet', 'requester', 'warehouseOutlet', 'items'])
+                ->where('fo_mode', 'RO Khusus')
+                ->where('status', 'submitted')
+                ->orderByDesc('created_at');
+            
+            $pendingApprovals = [];
+            
+            // Filter berdasarkan warehouse outlet dan jabatan user
+            if ($isSuperadmin) {
+                // Superadmin bisa lihat semua
+                $allApprovals = $query->get();
+            } else {
+                // Filter berdasarkan warehouse outlet yang bisa di-approve user
+                $allApprovals = $query->get()->filter(function($order) use ($user) {
+                    return $this->canUserApproveByWarehouse($user, $order->warehouse_outlet_id);
+                });
+            }
+            
+            foreach ($allApprovals as $order) {
+                $warehouseName = $order->warehouseOutlet ? $order->warehouseOutlet->name : 'Unknown';
+                $approvalLevelDisplay = $this->getApprovalLevelDisplay($warehouseName);
+                
+                $pendingApprovals[] = [
+                    'id' => $order->id,
+                    'order_number' => $order->order_number,
+                    'tanggal' => $order->tanggal,
+                    'arrival_date' => $order->arrival_date,
+                    'outlet' => $order->outlet ? ['nama_outlet' => $order->outlet->nama_outlet] : null,
+                    'warehouse_outlet' => $order->warehouseOutlet ? ['name' => $order->warehouseOutlet->name] : null,
+                    'requester' => $order->requester ? ['nama_lengkap' => $order->requester->nama_lengkap] : null,
+                    'items_count' => $order->items->count(),
+                    'description' => $order->description,
+                    'approval_level' => 'ro_khusus',
+                    'approval_level_display' => $approvalLevelDisplay,
+                    'created_at' => $order->created_at
+                ];
+            }
+            
+            return response()->json([
+                'success' => true,
+                'ro_khusus' => $pendingApprovals
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Error getting pending RO Khusus approvals', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'error' => 'Failed to get pending approvals'
+            ], 500);
+        }
+    }
+
+    // Helper untuk mendapatkan approval level display
+    private function getApprovalLevelDisplay($warehouseName)
+    {
+        switch ($warehouseName) {
+            case 'Kitchen':
+                return 'Kitchen Manager';
+            case 'Bar':
+                return 'Bar Manager';
+            case 'Service':
+                return 'Service Manager';
+            default:
+                return 'Manager';
+        }
+    }
+
+    // API: Get RO Khusus detail for approval modal
+    public function getROKhususDetail($id)
+    {
+        try {
+            $order = FoodFloorOrder::with([
+                'outlet',
+                'requester',
+                'warehouseOutlet',
+                'approver',
+                'items.item',
+                'items.category'
+            ])->findOrFail($id);
+            
+            // Ensure items have proper data
+            $order->items->transform(function($item) {
+                if (!$item->item && $item->item_id) {
+                    $item->item = \App\Models\Item::find($item->item_id);
+                }
+                return $item;
+            });
+            
+            return response()->json([
+                'success' => true,
+                'ro_khusus' => $order
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Error getting RO Khusus detail', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to load RO Khusus detail'
+            ], 500);
         }
     }
 } 

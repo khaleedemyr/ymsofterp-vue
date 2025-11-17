@@ -175,8 +175,191 @@ class FoodPaymentController extends Controller
     // Approve payment (Finance Manager)
     public function approve(Request $request, $id)
     {
-        // Logic approval
-        return response()->json(['success' => true]);
+        $request->validate([
+            'approved' => 'required|boolean',
+            'note' => 'nullable|string'
+        ]);
+
+        $user = Auth::user();
+        $foodPayment = FoodPayment::findOrFail($id);
+
+        // Superadmin check
+        $isSuperadmin = $user->id_role === '5af56935b011a' && $user->status === 'A';
+
+        // Finance Manager Approval
+        if (
+            ($user->id_jabatan == 160 && $user->status == 'A' && $foodPayment->status == 'paid' && !$foodPayment->finance_manager_approved_at)
+            || ($isSuperadmin && $foodPayment->status == 'paid' && !$foodPayment->finance_manager_approved_at)
+        ) {
+            $foodPayment->update([
+                'finance_manager_approved_at' => now(),
+                'finance_manager_approved_by' => $user->id,
+                'finance_manager_note' => $request->note,
+            ]);
+
+            // Log activity
+            \App\Models\ActivityLog::create([
+                'user_id' => $user->id,
+                'activity_type' => $request->approved ? 'approve' : 'reject',
+                'module' => 'food_payment',
+                'description' => ($request->approved ? 'Approve' : 'Reject') . ' Food Payment (Finance Manager): ' . $foodPayment->number,
+                'ip_address' => $request->ip(),
+            ]);
+
+            // Send notification to creator
+            if ($foodPayment->created_by) {
+                \App\Models\Notification::create([
+                    'user_id' => $foodPayment->created_by,
+                    'type' => 'food_payment_approval',
+                    'title' => 'Food Payment ' . ($request->approved ? 'Disetujui' : 'Ditolak'),
+                    'message' => "Food Payment {$foodPayment->number} telah " . ($request->approved ? 'disetujui' : 'ditolak') . " oleh Finance Manager.",
+                ]);
+            }
+
+            $msg = 'Food Payment berhasil ' . ($request->approved ? 'diapprove' : 'direject');
+            return response()->json(['success' => true, 'message' => $msg]);
+        }
+
+        return response()->json(['success' => false, 'message' => 'Anda tidak memiliki akses untuk approve Food Payment ini'], 403);
+    }
+
+    // API: Get pending Food Payment approvals
+    public function getPendingApprovals(Request $request)
+    {
+        try {
+            $user = Auth::user();
+            $isSuperadmin = $user->id_role === '5af56935b011a' && $user->status === 'A';
+            
+            $query = FoodPayment::with(['supplier', 'creator', 'financeManager', 'contraBons'])
+                ->where('status', 'paid') // Food Payment dengan status 'paid' perlu approval Finance Manager
+                ->whereNull('finance_manager_approved_at')
+                ->orderByDesc('created_at');
+            
+            $pendingApprovals = [];
+            
+            // Finance Manager approvals (id_jabatan == 160)
+            if (($user->id_jabatan == 160 && $user->status == 'A') || $isSuperadmin) {
+                $financeManagerApprovals = $query->get();
+                
+                foreach ($financeManagerApprovals as $fp) {
+                    $pendingApprovals[] = [
+                        'id' => $fp->id,
+                        'number' => $fp->number,
+                        'date' => $fp->date,
+                        'total' => $fp->total,
+                        'payment_type' => $fp->payment_type,
+                        'supplier' => $fp->supplier ? ['name' => $fp->supplier->name] : null,
+                        'creator' => $fp->creator ? ['nama_lengkap' => $fp->creator->nama_lengkap] : null,
+                        'approval_level' => 'finance_manager',
+                        'approval_level_display' => 'Finance Manager',
+                        'contra_bons_count' => $fp->contraBons->count(),
+                        'notes' => $fp->notes,
+                        'created_at' => $fp->created_at
+                    ];
+                }
+            }
+            
+            return response()->json([
+                'success' => true,
+                'food_payments' => $pendingApprovals
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Error getting pending Food Payment approvals', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'error' => 'Failed to get pending approvals'
+            ], 500);
+        }
+    }
+
+    // API: Get Food Payment detail for approval modal
+    public function getDetail($id)
+    {
+        try {
+            $foodPayment = FoodPayment::with([
+                'supplier',
+                'creator',
+                'financeManager',
+                'contraBons.purchaseOrder',
+                'contraBons.retailFood',
+                'contraBons.warehouseRetailFood',
+                'contraBons.items.item',
+                'contraBons.items.unit'
+            ])->findOrFail($id);
+            
+            // Transform contra bons to include source type and outlet information
+            $foodPayment->contra_bons = $foodPayment->contraBons->map(function($contraBon) {
+                $sourceTypeDisplay = 'Unknown';
+                $sourceNumbers = [];
+                $sourceOutlets = [];
+                
+                if ($contraBon->source_type === 'purchase_order' && $contraBon->purchaseOrder) {
+                    if ($contraBon->purchaseOrder->source_type === 'pr_foods') {
+                        $sourceTypeDisplay = 'PR Foods';
+                        // Get PR numbers
+                        $prNumbers = DB::table('pr_foods as pr')
+                            ->join('pr_food_items as pri', 'pr.id', '=', 'pri.pr_food_id')
+                            ->join('purchase_order_food_items as poi', 'pri.id', '=', 'poi.pr_food_item_id')
+                            ->where('poi.purchase_order_food_id', $contraBon->purchaseOrder->id)
+                            ->distinct()
+                            ->pluck('pr.pr_number')
+                            ->toArray();
+                        $sourceNumbers = $prNumbers;
+                    } elseif ($contraBon->purchaseOrder->source_type === 'ro_supplier') {
+                        $sourceTypeDisplay = 'RO Supplier';
+                        // Get RO Supplier numbers and outlet names
+                        $roData = DB::table('food_floor_orders as fo')
+                            ->join('purchase_order_food_items as poi', 'fo.id', '=', 'poi.ro_id')
+                            ->leftJoin('tbl_data_outlet as o', 'fo.id_outlet', '=', 'o.id_outlet')
+                            ->where('poi.purchase_order_food_id', $contraBon->purchaseOrder->id)
+                            ->select('fo.order_number', 'o.nama_outlet')
+                            ->distinct()
+                            ->get();
+                        $sourceNumbers = $roData->pluck('order_number')->unique()->filter()->toArray();
+                        $sourceOutlets = $roData->pluck('nama_outlet')->unique()->filter()->toArray();
+                    }
+                } elseif ($contraBon->source_type === 'retail_food') {
+                    $sourceTypeDisplay = 'Retail Food';
+                    if ($contraBon->retailFood) {
+                        $sourceNumbers = [$contraBon->retailFood->retail_number ?? ''];
+                        $sourceOutlets = [$contraBon->retailFood->outlet_name ?? ''];
+                    }
+                } elseif ($contraBon->source_type === 'warehouse_retail_food') {
+                    $sourceTypeDisplay = 'Warehouse Retail Food';
+                    if ($contraBon->warehouseRetailFood) {
+                        $sourceNumbers = [$contraBon->warehouseRetailFood->retail_number ?? ''];
+                        $warehouseName = $contraBon->warehouseRetailFood->warehouse ? $contraBon->warehouseRetailFood->warehouse->name : '';
+                        $divisionName = $contraBon->warehouseRetailFood->warehouseDivision ? $contraBon->warehouseRetailFood->warehouseDivision->name : '';
+                        $sourceOutlets = [$warehouseName . ($divisionName ? ' - ' . $divisionName : '')];
+                    }
+                }
+                
+                $contraBon->source_type_display = $sourceTypeDisplay;
+                $contraBon->source_numbers = $sourceNumbers;
+                $contraBon->source_outlets = $sourceOutlets;
+                
+                return $contraBon;
+            });
+            
+            return response()->json([
+                'success' => true,
+                'food_payment' => $foodPayment
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Error getting Food Payment detail', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to load Food Payment detail'
+            ], 500);
+        }
     }
 
     // API: Get contra bon yang belum dibayar

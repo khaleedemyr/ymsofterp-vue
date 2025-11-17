@@ -26,13 +26,15 @@ class PurchaseOrderOpsController extends Controller
             ->leftJoin('users as pm', 'po.purchasing_manager_approved_by', '=', 'pm.id')
             ->leftJoin('users as gm', 'po.gm_finance_approved_by', '=', 'gm.id')
             ->leftJoin('purchase_requisitions as pr', 'po.source_id', '=', 'pr.id')
+            ->leftJoin('tbl_data_outlet as o', 'pr.outlet_id', '=', 'o.id_outlet')
             ->select(
                 'po.*',
                 's.name as supplier_name',
                 'creator.nama_lengkap as creator_name',
                 'pm.nama_lengkap as purchasing_manager_name',
                 'gm.nama_lengkap as gm_finance_name',
-                'pr.pr_number as source_pr_number'
+                'pr.pr_number as source_pr_number',
+                'o.nama_outlet as outlet_name'
             )
             ->orderBy('po.created_at', 'desc');
 
@@ -41,7 +43,8 @@ class PurchaseOrderOpsController extends Controller
             $query->where(function($q) use ($search) {
                 $q->where('po.number', 'like', '%' . $search . '%')
                   ->orWhere('s.name', 'like', '%' . $search . '%')
-                  ->orWhere('pr.pr_number', 'like', '%' . $search . '%');
+                  ->orWhere('pr.pr_number', 'like', '%' . $search . '%')
+                  ->orWhere('o.nama_outlet', 'like', '%' . $search . '%');
             });
         }
         if (request('status')) {
@@ -85,6 +88,10 @@ class PurchaseOrderOpsController extends Controller
             // Source PR information
             $po->source_pr_number = $po->source_pr_number;
             
+            // Outlet information from PR
+            $po->outlet = $po->outlet_name ? (object) [
+                'nama_outlet' => $po->outlet_name
+            ] : null;
             
             return $po;
         });

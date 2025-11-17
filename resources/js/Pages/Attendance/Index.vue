@@ -622,8 +622,8 @@
 
         <!-- Absent Modal -->
     <div v-if="showAbsentModalFlag" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4">
-        <div class="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
+      <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4 max-h-[90vh] flex flex-col">
+        <div class="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
           <h3 class="text-lg font-semibold text-gray-900 dark:text-gray-100">
             Ajukan Izin/Cuti - {{ formatDate(selectedAbsentDate) }}
           </h3>
@@ -635,7 +635,7 @@
           </button>
         </div>
         
-        <div class="p-4">
+        <div class="p-4 overflow-y-auto flex-1">
           <form @submit.prevent="submitAbsentRequest">
             <div class="space-y-4">
               <!-- Leave Type -->
@@ -904,7 +904,7 @@
                     <div
                       v-for="user in approverResults"
                       :key="user.id"
-                      @click="selectApprover(user)"
+                      @click="addApprover(user)"
                       class="px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-600 cursor-pointer border-b border-gray-200 dark:border-gray-500 last:border-b-0"
                     >
                       <div class="font-medium text-gray-900 dark:text-white">{{ user.nama_lengkap }}</div>
@@ -916,28 +916,39 @@
                   </div>
                 </div>
                 
-                <!-- Selected Approver Display -->
-                <div v-if="selectedApprover" class="mt-3 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-md">
-                  <div class="flex items-center justify-between">
-                    <div>
-                      <div class="font-medium text-blue-900 dark:text-blue-100">{{ selectedApprover.nama_lengkap }}</div>
-                      <div class="text-sm text-blue-700 dark:text-blue-300">{{ selectedApprover.email }}</div>
-                      <div v-if="selectedApprover.nama_jabatan" class="text-xs text-blue-600 dark:text-blue-400 font-medium">{{ selectedApprover.nama_jabatan }}</div>
-                      <div v-if="selectedApprover.nama_divisi" class="text-xs text-blue-500 dark:text-blue-400">{{ selectedApprover.nama_divisi }}</div>
-                      <div v-if="selectedApprover.nama_outlet" class="text-xs text-green-600 dark:text-green-400 font-medium">{{ selectedApprover.nama_outlet }}</div>
+                <!-- Selected Approvers List -->
+                <div v-if="selectedApprovers.length > 0" class="mt-3 space-y-2">
+                  <div 
+                    v-for="(approver, index) in selectedApprovers" 
+                    :key="approver.id || index"
+                    class="p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-md"
+                  >
+                    <div class="flex items-start justify-between">
+                      <div class="flex-1">
+                        <div class="flex items-center gap-2 mb-1">
+                          <span class="text-xs font-semibold text-blue-600 dark:text-blue-400 bg-blue-100 dark:bg-blue-800 px-2 py-0.5 rounded">
+                            Level {{ index + 1 }}
+                          </span>
+                        </div>
+                        <div class="font-medium text-blue-900 dark:text-blue-100">{{ approver.nama_lengkap }}</div>
+                        <div class="text-sm text-blue-700 dark:text-blue-300">{{ approver.email }}</div>
+                        <div v-if="approver.nama_jabatan" class="text-xs text-blue-600 dark:text-blue-400 font-medium">{{ approver.nama_jabatan }}</div>
+                        <div v-if="approver.nama_divisi" class="text-xs text-blue-500 dark:text-blue-400">{{ approver.nama_divisi }}</div>
+                        <div v-if="approver.nama_outlet" class="text-xs text-green-600 dark:text-green-400 font-medium">{{ approver.nama_outlet }}</div>
+                      </div>
+                      <button
+                        @click="removeApprover(index)"
+                        class="ml-2 p-1 text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 flex-shrink-0"
+                        title="Hapus Atasan"
+                      >
+                        <i class="fa fa-times"></i>
+                      </button>
                     </div>
-                    <button
-                      @click="clearApprover"
-                      class="p-1 text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
-                      title="Hapus Atasan"
-                    >
-                      <i class="fa fa-times"></i>
-                    </button>
                   </div>
                 </div>
                 
                 <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                  Ketik minimal 2 karakter untuk mencari atasan yang akan menyetujui permohonan izin/cuti Anda
+                  Ketik minimal 2 karakter untuk mencari atasan. Anda dapat menambahkan multiple approvers berjenjang (Level 1, 2, 3, dst). Setelah semua approver approve, baru akan muncul di approval HRD.
                 </p>
               </div>
               
@@ -1022,26 +1033,27 @@
                 </div>
               </div>
             </div>
-            
-            <div class="flex justify-end gap-3 mt-6">
-              <button 
-                type="button"
-                @click="closeAbsentModal"
-                class="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-600 hover:bg-gray-200 dark:hover:bg-gray-500 rounded-md transition-colors"
-              >
-                Batal
-              </button>
-              <button 
-                type="submit"
-                :disabled="submittingAbsent || (isPublicHolidayType && totalExtraOffDays === 0) || (isAnnualLeaveType && annualLeaveBalance === 0) || (isExtraOffType && regularExtraOffBalance === 0) || isExceedingBalance"
-                class="px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 disabled:bg-red-400 rounded-md transition-colors"
-              >
-                <i v-if="submittingAbsent" class="fa-solid fa-spinner fa-spin mr-2"></i>
-                <i v-else class="fa-solid fa-paper-plane mr-2"></i>
-                {{ submittingAbsent ? 'Mengirim...' : 'Kirim Permohonan' }}
-              </button>
-            </div>
           </form>
+        </div>
+        
+        <div class="flex justify-end gap-3 p-4 border-t border-gray-200 dark:border-gray-700 flex-shrink-0">
+          <button 
+            type="button"
+            @click="closeAbsentModal"
+            class="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-600 hover:bg-gray-200 dark:hover:bg-gray-500 rounded-md transition-colors"
+          >
+            Batal
+          </button>
+          <button 
+            type="button"
+            @click="submitAbsentRequest"
+            :disabled="submittingAbsent || (isPublicHolidayType && totalExtraOffDays === 0) || (isAnnualLeaveType && annualLeaveBalance === 0) || (isExtraOffType && regularExtraOffBalance === 0) || isExceedingBalance || selectedApprovers.length === 0"
+            class="px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 disabled:bg-red-400 rounded-md transition-colors"
+          >
+            <i v-if="submittingAbsent" class="fa-solid fa-spinner fa-spin mr-2"></i>
+            <i v-else class="fa-solid fa-paper-plane mr-2"></i>
+            {{ submittingAbsent ? 'Mengirim...' : 'Kirim Permohonan' }}
+          </button>
         </div>
       </div>
     </div>
@@ -1458,7 +1470,7 @@ const submittingAbsent = ref(false)
 const absentForm = ref({
   leave_type_id: '',
   reason: '',
-  approver_id: '',
+  approver_id: '', // Keep for backward compatibility
   document: null,
   date_from: '',
   date_to: ''
@@ -1468,7 +1480,7 @@ const absentForm = ref({
 const approverSearch = ref('')
 const approverResults = ref([])
 const showApproverDropdown = ref(false)
-const selectedApprover = ref(null)
+const selectedApprovers = ref([]) // Changed to array for multiple approvers
 
 // Cancel leave functionality
 const showCancelModalFlag = ref(false)
@@ -1693,6 +1705,9 @@ const showAbsentModal = (date) => {
     date_to: date
   }
   capturedImages.value = []
+  selectedApprovers.value = [] // Reset approvers list
+  approverSearch.value = '' // Reset search
+  showApproverDropdown.value = false // Close dropdown
   // Load extra off days and balance
   loadExtraOffDays()
   loadExtraOffBalance()
@@ -1737,11 +1752,11 @@ const closeAbsentModal = () => {
   capturedImages.value = []
   absentForm.value.document = null
   stopCamera()
-  // Reset approver search
+  // Reset approver search and approvers list
+  selectedApprovers.value = []
   approverSearch.value = ''
   approverResults.value = []
   showApproverDropdown.value = false
-  selectedApprover.value = null
   absentForm.value.approver_id = ''
 }
 
@@ -1928,13 +1943,37 @@ const submitAbsentRequest = async () => {
   
   submittingAbsent.value = true
   
+  // Validate approvers
+  if (selectedApprovers.value.length === 0) {
+    await Swal.fire({
+      icon: 'warning',
+      title: 'Atasan Diperlukan',
+      text: 'Silakan pilih minimal satu atasan sebelum mengirim permohonan',
+      confirmButtonText: 'OK',
+      confirmButtonColor: '#3B82F6'
+    })
+    submittingAbsent.value = false
+    return
+  }
+  
   try {
     const formData = new FormData()
     formData.append('leave_type_id', absentForm.value.leave_type_id)
     formData.append('date_from', absentForm.value.date_from)
     formData.append('date_to', absentForm.value.date_to)
     formData.append('reason', absentForm.value.reason)
-    formData.append('approver_id', absentForm.value.approver_id)
+    
+    // Send approvers as array (for multi-level approval)
+    if (selectedApprovers.value.length > 0) {
+      selectedApprovers.value.forEach(approver => {
+        formData.append('approvers[]', approver.id)
+      })
+    }
+    
+    // Backward compatibility: also send approver_id if only one approver
+    if (selectedApprovers.value.length === 1) {
+      formData.append('approver_id', selectedApprovers.value[0].id)
+    }
     
     // Add captured images to FormData
     if (capturedImages.value.length > 0) {
@@ -2130,17 +2169,17 @@ const loadApprovers = async (search = '') => {
   }
 }
 
-const selectApprover = (user) => {
-  selectedApprover.value = user
-  absentForm.value.approver_id = user.id
+const addApprover = (user) => {
+  // Check if approver already exists
+  if (!selectedApprovers.value.find(approver => approver.id === user.id)) {
+    selectedApprovers.value.push(user)
+  }
   approverSearch.value = ''
   showApproverDropdown.value = false
 }
 
-const clearApprover = () => {
-  selectedApprover.value = null
-  absentForm.value.approver_id = ''
-  approverSearch.value = ''
+const removeApprover = (index) => {
+  selectedApprovers.value.splice(index, 1)
 }
 
 const onApproverSearchInput = () => {
@@ -2154,20 +2193,21 @@ const onApproverSearchInput = () => {
 
 // Cancel leave methods
 const canCancelRequest = (request) => {
-  // Can cancel if status is pending or supervisor_approved
-  if (!['pending', 'supervisor_approved'].includes(request.status)) {
+  // Can cancel if status is pending, supervisor_approved, or approved (HRD approved)
+  if (!['pending', 'supervisor_approved', 'approved'].includes(request.status)) {
     return false
   }
   
-  // Check if request is too close to start date (within 24 hours)
-  if (request.status === 'supervisor_approved') {
-    const startDate = new Date(request.date_from)
-    const now = new Date()
-    const hoursUntilStart = (startDate - now) / (1000 * 60 * 60)
-    
-    if (hoursUntilStart < 24) {
-      return false
-    }
+  // Check if date_from has not passed (can cancel until the day of the leave)
+  const startDate = new Date(request.date_from)
+  startDate.setHours(0, 0, 0, 0) // Set to start of day
+  
+  const today = new Date()
+  today.setHours(0, 0, 0, 0) // Set to start of day
+  
+  // Can cancel if start date is today or in the future
+  if (startDate < today) {
+    return false
   }
   
   return true

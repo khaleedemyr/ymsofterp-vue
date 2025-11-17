@@ -940,14 +940,19 @@ class NonFoodPaymentController extends Controller
         }
     }
 
-    public function approve(NonFoodPayment $nonFoodPayment)
+    public function approve(NonFoodPayment $nonFoodPayment, Request $request = null)
     {
         if (!$nonFoodPayment->canBeApproved()) {
+            if ($request && ($request->wantsJson() || $request->ajax() || $request->expectsJson())) {
+                return response()->json(['success' => false, 'message' => 'Payment ini tidak dapat disetujui.'], 400);
+            }
             return back()->with('error', 'Payment ini tidak dapat disetujui.');
         }
 
         try {
             DB::beginTransaction();
+            
+            $note = $request ? $request->input('note', '') : '';
             
             $nonFoodPayment->update([
                 'status' => 'approved',
@@ -955,35 +960,92 @@ class NonFoodPaymentController extends Controller
                 'approved_at' => now(),
             ]);
 
+            // Log activity
+            \App\Models\ActivityLog::create([
+                'user_id' => Auth::id(),
+                'activity_type' => 'approve',
+                'module' => 'non_food_payment',
+                'description' => 'Approve Non Food Payment: ' . $nonFoodPayment->payment_number,
+                'ip_address' => $request ? $request->ip() : request()->ip(),
+            ]);
+
+            // Send notification to creator
+            if ($nonFoodPayment->created_by) {
+                \App\Models\Notification::create([
+                    'user_id' => $nonFoodPayment->created_by,
+                    'type' => 'non_food_payment_approval',
+                    'title' => 'Non Food Payment Disetujui',
+                    'message' => "Non Food Payment {$nonFoodPayment->payment_number} telah disetujui oleh Finance Manager.",
+                ]);
+            }
+
             // Update PR status to PAID if all payments are completed
             $this->updatePRStatusIfAllPaid($nonFoodPayment);
 
             DB::commit();
 
+            if ($request && ($request->wantsJson() || $request->ajax() || $request->expectsJson())) {
+                return response()->json(['success' => true, 'message' => 'Non Food Payment berhasil disetujui.']);
+            }
+
             return back()->with('success', 'Non Food Payment berhasil disetujui.');
 
         } catch (\Exception $e) {
             DB::rollBack();
+            if ($request && ($request->wantsJson() || $request->ajax() || $request->expectsJson())) {
+                return response()->json(['success' => false, 'message' => 'Gagal menyetujui Non Food Payment: ' . $e->getMessage()], 500);
+            }
             return back()->with('error', 'Gagal menyetujui Non Food Payment: ' . $e->getMessage());
         }
     }
 
-    public function reject(NonFoodPayment $nonFoodPayment)
+    public function reject(NonFoodPayment $nonFoodPayment, Request $request = null)
     {
         if (!$nonFoodPayment->canBeRejected()) {
+            if ($request && ($request->wantsJson() || $request->ajax() || $request->expectsJson())) {
+                return response()->json(['success' => false, 'message' => 'Payment ini tidak dapat ditolak.'], 400);
+            }
             return back()->with('error', 'Payment ini tidak dapat ditolak.');
         }
 
         try {
+            $note = $request ? $request->input('note', '') : '';
+            
             $nonFoodPayment->update([
                 'status' => 'rejected',
                 'approved_by' => Auth::id(),
                 'approved_at' => now(),
             ]);
 
+            // Log activity
+            \App\Models\ActivityLog::create([
+                'user_id' => Auth::id(),
+                'activity_type' => 'reject',
+                'module' => 'non_food_payment',
+                'description' => 'Reject Non Food Payment: ' . $nonFoodPayment->payment_number . ($note ? ' - ' . $note : ''),
+                'ip_address' => $request ? $request->ip() : request()->ip(),
+            ]);
+
+            // Send notification to creator
+            if ($nonFoodPayment->created_by) {
+                \App\Models\Notification::create([
+                    'user_id' => $nonFoodPayment->created_by,
+                    'type' => 'non_food_payment_approval',
+                    'title' => 'Non Food Payment Ditolak',
+                    'message' => "Non Food Payment {$nonFoodPayment->payment_number} telah ditolak oleh Finance Manager." . ($note ? ' Alasan: ' . $note : ''),
+                ]);
+            }
+
+            if ($request && ($request->wantsJson() || $request->ajax() || $request->expectsJson())) {
+                return response()->json(['success' => true, 'message' => 'Non Food Payment berhasil ditolak.']);
+            }
+
             return back()->with('success', 'Non Food Payment berhasil ditolak.');
 
         } catch (\Exception $e) {
+            if ($request && ($request->wantsJson() || $request->ajax() || $request->expectsJson())) {
+                return response()->json(['success' => false, 'message' => 'Gagal menolak Non Food Payment: ' . $e->getMessage()], 500);
+            }
             return back()->with('error', 'Gagal menolak Non Food Payment: ' . $e->getMessage());
         }
     }
@@ -1270,6 +1332,369 @@ class NonFoodPaymentController extends Controller
         } catch (\Exception $e) {
             \Log::error('Non Food Payment printPreview error: ' . $e->getMessage());
             return response()->json(['error' => 'Terjadi kesalahan saat generate print preview: ' . $e->getMessage()], 500);
+        }
+    }
+
+    // API: Get pending Non Food Payment approvals
+    public function getPendingApprovals(Request $request)
+    {
+        try {
+            $user = Auth::user();
+            $isSuperadmin = $user->id_role === '5af56935b011a' && $user->status === 'A';
+            
+            $query = NonFoodPayment::with(['supplier', 'creator', 'purchaseOrderOps', 'purchaseRequisition'])
+                ->where('status', 'pending')
+                ->orderByDesc('created_at');
+            
+            $pendingApprovals = [];
+            
+            // Finance Manager approvals (id_jabatan == 160) and Superadmin
+            if (($user->id_jabatan == 160 && $user->status == 'A') || $isSuperadmin) {
+                $financeManagerApprovals = $query->get();
+                
+                foreach ($financeManagerApprovals as $nfp) {
+                    $paymentType = 'Unknown';
+                    $sourceNumber = null;
+                    
+                    if ($nfp->purchase_order_ops_id && $nfp->purchaseOrderOps) {
+                        $paymentType = 'PO';
+                        $sourceNumber = $nfp->purchaseOrderOps->number;
+                    } elseif ($nfp->purchase_requisition_id && $nfp->purchaseRequisition) {
+                        $paymentType = 'PR';
+                        $sourceNumber = $nfp->purchaseRequisition->pr_number;
+                    }
+                    
+                    $pendingApprovals[] = [
+                        'id' => $nfp->id,
+                        'payment_number' => $nfp->payment_number,
+                        'payment_date' => $nfp->payment_date,
+                        'amount' => $nfp->amount,
+                        'payment_method' => $nfp->payment_method,
+                        'supplier' => $nfp->supplier ? ['name' => $nfp->supplier->name] : null,
+                        'creator' => $nfp->creator ? ['nama_lengkap' => $nfp->creator->nama_lengkap] : null,
+                        'payment_type' => $paymentType,
+                        'source_number' => $sourceNumber,
+                        'description' => $nfp->description,
+                        'notes' => $nfp->notes,
+                        'created_at' => $nfp->created_at
+                    ];
+                }
+            }
+            
+            return response()->json([
+                'success' => true,
+                'non_food_payments' => $pendingApprovals
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Error getting pending Non Food Payment approvals', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'error' => 'Failed to get pending approvals'
+            ], 500);
+        }
+    }
+
+    // API: Get Non Food Payment detail for approval modal
+    public function getDetail($id)
+    {
+        try {
+            $nonFoodPayment = NonFoodPayment::with([
+                'supplier',
+                'creator',
+                'approver',
+                'purchaseOrderOps.supplier',
+                'purchaseOrderOps.items',
+                'purchaseOrderOps.source_pr',
+                'purchaseRequisition.division',
+                'purchaseRequisition.creator',
+                'purchaseRequisition.outlet',
+                'purchaseRequisition.items',
+                'attachments.uploader'
+            ])->findOrFail($id);
+            
+            // Add payment type and source info
+            $paymentType = 'Unknown';
+            $sourceInfo = null;
+            $itemsByOutlet = [];
+            $poAttachments = [];
+            $prAttachments = [];
+            
+            if ($nonFoodPayment->purchase_order_ops_id && $nonFoodPayment->purchaseOrderOps) {
+                $paymentType = 'PO';
+                $po = $nonFoodPayment->purchaseOrderOps;
+                
+                // Get PO attachments
+                try {
+                    $poAttachments = DB::table('purchase_order_ops_attachments as pooa')
+                        ->where('pooa.purchase_order_ops_id', $po->id)
+                        ->select(
+                            'pooa.id', 
+                            'pooa.file_name', 
+                            'pooa.file_path', 
+                            'pooa.mime_type as file_type', 
+                            'pooa.file_size', 
+                            'pooa.created_at'
+                        )
+                        ->get()
+                        ->toArray();
+                } catch (\Exception $e) {
+                    // Table might not exist, continue without attachments
+                }
+                
+                // Get items with outlet and category info
+                try {
+                    $items = DB::table('purchase_order_ops_items as poi')
+                        ->leftJoin('purchase_requisitions as pr', 'poi.source_id', '=', 'pr.id')
+                        ->leftJoin('tbl_data_outlet as o', 'pr.outlet_id', '=', 'o.id_outlet')
+                        ->leftJoin('purchase_requisition_categories as prc', 'pr.category_id', '=', 'prc.id')
+                        ->where('poi.purchase_order_ops_id', $po->id)
+                        ->select(
+                            'poi.id',
+                            'poi.item_name',
+                            'poi.quantity',
+                            'poi.unit',
+                            'poi.price',
+                            'poi.total',
+                            'pr.id as pr_id',
+                            'pr.outlet_id',
+                            'o.nama_outlet as outlet_name',
+                            'pr.category_id',
+                            'prc.name as category_name',
+                            'prc.division as category_division',
+                            'prc.subcategory as category_subcategory',
+                            'prc.budget_type as category_budget_type',
+                            'pr.pr_number',
+                            'pr.title as pr_title',
+                            'pr.description as pr_description'
+                        )
+                        ->get();
+                } catch (\Exception $e) {
+                    // Fallback to basic items
+                    $items = DB::table('purchase_order_ops_items as poi')
+                        ->where('poi.purchase_order_ops_id', $po->id)
+                        ->select('poi.*')
+                        ->get();
+                    
+                    $items = $items->map(function ($item) {
+                        $item->outlet_id = null;
+                        $item->outlet_name = 'Unknown Outlet';
+                        $item->pr_id = null;
+                        $item->pr_number = null;
+                        $item->pr_title = null;
+                        $item->pr_description = null;
+                        return $item;
+                    });
+                }
+                
+                // Group items by outlet and add PR attachments
+                $itemsByOutlet = $items->groupBy('outlet_id')->map(function ($outletItems, $outletId) {
+                    $firstItem = $outletItems->first();
+                    $prId = $firstItem->pr_id ?? null;
+                    
+                    // Get PR attachments for this specific PR
+                    $outletPrAttachments = [];
+                    if ($prId) {
+                        try {
+                            $outletPrAttachments = DB::table('purchase_requisition_attachments as pra')
+                                ->leftJoin('purchase_requisitions as pr', 'pra.purchase_requisition_id', '=', 'pr.id')
+                                ->where('pra.purchase_requisition_id', $prId)
+                                ->select(
+                                    'pra.id', 
+                                    'pra.file_name', 
+                                    'pra.file_path', 
+                                    'pra.mime_type as file_type', 
+                                    'pra.file_size', 
+                                    'pra.created_at',
+                                    'pr.description as pr_description'
+                                )
+                                ->get()
+                                ->toArray();
+                        } catch (\Exception $e) {
+                            // Continue without attachments if error
+                        }
+                    }
+                    
+                    return [
+                        'outlet_id' => $outletId,
+                        'outlet_name' => $firstItem->outlet_name ?? 'Unknown Outlet',
+                        'category_id' => $firstItem->category_id ?? null,
+                        'category_name' => $firstItem->category_name ?? null,
+                        'category_division' => $firstItem->category_division ?? null,
+                        'category_subcategory' => $firstItem->category_subcategory ?? null,
+                        'category_budget_type' => $firstItem->category_budget_type ?? null,
+                        'pr_number' => $firstItem->pr_number ?? null,
+                        'pr_title' => $firstItem->pr_title ?? null,
+                        'pr_description' => $firstItem->pr_description ?? null,
+                        'pr_attachments' => $outletPrAttachments,
+                        'items' => $outletItems->map(function ($item) {
+                            return [
+                                'id' => $item->id,
+                                'item_name' => $item->item_name,
+                                'quantity' => $item->quantity,
+                                'unit' => $item->unit,
+                                'price' => $item->price,
+                                'total' => $item->total,
+                            ];
+                        }),
+                        'subtotal' => $outletItems->sum('total')
+                    ];
+                })->values();
+                
+                $sourceInfo = [
+                    'type' => 'PO',
+                    'number' => $po->number,
+                    'date' => $po->date,
+                    'grand_total' => $po->grand_total,
+                    'supplier' => $po->supplier ? [
+                        'name' => $po->supplier->name
+                    ] : null,
+                    'source_pr' => $po->source_pr ? [
+                        'pr_number' => $po->source_pr->pr_number,
+                        'title' => $po->source_pr->title
+                    ] : null,
+                    'items_by_outlet' => $itemsByOutlet
+                ];
+            } elseif ($nonFoodPayment->purchase_requisition_id && $nonFoodPayment->purchaseRequisition) {
+                $paymentType = 'PR';
+                $pr = $nonFoodPayment->purchaseRequisition;
+                
+                // Get PR attachments
+                try {
+                    $prAttachments = DB::table('purchase_requisition_attachments as pra')
+                        ->leftJoin('purchase_requisitions as pr', 'pra.purchase_requisition_id', '=', 'pr.id')
+                        ->where('pra.purchase_requisition_id', $pr->id)
+                        ->select(
+                            'pra.id', 
+                            'pra.file_name', 
+                            'pra.file_path', 
+                            'pra.mime_type as file_type', 
+                            'pra.file_size', 
+                            'pra.created_at',
+                            'pr.description as pr_description'
+                        )
+                        ->get()
+                        ->toArray();
+                } catch (\Exception $e) {
+                    // Table might not exist, continue without attachments
+                }
+                
+                // Get PR items with outlet and category info
+                try {
+                    $items = DB::table('purchase_requisition_items as pri')
+                        ->leftJoin('tbl_data_outlet as o', 'pri.outlet_id', '=', 'o.id_outlet')
+                        ->leftJoin('purchase_requisition_categories as prc', 'pri.category_id', '=', 'prc.id')
+                        ->where('pri.purchase_requisition_id', $pr->id)
+                        ->select(
+                            'pri.id',
+                            'pri.item_name',
+                            'pri.qty as quantity',
+                            'pri.unit',
+                            'pri.unit_price as price',
+                            'pri.subtotal as total',
+                            'pri.outlet_id',
+                            'pri.category_id',
+                            'pri.item_type',
+                            'pri.allowance_recipient_name',
+                            'pri.allowance_account_number',
+                            'pri.others_notes',
+                            'o.nama_outlet as item_outlet_name',
+                            'prc.name as item_category_name',
+                            'prc.division as item_category_division',
+                            'prc.subcategory as item_category_subcategory',
+                            'prc.budget_type as item_category_budget_type'
+                        )
+                        ->get();
+                } catch (\Exception $e) {
+                    // Fallback to basic items
+                    $items = DB::table('purchase_requisition_items as pri')
+                        ->where('pri.purchase_requisition_id', $pr->id)
+                        ->select('pri.*')
+                        ->get();
+                }
+                
+                // Group items by outlet
+                $itemsByOutlet = $items->groupBy('outlet_id')->map(function ($outletItems, $outletId) use ($pr) {
+                    $firstItem = $outletItems->first();
+                    
+                    return [
+                        'outlet_id' => $outletId,
+                        'outlet_name' => $firstItem->item_outlet_name ?? 'Unknown Outlet',
+                        'category_id' => $firstItem->category_id ?? null,
+                        'category_name' => $firstItem->item_category_name ?? null,
+                        'category_division' => $firstItem->item_category_division ?? null,
+                        'category_subcategory' => $firstItem->item_category_subcategory ?? null,
+                        'category_budget_type' => $firstItem->item_category_budget_type ?? null,
+                        'pr_number' => $pr->pr_number,
+                        'pr_title' => $pr->title,
+                        'pr_description' => $pr->description,
+                        'pr_attachments' => $prAttachments,
+                        'items' => $outletItems->map(function ($item) {
+                            $itemName = $item->item_name;
+                            if ($item->item_type === 'allowance' && $item->allowance_recipient_name && $item->allowance_account_number) {
+                                $itemName = 'Allowance - ' . $item->allowance_recipient_name . ' - ' . $item->allowance_account_number;
+                            } elseif ($item->item_type === 'allowance' && $item->allowance_recipient_name) {
+                                $itemName = 'Allowance - ' . $item->allowance_recipient_name;
+                            }
+                            
+                            return [
+                                'id' => $item->id,
+                                'item_name' => $itemName,
+                                'quantity' => $item->quantity ?? $item->qty,
+                                'unit' => $item->unit,
+                                'price' => $item->price ?? $item->unit_price,
+                                'total' => $item->total ?? $item->subtotal,
+                                'item_type' => $item->item_type,
+                                'allowance_recipient_name' => $item->allowance_recipient_name,
+                                'allowance_account_number' => $item->allowance_account_number,
+                                'others_notes' => $item->others_notes
+                            ];
+                        }),
+                        'subtotal' => $outletItems->sum(function($item) {
+                            return $item->total ?? $item->subtotal ?? 0;
+                        })
+                    ];
+                })->values();
+                
+                $sourceInfo = [
+                    'type' => 'PR',
+                    'pr_number' => $pr->pr_number,
+                    'date' => $pr->date,
+                    'amount' => $pr->amount,
+                    'title' => $pr->title,
+                    'description' => $pr->description,
+                    'division' => $pr->division ? [
+                        'nama_divisi' => $pr->division->nama_divisi
+                    ] : null,
+                    'outlet' => $pr->outlet ? [
+                        'nama_outlet' => $pr->outlet->nama_outlet
+                    ] : null,
+                    'items_by_outlet' => $itemsByOutlet
+                ];
+            }
+            
+            $nonFoodPayment->payment_type = $paymentType;
+            $nonFoodPayment->source_info = $sourceInfo;
+            $nonFoodPayment->po_attachments = $poAttachments;
+            $nonFoodPayment->pr_attachments = $prAttachments;
+            
+            return response()->json([
+                'success' => true,
+                'non_food_payment' => $nonFoodPayment
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Error getting Non Food Payment detail', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to load Non Food Payment detail'
+            ], 500);
         }
     }
 }

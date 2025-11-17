@@ -208,7 +208,7 @@ onMounted(() => {
           type="text"
           v-model="search"
           @input="onSearchInput"
-          placeholder="Cari PO number, supplier..."
+          placeholder="Cari PO number, supplier, PR number, outlet..."
           class="flex-1 px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition"
         />
         <select
@@ -263,6 +263,7 @@ onMounted(() => {
                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Supplier</th>
                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Source PR</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Outlet</th>
                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Creator</th>
@@ -283,6 +284,12 @@ onMounted(() => {
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                   <span v-if="po.source_pr_number" class="inline-flex items-center px-2 py-1 bg-purple-100 text-purple-800 text-xs font-medium rounded">
                     {{ po.source_pr_number }}
+                  </span>
+                  <span v-else class="text-gray-400">-</span>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                  <span v-if="po.outlet?.nama_outlet" class="inline-flex items-center px-2 py-1 bg-green-100 text-green-800 text-xs font-medium rounded">
+                    {{ po.outlet.nama_outlet }}
                   </span>
                   <span v-else class="text-gray-400">-</span>
                 </td>

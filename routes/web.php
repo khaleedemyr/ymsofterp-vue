@@ -607,6 +607,8 @@ Route::get('/api/regions', [App\Http\Controllers\ReportController::class, 'apiRe
     Route::post('/po-foods/{id}/approve-gm-finance', [PurchaseOrderFoodsController::class, 'approveGMFinance'])->name('po-foods.approve-gm-finance');
     Route::delete('/po-foods/{id}', [PurchaseOrderFoodsController::class, 'destroy'])->name('po-foods.destroy');
     Route::post('/po-foods/{id}/mark-printed', [\App\Http\Controllers\PurchaseOrderFoodsController::class, 'markPrinted'])->name('po-foods.mark-printed');
+    Route::get('/api/po-food/pending-approvals', [PurchaseOrderFoodsController::class, 'getPendingApprovals']);
+    Route::get('/api/po-food/{id}', [PurchaseOrderFoodsController::class, 'getDetail']);
 
     // PO Report routes
     Route::get('/po-report', [\App\Http\Controllers\PurchaseOrderReportController::class, 'index'])->name('po-report.index');
@@ -631,6 +633,8 @@ Route::get('/api/regions', [App\Http\Controllers\ReportController::class, 'apiRe
     Route::get('/food-payments/{id}', [\App\Http\Controllers\FoodPaymentController::class, 'show'])->name('food-payments.show');
     Route::post('/food-payments/{id}/approve', [\App\Http\Controllers\FoodPaymentController::class, 'approve'])->name('food-payments.approve');
     Route::get('/api/food-payments/contra-bon-unpaid', [\App\Http\Controllers\FoodPaymentController::class, 'getContraBonUnpaid']);
+    Route::get('/api/food-payment/pending-approvals', [\App\Http\Controllers\FoodPaymentController::class, 'getPendingApprovals']);
+    Route::get('/api/food-payment/{id}', [\App\Http\Controllers\FoodPaymentController::class, 'getDetail']);
     Route::delete('/food-payments/{id}', [\App\Http\Controllers\FoodPaymentController::class, 'destroy'])->name('food-payments.destroy');
 
 Route::get('/items/import/template', [ItemController::class, 'downloadImportTemplate'])->name('items.import.template');
@@ -682,6 +686,8 @@ Route::resource('pr-foods', PrFoodController::class);
 Route::post('pr-foods/{id}/approve-assistant-ssd-manager', [PrFoodController::class, 'approveAssistantSsdManager'])->name('pr-foods.approve-assistant-ssd-manager');
 Route::post('pr-foods/{id}/approve-ssd-manager', [PrFoodController::class, 'approveSsdManager'])->name('pr-foods.approve-ssd-manager');
 Route::post('pr-foods/{id}/approve-vice-coo', [PrFoodController::class, 'approveViceCoo'])->name('pr-foods.approve-vice-coo');
+Route::get('/api/pr-food/pending-approvals', [PrFoodController::class, 'getPendingApprovals']);
+Route::get('/api/pr-food/{id}', [PrFoodController::class, 'getDetail']);
 
 Route::resource('suppliers', SupplierController::class);
 Route::patch('suppliers/{id}/toggle-status', [SupplierController::class, 'toggleStatus'])->name('suppliers.toggle-status');
@@ -747,6 +753,8 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/api/contra-bon/po-with-approved-gr', [\App\Http\Controllers\ContraBonController::class, 'getPOWithApprovedGR']);
     Route::get('/api/contra-bon/retail-food-contra-bon', [\App\Http\Controllers\ContraBonController::class, 'getRetailFoodContraBon']);
     Route::get('/api/contra-bon/warehouse-retail-food-contra-bon', [\App\Http\Controllers\ContraBonController::class, 'getWarehouseRetailFoodContraBon']);
+    Route::get('/api/contra-bon/pending-approvals', [\App\Http\Controllers\ContraBonController::class, 'getPendingApprovals']);
+    Route::get('/api/contra-bon/{id}', [\App\Http\Controllers\ContraBonController::class, 'getDetail']);
 });
 
 // Warehouse Transfer
@@ -805,6 +813,8 @@ Route::put('/floor-order/{id}', [FoodFloorOrderController::class, 'update'])->na
 Route::delete('/floor-order/{id}', [FoodFloorOrderController::class, 'destroy'])->name('floor-order.destroy');
 Route::post('/floor-order/{id}/submit', [FoodFloorOrderController::class, 'submit'])->name('floor-order.submit');
 Route::post('/floor-order/{id}/approve', [FoodFloorOrderController::class, 'approve'])->name('floor-order.approve');
+Route::get('/api/ro-khusus/pending-approvals', [FoodFloorOrderController::class, 'getPendingROKhususApprovals']);
+Route::get('/api/ro-khusus/{id}', [FoodFloorOrderController::class, 'getROKhususDetail']);
 Route::post('/api/floor-order/check-exists', [\App\Http\Controllers\FoodFloorOrderController::class, 'checkExists']);
 Route::get('/api/floor-order/supplier-available', [\App\Http\Controllers\FoodFloorOrderController::class, 'supplierAvailable']);
 
@@ -1202,6 +1212,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('non-food-payments/pr-items/{prId}', [\App\Http\Controllers\NonFoodPaymentController::class, 'getPRItems'])->name('non-food-payments.pr-items');
     Route::post('non-food-payments/{nonFoodPayment}/approve', [\App\Http\Controllers\NonFoodPaymentController::class, 'approve'])->name('non-food-payments.approve');
     Route::post('non-food-payments/{nonFoodPayment}/reject', [\App\Http\Controllers\NonFoodPaymentController::class, 'reject'])->name('non-food-payments.reject');
+    Route::get('/api/non-food-payment/pending-approvals', [\App\Http\Controllers\NonFoodPaymentController::class, 'getPendingApprovals']);
+    Route::get('/api/non-food-payment/{id}', [\App\Http\Controllers\NonFoodPaymentController::class, 'getDetail']);
     Route::post('non-food-payments/{nonFoodPayment}/mark-as-paid', [\App\Http\Controllers\NonFoodPaymentController::class, 'markAsPaid'])->name('non-food-payments.mark-as-paid');
     Route::post('non-food-payments/{nonFoodPayment}/cancel', [\App\Http\Controllers\NonFoodPaymentController::class, 'cancel'])->name('non-food-payments.cancel');
     

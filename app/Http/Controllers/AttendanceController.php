@@ -695,7 +695,9 @@ class AttendanceController extends Controller
                 'date_from' => 'required|date',
                 'date_to' => 'required|date|after_or_equal:date_from',
                 'reason' => 'required|string|max:1000',
-                'approver_id' => 'required|exists:users,id', // Wajib pilih atasan
+                'approver_id' => 'nullable|exists:users,id', // Optional for backward compatibility
+                'approvers' => 'nullable|array', // New: multiple approvers (berjenjang)
+                'approvers.*' => 'required|exists:users,id',
                 'document' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:5120', // 5MB max
                 'documents' => 'nullable|array',
                 'documents.*' => 'file|mimes:pdf,jpg,jpeg,png|max:5120' // 5MB max per file
@@ -800,36 +802,56 @@ class AttendanceController extends Controller
                 'updated_at' => now()
             ]);
             
-            // Validate that the selected approver exists and is active
-            $selectedApprover = DB::table('users')
-                ->where('id', $request->approver_id)
-                ->where('status', 'A')
-                ->select('id', 'nama_lengkap', 'email')
-                ->first();
-                
-            if (!$selectedApprover) {
+            // Handle multiple approvers (new flow) or single approver (backward compatibility)
+            $approvers = [];
+            
+            if (!empty($request->approvers) && is_array($request->approvers)) {
+                // New flow: multiple approvers
+                $approvers = $request->approvers;
+            } elseif (!empty($request->approver_id)) {
+                // Backward compatibility: single approver
+                $approvers = [$request->approver_id];
+            } else {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Atasan yang dipilih tidak valid atau tidak aktif'
+                    'message' => 'Minimal harus memilih 1 approver'
                 ], 400);
             }
             
-            // Find HRD approver (division_id=6 and status=A)
+            // Validate all approvers exist and are active
+            $validApprovers = DB::table('users')
+                ->whereIn('id', $approvers)
+                ->where('status', 'A')
+                ->select('id', 'nama_lengkap', 'email')
+                ->get();
+                
+            if ($validApprovers->count() !== count($approvers)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Salah satu atau lebih approver tidak valid atau tidak aktif'
+                ], 400);
+            }
+            
+            // Remove duplicates and maintain order
+            $approvers = array_values(array_unique($approvers));
+            
+            // Find HRD approver (division_id=6 and status=A) - will be used after all approvers approve
             $hrdApprover = $this->findHrdApprover();
             
-            // Create approval request
+            // Create approval request (for backward compatibility with existing approval system)
+            $firstApprover = $validApprovers->first();
             $approvalRequestId = DB::table('approval_requests')->insertGetId([
                 'user_id' => $user->id,
-                'approver_id' => $selectedApprover->id, // Use selected approver
-                'hrd_approver_id' => $hrdApprover ? $hrdApprover->id : null,
+                'approver_id' => $firstApprover->id, // First approver for backward compatibility
+                'hrd_approver_id' => null, // Will be set after all approvers approve
                 'leave_type_id' => $request->leave_type_id,
                 'date_from' => $request->date_from,
                 'date_to' => $request->date_to,
                 'reason' => $request->reason,
                 'document_path' => $documentPath,
-                'document_paths' => !empty($documentPaths) ? json_encode($documentPaths) : null, // Store multiple paths as JSON
+                'document_paths' => !empty($documentPaths) ? json_encode($documentPaths) : null,
                 'status' => 'pending',
-                'hrd_status' => $hrdApprover ? 'pending' : null,
+                'hrd_status' => null, // Will be set to 'pending' after all approvers approve
                 'created_at' => now(),
                 'updated_at' => now()
             ]);
@@ -839,11 +861,24 @@ class AttendanceController extends Controller
                 ->where('id', $absentRequestId)
                 ->update(['approval_request_id' => $approvalRequestId]);
 
-            // Kirim notifikasi ke atasan yang dipilih
+            // Create approval flows for each approver (sequential approval)
+            foreach ($approvers as $index => $approverId) {
+                DB::table('absent_request_approval_flows')->insert([
+                    'absent_request_id' => $absentRequestId,
+                    'approver_id' => $approverId,
+                    'approval_level' => $index + 1, // Level 1 = first, higher = later
+                    'status' => 'PENDING',
+                    'created_at' => now(),
+                    'updated_at' => now()
+                ]);
+            }
+
+            // Send notification to first approver only (sequential flow)
+            $firstApprover = $validApprovers->first();
             DB::table('notifications')->insert([
-                'user_id' => $selectedApprover->id,
+                'user_id' => $firstApprover->id,
                 'type' => 'leave_approval_request',
-                'message' => "Permohonan izin/cuti baru dari {$user->nama_lengkap} ({$leaveType->name}) untuk periode {$request->date_from} - {$request->date_to} membutuhkan persetujuan Anda.",
+                'message' => "Permohonan izin/cuti baru dari {$user->nama_lengkap} ({$leaveType->name}) untuk periode {$request->date_from} - {$request->date_to} membutuhkan persetujuan Anda (Level 1/" . count($approvers) . ").",
                 'url' => config('app.url') . '/home',
                 'is_read' => 0,
                 'approval_id' => $approvalRequestId,
@@ -1022,22 +1057,26 @@ class AttendanceController extends Controller
             }
             
             // Check if request can be cancelled
-            if (!in_array($leaveRequest->status, ['pending', 'supervisor_approved'])) {
+            // Can cancel if status is pending, supervisor_approved, or approved (HRD approved)
+            if (!in_array($leaveRequest->status, ['pending', 'supervisor_approved', 'approved'])) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Permohonan izin/cuti tidak dapat dibatalkan. Status: ' . $leaveRequest->status
                 ], 400);
             }
             
-            // Check if request is too close to start date (within 24 hours)
+            // Check if date_from has not passed (can cancel until the day of the leave)
             $startDate = new \DateTime($leaveRequest->date_from);
-            $now = new \DateTime();
-            $hoursUntilStart = $now->diff($startDate)->h + ($now->diff($startDate)->days * 24);
+            $startDate->setTime(0, 0, 0); // Set to start of day
             
-            if ($hoursUntilStart < 24 && $leaveRequest->status === 'supervisor_approved') {
+            $today = new \DateTime();
+            $today->setTime(0, 0, 0); // Set to start of day
+            
+            // Cannot cancel if start date has passed
+            if ($startDate < $today) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Permohonan izin/cuti tidak dapat dibatalkan karena sudah kurang dari 24 jam dari tanggal mulai'
+                    'message' => 'Permohonan izin/cuti tidak dapat dibatalkan karena tanggal izin sudah terlewat'
                 ], 400);
             }
             
@@ -1060,15 +1099,30 @@ class AttendanceController extends Controller
                     ]);
             }
             
-            // Send notification to approver if request was approved
-            if ($leaveRequest->status === 'supervisor_approved') {
+            // Send notification to approver(s) if request was approved
+            if (in_array($leaveRequest->status, ['supervisor_approved', 'approved'])) {
                 $approvalRequest = DB::table('approval_requests')
                     ->where('id', $leaveRequest->approval_request_id)
                     ->first();
                     
+                // Notify supervisor approver
                 if ($approvalRequest && $approvalRequest->approver_id) {
                     DB::table('notifications')->insert([
                         'user_id' => $approvalRequest->approver_id,
+                        'type' => 'leave_cancelled',
+                        'message' => "Permohonan izin/cuti dari {$user->nama_lengkap} untuk periode {$leaveRequest->date_from} - {$leaveRequest->date_to} telah dibatalkan.",
+                        'url' => config('app.url') . '/home',
+                        'is_read' => 0,
+                        'approval_id' => $leaveRequest->approval_request_id,
+                        'created_at' => now(),
+                        'updated_at' => now()
+                    ]);
+                }
+                
+                // Notify HRD approver if HRD approved
+                if ($leaveRequest->status === 'approved' && $approvalRequest && $approvalRequest->hrd_approver_id) {
+                    DB::table('notifications')->insert([
+                        'user_id' => $approvalRequest->hrd_approver_id,
                         'type' => 'leave_cancelled',
                         'message' => "Permohonan izin/cuti dari {$user->nama_lengkap} untuk periode {$leaveRequest->date_from} - {$leaveRequest->date_to} telah dibatalkan.",
                         'url' => config('app.url') . '/home',

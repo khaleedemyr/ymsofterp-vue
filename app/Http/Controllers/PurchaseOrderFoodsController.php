@@ -1262,4 +1262,163 @@ class PurchaseOrderFoodsController extends Controller
 
         return response()->json($pos);
     }
+
+    // API: Get pending PO Foods approvals
+    public function getPendingApprovals(Request $request)
+    {
+        try {
+            $user = Auth::user();
+            $isSuperadmin = $user->id_role === '5af56935b011a' && $user->status === 'A';
+            
+            $query = PurchaseOrderFood::with(['supplier', 'creator', 'items', 'purchasing_manager'])
+                ->where('status', 'draft')
+                ->orderByDesc('created_at');
+            
+            $pendingApprovals = [];
+            
+            // Purchasing Manager approvals (id_jabatan == 167 atau 168)
+            if ((in_array($user->id_jabatan, [167, 168]) && $user->status == 'A') || $isSuperadmin) {
+                $purchasingManagerApprovals = (clone $query)
+                    ->whereNull('purchasing_manager_approved_at')
+                    ->get();
+                
+                foreach ($purchasingManagerApprovals as $po) {
+                    $pendingApprovals[] = [
+                        'id' => $po->id,
+                        'number' => $po->number,
+                        'date' => $po->date,
+                        'grand_total' => $po->grand_total,
+                        'supplier' => $po->supplier ? ['name' => $po->supplier->name] : null,
+                        'creator' => $po->creator ? ['nama_lengkap' => $po->creator->nama_lengkap] : null,
+                        'items_count' => $po->items->count(),
+                        'source_type' => $po->source_type,
+                        'notes' => $po->notes,
+                        'approval_level' => 'purchasing_manager',
+                        'approval_level_display' => 'Purchasing Manager',
+                        'created_at' => $po->created_at
+                    ];
+                }
+            }
+            
+            // GM Finance approvals (id_jabatan == 152 atau 381)
+            if ((in_array($user->id_jabatan, [152, 381]) && $user->status == 'A') || $isSuperadmin) {
+                $gmFinanceApprovals = (clone $query)
+                    ->whereNotNull('purchasing_manager_approved_at')
+                    ->whereNull('gm_finance_approved_at')
+                    ->get();
+                
+                foreach ($gmFinanceApprovals as $po) {
+                    $pendingApprovals[] = [
+                        'id' => $po->id,
+                        'number' => $po->number,
+                        'date' => $po->date,
+                        'grand_total' => $po->grand_total,
+                        'supplier' => $po->supplier ? ['name' => $po->supplier->name] : null,
+                        'creator' => $po->creator ? ['nama_lengkap' => $po->creator->nama_lengkap] : null,
+                        'items_count' => $po->items->count(),
+                        'source_type' => $po->source_type,
+                        'notes' => $po->notes,
+                        'approval_level' => 'gm_finance',
+                        'approval_level_display' => 'GM Finance',
+                        'created_at' => $po->created_at
+                    ];
+                }
+            }
+            
+            return response()->json([
+                'success' => true,
+                'po_foods' => $pendingApprovals
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Error getting pending PO Foods approvals', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'error' => 'Failed to get pending approvals'
+            ], 500);
+        }
+    }
+
+    // API: Get PO Food detail for approval modal
+    public function getDetail($id)
+    {
+        try {
+            $po = PurchaseOrderFood::with([
+                'supplier',
+                'creator',
+                'purchasing_manager',
+                'gm_finance',
+                'items.item',
+                'items.unit'
+            ])->findOrFail($id);
+            
+            // Get source information and warehouse_outlet_id
+            $sourceInfo = null;
+            $warehouseOutletId = null;
+            
+            if ($po->source_type === 'pr_foods' || !$po->source_type) {
+                // Get PR numbers and warehouse_id from PR Foods
+                $prItemIds = $po->items->pluck('pr_food_item_id')->filter()->toArray();
+                if (!empty($prItemIds)) {
+                    $prIds = \App\Models\PurchaseRequisitionFoodItem::whereIn('id', $prItemIds)
+                        ->pluck('pr_food_id')
+                        ->unique()
+                        ->toArray();
+                    $prNumbers = \App\Models\PurchaseRequisitionFood::whereIn('id', $prIds)
+                        ->pluck('pr_number')
+                        ->unique()
+                        ->toArray();
+                    
+                    // Get warehouse_id from first PR
+                    $firstPR = \App\Models\PurchaseRequisitionFood::whereIn('id', $prIds)->first();
+                    if ($firstPR) {
+                        $warehouseOutletId = $firstPR->warehouse_id;
+                    }
+                    
+                    $sourceInfo = [
+                        'type' => 'PR Foods',
+                        'pr_numbers' => $prNumbers
+                    ];
+                }
+            } elseif ($po->source_type === 'ro_supplier') {
+                // Get RO numbers and warehouse_outlet_id from RO Supplier
+                $roNumbers = $po->items->pluck('ro_number')->unique()->filter()->toArray();
+                
+                // Get warehouse_outlet_id from first RO
+                $firstROId = $po->items->whereNotNull('ro_id')->first()?->ro_id;
+                if ($firstROId) {
+                    $firstRO = \App\Models\FoodFloorOrder::find($firstROId);
+                    if ($firstRO) {
+                        $warehouseOutletId = $firstRO->warehouse_outlet_id;
+                    }
+                }
+                
+                $sourceInfo = [
+                    'type' => 'RO Supplier',
+                    'ro_numbers' => $roNumbers
+                ];
+            }
+            
+            $po->source_info = $sourceInfo;
+            $po->warehouse_outlet_id = $warehouseOutletId;
+            
+            return response()->json([
+                'success' => true,
+                'po_food' => $po
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Error getting PO Food detail', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to load PO Food detail'
+            ], 500);
+        }
+    }
 } 

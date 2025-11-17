@@ -478,4 +478,146 @@ class PrFoodController extends Controller
         }
         DB::table('notifications')->insert($data);
     }
+
+    // API: Get pending PR Foods approvals
+    public function getPendingApprovals(Request $request)
+    {
+        try {
+            $user = Auth::user();
+            $isSuperadmin = $user->id_role === '5af56935b011a' && $user->status === 'A';
+            
+            $query = PrFood::with(['warehouse', 'requester', 'items'])
+                ->where('status', 'draft')
+                ->orderByDesc('created_at');
+            
+            $pendingApprovals = [];
+            
+            // Asisten SSD Manager approvals (id_jabatan == 172) - untuk non-MK warehouse
+            if (($user->id_jabatan == 172 && $user->status == 'A') || $isSuperadmin) {
+                $assistantSsdApprovals = (clone $query)
+                    ->whereNull('assistant_ssd_manager_approved_at')
+                    ->get()
+                    ->filter(function($pr) {
+                        // Filter non-MK warehouse
+                        return !in_array($pr->warehouse->name ?? '', ['MK1 Hot Kitchen', 'MK2 Cold Kitchen']);
+                    });
+                
+                foreach ($assistantSsdApprovals as $pr) {
+                    $pendingApprovals[] = [
+                        'id' => $pr->id,
+                        'pr_number' => $pr->pr_number,
+                        'tanggal' => $pr->tanggal,
+                        'warehouse' => $pr->warehouse ? ['name' => $pr->warehouse->name] : null,
+                        'requester' => $pr->requester ? ['nama_lengkap' => $pr->requester->nama_lengkap] : null,
+                        'items_count' => $pr->items->count(),
+                        'description' => $pr->description,
+                        'approval_level' => 'assistant_ssd_manager',
+                        'approval_level_display' => 'Asisten SSD Manager',
+                        'created_at' => $pr->created_at
+                    ];
+                }
+            }
+            
+            // SSD Manager approvals (id_jabatan == 161) - untuk non-MK warehouse yang sudah di-approve asisten
+            if (($user->id_jabatan == 161 && $user->status == 'A') || $isSuperadmin) {
+                $ssdManagerApprovals = (clone $query)
+                    ->whereNotNull('assistant_ssd_manager_approved_at')
+                    ->whereNull('ssd_manager_approved_at')
+                    ->get()
+                    ->filter(function($pr) {
+                        // Filter non-MK warehouse
+                        return !in_array($pr->warehouse->name ?? '', ['MK1 Hot Kitchen', 'MK2 Cold Kitchen']);
+                    });
+                
+                foreach ($ssdManagerApprovals as $pr) {
+                    $pendingApprovals[] = [
+                        'id' => $pr->id,
+                        'pr_number' => $pr->pr_number,
+                        'tanggal' => $pr->tanggal,
+                        'warehouse' => $pr->warehouse ? ['name' => $pr->warehouse->name] : null,
+                        'requester' => $pr->requester ? ['nama_lengkap' => $pr->requester->nama_lengkap] : null,
+                        'items_count' => $pr->items->count(),
+                        'description' => $pr->description,
+                        'approval_level' => 'ssd_manager',
+                        'approval_level_display' => 'SSD Manager',
+                        'created_at' => $pr->created_at
+                    ];
+                }
+            }
+            
+            // Sous Chef MK approvals (id_jabatan == 179) - untuk MK warehouse
+            if (($user->id_jabatan == 179 && $user->status == 'A') || $isSuperadmin) {
+                $sousChefMKApprovals = (clone $query)
+                    ->whereNull('ssd_manager_approved_at')
+                    ->get()
+                    ->filter(function($pr) {
+                        // Filter MK warehouse
+                        return in_array($pr->warehouse->name ?? '', ['MK1 Hot Kitchen', 'MK2 Cold Kitchen']);
+                    });
+                
+                foreach ($sousChefMKApprovals as $pr) {
+                    $pendingApprovals[] = [
+                        'id' => $pr->id,
+                        'pr_number' => $pr->pr_number,
+                        'tanggal' => $pr->tanggal,
+                        'warehouse' => $pr->warehouse ? ['name' => $pr->warehouse->name] : null,
+                        'requester' => $pr->requester ? ['nama_lengkap' => $pr->requester->nama_lengkap] : null,
+                        'items_count' => $pr->items->count(),
+                        'description' => $pr->description,
+                        'approval_level' => 'sous_chef_mk',
+                        'approval_level_display' => 'Sous Chef MK',
+                        'created_at' => $pr->created_at
+                    ];
+                }
+            }
+            
+            return response()->json([
+                'success' => true,
+                'pr_foods' => $pendingApprovals
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Error getting pending PR Foods approvals', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'error' => 'Failed to get pending approvals'
+            ], 500);
+        }
+    }
+
+    // API: Get PR Food detail for approval modal
+    public function getDetail($id)
+    {
+        try {
+            $prFood = PrFood::with([
+                'warehouse',
+                'warehouseDivision',
+                'requester',
+                'items.item.smallUnit',
+                'items.item.mediumUnit',
+                'items.item.largeUnit',
+                'assistantSsdManager',
+                'ssdManager',
+                'viceCoo'
+            ])->findOrFail($id);
+            
+            return response()->json([
+                'success' => true,
+                'pr_food' => $prFood
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Error getting PR Food detail', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to load PR Food detail'
+            ], 500);
+        }
+    }
 } 

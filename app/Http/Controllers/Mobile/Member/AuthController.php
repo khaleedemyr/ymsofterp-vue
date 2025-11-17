@@ -607,41 +607,60 @@ class AuthController extends Controller
                 ]);
             }
 
-            // Generate reset token
-            $token = Str::random(64);
+            // Generate reset token (shorter token to fit in string column)
+            $token = Str::random(60);
             
             // Store token in password_reset_tokens table
-            DB::table('password_reset_tokens')->updateOrInsert(
-                ['email' => $member->email],
-                [
-                    'token' => Hash::make($token),
-                    'created_at' => now()
-                ]
-            );
+            // Delete old token first if exists
+            DB::table('password_reset_tokens')->where('email', $member->email)->delete();
+            
+            // Insert new token
+            DB::table('password_reset_tokens')->insert([
+                'email' => $member->email,
+                'token' => Hash::make($token),
+                'created_at' => now()
+            ]);
 
             // Send email with reset link
             $resetUrl = url('/reset-password?token=' . $token . '&email=' . urlencode($member->email));
             
-            // Send email (you can create a Mailable class for better email template)
-            Mail::send([], [], function ($message) use ($member, $resetUrl) {
-                $message->to($member->email)
-                    ->subject('Reset Password - JUSTUS GROUP')
-                    ->html("
-                        <html>
-                        <body style='font-family: Arial, sans-serif;'>
-                            <h2>Reset Password Request</h2>
-                            <p>Hello {$member->nama_lengkap},</p>
-                            <p>You have requested to reset your password. Click the link below to reset your password:</p>
-                            <p><a href='{$resetUrl}' style='background-color: #FFD700; color: #000; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;'>Reset Password</a></p>
-                            <p>Or copy and paste this link into your browser:</p>
-                            <p>{$resetUrl}</p>
-                            <p>This link will expire in 60 minutes.</p>
-                            <p>If you did not request this, please ignore this email.</p>
-                            <p>Best regards,<br>JUSTUS GROUP</p>
-                        </body>
-                        </html>
-                    ");
-            });
+            // Try to send email, but don't fail if email sending fails (for security, still return success)
+            try {
+                $emailBody = "
+                    <html>
+                    <body style='font-family: Arial, sans-serif;'>
+                        <h2>Reset Password Request</h2>
+                        <p>Hello {$member->nama_lengkap},</p>
+                        <p>You have requested to reset your password. Click the link below to reset your password:</p>
+                        <p><a href='{$resetUrl}' style='background-color: #FFD700; color: #000; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;'>Reset Password</a></p>
+                        <p>Or copy and paste this link into your browser:</p>
+                        <p>{$resetUrl}</p>
+                        <p>This link will expire in 60 minutes.</p>
+                        <p>If you did not request this, please ignore this email.</p>
+                        <p>Best regards,<br>JUSTUS GROUP</p>
+                    </body>
+                    </html>
+                ";
+                
+                Mail::raw('', function ($message) use ($member, $resetUrl, $emailBody) {
+                    $message->to($member->email)
+                        ->subject('Reset Password - JUSTUS GROUP')
+                        ->html($emailBody);
+                });
+                
+                Log::info('Password reset email sent', [
+                    'email' => $member->email,
+                    'member_id' => $member->id
+                ]);
+            } catch (\Exception $mailException) {
+                // Log email error but don't fail the request (for security)
+                Log::error('Failed to send password reset email: ' . $mailException->getMessage(), [
+                    'email' => $member->email,
+                    'member_id' => $member->id,
+                    'trace' => $mailException->getTraceAsString()
+                ]);
+                // Continue - token is still saved, user can request again if needed
+            }
 
             Log::info('Password reset requested', [
                 'email' => $member->email,
@@ -653,11 +672,13 @@ class AuthController extends Controller
                 'message' => 'If the email exists, a password reset link has been sent.'
             ]);
         } catch (\Exception $e) {
-            Log::error('Forgot Password Error: ' . $e->getMessage());
+            Log::error('Forgot Password Error: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString()
+            ]);
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to send reset link',
-                'error' => $e->getMessage()
+                'error' => config('app.debug') ? $e->getMessage() : 'An error occurred. Please try again later.'
             ], 500);
         }
     }

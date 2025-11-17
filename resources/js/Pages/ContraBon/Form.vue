@@ -451,8 +451,21 @@ function formatCurrency(value) {
 const totalAmount = computed(() => {
   return form.items
     .filter(item => item.selected)
-    .reduce((sum, item) => sum + (item.quantity * item.price), 0);
+    .reduce((sum, item) => sum + (item.quantity * (item.price || 0)), 0);
 });
+
+// Function to update item total when price changes
+function updateItemTotal(item) {
+  // Ensure price is a valid number
+  if (item.price === null || item.price === undefined || item.price === '') {
+    item.price = 0;
+  } else {
+    // Convert to number if it's a string
+    const numPrice = parseFloat(item.price);
+    // Ensure price is not negative
+    item.price = numPrice >= 0 ? numPrice : 0;
+  }
+}
 
 async function onSubmit() {
   // Validasi: minimal harus ada 1 item yang dicentang
@@ -912,11 +925,20 @@ function toggleAllItems(event) {
                    <td class="px-3 py-2 min-w-[100px]">
                      {{ (sourceType === 'retail_food' || sourceType === 'warehouse_retail_food') ? (item.unit_name || '-') : (selectedPOGR?.items.find(i => i.item_id === item.item_id)?.unit_name || item.unit?.name || '-') }}
                    </td>
-                   <td class="px-3 py-2 min-w-[100px]">
-                     {{ formatCurrency(item.price) }}
+                   <td class="px-3 py-2 min-w-[120px]">
+                     <input 
+                       type="number" 
+                       v-model.number="item.price" 
+                       @input="updateItemTotal(item)"
+                       @blur="updateItemTotal(item)"
+                       step="0.01"
+                       min="0"
+                       class="w-full px-2 py-1 rounded border-gray-300 text-sm focus:ring-blue-500 focus:border-blue-500"
+                       placeholder="0.00"
+                     />
                    </td>
                    <td class="px-3 py-2 min-w-[100px]">
-                     {{ formatCurrency(item.quantity * item.price) }}
+                     {{ formatCurrency(item.quantity * (item.price || 0)) }}
                    </td>
                    <td class="px-3 py-2 min-w-[120px]">
                      <input type="text" v-model="item.notes" class="w-full rounded border-gray-300" />

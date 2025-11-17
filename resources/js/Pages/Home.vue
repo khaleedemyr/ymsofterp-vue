@@ -8,6 +8,11 @@ import BirthdayWidget from '@/Components/BirthdayWidget.vue';
 import WeatherIcon from '@/Components/WeatherIcon.vue';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import AnnouncementList from '@/Components/AnnouncementList.vue';
+import FoodPaymentApprovalCard from '@/Components/FoodPaymentApprovalCard.vue';
+import NonFoodPaymentApprovalCard from '@/Components/NonFoodPaymentApprovalCard.vue';
+import PRFoodApprovalCard from '@/Components/PRFoodApprovalCard.vue';
+import POFoodApprovalCard from '@/Components/POFoodApprovalCard.vue';
+import ROKhususApprovalCard from '@/Components/ROKhususApprovalCard.vue';
 import VueEasyLightbox from 'vue-easy-lightbox';
 import { useI18n } from 'vue-i18n';
 import axios from 'axios';
@@ -57,6 +62,25 @@ const categoryCostApprovalRejectionReason = ref('');
 
 // Outlet Stock Adjustment approvals
 const pendingStockAdjustmentApprovals = ref([]);
+
+// Contra Bon approvals
+const pendingContraBonApprovals = ref([]);
+const loadingContraBonApprovals = ref(false);
+const showContraBonApprovalModal = ref(false);
+const selectedContraBonApproval = ref(null);
+
+// All Contra Bon Modal
+const showAllContraBonModal = ref(false);
+const allContraBonApprovals = ref([]);
+const loadingAllContraBon = ref(false);
+const contraBonSearchQuery = ref('');
+const contraBonStatusFilter = ref(''); // '', 'draft', 'approved', 'rejected'
+const contraBonDateFilter = ref(''); // '', 'today', 'week', 'month'
+const contraBonSourceTypeFilter = ref(''); // '', 'purchase_order', 'retail_food', 'warehouse_retail_food'
+const contraBonApprovalLevelFilter = ref(''); // '', 'finance_manager', 'gm_finance'
+const contraBonSortBy = ref('newest'); // 'newest', 'oldest', 'number', 'amount'
+const contraBonCurrentPage = ref(1);
+const contraBonPerPage = ref(10);
 const loadingStockAdjustmentApprovals = ref(false);
 const showStockAdjustmentApprovalModal = ref(false);
 const selectedStockAdjustmentApproval = ref(null);
@@ -70,6 +94,83 @@ const poOpsSearchQuery = ref('');
 const poOpsStatusFilter = ref(''); // '', 'submitted', 'pending', 'awaiting', 'waiting'
 const poOpsDateFilter = ref(''); // '', 'today', 'week', 'month'
 const poOpsSortBy = ref('newest'); // 'newest', 'oldest', 'number', 'amount'
+
+// Filtered and paginated Contra Bon approvals
+const filteredContraBonApprovals = computed(() => {
+    let result = [...allContraBonApprovals.value];
+    
+    // Search by number, supplier, creator
+    if (contraBonSearchQuery.value) {
+        const q = contraBonSearchQuery.value.toLowerCase();
+        result = result.filter(cb => {
+            const number = (cb.number || '').toLowerCase();
+            const supplier = (cb.supplier?.name || '').toLowerCase();
+            const creator = (cb.creator?.nama_lengkap || '').toLowerCase();
+            return number.includes(q) || supplier.includes(q) || creator.includes(q);
+        });
+    }
+    
+    // Status filter
+    if (contraBonStatusFilter.value) {
+        result = result.filter(cb => (cb.status || 'draft').toString().toLowerCase() === contraBonStatusFilter.value);
+    }
+    
+    // Date filter
+    if (contraBonDateFilter.value) {
+        const now = new Date();
+        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        result = result.filter(cb => {
+            const d = new Date(cb.date);
+            switch (contraBonDateFilter.value) {
+                case 'today':
+                    return d >= today;
+                case 'week':
+                    return d >= new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+                case 'month':
+                    return d >= new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
+                default:
+                    return true;
+            }
+        });
+    }
+    
+    // Source type filter
+    if (contraBonSourceTypeFilter.value) {
+        result = result.filter(cb => (cb.source_type || '').toString().toLowerCase() === contraBonSourceTypeFilter.value);
+    }
+    
+    // Approval level filter
+    if (contraBonApprovalLevelFilter.value) {
+        result = result.filter(cb => (cb.approval_level || '').toString().toLowerCase() === contraBonApprovalLevelFilter.value);
+    }
+    
+    // Sort
+    result.sort((a, b) => {
+        switch (contraBonSortBy.value) {
+            case 'oldest':
+                return new Date(a.date || a.created_at) - new Date(b.date || b.created_at);
+            case 'number':
+                return (a.number || '').localeCompare(b.number || '');
+            case 'amount':
+                return (b.total_amount || 0) - (a.total_amount || 0);
+            case 'newest':
+            default:
+                return new Date(b.date || b.created_at) - new Date(a.date || a.created_at);
+        }
+    });
+    
+    return result;
+});
+
+const contraBonTotalPagesComputed = computed(() => {
+    return Math.ceil(filteredContraBonApprovals.value.length / contraBonPerPage.value);
+});
+
+const paginatedContraBonApprovals = computed(() => {
+    const start = (contraBonCurrentPage.value - 1) * contraBonPerPage.value;
+    const end = start + contraBonPerPage.value;
+    return filteredContraBonApprovals.value.slice(start, end);
+});
 
 const filteredAllPendingPoOps = computed(() => {
     let result = [...allPendingPoOps.value];
@@ -464,6 +565,11 @@ const stockAdjustmentApprovalCount = computed(() => {
     return count > 0 ? count : 0;
 });
 
+const contraBonApprovalCount = computed(() => {
+    const count = pendingContraBonApprovals.value.length;
+    return count > 0 ? count : 0;
+});
+
 const availableTrainingsStats = computed(() => {
     const total = availableTrainings.value.length;
     const completed = availableTrainings.value.filter(t => t.is_completed).length;
@@ -691,6 +797,85 @@ async function loadPendingStockAdjustmentApprovals() {
         loadingStockAdjustmentApprovals.value = false;
     }
 }
+
+// Load Contra Bon approvals
+async function loadPendingContraBonApprovals() {
+    loadingContraBonApprovals.value = true;
+    try {
+        const response = await axios.get('/api/contra-bon/pending-approvals');
+        if (response.data.success) {
+            pendingContraBonApprovals.value = response.data.contra_bons || [];
+        }
+    } catch (error) {
+        console.error('Error loading pending Contra Bon approvals:', error);
+    } finally {
+        loadingContraBonApprovals.value = false;
+    }
+}
+
+// Load all Contra Bon approvals for modal
+async function loadAllContraBonApprovals() {
+    loadingAllContraBon.value = true;
+    try {
+        const response = await axios.get('/api/contra-bon/pending-approvals?limit=500');
+        if (response.data.success) {
+            allContraBonApprovals.value = response.data.contra_bons || [];
+            contraBonCurrentPage.value = 1; // Reset to first page
+        }
+    } catch (error) {
+        console.error('Error loading all Contra Bon approvals:', error);
+    } finally {
+        loadingAllContraBon.value = false;
+    }
+}
+
+function openAllContraBonModal() {
+    showAllContraBonModal.value = true;
+    loadAllContraBonApprovals();
+}
+
+function changeContraBonPage(page) {
+    contraBonCurrentPage.value = page;
+}
+
+function changeContraBonPerPage(perPage) {
+    contraBonPerPage.value = perPage;
+    contraBonCurrentPage.value = 1; // Reset to first page
+}
+
+function getContraBonPageRange() {
+    const current = contraBonCurrentPage.value;
+    const total = contraBonTotalPagesComputed.value;
+    const range = [];
+    
+    if (total <= 7) {
+        for (let i = 1; i <= total; i++) {
+            range.push(i);
+        }
+    } else {
+        let start = Math.max(1, current - 2);
+        let end = Math.min(total, current + 2);
+        
+        if (current <= 3) {
+            start = 1;
+            end = 5;
+        } else if (current >= total - 2) {
+            start = total - 4;
+            end = total;
+        }
+        
+        for (let i = start; i <= end; i++) {
+            range.push(i);
+        }
+    }
+    
+    return range;
+}
+
+// Watch filters to reset page to 1
+watch([contraBonSearchQuery, contraBonStatusFilter, contraBonDateFilter, contraBonSourceTypeFilter, contraBonApprovalLevelFilter, contraBonSortBy], () => {
+    contraBonCurrentPage.value = 1;
+});
 
 async function loadAllPendingPoOps() {
     loadingAllPoOps.value = true;
@@ -1255,7 +1440,91 @@ function getStatusColor(status) {
     return colors[status] || 'bg-gray-100 text-gray-800';
 }
 
-// Show PO Ops approval details
+// Show Contra Bon approval details
+async function showContraBonApprovalDetails(cbId) {
+    try {
+        // Close "All Contra Bon" modal if open
+        if (showAllContraBonModal.value) {
+            showAllContraBonModal.value = false;
+        }
+        
+        // Load full details from API endpoint
+        const response = await axios.get(`/api/contra-bon/${cbId}`);
+        if (response.data && response.data.success && response.data.contra_bon) {
+            selectedContraBonApproval.value = response.data.contra_bon;
+            showContraBonApprovalModal.value = true;
+        } else {
+            Swal.fire('Error', response.data?.message || 'Gagal memuat detail Contra Bon', 'error');
+        }
+    } catch (error) {
+        console.error('Error loading Contra Bon approval details:', error);
+        const errorMessage = error.response?.data?.message || error.message || 'Gagal memuat detail Contra Bon';
+        Swal.fire('Error', errorMessage, 'error');
+    }
+}
+
+// Approve Contra Bon
+async function approveContraBon(cbId) {
+    try {
+        const response = await axios.post(`/contra-bons/${cbId}/approve`, {
+            approved: true,
+            note: ''
+        });
+        if (response.data.success) {
+            Swal.fire('Success', 'Contra Bon berhasil disetujui', 'success');
+            showContraBonApprovalModal.value = false;
+            loadPendingContraBonApprovals(); // Reload the list
+        }
+    } catch (error) {
+        console.error('Error approving Contra Bon:', error);
+        Swal.fire('Error', error.response?.data?.message || 'Gagal menyetujui Contra Bon', 'error');
+    }
+}
+
+// Reject Contra Bon
+async function rejectContraBon(cbId, reason) {
+    try {
+        const response = await axios.post(`/contra-bons/${cbId}/approve`, {
+            approved: false,
+            note: reason
+        });
+        if (response.data.success) {
+            Swal.fire('Success', 'Contra Bon berhasil ditolak', 'success');
+            showContraBonApprovalModal.value = false;
+            loadPendingContraBonApprovals(); // Reload the list
+        }
+    } catch (error) {
+        console.error('Error rejecting Contra Bon:', error);
+        Swal.fire('Error', error.response?.data?.message || 'Gagal menolak Contra Bon', 'error');
+    }
+}
+
+// Show reject Contra Bon modal
+function showRejectContraBonModal(cbId) {
+    Swal.fire({
+        title: 'Tolak Contra Bon',
+        input: 'textarea',
+        inputLabel: 'Alasan Penolakan',
+        inputPlaceholder: 'Masukkan alasan penolakan...',
+        inputAttributes: {
+            'aria-label': 'Masukkan alasan penolakan'
+        },
+        showCancelButton: true,
+        confirmButtonText: 'Tolak',
+        cancelButtonText: 'Batal',
+        confirmButtonColor: '#ef4444',
+        inputValidator: (value) => {
+            if (!value) {
+                return 'Alasan penolakan harus diisi!';
+            }
+        }
+    }).then((result) => {
+        if (result.isConfirmed) {
+            rejectContraBon(cbId, result.value);
+        }
+    });
+}
+
 async function showPoOpsApprovalDetails(poId) {
     try {
         const response = await axios.get(`/po-ops/${poId}`);
@@ -3532,6 +3801,61 @@ function handleBannerError(event) {
     event.target.parentElement.innerHTML = '<div class="w-full h-full bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500"></div>';
 }
 
+// Food Payment approval handlers
+function handleFoodPaymentApproved(fpId) {
+    // Component already handles reload, just log if needed
+    console.log('Food Payment approved:', fpId);
+}
+
+function handleFoodPaymentRejected(fpId) {
+    // Component already handles reload, just log if needed
+    console.log('Food Payment rejected:', fpId);
+}
+
+// Non Food Payment approval handlers
+function handleNonFoodPaymentApproved(nfpId) {
+    // Component already handles reload, just log if needed
+    console.log('Non Food Payment approved:', nfpId);
+}
+
+function handleNonFoodPaymentRejected(nfpId) {
+    // Component already handles reload, just log if needed
+    console.log('Non Food Payment rejected:', nfpId);
+}
+
+// PR Food approval handlers
+function handlePRFoodApproved(prId) {
+    // Component already handles reload, just log if needed
+    console.log('PR Food approved:', prId);
+}
+
+function handlePRFoodRejected(prId) {
+    // Component already handles reload, just log if needed
+    console.log('PR Food rejected:', prId);
+}
+
+// PO Food approval handlers
+function handlePOFoodApproved(poId) {
+    // Component already handles reload, just log if needed
+    console.log('PO Food approved:', poId);
+}
+
+function handlePOFoodRejected(poId) {
+    // Component already handles reload, just log if needed
+    console.log('PO Food rejected:', poId);
+}
+
+// RO Khusus approval handlers
+function handleROKhususApproved(roId) {
+    // Component already handles reload, just log if needed
+    console.log('RO Khusus approved:', roId);
+}
+
+function handleROKhususRejected(roId) {
+    // Component already handles reload, just log if needed
+    console.log('RO Khusus rejected:', roId);
+}
+
 onMounted(() => {
     updateGreeting();
     setInterval(updateTime, 1000);
@@ -3542,6 +3866,7 @@ onMounted(() => {
     loadPendingPoOpsApprovals();
     loadPendingCategoryCostApprovals();
     loadPendingStockAdjustmentApprovals();
+    loadPendingContraBonApprovals();
     loadPendingMovementApprovals();
     loadLeaveNotifications();
     loadPendingHrdApprovals();
@@ -4144,6 +4469,87 @@ watch(locale, () => {
                             </div>
 
                             
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Food Payment Approval Section -->
+                <FoodPaymentApprovalCard :is-night="isNight" @approved="handleFoodPaymentApproved" @rejected="handleFoodPaymentRejected" />
+
+                <!-- Non Food Payment Approval Section -->
+                <NonFoodPaymentApprovalCard :is-night="isNight" @approved="handleNonFoodPaymentApproved" @rejected="handleNonFoodPaymentRejected" />
+
+                <!-- PR Foods Approval Section -->
+                <PRFoodApprovalCard :is-night="isNight" @approved="handlePRFoodApproved" @rejected="handlePRFoodRejected" />
+
+                <!-- PO Foods Approval Section -->
+                <POFoodApprovalCard :is-night="isNight" @approved="handlePOFoodApproved" @rejected="handlePOFoodRejected" />
+
+                <!-- RO Khusus Approval Section -->
+                <ROKhususApprovalCard :is-night="isNight" @approved="handleROKhususApproved" @rejected="handleROKhususRejected" />
+
+                <!-- Contra Bon Approval Section -->
+                <div v-if="contraBonApprovalCount > 0" class="flex-shrink-0 mb-4">
+                    <div class="backdrop-blur-md rounded-2xl shadow-2xl border p-4 transition-all duration-500 animate-fade-in hover:shadow-3xl"
+                        :class="isNight ? 'bg-slate-800/90 border-slate-600/50' : 'bg-white/90 border-white/20'">
+                        <div class="flex items-center justify-between mb-3">
+                            <div class="flex items-center gap-2">
+                                <div class="w-3 h-3 rounded-full bg-blue-500 animate-pulse"></div>
+                                <h3 class="text-lg font-bold" :class="isNight ? 'text-white' : 'text-slate-800'">
+                                    <i class="fa fa-file-invoice-dollar mr-2 text-blue-500"></i>
+                                    Contra Bon Approval
+                                </h3>
+                            </div>
+                            <div class="bg-blue-500 text-white text-xs font-bold px-2 py-1 rounded-full">
+                                {{ contraBonApprovalCount }}
+                            </div>
+                        </div>
+                        
+                        <div v-if="loadingContraBonApprovals" class="text-center py-4">
+                            <div class="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500"></div>
+                            <p class="text-sm mt-2" :class="isNight ? 'text-slate-300' : 'text-slate-600'">Memuat data...</p>
+                        </div>
+                        
+                        <div v-else class="space-y-2">
+                            <!-- Contra Bon Approvals -->
+                            <div v-for="cb in pendingContraBonApprovals.slice(0, 3)" :key="'contra-bon-approval-' + cb.id"
+                                @click="showContraBonApprovalDetails(cb.id)"
+                                class="p-3 rounded-lg cursor-pointer transition-all duration-200 hover:scale-105"
+                                :class="isNight ? 'bg-slate-700/50 hover:bg-slate-600/50' : 'bg-blue-50 hover:bg-blue-100'">
+                                <div class="flex items-center justify-between">
+                                    <div class="flex-1">
+                                        <div class="font-semibold text-sm" :class="isNight ? 'text-white' : 'text-slate-800'">
+                                            {{ cb.number }}
+                                        </div>
+                                        <div class="text-xs" :class="isNight ? 'text-slate-300' : 'text-slate-600'">
+                                            {{ cb.supplier?.name || 'Unknown Supplier' }}
+                                        </div>
+                                        <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
+                                            <i class="fa fa-tag mr-1 text-blue-600"></i>
+                                            {{ cb.source_type_display }}
+                                        </div>
+                                        <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
+                                            Rp {{ new Intl.NumberFormat('id-ID').format(cb.total_amount) }}
+                                        </div>
+                                        <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
+                                            <i class="fa fa-user mr-1 text-blue-500"></i>{{ cb.creator?.nama_lengkap }}
+                                        </div>
+                                        <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
+                                            {{ formatDate(cb.date) }}
+                                        </div>
+                                    </div>
+                                    <div class="text-xs text-blue-500 font-medium">
+                                        <i class="fa fa-file-invoice-dollar mr-1"></i>{{ cb.approval_level_display }}
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Show more button if there are more than 3 Contra Bons -->
+                            <div v-if="pendingContraBonApprovals.length > 3" class="text-center pt-2">
+                                <button @click="openAllContraBonModal" class="text-sm text-blue-500 hover:text-blue-700 font-medium">
+                                    Lihat {{ pendingContraBonApprovals.length - 3 }} Contra Bon lainnya...
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -5827,6 +6233,308 @@ watch(locale, () => {
                     <button @click="showRejectPoOpsModal(selectedPoOpsApproval.id)" 
                             class="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors">
                         <i class="fa fa-times mr-2"></i>Reject
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Contra Bon Approval Modal -->
+        <div v-if="showContraBonApprovalModal && selectedContraBonApproval" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60]" @click="showContraBonApprovalModal = false">
+            <div class="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-4xl mx-4 max-h-[90vh] overflow-y-auto" @click.stop>
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-lg font-medium text-gray-900 dark:text-white">
+                        <i class="fa fa-file-invoice-dollar mr-2 text-blue-500"></i>
+                        Detail Contra Bon Approval
+                    </h3>
+                    <button @click="showContraBonApprovalModal = false" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                        <i class="fa-solid fa-times text-xl"></i>
+                    </button>
+                </div>
+
+                <div class="space-y-6">
+                    <!-- Basic Information -->
+                    <div class="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
+                        <h4 class="text-md font-semibold text-gray-900 dark:text-white mb-3">Informasi Dasar</h4>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="text-sm font-medium text-gray-600 dark:text-gray-400">Contra Bon Number</label>
+                                <p class="text-gray-900 dark:text-white font-semibold">{{ selectedContraBonApproval.number }}</p>
+                            </div>
+                            <div>
+                                <label class="text-sm font-medium text-gray-600 dark:text-gray-400">Date</label>
+                                <p class="text-gray-900 dark:text-white">{{ selectedContraBonApproval.date ? new Date(selectedContraBonApproval.date).toLocaleDateString('id-ID') : '-' }}</p>
+                            </div>
+                            <div>
+                                <label class="text-sm font-medium text-gray-600 dark:text-gray-400">Supplier</label>
+                                <p class="text-gray-900 dark:text-white">{{ selectedContraBonApproval.supplier?.name || 'Unknown' }}</p>
+                            </div>
+                            <div>
+                                <label class="text-sm font-medium text-gray-600 dark:text-gray-400">Status</label>
+                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
+                                      :class="getStatusColor(selectedContraBonApproval.status || 'draft')">
+                                    {{ (selectedContraBonApproval.status || 'draft').toUpperCase() }}
+                                </span>
+                            </div>
+                            <div>
+                                <label class="text-sm font-medium text-gray-600 dark:text-gray-400">Total Amount</label>
+                                <p class="text-gray-900 dark:text-white font-semibold text-lg">
+                                    Rp {{ new Intl.NumberFormat('id-ID').format(selectedContraBonApproval.total_amount || 0) }}
+                                </p>
+                            </div>
+                            <div>
+                                <label class="text-sm font-medium text-gray-600 dark:text-gray-400">Created By</label>
+                                <p class="text-gray-900 dark:text-white">{{ selectedContraBonApproval.creator?.nama_lengkap || 'Unknown' }}</p>
+                            </div>
+                            <div v-if="selectedContraBonApproval.source_type_display">
+                                <label class="text-sm font-medium text-gray-600 dark:text-gray-400">Source Type</label>
+                                <p class="text-gray-900 dark:text-white">{{ selectedContraBonApproval.source_type_display }}</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Items -->
+                    <div v-if="selectedContraBonApproval.items && selectedContraBonApproval.items.length > 0" class="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
+                        <h4 class="text-md font-semibold text-gray-900 dark:text-white mb-3">Items</h4>
+                        <div class="overflow-x-auto">
+                            <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-600">
+                                <thead class="bg-gray-100 dark:bg-gray-600">
+                                    <tr>
+                                        <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Item</th>
+                                        <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Qty</th>
+                                        <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Unit</th>
+                                        <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Price</th>
+                                        <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Total</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="bg-white dark:bg-gray-700 divide-y divide-gray-200 dark:divide-gray-600">
+                                    <tr v-for="item in selectedContraBonApproval.items" :key="item.id">
+                                        <td class="px-3 py-2 text-sm text-gray-900 dark:text-white">{{ item.item?.name || item.item_name || 'N/A' }}</td>
+                                        <td class="px-3 py-2 text-sm text-gray-900 dark:text-white">{{ item.quantity }}</td>
+                                        <td class="px-3 py-2 text-sm text-gray-900 dark:text-white">{{ item.unit?.name || item.unit_name || '-' }}</td>
+                                        <td class="px-3 py-2 text-sm text-gray-900 dark:text-white">Rp {{ new Intl.NumberFormat('id-ID').format(item.price || 0) }}</td>
+                                        <td class="px-3 py-2 text-sm text-gray-900 dark:text-white font-semibold">Rp {{ new Intl.NumberFormat('id-ID').format(item.total || 0) }}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Image if exists -->
+                    <div v-if="selectedContraBonApproval.image" class="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
+                        <h4 class="text-md font-semibold text-gray-900 dark:text-white mb-3">Gambar Contra Bon</h4>
+                        <img :src="`/storage/${selectedContraBonApproval.image}`" 
+                             alt="Contra Bon Image" 
+                             class="max-w-full h-auto rounded-lg border border-gray-300 dark:border-gray-600">
+                    </div>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="flex justify-end gap-3 mt-6 pt-4 border-t border-gray-200 dark:border-gray-600">
+                    <button @click="showContraBonApprovalModal = false" 
+                            class="px-4 py-2 text-gray-600 dark:text-gray-400 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                        Tutup
+                    </button>
+                    <button @click="approveContraBon(selectedContraBonApproval.id)" 
+                            class="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors">
+                        <i class="fa fa-check mr-2"></i>Approve
+                    </button>
+                    <button @click="showRejectContraBonModal(selectedContraBonApproval.id)" 
+                            class="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors">
+                        <i class="fa fa-times mr-2"></i>Reject
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- All Contra Bon Modal -->
+        <div v-if="showAllContraBonModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[50]" @click="showAllContraBonModal = false">
+            <div class="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-5xl mx-4 max-h-[90vh] overflow-y-auto" @click.stop>
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-lg font-medium text-gray-900 dark:text-white">
+                        <i class="fa fa-list mr-2 text-blue-500"></i>
+                        Semua Contra Bon Pending
+                    </h3>
+                    <button @click="showAllContraBonModal = false" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                        <i class="fa-solid fa-times text-xl"></i>
+                    </button>
+                </div>
+
+                <!-- Filters -->
+                <div class="mb-4 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+                        <div>
+                            <label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Cari</label>
+                            <input v-model="contraBonSearchQuery" type="text" placeholder="No CB, Supplier, atau Pembuat"
+                                   class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-600 dark:text-gray-100" />
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Status</label>
+                            <select v-model="contraBonStatusFilter"
+                                    class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-600 dark:text-gray-100">
+                                <option value="">Semua</option>
+                                <option value="draft">Draft</option>
+                                <option value="approved">Approved</option>
+                                <option value="rejected">Rejected</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Tanggal</label>
+                            <select v-model="contraBonDateFilter"
+                                    class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-600 dark:text-gray-100">
+                                <option value="">Semua</option>
+                                <option value="today">Hari ini</option>
+                                <option value="week">7 hari terakhir</option>
+                                <option value="month">30 hari terakhir</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Source Type</label>
+                            <select v-model="contraBonSourceTypeFilter"
+                                    class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-600 dark:text-gray-100">
+                                <option value="">Semua</option>
+                                <option value="purchase_order">PR Foods</option>
+                                <option value="retail_food">Retail Food</option>
+                                <option value="warehouse_retail_food">Warehouse Retail Food</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Approval Level</label>
+                            <select v-model="contraBonApprovalLevelFilter"
+                                    class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-600 dark:text-gray-100">
+                                <option value="">Semua</option>
+                                <option value="finance_manager">Finance Manager</option>
+                                <option value="gm_finance">GM Finance</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Urutkan</label>
+                            <select v-model="contraBonSortBy"
+                                    class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-600 dark:text-gray-100">
+                                <option value="newest">Terbaru</option>
+                                <option value="oldest">Terlama</option>
+                                <option value="number">Nomor CB</option>
+                                <option value="amount">Nominal</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Per Halaman</label>
+                            <select v-model="contraBonPerPage" @change="changeContraBonPerPage(contraBonPerPage)"
+                                    class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-600 dark:text-gray-100">
+                                <option :value="10">10</option>
+                                <option :value="25">25</option>
+                                <option :value="50">50</option>
+                                <option :value="100">100</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <div v-if="loadingAllContraBon" class="text-center py-6">
+                    <div class="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500"></div>
+                    <p class="text-sm mt-2 text-gray-600 dark:text-gray-300">Memuat data...</p>
+                </div>
+
+                <div v-else>
+                    <div v-if="filteredContraBonApprovals.length === 0" class="text-center py-10">
+                        <i class="fa-solid fa-check-circle text-4xl text-green-500 mb-2"></i>
+                        <p class="text-gray-600 dark:text-gray-300">Tidak ada Contra Bon pending</p>
+                    </div>
+                    <div v-else class="space-y-3">
+                        <div class="text-sm text-gray-600 dark:text-gray-400 mb-1">
+                            Menampilkan {{ (contraBonCurrentPage - 1) * contraBonPerPage + 1 }} - {{ Math.min(contraBonCurrentPage * contraBonPerPage, filteredContraBonApprovals.length) }} dari {{ filteredContraBonApprovals.length }} Contra Bon
+                        </div>
+                        <div v-for="cb in paginatedContraBonApprovals" :key="'all-contra-bon-' + cb.id"
+                             class="p-3 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors cursor-pointer"
+                             @click="showContraBonApprovalDetails(cb.id)">
+                            <div class="flex items-center justify-between">
+                                <div class="flex-1 min-w-0">
+                                    <div class="flex items-center gap-2">
+                                        <span class="font-semibold text-gray-900 dark:text-white truncate">{{ cb.number }}</span>
+                                        <span class="text-xs px-2 py-0.5 rounded-full" :class="getStatusColor(cb.status || 'draft')">{{ (cb.status || 'draft').toString().toUpperCase() }}</span>
+                                        <span v-if="cb.approval_level_display" class="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
+                                            {{ cb.approval_level_display }}
+                                        </span>
+                                    </div>
+                                    <div class="text-xs text-gray-600 dark:text-gray-300 truncate">
+                                        {{ cb.supplier?.name || 'Unknown Supplier' }} • Rp {{ new Intl.NumberFormat('id-ID').format(cb.total_amount || 0) }}
+                                    </div>
+                                    <div v-if="cb.source_type_display" class="text-[11px] text-gray-500 dark:text-gray-400 truncate">
+                                        <i class="fa fa-tag mr-1 text-blue-600"></i>
+                                        {{ cb.source_type_display }}
+                                    </div>
+                                    <div class="text-[11px] text-gray-500 dark:text-gray-400 truncate">
+                                        <i class="fa fa-user mr-1 text-blue-500"></i>
+                                        {{ cb.creator?.nama_lengkap || 'Unknown' }}
+                                    </div>
+                                </div>
+                                <div class="text-xs text-gray-500 dark:text-gray-400 pl-3 whitespace-nowrap">
+                                    {{ cb.date ? new Date(cb.date).toLocaleDateString('id-ID') : '-' }}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Pagination -->
+                    <div v-if="contraBonTotalPagesComputed > 1" class="flex items-center justify-between mt-6 pt-4 border-t border-gray-200 dark:border-gray-600">
+                        <div class="text-sm text-gray-600 dark:text-gray-400">
+                            Halaman {{ contraBonCurrentPage }} dari {{ contraBonTotalPagesComputed }}
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <button @click="changeContraBonPage(contraBonCurrentPage - 1)" 
+                                    :disabled="contraBonCurrentPage === 1"
+                                    class="px-3 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed">
+                                <i class="fa fa-chevron-left"></i> Sebelumnya
+                            </button>
+                            <div class="flex gap-1">
+                                <template v-if="contraBonTotalPagesComputed <= 7">
+                                    <button v-for="page in contraBonTotalPagesComputed" 
+                                            :key="page"
+                                            @click="changeContraBonPage(page)"
+                                            :class="[
+                                                'px-3 py-1 text-sm rounded-md',
+                                                contraBonCurrentPage === page 
+                                                    ? 'bg-blue-600 text-white' 
+                                                    : 'border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'
+                                            ]">
+                                        {{ page }}
+                                    </button>
+                                </template>
+                                <template v-else>
+                                    <button v-if="contraBonCurrentPage > 3" @click="changeContraBonPage(1)"
+                                            class="px-3 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700">
+                                        1
+                                    </button>
+                                    <span v-if="contraBonCurrentPage > 4" class="px-2 text-gray-500">...</span>
+                                    <button v-for="page in getContraBonPageRange()" 
+                                            :key="page"
+                                            @click="changeContraBonPage(page)"
+                                            :class="[
+                                                'px-3 py-1 text-sm rounded-md',
+                                                contraBonCurrentPage === page 
+                                                    ? 'bg-blue-600 text-white' 
+                                                    : 'border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'
+                                            ]">
+                                        {{ page }}
+                                    </button>
+                                    <span v-if="contraBonCurrentPage < contraBonTotalPagesComputed - 3" class="px-2 text-gray-500">...</span>
+                                    <button v-if="contraBonCurrentPage < contraBonTotalPagesComputed - 2" @click="changeContraBonPage(contraBonTotalPagesComputed)"
+                                            class="px-3 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700">
+                                        {{ contraBonTotalPagesComputed }}
+                                    </button>
+                                </template>
+                            </div>
+                            <button @click="changeContraBonPage(contraBonCurrentPage + 1)" 
+                                    :disabled="contraBonCurrentPage === contraBonTotalPagesComputed"
+                                    class="px-3 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed">
+                                Selanjutnya <i class="fa fa-chevron-right"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex justify-end gap-3 mt-6 pt-4 border-t border-gray-200 dark:border-gray-600">
+                    <button @click="showAllContraBonModal = false" class="px-4 py-2 text-gray-600 dark:text-gray-400 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                        Tutup
                     </button>
                 </div>
             </div>

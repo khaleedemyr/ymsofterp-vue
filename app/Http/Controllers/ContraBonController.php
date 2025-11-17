@@ -511,6 +511,179 @@ class ContraBonController extends Controller
         return back()->with('error', 'Anda tidak berhak melakukan approval pada tahap ini');
     }
 
+    /**
+     * Get Contra Bon detail for API (JSON response)
+     */
+    public function getDetail($id)
+    {
+        try {
+            $contraBon = ContraBon::with([
+                'supplier',
+                'purchaseOrder',
+                'items.item',
+                'items.unit',
+                'creator',
+                'approver',
+                'financeManager',
+                'gmFinance'
+            ])->findOrFail($id);
+
+            // Add source information for purchase orders
+            if ($contraBon->source_type === 'purchase_order' && $contraBon->purchaseOrder) {
+                $po = $contraBon->purchaseOrder;
+                
+                // Get source information based on PO source_type
+                if ($po->source_type === 'pr_foods' || !$po->source_type) {
+                    // For PR Foods, get PR numbers
+                    $prNumbers = DB::table('pr_foods as pr')
+                        ->join('pr_food_items as pri', 'pr.id', '=', 'pri.pr_food_id')
+                        ->join('purchase_order_food_items as poi', 'pri.id', '=', 'poi.pr_food_item_id')
+                        ->where('poi.purchase_order_food_id', $po->id)
+                        ->distinct()
+                        ->pluck('pr.pr_number')
+                        ->toArray();
+                    
+                    $contraBon->source_numbers = $prNumbers;
+                    $contraBon->source_outlets = [];
+                    $contraBon->source_type_display = 'PR Foods';
+                } elseif ($po->source_type === 'ro_supplier') {
+                    // Get RO Supplier numbers and outlet names
+                    $roData = DB::table('food_floor_orders as fo')
+                        ->join('purchase_order_food_items as poi', 'fo.id', '=', 'poi.ro_id')
+                        ->leftJoin('tbl_data_outlet as o', 'fo.id_outlet', '=', 'o.id_outlet')
+                        ->where('poi.purchase_order_food_id', $po->id)
+                        ->select('fo.order_number', 'o.nama_outlet', 'fo.id_outlet')
+                        ->distinct()
+                        ->get();
+                    
+                    $contraBon->source_numbers = $roData->pluck('order_number')->unique()->filter()->toArray();
+                    $contraBon->source_outlets = $roData->pluck('nama_outlet')->unique()->filter()->toArray();
+                    $contraBon->source_type_display = 'RO Supplier';
+                } else {
+                    $contraBon->source_numbers = [];
+                    $contraBon->source_outlets = [];
+                    $contraBon->source_type_display = 'Unknown';
+                }
+            } elseif ($contraBon->source_type === 'retail_food') {
+                $retailFood = \App\Models\RetailFood::find($contraBon->source_id);
+                $contraBon->source_numbers = [$retailFood->retail_number ?? ''];
+                $contraBon->source_outlets = [$retailFood->outlet ? $retailFood->outlet->nama_outlet : ''];
+                $contraBon->source_type_display = 'Retail Food';
+            } elseif ($contraBon->source_type === 'warehouse_retail_food') {
+                $warehouseRetailFood = \App\Models\RetailWarehouseFood::find($contraBon->source_id);
+                $contraBon->source_numbers = [$warehouseRetailFood->retail_number ?? ''];
+                $warehouseName = $warehouseRetailFood->warehouse ? $warehouseRetailFood->warehouse->name : '';
+                $divisionName = $warehouseRetailFood->warehouseDivision ? $warehouseRetailFood->warehouseDivision->name : '';
+                $contraBon->source_outlets = [$warehouseName . ($divisionName ? ' - ' . $divisionName : '')];
+                $contraBon->source_type_display = 'Warehouse Retail Food';
+            } else {
+                $contraBon->source_numbers = [];
+                $contraBon->source_outlets = [];
+                $contraBon->source_type_display = 'Unknown';
+            }
+
+            return response()->json([
+                'success' => true,
+                'contra_bon' => $contraBon
+            ]);
+            
+        } catch (\Exception $e) {
+            \Log::error('Error getting Contra Bon detail: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal memuat detail Contra Bon',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Get pending Contra Bon approvals for current user
+     */
+    public function getPendingApprovals(Request $request)
+    {
+        try {
+            $user = Auth::user();
+            $isSuperadmin = $user->id_role === '5af56935b011a' && $user->status === 'A';
+            
+            $query = ContraBon::with(['supplier', 'purchaseOrder', 'retailFood', 'warehouseRetailFood', 'creator'])
+                ->where('status', 'draft')
+                ->orderByDesc('created_at');
+            
+            $pendingApprovals = [];
+            
+            // Finance Manager approvals (id_jabatan == 160)
+            if (($user->id_jabatan == 160 && $user->status == 'A') || $isSuperadmin) {
+                $financeManagerApprovals = (clone $query)
+                    ->whereNull('finance_manager_approved_at')
+                    ->get();
+                
+                foreach ($financeManagerApprovals as $cb) {
+                    $pendingApprovals[] = [
+                        'id' => $cb->id,
+                        'number' => $cb->number,
+                        'date' => $cb->date,
+                        'total_amount' => $cb->total_amount,
+                        'supplier' => $cb->supplier ? ['name' => $cb->supplier->name] : null,
+                        'source_type' => $cb->source_type,
+                        'source_type_display' => $this->getSourceTypeDisplay($cb),
+                        'creator' => $cb->creator ? ['nama_lengkap' => $cb->creator->nama_lengkap] : null,
+                        'approval_level' => 'finance_manager',
+                        'approval_level_display' => 'Finance Manager'
+                    ];
+                }
+            }
+            
+            // GM Finance approvals (id_jabatan == 152)
+            if (($user->id_jabatan == 152 && $user->status == 'A') || $isSuperadmin) {
+                $gmFinanceApprovals = (clone $query)
+                    ->whereNotNull('finance_manager_approved_at')
+                    ->whereNull('gm_finance_approved_at')
+                    ->get();
+                
+                foreach ($gmFinanceApprovals as $cb) {
+                    $pendingApprovals[] = [
+                        'id' => $cb->id,
+                        'number' => $cb->number,
+                        'date' => $cb->date,
+                        'total_amount' => $cb->total_amount,
+                        'supplier' => $cb->supplier ? ['name' => $cb->supplier->name] : null,
+                        'source_type' => $cb->source_type,
+                        'source_type_display' => $this->getSourceTypeDisplay($cb),
+                        'creator' => $cb->creator ? ['nama_lengkap' => $cb->creator->nama_lengkap] : null,
+                        'approval_level' => 'gm_finance',
+                        'approval_level_display' => 'GM Finance'
+                    ];
+                }
+            }
+            
+            return response()->json([
+                'success' => true,
+                'contra_bons' => $pendingApprovals
+            ]);
+            
+        } catch (\Exception $e) {
+            \Log::error('Error loading pending Contra Bon approvals: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal memuat data approval Contra Bon',
+                'contra_bons' => []
+            ], 500);
+        }
+    }
+    
+    private function getSourceTypeDisplay($contraBon)
+    {
+        if ($contraBon->source_type === 'purchase_order' && $contraBon->purchaseOrder) {
+            return 'PR Foods';
+        } elseif ($contraBon->source_type === 'retail_food') {
+            return 'Retail Food';
+        } elseif ($contraBon->source_type === 'warehouse_retail_food') {
+            return 'Warehouse Retail Food';
+        }
+        return 'Unknown';
+    }
+
     private function sendNotification($userIds, $type, $title, $message, $url) {
         $now = now();
         $data = [];
