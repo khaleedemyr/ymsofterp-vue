@@ -497,7 +497,13 @@ async function onSubmit() {
     try {
       const url = isEdit.value ? `/contra-bons/${props.contraBon.id}` : '/contra-bons';
       const method = isEdit.value ? 'post' : 'post';
-      const config = { headers: { 'Content-Type': 'multipart/form-data' } };
+      const config = { 
+        headers: { 
+          'Content-Type': 'multipart/form-data',
+          'Accept': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest'
+        } 
+      };
       let res;
       if (isEdit.value) {
         fd.append('_method', 'PUT');
@@ -505,12 +511,62 @@ async function onSubmit() {
       } else {
         res = await axios.post(url, fd, config);
       }
-      Swal.fire('Berhasil', 'Data berhasil disimpan', 'success').then(() => router.visit('/contra-bons'));
-    } catch (e) {
-      Swal.close();
-      if (e.response && e.response.data && e.response.data.errors) {
-        form.setError(e.response.data.errors);
+      
+      // Check if response indicates success
+      if (res.status === 200 || res.status === 201) {
+        if (res.data && res.data.success === false) {
+          throw new Error(res.data.message || 'Gagal menyimpan data');
+        }
+        // Success - check if we got JSON response or redirect
+        if (res.data && res.data.success === true) {
+          Swal.fire('Berhasil', res.data.message || 'Data berhasil disimpan', 'success').then(() => router.visit('/contra-bons'));
+        } else {
+          // If no JSON response, assume success (redirect response)
+          Swal.fire('Berhasil', 'Data berhasil disimpan', 'success').then(() => router.visit('/contra-bons'));
+        }
+      } else {
+        throw new Error('Unexpected response status: ' + res.status);
       }
+    } catch (e) {
+      console.error('Error saving contra bon:', e);
+      let errorMessage = 'Terjadi kesalahan saat menyimpan data';
+      
+      if (e.response) {
+        // Server responded with error
+        if (e.response.data) {
+          if (e.response.data.message) {
+            errorMessage = e.response.data.message;
+          } else if (e.response.data.errors) {
+            // Validation errors
+            const errors = e.response.data.errors;
+            const errorMessages = Object.keys(errors).map(key => {
+              return Array.isArray(errors[key]) ? errors[key].join(', ') : errors[key];
+            });
+            errorMessage = errorMessages.join('\n');
+            form.setError(errors);
+          } else if (e.response.data.error) {
+            errorMessage = e.response.data.error;
+          } else if (typeof e.response.data === 'string') {
+            errorMessage = e.response.data;
+          }
+        }
+        if (e.response.status === 422) {
+          errorMessage = 'Validasi gagal: ' + errorMessage;
+        } else if (e.response.status === 500) {
+          errorMessage = 'Server error: ' + errorMessage;
+        }
+      } else if (e.request) {
+        errorMessage = 'Tidak ada response dari server. Pastikan koneksi internet Anda stabil.';
+      } else {
+        errorMessage = e.message || errorMessage;
+      }
+      
+      Swal.fire({
+        icon: 'error',
+        title: 'Gagal Menyimpan',
+        text: errorMessage,
+        confirmButtonText: 'OK'
+      });
     }
     return;
   }
@@ -537,14 +593,52 @@ async function onSubmit() {
       onSuccess: () => {
         Swal.fire('Berhasil', 'Data berhasil disimpan', 'success').then(() => router.visit('/contra-bons'));
       },
-      onError: () => Swal.close(),
+      onError: (errors) => {
+        console.error('Error saving contra bon:', errors);
+        let errorMessage = 'Terjadi kesalahan saat menyimpan data';
+        
+        if (errors) {
+          // Inertia validation errors
+          const errorMessages = Object.keys(errors).map(key => {
+            const errorValue = errors[key];
+            return Array.isArray(errorValue) ? errorValue.join(', ') : errorValue;
+          });
+          errorMessage = errorMessages.join('\n');
+        }
+        
+        Swal.fire({
+          icon: 'error',
+          title: 'Gagal Menyimpan',
+          text: errorMessage,
+          confirmButtonText: 'OK'
+        });
+      },
     });
   } else {
     form.post('/contra-bons', {
       onSuccess: () => {
         Swal.fire('Berhasil', 'Data berhasil disimpan', 'success').then(() => router.visit('/contra-bons'));
       },
-      onError: () => Swal.close(),
+      onError: (errors) => {
+        console.error('Error saving contra bon:', errors);
+        let errorMessage = 'Terjadi kesalahan saat menyimpan data';
+        
+        if (errors) {
+          // Inertia validation errors
+          const errorMessages = Object.keys(errors).map(key => {
+            const errorValue = errors[key];
+            return Array.isArray(errorValue) ? errorValue.join(', ') : errorValue;
+          });
+          errorMessage = errorMessages.join('\n');
+        }
+        
+        Swal.fire({
+          icon: 'error',
+          title: 'Gagal Menyimpan',
+          text: errorMessage,
+          confirmButtonText: 'OK'
+        });
+      },
     });
   }
 }

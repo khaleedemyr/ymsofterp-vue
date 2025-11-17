@@ -12,6 +12,7 @@ class MemberAppsBrand extends Model
         'outlet_id',
         'name',
         'description',
+        'whatsapp_number',
         'image',
         'logo',
         'pdf_file',

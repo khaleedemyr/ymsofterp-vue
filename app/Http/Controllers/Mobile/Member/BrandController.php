@@ -90,6 +90,7 @@ class BrandController extends Controller
                         'logo' => $logoUrl,
                         'pdf_menu' => $pdfMenuUrl,
                         'pdf_new_dining_experience' => $pdfNewDiningUrl,
+                        'whatsapp_number' => $brandData ? $brandData->whatsapp_number : null,
                         'gallery' => $galleryImages,
                     ];
                 });
@@ -191,6 +192,7 @@ class BrandController extends Controller
                     'logo' => $logoUrl,
                     'pdf_menu' => $pdfMenuUrl,
                     'pdf_new_dining_experience' => $pdfNewDiningUrl,
+                    'whatsapp_number' => $brandData ? $brandData->whatsapp_number : null,
                     'gallery' => $galleryImages,
                 ],
                 'message' => 'Brand retrieved successfully'

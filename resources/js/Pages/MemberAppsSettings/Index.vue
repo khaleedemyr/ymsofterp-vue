@@ -433,6 +433,140 @@
           </div>
         </div>
 
+        <!-- Feedback Tab -->
+        <div v-if="activeTab === 'feedback'" class="bg-white rounded-2xl shadow-lg overflow-hidden">
+          <div class="px-6 py-4 border-b border-gray-200">
+            <div class="flex justify-between items-center">
+              <h3 class="text-lg font-semibold text-gray-700">Feedback Management</h3>
+              <div class="flex gap-2">
+                <button 
+                  @click="refreshFeedbacks" 
+                  :disabled="refreshingFeedbacks"
+                  class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                  title="Refresh feedback data"
+                >
+                  <i :class="['fa-solid', refreshingFeedbacks ? 'fa-spinner fa-spin' : 'fa-arrows-rotate']"></i>
+                  <span v-if="!refreshingFeedbacks">Refresh</span>
+                  <span v-else>Refreshing...</span>
+                </button>
+                <select v-model="feedbackStatusFilter" @change="filterFeedbacks" class="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                  <option value="">All Status</option>
+                  <option value="pending">Pending</option>
+                  <option value="read">Read</option>
+                  <option value="replied">Replied</option>
+                  <option value="resolved">Resolved</option>
+                </select>
+              </div>
+            </div>
+          </div>
+          <div class="p-6">
+            <div class="space-y-4">
+              <div v-for="feedback in filteredFeedbacks" :key="feedback.id" class="bg-gray-50 rounded-xl p-6 border border-gray-200 hover:shadow-lg transition-all">
+                <div class="flex justify-between items-start mb-3">
+                  <div class="flex-1">
+                    <div class="flex items-center gap-3 mb-2">
+                      <h4 class="font-semibold text-gray-800">{{ feedback.subject }}</h4>
+                      <span :class="['px-2 py-1 rounded-full text-xs font-medium', getStatusClass(feedback.status)]">
+                        {{ feedback.status.toUpperCase() }}
+                      </span>
+                      <span v-if="feedback.rating" class="flex items-center gap-1 text-yellow-500">
+                        <i class="fa-solid fa-star"></i>
+                        <span class="text-sm font-medium">{{ feedback.rating }}</span>
+                      </span>
+                    </div>
+                    <div class="text-sm text-gray-600 mb-2">
+                      <i class="fa-solid fa-user mr-2"></i>
+                      <span class="font-medium">{{ feedback.member?.nama_lengkap || 'Unknown' }}</span>
+                      <span class="mx-2">•</span>
+                      <span>{{ feedback.member?.email || 'N/A' }}</span>
+                    </div>
+                    <div v-if="feedback.outlet_name" class="text-sm text-gray-600 mb-2">
+                      <i class="fa-solid fa-store mr-2"></i>
+                      <span>{{ feedback.outlet_name }}</span>
+                    </div>
+                    <div class="text-sm text-gray-500 mb-3">
+                      <i class="fa-solid fa-clock mr-2"></i>
+                      {{ formatFeedbackDate(feedback.created_at) }}
+                    </div>
+                    <div class="bg-white rounded-lg p-4 border border-gray-200 mb-3">
+                      <p class="text-gray-700 whitespace-pre-line">{{ feedback.message }}</p>
+                    </div>
+                    <!-- Replies Thread -->
+                    <div v-if="feedback.replies && feedback.replies.length > 0" class="mt-3 space-y-2">
+                      <div 
+                        v-for="reply in feedback.replies" 
+                        :key="reply.id"
+                        :class="[
+                          'rounded-lg p-4 border',
+                          reply.replied_by ? 'bg-blue-50 border-blue-200' : 'bg-gray-50 border-gray-200'
+                        ]"
+                      >
+                        <div class="flex items-center gap-2 mb-2">
+                          <i :class="[
+                            'fa-solid',
+                            reply.replied_by ? 'fa-user-shield text-blue-600' : 'fa-user text-gray-600'
+                          ]"></i>
+                          <span :class="[
+                            'font-medium',
+                            reply.replied_by ? 'text-blue-800' : 'text-gray-800'
+                          ]">
+                            {{ reply.replied_by ? 'Admin' : 'Member' }}
+                          </span>
+                          <span class="text-xs text-gray-500">{{ formatFeedbackDate(reply.created_at) }}</span>
+                        </div>
+                        <p class="text-gray-700 whitespace-pre-line">{{ reply.message }}</p>
+                      </div>
+                    </div>
+                    <!-- Legacy admin_reply display (for backward compatibility) -->
+                    <div v-else-if="feedback.admin_reply" class="bg-blue-50 rounded-lg p-4 border border-blue-200 mt-3">
+                      <div class="flex items-center gap-2 mb-2">
+                        <i class="fa-solid fa-reply text-blue-600"></i>
+                        <span class="font-medium text-blue-800">Admin Reply</span>
+                        <span class="text-xs text-gray-500">{{ formatFeedbackDate(feedback.replied_at) }}</span>
+                      </div>
+                      <p class="text-gray-700 whitespace-pre-line">{{ feedback.admin_reply }}</p>
+                    </div>
+                  </div>
+                </div>
+                <div class="flex gap-2 mt-4 pt-4 border-t border-gray-200">
+                  <button @click="openReplyModal(feedback)" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors">
+                    <i class="fa-solid fa-reply mr-2"></i>Reply
+                  </button>
+                  <button v-if="feedback.status === 'pending'" @click="updateFeedbackStatus(feedback.id, 'read')" class="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition-colors">
+                    <i class="fa-solid fa-check mr-2"></i>Mark as Read
+                  </button>
+                  <button v-if="feedback.status === 'replied'" @click="updateFeedbackStatus(feedback.id, 'resolved')" class="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors">
+                    <i class="fa-solid fa-check-circle mr-2"></i>Mark as Resolved
+                  </button>
+                </div>
+              </div>
+              <div v-if="!filteredFeedbacks || filteredFeedbacks.length === 0" class="text-center py-12 text-gray-500">
+                <i class="fa-solid fa-comment-dots text-4xl mb-4"></i>
+                <p>No feedbacks yet.</p>
+              </div>
+            </div>
+            <!-- Pagination -->
+            <div v-if="props.feedbacks && props.feedbacks.links && props.feedbacks.links.length > 3" class="mt-6 flex justify-center">
+              <div class="flex gap-2">
+                <button
+                  v-for="(link, index) in props.feedbacks.links"
+                  :key="index"
+                  @click="loadFeedbacksPage(link.url)"
+                  :disabled="!link.url"
+                  :class="[
+                    'px-4 py-2 rounded-lg border transition-colors',
+                    link.active
+                      ? 'bg-blue-600 text-white border-blue-600'
+                      : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50',
+                    !link.url ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
+                  ]"
+                  v-html="link.label"
+                ></button>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- Voucher Tab -->
         <div v-if="activeTab === 'voucher'" class="bg-white rounded-2xl shadow-lg overflow-hidden">
           <div class="px-6 py-4 border-b border-gray-200">
@@ -546,6 +680,20 @@
                 ref="voucherImageInput"
                 class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500"
               >
+              <div class="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                <div class="flex items-start gap-2">
+                  <i class="fa-solid fa-info-circle text-blue-600 mt-0.5"></i>
+                  <div class="flex-1">
+                    <p class="text-sm font-medium text-blue-800 mb-1">Rekomendasi Ukuran Gambar:</p>
+                    <p class="text-xs text-blue-700">
+                      <strong>Dimensi:</strong> 1080 x 400 pixels (atau rasio 2.7:1)<br>
+                      <strong>Format:</strong> JPG, PNG<br>
+                      <strong>Ukuran file:</strong> Maksimal 2MB<br>
+                      <span class="text-blue-600">* Gambar akan ditampilkan full width dengan tinggi 200px di page My Voucher dengan BoxFit.cover</span>
+                    </p>
+                  </div>
+                </div>
+              </div>
               <div v-if="voucherForm.imagePreview" class="mt-3">
                 <img :src="voucherForm.imagePreview" alt="Voucher preview" class="w-full max-w-md h-48 object-cover rounded-lg border border-gray-300">
                 <button 
@@ -1038,6 +1186,20 @@
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-2">Image</label>
               <input @change="handleBannerImageChange" type="file" accept="image/*" :required="!editingBanner" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+              <div class="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                <div class="flex items-start gap-2">
+                  <i class="fa-solid fa-info-circle text-blue-600 mt-0.5"></i>
+                  <div class="flex-1">
+                    <p class="text-sm font-medium text-blue-800 mb-1">Rekomendasi Ukuran Gambar:</p>
+                    <p class="text-xs text-blue-700">
+                      <strong>Dimensi:</strong> 1080 x 400 pixels (atau rasio 2.7:1)<br>
+                      <strong>Format:</strong> JPG, PNG<br>
+                      <strong>Ukuran file:</strong> Maksimal 2MB<br>
+                      <span class="text-blue-600">* Gambar akan ditampilkan dengan tinggi 280px di home screen app</span>
+                    </p>
+                  </div>
+                </div>
+              </div>
               <div v-if="editingBanner && editingBanner.image" class="mt-2">
                 <img :src="getImageUrl(editingBanner.image)" alt="Current image" class="w-32 h-20 object-cover rounded">
                 <p class="text-sm text-gray-500 mt-1">Current image</p>
@@ -1354,6 +1516,20 @@
               <div class="mt-4">
                 <label class="block text-sm font-medium text-gray-700 mb-2">Image</label>
                 <input @change="handleChallengeImageChange" type="file" accept="image/*" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                <div class="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                  <div class="flex items-start gap-2">
+                    <i class="fa-solid fa-info-circle text-blue-600 mt-0.5"></i>
+                    <div class="flex-1">
+                      <p class="text-sm font-medium text-blue-800 mb-1">Rekomendasi Ukuran Gambar:</p>
+                      <p class="text-xs text-blue-700">
+                        <strong>Dimensi:</strong> 1080 x 400 pixels (atau rasio 2.7:1)<br>
+                        <strong>Format:</strong> JPG, PNG<br>
+                        <strong>Ukuran file:</strong> Maksimal 2MB<br>
+                        <span class="text-blue-600">* Gambar akan ditampilkan di slider challenge dengan tinggi 120px di home screen app</span>
+                      </p>
+                    </div>
+                  </div>
+                </div>
                 <div v-if="editingChallenge && editingChallenge.image" class="mt-2">
                   <img :src="getImageUrl(editingChallenge.image)" alt="Current image" class="w-32 h-20 object-cover rounded">
                   <p class="text-sm text-gray-500 mt-1">Current image</p>
@@ -1404,6 +1580,21 @@
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-2">Image</label>
               <input @change="handleWhatsOnImageChange" type="file" accept="image/*" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+              <div class="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                <div class="flex items-start gap-2">
+                  <i class="fa-solid fa-info-circle text-blue-600 mt-0.5"></i>
+                  <div class="flex-1">
+                    <p class="text-sm font-medium text-blue-800 mb-1">Rekomendasi Ukuran Gambar:</p>
+                    <p class="text-xs text-blue-700">
+                      <strong>Dimensi:</strong> 800 x 1000 pixels (atau rasio 4:5)<br>
+                      <strong>Format:</strong> JPG, PNG<br>
+                      <strong>Ukuran file:</strong> Maksimal 2MB<br>
+                      <span class="text-blue-600">* Featured items: gambar akan ditampilkan dengan ukuran 120x150px<br>
+                      * Non-featured items: gambar akan ditampilkan dengan ukuran lebih kecil dalam grid 2 kolom</span>
+                    </p>
+                  </div>
+                </div>
+              </div>
               <div v-if="editingWhatsOn && editingWhatsOn.image" class="mt-2">
                 <img :src="getImageUrl(editingWhatsOn.image)" alt="Current image" class="w-32 h-20 object-cover rounded">
                 <p class="text-sm text-gray-500 mt-1">Current image</p>
@@ -1492,8 +1683,32 @@
               <textarea v-model="brandForm.description" rows="3" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"></textarea>
             </div>
             <div>
+              <label class="block text-sm font-medium text-gray-700 mb-2">WhatsApp Number</label>
+              <input 
+                v-model="brandForm.whatsapp_number" 
+                type="text" 
+                placeholder="Contoh: 6281234567890"
+                class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              >
+              <p class="text-xs text-gray-500 mt-1">Format: 62xxxxxxxxxxx (tanpa + dan spasi)</p>
+            </div>
+            <div>
               <label class="block text-sm font-medium text-gray-700 mb-2">Brand Logo</label>
               <input @change="handleBrandLogoChange" type="file" accept="image/*" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+              <div class="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                <div class="flex items-start gap-2">
+                  <i class="fa-solid fa-info-circle text-blue-600 mt-0.5"></i>
+                  <div class="flex-1">
+                    <p class="text-sm font-medium text-blue-800 mb-1">Rekomendasi Ukuran Logo:</p>
+                    <p class="text-xs text-blue-700">
+                      <strong>Dimensi:</strong> 500 x 500 pixels (persegi 1:1) atau 1000 x 500 pixels (landscape 2:1)<br>
+                      <strong>Format:</strong> PNG dengan transparan (disarankan), JPG<br>
+                      <strong>Ukuran file:</strong> Maksimal 2MB<br>
+                      <span class="text-blue-600">* Logo akan ditampilkan dengan ukuran 100x100px di list brand dan 80x80px di detail brand dengan BoxFit.contain</span>
+                    </p>
+                  </div>
+                </div>
+              </div>
               <div v-if="editingBrand && editingBrand.logo" class="mt-2">
                 <img :src="getImageUrl(editingBrand.logo)" alt="Current logo" class="w-32 h-20 object-cover rounded">
                 <p class="text-sm text-gray-500 mt-1">Current logo</p>
@@ -1520,6 +1735,20 @@
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-2">Foto Gallery</label>
               <input @change="handleBrandGalleryChange" type="file" accept="image/*" multiple class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+              <div class="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                <div class="flex items-start gap-2">
+                  <i class="fa-solid fa-info-circle text-blue-600 mt-0.5"></i>
+                  <div class="flex-1">
+                    <p class="text-sm font-medium text-blue-800 mb-1">Rekomendasi Ukuran Gallery:</p>
+                    <p class="text-xs text-blue-700">
+                      <strong>Dimensi:</strong> 1200 x 1500 pixels (atau rasio 4:5)<br>
+                      <strong>Format:</strong> JPG, PNG<br>
+                      <strong>Ukuran file:</strong> Maksimal 2MB per gambar<br>
+                      <span class="text-blue-600">* Gallery akan ditampilkan dalam grid 2 kolom dengan aspect ratio 0.8 (sedikit lebih tinggi) untuk efek brick layout</span>
+                    </p>
+                  </div>
+                </div>
+              </div>
               <p class="text-xs text-gray-500 mt-1">Pilih multiple images untuk gallery</p>
               
               <!-- Existing Gallery Images -->
@@ -1756,6 +1985,104 @@
       </div>
     </div>
 
+    <!-- Reply Feedback Modal -->
+    <div v-if="showReplyModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto">
+        <div class="px-6 py-4 border-b border-gray-200">
+          <div class="flex justify-between items-center">
+            <h3 class="text-lg font-semibold text-gray-700">
+              Reply to Feedback
+            </h3>
+            <button @click="closeReplyModal" class="text-gray-400 hover:text-gray-600">
+              <i class="fa-solid fa-times text-xl"></i>
+            </button>
+          </div>
+        </div>
+        <div class="p-6">
+          <div class="space-y-4 mb-6">
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-2">Subject</label>
+              <input 
+                :value="selectedFeedback?.subject" 
+                type="text" 
+                disabled
+                class="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-100"
+              >
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-2">Member</label>
+              <input 
+                :value="selectedFeedback?.member?.nama_lengkap + ' (' + selectedFeedback?.member?.email + ')'" 
+                type="text" 
+                disabled
+                class="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-100"
+              >
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-2">Original Message</label>
+              <div class="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 min-h-[100px]">
+                <p class="text-gray-700 whitespace-pre-line">{{ selectedFeedback?.message }}</p>
+              </div>
+            </div>
+            <!-- Show existing replies thread -->
+            <div v-if="selectedFeedback?.replies && selectedFeedback.replies.length > 0" class="space-y-2">
+              <label class="block text-sm font-medium text-gray-700 mb-2">Conversation Thread</label>
+              <div 
+                v-for="reply in selectedFeedback.replies" 
+                :key="reply.id"
+                :class="[
+                  'rounded-lg p-3 border',
+                  reply.replied_by ? 'bg-blue-50 border-blue-200' : 'bg-gray-50 border-gray-200'
+                ]"
+              >
+                <div class="flex items-center gap-2 mb-1">
+                  <i :class="[
+                    'fa-solid text-xs',
+                    reply.replied_by ? 'fa-user-shield text-blue-600' : 'fa-user text-gray-600'
+                  ]"></i>
+                  <span :class="[
+                    'text-xs font-medium',
+                    reply.replied_by ? 'text-blue-800' : 'text-gray-800'
+                  ]">
+                    {{ reply.replied_by ? 'Admin' : 'Member' }}
+                  </span>
+                  <span class="text-xs text-gray-500">{{ formatFeedbackDate(reply.created_at) }}</span>
+                </div>
+                <p class="text-sm text-gray-700 whitespace-pre-line">{{ reply.message }}</p>
+              </div>
+            </div>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">Your Reply *</label>
+            <textarea 
+              v-model="replyMessage" 
+              rows="6" 
+              required 
+              class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              placeholder="Enter your reply message"
+            ></textarea>
+          </div>
+          <div class="flex justify-end gap-3 mt-6">
+            <button 
+              type="button" 
+              @click="closeReplyModal" 
+              class="px-4 py-2 text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition"
+            >
+              Cancel
+            </button>
+            <button 
+              type="button" 
+              @click="submitReply" 
+              class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition flex items-center gap-2"
+            >
+              <i class="fa-solid fa-paper-plane"></i>
+              Send Reply
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- FAQ Modal -->
     <div v-if="showFaqModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto">
@@ -1833,13 +2160,14 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { router } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Swal from 'sweetalert2'
 import Multiselect from 'vue-multiselect'
 import 'vue-multiselect/dist/vue-multiselect.min.css'
 import VueEasyLightbox from 'vue-easy-lightbox'
+import axios from 'axios'
 
 const props = defineProps({
   banners: Array,
@@ -1854,7 +2182,8 @@ const props = defineProps({
   aboutUs: Array,
   vouchers: Array,
   members: Object,
-  occupations: Array
+  occupations: Array,
+  feedbacks: Object
 })
 
 const activeTab = ref('banner')
@@ -1868,7 +2197,8 @@ const tabs = [
   { id: 'faq', name: 'FAQ', icon: 'fa-solid fa-question-circle' },
   { id: 'terms-condition', name: 'Terms & Condition', icon: 'fa-solid fa-file-contract' },
   { id: 'about-us', name: 'About Us', icon: 'fa-solid fa-info-circle' },
-  { id: 'voucher', name: 'Voucher', icon: 'fa-solid fa-ticket' }
+  { id: 'voucher', name: 'Voucher', icon: 'fa-solid fa-ticket' },
+  { id: 'feedback', name: 'Feedback', icon: 'fa-solid fa-comment-dots' }
 ]
 
 // Modal states
@@ -1932,6 +2262,7 @@ const addingCategory = ref(false)
 const brandForm = ref({
   outlet_id: '',
   description: '',
+  whatsapp_number: '',
   logo: null,
   pdf_menu: null,
   pdf_new_dining_experience: null,
@@ -2173,6 +2504,15 @@ const closeWhatsOnModal = () => {
 const closeBrandModal = () => {
   showBrandModal.value = false
   editingBrand.value = null
+  brandForm.value = {
+    outlet_id: '',
+    description: '',
+    whatsapp_number: '',
+    logo: null,
+    pdf_menu: null,
+    pdf_new_dining_experience: null,
+    gallery_images: []
+  }
   brandGalleryImages.value = []
   deleteGalleryIds.value = []
 }
@@ -2333,6 +2673,7 @@ const editBrand = (brand) => {
   brandForm.value = {
     outlet_id: brand.outlet_id || '',
     description: brand.description || '',
+    whatsapp_number: brand.whatsapp_number || '',
     logo: null,
     pdf_menu: null,
     pdf_new_dining_experience: null,
@@ -2606,6 +2947,9 @@ const saveBrand = () => {
   }
   
   formData.append('description', brandForm.value.description)
+  if (brandForm.value.whatsapp_number) {
+    formData.append('whatsapp_number', brandForm.value.whatsapp_number)
+  }
   
   if (brandForm.value.logo) {
     formData.append('logo', brandForm.value.logo)
@@ -3452,6 +3796,177 @@ const loadItems = async () => {
   }
 }
 
+
+// Feedback management
+const feedbackStatusFilter = ref('')
+const showReplyModal = ref(false)
+const selectedFeedback = ref(null)
+const replyMessage = ref('')
+const refreshingFeedbacks = ref(false)
+
+const filteredFeedbacks = computed(() => {
+  if (!props.feedbacks || !props.feedbacks.data) return []
+  if (!feedbackStatusFilter.value) return props.feedbacks.data
+  return props.feedbacks.data.filter(f => f.status === feedbackStatusFilter.value)
+})
+
+const getStatusClass = (status) => {
+  const classes = {
+    pending: 'bg-yellow-100 text-yellow-800',
+    read: 'bg-blue-100 text-blue-800',
+    replied: 'bg-purple-100 text-purple-800',
+    resolved: 'bg-green-100 text-green-800'
+  }
+  return classes[status] || 'bg-gray-100 text-gray-800'
+}
+
+const formatFeedbackDate = (dateString) => {
+  if (!dateString) return 'N/A'
+  const date = new Date(dateString)
+  return date.toLocaleString('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  })
+}
+
+const openReplyModal = (feedback) => {
+  selectedFeedback.value = feedback
+  replyMessage.value = ''
+  showReplyModal.value = true
+}
+
+const closeReplyModal = () => {
+  showReplyModal.value = false
+  selectedFeedback.value = null
+  replyMessage.value = ''
+}
+
+const submitReply = async () => {
+  if (!replyMessage.value.trim()) {
+    Swal.fire({
+      icon: 'warning',
+      title: 'Warning!',
+      text: 'Please enter a reply message',
+      confirmButtonText: 'OK'
+    })
+    return
+  }
+
+  try {
+    const response = await axios.post(`/admin/member-apps-settings/feedback/${selectedFeedback.value.id}/reply`, {
+      admin_reply: replyMessage.value.trim()
+    })
+
+    const data = response.data
+    if (data.success) {
+      Swal.fire({
+        icon: 'success',
+        title: 'Success!',
+        text: 'Reply sent successfully',
+        timer: 2000,
+        showConfirmButton: false
+      })
+      closeReplyModal()
+      router.reload({ only: ['feedbacks'] })
+    } else {
+      Swal.fire({
+        icon: 'error',
+        title: 'Error!',
+        text: data.message || 'Failed to send reply',
+        confirmButtonText: 'OK'
+      })
+    }
+  } catch (error) {
+    console.error('Error submitting reply:', error)
+    Swal.fire({
+      icon: 'error',
+      title: 'Error!',
+      text: 'Failed to send reply. Please try again.',
+      confirmButtonText: 'OK'
+    })
+  }
+}
+
+const updateFeedbackStatus = async (feedbackId, status) => {
+  try {
+    const response = await axios.put(`/admin/member-apps-settings/feedback/${feedbackId}/status`, {
+      status: status
+    })
+
+    const data = response.data
+    if (data.success) {
+      Swal.fire({
+        icon: 'success',
+        title: 'Success!',
+        text: 'Status updated successfully',
+        timer: 2000,
+        showConfirmButton: false
+      })
+      router.reload({ only: ['feedbacks'] })
+    } else {
+      Swal.fire({
+        icon: 'error',
+        title: 'Error!',
+        text: data.message || 'Failed to update status',
+        confirmButtonText: 'OK'
+      })
+    }
+  } catch (error) {
+    console.error('Error updating status:', error)
+    Swal.fire({
+      icon: 'error',
+      title: 'Error!',
+      text: 'Failed to update status. Please try again.',
+      confirmButtonText: 'OK'
+    })
+  }
+}
+
+const loadFeedbacksPage = async (url) => {
+  if (!url) return
+  try {
+    const response = await axios.get(url)
+    // Reload page with new feedbacks data
+    router.reload({ only: ['feedbacks'] })
+  } catch (error) {
+    console.error('Error loading feedbacks page:', error)
+  }
+}
+
+const filterFeedbacks = () => {
+  // Filter is handled by computed property
+}
+
+const refreshFeedbacks = async () => {
+  if (refreshingFeedbacks.value) return
+  
+  refreshingFeedbacks.value = true
+  try {
+    // Reload feedbacks data from server
+    await router.reload({ only: ['feedbacks'] })
+    
+    Swal.fire({
+      icon: 'success',
+      title: 'Success!',
+      text: 'Feedback data refreshed',
+      timer: 1500,
+      showConfirmButton: false
+    })
+  } catch (error) {
+    console.error('Error refreshing feedbacks:', error)
+    Swal.fire({
+      icon: 'error',
+      title: 'Error!',
+      text: 'Failed to refresh feedback data',
+      confirmButtonText: 'OK'
+    })
+  } finally {
+    refreshingFeedbacks.value = false
+  }
+}
 
 onMounted(() => {
   loadItems()

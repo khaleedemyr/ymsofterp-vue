@@ -345,6 +345,8 @@ Route::prefix('mobile/member')->group(function () {
         Route::get('/brands/{id}', [\App\Http\Controllers\Mobile\Member\BrandController::class, 'show'])->name('api.mobile.member.brands.show');
     Route::get('/rewards', [\App\Http\Controllers\Mobile\Member\RewardController::class, 'index'])->name('api.mobile.member.rewards.index');
     Route::get('/banners', [\App\Http\Controllers\Mobile\Member\BannerController::class, 'index'])->name('api.mobile.member.banners.index');
+    Route::get('/challenges', [\App\Http\Controllers\Mobile\Member\ChallengeController::class, 'index'])->name('api.mobile.member.challenges.index');
+    Route::get('/challenges/{id}', [\App\Http\Controllers\Mobile\Member\ChallengeController::class, 'show'])->name('api.mobile.member.challenges.show');
     Route::get('/faqs', [\App\Http\Controllers\Mobile\Member\FaqController::class, 'index'])->name('api.mobile.member.faqs.index');
     Route::get('/whats-on', [\App\Http\Controllers\Mobile\Member\WhatsOnController::class, 'index'])->name('api.mobile.member.whats-on.index');
     Route::get('/terms-conditions', [\App\Http\Controllers\Mobile\Member\TermConditionController::class, 'index'])->name('api.mobile.member.terms-conditions.index');
@@ -361,6 +363,10 @@ Route::prefix('mobile/member')->group(function () {
                 Route::post('/auth/logout', [\App\Http\Controllers\Mobile\Member\AuthController::class, 'logout'])->name('api.mobile.member.auth.logout');
                 Route::get('/auth/me', [\App\Http\Controllers\Mobile\Member\AuthController::class, 'me'])->name('api.mobile.member.auth.me');
                 Route::post('/auth/upload-photo', [\App\Http\Controllers\Mobile\Member\AuthController::class, 'uploadPhoto'])->name('api.mobile.member.auth.upload-photo');
+                Route::post('/auth/update-notification-preference', [\App\Http\Controllers\Mobile\Member\AuthController::class, 'updateNotificationPreference'])->name('api.mobile.member.auth.update-notification-preference');
+                Route::post('/auth/change-password', [\App\Http\Controllers\Mobile\Member\AuthController::class, 'changePassword'])->name('api.mobile.member.auth.change-password');
+                Route::post('/auth/change-mobile-number', [\App\Http\Controllers\Mobile\Member\AuthController::class, 'changeMobileNumber'])->name('api.mobile.member.auth.change-mobile-number');
+                Route::put('/auth/update-profile', [\App\Http\Controllers\Mobile\Member\AuthController::class, 'updateProfile'])->name('api.mobile.member.auth.update-profile');
         
         // Device Token Management
         Route::post('/device-token/register', [\App\Http\Controllers\Mobile\Member\DeviceTokenController::class, 'register'])->name('api.mobile.member.device-token.register');
@@ -370,6 +376,13 @@ Route::prefix('mobile/member')->group(function () {
         // Member Spending
         Route::get('/spending/rolling-12-month', [\App\Http\Controllers\Mobile\Member\MemberSpendingController::class, 'getRolling12MonthSpending'])->name('api.mobile.member.spending.rolling-12-month');
         Route::get('/spending/monthly-history', [\App\Http\Controllers\Mobile\Member\MemberSpendingController::class, 'getMonthlyHistory'])->name('api.mobile.member.spending.monthly-history');
+                Route::get('/vouchers', [\App\Http\Controllers\Mobile\Member\VoucherController::class, 'index'])->name('api.mobile.member.vouchers.index');
+                
+                // Feedback
+                Route::get('/feedback', [\App\Http\Controllers\Mobile\Member\FeedbackController::class, 'index'])->name('api.mobile.member.feedback.index');
+                Route::get('/feedback/outlets', [\App\Http\Controllers\Mobile\Member\FeedbackController::class, 'getOutlets'])->name('api.mobile.member.feedback.outlets');
+                Route::post('/feedback', [\App\Http\Controllers\Mobile\Member\FeedbackController::class, 'store'])->name('api.mobile.member.feedback.store');
+                Route::post('/feedback/{id}/reply', [\App\Http\Controllers\Mobile\Member\FeedbackController::class, 'reply'])->name('api.mobile.member.feedback.reply');
         
         // TODO: Add more mobile member API routes here
         // - Profile

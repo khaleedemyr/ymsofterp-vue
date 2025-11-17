@@ -29,6 +29,7 @@ class MemberAppsMember extends Authenticatable
         'total_spending',
         'just_points',
         'is_active',
+        'allow_notification',
         'email_verified_at',
         'mobile_verified_at',
         'last_login_at'
@@ -44,6 +45,7 @@ class MemberAppsMember extends Authenticatable
         'tanggal_lahir' => 'date',
         'is_exclusive_member' => 'boolean',
         'is_active' => 'boolean',
+        'allow_notification' => 'boolean',
         'total_spending' => 'decimal:2',
         'just_points' => 'integer',
         'email_verified_at' => 'datetime',

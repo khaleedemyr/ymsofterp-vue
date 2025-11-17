@@ -2243,6 +2243,10 @@ Route::delete('/member-apps-settings/whats-on-category/{id}', [App\Http\Controll
     // Push Notification routes
     Route::post('/member-apps-settings/push-notification', [App\Http\Controllers\MemberAppsSettingsController::class, 'sendPushNotification'])->name('member-apps-settings.push-notification.send');
     
+    // Feedback routes
+    Route::post('/member-apps-settings/feedback/{id}/reply', [App\Http\Controllers\MemberAppsSettingsController::class, 'replyFeedback'])->name('member-apps-settings.feedback.reply');
+    Route::put('/member-apps-settings/feedback/{id}/status', [App\Http\Controllers\MemberAppsSettingsController::class, 'updateFeedbackStatus'])->name('member-apps-settings.feedback.status');
+    
     // Brand routes
     Route::post('/member-apps-settings/brand', [App\Http\Controllers\MemberAppsSettingsController::class, 'storeBrand'])->name('member-apps-settings.brand.store');
     Route::put('/member-apps-settings/brand/{id}', [App\Http\Controllers\MemberAppsSettingsController::class, 'updateBrand'])->name('member-apps-settings.brand.update');

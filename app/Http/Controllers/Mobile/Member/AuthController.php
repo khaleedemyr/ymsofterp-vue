@@ -220,6 +220,7 @@ class AuthController extends Controller
                     'total_spending' => $member->total_spending, // Lifetime spending (for backward compatibility)
                     'rolling_12_month_spending' => $tierProgress['rolling_12_month_spending'] ?? 0, // Rolling 12-month spending
                     'is_exclusive_member' => $member->is_exclusive_member,
+                    'allow_notification' => $member->allow_notification ?? true,
                     'occupation' => $member->occupation ? [
                         'id' => $member->occupation->id,
                         'name' => $member->occupation->name,
@@ -287,6 +288,231 @@ class AuthController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to upload photo',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Update notification preference
+     */
+    public function updateNotificationPreference(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'allow_notification' => 'required|boolean',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation error',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        try {
+            $member = $request->user();
+            $member->allow_notification = $request->allow_notification;
+            $member->save();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Notification preference updated successfully',
+                'data' => [
+                    'allow_notification' => $member->allow_notification,
+                ]
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Update Notification Preference Error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to update notification preference',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Change password
+     */
+    public function changePassword(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'current_password' => 'required|string',
+            'new_password' => 'required|string|min:6',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation error',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        try {
+            $member = $request->user();
+            
+            // Verify current password
+            if (!Hash::check($request->current_password, $member->password)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Current password is incorrect'
+                ], 401);
+            }
+
+            // Check if new password is same as current password
+            if (Hash::check($request->new_password, $member->password)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'New password must be different from current password'
+                ], 422);
+            }
+
+            // Update password
+            $member->password = Hash::make($request->new_password);
+            $member->save();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Password changed successfully'
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Change Password Error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to change password',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Change mobile number
+     */
+    public function changeMobileNumber(Request $request)
+    {
+        $member = $request->user();
+        
+        $validator = Validator::make($request->all(), [
+            'new_mobile_number' => [
+                'required',
+                'string',
+                'max:20',
+                Rule::unique('member_apps_members', 'mobile_phone')->ignore($member->id),
+            ],
+        ], [
+            'new_mobile_number.unique' => 'This mobile number is already registered',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation error',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        try {
+            // Check if new mobile number is same as current
+            if ($member->mobile_phone === $request->new_mobile_number) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'New mobile number must be different from current number'
+                ], 422);
+            }
+
+            // Update mobile number
+            $member->mobile_phone = $request->new_mobile_number;
+            $member->mobile_verified_at = null; // Reset verification status
+            $member->save();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Mobile number changed successfully',
+                'data' => [
+                    'mobile_phone' => $member->mobile_phone,
+                ]
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Change Mobile Number Error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to change mobile number',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Update profile
+     */
+    public function updateProfile(Request $request)
+    {
+        $member = $request->user();
+        
+        $validator = Validator::make($request->all(), [
+            'email' => [
+                'required',
+                'email',
+                Rule::unique('member_apps_members', 'email')->ignore($member->id),
+            ],
+            'nama_lengkap' => 'required|string|max:255',
+            'tanggal_lahir' => 'required|date',
+            'jenis_kelamin' => 'required|in:L,P',
+            'pekerjaan_id' => 'nullable|exists:member_apps_occupations,id',
+        ], [
+            'email.unique' => 'This email is already registered',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation error',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        try {
+            // Update member profile
+            $member->email = $request->email;
+            $member->nama_lengkap = $request->nama_lengkap;
+            $member->tanggal_lahir = $request->tanggal_lahir;
+            $member->jenis_kelamin = $request->jenis_kelamin;
+            $member->pekerjaan_id = $request->pekerjaan_id;
+            $member->save();
+
+            // Get updated member with relations
+            $member->refresh();
+            $member->load('occupation');
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Profile updated successfully',
+                'data' => [
+                    'id' => $member->id,
+                    'member_id' => $member->member_id,
+                    'email' => $member->email,
+                    'nama_lengkap' => $member->nama_lengkap,
+                    'mobile_phone' => $member->mobile_phone,
+                    'tanggal_lahir' => $member->tanggal_lahir,
+                    'jenis_kelamin' => $member->jenis_kelamin,
+                    'member_level' => $member->member_level,
+                    'just_points' => $member->just_points,
+                    'total_spending' => $member->total_spending,
+                    'is_exclusive_member' => $member->is_exclusive_member,
+                    'occupation' => $member->occupation ? [
+                        'id' => $member->occupation->id,
+                        'name' => $member->occupation->name,
+                    ] : null,
+                    'photo' => $member->photo ? 'https://ymsofterp.com/storage/' . $member->photo : null,
+                ]
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Update Profile Error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to update profile',
                 'error' => $e->getMessage()
             ], 500);
         }

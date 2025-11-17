@@ -146,7 +146,25 @@ class ContraBonController extends Controller
             $rules['source_id'] = 'required|integer';
         }
         
-        $request->validate($rules);
+        try {
+            $request->validate($rules);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            \Log::error('Contra Bon validation failed', [
+                'errors' => $e->errors(),
+                'request_data' => $request->except(['image'])
+            ]);
+            
+            // Return JSON error jika request dari axios/ajax
+            if ($request->wantsJson() || $request->ajax() || $request->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validasi gagal',
+                    'errors' => $e->errors()
+                ], 422);
+            }
+            
+            throw $e;
+        }
 
         DB::beginTransaction();
         try {
@@ -272,11 +290,51 @@ class ContraBonController extends Controller
             );
 
             DB::commit();
+            
+            \Log::info('Contra Bon created successfully', [
+                'contra_bon_id' => $contraBon->id,
+                'number' => $contraBon->number,
+                'total_amount' => $contraBon->total_amount,
+                'items_count' => count($request->items)
+            ]);
+            
+            // Return JSON response jika request dari axios/ajax
+            if ($request->wantsJson() || $request->ajax() || $request->expectsJson()) {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Contra Bon berhasil dibuat',
+                    'data' => [
+                        'id' => $contraBon->id,
+                        'number' => $contraBon->number
+                    ]
+                ], 200);
+            }
+            
             return redirect()->route('contra-bons.index')
                 ->with('success', 'Contra Bon berhasil dibuat');
         } catch (\Exception $e) {
             DB::rollBack();
-            return back()->with('error', 'Terjadi kesalahan: ' . $e->getMessage());
+            
+            \Log::error('Error creating Contra Bon', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'request_data' => [
+                    'source_type' => $request->input('source_type'),
+                    'items_count' => count($request->input('items', [])),
+                ]
+            ]);
+            
+            // Return JSON error jika request dari axios
+            if ($request->wantsJson() || $request->ajax()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Terjadi kesalahan: ' . $e->getMessage(),
+                    'error' => $e->getMessage()
+                ], 500);
+            }
+            
+            return back()->with('error', 'Terjadi kesalahan: ' . $e->getMessage())
+                ->withInput();
         }
     }
 

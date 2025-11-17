@@ -21,6 +21,7 @@ use App\Models\MemberAppsMemberVoucher;
 use App\Models\MemberAppsPushNotification;
 use App\Models\MemberAppsDeviceToken;
 use App\Models\MemberAppsPushNotificationRecipient;
+use App\Models\MemberAppsFeedback;
 use App\Services\FCMService;
 use App\Models\Item;
 use Illuminate\Support\Facades\Storage;
@@ -83,6 +84,26 @@ class MemberAppsSettingsController extends Controller
             $pushNotifications = MemberAppsPushNotification::with('recipients')->orderBy('created_at', 'desc')->paginate(20);
             \Log::info('MemberAppsSettings - Push Notifications loaded:', ['count' => $pushNotifications->total()]);
             
+            $feedbacks = MemberAppsFeedback::with(['member', 'replies.member'])
+                ->whereNull('parent_id') // Only get main feedbacks
+                ->orderBy('created_at', 'desc')
+                ->paginate(20);
+            
+            // Load outlet names for each feedback
+            $feedbacks->getCollection()->transform(function ($feedback) {
+                if ($feedback->outlet_id) {
+                    $outlet = DB::table('tbl_data_outlet')
+                        ->where('id_outlet', $feedback->outlet_id)
+                        ->first();
+                    $feedback->outlet_name = $outlet ? $outlet->nama_outlet : null;
+                } else {
+                    $feedback->outlet_name = null;
+                }
+                return $feedback;
+            });
+            
+            \Log::info('MemberAppsSettings - Feedbacks loaded:', ['count' => $feedbacks->total()]);
+            
             return Inertia::render('MemberAppsSettings/Index', [
                 'banners' => $banners,
                 'rewards' => $rewards,
@@ -97,7 +118,8 @@ class MemberAppsSettingsController extends Controller
                 'members' => $members,
                 'occupations' => $occupations,
                 'vouchers' => $vouchers,
-                'pushNotifications' => $pushNotifications
+                'pushNotifications' => $pushNotifications,
+                'feedbacks' => $feedbacks
             ]);
         } catch (\Exception $e) {
             \Log::error('MemberAppsSettings - Error loading index:', [
@@ -634,6 +656,7 @@ class MemberAppsSettingsController extends Controller
         $validator = Validator::make($request->all(), [
             'outlet_id' => 'required|exists:tbl_data_outlet,id_outlet',
             'description' => 'nullable|string',
+            'whatsapp_number' => 'nullable|string|max:20',
             'logo' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
             'pdf_menu' => 'nullable|file|mimes:pdf|max:10240',
             'pdf_new_dining_experience' => 'nullable|file|mimes:pdf|max:10240',
@@ -661,6 +684,7 @@ class MemberAppsSettingsController extends Controller
             'outlet_id' => $request->outlet_id,
             'name' => $outlet->nama_outlet,
             'description' => $request->description,
+            'whatsapp_number' => $request->whatsapp_number,
             'is_active' => true
         ];
 
@@ -699,6 +723,7 @@ class MemberAppsSettingsController extends Controller
         
         $validator = Validator::make($request->all(), [
             'description' => 'nullable|string',
+            'whatsapp_number' => 'nullable|string|max:20',
             'logo' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
             'pdf_menu' => 'nullable|file|mimes:pdf|max:10240',
             'pdf_new_dining_experience' => 'nullable|file|mimes:pdf|max:10240',
@@ -714,6 +739,7 @@ class MemberAppsSettingsController extends Controller
 
         $data = [
             'description' => $request->description,
+            'whatsapp_number' => $request->whatsapp_number,
             'is_active' => true
         ];
 
@@ -1334,5 +1360,90 @@ class MemberAppsSettingsController extends Controller
         }
 
         return $query->get();
+    }
+
+    /**
+     * Reply to feedback
+     */
+    public function replyFeedback(Request $request, $id)
+    {
+        $validator = Validator::make($request->all(), [
+            'admin_reply' => 'required|string|min:10',
+        ]);
+
+        if ($validator->fails()) {
+            return redirect()->back()->withErrors($validator)->withInput();
+        }
+
+        try {
+            $feedback = MemberAppsFeedback::findOrFail($id);
+            
+            // Create reply as a new feedback entry
+            $reply = MemberAppsFeedback::create([
+                'parent_id' => $id,
+                'member_id' => $feedback->member_id, // Keep original member_id
+                'outlet_id' => $feedback->outlet_id,
+                'subject' => 'Re: ' . $feedback->subject,
+                'message' => $request->admin_reply,
+                'status' => 'replied',
+                'replied_by' => auth()->id(),
+                'replied_at' => now(),
+            ]);
+
+            // Update parent feedback
+            $feedback->admin_reply = $request->admin_reply;
+            $feedback->replied_by = auth()->id();
+            $feedback->replied_at = now();
+            $feedback->status = 'replied';
+            $feedback->save();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Reply sent successfully'
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Reply Feedback Error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to send reply',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Update feedback status
+     */
+    public function updateFeedbackStatus(Request $request, $id)
+    {
+        $validator = Validator::make($request->all(), [
+            'status' => 'required|in:pending,read,replied,resolved',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation error',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        try {
+            $feedback = MemberAppsFeedback::findOrFail($id);
+            $feedback->status = $request->status;
+            $feedback->save();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Status updated successfully'
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Update Feedback Status Error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to update status',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 }
