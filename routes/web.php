@@ -2215,6 +2215,34 @@ Route::middleware(['auth'])->prefix('admin')->group(function () {
     Route::put('/member-apps-settings/whats-on/{id}', [App\Http\Controllers\MemberAppsSettingsController::class, 'updateWhatsOn'])->name('member-apps-settings.whats-on.update');
     Route::delete('/member-apps-settings/whats-on/{id}', [App\Http\Controllers\MemberAppsSettingsController::class, 'deleteWhatsOn'])->name('member-apps-settings.whats-on.delete');
     
+// Whats On Category routes
+Route::post('/member-apps-settings/whats-on-category', [App\Http\Controllers\MemberAppsSettingsController::class, 'storeWhatsOnCategory'])->name('member-apps-settings.whats-on-category.store');
+Route::put('/member-apps-settings/whats-on-category/{id}', [App\Http\Controllers\MemberAppsSettingsController::class, 'updateWhatsOnCategory'])->name('member-apps-settings.whats-on-category.update');
+Route::delete('/member-apps-settings/whats-on-category/{id}', [App\Http\Controllers\MemberAppsSettingsController::class, 'deleteWhatsOnCategory'])->name('member-apps-settings.whats-on-category.delete');
+
+    // FAQ routes
+    Route::post('/member-apps-settings/faq', [App\Http\Controllers\MemberAppsSettingsController::class, 'storeFaq'])->name('member-apps-settings.faq.store');
+    Route::put('/member-apps-settings/faq/{id}', [App\Http\Controllers\MemberAppsSettingsController::class, 'updateFaq'])->name('member-apps-settings.faq.update');
+    Route::delete('/member-apps-settings/faq/{id}', [App\Http\Controllers\MemberAppsSettingsController::class, 'deleteFaq'])->name('member-apps-settings.faq.delete');
+    
+    // Terms & Conditions routes
+    Route::post('/member-apps-settings/term-condition', [App\Http\Controllers\MemberAppsSettingsController::class, 'storeTermCondition'])->name('member-apps-settings.term-condition.store');
+    Route::put('/member-apps-settings/term-condition/{id}', [App\Http\Controllers\MemberAppsSettingsController::class, 'updateTermCondition'])->name('member-apps-settings.term-condition.update');
+    Route::delete('/member-apps-settings/term-condition/{id}', [App\Http\Controllers\MemberAppsSettingsController::class, 'deleteTermCondition'])->name('member-apps-settings.term-condition.delete');
+    
+    // About Us routes
+    Route::post('/member-apps-settings/about-us', [App\Http\Controllers\MemberAppsSettingsController::class, 'storeAboutUs'])->name('member-apps-settings.about-us.store');
+    Route::put('/member-apps-settings/about-us/{id}', [App\Http\Controllers\MemberAppsSettingsController::class, 'updateAboutUs'])->name('member-apps-settings.about-us.update');
+    Route::delete('/member-apps-settings/about-us/{id}', [App\Http\Controllers\MemberAppsSettingsController::class, 'deleteAboutUs'])->name('member-apps-settings.about-us.delete');
+    
+    // Voucher routes
+    Route::post('/member-apps-settings/voucher', [App\Http\Controllers\MemberAppsSettingsController::class, 'storeVoucher'])->name('member-apps-settings.voucher.store');
+    Route::post('/member-apps-settings/voucher/{id}/distribute', [App\Http\Controllers\MemberAppsSettingsController::class, 'distributeVoucher'])->name('member-apps-settings.voucher.distribute');
+    Route::delete('/member-apps-settings/voucher/{id}', [App\Http\Controllers\MemberAppsSettingsController::class, 'deleteVoucher'])->name('member-apps-settings.voucher.delete');
+    
+    // Push Notification routes
+    Route::post('/member-apps-settings/push-notification', [App\Http\Controllers\MemberAppsSettingsController::class, 'sendPushNotification'])->name('member-apps-settings.push-notification.send');
+    
     // Brand routes
     Route::post('/member-apps-settings/brand', [App\Http\Controllers\MemberAppsSettingsController::class, 'storeBrand'])->name('member-apps-settings.brand.store');
     Route::put('/member-apps-settings/brand/{id}', [App\Http\Controllers\MemberAppsSettingsController::class, 'updateBrand'])->name('member-apps-settings.brand.update');

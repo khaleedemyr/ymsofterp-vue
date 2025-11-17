@@ -338,6 +338,47 @@ Route::post('/outlet', [OutletController::class, 'store']);
 Route::put('/outlet/{id}', [OutletController::class, 'update']);
 Route::delete('/outlet/{id}', [OutletController::class, 'destroy']);
 
+// Mobile Member API Routes
+Route::prefix('mobile/member')->group(function () {
+        // Public routes (no auth required)
+        Route::get('/brands', [\App\Http\Controllers\Mobile\Member\BrandController::class, 'index'])->name('api.mobile.member.brands.index');
+        Route::get('/brands/{id}', [\App\Http\Controllers\Mobile\Member\BrandController::class, 'show'])->name('api.mobile.member.brands.show');
+    Route::get('/rewards', [\App\Http\Controllers\Mobile\Member\RewardController::class, 'index'])->name('api.mobile.member.rewards.index');
+    Route::get('/banners', [\App\Http\Controllers\Mobile\Member\BannerController::class, 'index'])->name('api.mobile.member.banners.index');
+    Route::get('/faqs', [\App\Http\Controllers\Mobile\Member\FaqController::class, 'index'])->name('api.mobile.member.faqs.index');
+    Route::get('/whats-on', [\App\Http\Controllers\Mobile\Member\WhatsOnController::class, 'index'])->name('api.mobile.member.whats-on.index');
+    Route::get('/terms-conditions', [\App\Http\Controllers\Mobile\Member\TermConditionController::class, 'index'])->name('api.mobile.member.terms-conditions.index');
+    Route::get('/about-us', [\App\Http\Controllers\Mobile\Member\AboutUsController::class, 'index'])->name('api.mobile.member.about-us.index');
+    
+    // Auth routes (no auth required)
+    Route::post('/auth/register', [\App\Http\Controllers\Mobile\Member\AuthController::class, 'register'])->name('api.mobile.member.auth.register');
+    Route::post('/auth/login', [\App\Http\Controllers\Mobile\Member\AuthController::class, 'login'])->name('api.mobile.member.auth.login');
+    Route::get('/auth/occupations', [\App\Http\Controllers\Mobile\Member\AuthController::class, 'getOccupations'])->name('api.mobile.member.auth.occupations');
+    
+    // Protected routes (require auth)
+    Route::middleware(['auth:sanctum'])->group(function () {
+                // Auth
+                Route::post('/auth/logout', [\App\Http\Controllers\Mobile\Member\AuthController::class, 'logout'])->name('api.mobile.member.auth.logout');
+                Route::get('/auth/me', [\App\Http\Controllers\Mobile\Member\AuthController::class, 'me'])->name('api.mobile.member.auth.me');
+                Route::post('/auth/upload-photo', [\App\Http\Controllers\Mobile\Member\AuthController::class, 'uploadPhoto'])->name('api.mobile.member.auth.upload-photo');
+        
+        // Device Token Management
+        Route::post('/device-token/register', [\App\Http\Controllers\Mobile\Member\DeviceTokenController::class, 'register'])->name('api.mobile.member.device-token.register');
+        Route::post('/device-token/unregister', [\App\Http\Controllers\Mobile\Member\DeviceTokenController::class, 'unregister'])->name('api.mobile.member.device-token.unregister');
+        Route::get('/device-token', [\App\Http\Controllers\Mobile\Member\DeviceTokenController::class, 'index'])->name('api.mobile.member.device-token.index');
+        
+        // Member Spending
+        Route::get('/spending/rolling-12-month', [\App\Http\Controllers\Mobile\Member\MemberSpendingController::class, 'getRolling12MonthSpending'])->name('api.mobile.member.spending.rolling-12-month');
+        Route::get('/spending/monthly-history', [\App\Http\Controllers\Mobile\Member\MemberSpendingController::class, 'getMonthlyHistory'])->name('api.mobile.member.spending.monthly-history');
+        
+        // TODO: Add more mobile member API routes here
+        // - Profile
+        // - Points
+        // - Vouchers
+        // - etc.
+    });
+});
+
 // PR Foods routes
 Route::get('/pr-foods/available', [PurchaseOrderFoodsController::class, 'getAvailablePR']);
 Route::post('/pr-foods/items', [PurchaseOrderFoodsController::class, 'getPRItems']);

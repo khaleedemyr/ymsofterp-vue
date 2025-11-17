@@ -62,6 +62,14 @@ $schedule->command('leave:monthly-credit')
 $schedule->command('leave:burn-previous-year')
 ->yearlyOn(3, 1, '00:00')
 ->description('Burning sisa cuti tahun sebelumnya');
+
+        // Update member tiers based on rolling 12-month spending - run monthly on the 1st
+        $schedule->command('members:update-tiers')
+            ->monthlyOn(1, '00:00')
+            ->withoutOverlapping()
+            ->runInBackground()
+            ->appendOutputTo(storage_path('logs/member-tiers-update.log'))
+            ->description('Update member tiers based on rolling 12-month spending');
     }
 
     /**

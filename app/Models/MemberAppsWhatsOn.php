@@ -14,7 +14,8 @@ class MemberAppsWhatsOn extends Model
         'image',
         'is_active',
         'is_featured',
-        'published_at'
+        'published_at',
+        'category_id'
     ];
 
     protected $casts = [
@@ -22,4 +23,9 @@ class MemberAppsWhatsOn extends Model
         'is_featured' => 'boolean',
         'published_at' => 'datetime',
     ];
+
+    public function category()
+    {
+        return $this->belongsTo(MemberAppsWhatsOnCategory::class, 'category_id');
+    }
 }
