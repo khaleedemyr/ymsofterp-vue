@@ -361,71 +361,71 @@ Route::prefix('mobile/member')->group(function () {
     
     // Debug route - test token validation (NO AUTH - untuk debugging)
     Route::get('/auth/test-token', function (Request $request) {
-        $token = $request->bearerToken();
-        
-        \Log::info('Test Token Debug (No Auth)', [
-            'has_token' => $token !== null,
-            'token_preview' => $token ? substr($token, 0, 30) . '...' : 'no token',
-            'token_length' => $token ? strlen($token) : 0,
-            'authorization_header' => $request->header('Authorization'),
-            'all_headers' => $request->headers->all(),
-        ]);
-        
-        $result = [
-            'has_token' => $token !== null,
-            'token_preview' => $token ? substr($token, 0, 30) . '...' : 'no token',
-            'token_length' => $token ? strlen($token) : 0,
-        ];
-        
-        // Try to find token in database
-        if ($token) {
-            $tokenParts = explode('|', $token);
-            if (count($tokenParts) === 2) {
-                $tokenId = $tokenParts[0];
-                $tokenHash = hash('sha256', $tokenParts[1]);
-                
-                $dbToken = \DB::table('personal_access_tokens')
-                    ->where('id', $tokenId)
-                    ->first();
-                
-                $result['token_parsed'] = true;
-                $result['token_id'] = $tokenId;
-                $result['db_token_found'] = $dbToken !== null;
-                
-                if ($dbToken) {
-                    $result['db_token_info'] = [
-                        'id' => $dbToken->id,
-                        'tokenable_id' => $dbToken->tokenable_id,
-                        'tokenable_type' => $dbToken->tokenable_type,
-                        'name' => $dbToken->name,
-                        'last_used_at' => $dbToken->last_used_at,
-                        'expires_at' => $dbToken->expires_at,
-                        'created_at' => $dbToken->created_at,
-                    ];
+        try {
+            $token = $request->bearerToken();
+            
+            $result = [
+                'success' => true,
+                'has_token' => $token !== null,
+                'token_preview' => $token ? substr($token, 0, 30) . '...' : 'no token',
+                'token_length' => $token ? strlen($token) : 0,
+            ];
+            
+            // Try to find token in database
+            if ($token) {
+                $tokenParts = explode('|', $token);
+                if (count($tokenParts) === 2) {
+                    $tokenId = $tokenParts[0];
                     
-                    // Try to get member
-                    if ($dbToken->tokenable_type === 'App\\Models\\MemberAppsMember') {
-                        $member = \App\Models\MemberAppsMember::find($dbToken->tokenable_id);
-                        $result['member_found'] = $member !== null;
-                        if ($member) {
-                            $result['member_info'] = [
-                                'id' => $member->id,
-                                'member_id' => $member->member_id,
-                                'email' => $member->email,
-                                'nama_lengkap' => $member->nama_lengkap,
-                            ];
+                    $dbToken = \DB::table('personal_access_tokens')
+                        ->where('id', $tokenId)
+                        ->first();
+                    
+                    $result['token_parsed'] = true;
+                    $result['token_id'] = $tokenId;
+                    $result['db_token_found'] = $dbToken !== null;
+                    
+                    if ($dbToken) {
+                        $result['db_token_info'] = [
+                            'id' => $dbToken->id,
+                            'tokenable_id' => $dbToken->tokenable_id,
+                            'tokenable_type' => $dbToken->tokenable_type,
+                            'name' => $dbToken->name,
+                            'last_used_at' => $dbToken->last_used_at,
+                            'expires_at' => $dbToken->expires_at,
+                            'created_at' => $dbToken->created_at,
+                        ];
+                        
+                        // Try to get member
+                        if ($dbToken->tokenable_type === 'App\\Models\\MemberAppsMember') {
+                            $member = \App\Models\MemberAppsMember::find($dbToken->tokenable_id);
+                            $result['member_found'] = $member !== null;
+                            if ($member) {
+                                $result['member_info'] = [
+                                    'id' => $member->id,
+                                    'member_id' => $member->member_id,
+                                    'email' => $member->email,
+                                    'nama_lengkap' => $member->nama_lengkap,
+                                ];
+                            }
                         }
                     }
+                } else {
+                    $result['token_parsed'] = false;
+                    $result['error'] = 'Token format invalid - should be {id}|{hash}';
                 }
-                
-                \Log::info('Token Database Check', $result);
-            } else {
-                $result['token_parsed'] = false;
-                $result['error'] = 'Token format invalid - should be {id}|{hash}';
             }
+            
+            \Log::info('Test Token Debug', $result);
+            
+            return response()->json($result, 200);
+        } catch (\Exception $e) {
+            \Log::error('Test Token Error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'error' => $e->getMessage()
+            ], 500);
         }
-        
-        return response()->json($result);
     });
     
     // Debug route - test dengan auth:sanctum (TEMPORARY - hapus setelah fix)
