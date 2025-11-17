@@ -372,12 +372,17 @@ Route::prefix('mobile/member')->group(function () {
         
         try {
             $token = $request->bearerToken();
+            $authHeader = $request->header('Authorization');
+            $allHeaders = $request->headers->all();
             
             $result = [
                 'success' => true,
                 'has_token' => $token !== null,
                 'token_preview' => $token ? substr($token, 0, 30) . '...' : 'no token',
                 'token_length' => $token ? strlen($token) : 0,
+                'authorization_header' => $authHeader,
+                'authorization_header_raw' => $request->server('HTTP_AUTHORIZATION'),
+                'all_headers' => $allHeaders,
             ];
             
             // Try to find token in database
