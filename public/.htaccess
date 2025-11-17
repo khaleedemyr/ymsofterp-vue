@@ -8,6 +8,9 @@
     RewriteRule ^ index.php [L]
 </IfModule>
 
+# Teruskan Authorization header untuk API authentication
+SetEnvIf Authorization "(.*)" HTTP_AUTHORIZATION=$1
+
 # Prevent directory listing
 Options -Indexes
 

@@ -42,18 +42,28 @@ try {
     $token = $token.Trim()
     $authHeader = "Bearer $token"
     
-    $headers = @{
-        "Authorization" = $authHeader
-        "Accept" = "application/json"
-    }
+    Write-Host "Token: $token" -ForegroundColor Cyan
+    Write-Host "Auth Header: $authHeader" -ForegroundColor Cyan
     
-    Write-Host "Sending debug request..." -ForegroundColor Yellow
+    # Gunakan WebRequest untuk kontrol lebih baik
+    $uri = "https://ymsofterp.com/api/mobile/member/auth/test-token"
+    
+    Write-Host "Sending debug request to: $uri" -ForegroundColor Yellow
     
     try {
-        $debugResponse = Invoke-RestMethod -Uri "https://ymsofterp.com/api/mobile/member/auth/test-token" `
-            -Method GET `
-            -Headers $headers `
-            -ErrorAction Stop
+        $request = [System.Net.WebRequest]::Create($uri)
+        $request.Method = "GET"
+        $request.Headers.Add("Authorization", $authHeader)
+        $request.Accept = "application/json"
+        $request.ContentType = "application/json"
+        
+        $response = $request.GetResponse()
+        $reader = New-Object System.IO.StreamReader($response.GetResponseStream())
+        $responseBody = $reader.ReadToEnd()
+        $reader.Close()
+        $response.Close()
+        
+        $debugResponse = $responseBody | ConvertFrom-Json
         
         Write-Host "Debug Response (SUCCESS):" -ForegroundColor Green
         $debugResponse | ConvertTo-Json -Depth 10
