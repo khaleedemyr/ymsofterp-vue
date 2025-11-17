@@ -15,6 +15,7 @@ class ContraBonItem extends Model
         'contra_bon_id',
         'item_id',
         'po_item_id',
+        'gr_item_id', // Untuk tracking item dari good receive yang sudah dibuat contra bon
         'quantity',
         'unit_id',
         'price',

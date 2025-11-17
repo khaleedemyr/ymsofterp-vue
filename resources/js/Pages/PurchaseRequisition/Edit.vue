@@ -2652,56 +2652,57 @@ watch(() => form.mode, (newMode) => {
     attachments.value = []
     outletAttachments.value = {}
   } else if (newMode === 'kasbon') {
-    // Validate kasbon period first
-    if (!isWithinKasbonPeriod()) {
-      const { startDate, endDate } = getKasbonPeriod()
-      const startStr = startDate.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
-      const endStr = endDate.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
-      
-      // Reset to default structure first
-      form.items = []
-      form.outlets = [newOutlet()]
-      form.travel_outlets = []
-      form.travel_items = []
-      form.travel_agenda = ''
-      form.travel_notes = ''
-      form.kasbon_amount = 0
-      form.kasbon_reason = ''
-      form.outlet_id = ''
-      form.category_id = ''
-      attachments.value = []
-      outletAttachments.value = {}
-      
-      // Set flag to hide form
-      kasbonOutOfPeriod.value = true
-      
-      // Reset mode to default
-      form.mode = 'pr_ops'
-      
-      // Show error alert (use setTimeout to ensure mode is reset first)
-      setTimeout(() => {
-        Swal.fire({
-          icon: 'error',
-          title: 'Tidak Dapat Input Kasbon',
-          html: `
-            <p class="text-sm mb-3">Anda tidak dapat menginput kasbon di luar periode yang ditentukan.</p>
-            <div class="bg-blue-50 border border-blue-200 rounded p-3 text-left">
-              <p class="text-sm font-semibold text-blue-800 mb-2">Periode Kasbon Aktif:</p>
-              <p class="text-sm text-blue-700">${startStr} - ${endStr}</p>
-            </div>
-            <p class="text-xs text-gray-600 mt-3">
-              Periode kasbon: Tanggal 20 bulan berjalan hingga tanggal 10 bulan selanjutnya
-            </p>
-          `,
-          confirmButtonText: 'OK',
-          confirmButtonColor: '#EF4444'
-        })
-      }, 100)
-      
-      return
-    }
+    // Validate kasbon period - DISABLED: Bebas input kapan saja
+    // Validasi periode tanggal 20 bulan berjalan - 10 bulan selanjutnya telah dinonaktifkan
+    // if (!isWithinKasbonPeriod()) {
+    //   const { startDate, endDate } = getKasbonPeriod()
+    //   const startStr = startDate.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
+    //   const endStr = endDate.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
+    //   
+    //   // Reset to default structure first
+    //   form.items = []
+    //   form.outlets = [newOutlet()]
+    //   form.travel_outlets = []
+    //   form.travel_items = []
+    //   form.travel_agenda = ''
+    //   form.travel_notes = ''
+    //   form.kasbon_amount = 0
+    //   form.kasbon_reason = ''
+    //   form.outlet_id = ''
+    //   form.category_id = ''
+    //   attachments.value = []
+    //   outletAttachments.value = {}
+    //   
+    //   // Set flag to hide form
+    //   kasbonOutOfPeriod.value = true
+    //   
+    //   // Reset mode to default
+    //   form.mode = 'pr_ops'
+    //   
+    //   // Show error alert (use setTimeout to ensure mode is reset first)
+    //   setTimeout(() => {
+    //     Swal.fire({
+    //       icon: 'error',
+    //       title: 'Tidak Dapat Input Kasbon',
+    //       html: `
+    //         <p class="text-sm mb-3">Anda tidak dapat menginput kasbon di luar periode yang ditentukan.</p>
+    //         <div class="bg-blue-50 border border-blue-200 rounded p-3 text-left">
+    //           <p class="text-sm font-semibold text-blue-800 mb-2">Periode Kasbon Aktif:</p>
+    //           <p class="text-sm text-blue-700">${startStr} - ${endStr}</p>
+    //         </div>
+    //         <p class="text-xs text-gray-600 mt-3">
+    //           Periode kasbon: Tanggal 20 bulan berjalan hingga tanggal 10 bulan selanjutnya
+    //         </p>
+    //       `,
+    //       confirmButtonText: 'OK',
+    //       confirmButtonColor: '#EF4444'
+    //     })
+    //   }, 100)
+    //   
+    //   return
+    // }
     
-    // Reset flag if within period
+    // Reset flag - always allow kasbon input
     kasbonOutOfPeriod.value = false
     
     // Reset to kasbon structure
@@ -3048,16 +3049,21 @@ const getKasbonPeriod = () => {
 }
 
 // Check if current date is within kasbon period
+// DISABLED: Validasi periode telah dinonaktifkan, bebas input kapan saja
 const isWithinKasbonPeriod = () => {
-  const now = new Date()
-  const { startDate, endDate } = getKasbonPeriod()
+  // Always return true - validasi periode tanggal 20 bulan berjalan - 10 bulan selanjutnya telah dinonaktifkan
+  return true
   
-  // Set time to 00:00:00 for accurate date comparison
-  const nowDate = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-  const start = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate())
-  const end = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate())
-  
-  return nowDate >= start && nowDate <= end
+  // Original validation code (disabled):
+  // const now = new Date()
+  // const { startDate, endDate } = getKasbonPeriod()
+  // 
+  // // Set time to 00:00:00 for accurate date comparison
+  // const nowDate = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  // const start = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate())
+  // const end = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate())
+  // 
+  // return nowDate >= start && nowDate <= end
 }
 
 // Get kasbon period text for display
@@ -3069,39 +3075,44 @@ const getKasbonPeriodText = () => {
 }
 
 // Check if kasbon exists for outlet in current period
+// DISABLED: Validasi duplikasi kasbon untuk outlet yang sama telah dinonaktifkan
 const checkKasbonExists = async () => {
-  if (!userOutletId.value || userOutletId.value == 1) {
-    return { exists: false, message: null }
-  }
+  // Always return false - validasi duplikasi kasbon telah dinonaktifkan, bebas input kapan saja
+  return { exists: false, message: null }
   
-  if (!form.outlet_id) {
-    return { exists: false, message: null }
-  }
-  
-  const { startDate, endDate } = getKasbonPeriod()
-  
-  try {
-    const response = await axios.get('/purchase-requisitions/check-kasbon-period', {
-      params: {
-        outlet_id: form.outlet_id,
-        start_date: startDate.toISOString().split('T')[0],
-        end_date: endDate.toISOString().split('T')[0],
-        exclude_id: null // For new PR, no exclude
-      }
-    })
-    
-    if (response.data.exists) {
-      return {
-        exists: true,
-        message: `Sudah ada pengajuan kasbon untuk outlet ini di periode ${getKasbonPeriodText()}. Per periode hanya diijinkan 1 user saja per outlet.`
-      }
-    }
-    
-    return { exists: false, message: null }
-  } catch (error) {
-    console.error('Error checking kasbon period:', error)
-    return { exists: false, message: null }
-  }
+  // Original validation code (disabled):
+  // if (!userOutletId.value || userOutletId.value == 1) {
+  //   return { exists: false, message: null }
+  // }
+  // 
+  // if (!form.outlet_id) {
+  //   return { exists: false, message: null }
+  // }
+  // 
+  // const { startDate, endDate } = getKasbonPeriod()
+  // 
+  // try {
+  //   const response = await axios.get('/purchase-requisitions/check-kasbon-period', {
+  //     params: {
+  //       outlet_id: form.outlet_id,
+  //       start_date: startDate.toISOString().split('T')[0],
+  //       end_date: endDate.toISOString().split('T')[0],
+  //       exclude_id: null // For new PR, no exclude
+  //     }
+  //   })
+  //   
+  //   if (response.data.exists) {
+  //     return {
+  //       exists: true,
+  //       message: `Sudah ada pengajuan kasbon untuk outlet ini di periode ${getKasbonPeriodText()}. Per periode hanya diijinkan 1 user saja per outlet.`
+  //     }
+  //   }
+  //   
+  //   return { exists: false, message: null }
+  // } catch (error) {
+  //   console.error('Error checking kasbon period:', error)
+  //   return { exists: false, message: null }
+  // }
 }
 
 // Load budget info for travel_application mode
@@ -3399,21 +3410,22 @@ const submitForm = async () => {
       return
     }
 
-    // Check if kasbon already exists for this outlet in current period (only for non-superuser)
-    if (userOutletId.value && userOutletId.value != 1) {
-      const kasbonCheck = await checkKasbonExists()
-      if (kasbonCheck.exists) {
-        loading.value = false
-        await Swal.fire({
-          icon: 'error',
-          title: 'Kasbon Sudah Ada',
-          html: kasbonCheck.message,
-          confirmButtonText: 'OK',
-          confirmButtonColor: '#EF4444'
-        })
-        return
-      }
-    }
+    // Check if kasbon already exists for this outlet in current period - DISABLED: Bebas input kapan saja
+    // Validasi duplikasi kasbon untuk outlet yang sama telah dinonaktifkan
+    // if (userOutletId.value && userOutletId.value != 1) {
+    //   const kasbonCheck = await checkKasbonExists()
+    //   if (kasbonCheck.exists) {
+    //     loading.value = false
+    //     await Swal.fire({
+    //       icon: 'error',
+    //       title: 'Kasbon Sudah Ada',
+    //       html: kasbonCheck.message,
+    //       confirmButtonText: 'OK',
+    //       confirmButtonColor: '#EF4444'
+    //     })
+    //     return
+    //   }
+    // }
   }
 
   // Validate pr_ops and purchase_payment mode structure

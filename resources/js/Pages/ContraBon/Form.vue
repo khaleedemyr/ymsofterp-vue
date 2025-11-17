@@ -61,8 +61,10 @@ const form = useForm({
     notes: i.notes || '',
     item: i.item,
     unit: i.unit,
+    selected: true, // Default selected untuk edit mode
     _rowKey: Date.now() + '-' + Math.random(),
   })) || [],
+  selectedItems: [], // Array untuk menyimpan item yang dicentang
 });
 
 onMounted(async () => {
@@ -211,6 +213,7 @@ function selectPOFromModal(po) {
       quantity: item.qty_received,
       price: item.po_price,
       notes: '',
+      selected: false, // Default tidak dicentang
       _rowKey: Date.now() + '-' + Math.random(),
     }));
   } else {
@@ -244,6 +247,8 @@ function selectRetailFoodFromModal(rf) {
       notes: '',
       item_name: item.item_name,
       unit_name: item.unit_name,
+      retail_food_item_id: item.id, // Simpan ID item dari retail food
+      selected: false, // Default tidak dicentang
       _rowKey: Date.now() + '-' + Math.random(),
     }));
   } else {
@@ -277,6 +282,8 @@ function selectWarehouseRetailFoodFromModal(rwf) {
       notes: '',
       item_name: item.item_name,
       unit_name: item.unit_name,
+      warehouse_retail_food_item_id: item.id, // Simpan ID item dari warehouse retail food
+      selected: false, // Default tidak dicentang
       _rowKey: Date.now() + '-' + Math.random(),
     }));
   } else {
@@ -324,6 +331,7 @@ async function onPOGRChange() {
       quantity: item.qty_received,
       price: item.po_price,
       notes: '',
+      selected: false, // Default tidak dicentang
       _rowKey: Date.now() + '-' + Math.random(),
     }));
     // Fetch supplier detail
@@ -377,6 +385,8 @@ async function onRetailFoodChange() {
           notes: '',
           item_name: item.item_name,
           unit_name: item.unit_name,
+          retail_food_item_id: item.id, // Simpan ID item dari retail food
+          selected: false, // Default tidak dicentang
           _rowKey: Date.now() + '-' + Math.random(),
         }));
       
@@ -439,7 +449,21 @@ function formatCurrency(value) {
   return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(value);
 }
 
+// Computed untuk menghitung total dari item yang dicentang
+const totalAmount = computed(() => {
+  return form.items
+    .filter(item => item.selected)
+    .reduce((sum, item) => sum + (item.quantity * item.price), 0);
+});
+
 async function onSubmit() {
+  // Validasi: minimal harus ada 1 item yang dicentang
+  const selectedItems = form.items.filter(item => item.selected);
+  if (selectedItems.length === 0) {
+    Swal.fire('Peringatan', 'Pilih minimal 1 item untuk dibuat contra bon', 'warning');
+    return;
+  }
+
   Swal.fire({
     title: isEdit.value ? 'Menyimpan Perubahan...' : 'Menyimpan Data...',
     allowOutsideClick: false,
@@ -463,9 +487,13 @@ async function onSubmit() {
         fd.append('source_id', '');
       }
       fd.append('image', fileImage.value);
-    form.items.forEach((item, idx) => {
+    // Hanya kirim item yang dicentang
+    selectedItems.forEach((item, idx) => {
       Object.keys(item).forEach(key => {
-        fd.append(`items[${idx}][${key}]`, item[key]);
+        // Jangan kirim field selected dan _rowKey
+        if (key !== 'selected' && key !== '_rowKey') {
+          fd.append(`items[${idx}][${key}]`, item[key]);
+        }
       });
     });
     try {
@@ -499,6 +527,13 @@ async function onSubmit() {
     form.source_id = '';
   }
   
+  // Hanya kirim item yang dicentang (hapus field selected dan _rowKey)
+  const itemsToSubmit = selectedItems.map(item => {
+    const { selected, _rowKey, ...itemData } = item;
+    return itemData;
+  });
+  form.items = itemsToSubmit;
+  
   if (isEdit.value) {
     form.put(`/contra-bons/${props.contraBon.id}`, {
       onSuccess: () => {
@@ -518,6 +553,13 @@ async function onSubmit() {
 
 function goBack() {
   router.visit('/contra-bons');
+}
+
+function toggleAllItems(event) {
+  const checked = event.target.checked;
+  form.items.forEach(item => {
+    item.selected = checked;
+  });
 }
 </script>
 <template>
@@ -741,6 +783,14 @@ function goBack() {
              <table v-else class="w-full min-w-full divide-y divide-gray-200">
                <thead class="bg-gradient-to-r from-blue-50 to-blue-100">
                  <tr>
+                   <th class="px-3 py-2 text-center text-xs font-bold text-blue-700 uppercase tracking-wider w-12">
+                     <input 
+                       type="checkbox" 
+                       :checked="form.items.length > 0 && form.items.every(item => item.selected)"
+                       @change="toggleAllItems"
+                       class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                     />
+                   </th>
                    <th class="px-3 py-2 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Item</th>
                    <th class="px-3 py-2 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Qty</th>
                    <th class="px-3 py-2 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Unit</th>
@@ -751,9 +801,16 @@ function goBack() {
                </thead>
                <tbody>
                  <tr v-if="form.items.length === 0" class="text-center text-gray-500">
-                   <td colspan="6" class="px-3 py-4">Tidak ada data item</td>
+                   <td colspan="7" class="px-3 py-4">Tidak ada data item</td>
                  </tr>
-                 <tr v-for="(item, idx) in form.items" :key="item._rowKey || idx">
+                 <tr v-for="(item, idx) in form.items" :key="item._rowKey || idx" :class="{ 'bg-gray-50': !item.selected }">
+                   <td class="px-3 py-2 text-center">
+                     <input 
+                       type="checkbox" 
+                       v-model="item.selected"
+                       class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                     />
+                   </td>
                    <td class="px-3 py-2 min-w-[200px]">
                      {{ isEdit ? (item.item?.name || '-') : (sourceType === 'retail_food' || sourceType === 'warehouse_retail_food' ? (item.item_name || '-') : (selectedPOGR?.items.find(i => i.item_id === item.item_id)?.item_name || '-')) }}
                    </td>
@@ -774,6 +831,18 @@ function goBack() {
                    </td>
                  </tr>
                </tbody>
+               <tfoot class="bg-gray-100">
+                 <tr>
+                   <td colspan="1" class="px-3 py-3"></td>
+                   <td colspan="4" class="px-3 py-3 text-right font-bold text-gray-700">
+                     Total:
+                   </td>
+                   <td class="px-3 py-3 font-bold text-blue-700">
+                     {{ formatCurrency(totalAmount) }}
+                   </td>
+                   <td class="px-3 py-3"></td>
+                 </tr>
+               </tfoot>
              </table>
            </div>
          </div>
