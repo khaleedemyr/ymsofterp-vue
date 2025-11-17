@@ -357,6 +357,8 @@ Route::prefix('mobile/member')->group(function () {
     // Auth routes (no auth required)
     Route::post('/auth/register', [\App\Http\Controllers\Mobile\Member\AuthController::class, 'register'])->name('api.mobile.member.auth.register');
     Route::post('/auth/login', [\App\Http\Controllers\Mobile\Member\AuthController::class, 'login'])->name('api.mobile.member.auth.login');
+    Route::post('/auth/forgot-password', [\App\Http\Controllers\Mobile\Member\AuthController::class, 'forgotPassword'])->name('api.mobile.member.auth.forgot-password');
+    Route::post('/auth/reset-password', [\App\Http\Controllers\Mobile\Member\AuthController::class, 'resetPassword'])->name('api.mobile.member.auth.reset-password');
     Route::get('/auth/occupations', [\App\Http\Controllers\Mobile\Member\AuthController::class, 'getOccupations'])->name('api.mobile.member.auth.occupations');
     
     // Debug route - test token validation (NO AUTH - untuk debugging)

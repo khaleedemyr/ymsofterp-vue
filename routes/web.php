@@ -2263,4 +2263,9 @@ Route::delete('/member-apps-settings/whats-on-category/{id}', [App\Http\Controll
     Route::delete('/member-apps-settings/brand/{id}', [App\Http\Controllers\MemberAppsSettingsController::class, 'deleteBrand'])->name('member-apps-settings.brand.delete');
 });
 
+// Reset password landing page (public route)
+Route::get('/reset-password', function () {
+    return view('reset-password');
+})->name('reset-password');
+
 require __DIR__.'/auth.php';
