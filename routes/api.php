@@ -360,7 +360,16 @@ Route::prefix('mobile/member')->group(function () {
     Route::get('/auth/occupations', [\App\Http\Controllers\Mobile\Member\AuthController::class, 'getOccupations'])->name('api.mobile.member.auth.occupations');
     
     // Debug route - test token validation (NO AUTH - untuk debugging)
-    Route::get('/auth/test-token', function (Request $request) {
+    // Support both GET and OPTIONS (for CORS preflight)
+    Route::match(['GET', 'OPTIONS'], '/auth/test-token', function (Request $request) {
+        // Handle OPTIONS preflight request
+        if ($request->getMethod() === 'OPTIONS') {
+            return response()->json([], 200)
+                ->header('Access-Control-Allow-Origin', '*')
+                ->header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+                ->header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept');
+        }
+        
         try {
             $token = $request->bearerToken();
             
