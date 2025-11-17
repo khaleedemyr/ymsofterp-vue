@@ -154,8 +154,9 @@ class ContraBonController extends Controller
                 'request_data' => $request->except(['image'])
             ]);
             
-            // Return JSON error jika request dari axios/ajax
-            if ($request->wantsJson() || $request->ajax() || $request->expectsJson()) {
+            // Return JSON error hanya jika request dari axios/ajax (bukan Inertia)
+            // Inertia request akan memiliki header X-Inertia, jadi kita skip JSON response untuk itu
+            if (($request->wantsJson() || $request->ajax() || $request->expectsJson()) && !$request->header('X-Inertia')) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Validasi gagal',
@@ -298,8 +299,9 @@ class ContraBonController extends Controller
                 'items_count' => count($request->items)
             ]);
             
-            // Return JSON response jika request dari axios/ajax
-            if ($request->wantsJson() || $request->ajax() || $request->expectsJson()) {
+            // Return JSON response hanya jika request dari axios/ajax (bukan Inertia)
+            // Inertia request akan memiliki header X-Inertia, jadi kita skip JSON response untuk itu
+            if (($request->wantsJson() || $request->ajax() || $request->expectsJson()) && !$request->header('X-Inertia')) {
                 return response()->json([
                     'success' => true,
                     'message' => 'Contra Bon berhasil dibuat',
@@ -324,8 +326,9 @@ class ContraBonController extends Controller
                 ]
             ]);
             
-            // Return JSON error jika request dari axios
-            if ($request->wantsJson() || $request->ajax()) {
+            // Return JSON error hanya jika request dari axios/ajax (bukan Inertia)
+            // Inertia request akan memiliki header X-Inertia, jadi kita skip JSON response untuk itu
+            if (($request->wantsJson() || $request->ajax() || $request->expectsJson()) && !$request->header('X-Inertia')) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Terjadi kesalahan: ' . $e->getMessage(),
