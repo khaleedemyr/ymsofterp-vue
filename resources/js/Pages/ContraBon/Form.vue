@@ -22,14 +22,15 @@ const fileImagePreview = ref(null);
 // Retail Food variables
 const retailFoodList = ref([]);
 const selectedRetailFood = ref(null);
-const loadingRetailFood = ref(false);
 const selectedRetailFoodKey = ref('');
 
 // Warehouse Retail Food variables
 const warehouseRetailFoodList = ref([]);
 const selectedWarehouseRetailFood = ref(null);
-const loadingWarehouseRetailFood = ref(false);
 const selectedWarehouseRetailFoodKey = ref('');
+
+// Loading state untuk initial load
+const initialLoading = ref(true);
 
 const sourceType = ref('purchase_order'); // 'purchase_order', 'retail_food', or 'warehouse_retail_food'
 
@@ -76,45 +77,47 @@ onMounted(async () => {
     const dd = String(today.getDate()).padStart(2, '0');
     form.date = `${yyyy}-${mm}-${dd}`;
     
-     // Load PO/GR data
-     loadingPOGR.value = true;
-     try {
-       const res = await axios.get('/api/contra-bon/po-with-approved-gr');
-       poWithGRList.value = res.data;
-     } catch (e) {
-       Swal.fire('Error', 'Gagal mengambil data PO/GR', 'error');
-     } finally {
-       loadingPOGR.value = false;
-     }
+    // Load semua data secara parallel untuk mempercepat loading
+    initialLoading.value = true;
     
-         // Load Retail Food data
-     loadingRetailFood.value = true;
-            try {
-         const res = await axios.get('/api/contra-bon/retail-food-contra-bon');
-         retailFoodList.value = res.data;
-       } catch (e) {
-        console.error('Error loading retail food:', e);
-        Swal.fire('Error', 'Gagal mengambil data Retail Food', 'error');
-      } finally {
-        loadingRetailFood.value = false;
-      }
-    
-    // Load Warehouse Retail Food data
-    loadingWarehouseRetailFood.value = true;
     try {
-      const res = await axios.get('/api/contra-bon/warehouse-retail-food-contra-bon');
-      warehouseRetailFoodList.value = res.data;
+      // Load semua data secara bersamaan (parallel)
+      const [poRes, retailFoodRes, warehouseRetailFoodRes] = await Promise.all([
+        axios.get('/api/contra-bon/po-with-approved-gr').catch(e => {
+          console.error('Error loading PO/GR:', e);
+          return { data: [] };
+        }),
+        axios.get('/api/contra-bon/retail-food-contra-bon').catch(e => {
+          console.error('Error loading retail food:', e);
+          return { data: [] };
+        }),
+        axios.get('/api/contra-bon/warehouse-retail-food-contra-bon').catch(e => {
+          console.error('Error loading warehouse retail food:', e);
+          return { data: [] };
+        })
+      ]);
+      
+      poWithGRList.value = poRes.data || [];
+      retailFoodList.value = retailFoodRes.data || [];
+      warehouseRetailFoodList.value = warehouseRetailFoodRes.data || [];
+      
+      // Initialize filtered lists
+      filteredPOList.value = poWithGRList.value;
+      filteredRetailFoodList.value = retailFoodList.value;
+      filteredWarehouseRetailFoodList.value = warehouseRetailFoodList.value;
+      
     } catch (e) {
-      console.error('Error loading warehouse retail food:', e);
-      Swal.fire('Error', 'Gagal mengambil data Warehouse Retail Food', 'error');
+      console.error('Error loading data:', e);
+      Swal.fire('Error', 'Gagal mengambil data', 'error');
     } finally {
-      loadingWarehouseRetailFood.value = false;
+      initialLoading.value = false;
     }
   } else {
     // Mode edit: set preview image jika ada
     if (props.contraBon?.image_path) {
       fileImagePreview.value = `/storage/${props.contraBon.image_path}`;
     }
+    initialLoading.value = false;
   }
 });
 
@@ -364,32 +367,30 @@ async function onRetailFoodChange() {
     return;
   }
   
-  // Show loading spinner
-  loadingRetailFood.value = true;
-  
-    try {
+  // Data sudah dimuat di onMounted, tidak perlu loading spinner
+  try {
     const retailFood = retailFoodList.value.find(rf => 
       rf.retail_food_id == selectedRetailFoodKey.value
     );
     
     selectedRetailFood.value = retailFood;
     
-          if (retailFood) {
-        form.items = retailFood.items.map(item => ({
-          gr_item_id: null,
-          item_id: null, // Tidak ada item_id karena menggunakan item_name
-          po_item_id: null,
-          unit_id: null, // Tidak ada unit_id karena menggunakan unit string
-          quantity: item.qty,
-          price: item.price,
-          notes: '',
-          item_name: item.item_name,
-          unit_name: item.unit_name,
-          retail_food_item_id: item.id, // Simpan ID item dari retail food
-          selected: false, // Default tidak dicentang
-          _rowKey: Date.now() + '-' + Math.random(),
-        }));
-      
+    if (retailFood) {
+      form.items = retailFood.items.map(item => ({
+        gr_item_id: null,
+        item_id: null, // Tidak ada item_id karena menggunakan item_name
+        po_item_id: null,
+        unit_id: null, // Tidak ada unit_id karena menggunakan unit string
+        quantity: item.qty,
+        price: item.price,
+        notes: '',
+        item_name: item.item_name,
+        unit_name: item.unit_name,
+        retail_food_item_id: item.id, // Simpan ID item dari retail food
+        selected: false, // Default tidak dicentang
+        _rowKey: Date.now() + '-' + Math.random(),
+      }));
+    
       // Fetch supplier detail
       if (retailFood.supplier_id) {
         try {
@@ -408,9 +409,6 @@ async function onRetailFoodChange() {
   } catch (error) {
     console.error('Error in onRetailFoodChange:', error);
     Swal.fire('Error', 'Gagal memuat data retail food', 'error');
-  } finally {
-    // Hide loading spinner
-    loadingRetailFood.value = false;
   }
 }
 
@@ -773,10 +771,10 @@ function toggleAllItems(event) {
                  <div>
            <label class="block text-sm font-medium text-gray-700 mb-2">Detail Item</label>
            <div class="overflow-x-auto">
-             <!-- Loading spinner for items -->
-             <div v-if="loadingRetailFood || loadingWarehouseRetailFood" class="flex justify-center items-center py-8">
+             <!-- Loading spinner hanya saat initial load -->
+             <div v-if="initialLoading && !isEdit" class="flex justify-center items-center py-8">
                <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-               <span class="ml-2 text-gray-600">Memuat data item...</span>
+               <span class="ml-2 text-gray-600">Memuat data...</span>
              </div>
              
              <!-- Items table -->
