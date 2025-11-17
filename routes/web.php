@@ -2235,6 +2235,16 @@ Route::delete('/member-apps-settings/whats-on-category/{id}', [App\Http\Controll
     Route::put('/member-apps-settings/about-us/{id}', [App\Http\Controllers\MemberAppsSettingsController::class, 'updateAboutUs'])->name('member-apps-settings.about-us.update');
     Route::delete('/member-apps-settings/about-us/{id}', [App\Http\Controllers\MemberAppsSettingsController::class, 'deleteAboutUs'])->name('member-apps-settings.about-us.delete');
     
+    // Benefits routes
+    Route::post('/member-apps-settings/benefits', [App\Http\Controllers\MemberAppsSettingsController::class, 'storeBenefits'])->name('member-apps-settings.benefits.store');
+    Route::put('/member-apps-settings/benefits/{id}', [App\Http\Controllers\MemberAppsSettingsController::class, 'updateBenefits'])->name('member-apps-settings.benefits.update');
+    Route::delete('/member-apps-settings/benefits/{id}', [App\Http\Controllers\MemberAppsSettingsController::class, 'deleteBenefits'])->name('member-apps-settings.benefits.delete');
+    
+    // Contact Us routes
+    Route::post('/member-apps-settings/contact-us', [App\Http\Controllers\MemberAppsSettingsController::class, 'storeContactUs'])->name('member-apps-settings.contact-us.store');
+    Route::put('/member-apps-settings/contact-us/{id}', [App\Http\Controllers\MemberAppsSettingsController::class, 'updateContactUs'])->name('member-apps-settings.contact-us.update');
+    Route::delete('/member-apps-settings/contact-us/{id}', [App\Http\Controllers\MemberAppsSettingsController::class, 'deleteContactUs'])->name('member-apps-settings.contact-us.delete');
+    
     // Voucher routes
     Route::post('/member-apps-settings/voucher', [App\Http\Controllers\MemberAppsSettingsController::class, 'storeVoucher'])->name('member-apps-settings.voucher.store');
     Route::post('/member-apps-settings/voucher/{id}/distribute', [App\Http\Controllers\MemberAppsSettingsController::class, 'distributeVoucher'])->name('member-apps-settings.voucher.distribute');

@@ -28,8 +28,10 @@ class RewardController extends Controller
                     'rewards.id as reward_id',
                     'rewards.item_id',
                     'rewards.points_required',
+                    'rewards.serial_code',
                     'items.name as item_name',
                     'items.sku',
+                    'items.description',
                     'items.category_id',
                     'items.sub_category_id',
                     'categories.name as category_name',
@@ -62,9 +64,11 @@ class RewardController extends Controller
                         ? 'https://ymsofterp.com/storage/' . $firstImage->path
                         : null,
                     'sku' => $reward->sku,
+                    'description' => $reward->description,
                     'category_name' => $reward->category_name,
                     'sub_category_name' => $reward->sub_category_name,
                     'category_display' => trim($categoryDisplay),
+                    'serial_code' => $reward->serial_code,
                 ];
             });
 

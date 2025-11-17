@@ -433,6 +433,88 @@
           </div>
         </div>
 
+        <!-- Benefits Tab -->
+        <div v-if="activeTab === 'benefits'" class="bg-white rounded-2xl shadow-lg overflow-hidden">
+          <div class="p-6">
+            <div class="flex justify-between items-center mb-6">
+              <h3 class="text-lg font-semibold text-gray-700">Benefits Management</h3>
+              <button @click="openBenefitsModal" class="bg-gradient-to-r from-teal-500 to-teal-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold">
+                <i class="fa-solid fa-plus mr-2"></i>Add Benefits
+              </button>
+            </div>
+
+            <div class="space-y-4">
+              <div v-for="benefit in props.benefits" :key="benefit.id" class="bg-gray-50 rounded-xl p-6 border border-gray-200 hover:shadow-lg transition-all">
+                <div class="flex justify-between items-start">
+                  <div class="flex-1">
+                    <h4 class="text-lg font-semibold text-gray-800 mb-2">{{ benefit.title }}</h4>
+                    <p class="text-gray-600 text-sm mb-3" v-html="benefit.content.substring(0, 100) + (benefit.content.length > 100 ? '...' : '')"></p>
+                    <span :class="benefit.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'" class="px-3 py-1 rounded-full text-xs font-semibold">
+                      {{ benefit.is_active ? 'Active' : 'Inactive' }}
+                    </span>
+                  </div>
+                  <div class="flex gap-2 ml-4">
+                    <button @click="editBenefits(benefit)" class="text-blue-600 hover:text-blue-800">
+                      <i class="fa-solid fa-edit"></i>
+                    </button>
+                    <button @click="deleteBenefits(benefit.id)" class="text-red-600 hover:text-red-800">
+                      <i class="fa-solid fa-trash"></i>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div v-if="!props.benefits || props.benefits.length === 0" class="text-center py-12 text-gray-500">
+              <i class="fa-solid fa-star text-4xl mb-4 text-gray-300"></i>
+              <p>No benefits yet. Click "Add Benefits" to create one.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Contact Us Tab -->
+        <div v-if="activeTab === 'contact-us'" class="bg-white rounded-2xl shadow-lg overflow-hidden">
+          <div class="p-6">
+            <div class="flex justify-between items-center mb-6">
+              <h3 class="text-lg font-semibold text-gray-700">Contact Us Management</h3>
+              <button @click="openContactUsModal" class="bg-gradient-to-r from-teal-500 to-teal-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold">
+                <i class="fa-solid fa-plus mr-2"></i>Add Contact Us
+              </button>
+            </div>
+
+            <div class="space-y-4">
+              <div v-for="contact in props.contactUs" :key="contact.id" class="bg-gray-50 rounded-xl p-6 border border-gray-200 hover:shadow-lg transition-all">
+                <div class="flex justify-between items-start">
+                  <div class="flex-1">
+                    <h4 class="text-lg font-semibold text-gray-800 mb-2">{{ contact.title }}</h4>
+                    <p class="text-gray-600 text-sm mb-3" v-html="contact.content.substring(0, 100) + (contact.content.length > 100 ? '...' : '')"></p>
+                    <div v-if="contact.whatsapp_number" class="mb-2">
+                      <span class="text-xs text-gray-500">WhatsApp: </span>
+                      <span class="text-xs font-semibold text-green-600">{{ contact.whatsapp_number }}</span>
+                    </div>
+                    <span :class="contact.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'" class="px-3 py-1 rounded-full text-xs font-semibold">
+                      {{ contact.is_active ? 'Active' : 'Inactive' }}
+                    </span>
+                  </div>
+                  <div class="flex gap-2 ml-4">
+                    <button @click="editContactUs(contact)" class="text-blue-600 hover:text-blue-800">
+                      <i class="fa-solid fa-edit"></i>
+                    </button>
+                    <button @click="deleteContactUs(contact.id)" class="text-red-600 hover:text-red-800">
+                      <i class="fa-solid fa-trash"></i>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div v-if="!props.contactUs || props.contactUs.length === 0" class="text-center py-12 text-gray-500">
+              <i class="fa-solid fa-phone text-4xl mb-4 text-gray-300"></i>
+              <p>No contact us yet. Click "Add Contact Us" to create one.</p>
+            </div>
+          </div>
+        </div>
+
         <!-- Feedback Tab -->
         <div v-if="activeTab === 'feedback'" class="bg-white rounded-2xl shadow-lg overflow-hidden">
           <div class="px-6 py-4 border-b border-gray-200">
@@ -1985,6 +2067,148 @@
       </div>
     </div>
 
+    <!-- Benefits Modal -->
+    <div v-if="showBenefitsModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl mx-4 max-h-[90vh] overflow-y-auto">
+        <div class="px-6 py-4 border-b border-gray-200">
+          <div class="flex justify-between items-center">
+            <h3 class="text-lg font-semibold text-gray-700">
+              {{ editingBenefits ? 'Edit Benefits' : 'Add Benefits' }}
+            </h3>
+            <button @click="closeBenefitsModal" class="text-gray-400 hover:text-gray-600">
+              <i class="fa-solid fa-times text-xl"></i>
+            </button>
+          </div>
+        </div>
+        <form @submit.prevent="saveBenefits" class="p-6">
+          <div class="space-y-4">
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-2">Title *</label>
+              <input 
+                v-model="benefitsForm.title" 
+                type="text" 
+                required 
+                class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
+                placeholder="Enter title"
+              >
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-2">Content *</label>
+              <textarea 
+                v-model="benefitsForm.content" 
+                rows="12" 
+                required 
+                class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
+                placeholder="Enter benefits content"
+              ></textarea>
+            </div>
+            <div class="flex items-center">
+              <input 
+                v-model="benefitsForm.is_active" 
+                type="checkbox" 
+                id="benefits_active" 
+                class="h-4 w-4 text-teal-600 focus:ring-teal-500 border-gray-300 rounded"
+              >
+              <label for="benefits_active" class="ml-2 block text-sm text-gray-700">Active</label>
+            </div>
+          </div>
+          <div class="flex justify-end gap-3 mt-6">
+            <button 
+              type="button" 
+              @click="closeBenefitsModal" 
+              class="px-4 py-2 text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition"
+            >
+              Cancel
+            </button>
+            <button 
+              type="submit" 
+              :disabled="savingBenefits" 
+              class="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            >
+              <i v-if="savingBenefits" class="fa-solid fa-spinner fa-spin"></i>
+              {{ savingBenefits ? 'Saving...' : (editingBenefits ? 'Update' : 'Create') }}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Contact Us Modal -->
+    <div v-if="showContactUsModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl mx-4 max-h-[90vh] overflow-y-auto">
+        <div class="px-6 py-4 border-b border-gray-200">
+          <div class="flex justify-between items-center">
+            <h3 class="text-lg font-semibold text-gray-700">
+              {{ editingContactUs ? 'Edit Contact Us' : 'Add Contact Us' }}
+            </h3>
+            <button @click="closeContactUsModal" class="text-gray-400 hover:text-gray-600">
+              <i class="fa-solid fa-times text-xl"></i>
+            </button>
+          </div>
+        </div>
+        <form @submit.prevent="saveContactUs" class="p-6">
+          <div class="space-y-4">
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-2">Title *</label>
+              <input 
+                v-model="contactUsForm.title" 
+                type="text" 
+                required 
+                class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
+                placeholder="Enter title"
+              >
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-2">Content *</label>
+              <textarea 
+                v-model="contactUsForm.content" 
+                rows="12" 
+                required 
+                class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
+                placeholder="Enter contact us content"
+              ></textarea>
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-2">WhatsApp Number</label>
+              <input 
+                v-model="contactUsForm.whatsapp_number" 
+                type="text" 
+                class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
+                placeholder="e.g., +6281234567890"
+              >
+              <p class="text-xs text-gray-500 mt-1">Format: +62xxxxxxxxxxx (dengan kode negara)</p>
+            </div>
+            <div class="flex items-center">
+              <input 
+                v-model="contactUsForm.is_active" 
+                type="checkbox" 
+                id="contact_us_active" 
+                class="h-4 w-4 text-teal-600 focus:ring-teal-500 border-gray-300 rounded"
+              >
+              <label for="contact_us_active" class="ml-2 block text-sm text-gray-700">Active</label>
+            </div>
+          </div>
+          <div class="flex justify-end gap-3 mt-6">
+            <button 
+              type="button" 
+              @click="closeContactUsModal" 
+              class="px-4 py-2 text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition"
+            >
+              Cancel
+            </button>
+            <button 
+              type="submit" 
+              :disabled="savingContactUs" 
+              class="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            >
+              <i v-if="savingContactUs" class="fa-solid fa-spinner fa-spin"></i>
+              {{ savingContactUs ? 'Saving...' : (editingContactUs ? 'Update' : 'Create') }}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
     <!-- Reply Feedback Modal -->
     <div v-if="showReplyModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto">
@@ -2180,6 +2404,8 @@ const props = defineProps({
   faqs: Array,
   termsConditions: Array,
   aboutUs: Array,
+  benefits: Array,
+  contactUs: Array,
   vouchers: Array,
   members: Object,
   occupations: Array,
@@ -2197,6 +2423,8 @@ const tabs = [
   { id: 'faq', name: 'FAQ', icon: 'fa-solid fa-question-circle' },
   { id: 'terms-condition', name: 'Terms & Condition', icon: 'fa-solid fa-file-contract' },
   { id: 'about-us', name: 'About Us', icon: 'fa-solid fa-info-circle' },
+  { id: 'benefits', name: 'Benefits', icon: 'fa-solid fa-star' },
+  { id: 'contact-us', name: 'Contact Us', icon: 'fa-solid fa-phone' },
   { id: 'voucher', name: 'Voucher', icon: 'fa-solid fa-ticket' },
   { id: 'feedback', name: 'Feedback', icon: 'fa-solid fa-comment-dots' }
 ]
@@ -2310,6 +2538,25 @@ const termConditionForm = ref({
 // About Us management
 const showAboutUsModal = ref(false)
 const editingAboutUs = ref(null)
+
+const showBenefitsModal = ref(false)
+const editingBenefits = ref(null)
+const savingBenefits = ref(false)
+const benefitsForm = ref({
+  title: '',
+  content: '',
+  is_active: true
+})
+
+const showContactUsModal = ref(false)
+const editingContactUs = ref(null)
+const savingContactUs = ref(false)
+const contactUsForm = ref({
+  title: '',
+  content: '',
+  whatsapp_number: '',
+  is_active: true
+})
 const savingAboutUs = ref(false)
 const aboutUsForm = ref({
   title: '',
@@ -2395,6 +2642,11 @@ const formatCurrency = (amount) => {
     currency: 'IDR',
     minimumFractionDigits: 0
   }).format(amount)
+}
+
+const formatNumber = (number) => {
+  if (!number && number !== 0) return '0'
+  return new Intl.NumberFormat('id-ID').format(number)
 }
 
 const formatDate = (date) => {
@@ -2981,28 +3233,69 @@ const saveBrand = () => {
   
   const method = editingBrand.value ? 'put' : 'post'
   
-  router[method](url, formData, {
-    forceFormData: true,
-    onSuccess: () => {
-      savingBrand.value = false
-      closeBrandModal()
-      Swal.fire({
-        icon: 'success',
-        title: 'Success!',
-        text: editingBrand.value ? 'Brand updated successfully!' : 'Brand created successfully!',
-        timer: 2000,
-        showConfirmButton: false
-      })
-    },
-    onError: () => {
-      savingBrand.value = false
-      Swal.fire({
-        icon: 'error',
-        title: 'Error!',
-        text: 'Failed to save brand. Please try again.',
-        confirmButtonText: 'OK'
-      })
+  // Use axios for file uploads to get better error handling
+  axios({
+    method: method,
+    url: url,
+    data: formData,
+    headers: {
+      'Content-Type': 'multipart/form-data',
+      'Accept': 'application/json',
+      'X-Requested-With': 'XMLHttpRequest'
     }
+  })
+  .then((response) => {
+    savingBrand.value = false
+    closeBrandModal()
+    Swal.fire({
+      icon: 'success',
+      title: 'Success!',
+      text: editingBrand.value ? 'Brand updated successfully!' : 'Brand created successfully!',
+      timer: 2000,
+      showConfirmButton: false
+    })
+    // Reload page to refresh data
+    window.location.reload()
+  })
+  .catch((error) => {
+    savingBrand.value = false
+    console.error('Error saving brand:', error)
+    
+    let errorMessage = 'Failed to save brand. Please try again.'
+    
+    if (error.response) {
+      // Server responded with error
+      const responseData = error.response.data
+      
+      if (responseData.message) {
+        errorMessage = responseData.message
+      } else if (responseData.errors) {
+        // Check for general error first
+        if (responseData.errors.general) {
+          errorMessage = Array.isArray(responseData.errors.general) 
+            ? responseData.errors.general[0] 
+            : responseData.errors.general
+        } else {
+          // Get first error message
+          const errorKeys = Object.keys(responseData.errors)
+          if (errorKeys.length > 0) {
+            const firstError = responseData.errors[errorKeys[0]]
+            errorMessage = Array.isArray(firstError) ? firstError[0] : firstError
+          }
+        }
+      } else if (responseData.error) {
+        errorMessage = responseData.error
+      }
+    } else if (error.message) {
+      errorMessage = error.message
+    }
+    
+    Swal.fire({
+      icon: 'error',
+      title: 'Error!',
+      text: errorMessage,
+      confirmButtonText: 'OK'
+    })
   })
 }
 
@@ -3370,6 +3663,196 @@ const saveAboutUs = () => {
         title: 'Error!',
         text: 'Failed to save About Us. Please try again.',
         confirmButtonText: 'OK'
+      })
+    }
+  })
+}
+
+const openBenefitsModal = () => {
+  editingBenefits.value = null
+  benefitsForm.value = {
+    title: '',
+    content: '',
+    is_active: true
+  }
+  showBenefitsModal.value = true
+}
+
+const closeBenefitsModal = () => {
+  showBenefitsModal.value = false
+  editingBenefits.value = null
+}
+
+const editBenefits = (benefit) => {
+  editingBenefits.value = benefit
+  benefitsForm.value = {
+    title: benefit.title || '',
+    content: benefit.content || '',
+    is_active: benefit.is_active
+  }
+  showBenefitsModal.value = true
+}
+
+const saveBenefits = () => {
+  if (savingBenefits.value) return
+  
+  savingBenefits.value = true
+  
+  const url = editingBenefits.value 
+    ? `/admin/member-apps-settings/benefits/${editingBenefits.value.id}`
+    : '/admin/member-apps-settings/benefits'
+  
+  const method = editingBenefits.value ? 'put' : 'post'
+  
+  router[method](url, benefitsForm.value, {
+    onSuccess: () => {
+      savingBenefits.value = false
+      closeBenefitsModal()
+      Swal.fire({
+        icon: 'success',
+        title: 'Success!',
+        text: editingBenefits.value ? 'Benefits updated successfully!' : 'Benefits created successfully!',
+        timer: 2000,
+        showConfirmButton: false
+      })
+    },
+    onError: () => {
+      savingBenefits.value = false
+      Swal.fire({
+        icon: 'error',
+        title: 'Error!',
+        text: 'Failed to save benefits. Please try again.',
+        confirmButtonText: 'OK'
+      })
+    }
+  })
+}
+
+const deleteBenefits = (id) => {
+  Swal.fire({
+    title: 'Are you sure?',
+    text: "You won't be able to revert this!",
+    icon: 'warning',
+    showCancelButton: true,
+    confirmColor: '#d33',
+    cancelColor: '#3085d6',
+    confirmText: 'Yes, delete it!'
+  }).then((result) => {
+    if (result.isConfirmed) {
+      router.delete(`/admin/member-apps-settings/benefits/${id}`, {
+        onSuccess: () => {
+          Swal.fire({
+            icon: 'success',
+            title: 'Deleted!',
+            text: 'Benefits has been deleted.',
+            timer: 2000,
+            showConfirmButton: false
+          })
+        },
+        onError: () => {
+          Swal.fire({
+            icon: 'error',
+            title: 'Error!',
+            text: 'Failed to delete benefits.',
+            confirmButtonText: 'OK'
+          })
+        }
+      })
+    }
+  })
+}
+
+const openContactUsModal = () => {
+  editingContactUs.value = null
+  contactUsForm.value = {
+    title: '',
+    content: '',
+    whatsapp_number: '',
+    is_active: true
+  }
+  showContactUsModal.value = true
+}
+
+const closeContactUsModal = () => {
+  showContactUsModal.value = false
+  editingContactUs.value = null
+}
+
+const editContactUs = (contact) => {
+  editingContactUs.value = contact
+  contactUsForm.value = {
+    title: contact.title || '',
+    content: contact.content || '',
+    whatsapp_number: contact.whatsapp_number || '',
+    is_active: contact.is_active
+  }
+  showContactUsModal.value = true
+}
+
+const saveContactUs = () => {
+  if (savingContactUs.value) return
+  
+  savingContactUs.value = true
+  
+  const url = editingContactUs.value 
+    ? `/admin/member-apps-settings/contact-us/${editingContactUs.value.id}`
+    : '/admin/member-apps-settings/contact-us'
+  
+  const method = editingContactUs.value ? 'put' : 'post'
+  
+  router[method](url, contactUsForm.value, {
+    onSuccess: () => {
+      savingContactUs.value = false
+      closeContactUsModal()
+      Swal.fire({
+        icon: 'success',
+        title: 'Success!',
+        text: editingContactUs.value ? 'Contact Us updated successfully!' : 'Contact Us created successfully!',
+        timer: 2000,
+        showConfirmButton: false
+      })
+    },
+    onError: () => {
+      savingContactUs.value = false
+      Swal.fire({
+        icon: 'error',
+        title: 'Error!',
+        text: 'Failed to save contact us. Please try again.',
+        confirmButtonText: 'OK'
+      })
+    }
+  })
+}
+
+const deleteContactUs = (id) => {
+  Swal.fire({
+    title: 'Are you sure?',
+    text: "You won't be able to revert this!",
+    icon: 'warning',
+    showCancelButton: true,
+    confirmColor: '#d33',
+    cancelColor: '#3085d6',
+    confirmText: 'Yes, delete it!'
+  }).then((result) => {
+    if (result.isConfirmed) {
+      router.delete(`/admin/member-apps-settings/contact-us/${id}`, {
+        onSuccess: () => {
+          Swal.fire({
+            icon: 'success',
+            title: 'Deleted!',
+            text: 'Contact Us has been deleted.',
+            timer: 2000,
+            showConfirmButton: false
+          })
+        },
+        onError: () => {
+          Swal.fire({
+            icon: 'error',
+            title: 'Error!',
+            text: 'Failed to delete contact us.',
+            confirmButtonText: 'OK'
+          })
+        }
       })
     }
   })

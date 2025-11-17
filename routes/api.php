@@ -351,6 +351,8 @@ Route::prefix('mobile/member')->group(function () {
     Route::get('/whats-on', [\App\Http\Controllers\Mobile\Member\WhatsOnController::class, 'index'])->name('api.mobile.member.whats-on.index');
     Route::get('/terms-conditions', [\App\Http\Controllers\Mobile\Member\TermConditionController::class, 'index'])->name('api.mobile.member.terms-conditions.index');
     Route::get('/about-us', [\App\Http\Controllers\Mobile\Member\AboutUsController::class, 'index'])->name('api.mobile.member.about-us.index');
+    Route::get('/benefits', [\App\Http\Controllers\Mobile\Member\BenefitsController::class, 'index'])->name('api.mobile.member.benefits.index');
+    Route::get('/contact-us', [\App\Http\Controllers\Mobile\Member\ContactUsController::class, 'index'])->name('api.mobile.member.contact-us.index');
     
     // Auth routes (no auth required)
     Route::post('/auth/register', [\App\Http\Controllers\Mobile\Member\AuthController::class, 'register'])->name('api.mobile.member.auth.register');

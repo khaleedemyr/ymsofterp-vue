@@ -13,6 +13,8 @@ use App\Models\MemberAppsBrandGallery;
 use App\Models\MemberAppsFaq;
 use App\Models\MemberAppsTermCondition;
 use App\Models\MemberAppsAboutUs;
+use App\Models\MemberAppsBenefits;
+use App\Models\MemberAppsContactUs;
 use App\Models\MemberAppsMember;
 use App\Models\MemberAppsOccupation;
 use App\Models\MemberAppsVoucher;
@@ -72,6 +74,12 @@ class MemberAppsSettingsController extends Controller
             $aboutUs = MemberAppsAboutUs::orderBy('created_at', 'desc')->get();
             \Log::info('MemberAppsSettings - About Us loaded:', ['count' => $aboutUs->count()]);
             
+            $benefits = MemberAppsBenefits::orderBy('created_at', 'desc')->get();
+            \Log::info('MemberAppsSettings - Benefits loaded:', ['count' => $benefits->count()]);
+            
+            $contactUs = MemberAppsContactUs::orderBy('created_at', 'desc')->get();
+            \Log::info('MemberAppsSettings - Contact Us loaded:', ['count' => $contactUs->count()]);
+            
             $members = MemberAppsMember::with('occupation')->orderBy('created_at', 'desc')->paginate(20);
             \Log::info('MemberAppsSettings - Members loaded:', ['count' => $members->total()]);
             
@@ -115,6 +123,8 @@ class MemberAppsSettingsController extends Controller
                 'faqs' => $faqs,
                 'termsConditions' => $termsConditions,
                 'aboutUs' => $aboutUs,
+                'benefits' => $benefits,
+                'contactUs' => $contactUs,
                 'members' => $members,
                 'occupations' => $occupations,
                 'vouchers' => $vouchers,
@@ -221,13 +231,29 @@ class MemberAppsSettingsController extends Controller
             return redirect()->back()->withErrors($validator)->withInput();
         }
 
+        // Generate unique serial code
+        $serialCode = $this->generateSerialCode();
+
         MemberAppsReward::create([
             'item_id' => $request->item_id,
             'points_required' => $request->points_required,
+            'serial_code' => $serialCode,
             'is_active' => true
         ]);
 
         return redirect()->back()->with('success', 'Reward berhasil ditambahkan');
+    }
+
+    private function generateSerialCode()
+    {
+        do {
+            $date = date('Ymd');
+            $time = date('His');
+            $random = strtoupper(substr(md5(uniqid(rand(), true)), 0, 4));
+            $serialCode = "JTS-{$date}-{$time}-{$random}";
+        } while (MemberAppsReward::where('serial_code', $serialCode)->exists());
+
+        return $serialCode;
     }
 
     public function updateReward(Request $request, $id)
@@ -653,147 +679,208 @@ class MemberAppsSettingsController extends Controller
     // Brand Methods
     public function storeBrand(Request $request)
     {
-        $validator = Validator::make($request->all(), [
-            'outlet_id' => 'required|exists:tbl_data_outlet,id_outlet',
-            'description' => 'nullable|string',
-            'whatsapp_number' => 'nullable|string|max:20',
-            'logo' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
-            'pdf_menu' => 'nullable|file|mimes:pdf|max:10240',
-            'pdf_new_dining_experience' => 'nullable|file|mimes:pdf|max:10240',
-            'gallery_images' => 'nullable|array',
-            'gallery_images.*' => 'image|mimes:jpeg,png,jpg,gif|max:2048'
-        ]);
+        try {
+            $validator = Validator::make($request->all(), [
+                'outlet_id' => 'required|exists:tbl_data_outlet,id_outlet',
+                'description' => 'nullable|string',
+                'whatsapp_number' => 'nullable|string|max:20',
+                'logo' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
+                'pdf_menu' => 'nullable|file|mimes:pdf|max:10240',
+                'pdf_new_dining_experience' => 'nullable|file|mimes:pdf|max:10240',
+                'gallery_images' => 'nullable|array',
+                'gallery_images.*' => 'image|mimes:jpeg,png,jpg,gif|max:2048'
+            ]);
 
-        if ($validator->fails()) {
-            return redirect()->back()->withErrors($validator)->withInput();
-        }
-
-        // Get outlet name
-        $outlet = DB::table('tbl_data_outlet')->where('id_outlet', $request->outlet_id)->first();
-        if (!$outlet) {
-            return redirect()->back()->with('error', 'Outlet tidak ditemukan');
-        }
-
-        // Check if brand already exists for this outlet
-        $existingBrand = MemberAppsBrand::where('outlet_id', $request->outlet_id)->first();
-        if ($existingBrand) {
-            return redirect()->back()->with('error', 'Brand untuk outlet ini sudah ada');
-        }
-
-        $data = [
-            'outlet_id' => $request->outlet_id,
-            'name' => $outlet->nama_outlet,
-            'description' => $request->description,
-            'whatsapp_number' => $request->whatsapp_number,
-            'is_active' => true
-        ];
-
-        if ($request->hasFile('logo')) {
-            $data['logo'] = $request->file('logo')->store('member-apps/brands/logos', 'public');
-        }
-
-        if ($request->hasFile('pdf_menu')) {
-            $data['pdf_menu'] = $request->file('pdf_menu')->store('member-apps/brands/pdfs', 'public');
-        }
-
-        if ($request->hasFile('pdf_new_dining_experience')) {
-            $data['pdf_new_dining_experience'] = $request->file('pdf_new_dining_experience')->store('member-apps/brands/pdfs', 'public');
-        }
-
-        $brand = MemberAppsBrand::create($data);
-
-        // Handle gallery images
-        if ($request->hasFile('gallery_images')) {
-            foreach ($request->file('gallery_images') as $index => $image) {
-                $imagePath = $image->store('member-apps/brands/gallery', 'public');
-                MemberAppsBrandGallery::create([
-                    'brand_id' => $brand->id,
-                    'image' => $imagePath,
-                    'sort_order' => $index
-                ]);
+            if ($validator->fails()) {
+                \Log::error('Brand validation failed', ['errors' => $validator->errors()->toArray()]);
+                return redirect()->back()->withErrors($validator)->withInput();
             }
-        }
 
-        return redirect()->back()->with('success', 'Brand berhasil ditambahkan');
+            // Get outlet name
+            $outlet = DB::table('tbl_data_outlet')->where('id_outlet', $request->outlet_id)->first();
+            if (!$outlet) {
+                \Log::error('Brand store - Outlet not found', ['outlet_id' => $request->outlet_id]);
+                return redirect()->back()->withErrors(['outlet_id' => 'Outlet tidak ditemukan'])->withInput();
+            }
+
+            // Check if brand already exists for this outlet
+            $existingBrand = MemberAppsBrand::where('outlet_id', $request->outlet_id)->first();
+            if ($existingBrand) {
+                \Log::error('Brand store - Brand already exists', ['outlet_id' => $request->outlet_id]);
+                return redirect()->back()->withErrors(['outlet_id' => 'Brand untuk outlet ini sudah ada'])->withInput();
+            }
+
+            $data = [
+                'outlet_id' => $request->outlet_id,
+                'name' => $outlet->nama_outlet,
+                'description' => $request->description,
+                'whatsapp_number' => $request->whatsapp_number,
+                'is_active' => true
+            ];
+
+            if ($request->hasFile('logo')) {
+                $data['logo'] = $request->file('logo')->store('member-apps/brands/logos', 'public');
+            }
+
+            if ($request->hasFile('pdf_menu')) {
+                $data['pdf_menu'] = $request->file('pdf_menu')->store('member-apps/brands/pdfs', 'public');
+            }
+
+            if ($request->hasFile('pdf_new_dining_experience')) {
+                $data['pdf_new_dining_experience'] = $request->file('pdf_new_dining_experience')->store('member-apps/brands/pdfs', 'public');
+            }
+
+            $brand = MemberAppsBrand::create($data);
+
+            // Handle gallery images
+            if ($request->hasFile('gallery_images')) {
+                foreach ($request->file('gallery_images') as $index => $image) {
+                    $imagePath = $image->store('member-apps/brands/gallery', 'public');
+                    MemberAppsBrandGallery::create([
+                        'brand_id' => $brand->id,
+                        'image' => $imagePath,
+                        'sort_order' => $index
+                    ]);
+                }
+            }
+
+            \Log::info('Brand created successfully', ['brand_id' => $brand->id, 'outlet_id' => $request->outlet_id]);
+            return redirect()->back()->with('success', 'Brand berhasil ditambahkan');
+        } catch (\Exception $e) {
+            \Log::error('Error storing brand', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'request_data' => $request->except(['logo', 'pdf_menu', 'pdf_new_dining_experience', 'gallery_images'])
+            ]);
+            
+            return redirect()->back()
+                ->withErrors(['general' => 'Terjadi kesalahan: ' . $e->getMessage()])
+                ->withInput();
+        }
     }
 
     public function updateBrand(Request $request, $id)
     {
-        $brand = MemberAppsBrand::findOrFail($id);
-        
-        $validator = Validator::make($request->all(), [
-            'description' => 'nullable|string',
-            'whatsapp_number' => 'nullable|string|max:20',
-            'logo' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
-            'pdf_menu' => 'nullable|file|mimes:pdf|max:10240',
-            'pdf_new_dining_experience' => 'nullable|file|mimes:pdf|max:10240',
-            'gallery_images' => 'nullable|array',
-            'gallery_images.*' => 'image|mimes:jpeg,png,jpg,gif|max:2048',
-            'delete_gallery_ids' => 'nullable|array',
-            'delete_gallery_ids.*' => 'exists:member_apps_brand_galleries,id'
-        ]);
+        try {
+            $brand = MemberAppsBrand::findOrFail($id);
+            
+            $validator = Validator::make($request->all(), [
+                'description' => 'nullable|string',
+                'whatsapp_number' => 'nullable|string|max:20',
+                'logo' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
+                'pdf_menu' => 'nullable|file|mimes:pdf|max:10240',
+                'pdf_new_dining_experience' => 'nullable|file|mimes:pdf|max:10240',
+                'gallery_images' => 'nullable|array',
+                'gallery_images.*' => 'image|mimes:jpeg,png,jpg,gif|max:2048',
+                'delete_gallery_ids' => 'nullable|array',
+                'delete_gallery_ids.*' => 'exists:member_apps_brand_galleries,id'
+            ]);
 
-        if ($validator->fails()) {
-            return redirect()->back()->withErrors($validator)->withInput();
-        }
-
-        $data = [
-            'description' => $request->description,
-            'whatsapp_number' => $request->whatsapp_number,
-            'is_active' => true
-        ];
-
-        if ($request->hasFile('logo')) {
-            // Delete old logo
-            if ($brand->logo) {
-                Storage::disk('public')->delete($brand->logo);
+            if ($validator->fails()) {
+                \Log::error('Brand update validation failed', ['errors' => $validator->errors()->toArray(), 'brand_id' => $id]);
+                
+                // Check if AJAX request
+                if ($request->expectsJson() || $request->ajax() || $request->wantsJson()) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Validation failed',
+                        'errors' => $validator->errors()
+                    ], 422);
+                }
+                
+                return redirect()->back()->withErrors($validator)->withInput();
             }
-            $data['logo'] = $request->file('logo')->store('member-apps/brands/logos', 'public');
-        }
 
-        if ($request->hasFile('pdf_menu')) {
-            // Delete old PDF menu
-            if ($brand->pdf_menu) {
-                Storage::disk('public')->delete($brand->pdf_menu);
+            $data = [
+                'description' => $request->description,
+                'whatsapp_number' => $request->whatsapp_number,
+                'is_active' => true
+            ];
+
+            if ($request->hasFile('logo')) {
+                // Delete old logo
+                if ($brand->logo) {
+                    Storage::disk('public')->delete($brand->logo);
+                }
+                $data['logo'] = $request->file('logo')->store('member-apps/brands/logos', 'public');
             }
-            $data['pdf_menu'] = $request->file('pdf_menu')->store('member-apps/brands/pdfs', 'public');
-        }
 
-        if ($request->hasFile('pdf_new_dining_experience')) {
-            // Delete old PDF new dining experience
-            if ($brand->pdf_new_dining_experience) {
-                Storage::disk('public')->delete($brand->pdf_new_dining_experience);
+            if ($request->hasFile('pdf_menu')) {
+                // Delete old PDF menu
+                if ($brand->pdf_menu) {
+                    Storage::disk('public')->delete($brand->pdf_menu);
+                }
+                $data['pdf_menu'] = $request->file('pdf_menu')->store('member-apps/brands/pdfs', 'public');
             }
-            $data['pdf_new_dining_experience'] = $request->file('pdf_new_dining_experience')->store('member-apps/brands/pdfs', 'public');
-        }
 
-        $brand->update($data);
+            if ($request->hasFile('pdf_new_dining_experience')) {
+                // Delete old PDF new dining experience
+                if ($brand->pdf_new_dining_experience) {
+                    Storage::disk('public')->delete($brand->pdf_new_dining_experience);
+                }
+                $data['pdf_new_dining_experience'] = $request->file('pdf_new_dining_experience')->store('member-apps/brands/pdfs', 'public');
+            }
 
-        // Handle delete gallery images
-        if ($request->has('delete_gallery_ids')) {
-            foreach ($request->delete_gallery_ids as $galleryId) {
-                $gallery = MemberAppsBrandGallery::find($galleryId);
-                if ($gallery) {
-                    Storage::disk('public')->delete($gallery->image);
-                    $gallery->delete();
+            $brand->update($data);
+
+            // Handle delete gallery images
+            if ($request->has('delete_gallery_ids')) {
+                foreach ($request->delete_gallery_ids as $galleryId) {
+                    $gallery = MemberAppsBrandGallery::find($galleryId);
+                    if ($gallery) {
+                        Storage::disk('public')->delete($gallery->image);
+                        $gallery->delete();
+                    }
                 }
             }
-        }
 
-        // Handle new gallery images
-        if ($request->hasFile('gallery_images')) {
-            $maxSortOrder = MemberAppsBrandGallery::where('brand_id', $brand->id)->max('sort_order') ?? -1;
-            foreach ($request->file('gallery_images') as $index => $image) {
-                $imagePath = $image->store('member-apps/brands/gallery', 'public');
-                MemberAppsBrandGallery::create([
-                    'brand_id' => $brand->id,
-                    'image' => $imagePath,
-                    'sort_order' => $maxSortOrder + $index + 1
-                ]);
+            // Handle new gallery images
+            if ($request->hasFile('gallery_images')) {
+                $maxSortOrder = MemberAppsBrandGallery::where('brand_id', $brand->id)->max('sort_order') ?? -1;
+                foreach ($request->file('gallery_images') as $index => $image) {
+                    $imagePath = $image->store('member-apps/brands/gallery', 'public');
+                    MemberAppsBrandGallery::create([
+                        'brand_id' => $brand->id,
+                        'image' => $imagePath,
+                        'sort_order' => $maxSortOrder + $index + 1
+                    ]);
+                }
             }
-        }
 
-        return redirect()->back()->with('success', 'Brand berhasil diperbarui');
+            \Log::info('Brand updated successfully', ['brand_id' => $brand->id]);
+            
+            // Check if AJAX request
+            if ($request->expectsJson() || $request->ajax() || $request->wantsJson()) {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Brand berhasil diperbarui'
+                ], 200);
+            }
+            
+            return redirect()->back()->with('success', 'Brand berhasil diperbarui');
+        } catch (\Exception $e) {
+            \Log::error('Error updating brand', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'brand_id' => $id,
+                'request_data' => $request->except(['logo', 'pdf_menu', 'pdf_new_dining_experience', 'gallery_images'])
+            ]);
+            
+            $errorMessage = 'Terjadi kesalahan: ' . $e->getMessage();
+            
+            // Check if AJAX request
+            if ($request->expectsJson() || $request->ajax() || $request->wantsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $errorMessage,
+                    'errors' => ['general' => $errorMessage]
+                ], 500);
+            }
+            
+            return redirect()->back()
+                ->withErrors(['general' => $errorMessage])
+                ->withInput();
+        }
     }
 
     public function deleteBrand($id)
@@ -981,6 +1068,116 @@ class MemberAppsSettingsController extends Controller
         $aboutUs->delete();
 
         return redirect()->back()->with('success', 'About Us berhasil dihapus');
+    }
+
+    // Benefits Methods
+    public function storeBenefits(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'title' => 'required|string|max:255',
+            'content' => 'required|string',
+            'is_active' => 'nullable|boolean'
+        ]);
+
+        if ($validator->fails()) {
+            return redirect()->back()->withErrors($validator)->withInput();
+        }
+
+        MemberAppsBenefits::create([
+            'title' => $request->title,
+            'content' => $request->content,
+            'is_active' => $request->has('is_active')
+        ]);
+
+        return redirect()->back()->with('success', 'Benefits berhasil ditambahkan');
+    }
+
+    public function updateBenefits(Request $request, $id)
+    {
+        $benefits = MemberAppsBenefits::findOrFail($id);
+        
+        $validator = Validator::make($request->all(), [
+            'title' => 'required|string|max:255',
+            'content' => 'required|string',
+            'is_active' => 'nullable|boolean'
+        ]);
+
+        if ($validator->fails()) {
+            return redirect()->back()->withErrors($validator)->withInput();
+        }
+
+        $benefits->update([
+            'title' => $request->title,
+            'content' => $request->content,
+            'is_active' => $request->has('is_active')
+        ]);
+
+        return redirect()->back()->with('success', 'Benefits berhasil diperbarui');
+    }
+
+    public function deleteBenefits($id)
+    {
+        $benefits = MemberAppsBenefits::findOrFail($id);
+        $benefits->delete();
+
+        return redirect()->back()->with('success', 'Benefits berhasil dihapus');
+    }
+
+    // Contact Us Methods
+    public function storeContactUs(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'title' => 'required|string|max:255',
+            'content' => 'required|string',
+            'whatsapp_number' => 'nullable|string|max:20',
+            'is_active' => 'nullable|boolean'
+        ]);
+
+        if ($validator->fails()) {
+            return redirect()->back()->withErrors($validator)->withInput();
+        }
+
+        MemberAppsContactUs::create([
+            'title' => $request->title,
+            'content' => $request->content,
+            'whatsapp_number' => $request->whatsapp_number,
+            'is_active' => $request->has('is_active')
+        ]);
+
+        return redirect()->back()->with('success', 'Contact Us berhasil ditambahkan');
+    }
+
+    public function updateContactUs(Request $request, $id)
+    {
+        $contactUs = MemberAppsContactUs::findOrFail($id);
+        
+        $validator = Validator::make($request->all(), [
+            'title' => 'required|string|max:255',
+            'content' => 'required|string',
+            'whatsapp_number' => 'nullable|string|max:20',
+            'is_active' => 'nullable|boolean'
+        ]);
+
+        if ($validator->fails()) {
+            return redirect()->back()->withErrors($validator)->withInput();
+        }
+
+        $contactUs->update([
+            'title' => $request->title,
+            'content' => $request->content,
+            'whatsapp_number' => $request->whatsapp_number,
+            'is_active' => $request->has('is_active')
+        ]);
+
+        return redirect()->back()->with('success', 'Contact Us berhasil diperbarui');
+    }
+
+    public function deleteContactUs($id)
+    {
+        $contactUs = MemberAppsContactUs::findOrFail($id);
+        $contactUs->delete();
+
+        return redirect()->back()->with('success', 'Contact Us berhasil dihapus');
     }
 
     // Voucher Methods

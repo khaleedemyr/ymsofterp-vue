@@ -11,6 +11,7 @@ class MemberAppsReward extends Model
     protected $fillable = [
         'item_id',
         'points_required',
+        'serial_code',
         'is_active'
     ];
 
