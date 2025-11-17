@@ -359,6 +359,97 @@ Route::prefix('mobile/member')->group(function () {
     Route::post('/auth/login', [\App\Http\Controllers\Mobile\Member\AuthController::class, 'login'])->name('api.mobile.member.auth.login');
     Route::get('/auth/occupations', [\App\Http\Controllers\Mobile\Member\AuthController::class, 'getOccupations'])->name('api.mobile.member.auth.occupations');
     
+    // Debug route - test token validation (NO AUTH - untuk debugging)
+    Route::get('/auth/test-token', function (Request $request) {
+        $token = $request->bearerToken();
+        
+        \Log::info('Test Token Debug (No Auth)', [
+            'has_token' => $token !== null,
+            'token_preview' => $token ? substr($token, 0, 30) . '...' : 'no token',
+            'token_length' => $token ? strlen($token) : 0,
+            'authorization_header' => $request->header('Authorization'),
+            'all_headers' => $request->headers->all(),
+        ]);
+        
+        $result = [
+            'has_token' => $token !== null,
+            'token_preview' => $token ? substr($token, 0, 30) . '...' : 'no token',
+            'token_length' => $token ? strlen($token) : 0,
+        ];
+        
+        // Try to find token in database
+        if ($token) {
+            $tokenParts = explode('|', $token);
+            if (count($tokenParts) === 2) {
+                $tokenId = $tokenParts[0];
+                $tokenHash = hash('sha256', $tokenParts[1]);
+                
+                $dbToken = \DB::table('personal_access_tokens')
+                    ->where('id', $tokenId)
+                    ->first();
+                
+                $result['token_parsed'] = true;
+                $result['token_id'] = $tokenId;
+                $result['db_token_found'] = $dbToken !== null;
+                
+                if ($dbToken) {
+                    $result['db_token_info'] = [
+                        'id' => $dbToken->id,
+                        'tokenable_id' => $dbToken->tokenable_id,
+                        'tokenable_type' => $dbToken->tokenable_type,
+                        'name' => $dbToken->name,
+                        'last_used_at' => $dbToken->last_used_at,
+                        'expires_at' => $dbToken->expires_at,
+                        'created_at' => $dbToken->created_at,
+                    ];
+                    
+                    // Try to get member
+                    if ($dbToken->tokenable_type === 'App\\Models\\MemberAppsMember') {
+                        $member = \App\Models\MemberAppsMember::find($dbToken->tokenable_id);
+                        $result['member_found'] = $member !== null;
+                        if ($member) {
+                            $result['member_info'] = [
+                                'id' => $member->id,
+                                'member_id' => $member->member_id,
+                                'email' => $member->email,
+                                'nama_lengkap' => $member->nama_lengkap,
+                            ];
+                        }
+                    }
+                }
+                
+                \Log::info('Token Database Check', $result);
+            } else {
+                $result['token_parsed'] = false;
+                $result['error'] = 'Token format invalid - should be {id}|{hash}';
+            }
+        }
+        
+        return response()->json($result);
+    });
+    
+    // Debug route - test dengan auth:sanctum (TEMPORARY - hapus setelah fix)
+    Route::get('/auth/test-token-auth', function (Request $request) {
+        $token = $request->bearerToken();
+        $user = $request->user();
+        
+        \Log::info('Test Token Debug (With Auth)', [
+            'has_token' => $token !== null,
+            'token_preview' => $token ? substr($token, 0, 30) . '...' : 'no token',
+            'user_authenticated' => $user !== null,
+            'user_id' => $user ? $user->id : null,
+            'user_email' => $user ? $user->email : null,
+        ]);
+        
+        return response()->json([
+            'has_token' => $token !== null,
+            'token_preview' => $token ? substr($token, 0, 30) . '...' : 'no token',
+            'user_authenticated' => $user !== null,
+            'user_id' => $user ? $user->id : null,
+            'user_email' => $user ? $user->email : null,
+        ]);
+    })->middleware('auth:sanctum');
+    
     // Protected routes (require auth)
     Route::middleware(['auth:sanctum'])->group(function () {
                 // Auth
