@@ -140,8 +140,17 @@ class AuthController extends Controller
                 'last_login_at' => now()
             ]);
 
+            // Delete old tokens (optional - untuk security, hapus token lama)
+            // $member->tokens()->delete();
+
             // Create token
             $token = $member->createToken('mobile-app')->plainTextToken;
+            
+            Log::info('Login successful', [
+                'member_id' => $member->id,
+                'email' => $member->email,
+                'token_preview' => substr($token, 0, 20) . '...'
+            ]);
 
             return response()->json([
                 'success' => true,
@@ -162,7 +171,9 @@ class AuthController extends Controller
             ]);
 
         } catch (\Exception $e) {
-            Log::error('Login Error: ' . $e->getMessage());
+            Log::error('Login Error: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString()
+            ]);
             return response()->json([
                 'success' => false,
                 'message' => 'Login failed',
@@ -177,8 +188,16 @@ class AuthController extends Controller
     public function logout(Request $request)
     {
         try {
-            // Revoke current token
-            $request->user()->currentAccessToken()->delete();
+            $user = $request->user();
+            
+            if ($user) {
+                // Delete current token
+                $request->user()->currentAccessToken()->delete();
+                
+                Log::info('Logout successful', [
+                    'member_id' => $user->id
+                ]);
+            }
 
             return response()->json([
                 'success' => true,
@@ -202,6 +221,21 @@ class AuthController extends Controller
         try {
             $member = $request->user();
             
+            if (!$member) {
+                Log::warning('Auth me called but no user found', [
+                    'token_preview' => $request->bearerToken() ? substr($request->bearerToken(), 0, 20) . '...' : 'no token'
+                ]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthenticated'
+                ], 401);
+            }
+            
+            Log::info('Auth me successful', [
+                'member_id' => $member->id,
+                'email' => $member->email
+            ]);
+
             // Get tier progress with rolling 12-month spending
             $tierProgress = MemberTierService::getTierProgress($member->id);
             
@@ -230,7 +264,10 @@ class AuthController extends Controller
                 ]
             ]);
         } catch (\Exception $e) {
-            Log::error('Get Profile Error: ' . $e->getMessage());
+            Log::error('Get Profile Error: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString(),
+                'token_preview' => $request->bearerToken() ? substr($request->bearerToken(), 0, 20) . '...' : 'no token'
+            ]);
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to get profile',
@@ -258,29 +295,31 @@ class AuthController extends Controller
 
         try {
             $member = $request->user();
+            
+            if (!$member) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthenticated'
+                ], 401);
+            }
 
             // Delete old photo if exists
             if ($member->photo) {
-                $oldPhotoPath = storage_path('app/public/' . $member->photo);
-                if (file_exists($oldPhotoPath)) {
-                    unlink($oldPhotoPath);
-                }
+                \Storage::disk('public')->delete($member->photo);
             }
 
-            // Upload new photo
-            $file = $request->file('photo');
-            $fileName = 'member-apps/members/' . time() . '_' . $member->id . '.' . $file->getClientOriginalExtension();
-            $file->storeAs('public', $fileName);
-
-            // Update member photo
-            $member->photo = $fileName;
-            $member->save();
+            // Store new photo
+            $photoPath = $request->file('photo')->store('member-apps/photos', 'public');
+            
+            $member->update([
+                'photo' => $photoPath
+            ]);
 
             return response()->json([
                 'success' => true,
                 'message' => 'Photo uploaded successfully',
                 'data' => [
-                    'photo' => 'https://ymsofterp.com/storage/' . $fileName,
+                    'photo' => 'https://ymsofterp.com/storage/' . $photoPath
                 ]
             ]);
         } catch (\Exception $e) {
@@ -312,14 +351,23 @@ class AuthController extends Controller
 
         try {
             $member = $request->user();
-            $member->allow_notification = $request->allow_notification;
-            $member->save();
+            
+            if (!$member) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthenticated'
+                ], 401);
+            }
+
+            $member->update([
+                'allow_notification' => $request->allow_notification
+            ]);
 
             return response()->json([
                 'success' => true,
                 'message' => 'Notification preference updated successfully',
                 'data' => [
-                    'allow_notification' => $member->allow_notification,
+                    'allow_notification' => $member->allow_notification
                 ]
             ]);
         } catch (\Exception $e) {
@@ -353,25 +401,25 @@ class AuthController extends Controller
         try {
             $member = $request->user();
             
+            if (!$member) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthenticated'
+                ], 401);
+            }
+
             // Verify current password
             if (!Hash::check($request->current_password, $member->password)) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Current password is incorrect'
-                ], 401);
-            }
-
-            // Check if new password is same as current password
-            if (Hash::check($request->new_password, $member->password)) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'New password must be different from current password'
                 ], 422);
             }
 
             // Update password
-            $member->password = Hash::make($request->new_password);
-            $member->save();
+            $member->update([
+                'password' => Hash::make($request->new_password)
+            ]);
 
             return response()->json([
                 'success' => true,
@@ -392,17 +440,13 @@ class AuthController extends Controller
      */
     public function changeMobileNumber(Request $request)
     {
-        $member = $request->user();
-        
         $validator = Validator::make($request->all(), [
-            'new_mobile_number' => [
+            'mobile_phone' => [
                 'required',
                 'string',
                 'max:20',
-                Rule::unique('member_apps_members', 'mobile_phone')->ignore($member->id),
+                Rule::unique('member_apps_members', 'mobile_phone')->ignore($request->user()->id),
             ],
-        ], [
-            'new_mobile_number.unique' => 'This mobile number is already registered',
         ]);
 
         if ($validator->fails()) {
@@ -414,24 +458,24 @@ class AuthController extends Controller
         }
 
         try {
-            // Check if new mobile number is same as current
-            if ($member->mobile_phone === $request->new_mobile_number) {
+            $member = $request->user();
+            
+            if (!$member) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'New mobile number must be different from current number'
-                ], 422);
+                    'message' => 'Unauthenticated'
+                ], 401);
             }
 
-            // Update mobile number
-            $member->mobile_phone = $request->new_mobile_number;
-            $member->mobile_verified_at = null; // Reset verification status
-            $member->save();
+            $member->update([
+                'mobile_phone' => $request->mobile_phone
+            ]);
 
             return response()->json([
                 'success' => true,
                 'message' => 'Mobile number changed successfully',
                 'data' => [
-                    'mobile_phone' => $member->mobile_phone,
+                    'mobile_phone' => $member->mobile_phone
                 ]
             ]);
         } catch (\Exception $e) {
@@ -449,20 +493,11 @@ class AuthController extends Controller
      */
     public function updateProfile(Request $request)
     {
-        $member = $request->user();
-        
         $validator = Validator::make($request->all(), [
-            'email' => [
-                'required',
-                'email',
-                Rule::unique('member_apps_members', 'email')->ignore($member->id),
-            ],
             'nama_lengkap' => 'required|string|max:255',
             'tanggal_lahir' => 'required|date',
             'jenis_kelamin' => 'required|in:L,P',
             'pekerjaan_id' => 'nullable|exists:member_apps_occupations,id',
-        ], [
-            'email.unique' => 'This email is already registered',
         ]);
 
         if ($validator->fails()) {
@@ -474,17 +509,21 @@ class AuthController extends Controller
         }
 
         try {
-            // Update member profile
-            $member->email = $request->email;
-            $member->nama_lengkap = $request->nama_lengkap;
-            $member->tanggal_lahir = $request->tanggal_lahir;
-            $member->jenis_kelamin = $request->jenis_kelamin;
-            $member->pekerjaan_id = $request->pekerjaan_id;
-            $member->save();
+            $member = $request->user();
+            
+            if (!$member) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthenticated'
+                ], 401);
+            }
 
-            // Get updated member with relations
-            $member->refresh();
-            $member->load('occupation');
+            $member->update([
+                'nama_lengkap' => $request->nama_lengkap,
+                'tanggal_lahir' => $request->tanggal_lahir,
+                'jenis_kelamin' => $request->jenis_kelamin,
+                'pekerjaan_id' => $request->pekerjaan_id,
+            ]);
 
             return response()->json([
                 'success' => true,
@@ -499,13 +538,6 @@ class AuthController extends Controller
                     'jenis_kelamin' => $member->jenis_kelamin,
                     'member_level' => $member->member_level,
                     'just_points' => $member->just_points,
-                    'total_spending' => $member->total_spending,
-                    'is_exclusive_member' => $member->is_exclusive_member,
-                    'occupation' => $member->occupation ? [
-                        'id' => $member->occupation->id,
-                        'name' => $member->occupation->name,
-                    ] : null,
-                    'photo' => $member->photo ? 'https://ymsofterp.com/storage/' . $member->photo : null,
                 ]
             ]);
         } catch (\Exception $e) {
@@ -519,14 +551,14 @@ class AuthController extends Controller
     }
 
     /**
-     * Get occupations list for registration form
+     * Get occupations list
      */
     public function getOccupations()
     {
         try {
             $occupations = MemberAppsOccupation::where('is_active', true)
-                ->orderBy('sort_order', 'asc')
-                ->get(['id', 'name']);
+                ->orderBy('name', 'asc')
+                ->get();
 
             return response()->json([
                 'success' => true,
@@ -544,66 +576,15 @@ class AuthController extends Controller
 
     /**
      * Generate unique member ID
-     * Format: JTS-YYMM-XXXXX
-     * - JTS = prefix
-     * - YY = 2 digit tahun (24 untuk 2024)
-     * - MM = 2 digit bulan (01-12)
-     * - XXXXX = 5 digit sequence per bulan (reset setiap bulan)
-     * 
-     * Example: 
-     * - November 2024: JTS-2411-00001, JTS-2411-00002, ...
-     * - December 2024: JTS-2412-00001, JTS-2412-00002, ... (reset sequence)
      */
     private function generateMemberId()
     {
-        $prefix = 'JTS'; // Justus prefix
-        $year = date('y'); // 2 digit tahun (24 untuk 2024)
-        $month = date('m'); // 2 digit bulan (01-12)
-        $yearMonth = $year . $month; // YYMM format
-        
-        $maxAttempts = 10;
-        $attempt = 0;
-
         do {
-            // Get last member ID for current month
-            $lastMember = MemberAppsMember::whereNotNull('member_id')
-                ->where('member_id', 'like', $prefix . '-' . $yearMonth . '-%')
-                ->orderBy('id', 'desc')
-                ->first();
+            $prefix = 'UD';
+            $random = strtoupper(substr(md5(uniqid(rand(), true)), 0, 6));
+            $memberId = $prefix . '-' . $random;
+        } while (MemberAppsMember::where('member_id', $memberId)->exists());
 
-            if ($lastMember && $lastMember->member_id) {
-                // Extract sequence from last member ID
-                // Format: JTS-YYMM-XXXXX
-                $parts = explode('-', $lastMember->member_id);
-                if (count($parts) == 3 && $parts[0] == $prefix && $parts[1] == $yearMonth && is_numeric($parts[2])) {
-                    $lastSequence = (int) $parts[2];
-                    $newSequence = $lastSequence + 1;
-                } else {
-                    // If format is wrong, start from 1
-                    $newSequence = 1;
-                }
-            } else {
-                // No existing member for this month, start from 1
-                $newSequence = 1;
-            }
-
-            // Format: JTS-YYMM-XXXXX (5 digits for sequence)
-            $memberId = $prefix . '-' . $yearMonth . '-' . str_pad($newSequence, 5, '0', STR_PAD_LEFT);
-
-            // Check if member ID already exists (shouldn't happen, but just in case)
-            $exists = MemberAppsMember::where('member_id', $memberId)->exists();
-
-            if (!$exists) {
-                return $memberId;
-            }
-
-            $attempt++;
-            $newSequence++; // Try next sequence if exists
-
-        } while ($attempt < $maxAttempts);
-
-        // Fallback: Use timestamp if all attempts fail
-        return $prefix . '-' . $yearMonth . '-' . str_pad(substr(time(), -5), 5, '0', STR_PAD_LEFT);
+        return $memberId;
     }
 }
-
