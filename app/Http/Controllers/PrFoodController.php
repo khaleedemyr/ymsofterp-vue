@@ -518,8 +518,8 @@ class PrFoodController extends Controller
                 }
             }
             
-            // SSD Manager approvals (id_jabatan == 161) - untuk non-MK warehouse yang sudah di-approve asisten
-            if (($user->id_jabatan == 161 && $user->status == 'A') || $isSuperadmin) {
+            // SSD Manager approvals (id_jabatan == 161 atau 172) - untuk non-MK warehouse yang sudah di-approve asisten
+            if ((in_array($user->id_jabatan, [161, 172]) && $user->status == 'A') || $isSuperadmin) {
                 $ssdManagerApprovals = (clone $query)
                     ->whereNotNull('assistant_ssd_manager_approved_at')
                     ->whereNull('ssd_manager_approved_at')
