@@ -475,7 +475,7 @@ async function onSubmit() {
     return;
   }
 
-  Swal.fire({
+  const loadingSwal = Swal.fire({
     title: isEdit.value ? 'Menyimpan Perubahan...' : 'Menyimpan Data...',
     allowOutsideClick: false,
     showConfirmButton: false,
@@ -530,18 +530,26 @@ async function onSubmit() {
         if (res.data && res.data.success === false) {
           throw new Error(res.data.message || 'Gagal menyimpan data');
         }
+        // Close loading Swal first
+        await Swal.close();
+        
         // Success - check if we got JSON response or redirect
         if (res.data && res.data.success === true) {
-          Swal.fire('Berhasil', res.data.message || 'Data berhasil disimpan', 'success').then(() => router.visit('/contra-bons'));
+          await Swal.fire('Berhasil', res.data.message || 'Data berhasil disimpan', 'success');
+          router.visit('/contra-bons');
         } else {
           // If no JSON response, assume success (redirect response)
-          Swal.fire('Berhasil', 'Data berhasil disimpan', 'success').then(() => router.visit('/contra-bons'));
+          await Swal.fire('Berhasil', 'Data berhasil disimpan', 'success');
+          router.visit('/contra-bons');
         }
       } else {
         throw new Error('Unexpected response status: ' + res.status);
       }
     } catch (e) {
       console.error('Error saving contra bon:', e);
+      // Close loading Swal first
+      await Swal.close();
+      
       let errorMessage = 'Terjadi kesalahan saat menyimpan data';
       
       if (e.response) {
@@ -574,7 +582,7 @@ async function onSubmit() {
         errorMessage = e.message || errorMessage;
       }
       
-      Swal.fire({
+      await Swal.fire({
         icon: 'error',
         title: 'Gagal Menyimpan',
         text: errorMessage,
@@ -603,11 +611,16 @@ async function onSubmit() {
   
   if (isEdit.value) {
     form.put(`/contra-bons/${props.contraBon.id}`, {
-      onSuccess: () => {
-        Swal.fire('Berhasil', 'Data berhasil disimpan', 'success').then(() => router.visit('/contra-bons'));
+      onSuccess: async () => {
+        await Swal.close();
+        await Swal.fire('Berhasil', 'Data berhasil disimpan', 'success');
+        router.visit('/contra-bons');
       },
-      onError: (errors) => {
+      onError: async (errors) => {
         console.error('Error saving contra bon:', errors);
+        // Close loading Swal first
+        await Swal.close();
+        
         let errorMessage = 'Terjadi kesalahan saat menyimpan data';
         
         if (errors) {
@@ -619,7 +632,7 @@ async function onSubmit() {
           errorMessage = errorMessages.join('\n');
         }
         
-        Swal.fire({
+        await Swal.fire({
           icon: 'error',
           title: 'Gagal Menyimpan',
           text: errorMessage,
@@ -629,11 +642,16 @@ async function onSubmit() {
     });
   } else {
     form.post('/contra-bons', {
-      onSuccess: () => {
-        Swal.fire('Berhasil', 'Data berhasil disimpan', 'success').then(() => router.visit('/contra-bons'));
+      onSuccess: async () => {
+        await Swal.close();
+        await Swal.fire('Berhasil', 'Data berhasil disimpan', 'success');
+        router.visit('/contra-bons');
       },
-      onError: (errors) => {
+      onError: async (errors) => {
         console.error('Error saving contra bon:', errors);
+        // Close loading Swal first
+        await Swal.close();
+        
         let errorMessage = 'Terjadi kesalahan saat menyimpan data';
         
         if (errors) {
@@ -645,7 +663,7 @@ async function onSubmit() {
           errorMessage = errorMessages.join('\n');
         }
         
-        Swal.fire({
+        await Swal.fire({
           icon: 'error',
           title: 'Gagal Menyimpan',
           text: errorMessage,
