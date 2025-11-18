@@ -74,7 +74,10 @@
                   <button @click="openEdit(gr.id)" class="inline-flex items-center btn btn-xs bg-yellow-100 text-yellow-800 hover:bg-yellow-200 rounded px-2 py-1 font-semibold transition">
                     <i class="fa-solid fa-pen-to-square mr-1"></i> Edit
                   </button>
-                  <button @click="hapus(gr.id)" class="inline-flex items-center btn btn-xs bg-red-100 text-red-700 hover:bg-red-200 rounded px-2 py-1 font-semibold transition">
+                  <button 
+                    v-if="canDelete(gr)"
+                    @click="hapus(gr.id)" 
+                    class="inline-flex items-center btn btn-xs bg-red-100 text-red-700 hover:bg-red-200 rounded px-2 py-1 font-semibold transition">
                     <i class="fa-solid fa-trash mr-1"></i> Hapus
                   </button>
                 </div>
@@ -111,8 +114,8 @@
 </template>
 
 <script setup>
-import { ref, onMounted, watch } from 'vue';
-import { router } from '@inertiajs/vue3';
+import { ref, onMounted, watch, computed } from 'vue';
+import { router, usePage } from '@inertiajs/vue3';
 import { debounce } from 'lodash';
 import axios from 'axios';
 import Swal from 'sweetalert2';
@@ -126,6 +129,20 @@ const props = defineProps({
   goodReceives: Object,
   filters: Object
 });
+
+const page = usePage();
+const user = computed(() => page.props.auth?.user || page.props.user);
+
+// Check if user can delete Good Receive
+// Allow delete for: Superadmin (id_role = '5af56935b011a') or User with division_id=11 and status='A'
+function canDelete(gr) {
+  if (!user.value) return false;
+  
+  const isSuperadmin = user.value.id_role === '5af56935b011a';
+  const isDivision11 = user.value.division_id === 11 && user.value.status === 'A';
+  
+  return isSuperadmin || isDivision11;
+}
 
 const showForm = ref(false);
 const from = ref(props.filters?.from || '');

@@ -22,6 +22,7 @@ class FoodGoodReceiveController extends Controller
                 'gr.gr_number',
                 'gr.receive_date',
                 'gr.notes',
+                'gr.received_by',
                 'po.number as po_number',
                 's.name as supplier_name',
                 'u.nama_lengkap as received_by_name'

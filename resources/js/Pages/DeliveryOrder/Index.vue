@@ -155,7 +155,11 @@
                   <i v-if="loadingReprintId === order.id" class="fa fa-spinner fa-spin mr-1"></i>
                   <i v-else class="fa fa-print mr-1"></i> Reprint
                 </button>
-                <button @click="handleDelete(order.id)" :disabled="loadingDeleteId === order.id" class="ml-2 inline-flex items-center btn btn-xs bg-red-100 text-red-800 hover:bg-red-200 rounded px-2 py-1 font-semibold transition disabled:opacity-50">
+                <button 
+                  v-if="canDelete"
+                  @click="handleDelete(order.id)" 
+                  :disabled="loadingDeleteId === order.id" 
+                  class="ml-2 inline-flex items-center btn btn-xs bg-red-100 text-red-800 hover:bg-red-200 rounded px-2 py-1 font-semibold transition disabled:opacity-50">
                   <i v-if="loadingDeleteId === order.id" class="fa fa-spinner fa-spin mr-1"></i>
                   <i v-else class="fa fa-trash mr-1"></i> Delete
                 </button>
@@ -266,6 +270,19 @@ const exportingSummary = ref(false);
 const exportingDetail = ref(false);
 
 const page = usePage();
+const user = computed(() => page.props.auth?.user || page.props.user);
+
+// Check if user can delete Delivery Order
+// Allow delete for: Superadmin (id_role = '5af56935b011a') or User with division_id=11 and status='A'
+const canDelete = computed(() => {
+  if (!user.value) return false;
+  
+  const isSuperadmin = user.value.id_role === '5af56935b011a';
+  const isDivision11 = user.value.division_id === 11 && user.value.status === 'A';
+  
+  return isSuperadmin || isDivision11;
+});
+
 const search = ref(props.filters?.search || '');
 const dateFrom = ref(props.filters?.dateFrom || '');
 const dateTo = ref(props.filters?.dateTo || '');
