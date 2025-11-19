@@ -25,10 +25,27 @@
         </div>
         <div>
           <label class="block text-sm font-medium text-gray-700">Supplier</label>
-          <select v-model="selectedSupplierId" @change="onSupplierChange" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500" required>
-            <option value="">Pilih Supplier</option>
-            <option v-for="s in suppliers" :key="s.id" :value="s.id">{{ s.name }}</option>
-          </select>
+          <multiselect
+            v-model="selectedSupplier"
+            :options="suppliers"
+            :searchable="true"
+            :close-on-select="true"
+            :show-labels="false"
+            placeholder="Pilih Supplier"
+            label="name"
+            track-by="id"
+            @select="onSupplierChange"
+            @remove="onSupplierRemove"
+            class="mt-1"
+            required
+          >
+            <template #noOptions>
+              <span>Tidak ada supplier ditemukan</span>
+            </template>
+            <template #noResult>
+              <span>Tidak ada supplier ditemukan</span>
+            </template>
+          </multiselect>
         </div>
         <!-- Card Info Contra Bon -->
         <div class="bg-blue-50 rounded-lg p-4 shadow mb-4">
@@ -112,6 +129,8 @@ import { router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import Swal from 'sweetalert2';
 import axios from 'axios';
+import Multiselect from 'vue-multiselect';
+import 'vue-multiselect/dist/vue-multiselect.min.css';
 
 const props = defineProps({
   payment: {
@@ -123,7 +142,7 @@ const props = defineProps({
 const isEditMode = computed(() => !!props.payment);
 
 const suppliers = ref([]);
-const selectedSupplierId = ref('');
+const selectedSupplier = ref(null);
 const contraBons = ref([]);
 const form = ref({
   date: '',
@@ -181,16 +200,16 @@ function formatCurrency(value) {
   return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(value);
 }
 
-async function onSupplierChange() {
+async function onSupplierChange(supplier) {
   if (!isEditMode.value) {
-  form.value.selected_contra_bon_ids = [];
+    form.value.selected_contra_bon_ids = [];
   }
   contraBons.value = [];
-  if (!selectedSupplierId.value) return;
+  if (!supplier || !supplier.id) return;
   try {
     const res = await axios.get('/api/food-payments/contra-bon-unpaid');
     // Filter hanya yang supplier_id sesuai
-    let availableContraBons = res.data.filter(cb => cb.supplier_id == selectedSupplierId.value);
+    let availableContraBons = res.data.filter(cb => cb.supplier_id == supplier.id);
     
     // Jika edit mode, tambahkan contra bon yang sudah dipilih meskipun sudah paid
     if (isEditMode.value && props.payment?.contra_bons) {
@@ -215,12 +234,18 @@ async function onSupplierChange() {
   }
 }
 
+function onSupplierRemove() {
+  form.value.selected_contra_bon_ids = [];
+  contraBons.value = [];
+  selectedSupplier.value = null;
+}
+
 function isImageFile(path) {
   return path && (path.endsWith('.jpg') || path.endsWith('.jpeg') || path.endsWith('.png'));
 }
 
 async function onSubmit() {
-  if (!selectedSupplierId.value) {
+  if (!selectedSupplier.value || !selectedSupplier.value.id) {
     Swal.fire('Error', 'Pilih supplier terlebih dahulu', 'error');
     return;
   }
@@ -236,7 +261,7 @@ async function onSubmit() {
     formData.append('date', form.value.date);
     formData.append('payment_type', form.value.payment_type);
     formData.append('notes', form.value.notes);
-    formData.append('supplier_id', selectedSupplierId.value);
+    formData.append('supplier_id', selectedSupplier.value.id);
     form.value.selected_contra_bon_ids.forEach(id => {
       formData.append('contra_bon_ids[]', id);
     });
@@ -273,7 +298,7 @@ async function onSubmit() {
 onMounted(async () => {
   try {
     const res = await axios.get('/api/suppliers');
-    suppliers.value = res.data;
+    suppliers.value = res.data || [];
   } catch (e) {
     suppliers.value = [];
     Swal.fire('Error', 'Gagal mengambil data supplier', 'error');
@@ -284,15 +309,21 @@ onMounted(async () => {
     form.value.date = props.payment.date || '';
     form.value.payment_type = props.payment.payment_type || '';
     form.value.notes = props.payment.notes || '';
-    selectedSupplierId.value = props.payment.supplier_id || '';
-    existingBuktiPath.value = props.payment.bukti_transfer_path || null;
     
-    // Load contra bon yang sudah dipilih
-    if (props.payment.contra_bons && props.payment.contra_bons.length > 0) {
-      form.value.selected_contra_bon_ids = props.payment.contra_bons.map(cb => cb.id);
-      // Trigger load contra bon untuk supplier ini
-      await onSupplierChange();
+    // Set selected supplier object - pastikan suppliers sudah ter-load
+    if (props.payment.supplier_id && suppliers.value.length > 0) {
+      const supplier = suppliers.value.find(s => s.id == props.payment.supplier_id);
+      if (supplier) {
+        selectedSupplier.value = supplier;
+        // Trigger load contra bon untuk supplier ini
+        if (props.payment.contra_bons && props.payment.contra_bons.length > 0) {
+          form.value.selected_contra_bon_ids = props.payment.contra_bons.map(cb => cb.id);
+          await onSupplierChange(supplier);
+        }
+      }
     }
+    
+    existingBuktiPath.value = props.payment.bukti_transfer_path || null;
   } else {
     // Set default date ke hari ini untuk create mode
     const today = new Date();
@@ -305,5 +336,74 @@ onMounted(async () => {
 </script>
 
 <script>
-export default { filters: { currency(val) { return 'Rp ' + Number(val).toLocaleString('id-ID'); } } }
-</script> 
+export default { 
+  components: {
+    Multiselect
+  },
+  filters: { 
+    currency(val) { 
+      return 'Rp ' + Number(val).toLocaleString('id-ID'); 
+    } 
+  } 
+}
+</script>
+
+<style scoped>
+/* Custom multiselect styling */
+.multiselect {
+  min-height: 42px;
+}
+
+.multiselect :deep(.multiselect__tags) {
+  border: 1px solid #d1d5db;
+  border-radius: 0.5rem;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  min-height: 42px;
+  padding: 8px 12px;
+}
+
+.multiselect :deep(.multiselect__placeholder) {
+  color: #6b7280;
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+
+.multiselect :deep(.multiselect__single) {
+  color: #111827;
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+
+.multiselect :deep(.multiselect__input) {
+  border: none;
+  padding: 0;
+  margin: 0;
+  min-height: auto;
+}
+
+.multiselect :deep(.multiselect__input:focus) {
+  outline: none;
+}
+
+.multiselect :deep(.multiselect__content-wrapper) {
+  border: 1px solid #d1d5db;
+  border-radius: 0.5rem;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+
+.multiselect :deep(.multiselect__option--highlight) {
+  background: #3b82f6;
+  color: white;
+}
+
+.multiselect :deep(.multiselect__option--selected) {
+  background: #eff6ff;
+  color: #1e40af;
+  font-weight: 600;
+}
+
+.multiselect :deep(.multiselect__option--selected.multiselect__option--highlight) {
+  background: #3b82f6;
+  color: white;
+}
+</style> 

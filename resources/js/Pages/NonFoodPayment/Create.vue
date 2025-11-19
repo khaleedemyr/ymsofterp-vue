@@ -419,17 +419,28 @@
             <!-- Supplier -->
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-2">Supplier *</label>
-              <select 
-                v-model="form.supplier_id" 
-                required 
+              <multiselect
+                v-model="selectedSupplier"
+                :options="suppliers"
+                :searchable="true"
+                :close-on-select="true"
+                :show-labels="false"
                 :disabled="selectedPO"
-                class="w-full px-4 py-2 rounded-xl border border-gray-300 focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition disabled:bg-gray-100"
+                placeholder="Pilih Supplier"
+                label="name"
+                track-by="id"
+                @select="onSupplierChange"
+                @remove="onSupplierRemove"
+                class="mt-1"
+                required
               >
-                <option value="">Pilih Supplier</option>
-                <option v-for="supplier in suppliers" :key="supplier.id" :value="supplier.id">
-                  {{ supplier.name }}
-                </option>
-              </select>
+                <template #noOptions>
+                  <span>Tidak ada supplier ditemukan</span>
+                </template>
+                <template #noResult>
+                  <span>Tidak ada supplier ditemukan</span>
+                </template>
+              </multiselect>
               <p v-if="selectedPO" class="mt-1 text-xs text-gray-500">
                 Supplier diambil dari Purchase Order
               </p>
@@ -578,6 +589,8 @@ import { ref, reactive, computed } from 'vue';
 import { router } from '@inertiajs/vue3';
 import axios from 'axios';
 import AppLayout from '@/Layouts/AppLayout.vue';
+import Multiselect from 'vue-multiselect';
+import 'vue-multiselect/dist/vue-multiselect.min.css';
 
 const props = defineProps({
   suppliers: Array,
@@ -607,6 +620,7 @@ const mappedPRs = computed(() => {
 const isSubmitting = ref(false);
 const selectedPO = ref(null);
 const selectedPR = ref(null);
+const selectedSupplier = ref(null);
 const poItems = ref([]);
 const itemsByOutlet = ref({});
 const loadingPOItems = ref(false);
@@ -628,6 +642,17 @@ const form = reactive({
   reference_number: '',
   notes: ''
 });
+
+function onSupplierChange(supplier) {
+  if (supplier && supplier.id) {
+    form.supplier_id = supplier.id;
+  }
+}
+
+function onSupplierRemove() {
+  selectedSupplier.value = null;
+  form.supplier_id = '';
+}
 
 function formatDate(date) {
   if (!date) return '-';
@@ -671,6 +696,7 @@ function closeLightbox() {
 function resetSelection() {
   selectedPO.value = null;
   selectedPR.value = null;
+  selectedSupplier.value = null;
   poItems.value = [];
   itemsByOutlet.value = {};
   poAttachments.value = [];
@@ -709,6 +735,14 @@ async function selectPO(po) {
   form.supplier_id = po.supplier_id;
   form.amount = po.grand_total;
   originalAmount.value = po.grand_total;
+  
+  // Set selected supplier from PO
+  if (po.supplier_id && props.suppliers) {
+    const supplier = props.suppliers.find(s => s.id == po.supplier_id);
+    if (supplier) {
+      selectedSupplier.value = supplier;
+    }
+  }
   
   // Load PO items grouped by outlet
   loadingPOItems.value = true;
@@ -751,6 +785,9 @@ async function selectPR(pr) {
   form.supplier_id = ''; // PR tidak punya supplier, user harus pilih manual
   form.amount = pr.amount;
   originalAmount.value = pr.amount;
+  
+  // Reset selected supplier for PR (user must select manually)
+  selectedSupplier.value = null;
   
   // Load PR items grouped by outlet
   loadingPOItems.value = true;
@@ -821,3 +858,81 @@ function goBack() {
   router.get('/non-food-payments');
 }
 </script>
+
+<script>
+export default { 
+  components: {
+    Multiselect
+  }
+}
+</script>
+
+<style scoped>
+/* Custom multiselect styling */
+.multiselect {
+  min-height: 42px;
+}
+
+.multiselect :deep(.multiselect__tags) {
+  border: 1px solid #d1d5db;
+  border-radius: 0.75rem;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  min-height: 42px;
+  padding: 8px 12px;
+}
+
+.multiselect :deep(.multiselect__placeholder) {
+  color: #6b7280;
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+
+.multiselect :deep(.multiselect__single) {
+  color: #111827;
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+
+.multiselect :deep(.multiselect__input) {
+  border: none;
+  padding: 0;
+  margin: 0;
+  min-height: auto;
+}
+
+.multiselect :deep(.multiselect__input:focus) {
+  outline: none;
+}
+
+.multiselect :deep(.multiselect__content-wrapper) {
+  border: 1px solid #d1d5db;
+  border-radius: 0.75rem;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+
+.multiselect :deep(.multiselect__option--highlight) {
+  background: #3b82f6;
+  color: white;
+}
+
+.multiselect :deep(.multiselect__option--selected) {
+  background: #eff6ff;
+  color: #1e40af;
+  font-weight: 600;
+}
+
+.multiselect :deep(.multiselect__option--selected.multiselect__option--highlight) {
+  background: #3b82f6;
+  color: white;
+}
+
+.multiselect :deep(.multiselect--disabled) {
+  background: #f3f4f6;
+  opacity: 1;
+}
+
+.multiselect :deep(.multiselect--disabled .multiselect__tags) {
+  background: #f3f4f6;
+  cursor: not-allowed;
+}
+</style>
