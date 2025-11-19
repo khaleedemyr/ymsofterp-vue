@@ -457,8 +457,19 @@ function formatCurrency(value) {
 const totalAmount = computed(() => {
   return form.items
     .filter(item => item.selected)
-    .reduce((sum, item) => sum + (item.quantity * (item.price || 0)), 0);
+    .reduce((sum, item) => {
+      const quantity = Number(item.quantity) || 0;
+      const price = Number(item.price) || 0;
+      return sum + (quantity * price);
+    }, 0);
 });
+
+// Function to calculate item total
+function calculateItemTotal(item) {
+  const quantity = Number(item.quantity) || 0;
+  const price = Number(item.price) || 0;
+  return quantity * price;
+}
 
 // Function to update item total when price changes
 function updateItemTotal(item) {
@@ -470,6 +481,10 @@ function updateItemTotal(item) {
     const numPrice = parseFloat(item.price);
     // Ensure price is not negative
     item.price = numPrice >= 0 ? numPrice : 0;
+  }
+  // Update po_item_total untuk purchase_order (jika ada)
+  if (sourceType.value === 'purchase_order' && item.po_item_id) {
+    item.po_item_total = calculateItemTotal(item);
   }
 }
 
@@ -1025,12 +1040,7 @@ function toggleAllItems(event) {
                      <span v-else class="text-gray-400">-</span>
                    </td>
                    <td class="px-3 py-2 min-w-[100px]">
-                     <span v-if="sourceType === 'purchase_order' && item.po_item_total">
-                       {{ formatCurrency(item.po_item_total) }}
-                     </span>
-                     <span v-else>
-                     {{ formatCurrency(item.quantity * (item.price || 0)) }}
-                     </span>
+                     {{ formatCurrency(calculateItemTotal(item)) }}
                    </td>
                    <td class="px-3 py-2 min-w-[120px]">
                      <input type="text" v-model="item.notes" class="w-full rounded border-gray-300" />
