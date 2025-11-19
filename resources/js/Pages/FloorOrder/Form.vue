@@ -213,8 +213,12 @@ function onItemKeydown(idx, e) {
 function onQtyInput(idx, e) {
   const val = e.target.value.replace(/[^0-9.]/g, '');
   form.value.items[idx].qty = val;
+  calculateSubtotal(idx);
+}
+
+function calculateSubtotal(idx) {
   const price = Number(form.value.items[idx].price) || 0;
-  const qty = Number(val) || 0;
+  const qty = Number(form.value.items[idx].qty) || 0;
   form.value.items[idx].subtotal = price * qty;
 }
 
@@ -601,8 +605,21 @@ function getDropdownStyle(idx) {
   };
 }
 
+function calculateItemSubtotal(item) {
+  const price = Number(item.price) || 0;
+  const qty = Number(item.qty) || 0;
+  const calculated = price * qty;
+  // Update item.subtotal to keep it in sync
+  item.subtotal = calculated;
+  return calculated;
+}
+
 const grandTotalPC = computed(() =>
-  form.value.items.reduce((sum, item) => sum + (Number(item.subtotal) || 0), 0)
+  form.value.items.reduce((sum, item) => {
+    const price = Number(item.price) || 0;
+    const qty = Number(item.qty) || 0;
+    return sum + (price * qty);
+  }, 0)
 );
 
 // Watch selectedFOMode, jika FO Khusus, langsung fetch item availabilities
@@ -1207,7 +1224,7 @@ watch(selectedWarehouseOutlet, (val) => {
                         </div>
                       </td>
                       <td class="px-3 py-2 min-w-[80px]">
-                        <input type="number" min="0.01" step="0.01" v-model="item.qty" @input="onQtyInput(idx, $event)" class="w-full rounded border-gray-300" required :disabled="loadingItems" />
+                        <input type="number" min="0.01" step="0.01" :value="item.qty" @input="onQtyInput(idx, $event)" class="w-full rounded border-gray-300" required :disabled="loadingItems" />
                       </td>
                       <td class="px-3 py-2 min-w-[80px]">
                         <input type="text" v-model="item.unit" class="w-full rounded border-gray-300 bg-gray-100" readonly />
@@ -1216,7 +1233,7 @@ watch(selectedWarehouseOutlet, (val) => {
                         {{ formatRupiah(item.price) }}
                       </td>
                       <td class="px-3 py-2 min-w-[120px] font-semibold">
-                        Rp {{ (Number(item.subtotal) || 0).toLocaleString('id-ID') }}
+                        Rp {{ calculateItemSubtotal(item).toLocaleString('id-ID') }}
                       </td>
                       <td class="px-3 py-2">
                         <button type="button" @click="removeItem(idx)" class="text-red-500 hover:text-red-700" :disabled="form.items.length === 1 || loadingItems"><i class="fa fa-trash"></i></button>

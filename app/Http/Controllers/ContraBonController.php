@@ -1130,8 +1130,43 @@ class ContraBonController extends Controller
 
     public function destroy($id)
     {
-        $contraBon = ContraBon::findOrFail($id);
-        $contraBon->delete();
-        return redirect()->route('contra-bons.index')->with('success', 'Contra Bon berhasil dihapus');
+        $contraBon = ContraBon::with('items')->findOrFail($id);
+        
+        DB::beginTransaction();
+        try {
+            // Delete contra bon items first (this will free up the gr_item_id references)
+            $contraBon->items()->delete();
+            
+            // Delete the contra bon
+            $contraBon->delete();
+            
+            DB::commit();
+            
+            if (request()->expectsJson() || request()->ajax()) {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Contra Bon berhasil dihapus. Item-item telah dikembalikan dan dapat digunakan lagi.'
+                ]);
+            }
+            
+            return redirect()->route('contra-bons.index')->with('success', 'Contra Bon berhasil dihapus. Item-item telah dikembalikan dan dapat digunakan lagi.');
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::error('Error deleting Contra Bon', [
+                'contra_bon_id' => $id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            if (request()->expectsJson() || request()->ajax()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Gagal menghapus Contra Bon: ' . $e->getMessage()
+                ], 500);
+            }
+            
+            return redirect()->route('contra-bons.index')
+                ->with('error', 'Gagal menghapus Contra Bon: ' . $e->getMessage());
+        }
     }
 } 
