@@ -545,15 +545,26 @@ async function approvePayment() {
             approved: true,
             note: ''
         });
-        if (response.data.success) {
-            Swal.fire('Success', 'Food Payment berhasil disetujui', 'success');
-            closeDetailModal();
-            loadPendingApprovals();
-            emit('approved', selectedPayment.value.id);
+        
+        // Check if response is successful (status 200-299) and has success flag
+        if (response.status >= 200 && response.status < 300) {
+            if (response.data && response.data.success) {
+                Swal.fire('Success', response.data.message || 'Food Payment berhasil disetujui', 'success');
+                closeDetailModal();
+                loadPendingApprovals();
+                emit('approved', selectedPayment.value.id);
+            } else {
+                // Response OK but success is false
+                const errorMsg = response.data?.message || 'Gagal menyetujui Food Payment';
+                Swal.fire('Error', errorMsg, 'error');
+            }
+        } else {
+            Swal.fire('Error', 'Gagal menyetujui Food Payment', 'error');
         }
     } catch (error) {
         console.error('Error approving Food Payment:', error);
-        Swal.fire('Error', error.response?.data?.message || 'Gagal menyetujui Food Payment', 'error');
+        const errorMsg = error.response?.data?.message || error.message || 'Gagal menyetujui Food Payment';
+        Swal.fire('Error', errorMsg, 'error');
     }
 }
 
@@ -582,15 +593,26 @@ function showRejectModal() {
                     approved: false,
                     note: result.value
                 });
-                if (response.data.success) {
-                    Swal.fire('Success', 'Food Payment berhasil ditolak', 'success');
-                    closeDetailModal();
-                    loadPendingApprovals();
-                    emit('rejected', selectedPayment.value.id);
+                
+                // Check if response is successful (status 200-299) and has success flag
+                if (response.status >= 200 && response.status < 300) {
+                    if (response.data && response.data.success) {
+                        Swal.fire('Success', response.data.message || 'Food Payment berhasil ditolak', 'success');
+                        closeDetailModal();
+                        loadPendingApprovals();
+                        emit('rejected', selectedPayment.value.id);
+                    } else {
+                        // Response OK but success is false
+                        const errorMsg = response.data?.message || 'Gagal menolak Food Payment';
+                        Swal.fire('Error', errorMsg, 'error');
+                    }
+                } else {
+                    Swal.fire('Error', 'Gagal menolak Food Payment', 'error');
                 }
             } catch (error) {
                 console.error('Error rejecting Food Payment:', error);
-                Swal.fire('Error', error.response?.data?.message || 'Gagal menolak Food Payment', 'error');
+                const errorMsg = error.response?.data?.message || error.message || 'Gagal menolak Food Payment';
+                Swal.fire('Error', errorMsg, 'error');
             }
         }
     });

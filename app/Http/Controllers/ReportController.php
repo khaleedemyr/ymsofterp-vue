@@ -3537,4 +3537,101 @@ class ReportController extends Controller
             return response()->json(['error' => 'Terjadi kesalahan saat generate Excel: ' . $e->getMessage()], 500);
         }
     }
+
+    /**
+     * Activity Log Report
+     */
+    public function reportActivityLog(Request $request)
+    {
+        $query = DB::table('activity_logs as al')
+            ->leftJoin('users as u', 'al.user_id', '=', 'u.id')
+            ->select(
+                'al.id',
+                'al.user_id',
+                'u.nama_lengkap as user_name',
+                'al.activity_type',
+                'al.module',
+                'al.description',
+                'al.ip_address',
+                'al.user_agent',
+                'al.old_data',
+                'al.new_data',
+                'al.created_at'
+            );
+
+        // Filter by user
+        if ($request->filled('user_id')) {
+            $query->where('al.user_id', $request->user_id);
+        }
+
+        // Filter by activity type
+        if ($request->filled('activity_type')) {
+            $query->where('al.activity_type', $request->activity_type);
+        }
+
+        // Filter by module
+        if ($request->filled('module')) {
+            $query->where('al.module', $request->module);
+        }
+
+        // Filter by date range
+        if ($request->filled('date_from')) {
+            $query->whereDate('al.created_at', '>=', $request->date_from);
+        }
+        if ($request->filled('date_to')) {
+            $query->whereDate('al.created_at', '<=', $request->date_to);
+        }
+
+        // Filter by search (description, module, user name)
+        if ($request->filled('search')) {
+            $search = $request->search;
+            $query->where(function($q) use ($search) {
+                $q->where('al.description', 'like', "%{$search}%")
+                  ->orWhere('al.module', 'like', "%{$search}%")
+                  ->orWhere('u.nama_lengkap', 'like', "%{$search}%")
+                  ->orWhere('al.ip_address', 'like', "%{$search}%");
+            });
+        }
+
+        // Get unique values for filters
+        $users = DB::table('users')
+            ->whereIn('id', function($q) {
+                $q->select('user_id')->from('activity_logs')->distinct();
+            })
+            ->select('id', 'nama_lengkap')
+            ->orderBy('nama_lengkap')
+            ->get();
+
+        $activityTypes = DB::table('activity_logs')
+            ->select('activity_type')
+            ->distinct()
+            ->orderBy('activity_type')
+            ->pluck('activity_type');
+
+        $modules = DB::table('activity_logs')
+            ->select('module')
+            ->distinct()
+            ->orderBy('module')
+            ->pluck('module');
+
+        // Pagination
+        $perPage = $request->get('per_page', 25);
+        $logs = $query->orderByDesc('al.created_at')->paginate($perPage)->withQueryString();
+
+        return Inertia::render('Report/ActivityLog', [
+            'logs' => $logs,
+            'users' => $users,
+            'activityTypes' => $activityTypes,
+            'modules' => $modules,
+            'filters' => [
+                'user_id' => $request->user_id,
+                'activity_type' => $request->activity_type,
+                'module' => $request->module,
+                'date_from' => $request->date_from,
+                'date_to' => $request->date_to,
+                'search' => $request->search,
+                'per_page' => $perPage,
+            ]
+        ]);
+    }
 } 

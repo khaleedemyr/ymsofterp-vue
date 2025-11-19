@@ -179,7 +179,7 @@ class FoodPaymentController extends Controller
         ]);
 
         $user = Auth::user();
-        $foodPayment = FoodPayment::findOrFail($id);
+        $foodPayment = FoodPayment::with('contraBons')->findOrFail($id);
 
         // Superadmin check
         $isSuperadmin = $user->id_role === '5af56935b011a' && $user->status === 'A';
@@ -189,49 +189,74 @@ class FoodPaymentController extends Controller
             ($user->id_jabatan == 160 && $user->status == 'A' && $foodPayment->status == 'draft' && !$foodPayment->finance_manager_approved_at)
             || ($isSuperadmin && $foodPayment->status == 'draft' && !$foodPayment->finance_manager_approved_at)
         ) {
-            $foodPayment->update([
-                'finance_manager_approved_at' => now(),
-                'finance_manager_approved_by' => $user->id,
-                'finance_manager_note' => $request->note,
-                'status' => $request->approved ? 'draft' : 'rejected' // Tetap draft setelah Finance Manager approve
-            ]);
-
-            // Log activity
-            \App\Models\ActivityLog::create([
-                'user_id' => $user->id,
-                'activity_type' => $request->approved ? 'approve' : 'reject',
-                'module' => 'food_payment',
-                'description' => ($request->approved ? 'Approve' : 'Reject') . ' Food Payment (Finance Manager): ' . $foodPayment->number,
-                'ip_address' => $request->ip(),
-            ]);
-
-            // Send notification to GM Finance if approved
-            if ($request->approved) {
-                $gmFinances = \DB::table('users')
-                    ->where('id_jabatan', 152)
-                    ->where('status', 'A')
-                    ->pluck('id');
-                $this->sendNotification(
-                    $gmFinances,
-                    'food_payment_approval',
-                    'Approval Food Payment',
-                    "Food Payment {$foodPayment->number} menunggu approval Anda.",
-                    route('food-payments.show', $foodPayment->id)
-                );
-            } else {
-                // Send notification to creator if rejected
-                if ($foodPayment->created_by) {
-                    \App\Models\Notification::create([
-                        'user_id' => $foodPayment->created_by,
-                        'type' => 'food_payment_approval',
-                        'title' => 'Food Payment Ditolak',
-                        'message' => "Food Payment {$foodPayment->number} telah ditolak oleh Finance Manager.",
-                    ]);
+            DB::beginTransaction();
+            try {
+                // Jika di-reject, ambil contra bon ids dulu sebelum update status
+                $contraBonIds = [];
+                if (!$request->approved) {
+                    // Refresh relationship untuk memastikan data ter-load
+                    $foodPayment->load('contraBons');
+                    $contraBonIds = $foodPayment->contraBons->pluck('id')->toArray();
                 }
-            }
+                
+                $foodPayment->update([
+                    'finance_manager_approved_at' => now(),
+                    'finance_manager_approved_by' => $user->id,
+                    'finance_manager_note' => $request->note,
+                    'status' => $request->approved ? 'draft' : 'rejected' // Tetap draft setelah Finance Manager approve
+                ]);
 
-            $msg = 'Food Payment berhasil ' . ($request->approved ? 'diapprove' : 'direject');
-            return response()->json(['success' => true, 'message' => $msg]);
+                // Jika di-reject, kembalikan status Contra Bon ke 'approved'
+                if (!$request->approved && !empty($contraBonIds)) {
+                    ContraBon::whereIn('id', $contraBonIds)
+                        ->update(['status' => 'approved']);
+                }
+
+                // Log activity
+                \App\Models\ActivityLog::create([
+                    'user_id' => $user->id,
+                    'activity_type' => $request->approved ? 'approve' : 'reject',
+                    'module' => 'food_payment',
+                    'description' => ($request->approved ? 'Approve' : 'Reject') . ' Food Payment (Finance Manager): ' . $foodPayment->number,
+                    'ip_address' => $request->ip(),
+                ]);
+
+                // Send notification to GM Finance if approved
+                if ($request->approved) {
+                    $gmFinances = \DB::table('users')
+                        ->where('id_jabatan', 152)
+                        ->where('status', 'A')
+                        ->pluck('id');
+                    $this->sendNotification(
+                        $gmFinances,
+                        'food_payment_approval',
+                        'Approval Food Payment',
+                        "Food Payment {$foodPayment->number} menunggu approval Anda.",
+                        route('food-payments.show', $foodPayment->id)
+                    );
+                } else {
+                    // Send notification to creator if rejected
+                    if ($foodPayment->created_by) {
+                        \App\Models\Notification::create([
+                            'user_id' => $foodPayment->created_by,
+                            'type' => 'food_payment_approval',
+                            'title' => 'Food Payment Ditolak',
+                            'message' => "Food Payment {$foodPayment->number} telah ditolak oleh Finance Manager. Status Contra Bon telah dikembalikan ke 'approved'.",
+                        ]);
+                    }
+                }
+
+                DB::commit();
+                $msg = 'Food Payment berhasil ' . ($request->approved ? 'diapprove' : 'direject');
+                return response()->json(['success' => true, 'message' => $msg]);
+            } catch (\Exception $e) {
+                DB::rollBack();
+                \Log::error('Error approving/rejecting Food Payment (Finance Manager)', [
+                    'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString()
+                ]);
+                return response()->json(['success' => false, 'message' => 'Gagal memproses approval: ' . $e->getMessage()], 500);
+            }
         }
 
         // GM Finance Approval (Second level - final approval)
@@ -239,34 +264,59 @@ class FoodPaymentController extends Controller
             ($user->id_jabatan == 152 && $user->status == 'A' && $foodPayment->status == 'draft' && $foodPayment->finance_manager_approved_at && !$foodPayment->gm_finance_approved_at)
             || ($isSuperadmin && $foodPayment->status == 'draft' && $foodPayment->finance_manager_approved_at && !$foodPayment->gm_finance_approved_at)
         ) {
-            $foodPayment->update([
-                'gm_finance_approved_at' => now(),
-                'gm_finance_approved_by' => $user->id,
-                'gm_finance_note' => $request->note,
-                'status' => $request->approved ? 'approved' : 'rejected'
-            ]);
-
-            // Log activity
-            \App\Models\ActivityLog::create([
-                'user_id' => $user->id,
-                'activity_type' => $request->approved ? 'approve' : 'reject',
-                'module' => 'food_payment',
-                'description' => ($request->approved ? 'Approve' : 'Reject') . ' Food Payment (GM Finance): ' . $foodPayment->number,
-                'ip_address' => $request->ip(),
-            ]);
-
-            // Send notification to creator
-            if ($foodPayment->created_by) {
-                \App\Models\Notification::create([
-                    'user_id' => $foodPayment->created_by,
-                    'type' => 'food_payment_approval',
-                    'title' => 'Food Payment ' . ($request->approved ? 'Disetujui' : 'Ditolak'),
-                    'message' => "Food Payment {$foodPayment->number} telah " . ($request->approved ? 'disetujui' : 'ditolak') . " oleh GM Finance.",
+            DB::beginTransaction();
+            try {
+                // Jika di-reject, ambil contra bon ids dulu sebelum update status
+                $contraBonIds = [];
+                if (!$request->approved) {
+                    // Refresh relationship untuk memastikan data ter-load
+                    $foodPayment->load('contraBons');
+                    $contraBonIds = $foodPayment->contraBons->pluck('id')->toArray();
+                }
+                
+                $foodPayment->update([
+                    'gm_finance_approved_at' => now(),
+                    'gm_finance_approved_by' => $user->id,
+                    'gm_finance_note' => $request->note,
+                    'status' => $request->approved ? 'approved' : 'rejected'
                 ]);
-            }
 
-            $msg = 'Food Payment berhasil ' . ($request->approved ? 'diapprove' : 'direject');
-            return response()->json(['success' => true, 'message' => $msg]);
+                // Jika di-reject, kembalikan status Contra Bon ke 'approved'
+                if (!$request->approved && !empty($contraBonIds)) {
+                    ContraBon::whereIn('id', $contraBonIds)
+                        ->update(['status' => 'approved']);
+                }
+
+                // Log activity
+                \App\Models\ActivityLog::create([
+                    'user_id' => $user->id,
+                    'activity_type' => $request->approved ? 'approve' : 'reject',
+                    'module' => 'food_payment',
+                    'description' => ($request->approved ? 'Approve' : 'Reject') . ' Food Payment (GM Finance): ' . $foodPayment->number,
+                    'ip_address' => $request->ip(),
+                ]);
+
+                // Send notification to creator
+                if ($foodPayment->created_by) {
+                    \App\Models\Notification::create([
+                        'user_id' => $foodPayment->created_by,
+                        'type' => 'food_payment_approval',
+                        'title' => 'Food Payment ' . ($request->approved ? 'Disetujui' : 'Ditolak'),
+                        'message' => "Food Payment {$foodPayment->number} telah " . ($request->approved ? 'disetujui' : 'ditolak') . " oleh GM Finance." . (!$request->approved ? " Status Contra Bon telah dikembalikan ke 'approved'." : ''),
+                    ]);
+                }
+
+                DB::commit();
+                $msg = 'Food Payment berhasil ' . ($request->approved ? 'diapprove' : 'direject');
+                return response()->json(['success' => true, 'message' => $msg]);
+            } catch (\Exception $e) {
+                DB::rollBack();
+                \Log::error('Error approving/rejecting Food Payment (GM Finance)', [
+                    'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString()
+                ]);
+                return response()->json(['success' => false, 'message' => 'Gagal memproses approval: ' . $e->getMessage()], 500);
+            }
         }
 
         return response()->json(['success' => false, 'message' => 'Anda tidak memiliki akses untuk approve Food Payment ini'], 403);

@@ -12,15 +12,18 @@ class NotificationController extends Controller
     {
         $notifications = Notification::where('user_id', Auth::id())
             ->orderBy('created_at', 'desc')
+            ->limit(50)
             ->get()
             ->map(function ($notification) {
                 return [
                     'id' => $notification->id,
                     'task_id' => $notification->task_id,
                     'type' => $notification->type,
+                    'title' => $notification->title ?? '',
                     'message' => $notification->message,
                     'url' => $notification->url,
-                    'is_read' => $notification->is_read,
+                    'is_read' => (bool) $notification->is_read,
+                    'created_at' => $notification->created_at,
                     'time' => $notification->created_at->diffForHumans(),
                 ];
             });

@@ -28,4 +28,12 @@ class ActivityLog extends Model
 
     public $timestamps = false; // Jika hanya ada created_at, tanpa updated_at
     // Jika ada updated_at juga, ganti menjadi true
+
+    /**
+     * Get the user that performed the activity
+     */
+    public function user()
+    {
+        return $this->belongsTo(\App\Models\User::class, 'user_id');
+    }
 }

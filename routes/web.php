@@ -560,7 +560,10 @@ Route::get('/test-approvers', [\App\Http\Controllers\PurchaseOrderOpsController:
     Route::get('/outlets', [OutletController::class, 'index'])->name('outlets.index');
     Route::get('/api/outlets', [\App\Http\Controllers\OutletController::class, 'apiList'])->name('outlets.list');
     Route::get('/api/outlets/report', [App\Http\Controllers\ReportController::class, 'apiOutlets'])->middleware(['auth']);
-Route::get('/api/regions', [App\Http\Controllers\ReportController::class, 'apiRegions'])->middleware(['auth']);
+    Route::get('/api/regions', [App\Http\Controllers\ReportController::class, 'apiRegions'])->middleware(['auth']);
+    
+    // Activity Log Report
+    Route::get('/report/activity-log', [App\Http\Controllers\ReportController::class, 'reportActivityLog'])->middleware(['auth'])->name('report.activity-log');
     Route::get('/api/outlets/investor', [\App\Http\Controllers\InvestorController::class, 'outlets'])->middleware(['auth:sanctum']);
     Route::get('/api/outlets/{id}', [\App\Http\Controllers\OutletController::class, 'apiShow'])->name('outlets.show');
     Route::post('/outlets', [OutletController::class, 'store'])->name('outlets.store');
@@ -2079,6 +2082,14 @@ Route::middleware(['auth', 'verified'])->prefix('jabatan-training')->name('jabat
   });
 
 // Approval Routes
+// Notification routes (must be before approval routes to avoid conflict)
+Route::middleware(['auth'])->prefix('api')->group(function () {
+    Route::get('/notifications', [\App\Http\Controllers\NotificationController::class, 'index'])->name('api.notifications');
+    Route::get('/notifications/unread-count', [\App\Http\Controllers\NotificationController::class, 'unreadCount'])->name('api.notifications.unread-count');
+    Route::post('/notifications/{id}/read', [\App\Http\Controllers\NotificationController::class, 'markAsRead'])->name('api.notifications.mark-read');
+    Route::post('/notifications/mark-all-read', [\App\Http\Controllers\NotificationController::class, 'markAllAsRead'])->name('api.notifications.mark-all-read');
+});
+
 Route::middleware(['auth', 'verified'])->prefix('api/approval')->group(function () {
     Route::get('/pending', [\App\Http\Controllers\ApprovalController::class, 'getPendingApprovals'])->name('api.approval.pending');
     Route::get('/pending-hrd', [\App\Http\Controllers\ApprovalController::class, 'getPendingHrdApprovals'])->name('api.approval.pending-hrd');

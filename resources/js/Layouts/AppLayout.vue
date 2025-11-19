@@ -363,6 +363,7 @@ const menuGroups = [
         menus: [
             { name: () => 'Support Admin Panel', icon: 'fa-solid fa-comments', route: '/support/admin', code: 'support_admin_panel' },
             { name: () => 'Monitoring User Aktif', icon: 'fa-solid fa-users-line', route: '/monitoring/active-users', code: 'monitoring_active_users' },
+            { name: () => 'Activity Log Report', icon: 'fa-solid fa-list-alt', route: '/report/activity-log', code: 'activity_log_report' },
         ],
     },
     {
@@ -486,14 +487,16 @@ async function fetchNotifications() {
     try {
         loading.value = true;
         const response = await axios.get('/api/notifications');
-        const newNotifications = response.data;
+        
+        // Response is an array of notifications
+        const newNotifications = Array.isArray(response.data) ? response.data : (response.data?.notifications || []);
         
         // Check for new unread notifications
         newNotifications.forEach(notif => {
             if (!lastNotificationIds.value.has(notif.id) && !notif.is_read) {
                 // This is a new unread notification, show toast
                 showToast({ 
-                    title: notif.type === 'success' ? 'Success' : notif.type === 'error' ? 'Error' : 'Info',
+                    title: notif.title || (notif.type === 'success' ? 'Success' : notif.type === 'error' ? 'Error' : 'Info'),
                     message: notif.message, 
                     type: notif.type 
                 });
@@ -509,6 +512,7 @@ async function fetchNotifications() {
         notifications.value = newNotifications;
     } catch (error) {
         console.error('Error fetching notifications:', error);
+        // Don't show error to user, just log it
     } finally {
         loading.value = false;
     }
@@ -534,7 +538,7 @@ async function markAsRead(id) {
 
 async function markAllAsRead() {
     try {
-        await axios.post('/api/notifications/read-all');
+        await axios.post('/api/notifications/mark-all-read');
         await fetchUnreadCount();
         await fetchNotifications();
     } catch (error) {
