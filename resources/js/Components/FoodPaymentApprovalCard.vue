@@ -588,8 +588,11 @@ function showRejectModal() {
         }
     }).then(async (result) => {
         if (result.isConfirmed && selectedPayment.value) {
+            // Store the ID before closing modal
+            const paymentId = selectedPayment.value.id;
+            
             try {
-                const response = await axios.post(`/food-payments/${selectedPayment.value.id}/approve`, {
+                const response = await axios.post(`/food-payments/${paymentId}/approve`, {
                     approved: false,
                     note: result.value
                 });
@@ -600,7 +603,7 @@ function showRejectModal() {
                         Swal.fire('Success', response.data.message || 'Food Payment berhasil ditolak', 'success');
                         closeDetailModal();
                         loadPendingApprovals();
-                        emit('rejected', selectedPayment.value.id);
+                        emit('rejected', paymentId);
                     } else {
                         // Response OK but success is false
                         const errorMsg = response.data?.message || 'Gagal menolak Food Payment';
