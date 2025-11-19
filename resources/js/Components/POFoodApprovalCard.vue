@@ -12,8 +12,45 @@
                             PO Foods Approval
                         </h3>
                     </div>
-                    <div class="bg-indigo-500 text-white text-xs font-bold px-2 py-1 rounded-full">
-                        {{ approvalCount }}
+                    <div class="flex items-center gap-2">
+                        <button 
+                            v-if="!isSelecting"
+                            @click.stop="isSelecting = true"
+                            class="text-xs bg-indigo-500 text-white px-2 py-1 rounded hover:bg-indigo-600 transition"
+                        >
+                            <i class="fa fa-check-square mr-1"></i>Multi Approve
+                        </button>
+                        <button 
+                            v-else
+                            @click.stop="isSelecting = false; selectedApprovals.clear()"
+                            class="text-xs bg-gray-500 text-white px-2 py-1 rounded hover:bg-gray-600 transition"
+                        >
+                            <i class="fa fa-times mr-1"></i>Cancel
+                        </button>
+                        <div class="bg-indigo-500 text-white text-xs font-bold px-2 py-1 rounded-full">
+                            {{ approvalCount }}
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Multi-approve actions -->
+                <div v-if="isSelecting && selectedApprovals.size > 0" class="mb-3 p-2 bg-indigo-100 dark:bg-indigo-900/30 rounded-lg flex items-center justify-between">
+                    <span class="text-sm font-medium text-indigo-800 dark:text-indigo-200">
+                        {{ selectedApprovals.size }} item dipilih
+                    </span>
+                    <div class="flex gap-2">
+                        <button 
+                            @click="selectAllApprovals"
+                            class="text-xs bg-blue-500 text-white px-2 py-1 rounded hover:bg-blue-600 transition"
+                        >
+                            <i class="fa fa-check-double mr-1"></i>Select All
+                        </button>
+                        <button 
+                            @click="approveMultiple"
+                            class="text-xs bg-indigo-600 text-white px-2 py-1 rounded hover:bg-indigo-700 transition"
+                        >
+                            <i class="fa fa-check mr-1"></i>Approve Selected
+                        </button>
                     </div>
                 </div>
                 
@@ -25,30 +62,43 @@
                 <div v-else class="space-y-2">
                     <!-- PO Food Approvals -->
                     <div v-for="po in pendingApprovals.slice(0, 3)" :key="'po-food-approval-' + po.id"
-                        @click="showDetails(po.id)"
-                        class="p-3 rounded-lg cursor-pointer transition-all duration-200 hover:scale-105"
-                        :class="isNight ? 'bg-slate-700/50 hover:bg-slate-600/50' : 'bg-indigo-50 hover:bg-indigo-100'">
+                        @click="isSelecting ? toggleSelection(po.id) : showDetails(po.id)"
+                        class="p-3 rounded-lg transition-all duration-200"
+                        :class="[
+                            isSelecting ? 'cursor-default' : 'cursor-pointer hover:scale-105',
+                            isNight ? 'bg-slate-700/50 hover:bg-slate-600/50' : 'bg-indigo-50 hover:bg-indigo-100',
+                            selectedApprovals.has(po.id) ? 'ring-2 ring-indigo-500' : ''
+                        ]">
                         <div class="flex items-center justify-between">
-                            <div class="flex-1">
-                                <div class="font-semibold text-sm" :class="isNight ? 'text-white' : 'text-slate-800'">
-                                    {{ po.number }}
-                                </div>
-                                <div class="text-xs" :class="isNight ? 'text-slate-300' : 'text-slate-600'">
-                                    {{ po.supplier?.name || 'Unknown Supplier' }}
-                                </div>
-                                <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
-                                    <i class="fa fa-box mr-1 text-indigo-600"></i>
-                                    {{ po.items_count }} items
-                                </div>
-                                <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
-                                    <i class="fa fa-money-bill-wave mr-1 text-indigo-600"></i>
-                                    Rp {{ new Intl.NumberFormat('id-ID').format(po.grand_total) }}
-                                </div>
-                                <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
-                                    <i class="fa fa-user mr-1 text-indigo-500"></i>{{ po.creator?.nama_lengkap }}
-                                </div>
-                                <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
-                                    {{ formatDate(po.date) }}
+                            <div class="flex items-center gap-2 flex-1">
+                                <input 
+                                    v-if="isSelecting"
+                                    type="checkbox"
+                                    :checked="selectedApprovals.has(po.id)"
+                                    @click.stop="toggleSelection(po.id)"
+                                    class="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500"
+                                />
+                                <div class="flex-1">
+                                    <div class="font-semibold text-sm" :class="isNight ? 'text-white' : 'text-slate-800'">
+                                        {{ po.number }}
+                                    </div>
+                                    <div class="text-xs" :class="isNight ? 'text-slate-300' : 'text-slate-600'">
+                                        {{ po.supplier?.name || 'Unknown Supplier' }}
+                                    </div>
+                                    <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
+                                        <i class="fa fa-box mr-1 text-indigo-600"></i>
+                                        {{ po.items_count }} items
+                                    </div>
+                                    <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
+                                        <i class="fa fa-money-bill-wave mr-1 text-indigo-600"></i>
+                                        Rp {{ new Intl.NumberFormat('id-ID').format(po.grand_total) }}
+                                    </div>
+                                    <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
+                                        <i class="fa fa-user mr-1 text-indigo-500"></i>{{ po.creator?.nama_lengkap }}
+                                    </div>
+                                    <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
+                                        {{ formatDate(po.date) }}
+                                    </div>
                                 </div>
                             </div>
                             <div class="text-xs text-indigo-500 font-medium">
@@ -334,6 +384,8 @@ const emit = defineEmits(['approved', 'rejected']);
 // State
 const pendingApprovals = ref([]);
 const loading = ref(false);
+const selectedApprovals = ref(new Set()); // For multi-select
+const isSelecting = ref(false); // Toggle select mode
 
 // Computed
 const approvalCount = computed(() => pendingApprovals.value.length);
@@ -346,6 +398,98 @@ function formatDate(date) {
         month: 'short',
         day: 'numeric'
     });
+}
+
+// Toggle selection
+function toggleSelection(poId) {
+    if (selectedApprovals.value.has(poId)) {
+        selectedApprovals.value.delete(poId);
+    } else {
+        selectedApprovals.value.add(poId);
+    }
+}
+
+// Select all approvals
+function selectAllApprovals() {
+    pendingApprovals.value.forEach(po => {
+        selectedApprovals.value.add(po.id);
+    });
+}
+
+// Approve multiple POs
+async function approveMultiple() {
+    if (selectedApprovals.value.size === 0) {
+        Swal.fire('Warning', 'Pilih minimal satu PO Food untuk di-approve', 'warning');
+        return;
+    }
+    
+    const result = await Swal.fire({
+        title: 'Approve Multiple PO Foods?',
+        text: `Apakah Anda yakin ingin approve ${selectedApprovals.value.size} PO Food?`,
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonText: 'Ya, Approve',
+        cancelButtonText: 'Batal',
+        confirmButtonColor: '#6366f1',
+    });
+    
+    if (!result.isConfirmed) return;
+    
+    try {
+        Swal.fire({
+            title: 'Processing...',
+            text: 'Sedang memproses approval...',
+            allowOutsideClick: false,
+            didOpen: () => {
+                Swal.showLoading();
+            }
+        });
+        
+        const poIds = Array.from(selectedApprovals.value);
+        const promises = poIds.map(async (poId) => {
+            const po = pendingApprovals.value.find(p => p.id === poId);
+            if (!po) return { error: new Error('PO not found'), poId };
+            
+            try {
+                let endpoint = '';
+                const approvalLevel = po.approval_level;
+                
+                if (approvalLevel === 'purchasing_manager') {
+                    endpoint = `/po-foods/${poId}/approve`;
+                } else if (approvalLevel === 'gm_finance') {
+                    endpoint = `/po-foods/${poId}/approve-gm-finance`;
+                } else {
+                    return { error: new Error('Unknown approval level'), poId };
+                }
+                
+                await axios.post(endpoint, {
+                    approved: true,
+                    note: ''
+                });
+                
+                return { success: true, poId };
+            } catch (err) {
+                return { error: err, poId };
+            }
+        });
+        
+        const results = await Promise.all(promises);
+        const success = results.filter(r => r.success).length;
+        const failed = results.filter(r => r.error).length;
+        
+        selectedApprovals.value.clear();
+        isSelecting.value = false;
+        loadPendingApprovals();
+        
+        if (failed === 0) {
+            Swal.fire('Success', `${success} PO Food berhasil disetujui`, 'success');
+        } else {
+            Swal.fire('Partial Success', `${success} berhasil, ${failed} gagal`, 'warning');
+        }
+    } catch (error) {
+        console.error('Error approving multiple PO Foods:', error);
+        Swal.fire('Error', 'Gagal menyetujui PO Foods', 'error');
+    }
 }
 
 async function loadPendingApprovals() {

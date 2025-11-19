@@ -984,6 +984,23 @@
               {{ form.mode === 'travel_application' ? 'Agenda Kerja *' : 'Description' }}
             </label>
             
+            <!-- Note for Travel Application -->
+            <div v-if="form.mode === 'travel_application'" class="mb-3 p-3 bg-yellow-50 border-l-4 border-yellow-400 rounded-r-lg">
+              <div class="flex items-start">
+                <div class="flex-shrink-0">
+                  <i class="fa fa-info-circle text-yellow-600 text-lg mt-0.5"></i>
+                </div>
+                <div class="ml-3">
+                  <p class="text-sm font-medium text-yellow-800">
+                    <strong>Catatan Penting:</strong>
+                  </p>
+                  <p class="text-sm text-yellow-700 mt-1">
+                    Wajib mencantumkan <strong>tanggal keberangkatan</strong> dan <strong>tanggal pulang</strong> dalam agenda kerja.
+                  </p>
+                </div>
+              </div>
+            </div>
+            
             <!-- For travel_application: Agenda Kerja -->
             <textarea
               v-if="form.mode === 'travel_application'"

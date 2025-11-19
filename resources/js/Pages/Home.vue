@@ -43,6 +43,8 @@ const showPrApprovalModal = ref(false);
 const selectedPrApproval = ref(null);
 const prApprovalBudgetInfo = ref(null);
 const prModeSpecificData = ref(null);
+const selectedPrApprovals = ref(new Set()); // For multi-select
+const isSelectingPrApprovals = ref(false); // Toggle select mode
 const showLightbox = ref(false);
 const lightboxImage = ref(null);
 const lightboxType = ref('pr'); // 'pr' or 'po'
@@ -52,6 +54,8 @@ const pendingPoOpsApprovals = ref([]);
 const loadingPoOpsApprovals = ref(false);
 const showPoOpsApprovalModal = ref(false);
 const selectedPoOpsApproval = ref(null);
+const selectedPoOpsApprovals = ref(new Set()); // For multi-select
+const isSelectingPoOpsApprovals = ref(false); // Toggle select mode
 
 // Category Cost Outlet approvals
 const pendingCategoryCostApprovals = ref([]);
@@ -59,15 +63,21 @@ const loadingCategoryCostApprovals = ref(false);
 const showCategoryCostApprovalModal = ref(false);
 const selectedCategoryCostApproval = ref(null);
 const categoryCostApprovalRejectionReason = ref('');
+const selectedCategoryCostApprovals = ref(new Set()); // For multi-select
+const isSelectingCategoryCostApprovals = ref(false); // Toggle select mode
 
 // Outlet Stock Adjustment approvals
 const pendingStockAdjustmentApprovals = ref([]);
+const selectedStockAdjustmentApprovals = ref(new Set()); // For multi-select
+const isSelectingStockAdjustmentApprovals = ref(false); // Toggle select mode
 
 // Contra Bon approvals
 const pendingContraBonApprovals = ref([]);
 const loadingContraBonApprovals = ref(false);
 const showContraBonApprovalModal = ref(false);
 const selectedContraBonApproval = ref(null);
+const selectedContraBonApprovals = ref(new Set()); // For multi-select
+const isSelectingContraBonApprovals = ref(false); // Toggle select mode
 
 // All Contra Bon Modal
 const showAllContraBonModal = ref(false);
@@ -94,6 +104,17 @@ const poOpsSearchQuery = ref('');
 const poOpsStatusFilter = ref(''); // '', 'submitted', 'pending', 'awaiting', 'waiting'
 const poOpsDateFilter = ref(''); // '', 'today', 'week', 'month'
 const poOpsSortBy = ref('newest'); // 'newest', 'oldest', 'number', 'amount'
+
+// All PR Modal
+const showAllPrModal = ref(false);
+const allPrApprovals = ref([]);
+const loadingAllPr = ref(false);
+// PR filters
+const prSearchQuery = ref('');
+const prStatusFilter = ref(''); // '', 'SUBMITTED', 'APPROVED', etc.
+const prDateFilter = ref(''); // '', 'today', 'week', 'month'
+const prSortBy = ref('newest'); // 'newest', 'oldest', 'number', 'amount'
+const prModeFilter = ref(''); // '', 'pr_ops', 'purchase_payment', 'travel_application', 'kasbon'
 
 // Filtered and paginated Contra Bon approvals
 const filteredContraBonApprovals = computed(() => {
@@ -897,6 +918,90 @@ function openAllPoOpsModal() {
     loadAllPendingPoOps();
 }
 
+// Load all PR approvals
+async function loadAllPrApprovals() {
+    loadingAllPr.value = true;
+    try {
+        const response = await axios.get('/api/purchase-requisitions/pending-approvals?limit=500');
+        if (response.data.success) {
+            allPrApprovals.value = response.data.purchase_requisitions || [];
+        }
+    } catch (error) {
+        console.error('Error loading all PR approvals:', error);
+    } finally {
+        loadingAllPr.value = false;
+    }
+}
+
+function openAllPrModal() {
+    showAllPrModal.value = true;
+    loadAllPrApprovals();
+}
+
+// Filtered all PR approvals
+const filteredAllPrApprovals = computed(() => {
+    let result = [...allPrApprovals.value];
+    
+    // Search
+    if (prSearchQuery.value) {
+        const q = prSearchQuery.value.toLowerCase();
+        result = result.filter(pr => {
+            const number = (pr.pr_number || '').toLowerCase();
+            const title = (pr.title || '').toLowerCase();
+            const division = (pr.division?.nama_divisi || '').toLowerCase();
+            const outlet = (pr.outlet?.nama_outlet || '').toLowerCase();
+            const creator = (pr.creator?.nama_lengkap || pr.created_by_name || '').toLowerCase();
+            return number.includes(q) || title.includes(q) || division.includes(q) || outlet.includes(q) || creator.includes(q);
+        });
+    }
+    
+    // Status filter
+    if (prStatusFilter.value) {
+        result = result.filter(pr => (pr.status || '').toString().toUpperCase() === prStatusFilter.value.toUpperCase());
+    }
+    
+    // Mode filter
+    if (prModeFilter.value) {
+        result = result.filter(pr => (pr.mode || '') === prModeFilter.value);
+    }
+    
+    // Date filter
+    if (prDateFilter.value) {
+        const now = new Date();
+        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        result = result.filter(pr => {
+            const d = new Date(pr.created_at);
+            switch (prDateFilter.value) {
+                case 'today':
+                    return d >= today;
+                case 'week':
+                    return d >= new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+                case 'month':
+                    return d >= new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
+                default:
+                    return true;
+            }
+        });
+    }
+    
+    // Sort
+    result.sort((a, b) => {
+        switch (prSortBy.value) {
+            case 'oldest':
+                return new Date(a.created_at) - new Date(b.created_at);
+            case 'number':
+                return (a.pr_number || '').localeCompare(b.pr_number || '');
+            case 'amount':
+                return (b.amount || 0) - (a.amount || 0);
+            case 'newest':
+            default:
+                return new Date(b.created_at) - new Date(a.created_at);
+        }
+    });
+    
+    return result;
+});
+
 // Load active sanctions
 async function loadActiveSanctions() {
     loadingSanctions.value = true;
@@ -1011,6 +1116,11 @@ async function rejectCoaching(coachingId, approverId) {
 // Show PR approval details
 async function showPrApprovalDetails(prId) {
     try {
+        // Close "All PR" modal if open
+        if (showAllPrModal.value) {
+            showAllPrModal.value = false;
+        }
+        
         const response = await axios.get(`/api/purchase-requisitions/${prId}/approval-details`);
         if (response.data.success) {
             selectedPrApproval.value = response.data.purchase_requisition;
@@ -1109,6 +1219,75 @@ function getGroupedAttachments(attachments) {
     });
     
     return grouped;
+}
+
+// Toggle PR approval selection
+function togglePrApprovalSelection(prId) {
+    if (selectedPrApprovals.value.has(prId)) {
+        selectedPrApprovals.value.delete(prId);
+    } else {
+        selectedPrApprovals.value.add(prId);
+    }
+}
+
+// Select all PR approvals
+function selectAllPrApprovals() {
+    pendingPrApprovals.value.forEach(pr => {
+        selectedPrApprovals.value.add(pr.id);
+    });
+}
+
+// Approve multiple PRs
+async function approveMultiplePr() {
+    if (selectedPrApprovals.value.size === 0) {
+        Swal.fire('Warning', 'Pilih minimal satu Purchase Requisition untuk di-approve', 'warning');
+        return;
+    }
+    
+    const result = await Swal.fire({
+        title: 'Approve Multiple PRs?',
+        text: `Apakah Anda yakin ingin approve ${selectedPrApprovals.value.size} Purchase Requisition?`,
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonText: 'Ya, Approve',
+        cancelButtonText: 'Batal',
+        confirmButtonColor: '#10b981',
+    });
+    
+    if (!result.isConfirmed) return;
+    
+    try {
+        Swal.fire({
+            title: 'Processing...',
+            text: 'Sedang memproses approval...',
+            allowOutsideClick: false,
+            didOpen: () => {
+                Swal.showLoading();
+            }
+        });
+        
+        const prIds = Array.from(selectedPrApprovals.value);
+        const promises = prIds.map(prId => 
+            axios.post(`/purchase-requisitions/${prId}/approve`).catch(err => ({ error: err, prId }))
+        );
+        
+        const results = await Promise.all(promises);
+        const success = results.filter(r => !r.error).length;
+        const failed = results.filter(r => r.error).length;
+        
+        selectedPrApprovals.value.clear();
+        isSelectingPrApprovals.value = false;
+        loadPendingPrApprovals();
+        
+        if (failed === 0) {
+            Swal.fire('Success', `${success} Purchase Requisition berhasil disetujui`, 'success');
+        } else {
+            Swal.fire('Partial Success', `${success} berhasil, ${failed} gagal`, 'warning');
+        }
+    } catch (error) {
+        console.error('Error approving multiple PRs:', error);
+        Swal.fire('Error', 'Gagal menyetujui Purchase Requisition', 'error');
+    }
 }
 
 // Approve PR
@@ -1473,6 +1652,78 @@ async function showContraBonApprovalDetails(cbId) {
     }
 }
 
+// Toggle Contra Bon approval selection
+function toggleContraBonApprovalSelection(cbId) {
+    if (selectedContraBonApprovals.value.has(cbId)) {
+        selectedContraBonApprovals.value.delete(cbId);
+    } else {
+        selectedContraBonApprovals.value.add(cbId);
+    }
+}
+
+// Select all Contra Bon approvals
+function selectAllContraBonApprovals() {
+    pendingContraBonApprovals.value.forEach(cb => {
+        selectedContraBonApprovals.value.add(cb.id);
+    });
+}
+
+// Approve multiple Contra Bons
+async function approveMultipleContraBon() {
+    if (selectedContraBonApprovals.value.size === 0) {
+        Swal.fire('Warning', 'Pilih minimal satu Contra Bon untuk di-approve', 'warning');
+        return;
+    }
+    
+    const result = await Swal.fire({
+        title: 'Approve Multiple Contra Bons?',
+        text: `Apakah Anda yakin ingin approve ${selectedContraBonApprovals.value.size} Contra Bon?`,
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonText: 'Ya, Approve',
+        cancelButtonText: 'Batal',
+        confirmButtonColor: '#3b82f6',
+    });
+    
+    if (!result.isConfirmed) return;
+    
+    try {
+        Swal.fire({
+            title: 'Processing...',
+            text: 'Sedang memproses approval...',
+            allowOutsideClick: false,
+            didOpen: () => {
+                Swal.showLoading();
+            }
+        });
+        
+        const cbIds = Array.from(selectedContraBonApprovals.value);
+        const promises = cbIds.map(cbId => 
+            axios.post(`/contra-bons/${cbId}/approve`, {
+                approved: true,
+                note: ''
+            }).catch(err => ({ error: err, cbId }))
+        );
+        
+        const results = await Promise.all(promises);
+        const success = results.filter(r => !r.error).length;
+        const failed = results.filter(r => r.error).length;
+        
+        selectedContraBonApprovals.value.clear();
+        isSelectingContraBonApprovals.value = false;
+        loadPendingContraBonApprovals();
+        
+        if (failed === 0) {
+            Swal.fire('Success', `${success} Contra Bon berhasil disetujui`, 'success');
+        } else {
+            Swal.fire('Partial Success', `${success} berhasil, ${failed} gagal`, 'warning');
+        }
+    } catch (error) {
+        console.error('Error approving multiple Contra Bons:', error);
+        Swal.fire('Error', 'Gagal menyetujui Contra Bon', 'error');
+    }
+}
+
 // Approve Contra Bon
 async function approveContraBon(cbId) {
     try {
@@ -1557,6 +1808,78 @@ async function showPoOpsApprovalDetails(poId) {
     } catch (error) {
         console.error('Error loading PO Ops approval details:', error);
         Swal.fire('Error', 'Gagal memuat detail Purchase Order Ops', 'error');
+    }
+}
+
+// Toggle PO Ops approval selection
+function togglePoOpsApprovalSelection(poId) {
+    if (selectedPoOpsApprovals.value.has(poId)) {
+        selectedPoOpsApprovals.value.delete(poId);
+    } else {
+        selectedPoOpsApprovals.value.add(poId);
+    }
+}
+
+// Select all PO Ops approvals
+function selectAllPoOpsApprovals() {
+    pendingPoOpsApprovals.value.forEach(po => {
+        selectedPoOpsApprovals.value.add(po.id);
+    });
+}
+
+// Approve multiple PO Ops
+async function approveMultiplePoOps() {
+    if (selectedPoOpsApprovals.value.size === 0) {
+        Swal.fire('Warning', 'Pilih minimal satu Purchase Order Ops untuk di-approve', 'warning');
+        return;
+    }
+    
+    const result = await Swal.fire({
+        title: 'Approve Multiple PO Ops?',
+        text: `Apakah Anda yakin ingin approve ${selectedPoOpsApprovals.value.size} Purchase Order Ops?`,
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonText: 'Ya, Approve',
+        cancelButtonText: 'Batal',
+        confirmButtonColor: '#f97316',
+    });
+    
+    if (!result.isConfirmed) return;
+    
+    try {
+        Swal.fire({
+            title: 'Processing...',
+            text: 'Sedang memproses approval...',
+            allowOutsideClick: false,
+            didOpen: () => {
+                Swal.showLoading();
+            }
+        });
+        
+        const poIds = Array.from(selectedPoOpsApprovals.value);
+        const promises = poIds.map(poId => 
+            axios.post(`/po-ops/${poId}/approve`, {
+                approved: true,
+                comments: ''
+            }).catch(err => ({ error: err, poId }))
+        );
+        
+        const results = await Promise.all(promises);
+        const success = results.filter(r => !r.error).length;
+        const failed = results.filter(r => r.error).length;
+        
+        selectedPoOpsApprovals.value.clear();
+        isSelectingPoOpsApprovals.value = false;
+        loadPendingPoOpsApprovals();
+        
+        if (failed === 0) {
+            Swal.fire('Success', `${success} Purchase Order Ops berhasil disetujui`, 'success');
+        } else {
+            Swal.fire('Partial Success', `${success} berhasil, ${failed} gagal`, 'warning');
+        }
+    } catch (error) {
+        console.error('Error approving multiple PO Ops:', error);
+        Swal.fire('Error', 'Gagal menyetujui Purchase Order Ops', 'error');
     }
 }
 
@@ -4364,8 +4687,45 @@ watch(locale, () => {
                                     Purchase Requisition Approval
                                 </h3>
                             </div>
-                            <div class="bg-green-500 text-white text-xs font-bold px-2 py-1 rounded-full">
-                                {{ prApprovalCount }}
+                            <div class="flex items-center gap-2">
+                                <button 
+                                    v-if="!isSelectingPrApprovals"
+                                    @click.stop="isSelectingPrApprovals = true"
+                                    class="text-xs bg-green-500 text-white px-2 py-1 rounded hover:bg-green-600 transition"
+                                >
+                                    <i class="fa fa-check-square mr-1"></i>Multi Approve
+                                </button>
+                                <button 
+                                    v-else
+                                    @click.stop="isSelectingPrApprovals = false; selectedPrApprovals.clear()"
+                                    class="text-xs bg-gray-500 text-white px-2 py-1 rounded hover:bg-gray-600 transition"
+                                >
+                                    <i class="fa fa-times mr-1"></i>Cancel
+                                </button>
+                                <div class="bg-green-500 text-white text-xs font-bold px-2 py-1 rounded-full">
+                                    {{ prApprovalCount }}
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Multi-approve actions -->
+                        <div v-if="isSelectingPrApprovals && selectedPrApprovals.size > 0" class="mb-3 p-2 bg-green-100 dark:bg-green-900/30 rounded-lg flex items-center justify-between">
+                            <span class="text-sm font-medium text-green-800 dark:text-green-200">
+                                {{ selectedPrApprovals.size }} item dipilih
+                            </span>
+                            <div class="flex gap-2">
+                                <button 
+                                    @click="selectAllPrApprovals"
+                                    class="text-xs bg-blue-500 text-white px-2 py-1 rounded hover:bg-blue-600 transition"
+                                >
+                                    <i class="fa fa-check-double mr-1"></i>Select All
+                                </button>
+                                <button 
+                                    @click="approveMultiplePr"
+                                    class="text-xs bg-green-600 text-white px-2 py-1 rounded hover:bg-green-700 transition"
+                                >
+                                    <i class="fa fa-check mr-1"></i>Approve Selected
+                                </button>
                             </div>
                         </div>
                         
@@ -4377,22 +4737,35 @@ watch(locale, () => {
                         <div v-else class="space-y-2">
                             <!-- Purchase Requisition Approvals -->
                             <div v-for="pr in pendingPrApprovals.slice(0, 3)" :key="'pr-approval-' + pr.id"
-                                @click="showPrApprovalDetails(pr.id)"
-                                class="p-3 rounded-lg cursor-pointer transition-all duration-200 hover:scale-105"
-                                :class="isNight ? 'bg-slate-700/50 hover:bg-slate-600/50' : 'bg-green-50 hover:bg-green-100'">
+                                @click="isSelectingPrApprovals ? togglePrApprovalSelection(pr.id) : showPrApprovalDetails(pr.id)"
+                                class="p-3 rounded-lg transition-all duration-200"
+                                :class="[
+                                    isSelectingPrApprovals ? 'cursor-default' : 'cursor-pointer hover:scale-105',
+                                    isNight ? 'bg-slate-700/50 hover:bg-slate-600/50' : 'bg-green-50 hover:bg-green-100',
+                                    selectedPrApprovals.has(pr.id) ? 'ring-2 ring-green-500' : ''
+                                ]">
                                 <div class="flex items-center justify-between">
-                                    <div class="flex-1">
-                                        <div class="font-semibold text-sm" :class="isNight ? 'text-white' : 'text-slate-800'">
-                                            {{ pr.pr_number }}
-                                        </div>
-                                        <div class="text-xs" :class="isNight ? 'text-slate-300' : 'text-slate-600'">
-                                            {{ pr.title }}
-                                        </div>
-                                        <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
-                                            {{ pr.division?.nama_divisi }} • Rp {{ new Intl.NumberFormat('id-ID').format(pr.amount) }}
-                                        </div>
-                                        <div v-if="pr.outlet?.nama_outlet" class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
-                                            <i class="fa fa-map-marker-alt mr-1 text-blue-500"></i>{{ pr.outlet.nama_outlet }}
+                                    <div class="flex items-center gap-2 flex-1">
+                                        <input 
+                                            v-if="isSelectingPrApprovals"
+                                            type="checkbox"
+                                            :checked="selectedPrApprovals.has(pr.id)"
+                                            @click.stop="togglePrApprovalSelection(pr.id)"
+                                            class="w-4 h-4 text-green-600 rounded focus:ring-green-500"
+                                        />
+                                        <div class="flex-1">
+                                            <div class="font-semibold text-sm" :class="isNight ? 'text-white' : 'text-slate-800'">
+                                                {{ pr.pr_number }}
+                                            </div>
+                                            <div class="text-xs" :class="isNight ? 'text-slate-300' : 'text-slate-600'">
+                                                {{ pr.title }}
+                                            </div>
+                                            <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
+                                                {{ pr.division?.nama_divisi }} • Rp {{ new Intl.NumberFormat('id-ID').format(pr.amount) }}
+                                            </div>
+                                            <div v-if="pr.outlet?.nama_outlet" class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
+                                                <i class="fa fa-map-marker-alt mr-1 text-blue-500"></i>{{ pr.outlet.nama_outlet }}
+                                            </div>
                                         </div>
                                     </div>
                                     <div class="text-xs text-green-500 font-medium">
@@ -4403,7 +4776,7 @@ watch(locale, () => {
                             
                             <!-- Show more button if there are more than 3 PRs -->
                             <div v-if="pendingPrApprovals.length > 3" class="text-center pt-2">
-                                <button class="text-sm text-green-500 hover:text-green-700 font-medium">
+                                <button @click="openAllPrModal" class="text-sm text-green-500 hover:text-green-700 font-medium">
                                     Lihat {{ pendingPrApprovals.length - 3 }} PR lainnya...
                                 </button>
                             </div>
@@ -4423,8 +4796,45 @@ watch(locale, () => {
                                     Purchase Order Ops Approval
                                 </h3>
                             </div>
-                            <div class="bg-orange-500 text-white text-xs font-bold px-2 py-1 rounded-full">
-                                {{ poOpsApprovalCount }}
+                            <div class="flex items-center gap-2">
+                                <button 
+                                    v-if="!isSelectingPoOpsApprovals"
+                                    @click.stop="isSelectingPoOpsApprovals = true"
+                                    class="text-xs bg-orange-500 text-white px-2 py-1 rounded hover:bg-orange-600 transition"
+                                >
+                                    <i class="fa fa-check-square mr-1"></i>Multi Approve
+                                </button>
+                                <button 
+                                    v-else
+                                    @click.stop="isSelectingPoOpsApprovals = false; selectedPoOpsApprovals.clear()"
+                                    class="text-xs bg-gray-500 text-white px-2 py-1 rounded hover:bg-gray-600 transition"
+                                >
+                                    <i class="fa fa-times mr-1"></i>Cancel
+                                </button>
+                                <div class="bg-orange-500 text-white text-xs font-bold px-2 py-1 rounded-full">
+                                    {{ poOpsApprovalCount }}
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Multi-approve actions -->
+                        <div v-if="isSelectingPoOpsApprovals && selectedPoOpsApprovals.size > 0" class="mb-3 p-2 bg-orange-100 dark:bg-orange-900/30 rounded-lg flex items-center justify-between">
+                            <span class="text-sm font-medium text-orange-800 dark:text-orange-200">
+                                {{ selectedPoOpsApprovals.size }} item dipilih
+                            </span>
+                            <div class="flex gap-2">
+                                <button 
+                                    @click="selectAllPoOpsApprovals"
+                                    class="text-xs bg-blue-500 text-white px-2 py-1 rounded hover:bg-blue-600 transition"
+                                >
+                                    <i class="fa fa-check-double mr-1"></i>Select All
+                                </button>
+                                <button 
+                                    @click="approveMultiplePoOps"
+                                    class="text-xs bg-orange-600 text-white px-2 py-1 rounded hover:bg-orange-700 transition"
+                                >
+                                    <i class="fa fa-check mr-1"></i>Approve Selected
+                                </button>
                             </div>
                         </div>
                         
@@ -4436,33 +4846,46 @@ watch(locale, () => {
                         <div v-else class="space-y-2">
                             <!-- Purchase Order Ops Approvals -->
                             <div v-for="po in pendingPoOpsApprovals.slice(0, 3)" :key="'po-ops-approval-' + po.id"
-                                @click="showPoOpsApprovalDetails(po.id)"
-                                class="p-3 rounded-lg cursor-pointer transition-all duration-200 hover:scale-105"
-                                :class="isNight ? 'bg-slate-700/50 hover:bg-slate-600/50' : 'bg-orange-50 hover:bg-orange-100'">
+                                @click="isSelectingPoOpsApprovals ? togglePoOpsApprovalSelection(po.id) : showPoOpsApprovalDetails(po.id)"
+                                class="p-3 rounded-lg transition-all duration-200"
+                                :class="[
+                                    isSelectingPoOpsApprovals ? 'cursor-default' : 'cursor-pointer hover:scale-105',
+                                    isNight ? 'bg-slate-700/50 hover:bg-slate-600/50' : 'bg-orange-50 hover:bg-orange-100',
+                                    selectedPoOpsApprovals.has(po.id) ? 'ring-2 ring-orange-500' : ''
+                                ]">
                                 <div class="flex items-center justify-between">
-                                    <div class="flex-1">
-                                        <div class="font-semibold text-sm" :class="isNight ? 'text-white' : 'text-slate-800'">
-                                            {{ po.number }}
-                                        </div>
-                                        <div class="text-xs" :class="isNight ? 'text-slate-300' : 'text-slate-600'">
-                                            {{ po.supplier?.name || 'Unknown Supplier' }}
-                                        </div>
-                                    <div v-if="po.purchase_requisition" class="text-xs" :class="isNight ? 'text-slate-300' : 'text-slate-600'">
-                                        <i class="fa fa-shopping-cart mr-1 text-green-600"></i>
-                                        PR: {{ po.purchase_requisition.pr_number }}
-                                    </div>
-                                    <div v-if="po.purchase_requisition?.title" class="text-[11px] truncate" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
-                                        {{ po.purchase_requisition.title }}
-                                    </div>
-                                    <div v-if="po.purchase_requisition?.outlet || po.purchase_requisition?.division" class="text-[11px]" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
-                                        <i class="fa fa-store mr-1 text-blue-500"></i>
-                                        {{ po.purchase_requisition?.outlet?.nama_outlet || po.purchase_requisition?.division?.nama_divisi || '-' }}
-                                    </div>
-                                        <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
-                                            Rp {{ new Intl.NumberFormat('id-ID').format(po.grand_total) }}
-                                        </div>
-                                        <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
-                                            <i class="fa fa-user mr-1 text-blue-500"></i>{{ po.creator?.nama_lengkap }}
+                                    <div class="flex items-center gap-2 flex-1">
+                                        <input 
+                                            v-if="isSelectingPoOpsApprovals"
+                                            type="checkbox"
+                                            :checked="selectedPoOpsApprovals.has(po.id)"
+                                            @click.stop="togglePoOpsApprovalSelection(po.id)"
+                                            class="w-4 h-4 text-orange-600 rounded focus:ring-orange-500"
+                                        />
+                                        <div class="flex-1">
+                                            <div class="font-semibold text-sm" :class="isNight ? 'text-white' : 'text-slate-800'">
+                                                {{ po.number }}
+                                            </div>
+                                            <div class="text-xs" :class="isNight ? 'text-slate-300' : 'text-slate-600'">
+                                                {{ po.supplier?.name || 'Unknown Supplier' }}
+                                            </div>
+                                            <div v-if="po.purchase_requisition" class="text-xs" :class="isNight ? 'text-slate-300' : 'text-slate-600'">
+                                                <i class="fa fa-shopping-cart mr-1 text-green-600"></i>
+                                                PR: {{ po.purchase_requisition.pr_number }}
+                                            </div>
+                                            <div v-if="po.purchase_requisition?.title" class="text-[11px] truncate" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
+                                                {{ po.purchase_requisition.title }}
+                                            </div>
+                                            <div v-if="po.purchase_requisition?.outlet || po.purchase_requisition?.division" class="text-[11px]" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
+                                                <i class="fa fa-store mr-1 text-blue-500"></i>
+                                                {{ po.purchase_requisition?.outlet?.nama_outlet || po.purchase_requisition?.division?.nama_divisi || '-' }}
+                                            </div>
+                                            <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
+                                                Rp {{ new Intl.NumberFormat('id-ID').format(po.grand_total) }}
+                                            </div>
+                                            <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
+                                                <i class="fa fa-user mr-1 text-blue-500"></i>{{ po.creator?.nama_lengkap }}
+                                            </div>
                                         </div>
                                     </div>
                                     <div class="text-xs text-orange-500 font-medium">
@@ -4510,8 +4933,45 @@ watch(locale, () => {
                                     Contra Bon Approval
                                 </h3>
                             </div>
-                            <div class="bg-blue-500 text-white text-xs font-bold px-2 py-1 rounded-full">
-                                {{ contraBonApprovalCount }}
+                            <div class="flex items-center gap-2">
+                                <button 
+                                    v-if="!isSelectingContraBonApprovals"
+                                    @click.stop="isSelectingContraBonApprovals = true"
+                                    class="text-xs bg-blue-500 text-white px-2 py-1 rounded hover:bg-blue-600 transition"
+                                >
+                                    <i class="fa fa-check-square mr-1"></i>Multi Approve
+                                </button>
+                                <button 
+                                    v-else
+                                    @click.stop="isSelectingContraBonApprovals = false; selectedContraBonApprovals.clear()"
+                                    class="text-xs bg-gray-500 text-white px-2 py-1 rounded hover:bg-gray-600 transition"
+                                >
+                                    <i class="fa fa-times mr-1"></i>Cancel
+                                </button>
+                                <div class="bg-blue-500 text-white text-xs font-bold px-2 py-1 rounded-full">
+                                    {{ contraBonApprovalCount }}
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Multi-approve actions -->
+                        <div v-if="isSelectingContraBonApprovals && selectedContraBonApprovals.size > 0" class="mb-3 p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg flex items-center justify-between">
+                            <span class="text-sm font-medium text-blue-800 dark:text-blue-200">
+                                {{ selectedContraBonApprovals.size }} item dipilih
+                            </span>
+                            <div class="flex gap-2">
+                                <button 
+                                    @click="selectAllContraBonApprovals"
+                                    class="text-xs bg-blue-500 text-white px-2 py-1 rounded hover:bg-blue-600 transition"
+                                >
+                                    <i class="fa fa-check-double mr-1"></i>Select All
+                                </button>
+                                <button 
+                                    @click="approveMultipleContraBon"
+                                    class="text-xs bg-blue-600 text-white px-2 py-1 rounded hover:bg-blue-700 transition"
+                                >
+                                    <i class="fa fa-check mr-1"></i>Approve Selected
+                                </button>
                             </div>
                         </div>
                         
@@ -4523,29 +4983,42 @@ watch(locale, () => {
                         <div v-else class="space-y-2">
                             <!-- Contra Bon Approvals -->
                             <div v-for="cb in pendingContraBonApprovals.slice(0, 3)" :key="'contra-bon-approval-' + cb.id"
-                                @click="showContraBonApprovalDetails(cb.id)"
-                                class="p-3 rounded-lg cursor-pointer transition-all duration-200 hover:scale-105"
-                                :class="isNight ? 'bg-slate-700/50 hover:bg-slate-600/50' : 'bg-blue-50 hover:bg-blue-100'">
+                                @click="isSelectingContraBonApprovals ? toggleContraBonApprovalSelection(cb.id) : showContraBonApprovalDetails(cb.id)"
+                                class="p-3 rounded-lg transition-all duration-200"
+                                :class="[
+                                    isSelectingContraBonApprovals ? 'cursor-default' : 'cursor-pointer hover:scale-105',
+                                    isNight ? 'bg-slate-700/50 hover:bg-slate-600/50' : 'bg-blue-50 hover:bg-blue-100',
+                                    selectedContraBonApprovals.has(cb.id) ? 'ring-2 ring-blue-500' : ''
+                                ]">
                                 <div class="flex items-center justify-between">
-                                    <div class="flex-1">
-                                        <div class="font-semibold text-sm" :class="isNight ? 'text-white' : 'text-slate-800'">
-                                            {{ cb.number }}
-                                        </div>
-                                        <div class="text-xs" :class="isNight ? 'text-slate-300' : 'text-slate-600'">
-                                            {{ cb.supplier?.name || 'Unknown Supplier' }}
-                                        </div>
-                                        <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
-                                            <i class="fa fa-tag mr-1 text-blue-600"></i>
-                                            {{ cb.source_type_display }}
-                                        </div>
-                                        <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
-                                            Rp {{ new Intl.NumberFormat('id-ID').format(cb.total_amount) }}
-                                        </div>
-                                        <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
-                                            <i class="fa fa-user mr-1 text-blue-500"></i>{{ cb.creator?.nama_lengkap }}
-                                        </div>
-                                        <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
-                                            {{ formatDate(cb.date) }}
+                                    <div class="flex items-center gap-2 flex-1">
+                                        <input 
+                                            v-if="isSelectingContraBonApprovals"
+                                            type="checkbox"
+                                            :checked="selectedContraBonApprovals.has(cb.id)"
+                                            @click.stop="toggleContraBonApprovalSelection(cb.id)"
+                                            class="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                                        />
+                                        <div class="flex-1">
+                                            <div class="font-semibold text-sm" :class="isNight ? 'text-white' : 'text-slate-800'">
+                                                {{ cb.number }}
+                                            </div>
+                                            <div class="text-xs" :class="isNight ? 'text-slate-300' : 'text-slate-600'">
+                                                {{ cb.supplier?.name || 'Unknown Supplier' }}
+                                            </div>
+                                            <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
+                                                <i class="fa fa-tag mr-1 text-blue-600"></i>
+                                                {{ cb.source_type_display }}
+                                            </div>
+                                            <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
+                                                Rp {{ new Intl.NumberFormat('id-ID').format(cb.total_amount) }}
+                                            </div>
+                                            <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
+                                                <i class="fa fa-user mr-1 text-blue-500"></i>{{ cb.creator?.nama_lengkap }}
+                                            </div>
+                                            <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
+                                                {{ formatDate(cb.date) }}
+                                            </div>
                                         </div>
                                     </div>
                                     <div class="text-xs text-blue-500 font-medium">
@@ -5234,28 +5707,46 @@ watch(locale, () => {
                     </div>
 
                     <!-- Travel Application Specific Fields -->
-                    <div v-if="selectedPrApproval.mode === 'travel_application' && prModeSpecificData" class="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
+                    <div v-if="selectedPrApproval.mode === 'travel_application'" class="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
                         <h4 class="text-md font-semibold text-gray-900 dark:text-white mb-3">
                             <i class="fa fa-plane mr-2 text-purple-500"></i>
                             Informasi Perjalanan Dinas
                         </h4>
                         <div class="space-y-4">
-                            <div v-if="prModeSpecificData.travel_outlets && prModeSpecificData.travel_outlets.length > 0">
+                            <div v-if="prModeSpecificData && prModeSpecificData.travel_outlets && prModeSpecificData.travel_outlets.length > 0">
                                 <div class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Outlet Tujuan Perjalanan Dinas</div>
                                 <div class="flex flex-wrap gap-2">
                                     <span v-for="outlet in prModeSpecificData.travel_outlets" :key="outlet.id"
-                                          class="inline-flex items-center px-3 py-1 rounded-full text-sm bg-purple-100 text-purple-800">
+                                          class="inline-flex items-center px-3 py-1 rounded-full text-sm bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200">
                                         <i class="fa fa-store mr-2"></i>
                                         {{ outlet.name }}
                                     </span>
                                 </div>
                             </div>
-                            <div v-if="prModeSpecificData.travel_agenda">
-                                <div class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Agenda Kerja</div>
-                                <div class="text-gray-900 dark:text-white bg-white dark:bg-gray-800 p-3 rounded-lg border border-gray-200 dark:border-gray-600 whitespace-pre-wrap">{{ prModeSpecificData.travel_agenda }}</div>
+                            <div v-if="prModeSpecificData && prModeSpecificData.travel_agenda">
+                                <div class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                    <i class="fa fa-calendar-check mr-2 text-purple-500"></i>
+                                    Agenda Kerja
+                                </div>
+                                <div class="text-gray-900 dark:text-white bg-white dark:bg-gray-800 p-4 rounded-lg border-2 border-purple-200 dark:border-purple-700 whitespace-pre-wrap leading-relaxed">
+                                    {{ prModeSpecificData.travel_agenda }}
+                                </div>
                             </div>
-                            <div v-if="prModeSpecificData.travel_notes">
-                                <div class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Notes</div>
+                            <div v-else-if="selectedPrApproval.description && !prModeSpecificData">
+                                <!-- Fallback: use description as agenda for old data -->
+                                <div class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                    <i class="fa fa-calendar-check mr-2 text-purple-500"></i>
+                                    Agenda Kerja
+                                </div>
+                                <div class="text-gray-900 dark:text-white bg-white dark:bg-gray-800 p-4 rounded-lg border-2 border-purple-200 dark:border-purple-700 whitespace-pre-wrap leading-relaxed">
+                                    {{ selectedPrApproval.description }}
+                                </div>
+                            </div>
+                            <div v-if="prModeSpecificData && prModeSpecificData.travel_notes">
+                                <div class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                    <i class="fa fa-sticky-note mr-2 text-purple-500"></i>
+                                    Notes
+                                </div>
                                 <div class="text-gray-900 dark:text-white bg-white dark:bg-gray-800 p-3 rounded-lg border border-gray-200 dark:border-gray-600 whitespace-pre-wrap">{{ prModeSpecificData.travel_notes }}</div>
                             </div>
                         </div>
@@ -6627,6 +7118,132 @@ watch(locale, () => {
 
                 <div class="flex justify-end gap-3 mt-6 pt-4 border-t border-gray-200 dark:border-gray-600">
                     <button @click="showAllPoOpsModal = false" class="px-4 py-2 text-gray-600 dark:text-gray-400 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                        Tutup
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- All PR Modal -->
+        <div v-if="showAllPrModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click="showAllPrModal = false">
+            <div class="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-5xl mx-4 max-h-[90vh] overflow-y-auto" @click.stop>
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-lg font-medium text-gray-900 dark:text-white">
+                        <i class="fa fa-list mr-2 text-green-500"></i>
+                        Semua Purchase Requisition Pending
+                    </h3>
+                    <button @click="showAllPrModal = false" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                        <i class="fa-solid fa-times text-xl"></i>
+                    </button>
+                </div>
+
+                <!-- Filters -->
+                <div class="mb-4 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
+                        <div>
+                            <label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Cari</label>
+                            <input v-model="prSearchQuery" type="text" placeholder="No PR, Judul, Divisi, Outlet, atau Pembuat"
+                                   class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-green-500 focus:border-green-500 dark:bg-gray-600 dark:text-gray-100" />
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Status</label>
+                            <select v-model="prStatusFilter"
+                                    class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-green-500 focus:border-green-500 dark:bg-gray-600 dark:text-gray-100">
+                                <option value="">Semua</option>
+                                <option value="SUBMITTED">Submitted</option>
+                                <option value="APPROVED">Approved</option>
+                                <option value="REJECTED">Rejected</option>
+                                <option value="PROCESSED">Processed</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Mode</label>
+                            <select v-model="prModeFilter"
+                                    class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-green-500 focus:border-green-500 dark:bg-gray-600 dark:text-gray-100">
+                                <option value="">Semua</option>
+                                <option value="pr_ops">PR Ops</option>
+                                <option value="purchase_payment">Purchase Payment</option>
+                                <option value="travel_application">Travel Application</option>
+                                <option value="kasbon">Kasbon</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Tanggal</label>
+                            <select v-model="prDateFilter"
+                                    class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-green-500 focus:border-green-500 dark:bg-gray-600 dark:text-gray-100">
+                                <option value="">Semua</option>
+                                <option value="today">Hari ini</option>
+                                <option value="week">7 hari terakhir</option>
+                                <option value="month">30 hari terakhir</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Urutkan</label>
+                            <select v-model="prSortBy"
+                                    class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-green-500 focus:border-green-500 dark:bg-gray-600 dark:text-gray-100">
+                                <option value="newest">Terbaru</option>
+                                <option value="oldest">Terlama</option>
+                                <option value="number">Nomor PR</option>
+                                <option value="amount">Nominal</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <div v-if="loadingAllPr" class="text-center py-6">
+                    <div class="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-green-500"></div>
+                    <p class="text-sm mt-2 text-gray-600 dark:text-gray-300">Memuat data...</p>
+                </div>
+
+                <div v-else>
+                    <div v-if="filteredAllPrApprovals.length === 0" class="text-center py-10">
+                        <i class="fa-solid fa-check-circle text-4xl text-green-500 mb-2"></i>
+                        <p class="text-gray-600 dark:text-gray-300">Tidak ada Purchase Requisition pending</p>
+                    </div>
+                    <div v-else class="space-y-3">
+                        <div class="text-sm text-gray-600 dark:text-gray-400 mb-1">Menampilkan {{ filteredAllPrApprovals.length }} dari {{ allPrApprovals.length }} Purchase Requisition</div>
+                        <div v-for="pr in filteredAllPrApprovals" :key="'all-pr-' + pr.id"
+                             class="p-3 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors cursor-pointer"
+                             @click="showPrApprovalDetails(pr.id)">
+                            <div class="flex items-center justify-between">
+                                <div class="flex-1 min-w-0">
+                                    <div class="flex items-center gap-2">
+                                        <span class="font-semibold text-gray-900 dark:text-white truncate">{{ pr.pr_number }}</span>
+                                        <span v-if="pr.mode" 
+                                              :class="['text-xs px-2 py-0.5 rounded-full', getPrModeBadgeClass(pr.mode)]">
+                                            {{ getPrModeLabel(pr.mode) }}
+                                        </span>
+                                        <span class="text-xs px-2 py-0.5 rounded-full" 
+                                              :class="pr.status === 'SUBMITTED' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' : 
+                                                      pr.status === 'APPROVED' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' : 
+                                                      pr.status === 'REJECTED' ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' : 
+                                                      'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200'">
+                                            {{ (pr.status || '').toString().toUpperCase() }}
+                                        </span>
+                                    </div>
+                                    <div class="text-xs text-gray-600 dark:text-gray-300 truncate mt-1">
+                                        {{ pr.title }}
+                                    </div>
+                                    <div class="text-xs text-gray-500 dark:text-gray-400 truncate">
+                                        {{ pr.division?.nama_divisi || '-' }} 
+                                        <span v-if="pr.outlet?.nama_outlet">• {{ pr.outlet.nama_outlet }}</span>
+                                        • Rp {{ new Intl.NumberFormat('id-ID').format(pr.amount || 0) }}
+                                    </div>
+                                    <div class="text-[11px] text-gray-500 dark:text-gray-400 truncate mt-1">
+                                        <i class="fa fa-user mr-1 text-green-600"></i>
+                                        {{ pr.creator?.nama_lengkap || pr.created_by_name || '-' }}
+                                    </div>
+                                </div>
+                                <div class="text-xs text-gray-500 dark:text-gray-400 pl-3 whitespace-nowrap">
+                                    {{ new Date(pr.created_at).toLocaleDateString('id-ID') }}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex justify-end gap-3 mt-6 pt-4 border-t border-gray-200 dark:border-gray-600">
+                    <button @click="showAllPrModal = false" class="px-4 py-2 text-gray-600 dark:text-gray-400 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
                         Tutup
                     </button>
                 </div>

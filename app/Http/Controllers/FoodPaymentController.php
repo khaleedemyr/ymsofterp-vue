@@ -206,10 +206,13 @@ class FoodPaymentController extends Controller
                     'status' => $request->approved ? 'draft' : 'rejected' // Tetap draft setelah Finance Manager approve
                 ]);
 
-                // Jika di-reject, kembalikan status Contra Bon ke 'approved'
+                // Jika di-reject, kembalikan status Contra Bon ke 'approved' dan hapus relasi
                 if (!$request->approved && !empty($contraBonIds)) {
                     ContraBon::whereIn('id', $contraBonIds)
                         ->update(['status' => 'approved']);
+                    
+                    // Hapus relasi FoodPaymentContraBon agar Contra Bon bisa digunakan lagi
+                    FoodPaymentContraBon::where('food_payment_id', $foodPayment->id)->delete();
                 }
 
                 // Log activity
@@ -281,10 +284,13 @@ class FoodPaymentController extends Controller
                     'status' => $request->approved ? 'approved' : 'rejected'
                 ]);
 
-                // Jika di-reject, kembalikan status Contra Bon ke 'approved'
+                // Jika di-reject, kembalikan status Contra Bon ke 'approved' dan hapus relasi
                 if (!$request->approved && !empty($contraBonIds)) {
                     ContraBon::whereIn('id', $contraBonIds)
                         ->update(['status' => 'approved']);
+                    
+                    // Hapus relasi FoodPaymentContraBon agar Contra Bon bisa digunakan lagi
+                    FoodPaymentContraBon::where('food_payment_id', $foodPayment->id)->delete();
                 }
 
                 // Log activity
@@ -549,7 +555,13 @@ class FoodPaymentController extends Controller
     // API: Get contra bon yang belum dibayar
     public function getContraBonUnpaid()
     {
-        $paidContraBonIds = FoodPaymentContraBon::pluck('contra_bon_id')->toArray();
+        // Hanya ambil Contra Bon yang terkait dengan Food Payment yang statusnya bukan 'rejected'
+        $paidContraBonIds = FoodPaymentContraBon::whereHas('foodPayment', function($query) {
+                $query->where('status', '!=', 'rejected');
+            })
+            ->pluck('contra_bon_id')
+            ->toArray();
+        
         $contraBons = ContraBon::with(['supplier', 'purchaseOrder', 'retailFood'])
             ->where('status', 'approved')
             ->whereNotIn('id', $paidContraBonIds)

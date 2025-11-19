@@ -12,8 +12,45 @@
                             PR Foods Approval
                         </h3>
                     </div>
-                    <div class="bg-purple-500 text-white text-xs font-bold px-2 py-1 rounded-full">
-                        {{ approvalCount }}
+                    <div class="flex items-center gap-2">
+                        <button 
+                            v-if="!isSelecting"
+                            @click.stop="isSelecting = true"
+                            class="text-xs bg-purple-500 text-white px-2 py-1 rounded hover:bg-purple-600 transition"
+                        >
+                            <i class="fa fa-check-square mr-1"></i>Multi Approve
+                        </button>
+                        <button 
+                            v-else
+                            @click.stop="isSelecting = false; selectedApprovals.clear()"
+                            class="text-xs bg-gray-500 text-white px-2 py-1 rounded hover:bg-gray-600 transition"
+                        >
+                            <i class="fa fa-times mr-1"></i>Cancel
+                        </button>
+                        <div class="bg-purple-500 text-white text-xs font-bold px-2 py-1 rounded-full">
+                            {{ approvalCount }}
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Multi-approve actions -->
+                <div v-if="isSelecting && selectedApprovals.size > 0" class="mb-3 p-2 bg-purple-100 dark:bg-purple-900/30 rounded-lg flex items-center justify-between">
+                    <span class="text-sm font-medium text-purple-800 dark:text-purple-200">
+                        {{ selectedApprovals.size }} item dipilih
+                    </span>
+                    <div class="flex gap-2">
+                        <button 
+                            @click="selectAllApprovals"
+                            class="text-xs bg-blue-500 text-white px-2 py-1 rounded hover:bg-blue-600 transition"
+                        >
+                            <i class="fa fa-check-double mr-1"></i>Select All
+                        </button>
+                        <button 
+                            @click="approveMultiple"
+                            class="text-xs bg-purple-600 text-white px-2 py-1 rounded hover:bg-purple-700 transition"
+                        >
+                            <i class="fa fa-check mr-1"></i>Approve Selected
+                        </button>
                     </div>
                 </div>
                 
@@ -25,26 +62,39 @@
                 <div v-else class="space-y-2">
                     <!-- PR Food Approvals -->
                     <div v-for="pr in pendingApprovals.slice(0, 3)" :key="'pr-food-approval-' + pr.id"
-                        @click="showDetails(pr.id)"
-                        class="p-3 rounded-lg cursor-pointer transition-all duration-200 hover:scale-105"
-                        :class="isNight ? 'bg-slate-700/50 hover:bg-slate-600/50' : 'bg-purple-50 hover:bg-purple-100'">
+                        @click="isSelecting ? toggleSelection(pr.id) : showDetails(pr.id)"
+                        class="p-3 rounded-lg transition-all duration-200"
+                        :class="[
+                            isSelecting ? 'cursor-default' : 'cursor-pointer hover:scale-105',
+                            isNight ? 'bg-slate-700/50 hover:bg-slate-600/50' : 'bg-purple-50 hover:bg-purple-100',
+                            selectedApprovals.has(pr.id) ? 'ring-2 ring-purple-500' : ''
+                        ]">
                         <div class="flex items-center justify-between">
-                            <div class="flex-1">
-                                <div class="font-semibold text-sm" :class="isNight ? 'text-white' : 'text-slate-800'">
-                                    {{ pr.pr_number }}
-                                </div>
-                                <div class="text-xs" :class="isNight ? 'text-slate-300' : 'text-slate-600'">
-                                    {{ pr.warehouse?.name || 'Unknown Warehouse' }}
-                                </div>
-                                <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
-                                    <i class="fa fa-box mr-1 text-purple-600"></i>
-                                    {{ pr.items_count }} items
-                                </div>
-                                <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
-                                    <i class="fa fa-user mr-1 text-purple-500"></i>{{ pr.requester?.nama_lengkap }}
-                                </div>
-                                <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
-                                    {{ formatDate(pr.tanggal) }}
+                            <div class="flex items-center gap-2 flex-1">
+                                <input 
+                                    v-if="isSelecting"
+                                    type="checkbox"
+                                    :checked="selectedApprovals.has(pr.id)"
+                                    @click.stop="toggleSelection(pr.id)"
+                                    class="w-4 h-4 text-purple-600 rounded focus:ring-purple-500"
+                                />
+                                <div class="flex-1">
+                                    <div class="font-semibold text-sm" :class="isNight ? 'text-white' : 'text-slate-800'">
+                                        {{ pr.pr_number }}
+                                    </div>
+                                    <div class="text-xs" :class="isNight ? 'text-slate-300' : 'text-slate-600'">
+                                        {{ pr.warehouse?.name || 'Unknown Warehouse' }}
+                                    </div>
+                                    <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
+                                        <i class="fa fa-box mr-1 text-purple-600"></i>
+                                        {{ pr.items_count }} items
+                                    </div>
+                                    <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
+                                        <i class="fa fa-user mr-1 text-purple-500"></i>{{ pr.requester?.nama_lengkap }}
+                                    </div>
+                                    <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
+                                        {{ formatDate(pr.tanggal) }}
+                                    </div>
                                 </div>
                             </div>
                             <div class="text-xs text-purple-500 font-medium">
@@ -290,6 +340,8 @@ const emit = defineEmits(['approved', 'rejected']);
 // State
 const pendingApprovals = ref([]);
 const loading = ref(false);
+const selectedApprovals = ref(new Set()); // For multi-select
+const isSelecting = ref(false); // Toggle select mode
 
 // Computed
 const approvalCount = computed(() => pendingApprovals.value.length);
@@ -302,6 +354,110 @@ function formatDate(date) {
         month: 'short',
         day: 'numeric'
     });
+}
+
+// Toggle selection
+function toggleSelection(prId) {
+    if (selectedApprovals.value.has(prId)) {
+        selectedApprovals.value.delete(prId);
+    } else {
+        selectedApprovals.value.add(prId);
+    }
+}
+
+// Select all approvals
+function selectAllApprovals() {
+    pendingApprovals.value.forEach(pr => {
+        selectedApprovals.value.add(pr.id);
+    });
+}
+
+// Approve multiple PRs
+async function approveMultiple() {
+    if (selectedApprovals.value.size === 0) {
+        Swal.fire('Warning', 'Pilih minimal satu PR Food untuk di-approve', 'warning');
+        return;
+    }
+    
+    const result = await Swal.fire({
+        title: 'Approve Multiple PR Foods?',
+        text: `Apakah Anda yakin ingin approve ${selectedApprovals.value.size} PR Food?`,
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonText: 'Ya, Approve',
+        cancelButtonText: 'Batal',
+        confirmButtonColor: '#9333ea',
+    });
+    
+    if (!result.isConfirmed) return;
+    
+    try {
+        Swal.fire({
+            title: 'Processing...',
+            text: 'Sedang memproses approval...',
+            allowOutsideClick: false,
+            didOpen: () => {
+                Swal.showLoading();
+            }
+        });
+        
+        const prIds = Array.from(selectedApprovals.value);
+        const promises = prIds.map(async (prId) => {
+            const pr = pendingApprovals.value.find(p => p.id === prId);
+            if (!pr) return { error: new Error('PR not found'), prId };
+            
+            try {
+                let endpoint = '';
+                const approvalLevel = pr.approval_level;
+                
+                if (approvalLevel === 'assistant_ssd_manager') {
+                    endpoint = `/pr-foods/${prId}/approve-assistant-ssd-manager`;
+                } else if (approvalLevel === 'ssd_manager' || approvalLevel === 'sous_chef_mk') {
+                    endpoint = `/pr-foods/${prId}/approve-ssd-manager`;
+                } else {
+                    return { error: new Error('Unknown approval level'), prId };
+                }
+                
+                const requestData = {
+                    approved: true
+                };
+                
+                if (approvalLevel === 'assistant_ssd_manager') {
+                    requestData.assistant_ssd_manager_note = '';
+                } else if (approvalLevel === 'ssd_manager' || approvalLevel === 'sous_chef_mk') {
+                    requestData.ssd_manager_note = '';
+                }
+                
+                await axios.post(endpoint, requestData, {
+                    headers: {
+                        'Accept': 'application/json',
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                return { success: true, prId };
+            } catch (err) {
+                return { error: err, prId };
+            }
+        });
+        
+        const results = await Promise.all(promises);
+        const success = results.filter(r => r.success).length;
+        const failed = results.filter(r => r.error).length;
+        
+        selectedApprovals.value.clear();
+        isSelecting.value = false;
+        loadPendingApprovals();
+        
+        if (failed === 0) {
+            Swal.fire('Success', `${success} PR Food berhasil disetujui`, 'success');
+        } else {
+            Swal.fire('Partial Success', `${success} berhasil, ${failed} gagal`, 'warning');
+        }
+    } catch (error) {
+        console.error('Error approving multiple PR Foods:', error);
+        Swal.fire('Error', 'Gagal menyetujui PR Foods', 'error');
+    }
 }
 
 async function loadPendingApprovals() {

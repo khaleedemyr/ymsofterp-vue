@@ -1058,14 +1058,37 @@ class PurchaseRequisitionController extends Controller
         try {
             // Get current approver
             $currentApprover = auth()->user();
+            $isSuperadmin = $currentApprover->id_role === '5af56935b011a' && $currentApprover->status === 'A';
             
-            // Update the approval flow for current approver
-            $currentApprovalFlow = $purchaseRequisition->approvalFlows()
-                ->where('approver_id', $currentApprover->id)
-                ->where('status', 'PENDING')
-                ->first();
-            
-            if ($currentApprovalFlow) {
+            if ($isSuperadmin) {
+                // Superadmin can approve any pending level - approve the next pending level
+                $pendingFlows = $purchaseRequisition->approvalFlows()
+                    ->where('status', 'PENDING')
+                    ->orderBy('approval_level')
+                    ->get();
+                
+                if ($pendingFlows->isEmpty()) {
+                    return back()->withErrors(['error' => 'No pending approvals found.']);
+                }
+                
+                // Approve the next pending level
+                $nextFlow = $pendingFlows->first();
+                $nextFlow->update([
+                    'status' => 'APPROVED',
+                    'approved_at' => now(),
+                    'approver_id' => $currentApprover->id, // Update approver_id to superadmin
+                ]);
+            } else {
+                // Regular users: Update the approval flow for current approver
+                $currentApprovalFlow = $purchaseRequisition->approvalFlows()
+                    ->where('approver_id', $currentApprover->id)
+                    ->where('status', 'PENDING')
+                    ->first();
+                
+                if (!$currentApprovalFlow) {
+                    return back()->withErrors(['error' => 'You are not authorized to approve this purchase requisition.']);
+                }
+                
                 $currentApprovalFlow->update([
                     'status' => 'APPROVED',
                     'approved_at' => now(),
@@ -1120,14 +1143,38 @@ class PurchaseRequisitionController extends Controller
         try {
             // Get current approver
             $currentApprover = auth()->user();
+            $isSuperadmin = $currentApprover->id_role === '5af56935b011a' && $currentApprover->status === 'A';
             
-            // Update the approval flow for current approver
-            $currentApprovalFlow = $purchaseRequisition->approvalFlows()
-                ->where('approver_id', $currentApprover->id)
-                ->where('status', 'PENDING')
-                ->first();
-            
-            if ($currentApprovalFlow) {
+            if ($isSuperadmin) {
+                // Superadmin can reject any pending level - reject the next pending level
+                $pendingFlows = $purchaseRequisition->approvalFlows()
+                    ->where('status', 'PENDING')
+                    ->orderBy('approval_level')
+                    ->get();
+                
+                if ($pendingFlows->isEmpty()) {
+                    return back()->withErrors(['error' => 'No pending approvals found.']);
+                }
+                
+                // Reject the next pending level
+                $nextFlow = $pendingFlows->first();
+                $nextFlow->update([
+                    'status' => 'REJECTED',
+                    'rejected_at' => now(),
+                    'comments' => $validated['rejection_reason'],
+                    'approver_id' => $currentApprover->id, // Update approver_id to superadmin
+                ]);
+            } else {
+                // Regular users: Update the approval flow for current approver
+                $currentApprovalFlow = $purchaseRequisition->approvalFlows()
+                    ->where('approver_id', $currentApprover->id)
+                    ->where('status', 'PENDING')
+                    ->first();
+                
+                if (!$currentApprovalFlow) {
+                    return back()->withErrors(['error' => 'You are not authorized to reject this purchase requisition.']);
+                }
+                
                 $currentApprovalFlow->update([
                     'status' => 'REJECTED',
                     'rejected_at' => now(),
@@ -1419,35 +1466,53 @@ class PurchaseRequisitionController extends Controller
     {
         try {
             $currentUser = auth()->user();
+            $isSuperadmin = $currentUser->id_role === '5af56935b011a' && $currentUser->status === 'A';
             
-            // Get PRs where current user is the next approver in line
-            $pendingApprovals = PurchaseRequisition::where('status', 'SUBMITTED')
-                ->whereHas('approvalFlows', function($query) use ($currentUser) {
-                    $query->where('approver_id', $currentUser->id)
-                          ->where('status', 'PENDING');
-                })
-                ->with([
-                    'division',
-                    'category',
-                    'outlet',
-                    'creator',
-                    'approvalFlows.approver.jabatan'
-                ])
-                ->orderBy('created_at', 'desc')
-                ->get();
+            if ($isSuperadmin) {
+                // Superadmin can see all pending approvals
+                $pendingApprovals = PurchaseRequisition::where('status', 'SUBMITTED')
+                    ->whereHas('approvalFlows', function($query) {
+                        $query->where('status', 'PENDING');
+                    })
+                    ->with([
+                        'division',
+                        'category',
+                        'outlet',
+                        'creator',
+                        'approvalFlows.approver.jabatan'
+                    ])
+                    ->orderBy('created_at', 'desc')
+                    ->get();
+            } else {
+                // Regular users: Get PRs where current user is the next approver in line
+                $pendingApprovals = PurchaseRequisition::where('status', 'SUBMITTED')
+                    ->whereHas('approvalFlows', function($query) use ($currentUser) {
+                        $query->where('approver_id', $currentUser->id)
+                              ->where('status', 'PENDING');
+                    })
+                    ->with([
+                        'division',
+                        'category',
+                        'outlet',
+                        'creator',
+                        'approvalFlows.approver.jabatan'
+                    ])
+                    ->orderBy('created_at', 'desc')
+                    ->get();
 
-            // Filter to only show PRs where current user is next in line
-            $filteredApprovals = $pendingApprovals->filter(function($pr) use ($currentUser) {
-                $pendingFlows = $pr->approvalFlows->where('status', 'PENDING');
-                if ($pendingFlows->isEmpty()) return false;
-                
-                $nextApprover = $pendingFlows->sortBy('approval_level')->first();
-                return $nextApprover->approver_id === $currentUser->id;
-            });
+                // Filter to only show PRs where current user is next in line
+                $pendingApprovals = $pendingApprovals->filter(function($pr) use ($currentUser) {
+                    $pendingFlows = $pr->approvalFlows->where('status', 'PENDING');
+                    if ($pendingFlows->isEmpty()) return false;
+                    
+                    $nextApprover = $pendingFlows->sortBy('approval_level')->first();
+                    return $nextApprover->approver_id === $currentUser->id;
+                });
+            }
 
             return response()->json([
                 'success' => true,
-                'purchase_requisitions' => $filteredApprovals->values()
+                'purchase_requisitions' => $pendingApprovals->values()
             ]);
 
         } catch (\Exception $e) {
@@ -1508,6 +1573,21 @@ class PurchaseRequisitionController extends Controller
                 // Fallback: if notes is not JSON, use description as agenda (for old data)
                 if (empty($modeSpecificData['travel_agenda']) && $purchaseRequisition->description) {
                     $modeSpecificData['travel_agenda'] = $purchaseRequisition->description;
+                }
+                
+                // Ensure travel_agenda is always set, even if empty
+                if (empty($modeSpecificData['travel_agenda'])) {
+                    $modeSpecificData['travel_agenda'] = '';
+                }
+                
+                // Ensure travel_notes is always set
+                if (!isset($modeSpecificData['travel_notes'])) {
+                    $modeSpecificData['travel_notes'] = '';
+                }
+                
+                // Ensure travel_outlets is always an array
+                if (!isset($modeSpecificData['travel_outlets'])) {
+                    $modeSpecificData['travel_outlets'] = [];
                 }
             } elseif ($purchaseRequisition->mode === 'kasbon') {
                 // For kasbon, extract amount and reason from items

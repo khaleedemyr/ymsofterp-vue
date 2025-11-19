@@ -12,8 +12,45 @@
                             RO Khusus Approval
                         </h3>
                     </div>
-                    <div class="bg-teal-500 text-white text-xs font-bold px-2 py-1 rounded-full">
-                        {{ approvalCount }}
+                    <div class="flex items-center gap-2">
+                        <button 
+                            v-if="!isSelecting"
+                            @click.stop="isSelecting = true"
+                            class="text-xs bg-teal-500 text-white px-2 py-1 rounded hover:bg-teal-600 transition"
+                        >
+                            <i class="fa fa-check-square mr-1"></i>Multi Approve
+                        </button>
+                        <button 
+                            v-else
+                            @click.stop="isSelecting = false; selectedApprovals.clear()"
+                            class="text-xs bg-gray-500 text-white px-2 py-1 rounded hover:bg-gray-600 transition"
+                        >
+                            <i class="fa fa-times mr-1"></i>Cancel
+                        </button>
+                        <div class="bg-teal-500 text-white text-xs font-bold px-2 py-1 rounded-full">
+                            {{ approvalCount }}
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Multi-approve actions -->
+                <div v-if="isSelecting && selectedApprovals.size > 0" class="mb-3 p-2 bg-teal-100 dark:bg-teal-900/30 rounded-lg flex items-center justify-between">
+                    <span class="text-sm font-medium text-teal-800 dark:text-teal-200">
+                        {{ selectedApprovals.size }} item dipilih
+                    </span>
+                    <div class="flex gap-2">
+                        <button 
+                            @click="selectAllApprovals"
+                            class="text-xs bg-blue-500 text-white px-2 py-1 rounded hover:bg-blue-600 transition"
+                        >
+                            <i class="fa fa-check-double mr-1"></i>Select All
+                        </button>
+                        <button 
+                            @click="approveMultiple"
+                            class="text-xs bg-teal-600 text-white px-2 py-1 rounded hover:bg-teal-700 transition"
+                        >
+                            <i class="fa fa-check mr-1"></i>Approve Selected
+                        </button>
                     </div>
                 </div>
                 
@@ -25,30 +62,43 @@
                 <div v-else class="space-y-2">
                     <!-- RO Khusus Approvals -->
                     <div v-for="ro in pendingApprovals.slice(0, 3)" :key="'ro-khusus-approval-' + ro.id"
-                        @click="showDetails(ro.id)"
-                        class="p-3 rounded-lg cursor-pointer transition-all duration-200 hover:scale-105"
-                        :class="isNight ? 'bg-slate-700/50 hover:bg-slate-600/50' : 'bg-teal-50 hover:bg-teal-100'">
+                        @click="isSelecting ? toggleSelection(ro.id) : showDetails(ro.id)"
+                        class="p-3 rounded-lg transition-all duration-200"
+                        :class="[
+                            isSelecting ? 'cursor-default' : 'cursor-pointer hover:scale-105',
+                            isNight ? 'bg-slate-700/50 hover:bg-slate-600/50' : 'bg-teal-50 hover:bg-teal-100',
+                            selectedApprovals.has(ro.id) ? 'ring-2 ring-teal-500' : ''
+                        ]">
                         <div class="flex items-center justify-between">
-                            <div class="flex-1">
-                                <div class="font-semibold text-sm" :class="isNight ? 'text-white' : 'text-slate-800'">
-                                    {{ ro.order_number }}
-                                </div>
-                                <div class="text-xs" :class="isNight ? 'text-slate-300' : 'text-slate-600'">
-                                    {{ ro.outlet?.nama_outlet || 'Unknown Outlet' }}
-                                </div>
-                                <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
-                                    <i class="fa fa-warehouse mr-1 text-teal-600"></i>
-                                    {{ ro.warehouse_outlet?.name || 'Unknown Warehouse' }}
-                                </div>
-                                <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
-                                    <i class="fa fa-box mr-1 text-teal-600"></i>
-                                    {{ ro.items_count }} items
-                                </div>
-                                <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
-                                    <i class="fa fa-user mr-1 text-teal-500"></i>{{ ro.requester?.nama_lengkap }}
-                                </div>
-                                <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
-                                    {{ formatDate(ro.tanggal) }}
+                            <div class="flex items-center gap-2 flex-1">
+                                <input 
+                                    v-if="isSelecting"
+                                    type="checkbox"
+                                    :checked="selectedApprovals.has(ro.id)"
+                                    @click.stop="toggleSelection(ro.id)"
+                                    class="w-4 h-4 text-teal-600 rounded focus:ring-teal-500"
+                                />
+                                <div class="flex-1">
+                                    <div class="font-semibold text-sm" :class="isNight ? 'text-white' : 'text-slate-800'">
+                                        {{ ro.order_number }}
+                                    </div>
+                                    <div class="text-xs" :class="isNight ? 'text-slate-300' : 'text-slate-600'">
+                                        {{ ro.outlet?.nama_outlet || 'Unknown Outlet' }}
+                                    </div>
+                                    <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
+                                        <i class="fa fa-warehouse mr-1 text-teal-600"></i>
+                                        {{ ro.warehouse_outlet?.name || 'Unknown Warehouse' }}
+                                    </div>
+                                    <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
+                                        <i class="fa fa-box mr-1 text-teal-600"></i>
+                                        {{ ro.items_count }} items
+                                    </div>
+                                    <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
+                                        <i class="fa fa-user mr-1 text-teal-500"></i>{{ ro.requester?.nama_lengkap }}
+                                    </div>
+                                    <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
+                                        {{ formatDate(ro.tanggal) }}
+                                    </div>
                                 </div>
                             </div>
                             <div class="text-xs text-teal-500 font-medium">
@@ -306,6 +356,8 @@ const emit = defineEmits(['approved', 'rejected']);
 // State
 const pendingApprovals = ref([]);
 const loading = ref(false);
+const selectedApprovals = ref(new Set()); // For multi-select
+const isSelecting = ref(false); // Toggle select mode
 
 // Computed
 const approvalCount = computed(() => pendingApprovals.value.length);
@@ -318,6 +370,82 @@ function formatDate(date) {
         month: 'short',
         day: 'numeric'
     });
+}
+
+// Toggle selection
+function toggleSelection(roId) {
+    if (selectedApprovals.value.has(roId)) {
+        selectedApprovals.value.delete(roId);
+    } else {
+        selectedApprovals.value.add(roId);
+    }
+}
+
+// Select all approvals
+function selectAllApprovals() {
+    pendingApprovals.value.forEach(ro => {
+        selectedApprovals.value.add(ro.id);
+    });
+}
+
+// Approve multiple ROs
+async function approveMultiple() {
+    if (selectedApprovals.value.size === 0) {
+        Swal.fire('Warning', 'Pilih minimal satu RO Khusus untuk di-approve', 'warning');
+        return;
+    }
+    
+    const result = await Swal.fire({
+        title: 'Approve Multiple RO Khusus?',
+        text: `Apakah Anda yakin ingin approve ${selectedApprovals.value.size} RO Khusus?`,
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonText: 'Ya, Approve',
+        cancelButtonText: 'Batal',
+        confirmButtonColor: '#14b8a6',
+    });
+    
+    if (!result.isConfirmed) return;
+    
+    try {
+        Swal.fire({
+            title: 'Processing...',
+            text: 'Sedang memproses approval...',
+            allowOutsideClick: false,
+            didOpen: () => {
+                Swal.showLoading();
+            }
+        });
+        
+        const roIds = Array.from(selectedApprovals.value);
+        const promises = roIds.map(async (roId) => {
+            try {
+                await axios.post(`/floor-order/${roId}/approve`, {
+                    notes: ''
+                });
+                return { success: true, roId };
+            } catch (err) {
+                return { error: err, roId };
+            }
+        });
+        
+        const results = await Promise.all(promises);
+        const success = results.filter(r => r.success).length;
+        const failed = results.filter(r => r.error).length;
+        
+        selectedApprovals.value.clear();
+        isSelecting.value = false;
+        loadPendingApprovals();
+        
+        if (failed === 0) {
+            Swal.fire('Success', `${success} RO Khusus berhasil disetujui`, 'success');
+        } else {
+            Swal.fire('Partial Success', `${success} berhasil, ${failed} gagal`, 'warning');
+        }
+    } catch (error) {
+        console.error('Error approving multiple RO Khusus:', error);
+        Swal.fire('Error', 'Gagal menyetujui RO Khusus', 'error');
+    }
 }
 
 async function loadPendingApprovals() {
