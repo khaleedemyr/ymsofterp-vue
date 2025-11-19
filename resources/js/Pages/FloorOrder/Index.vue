@@ -64,20 +64,24 @@ async function hapus(order) {
   });
   if (!result.isConfirmed) return;
   try {
-    await axios.delete(`/floor-order/${order.id}`);
-    Swal.fire({
-      icon: 'success',
-      title: 'Berhasil',
-      text: 'Request Order berhasil dihapus.',
-      timer: 1500,
-      showConfirmButton: false
-    });
-    window.location.reload();
+    const response = await axios.delete(`/floor-order/${order.id}`);
+    if (response.data && response.data.success) {
+      Swal.fire({
+        icon: 'success',
+        title: 'Berhasil',
+        text: response.data.message || 'Request Order berhasil dihapus.',
+        timer: 1500,
+        showConfirmButton: false
+      });
+      window.location.reload();
+    } else {
+      throw new Error(response.data?.error || 'Gagal menghapus Request Order');
+    }
   } catch (err) {
     Swal.fire({
       icon: 'error',
       title: 'Gagal',
-      text: err?.response?.data?.error || 'Tidak bisa hapus Request Order ini.'
+      text: err?.response?.data?.error || err?.response?.data?.message || err?.message || 'Tidak bisa hapus Request Order ini.'
     });
   }
 }
@@ -198,7 +202,11 @@ function formatRupiah(val) {
                     <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M15.232 5.232l3.536 3.536M9 13l6-6m2 2l-6 6m-2 2h6a2 2 0 002-2v-6a2 2 0 00-2-2H7a2 2 0 00-2 2v6a2 2 0 002 2z"/></svg>
                     Edit
                   </button>
-                  <button @click="hapus(order)" :disabled="!['draft','approved','submitted'].includes(order.status)" class="inline-flex items-center btn btn-xs bg-red-100 text-red-700 hover:bg-red-200 rounded px-2 py-1 font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed">
+                  <button 
+                    @click="hapus(order)" 
+                    :disabled="!['draft','approved','submitted'].includes(order.status) || order.has_packing_list" 
+                    :title="order.has_packing_list ? 'Request Order tidak dapat dihapus karena sudah ada di Packing List' : ''"
+                    class="inline-flex items-center btn btn-xs bg-red-100 text-red-700 hover:bg-red-200 rounded px-2 py-1 font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed">
                     <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12"/></svg>
                     Hapus
                   </button>

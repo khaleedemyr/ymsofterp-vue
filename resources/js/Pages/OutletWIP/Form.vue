@@ -76,7 +76,7 @@
         </div>
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1">Qty Produksi</label>
-          <input type="number" min="1" v-model.number="form.qty" class="input input-bordered w-full" required @input="onQtyChange" :disabled="!form.warehouse_outlet_id || !form.item_id" />
+          <input type="number" min="0" step="0.01" v-model.number="form.qty" class="input input-bordered w-full" required @input="onQtyChange" :disabled="!form.warehouse_outlet_id || !form.item_id" />
         </div>
         <div class="md:col-span-2 flex gap-2 items-end">
           <div class="flex-1">
@@ -193,7 +193,7 @@ const canSubmit = computed(() => {
          form.production_date && 
          form.item_id && 
          form.qty > 0 && 
-         form.qty_jadi > 0 && 
+         form.qty_jadi >= 0 && 
          form.unit_id &&
          bom.value.length > 0 &&
          bom.value.every(item => item.sufficient)

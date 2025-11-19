@@ -749,9 +749,10 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/contra-bons', [ContraBonController::class, 'index'])->name('contra-bons.index');
     Route::get('/contra-bons/create', [ContraBonController::class, 'create'])->name('contra-bons.create');
     Route::post('/contra-bons', [ContraBonController::class, 'store'])->name('contra-bons.store');
-    Route::get('/contra-bons/{id}', [ContraBonController::class, 'show'])->name('contra-bons.show');
     Route::get('/contra-bons/{id}/edit', [ContraBonController::class, 'edit'])->name('contra-bons.edit');
     Route::post('/contra-bons/{id}/approve', [ContraBonController::class, 'approve'])->name('contra-bons.approve');
+    Route::delete('/contra-bons/{id}', [ContraBonController::class, 'destroy'])->name('contra-bons.destroy');
+    Route::get('/contra-bons/{id}', [ContraBonController::class, 'show'])->name('contra-bons.show');
     Route::get('/api/contra-bon/approved-good-receives', [\App\Http\Controllers\ContraBonController::class, 'getApprovedGoodReceives']);
     Route::get('/api/contra-bon/po-with-approved-gr', [\App\Http\Controllers\ContraBonController::class, 'getPOWithApprovedGR']);
     Route::get('/api/contra-bon/retail-food-contra-bon', [\App\Http\Controllers\ContraBonController::class, 'getRetailFoodContraBon']);

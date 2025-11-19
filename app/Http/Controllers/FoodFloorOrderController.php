@@ -263,7 +263,32 @@ class FoodFloorOrderController extends Controller
     public function destroy($id)
     {
         $order = FoodFloorOrder::findOrFail($id);
+        
+        // Cek apakah RO sudah ada di packing list
+        $packingListExists = \DB::table('food_packing_lists')
+            ->where('food_floor_order_id', $order->id)
+            ->exists();
+        
+        if ($packingListExists) {
+            if (request()->expectsJson() || request()->ajax()) {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'Request Order tidak dapat dihapus karena sudah ada di Packing List'
+                ], 422);
+            }
+            return redirect()->route('floor-order.index')
+                ->with('error', 'Request Order tidak dapat dihapus karena sudah ada di Packing List');
+        }
+        
         $order->delete();
+        
+        if (request()->expectsJson() || request()->ajax()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Floor Order berhasil dihapus'
+            ]);
+        }
+        
         return redirect()->route('floor-order.index')->with('success', 'Floor Order berhasil dihapus');
     }
 
@@ -556,6 +581,11 @@ class FoodFloorOrderController extends Controller
             $order->loadMissing('items');
             $order->setRelation('outlet', $order->outlet);
             $order->setRelation('requester', $order->requester);
+            
+            // Cek apakah RO sudah ada di packing list
+            $order->has_packing_list = \DB::table('food_packing_lists')
+                ->where('food_floor_order_id', $order->id)
+                ->exists();
             $order->setRelation('foSchedule', $order->foSchedule);
             $order->setRelation('warehouseOutlet', $order->warehouseOutlet);
             return $order;
