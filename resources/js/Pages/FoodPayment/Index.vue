@@ -70,6 +70,9 @@
                   <button @click="goToDetail(p.id)" class="inline-flex items-center btn btn-xs bg-blue-100 text-blue-800 hover:bg-blue-200 rounded px-2 py-1 font-semibold transition">
                     <i class="fa fa-eye mr-1"></i> Detail
                   </button>
+                  <button v-if="p.status === 'approved'" @click="markAsPaid(p.id)" class="inline-flex items-center btn btn-xs bg-green-100 text-green-800 hover:bg-green-200 rounded px-2 py-1 font-semibold transition">
+                    <i class="fa fa-check-circle mr-1"></i> Paid
+                  </button>
                   <button @click="goToEdit(p.id)" class="inline-flex items-center btn btn-xs bg-yellow-100 text-yellow-800 hover:bg-yellow-200 rounded px-2 py-1 font-semibold transition">
                     <i class="fa fa-pencil-alt mr-1"></i> Edit
                   </button>
@@ -189,6 +192,46 @@ function confirmDelete(id) {
             Swal.fire('Gagal', 'Gagal menghapus Food Payment', 'error');
           }
         });
+      }
+    });
+  });
+}
+
+async function markAsPaid(id) {
+  if (!id) return;
+  import('sweetalert2').then(({ default: Swal }) => {
+    Swal.fire({
+      title: 'Tandai sebagai Paid?',
+      text: 'Food Payment akan ditandai sebagai paid.',
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonColor: '#10B981',
+      cancelButtonColor: '#6B7280',
+      confirmButtonText: 'Ya, Tandai Paid',
+      cancelButtonText: 'Batal'
+    }).then(async (result) => {
+      if (result.isConfirmed) {
+        try {
+          const response = await fetch(`/food-payments/${id}/mark-as-paid`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
+            }
+          });
+          
+          const data = await response.json();
+          
+          if (data.success) {
+            Swal.fire('Berhasil', data.message || 'Food Payment berhasil ditandai sebagai paid!', 'success');
+            router.reload({ only: ['payments'] });
+          } else {
+            Swal.fire('Gagal', data.message || 'Gagal menandai Food Payment sebagai paid', 'error');
+          }
+        } catch (error) {
+          console.error('Error marking as paid:', error);
+          Swal.fire('Gagal', 'Gagal menandai Food Payment sebagai paid', 'error');
+        }
       }
     });
   });

@@ -632,6 +632,7 @@ Route::get('/api/regions', [App\Http\Controllers\ReportController::class, 'apiRe
     Route::post('/food-payments', [\App\Http\Controllers\FoodPaymentController::class, 'store'])->name('food-payments.store');
     Route::get('/food-payments/{id}', [\App\Http\Controllers\FoodPaymentController::class, 'show'])->name('food-payments.show');
     Route::post('/food-payments/{id}/approve', [\App\Http\Controllers\FoodPaymentController::class, 'approve'])->name('food-payments.approve');
+    Route::post('/food-payments/{id}/mark-as-paid', [\App\Http\Controllers\FoodPaymentController::class, 'markAsPaid'])->name('food-payments.mark-as-paid');
     Route::get('/api/food-payments/contra-bon-unpaid', [\App\Http\Controllers\FoodPaymentController::class, 'getContraBonUnpaid']);
     Route::get('/api/food-payment/pending-approvals', [\App\Http\Controllers\FoodPaymentController::class, 'getPendingApprovals']);
     Route::get('/api/food-payment/{id}', [\App\Http\Controllers\FoodPaymentController::class, 'getDetail']);

@@ -64,7 +64,7 @@
         </div>
 
         <!-- PR Food Approval Detail Modal -->
-        <div v-if="showDetailModal && selectedPR" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60]" @click="closeDetailModal">
+        <div v-if="showDetailModal && selectedPR" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999]" @click="closeDetailModal">
             <div class="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-4xl mx-4 max-h-[90vh] overflow-y-auto" @click.stop>
                 <div class="flex items-center justify-between mb-4">
                     <h3 class="text-lg font-medium text-gray-900 dark:text-white">
@@ -159,7 +159,7 @@
         </div>
 
         <!-- All PR Food Modal -->
-        <div v-if="showAllModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[50]" @click="closeAllModal">
+        <div v-if="showAllModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9998]" @click="closeAllModal">
             <div class="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-5xl mx-4 max-h-[90vh] overflow-y-auto" @click.stop>
                 <div class="flex items-center justify-between mb-4">
                     <h3 class="text-lg font-medium text-gray-900 dark:text-white">
@@ -391,9 +391,18 @@ async function approvePR() {
             requestData.ssd_manager_note = '';
         }
         
-        const response = await axios.post(endpoint, requestData);
+        const response = await axios.post(endpoint, requestData, {
+            headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json'
+            }
+        });
         
-        Swal.fire('Success', 'PR Food berhasil disetujui', 'success');
+        if (response.data && response.data.success) {
+            Swal.fire('Success', response.data.message || 'PR Food berhasil disetujui', 'success');
+        } else {
+            Swal.fire('Success', 'PR Food berhasil disetujui', 'success');
+        }
         closeDetailModal();
         loadPendingApprovals();
         emit('approved', selectedPR.value.id);
@@ -446,9 +455,18 @@ function showRejectModal() {
                     requestData.ssd_manager_note = result.value;
                 }
                 
-                const response = await axios.post(endpoint, requestData);
+                const response = await axios.post(endpoint, requestData, {
+                    headers: {
+                        'Accept': 'application/json',
+                        'Content-Type': 'application/json'
+                    }
+                });
                 
-                Swal.fire('Success', 'PR Food berhasil ditolak', 'success');
+                if (response.data && response.data.success) {
+                    Swal.fire('Success', response.data.message || 'PR Food berhasil ditolak', 'success');
+                } else {
+                    Swal.fire('Success', 'PR Food berhasil ditolak', 'success');
+                }
                 closeDetailModal();
                 loadPendingApprovals();
                 emit('rejected', selectedPR.value.id);

@@ -186,15 +186,16 @@ class FoodPaymentController extends Controller
         // Superadmin check
         $isSuperadmin = $user->id_role === '5af56935b011a' && $user->status === 'A';
 
-        // Finance Manager Approval
+        // Finance Manager Approval (First level)
         if (
-            ($user->id_jabatan == 160 && $user->status == 'A' && $foodPayment->status == 'paid' && !$foodPayment->finance_manager_approved_at)
-            || ($isSuperadmin && $foodPayment->status == 'paid' && !$foodPayment->finance_manager_approved_at)
+            ($user->id_jabatan == 160 && $user->status == 'A' && $foodPayment->status == 'draft' && !$foodPayment->finance_manager_approved_at)
+            || ($isSuperadmin && $foodPayment->status == 'draft' && !$foodPayment->finance_manager_approved_at)
         ) {
             $foodPayment->update([
                 'finance_manager_approved_at' => now(),
                 'finance_manager_approved_by' => $user->id,
                 'finance_manager_note' => $request->note,
+                'status' => $request->approved ? 'draft' : 'rejected' // Tetap draft setelah Finance Manager approve
             ]);
 
             // Log activity
@@ -206,13 +207,63 @@ class FoodPaymentController extends Controller
                 'ip_address' => $request->ip(),
             ]);
 
+            // Send notification to GM Finance if approved
+            if ($request->approved) {
+                $gmFinances = \DB::table('users')
+                    ->where('id_jabatan', 152)
+                    ->where('status', 'A')
+                    ->pluck('id');
+                $this->sendNotification(
+                    $gmFinances,
+                    'food_payment_approval',
+                    'Approval Food Payment',
+                    "Food Payment {$foodPayment->number} menunggu approval Anda.",
+                    route('food-payments.show', $foodPayment->id)
+                );
+            } else {
+                // Send notification to creator if rejected
+                if ($foodPayment->created_by) {
+                    \App\Models\Notification::create([
+                        'user_id' => $foodPayment->created_by,
+                        'type' => 'food_payment_approval',
+                        'title' => 'Food Payment Ditolak',
+                        'message' => "Food Payment {$foodPayment->number} telah ditolak oleh Finance Manager.",
+                    ]);
+                }
+            }
+
+            $msg = 'Food Payment berhasil ' . ($request->approved ? 'diapprove' : 'direject');
+            return response()->json(['success' => true, 'message' => $msg]);
+        }
+
+        // GM Finance Approval (Second level - final approval)
+        if (
+            ($user->id_jabatan == 152 && $user->status == 'A' && $foodPayment->status == 'draft' && $foodPayment->finance_manager_approved_at && !$foodPayment->gm_finance_approved_at)
+            || ($isSuperadmin && $foodPayment->status == 'draft' && $foodPayment->finance_manager_approved_at && !$foodPayment->gm_finance_approved_at)
+        ) {
+            $foodPayment->update([
+                'gm_finance_approved_at' => now(),
+                'gm_finance_approved_by' => $user->id,
+                'gm_finance_note' => $request->note,
+                'status' => $request->approved ? 'approved' : 'rejected'
+            ]);
+
+            // Log activity
+            \App\Models\ActivityLog::create([
+                'user_id' => $user->id,
+                'activity_type' => $request->approved ? 'approve' : 'reject',
+                'module' => 'food_payment',
+                'description' => ($request->approved ? 'Approve' : 'Reject') . ' Food Payment (GM Finance): ' . $foodPayment->number,
+                'ip_address' => $request->ip(),
+            ]);
+
             // Send notification to creator
             if ($foodPayment->created_by) {
                 \App\Models\Notification::create([
                     'user_id' => $foodPayment->created_by,
                     'type' => 'food_payment_approval',
                     'title' => 'Food Payment ' . ($request->approved ? 'Disetujui' : 'Ditolak'),
-                    'message' => "Food Payment {$foodPayment->number} telah " . ($request->approved ? 'disetujui' : 'ditolak') . " oleh Finance Manager.",
+                    'message' => "Food Payment {$foodPayment->number} telah " . ($request->approved ? 'disetujui' : 'ditolak') . " oleh GM Finance.",
                 ]);
             }
 
@@ -223,6 +274,64 @@ class FoodPaymentController extends Controller
         return response()->json(['success' => false, 'message' => 'Anda tidak memiliki akses untuk approve Food Payment ini'], 403);
     }
 
+    // Mark Food Payment as Paid (from approved status)
+    public function markAsPaid($id)
+    {
+        try {
+            $foodPayment = FoodPayment::findOrFail($id);
+            
+            if ($foodPayment->status !== 'approved') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Food Payment harus berstatus approved untuk bisa ditandai sebagai paid'
+                ], 400);
+            }
+            
+            $foodPayment->update([
+                'status' => 'paid'
+            ]);
+            
+            // Log activity
+            \App\Models\ActivityLog::create([
+                'user_id' => Auth::id(),
+                'activity_type' => 'update',
+                'module' => 'food_payment',
+                'description' => 'Mark Food Payment as Paid: ' . $foodPayment->number,
+                'ip_address' => request()->ip(),
+            ]);
+            
+            return response()->json([
+                'success' => true,
+                'message' => 'Food Payment berhasil ditandai sebagai paid'
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Error marking Food Payment as paid: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal menandai Food Payment sebagai paid'
+            ], 500);
+        }
+    }
+
+    // Helper method untuk send notification
+    private function sendNotification($userIds, $type, $title, $message, $url) {
+        $now = now();
+        $data = [];
+        foreach ($userIds as $uid) {
+            $data[] = [
+                'user_id' => $uid,
+                'type' => $type,
+                'title' => $title,
+                'message' => $message,
+                'url' => $url,
+                'is_read' => 0,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ];
+        }
+        DB::table('notifications')->insert($data);
+    }
+
     // API: Get pending Food Payment approvals
     public function getPendingApprovals(Request $request)
     {
@@ -231,15 +340,16 @@ class FoodPaymentController extends Controller
             $isSuperadmin = $user->id_role === '5af56935b011a' && $user->status === 'A';
             
             $query = FoodPayment::with(['supplier', 'creator', 'financeManager', 'contraBons'])
-                ->where('status', 'paid') // Food Payment dengan status 'paid' perlu approval Finance Manager
-                ->whereNull('finance_manager_approved_at')
+                ->where('status', 'draft') // Food Payment dengan status 'draft' perlu approval
                 ->orderByDesc('created_at');
             
             $pendingApprovals = [];
             
-            // Finance Manager approvals (id_jabatan == 160)
+            // Finance Manager approvals (id_jabatan == 160) - First level
             if (($user->id_jabatan == 160 && $user->status == 'A') || $isSuperadmin) {
-                $financeManagerApprovals = $query->get();
+                $financeManagerApprovals = (clone $query)
+                    ->whereNull('finance_manager_approved_at')
+                    ->get();
                 
                 foreach ($financeManagerApprovals as $fp) {
                     $pendingApprovals[] = [
@@ -252,6 +362,31 @@ class FoodPaymentController extends Controller
                         'creator' => $fp->creator ? ['nama_lengkap' => $fp->creator->nama_lengkap] : null,
                         'approval_level' => 'finance_manager',
                         'approval_level_display' => 'Finance Manager',
+                        'contra_bons_count' => $fp->contraBons->count(),
+                        'notes' => $fp->notes,
+                        'created_at' => $fp->created_at
+                    ];
+                }
+            }
+            
+            // GM Finance approvals (id_jabatan == 152) - Second level
+            if (($user->id_jabatan == 152 && $user->status == 'A') || $isSuperadmin) {
+                $gmFinanceApprovals = (clone $query)
+                    ->whereNotNull('finance_manager_approved_at')
+                    ->whereNull('gm_finance_approved_at')
+                    ->get();
+                
+                foreach ($gmFinanceApprovals as $fp) {
+                    $pendingApprovals[] = [
+                        'id' => $fp->id,
+                        'number' => $fp->number,
+                        'date' => $fp->date,
+                        'total' => $fp->total,
+                        'payment_type' => $fp->payment_type,
+                        'supplier' => $fp->supplier ? ['name' => $fp->supplier->name] : null,
+                        'creator' => $fp->creator ? ['nama_lengkap' => $fp->creator->nama_lengkap] : null,
+                        'approval_level' => 'gm_finance',
+                        'approval_level_display' => 'GM Finance',
                         'contra_bons_count' => $fp->contraBons->count(),
                         'notes' => $fp->notes,
                         'created_at' => $fp->created_at
@@ -284,6 +419,7 @@ class FoodPaymentController extends Controller
                 'supplier',
                 'creator',
                 'financeManager',
+                'gmFinance',
                 'contraBons.purchaseOrder',
                 'contraBons.retailFood',
                 'contraBons.warehouseRetailFood',

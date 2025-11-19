@@ -67,7 +67,7 @@
         </div>
 
         <!-- Food Payment Approval Detail Modal -->
-        <div v-if="showDetailModal && selectedPayment" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60]" @click="closeDetailModal">
+        <div v-if="showDetailModal && selectedPayment" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999]" @click="closeDetailModal">
             <div class="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-4xl mx-4 max-h-[90vh] overflow-y-auto" @click.stop>
                 <div class="flex items-center justify-between mb-4">
                     <h3 class="text-lg font-medium text-gray-900 dark:text-white">
@@ -211,7 +211,7 @@
         </div>
 
         <!-- All Food Payment Modal -->
-        <div v-if="showAllModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[50]" @click="closeAllModal">
+        <div v-if="showAllModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9998]" @click="closeAllModal">
             <div class="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-5xl mx-4 max-h-[90vh] overflow-y-auto" @click.stop>
                 <div class="flex items-center justify-between mb-4">
                     <h3 class="text-lg font-medium text-gray-900 dark:text-white">
@@ -494,10 +494,18 @@ async function loadPendingApprovals() {
     }
 }
 
+const currentApprovalLevel = ref('');
+
 async function showDetails(fpId) {
     try {
         if (showAllModal.value) {
             showAllModal.value = false;
+        }
+        
+        // Find approval level from pendingApprovals or allApprovals
+        const fp = pendingApprovals.value.find(p => p.id === fpId) || allApprovals.value.find(p => p.id === fpId);
+        if (fp) {
+            currentApprovalLevel.value = fp.approval_level;
         }
         
         loadingDetail.value = true;
@@ -506,6 +514,10 @@ async function showDetails(fpId) {
         const response = await axios.get(`/api/food-payment/${fpId}`);
         if (response.data && response.data.success && response.data.food_payment) {
             selectedPayment.value = response.data.food_payment;
+            // Add approval level to selectedPayment
+            if (!selectedPayment.value.approval_level && currentApprovalLevel.value) {
+                selectedPayment.value.approval_level = currentApprovalLevel.value;
+            }
         } else {
             Swal.fire('Error', response.data?.message || 'Gagal memuat detail Food Payment', 'error');
             closeDetailModal();

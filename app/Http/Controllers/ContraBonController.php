@@ -428,7 +428,7 @@ class ContraBonController extends Controller
         // Superadmin check
         $isSuperadmin = $user->id_role === '5af56935b011a' && $user->status === 'A';
 
-        // Finance Manager Approval
+        // Finance Manager Approval (Only level - final approval)
         if (
             ($user->id_jabatan == 160 && $user->status == 'A' && $contraBon->status == 'draft' && !$contraBon->finance_manager_approved_at)
             || ($isSuperadmin && $contraBon->status == 'draft' && !$contraBon->finance_manager_approved_at)
@@ -437,7 +437,7 @@ class ContraBonController extends Controller
                 'finance_manager_approved_at' => now(),
                 'finance_manager_approved_by' => $user->id,
                 'finance_manager_note' => $request->note,
-                'status' => $request->approved ? 'draft' : 'rejected'
+                'status' => $request->approved ? 'approved' : 'rejected'
             ]);
 
             // Log activity
@@ -452,51 +452,15 @@ class ContraBonController extends Controller
                 'new_data' => $contraBon->fresh()->toArray(),
             ]);
 
-            // Notifikasi ke GM Finance jika approve
-            if ($request->approved) {
-                $gmFinances = \DB::table('users')
-                    ->where('id_jabatan', 152)
-                    ->where('status', 'A')
-                    ->pluck('id');
-                $this->sendNotification(
-                    $gmFinances,
-                    'contra_bon_approval',
-                    'Approval Contra Bon',
-                    "Contra Bon {$contraBon->number} menunggu approval Anda.",
-                    route('contra-bons.show', $contraBon->id)
-                );
+            // Send notification to creator if approved
+            if ($request->approved && $contraBon->created_by) {
+                \App\Models\Notification::create([
+                    'user_id' => $contraBon->created_by,
+                    'type' => 'contra_bon_approval',
+                    'title' => 'Contra Bon Disetujui',
+                    'message' => "Contra Bon {$contraBon->number} telah disetujui oleh Finance Manager.",
+                ]);
             }
-
-            $msg = 'Contra Bon berhasil ' . ($request->approved ? 'diapprove' : 'direject');
-            if ($request->expectsJson()) {
-                return response()->json(['success' => true, 'message' => $msg]);
-            }
-            return back()->with('success', $msg);
-        }
-
-        // GM Finance Approval
-        if (
-            ($user->id_jabatan == 152 && $user->status == 'A' && $contraBon->status == 'draft' && $contraBon->finance_manager_approved_at && !$contraBon->gm_finance_approved_at)
-            || ($isSuperadmin && $contraBon->status == 'draft' && $contraBon->finance_manager_approved_at && !$contraBon->gm_finance_approved_at)
-        ) {
-            $contraBon->update([
-                'gm_finance_approved_at' => now(),
-                'gm_finance_approved_by' => $user->id,
-                'gm_finance_note' => $request->note,
-                'status' => $request->approved ? 'approved' : 'rejected'
-            ]);
-
-            // Log activity
-            \App\Models\ActivityLog::create([
-                'user_id' => $user->id,
-                'activity_type' => $request->approved ? 'approve' : 'reject',
-                'module' => 'contra_bon',
-                'description' => ($request->approved ? 'Approve' : 'Reject') . ' Contra Bon (GM Finance): ' . $contraBon->number,
-                'ip_address' => $request->ip(),
-                'user_agent' => $request->userAgent(),
-                'old_data' => null,
-                'new_data' => $contraBon->fresh()->toArray(),
-            ]);
 
             $msg = 'Contra Bon berhasil ' . ($request->approved ? 'diapprove' : 'direject');
             if ($request->expectsJson()) {
@@ -612,7 +576,7 @@ class ContraBonController extends Controller
             
             $pendingApprovals = [];
             
-            // Finance Manager approvals (id_jabatan == 160)
+            // Finance Manager approvals (id_jabatan == 160) - Only level
             if (($user->id_jabatan == 160 && $user->status == 'A') || $isSuperadmin) {
                 $financeManagerApprovals = (clone $query)
                     ->whereNull('finance_manager_approved_at')
@@ -630,29 +594,6 @@ class ContraBonController extends Controller
                         'creator' => $cb->creator ? ['nama_lengkap' => $cb->creator->nama_lengkap] : null,
                         'approval_level' => 'finance_manager',
                         'approval_level_display' => 'Finance Manager'
-                    ];
-                }
-            }
-            
-            // GM Finance approvals (id_jabatan == 152)
-            if (($user->id_jabatan == 152 && $user->status == 'A') || $isSuperadmin) {
-                $gmFinanceApprovals = (clone $query)
-                    ->whereNotNull('finance_manager_approved_at')
-                    ->whereNull('gm_finance_approved_at')
-                    ->get();
-                
-                foreach ($gmFinanceApprovals as $cb) {
-                    $pendingApprovals[] = [
-                        'id' => $cb->id,
-                        'number' => $cb->number,
-                        'date' => $cb->date,
-                        'total_amount' => $cb->total_amount,
-                        'supplier' => $cb->supplier ? ['name' => $cb->supplier->name] : null,
-                        'source_type' => $cb->source_type,
-                        'source_type_display' => $this->getSourceTypeDisplay($cb),
-                        'creator' => $cb->creator ? ['nama_lengkap' => $cb->creator->nama_lengkap] : null,
-                        'approval_level' => 'gm_finance',
-                        'approval_level_display' => 'GM Finance'
                     ];
                 }
             }

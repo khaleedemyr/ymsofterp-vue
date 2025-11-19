@@ -271,6 +271,12 @@ class PrFoodController extends Controller
         // Check if warehouse is MK1 or MK2 - jika MK, tidak perlu approval asisten SSD manager
         $isMKWarehouse = in_array($prFood->warehouse->name, ['MK1 Hot Kitchen', 'MK2 Cold Kitchen']);
         if ($isMKWarehouse) {
+            if ($request->expectsJson() || $request->ajax()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'PR MK tidak memerlukan approval Asisten SSD Manager'
+                ], 400);
+            }
             return redirect()->route('pr-foods.index')->with('error', 'PR MK tidak memerlukan approval Asisten SSD Manager');
         }
         
@@ -338,6 +344,14 @@ class PrFoodController extends Controller
             );
         }
         
+        if ($request->expectsJson() || $request->ajax()) {
+            return response()->json([
+                'success' => true,
+                'message' => $request->approved ? 'PR Food berhasil disetujui' : 'PR Food berhasil ditolak',
+                'pr_food' => $prFood->fresh()
+            ]);
+        }
+        
         return redirect()->route('pr-foods.index');
     }
 
@@ -352,6 +366,12 @@ class PrFoodController extends Controller
         
         // Untuk PR non-MK, pastikan sudah di-approve asisten SSD manager terlebih dahulu
         if (!$isMKWarehouse && !$prFood->assistant_ssd_manager_approved_at) {
+            if ($request->expectsJson() || $request->ajax()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'PR harus di-approve Asisten SSD Manager terlebih dahulu'
+                ], 400);
+            }
             return redirect()->route('pr-foods.index')->with('error', 'PR harus di-approve Asisten SSD Manager terlebih dahulu');
         }
         
@@ -403,6 +423,15 @@ class PrFoodController extends Controller
             );
             \Log::info('Notif reject sent', ['user_id' => $requestedBy, 'pr_id' => $prFood->id]);
         }
+        
+        if ($request->expectsJson() || $request->ajax()) {
+            return response()->json([
+                'success' => true,
+                'message' => $request->approved ? 'PR Food berhasil disetujui' : 'PR Food berhasil ditolak',
+                'pr_food' => $prFood->fresh()
+            ]);
+        }
+        
         return redirect()->route('pr-foods.index');
     }
 

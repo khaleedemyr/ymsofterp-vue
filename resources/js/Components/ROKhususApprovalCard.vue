@@ -68,7 +68,7 @@
         </div>
 
         <!-- RO Khusus Approval Detail Modal -->
-        <div v-if="showDetailModal && selectedRO" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60]" @click="closeDetailModal">
+        <div v-if="showDetailModal && selectedRO" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999]" @click="closeDetailModal">
             <div class="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-4xl mx-4 max-h-[90vh] overflow-y-auto" @click.stop>
                 <div class="flex items-center justify-between mb-4">
                     <h3 class="text-lg font-medium text-gray-900 dark:text-white">
@@ -171,7 +171,7 @@
         </div>
 
         <!-- All RO Khusus Modal -->
-        <div v-if="showAllModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[50]" @click="closeAllModal">
+        <div v-if="showAllModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9998]" @click="closeAllModal">
             <div class="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-5xl mx-4 max-h-[90vh] overflow-y-auto" @click.stop>
                 <div class="flex items-center justify-between mb-4">
                     <h3 class="text-lg font-medium text-gray-900 dark:text-white">
@@ -386,14 +386,17 @@ async function approveRO() {
 
         if (!result.isConfirmed) return;
 
-        const response = await axios.post(`/floor-order/${selectedRO.value.id}/approve`, {
+        // Save ID before closing modal
+        const roId = selectedRO.value.id;
+        
+        const response = await axios.post(`/floor-order/${roId}/approve`, {
             notes: ''
         });
         
         Swal.fire('Success', 'RO Khusus berhasil disetujui', 'success');
         closeDetailModal();
         loadPendingApprovals();
-        emit('approved', selectedRO.value.id);
+        emit('approved', roId);
     } catch (error) {
         console.error('Error approving RO Khusus:', error);
         const errorMessage = error.response?.data?.message || error.message || 'Gagal menyetujui RO Khusus';
@@ -422,9 +425,12 @@ function showRejectModal() {
     }).then(async (result) => {
         if (result.isConfirmed && selectedRO.value) {
             try {
+                // Save ID before closing modal
+                const roId = selectedRO.value.id;
+                
                 // Note: Reject mungkin perlu endpoint khusus atau update status
                 // Untuk sementara, kita bisa update status ke rejected via API
-                const response = await axios.post(`/floor-order/${selectedRO.value.id}/approve`, {
+                const response = await axios.post(`/floor-order/${roId}/approve`, {
                     notes: result.value,
                     approved: false
                 });
@@ -432,7 +438,7 @@ function showRejectModal() {
                 Swal.fire('Success', 'RO Khusus berhasil ditolak', 'success');
                 closeDetailModal();
                 loadPendingApprovals();
-                emit('rejected', selectedRO.value.id);
+                emit('rejected', roId);
             } catch (error) {
                 console.error('Error rejecting RO Khusus:', error);
                 Swal.fire('Error', error.response?.data?.message || 'Gagal menolak RO Khusus', 'error');

@@ -71,7 +71,7 @@
         </div>
 
         <!-- Non Food Payment Approval Detail Modal -->
-        <div v-if="showDetailModal && selectedPayment" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60]" @click="closeDetailModal">
+        <div v-if="showDetailModal && selectedPayment" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999]" @click="closeDetailModal">
             <div class="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-4xl mx-4 max-h-[90vh] overflow-y-auto" @click.stop>
                 <div class="flex items-center justify-between mb-4">
                     <h3 class="text-lg font-medium text-gray-900 dark:text-white">
@@ -181,6 +181,13 @@
                                 <label class="text-sm font-medium text-gray-600 dark:text-gray-400">Outlet</label>
                                 <p class="text-gray-900 dark:text-white">{{ selectedPayment.source_info.outlet.nama_outlet }}</p>
                             </div>
+                            <div v-if="selectedPayment.source_info.type === 'PR' && (selectedPayment.source_info.creator || selectedPayment.source_info.created_by_name)">
+                                <label class="text-sm font-medium text-gray-600 dark:text-gray-400">Created By</label>
+                                <p class="text-gray-900 dark:text-white">
+                                    <i class="fa fa-user mr-1 text-gray-400"></i>
+                                    {{ selectedPayment.source_info.creator?.nama_lengkap || selectedPayment.source_info.created_by_name || '-' }}
+                                </p>
+                            </div>
                             <div v-if="selectedPayment.source_info.supplier">
                                 <label class="text-sm font-medium text-gray-600 dark:text-gray-400">Supplier</label>
                                 <p class="text-gray-900 dark:text-white">{{ selectedPayment.source_info.supplier.name }}</p>
@@ -205,20 +212,22 @@
                             <h4 class="text-md font-semibold text-gray-900 dark:text-white mb-3">
                                 <i class="fa fa-store mr-2 text-green-500"></i>
                                 {{ outletGroup.outlet_name }}
-                                <span v-if="outletGroup.pr_number" class="text-sm font-normal text-gray-600 dark:text-gray-400">
+                                <span v-if="outletGroup.pr_number && selectedPayment.source_info && selectedPayment.source_info.type === 'PO'" class="text-sm font-normal text-gray-600 dark:text-gray-400">
                                     (PR: {{ outletGroup.pr_number }})
                                 </span>
                             </h4>
                             
-                            <!-- PR Title and Description -->
-                            <div v-if="outletGroup.pr_title" class="mb-3">
-                                <label class="text-sm font-medium text-gray-600 dark:text-gray-400">PR Title</label>
-                                <p class="text-gray-900 dark:text-white">{{ outletGroup.pr_title }}</p>
-                            </div>
-                            <div v-if="outletGroup.pr_description" class="mb-3">
-                                <label class="text-sm font-medium text-gray-600 dark:text-gray-400">PR Description</label>
-                                <p class="text-gray-900 dark:text-white">{{ outletGroup.pr_description }}</p>
-                            </div>
+                            <!-- PR Title and Description - Only show if payment is from PO (multiple PRs) -->
+                            <template v-if="selectedPayment.source_info && selectedPayment.source_info.type === 'PO'">
+                                <div v-if="outletGroup.pr_title" class="mb-3">
+                                    <label class="text-sm font-medium text-gray-600 dark:text-gray-400">PR Title</label>
+                                    <p class="text-gray-900 dark:text-white">{{ outletGroup.pr_title }}</p>
+                                </div>
+                                <div v-if="outletGroup.pr_description" class="mb-3">
+                                    <label class="text-sm font-medium text-gray-600 dark:text-gray-400">PR Description</label>
+                                    <p class="text-gray-900 dark:text-white">{{ outletGroup.pr_description }}</p>
+                                </div>
+                            </template>
                             
                             <!-- Category Info -->
                             <div v-if="outletGroup.category_name" class="mb-3 grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
@@ -352,7 +361,7 @@
         </div>
 
         <!-- All Non Food Payment Modal -->
-        <div v-if="showAllModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[50]" @click="closeAllModal">
+        <div v-if="showAllModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9998]" @click="closeAllModal">
             <div class="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-5xl mx-4 max-h-[90vh] overflow-y-auto" @click.stop>
                 <div class="flex items-center justify-between mb-4">
                     <h3 class="text-lg font-medium text-gray-900 dark:text-white">

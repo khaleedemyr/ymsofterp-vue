@@ -5007,6 +5007,13 @@ watch(locale, () => {
                                     {{ formatDate(selectedPrApproval.created_at) }}
                                 </div>
                             </div>
+                            <div>
+                                <div class="text-sm font-medium text-gray-700 dark:text-gray-300">Created By</div>
+                                <div class="text-gray-900 dark:text-white">
+                                    <i class="fa fa-user mr-1 text-gray-400"></i>
+                                    {{ selectedPrApproval.creator?.nama_lengkap || selectedPrApproval.created_by_name || '-' }}
+                                </div>
+                            </div>
                         </div>
                         <div class="mt-4">
                             <div class="text-sm font-medium text-gray-700 dark:text-gray-300">Description</div>

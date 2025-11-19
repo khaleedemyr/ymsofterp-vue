@@ -954,11 +954,26 @@ class NonFoodPaymentController extends Controller
             
             $note = $request ? $request->input('note', '') : '';
             
+            // Update status to approved (NOT paid)
             $nonFoodPayment->update([
                 'status' => 'approved',
                 'approved_by' => Auth::id(),
                 'approved_at' => now(),
             ]);
+            
+            // Refresh to ensure status is saved correctly
+            $nonFoodPayment->refresh();
+            
+            // Verify status is still 'approved' and not 'paid'
+            if ($nonFoodPayment->status !== 'approved') {
+                \Log::warning('Non Food Payment status changed after approve', [
+                    'payment_id' => $nonFoodPayment->id,
+                    'expected_status' => 'approved',
+                    'actual_status' => $nonFoodPayment->status
+                ]);
+                // Force set back to approved
+                $nonFoodPayment->update(['status' => 'approved']);
+            }
 
             // Log activity
             \App\Models\ActivityLog::create([
@@ -980,7 +995,17 @@ class NonFoodPaymentController extends Controller
             }
 
             // Update PR status to PAID if all payments are completed
+            // Note: This only updates PR status, NOT payment status
             $this->updatePRStatusIfAllPaid($nonFoodPayment);
+            
+            // Final refresh to ensure status is still 'approved'
+            $nonFoodPayment->refresh();
+            if ($nonFoodPayment->status !== 'approved') {
+                \Log::error('Non Food Payment status changed to ' . $nonFoodPayment->status . ' after updatePRStatusIfAllPaid', [
+                    'payment_id' => $nonFoodPayment->id
+                ]);
+                $nonFoodPayment->update(['status' => 'approved']);
+            }
 
             DB::commit();
 
@@ -1563,6 +1588,7 @@ class NonFoodPaymentController extends Controller
                 $pr = $nonFoodPayment->purchaseRequisition;
                 
                 // Get PR attachments
+                $prAttachments = [];
                 try {
                     $prAttachments = DB::table('purchase_requisition_attachments as pra')
                         ->leftJoin('purchase_requisitions as pr', 'pra.purchase_requisition_id', '=', 'pr.id')
@@ -1580,6 +1606,7 @@ class NonFoodPaymentController extends Controller
                         ->toArray();
                 } catch (\Exception $e) {
                     // Table might not exist, continue without attachments
+                    $prAttachments = [];
                 }
                 
                 // Get PR items with outlet and category info
@@ -1617,12 +1644,36 @@ class NonFoodPaymentController extends Controller
                 }
                 
                 // Group items by outlet
-                $itemsByOutlet = $items->groupBy('outlet_id')->map(function ($outletItems, $outletId) use ($pr) {
+                // If items don't have outlet_id but PR has outlet, use PR outlet
+                $groupedItems = $items->groupBy(function($item) use ($pr) {
+                    // Use item outlet_id if available, otherwise use PR outlet_id
+                    return $item->outlet_id ?? $pr->outlet_id ?? null;
+                });
+                
+                $itemsByOutlet = $groupedItems->map(function ($outletItems, $outletId) use ($pr, $prAttachments) {
                     $firstItem = $outletItems->first();
+                    
+                    // Get outlet name - prefer from item, fallback to PR outlet, then query by outlet_id
+                    $outletName = $firstItem->item_outlet_name ?? null;
+                    if (!$outletName && $pr->outlet) {
+                        $outletName = $pr->outlet->nama_outlet;
+                    }
+                    if (!$outletName && $outletId) {
+                        // Try to get outlet name directly from database
+                        try {
+                            $outlet = DB::table('tbl_data_outlet')->where('id_outlet', $outletId)->first();
+                            $outletName = $outlet ? $outlet->nama_outlet : null;
+                        } catch (\Exception $e) {
+                            // Ignore
+                        }
+                    }
+                    if (!$outletName) {
+                        $outletName = 'Unknown Outlet';
+                    }
                     
                     return [
                         'outlet_id' => $outletId,
-                        'outlet_name' => $firstItem->item_outlet_name ?? 'Unknown Outlet',
+                        'outlet_name' => $outletName,
                         'category_id' => $firstItem->category_id ?? null,
                         'category_name' => $firstItem->item_category_name ?? null,
                         'category_division' => $firstItem->item_category_division ?? null,
@@ -1631,7 +1682,7 @@ class NonFoodPaymentController extends Controller
                         'pr_number' => $pr->pr_number,
                         'pr_title' => $pr->title,
                         'pr_description' => $pr->description,
-                        'pr_attachments' => $prAttachments,
+                        'pr_attachments' => $prAttachments ?? [],
                         'items' => $outletItems->map(function ($item) {
                             $itemName = $item->item_name;
                             if ($item->item_type === 'allowance' && $item->allowance_recipient_name && $item->allowance_account_number) {
@@ -1672,6 +1723,10 @@ class NonFoodPaymentController extends Controller
                     'outlet' => $pr->outlet ? [
                         'nama_outlet' => $pr->outlet->nama_outlet
                     ] : null,
+                    'creator' => $pr->creator ? [
+                        'nama_lengkap' => $pr->creator->nama_lengkap
+                    ] : null,
+                    'created_by_name' => $pr->creator ? $pr->creator->nama_lengkap : null,
                     'items_by_outlet' => $itemsByOutlet
                 ];
             }

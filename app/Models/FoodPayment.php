@@ -8,7 +8,14 @@ class FoodPayment extends Model
 {
     protected $fillable = [
         'number', 'date', 'supplier_id', 'total', 'payment_type', 'notes', 'bukti_transfer_path', 'status',
-        'finance_manager_approved_at', 'finance_manager_approved_by', 'finance_manager_note', 'created_by'
+        'finance_manager_approved_at', 'finance_manager_approved_by', 'finance_manager_note',
+        'gm_finance_approved_at', 'gm_finance_approved_by', 'gm_finance_note',
+        'created_by'
+    ];
+
+    protected $casts = [
+        'finance_manager_approved_at' => 'datetime',
+        'gm_finance_approved_at' => 'datetime',
     ];
 
     public function contraBons() {
@@ -22,5 +29,14 @@ class FoodPayment extends Model
     }
     public function financeManager() {
         return $this->belongsTo(\App\Models\User::class, 'finance_manager_approved_by');
+    }
+    public function gmFinance() {
+        return $this->belongsTo(\App\Models\User::class, 'gm_finance_approved_by');
+    }
+
+    // Methods
+    public function canBePaid()
+    {
+        return $this->status === 'approved';
     }
 } 
