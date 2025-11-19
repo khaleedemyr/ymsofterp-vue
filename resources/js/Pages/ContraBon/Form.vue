@@ -40,6 +40,9 @@ const filteredPOList = ref([]);
 const filteredRetailFoodList = ref([]);
 const filteredWarehouseRetailFoodList = ref([]);
 
+// Tutorial modal
+const showTutorial = ref(false);
+
 const form = useForm({
   date: props.contraBon?.date ? props.contraBon.date.substring(0, 10) : '',
   notes: props.contraBon?.notes || '',
@@ -342,26 +345,26 @@ function selectPOFromModal(po) {
       const unitName = item.unit_name || '';
       
       const mappedItem = {
-        gr_item_id: item.id,
-        item_id: item.item_id,
-        po_item_id: item.po_item_id,
-        unit_id: item.unit_id,
+      gr_item_id: item.id,
+      item_id: item.item_id,
+      po_item_id: item.po_item_id,
+      unit_id: item.unit_id,
         item_name: itemName, // Langsung gunakan dari API
         unit_name: unitName, // Langsung gunakan dari API
-        quantity: item.qty_received,
-        price: item.po_price,
-        discount_percent: item.discount_percent || 0,
-        discount_amount: item.discount_amount || 0,
-        po_item_total: item.po_item_total || (item.po_price * item.qty_received),
-        notes: '',
-        selected: false, // Default tidak dicentang
-        // Source info
-        source_type: 'purchase_order',
-        source_id: `${po.po_id}-${po.gr_id}`,
-        source_display: `${po.po_number} - ${po.gr_number}`,
-        po_id: po.po_id,
-        gr_id: po.gr_id,
-        _rowKey: Date.now() + '-' + Math.random() + '-po',
+      quantity: item.qty_received,
+      price: item.po_price,
+      discount_percent: item.discount_percent || 0,
+      discount_amount: item.discount_amount || 0,
+      po_item_total: item.po_item_total || (item.po_price * item.qty_received),
+      notes: '',
+      selected: false, // Default tidak dicentang
+      // Source info
+      source_type: 'purchase_order',
+      source_id: `${po.po_id}-${po.gr_id}`,
+      source_display: `${po.po_number} - ${po.gr_number}`,
+      po_id: po.po_id,
+      gr_id: po.gr_id,
+      _rowKey: Date.now() + '-' + Math.random() + '-po',
       };
       
       // Warn jika masih kosong setelah mapping
@@ -954,11 +957,26 @@ function getUnitName(item) {
 <template>
   <AppLayout>
     <div class="max-w-5xl w-full mx-auto py-8 px-2">
-      <div class="flex items-center gap-2 mb-6">
-        <button @click="goBack" class="text-blue-500 hover:underline"><i class="fa fa-arrow-left"></i> Kembali</button>
-        <h1 class="text-2xl font-bold text-gray-800 flex items-center gap-2 ml-4">
-          <i class="fa-solid fa-file-circle-xmark text-blue-500"></i> {{ isEdit ? 'Edit' : 'Tambah' }} Contra Bon
-        </h1>
+      <div class="flex items-center justify-between mb-6">
+        <div class="flex items-center gap-2">
+          <button @click="goBack" class="text-blue-500 hover:underline"><i class="fa fa-arrow-left"></i> Kembali</button>
+          <h1 class="text-2xl font-bold text-gray-800 flex items-center gap-2 ml-4">
+            <i class="fa-solid fa-file-circle-xmark text-blue-500"></i> {{ isEdit ? 'Edit' : 'Tambah' }} Contra Bon
+          </h1>
+        </div>
+        <div class="flex flex-col items-end">
+          <p class="text-xs text-gray-600 mb-1">
+            <span class="text-red-600 font-semibold">Klik disini untuk tutorial</span>
+          </p>
+          <button
+            type="button"
+            @click="showTutorial = true"
+            class="inline-flex items-center px-4 py-2 border-2 border-red-500 text-sm font-semibold rounded-md text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 shadow-md transition-all duration-200 hover:shadow-lg"
+          >
+            <i class="fa fa-question-circle mr-2 text-lg"></i>
+            Cara Menggunakan Contra Bon
+          </button>
+        </div>
       </div>
       <form @submit.prevent="onSubmit" class="space-y-6">
         <!-- Date Input -->
@@ -1363,6 +1381,213 @@ function getUnitName(item) {
                 </div>
               </div>
             </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tutorial Modal -->
+    <div v-if="showTutorial" class="fixed inset-0 z-50 overflow-y-auto" @click.self="showTutorial = false">
+      <div class="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0">
+        <!-- Background overlay -->
+        <div class="fixed inset-0 transition-opacity bg-gray-500 bg-opacity-75" @click="showTutorial = false"></div>
+
+        <!-- Modal panel -->
+        <div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-5xl sm:w-full">
+          <!-- Header -->
+          <div class="bg-blue-600 px-6 py-4 flex items-center justify-between">
+            <h3 class="text-lg font-semibold text-white">
+              <i class="fa fa-graduation-cap mr-2"></i>
+              Tutorial: Panduan Contra Bon
+            </h3>
+            <button
+              @click="showTutorial = false"
+              class="text-white hover:text-gray-200 focus:outline-none"
+            >
+              <i class="fa fa-times text-xl"></i>
+            </button>
+          </div>
+
+          <!-- Content -->
+          <div class="px-6 py-6 max-h-[70vh] overflow-y-auto">
+            <div class="space-y-6">
+              <!-- Introduction -->
+              <div class="bg-green-50 border-l-4 border-green-500 p-4 rounded">
+                <h4 class="font-semibold text-green-800 mb-2">
+                  <i class="fa fa-info-circle mr-2"></i>
+                  Apa itu Contra Bon?
+                </h4>
+                <p class="text-sm text-green-700">
+                  Contra Bon adalah dokumen yang digunakan untuk mencatat pengembalian barang atau koreksi terhadap 
+                  transaksi pembelian sebelumnya. Fitur ini memungkinkan Anda untuk membuat contra bon dari berbagai sumber data, 
+                  seperti Purchase Order (PO), Good Receipt (GR), Retail Food, dan Warehouse Retail Food.
+                </p>
+              </div>
+
+              <!-- Step 1 -->
+              <div class="border border-gray-200 rounded-lg p-4">
+                <div class="flex items-start">
+                  <div class="flex-shrink-0 w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center font-bold">
+                    1
+                  </div>
+                  <div class="ml-4 flex-1">
+                    <h4 class="font-semibold text-gray-900 mb-2">Isi Informasi Dasar</h4>
+                    <ul class="text-sm text-gray-700 space-y-1 list-disc list-inside">
+                      <li><strong>Tanggal:</strong> Pilih tanggal contra bon (wajib)</li>
+                      <li><strong>Supplier Invoice Number:</strong> Masukkan nomor invoice dari supplier (opsional)</li>
+                      <li><strong>Notes:</strong> Tambahkan catatan jika diperlukan (opsional)</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Step 2 -->
+              <div class="border border-gray-200 rounded-lg p-4">
+                <div class="flex items-start">
+                  <div class="flex-shrink-0 w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center font-bold">
+                    2
+                  </div>
+                  <div class="ml-4 flex-1">
+                    <h4 class="font-semibold text-gray-900 mb-2">Tambah Sumber Data</h4>
+                    <p class="text-sm text-gray-700 mb-2">
+                      Klik salah satu tombol untuk menambahkan sumber data:
+                    </p>
+                    <ul class="text-sm text-gray-700 space-y-1 list-disc list-inside">
+                      <li><strong>Tambah PO/GR:</strong> Untuk menambahkan data dari Purchase Order dan Good Receipt</li>
+                      <li><strong>Tambah Retail Food:</strong> Untuk menambahkan data dari Retail Food</li>
+                      <li><strong>Tambah Warehouse Retail Food:</strong> Untuk menambahkan data dari Warehouse Retail Food</li>
+                    </ul>
+                    <div class="bg-gray-50 p-3 rounded border border-gray-200 mt-2">
+                      <p class="text-xs text-gray-600">
+                        <i class="fa fa-lightbulb text-yellow-500 mr-1"></i>
+                        <strong>Tip:</strong> Anda bisa menambahkan beberapa sumber data sekaligus dalam satu contra bon.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Step 3 -->
+              <div class="border border-gray-200 rounded-lg p-4">
+                <div class="flex items-start">
+                  <div class="flex-shrink-0 w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center font-bold">
+                    3
+                  </div>
+                  <div class="ml-4 flex-1">
+                    <h4 class="font-semibold text-gray-900 mb-2">Pilih Item dari Modal</h4>
+                    <p class="text-sm text-gray-700 mb-2">
+                      Setelah membuka modal sumber data:
+                    </p>
+                    <ul class="text-sm text-gray-700 space-y-1 list-disc list-inside">
+                      <li>Gunakan kotak pencarian untuk mencari data yang diinginkan</li>
+                      <li>Klik pada item yang ingin ditambahkan</li>
+                      <li>Item akan otomatis ditambahkan ke form contra bon</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Step 4 -->
+              <div class="border border-gray-200 rounded-lg p-4">
+                <div class="flex items-start">
+                  <div class="flex-shrink-0 w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center font-bold">
+                    4
+                  </div>
+                  <div class="ml-4 flex-1">
+                    <h4 class="font-semibold text-gray-900 mb-2">Pilih Item yang Akan Dikembalikan</h4>
+                    <p class="text-sm text-gray-700 mb-2">
+                      Di tabel item, centang checkbox pada item yang ingin dikembalikan:
+                    </p>
+                    <ul class="text-sm text-gray-700 space-y-1 list-disc list-inside">
+                      <li>Gunakan checkbox di header untuk memilih semua item sekaligus</li>
+                      <li>Atau centang item secara individual</li>
+                      <li>Hanya item yang dicentang yang akan disimpan ke contra bon</li>
+                    </ul>
+                    <div class="bg-amber-50 border-l-4 border-amber-500 p-3 rounded mt-2">
+                      <p class="text-xs text-amber-800">
+                        <i class="fa fa-exclamation-triangle mr-1"></i>
+                        <strong>Penting:</strong> Pastikan untuk memilih item yang benar sebelum menyimpan.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Step 5 -->
+              <div class="border border-gray-200 rounded-lg p-4">
+                <div class="flex items-start">
+                  <div class="flex-shrink-0 w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center font-bold">
+                    5
+                  </div>
+                  <div class="ml-4 flex-1">
+                    <h4 class="font-semibold text-gray-900 mb-2">Edit Item (Opsional)</h4>
+                    <p class="text-sm text-gray-700 mb-2">
+                      Anda bisa mengedit detail item sebelum menyimpan:
+                    </p>
+                    <ul class="text-sm text-gray-700 space-y-1 list-disc list-inside">
+                      <li><strong>Quantity:</strong> Sesuaikan jumlah item yang dikembalikan</li>
+                      <li><strong>Price:</strong> Sesuaikan harga jika diperlukan</li>
+                      <li><strong>Notes:</strong> Tambahkan catatan untuk item tertentu</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Step 6 -->
+              <div class="border border-gray-200 rounded-lg p-4">
+                <div class="flex items-start">
+                  <div class="flex-shrink-0 w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center font-bold">
+                    6
+                  </div>
+                  <div class="ml-4 flex-1">
+                    <h4 class="font-semibold text-gray-900 mb-2">Hapus Sumber Data (Opsional)</h4>
+                    <p class="text-sm text-gray-700 mb-2">
+                      Jika Anda ingin menghapus sumber data yang sudah ditambahkan:
+                    </p>
+                    <ul class="text-sm text-gray-700 space-y-1 list-disc list-inside">
+                      <li>Klik tombol <strong>"Hapus"</strong> pada card sumber data</li>
+                      <li>Semua item dari sumber data tersebut akan ikut terhapus</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Step 7 -->
+              <div class="border border-gray-200 rounded-lg p-4">
+                <div class="flex items-start">
+                  <div class="flex-shrink-0 w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center font-bold">
+                    7
+                  </div>
+                  <div class="ml-4 flex-1">
+                    <h4 class="font-semibold text-gray-900 mb-2">Simpan Contra Bon</h4>
+                    <p class="text-sm text-gray-700 mb-2">
+                      Setelah semua data diisi dengan benar:
+                    </p>
+                    <ul class="text-sm text-gray-700 space-y-1 list-disc list-inside">
+                      <li>Klik tombol <strong>"Simpan"</strong> di bagian bawah form</li>
+                      <li>Sistem akan memvalidasi data sebelum menyimpan</li>
+                      <li>Jika berhasil, Anda akan diarahkan ke halaman daftar contra bon</li>
+                    </ul>
+                    <div class="bg-green-50 border-l-4 border-green-500 p-3 rounded mt-2">
+                      <p class="text-xs text-green-800">
+                        <i class="fa fa-check-circle mr-1"></i>
+                        <strong>Info:</strong> Pastikan minimal ada satu item yang dipilih sebelum menyimpan.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Footer -->
+          <div class="bg-gray-50 px-6 py-4 flex justify-end">
+            <button
+              @click="showTutorial = false"
+              class="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+            >
+              Tutup
+            </button>
           </div>
         </div>
       </div>
