@@ -453,22 +453,47 @@ function formatCurrency(value) {
   return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(value);
 }
 
-// Computed untuk menghitung total dari item yang dicentang
+// Computed untuk menghitung total dari item yang dicentang (with discount)
 const totalAmount = computed(() => {
   return form.items
     .filter(item => item.selected)
     .reduce((sum, item) => {
-      const quantity = Number(item.quantity) || 0;
-      const price = Number(item.price) || 0;
-      return sum + (quantity * price);
+      return sum + calculateItemTotal(item);
     }, 0);
 });
 
-// Function to calculate item total
+// Function to calculate item total (with discount)
 function calculateItemTotal(item) {
   const quantity = Number(item.quantity) || 0;
   const price = Number(item.price) || 0;
-  return quantity * price;
+  const subtotal = quantity * price;
+  
+  // Apply discount if available (for purchase_order source type)
+  if (sourceType.value === 'purchase_order') {
+    const discountPercent = Number(item.discount_percent) || 0;
+    const discountAmount = Number(item.discount_amount) || 0;
+    
+    let discount = 0;
+    if (discountPercent > 0) {
+      // Discount percent applies to subtotal
+      discount = subtotal * (discountPercent / 100);
+    } else if (discountAmount > 0) {
+      // Discount amount is proportional to quantity ratio
+      // Get original PO item quantity for ratio calculation
+      const poItem = selectedPOGR?.items?.find(i => i.item_id === item.item_id || i.id === item.gr_item_id);
+      if (poItem && poItem.qty_received > 0) {
+        const quantityRatio = quantity / poItem.qty_received;
+        discount = discountAmount * quantityRatio;
+      } else {
+        discount = discountAmount;
+      }
+    }
+    
+    return subtotal - discount;
+  }
+  
+  // For retail_food and warehouse_retail_food, no discount
+  return subtotal;
 }
 
 // Function to update item total when price changes
