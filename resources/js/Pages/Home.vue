@@ -6304,12 +6304,7 @@ watch(locale, () => {
                                             <span v-else class="text-gray-400">-</span>
                                         </td>
                                         <td class="px-3 py-2 text-sm text-gray-900 dark:text-white font-semibold">
-                                            <span v-if="selectedContraBonApproval.source_type === 'purchase_order' && item.po_item_total">
-                                                Rp {{ new Intl.NumberFormat('id-ID').format(item.po_item_total || 0) }}
-                                            </span>
-                                            <span v-else>
-                                                Rp {{ new Intl.NumberFormat('id-ID').format(item.total || 0) }}
-                                            </span>
+                                            Rp {{ new Intl.NumberFormat('id-ID').format(item.total || 0) }}
                                         </td>
                                     </tr>
                                 </tbody>
