@@ -25,8 +25,21 @@ class OpexOutletDashboardController extends Controller
             $outletId = $userOutletId; // Force menggunakan outlet user
         }
 
-        // Get dashboard data
-        $dashboardData = $this->getDashboardData($dateFrom, $dateTo, $outletId, $request);
+        // Get dashboard data - hanya jika outlet sudah dipilih (untuk admin) atau sudah ada outlet (untuk non-admin)
+        $dashboardData = null;
+        if ($outletId) {
+            $dashboardData = $this->getDashboardData($dateFrom, $dateTo, $outletId, $request);
+        } else {
+            // Return empty dashboard data structure
+            $dashboardData = [
+                'overview' => null,
+                'opexTrend' => [],
+                'opexByCategory' => [],
+                'unpaidPRs' => [],
+                'recentPayments' => [],
+                'retailNonFood' => []
+            ];
+        }
         
         // Get outlets list for filter (hanya untuk admin)
         $outlets = [];

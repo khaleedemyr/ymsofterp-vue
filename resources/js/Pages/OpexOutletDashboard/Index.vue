@@ -66,8 +66,19 @@
         </div>
       </div>
 
+      <!-- Message jika outlet belum dipilih (untuk admin) -->
+      <div v-if="canSelectOutlet && !filters.outlet_id" class="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6 rounded-lg">
+        <div class="flex items-center">
+          <i class="fa-solid fa-exclamation-triangle text-yellow-600 text-xl mr-3"></i>
+          <div>
+            <p class="text-yellow-800 font-semibold">Pilih Outlet Terlebih Dahulu</p>
+            <p class="text-yellow-700 text-sm mt-1">Silakan pilih outlet dari filter di atas untuk menampilkan data dashboard.</p>
+          </div>
+        </div>
+      </div>
+
       <!-- Overview Cards -->
-      <div class="grid grid-cols-1 md:grid-cols-5 gap-6 mb-6">
+      <div v-if="!canSelectOutlet || filters.outlet_id" class="grid grid-cols-1 md:grid-cols-5 gap-6 mb-6">
         <div 
           @click="openCardModal('total_paid')"
           class="bg-white rounded-xl shadow-lg p-6 border-l-4 border-blue-500 cursor-pointer hover:shadow-xl transition-shadow"
@@ -140,7 +151,7 @@
       </div>
 
       <!-- Opex Trend Chart -->
-      <div class="bg-white rounded-xl shadow-lg p-6 mb-6">
+      <div v-if="!canSelectOutlet || filters.outlet_id" class="bg-white rounded-xl shadow-lg p-6 mb-6">
         <h2 class="text-xl font-bold text-gray-800 mb-4">Opex Trend</h2>
         <apexchart
           type="line"
@@ -151,7 +162,7 @@
       </div>
 
       <!-- Opex by Category Chart -->
-      <div class="bg-white rounded-xl shadow-lg p-6 mb-6">
+      <div v-if="!canSelectOutlet || filters.outlet_id" class="bg-white rounded-xl shadow-lg p-6 mb-6">
         <h2 class="text-xl font-bold text-gray-800 mb-4">Opex by Category</h2>
         <apexchart
           type="bar"
@@ -162,7 +173,7 @@
       </div>
 
       <!-- Food by Category Chart -->
-      <div class="bg-white rounded-xl shadow-lg p-6 mb-6">
+      <div v-if="!canSelectOutlet || filters.outlet_id" class="bg-white rounded-xl shadow-lg p-6 mb-6">
         <h2 class="text-xl font-bold text-gray-800 mb-4">Food Expenses by Category Item</h2>
         <apexchart
           type="bar"
@@ -923,7 +934,10 @@ function applyFilters() {
     preserveState: true,
     replace: true
   });
-  fetchFoodByCategory();
+  // Hanya fetch jika outlet sudah dipilih (untuk admin) atau sudah ada outlet (untuk non-admin)
+  if (!canSelectOutlet.value || filters.value.outlet_id) {
+    fetchFoodByCategory();
+  }
 }
 
 async function fetchFoodByCategory() {
@@ -1451,13 +1465,19 @@ const foodByCategoryOptions = computed(() => {
   };
 });
 
-// Fetch food by category on mount and when filters change
+// Fetch food by category on mount and when filters change - hanya jika outlet sudah dipilih
 onMounted(() => {
-  fetchFoodByCategory();
+  // Hanya fetch jika outlet sudah dipilih (untuk admin) atau sudah ada outlet (untuk non-admin)
+  if (!canSelectOutlet.value || filters.value.outlet_id) {
+    fetchFoodByCategory();
+  }
 });
 
 watch([() => filters.value.date_from, () => filters.value.date_to, () => filters.value.outlet_id], () => {
-  fetchFoodByCategory();
+  // Hanya fetch jika outlet sudah dipilih (untuk admin) atau sudah ada outlet (untuk non-admin)
+  if (!canSelectOutlet.value || filters.value.outlet_id) {
+    fetchFoodByCategory();
+  }
 });
 
 </script>
