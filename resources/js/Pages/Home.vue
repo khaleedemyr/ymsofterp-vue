@@ -91,6 +91,9 @@ const contraBonApprovalLevelFilter = ref(''); // '', 'finance_manager', 'gm_fina
 const contraBonSortBy = ref('newest'); // 'newest', 'oldest', 'number', 'amount'
 const contraBonCurrentPage = ref(1);
 const contraBonPerPage = ref(10);
+// Multi-select for All Contra Bon Modal
+const isSelectingAllContraBon = ref(false);
+const selectedAllContraBonApprovals = ref(new Set());
 const loadingStockAdjustmentApprovals = ref(false);
 const showStockAdjustmentApprovalModal = ref(false);
 const selectedStockAdjustmentApproval = ref(null);
@@ -104,6 +107,9 @@ const poOpsSearchQuery = ref('');
 const poOpsStatusFilter = ref(''); // '', 'submitted', 'pending', 'awaiting', 'waiting'
 const poOpsDateFilter = ref(''); // '', 'today', 'week', 'month'
 const poOpsSortBy = ref('newest'); // 'newest', 'oldest', 'number', 'amount'
+// Multi-select for All PO Ops Modal
+const isSelectingAllPoOps = ref(false);
+const selectedAllPoOpsApprovals = ref(new Set());
 
 // All PR Modal
 const showAllPrModal = ref(false);
@@ -115,6 +121,9 @@ const prStatusFilter = ref(''); // '', 'SUBMITTED', 'APPROVED', etc.
 const prDateFilter = ref(''); // '', 'today', 'week', 'month'
 const prSortBy = ref('newest'); // 'newest', 'oldest', 'number', 'amount'
 const prModeFilter = ref(''); // '', 'pr_ops', 'purchase_payment', 'travel_application', 'kasbon'
+// Multi-select for All PR Modal
+const isSelectingAllPr = ref(false);
+const selectedAllPrApprovals = ref(new Set());
 
 // Filtered and paginated Contra Bon approvals
 const filteredContraBonApprovals = computed(() => {
@@ -853,6 +862,79 @@ async function loadAllContraBonApprovals() {
 function openAllContraBonModal() {
     showAllContraBonModal.value = true;
     loadAllContraBonApprovals();
+    // Reset selection when opening modal
+    isSelectingAllContraBon.value = false;
+    selectedAllContraBonApprovals.value.clear();
+}
+
+// Multi-select functions for All Contra Bon Modal
+function toggleAllContraBonSelection(cbId) {
+    if (selectedAllContraBonApprovals.value.has(cbId)) {
+        selectedAllContraBonApprovals.value.delete(cbId);
+    } else {
+        selectedAllContraBonApprovals.value.add(cbId);
+    }
+}
+
+function selectAllAllContraBonApprovals() {
+    paginatedContraBonApprovals.value.forEach(cb => {
+        selectedAllContraBonApprovals.value.add(cb.id);
+    });
+}
+
+async function approveMultipleAllContraBon() {
+    if (selectedAllContraBonApprovals.value.size === 0) {
+        Swal.fire('Warning', 'Pilih minimal satu Contra Bon untuk di-approve', 'warning');
+        return;
+    }
+    
+    const result = await Swal.fire({
+        title: 'Approve Multiple Contra Bons?',
+        text: `Apakah Anda yakin ingin approve ${selectedAllContraBonApprovals.value.size} Contra Bon?`,
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonText: 'Ya, Approve',
+        cancelButtonText: 'Batal',
+        confirmButtonColor: '#3b82f6',
+    });
+    
+    if (!result.isConfirmed) return;
+    
+    try {
+        Swal.fire({
+            title: 'Processing...',
+            text: 'Sedang memproses approval...',
+            allowOutsideClick: false,
+            didOpen: () => {
+                Swal.showLoading();
+            }
+        });
+        
+        const cbIds = Array.from(selectedAllContraBonApprovals.value);
+        const promises = cbIds.map(cbId => 
+            axios.post(`/contra-bons/${cbId}/approve`, {
+                approved: true,
+                note: ''
+            }).catch(err => ({ error: err, cbId }))
+        );
+        
+        const results = await Promise.all(promises);
+        const success = results.filter(r => !r.error).length;
+        const failed = results.filter(r => r.error).length;
+        
+        selectedAllContraBonApprovals.value.clear();
+        isSelectingAllContraBon.value = false;
+        loadAllContraBonApprovals();
+        
+        if (failed === 0) {
+            Swal.fire('Success', `${success} Contra Bon berhasil disetujui`, 'success');
+        } else {
+            Swal.fire('Partial Success', `${success} berhasil, ${failed} gagal`, 'warning');
+        }
+    } catch (error) {
+        console.error('Error approving multiple Contra Bons:', error);
+        Swal.fire('Error', 'Gagal menyetujui Contra Bon', 'error');
+    }
 }
 
 function changeContraBonPage(page) {
@@ -915,7 +997,80 @@ async function loadAllPendingPoOps() {
 
 function openAllPoOpsModal() {
     showAllPoOpsModal.value = true;
+    // Reset selection when opening modal
+    isSelectingAllPoOps.value = false;
+    selectedAllPoOpsApprovals.value.clear();
     loadAllPendingPoOps();
+}
+
+// Multi-select functions for All PO Ops Modal
+function toggleAllPoOpsSelection(poId) {
+    if (selectedAllPoOpsApprovals.value.has(poId)) {
+        selectedAllPoOpsApprovals.value.delete(poId);
+    } else {
+        selectedAllPoOpsApprovals.value.add(poId);
+    }
+}
+
+function selectAllAllPoOpsApprovals() {
+    filteredAllPendingPoOps.value.forEach(po => {
+        selectedAllPoOpsApprovals.value.add(po.id);
+    });
+}
+
+async function approveMultipleAllPoOps() {
+    if (selectedAllPoOpsApprovals.value.size === 0) {
+        Swal.fire('Warning', 'Pilih minimal satu Purchase Order Ops untuk di-approve', 'warning');
+        return;
+    }
+    
+    const result = await Swal.fire({
+        title: 'Approve Multiple PO Ops?',
+        text: `Apakah Anda yakin ingin approve ${selectedAllPoOpsApprovals.value.size} Purchase Order Ops?`,
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonText: 'Ya, Approve',
+        cancelButtonText: 'Batal',
+        confirmButtonColor: '#f97316',
+    });
+    
+    if (!result.isConfirmed) return;
+    
+    try {
+        Swal.fire({
+            title: 'Processing...',
+            text: 'Sedang memproses approval...',
+            allowOutsideClick: false,
+            didOpen: () => {
+                Swal.showLoading();
+            }
+        });
+        
+        const poIds = Array.from(selectedAllPoOpsApprovals.value);
+        const promises = poIds.map(poId => 
+            axios.post(`/po-ops/${poId}/approve`, {
+                approved: true,
+                comments: ''
+            }).catch(err => ({ error: err, poId }))
+        );
+        
+        const results = await Promise.all(promises);
+        const success = results.filter(r => !r.error).length;
+        const failed = results.filter(r => r.error).length;
+        
+        selectedAllPoOpsApprovals.value.clear();
+        isSelectingAllPoOps.value = false;
+        loadAllPendingPoOps();
+        
+        if (failed === 0) {
+            Swal.fire('Success', `${success} Purchase Order Ops berhasil disetujui`, 'success');
+        } else {
+            Swal.fire('Partial Success', `${success} berhasil, ${failed} gagal`, 'warning');
+        }
+    } catch (error) {
+        console.error('Error approving multiple PO Ops:', error);
+        Swal.fire('Error', 'Gagal menyetujui Purchase Order Ops', 'error');
+    }
 }
 
 // Load all PR approvals
@@ -936,6 +1091,76 @@ async function loadAllPrApprovals() {
 function openAllPrModal() {
     showAllPrModal.value = true;
     loadAllPrApprovals();
+    // Reset selection when opening modal
+    isSelectingAllPr.value = false;
+    selectedAllPrApprovals.value.clear();
+}
+
+// Multi-select functions for All PR Modal
+function toggleAllPrSelection(prId) {
+    if (selectedAllPrApprovals.value.has(prId)) {
+        selectedAllPrApprovals.value.delete(prId);
+    } else {
+        selectedAllPrApprovals.value.add(prId);
+    }
+}
+
+function selectAllAllPrApprovals() {
+    filteredAllPrApprovals.value.forEach(pr => {
+        selectedAllPrApprovals.value.add(pr.id);
+    });
+}
+
+async function approveMultipleAllPr() {
+    if (selectedAllPrApprovals.value.size === 0) {
+        Swal.fire('Warning', 'Pilih minimal satu Purchase Requisition untuk di-approve', 'warning');
+        return;
+    }
+    
+    const result = await Swal.fire({
+        title: 'Approve Multiple PRs?',
+        text: `Apakah Anda yakin ingin approve ${selectedAllPrApprovals.value.size} Purchase Requisition?`,
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonText: 'Ya, Approve',
+        cancelButtonText: 'Batal',
+        confirmButtonColor: '#10b981',
+    });
+    
+    if (!result.isConfirmed) return;
+    
+    try {
+        Swal.fire({
+            title: 'Processing...',
+            text: 'Sedang memproses approval...',
+            allowOutsideClick: false,
+            didOpen: () => {
+                Swal.showLoading();
+            }
+        });
+        
+        const prIds = Array.from(selectedAllPrApprovals.value);
+        const promises = prIds.map(prId => 
+            axios.post(`/purchase-requisitions/${prId}/approve`).catch(err => ({ error: err, prId }))
+        );
+        
+        const results = await Promise.all(promises);
+        const success = results.filter(r => !r.error).length;
+        const failed = results.filter(r => r.error).length;
+        
+        selectedAllPrApprovals.value.clear();
+        isSelectingAllPr.value = false;
+        loadAllPrApprovals();
+        
+        if (failed === 0) {
+            Swal.fire('Success', `${success} Purchase Requisition berhasil disetujui`, 'success');
+        } else {
+            Swal.fire('Partial Success', `${success} berhasil, ${failed} gagal`, 'warning');
+        }
+    } catch (error) {
+        console.error('Error approving multiple PRs:', error);
+        Swal.fire('Error', 'Gagal menyetujui Purchase Requisition', 'error');
+    }
 }
 
 // Filtered all PR approvals
@@ -6838,9 +7063,46 @@ watch(locale, () => {
                         <i class="fa fa-list mr-2 text-blue-500"></i>
                         Semua Contra Bon Pending
                     </h3>
-                    <button @click="showAllContraBonModal = false" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
-                        <i class="fa-solid fa-times text-xl"></i>
-                    </button>
+                    <div class="flex items-center gap-2">
+                        <button 
+                            v-if="!isSelectingAllContraBon"
+                            @click.stop="isSelectingAllContraBon = true"
+                            class="text-xs bg-blue-500 text-white px-2 py-1 rounded hover:bg-blue-600 transition"
+                        >
+                            <i class="fa fa-check-square mr-1"></i>Multi Approve
+                        </button>
+                        <button 
+                            v-else
+                            @click.stop="isSelectingAllContraBon = false; selectedAllContraBonApprovals.clear()"
+                            class="text-xs bg-gray-500 text-white px-2 py-1 rounded hover:bg-gray-600 transition"
+                        >
+                            <i class="fa fa-times mr-1"></i>Cancel
+                        </button>
+                        <button @click="showAllContraBonModal = false" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                            <i class="fa-solid fa-times text-xl"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Multi-approve actions -->
+                <div v-if="isSelectingAllContraBon && selectedAllContraBonApprovals.size > 0" class="mb-4 p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg flex items-center justify-between">
+                    <span class="text-sm font-medium text-blue-800 dark:text-blue-200">
+                        {{ selectedAllContraBonApprovals.size }} item dipilih
+                    </span>
+                    <div class="flex gap-2">
+                        <button 
+                            @click="selectAllAllContraBonApprovals"
+                            class="text-xs bg-blue-500 text-white px-2 py-1 rounded hover:bg-blue-600 transition"
+                        >
+                            <i class="fa fa-check-double mr-1"></i>Select All
+                        </button>
+                        <button 
+                            @click="approveMultipleAllContraBon"
+                            class="text-xs bg-blue-600 text-white px-2 py-1 rounded hover:bg-blue-700 transition"
+                        >
+                            <i class="fa fa-check mr-1"></i>Approve Selected
+                        </button>
+                    </div>
                 </div>
 
                 <!-- Filters -->
@@ -6928,10 +7190,22 @@ watch(locale, () => {
                             Menampilkan {{ (contraBonCurrentPage - 1) * contraBonPerPage + 1 }} - {{ Math.min(contraBonCurrentPage * contraBonPerPage, filteredContraBonApprovals.length) }} dari {{ filteredContraBonApprovals.length }} Contra Bon
                         </div>
                         <div v-for="cb in paginatedContraBonApprovals" :key="'all-contra-bon-' + cb.id"
-                             class="p-3 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors cursor-pointer"
-                             @click="showContraBonApprovalDetails(cb.id)">
+                             class="p-3 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600 transition-colors"
+                             :class="[
+                                 isSelectingAllContraBon ? 'cursor-default' : 'cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600',
+                                 selectedAllContraBonApprovals.has(cb.id) ? 'ring-2 ring-blue-500' : ''
+                             ]"
+                             @click="isSelectingAllContraBon ? toggleAllContraBonSelection(cb.id) : showContraBonApprovalDetails(cb.id)">
                             <div class="flex items-center justify-between">
-                                <div class="flex-1 min-w-0">
+                                <div class="flex items-center gap-2 flex-1 min-w-0">
+                                    <input 
+                                        v-if="isSelectingAllContraBon"
+                                        type="checkbox"
+                                        :checked="selectedAllContraBonApprovals.has(cb.id)"
+                                        @click.stop="toggleAllContraBonSelection(cb.id)"
+                                        class="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                                    />
+                                    <div class="flex-1 min-w-0">
                                     <div class="flex items-center gap-2">
                                         <span class="font-semibold text-gray-900 dark:text-white truncate">{{ cb.number }}</span>
                                         <span class="text-xs px-2 py-0.5 rounded-full" :class="getStatusColor(cb.status || 'draft')">{{ (cb.status || 'draft').toString().toUpperCase() }}</span>
@@ -6949,6 +7223,7 @@ watch(locale, () => {
                                     <div class="text-[11px] text-gray-500 dark:text-gray-400 truncate">
                                         <i class="fa fa-user mr-1 text-blue-500"></i>
                                         {{ cb.creator?.nama_lengkap || 'Unknown' }}
+                                    </div>
                                     </div>
                                 </div>
                                 <div class="text-xs text-gray-500 dark:text-gray-400 pl-3 whitespace-nowrap">
@@ -7032,9 +7307,46 @@ watch(locale, () => {
                         <i class="fa fa-list mr-2 text-orange-500"></i>
                         Semua Purchase Order Ops Pending
                     </h3>
-                    <button @click="showAllPoOpsModal = false" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
-                        <i class="fa-solid fa-times text-xl"></i>
-                    </button>
+                    <div class="flex items-center gap-2">
+                        <button 
+                            v-if="!isSelectingAllPoOps"
+                            @click.stop="isSelectingAllPoOps = true"
+                            class="text-xs bg-orange-500 text-white px-2 py-1 rounded hover:bg-orange-600 transition"
+                        >
+                            <i class="fa fa-check-square mr-1"></i>Multi Approve
+                        </button>
+                        <button 
+                            v-else
+                            @click.stop="isSelectingAllPoOps = false; selectedAllPoOpsApprovals.clear()"
+                            class="text-xs bg-gray-500 text-white px-2 py-1 rounded hover:bg-gray-600 transition"
+                        >
+                            <i class="fa fa-times mr-1"></i>Cancel
+                        </button>
+                        <button @click="showAllPoOpsModal = false" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                            <i class="fa-solid fa-times text-xl"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Multi-approve actions -->
+                <div v-if="isSelectingAllPoOps && selectedAllPoOpsApprovals.size > 0" class="mb-4 p-2 bg-orange-100 dark:bg-orange-900/30 rounded-lg flex items-center justify-between">
+                    <span class="text-sm font-medium text-orange-800 dark:text-orange-200">
+                        {{ selectedAllPoOpsApprovals.size }} item dipilih
+                    </span>
+                    <div class="flex gap-2">
+                        <button 
+                            @click="selectAllAllPoOpsApprovals"
+                            class="text-xs bg-blue-500 text-white px-2 py-1 rounded hover:bg-blue-600 transition"
+                        >
+                            <i class="fa fa-check-double mr-1"></i>Select All
+                        </button>
+                        <button 
+                            @click="approveMultipleAllPoOps"
+                            class="text-xs bg-orange-600 text-white px-2 py-1 rounded hover:bg-orange-700 transition"
+                        >
+                            <i class="fa fa-check mr-1"></i>Approve Selected
+                        </button>
+                    </div>
                 </div>
 
                 <!-- Filters -->
@@ -7092,10 +7404,22 @@ watch(locale, () => {
                     <div v-else class="space-y-3">
                         <div class="text-sm text-gray-600 dark:text-gray-400 mb-1">Menampilkan {{ filteredAllPendingPoOps.length }} dari {{ allPendingPoOps.length }} PO Ops</div>
                         <div v-for="po in filteredAllPendingPoOps" :key="'all-po-ops-' + po.id"
-                             class="p-3 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors cursor-pointer"
-                             @click="showPoOpsApprovalDetails(po.id)">
+                             class="p-3 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600 transition-colors"
+                             :class="[
+                                 isSelectingAllPoOps ? 'cursor-default' : 'cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600',
+                                 selectedAllPoOpsApprovals.has(po.id) ? 'ring-2 ring-orange-500' : ''
+                             ]"
+                             @click="isSelectingAllPoOps ? toggleAllPoOpsSelection(po.id) : showPoOpsApprovalDetails(po.id)">
                             <div class="flex items-center justify-between">
-                                <div class="flex-1 min-w-0">
+                                <div class="flex items-center gap-2 flex-1 min-w-0">
+                                    <input 
+                                        v-if="isSelectingAllPoOps"
+                                        type="checkbox"
+                                        :checked="selectedAllPoOpsApprovals.has(po.id)"
+                                        @click.stop="toggleAllPoOpsSelection(po.id)"
+                                        class="w-4 h-4 text-orange-600 rounded focus:ring-orange-500"
+                                    />
+                                    <div class="flex-1 min-w-0">
                                     <div class="flex items-center gap-2">
                                         <span class="font-semibold text-gray-900 dark:text-white truncate">{{ po.number }}</span>
                                         <span class="text-xs px-2 py-0.5 rounded-full" :class="getStatusColor(po.status)">{{ (po.status || '').toString().toUpperCase() }}</span>
@@ -7106,6 +7430,7 @@ watch(locale, () => {
                                     <div v-if="po.purchase_requisition" class="text-[11px] text-gray-500 dark:text-gray-400 truncate">
                                         <i class="fa fa-shopping-cart mr-1 text-green-600"></i>
                                         PR {{ po.purchase_requisition.pr_number }} — {{ po.purchase_requisition.title }}
+                                    </div>
                                     </div>
                                 </div>
                                 <div class="text-xs text-gray-500 dark:text-gray-400 pl-3 whitespace-nowrap">
@@ -7132,9 +7457,46 @@ watch(locale, () => {
                         <i class="fa fa-list mr-2 text-green-500"></i>
                         Semua Purchase Requisition Pending
                     </h3>
-                    <button @click="showAllPrModal = false" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
-                        <i class="fa-solid fa-times text-xl"></i>
-                    </button>
+                    <div class="flex items-center gap-2">
+                        <button 
+                            v-if="!isSelectingAllPr"
+                            @click.stop="isSelectingAllPr = true"
+                            class="text-xs bg-green-500 text-white px-2 py-1 rounded hover:bg-green-600 transition"
+                        >
+                            <i class="fa fa-check-square mr-1"></i>Multi Approve
+                        </button>
+                        <button 
+                            v-else
+                            @click.stop="isSelectingAllPr = false; selectedAllPrApprovals.clear()"
+                            class="text-xs bg-gray-500 text-white px-2 py-1 rounded hover:bg-gray-600 transition"
+                        >
+                            <i class="fa fa-times mr-1"></i>Cancel
+                        </button>
+                        <button @click="showAllPrModal = false" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                            <i class="fa-solid fa-times text-xl"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Multi-approve actions -->
+                <div v-if="isSelectingAllPr && selectedAllPrApprovals.size > 0" class="mb-4 p-2 bg-green-100 dark:bg-green-900/30 rounded-lg flex items-center justify-between">
+                    <span class="text-sm font-medium text-green-800 dark:text-green-200">
+                        {{ selectedAllPrApprovals.size }} item dipilih
+                    </span>
+                    <div class="flex gap-2">
+                        <button 
+                            @click="selectAllAllPrApprovals"
+                            class="text-xs bg-blue-500 text-white px-2 py-1 rounded hover:bg-blue-600 transition"
+                        >
+                            <i class="fa fa-check-double mr-1"></i>Select All
+                        </button>
+                        <button 
+                            @click="approveMultipleAllPr"
+                            class="text-xs bg-green-600 text-white px-2 py-1 rounded hover:bg-green-700 transition"
+                        >
+                            <i class="fa fa-check mr-1"></i>Approve Selected
+                        </button>
+                    </div>
                 </div>
 
                 <!-- Filters -->
@@ -7203,10 +7565,22 @@ watch(locale, () => {
                     <div v-else class="space-y-3">
                         <div class="text-sm text-gray-600 dark:text-gray-400 mb-1">Menampilkan {{ filteredAllPrApprovals.length }} dari {{ allPrApprovals.length }} Purchase Requisition</div>
                         <div v-for="pr in filteredAllPrApprovals" :key="'all-pr-' + pr.id"
-                             class="p-3 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors cursor-pointer"
-                             @click="showPrApprovalDetails(pr.id)">
+                             class="p-3 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600 transition-colors"
+                             :class="[
+                                 isSelectingAllPr ? 'cursor-default' : 'cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600',
+                                 selectedAllPrApprovals.has(pr.id) ? 'ring-2 ring-green-500' : ''
+                             ]"
+                             @click="isSelectingAllPr ? toggleAllPrSelection(pr.id) : showPrApprovalDetails(pr.id)">
                             <div class="flex items-center justify-between">
-                                <div class="flex-1 min-w-0">
+                                <div class="flex items-center gap-2 flex-1 min-w-0">
+                                    <input 
+                                        v-if="isSelectingAllPr"
+                                        type="checkbox"
+                                        :checked="selectedAllPrApprovals.has(pr.id)"
+                                        @click.stop="toggleAllPrSelection(pr.id)"
+                                        class="w-4 h-4 text-green-600 rounded focus:ring-green-500"
+                                    />
+                                    <div class="flex-1 min-w-0">
                                     <div class="flex items-center gap-2">
                                         <span class="font-semibold text-gray-900 dark:text-white truncate">{{ pr.pr_number }}</span>
                                         <span v-if="pr.mode" 
@@ -7232,6 +7606,7 @@ watch(locale, () => {
                                     <div class="text-[11px] text-gray-500 dark:text-gray-400 truncate mt-1">
                                         <i class="fa fa-user mr-1 text-green-600"></i>
                                         {{ pr.creator?.nama_lengkap || pr.created_by_name || '-' }}
+                                    </div>
                                     </div>
                                 </div>
                                 <div class="text-xs text-gray-500 dark:text-gray-400 pl-3 whitespace-nowrap">

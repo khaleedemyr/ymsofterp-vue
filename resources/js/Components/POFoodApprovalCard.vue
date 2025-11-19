@@ -255,9 +255,46 @@
                         <i class="fa fa-list mr-2 text-indigo-500"></i>
                         Semua PO Foods Pending
                     </h3>
-                    <button @click="closeAllModal" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
-                        <i class="fa fa-times text-xl"></i>
-                    </button>
+                    <div class="flex items-center gap-2">
+                        <button 
+                            v-if="!isSelectingAll"
+                            @click.stop="isSelectingAll = true"
+                            class="text-xs bg-indigo-500 text-white px-2 py-1 rounded hover:bg-indigo-600 transition"
+                        >
+                            <i class="fa fa-check-square mr-1"></i>Multi Approve
+                        </button>
+                        <button 
+                            v-else
+                            @click.stop="isSelectingAll = false; selectedAllApprovals.clear()"
+                            class="text-xs bg-gray-500 text-white px-2 py-1 rounded hover:bg-gray-600 transition"
+                        >
+                            <i class="fa fa-times mr-1"></i>Cancel
+                        </button>
+                        <button @click="closeAllModal" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                            <i class="fa fa-times text-xl"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Multi-approve actions -->
+                <div v-if="isSelectingAll && selectedAllApprovals.size > 0" class="mb-4 p-2 bg-indigo-100 dark:bg-indigo-900/30 rounded-lg flex items-center justify-between">
+                    <span class="text-sm font-medium text-indigo-800 dark:text-indigo-200">
+                        {{ selectedAllApprovals.size }} item dipilih
+                    </span>
+                    <div class="flex gap-2">
+                        <button 
+                            @click="selectAllAllApprovals"
+                            class="text-xs bg-blue-500 text-white px-2 py-1 rounded hover:bg-blue-600 transition"
+                        >
+                            <i class="fa fa-check-double mr-1"></i>Select All
+                        </button>
+                        <button 
+                            @click="approveMultipleAll"
+                            class="text-xs bg-indigo-600 text-white px-2 py-1 rounded hover:bg-indigo-700 transition"
+                        >
+                            <i class="fa fa-check mr-1"></i>Approve Selected
+                        </button>
+                    </div>
                 </div>
 
                 <!-- Filters and Search -->
@@ -304,11 +341,23 @@
 
                 <div v-else class="space-y-2">
                     <div v-for="po in paginatedApprovals" :key="'all-po-' + po.id"
-                         @click="showDetails(po.id)"
-                         class="p-3 rounded-lg cursor-pointer transition-all duration-200 hover:scale-[1.02] border border-gray-200 dark:border-gray-700 hover:border-indigo-500 dark:hover:border-indigo-500"
-                         :class="isNight ? 'bg-slate-700/50 hover:bg-slate-600/50' : 'bg-gray-50 hover:bg-indigo-50'">
+                         class="p-3 rounded-lg transition-all duration-200 border border-gray-200 dark:border-gray-700"
+                         :class="[
+                             isSelectingAll ? 'cursor-default' : 'cursor-pointer hover:scale-[1.02] hover:border-indigo-500 dark:hover:border-indigo-500',
+                             isNight ? 'bg-slate-700/50 hover:bg-slate-600/50' : 'bg-gray-50 hover:bg-indigo-50',
+                             selectedAllApprovals.has(po.id) ? 'ring-2 ring-indigo-500' : ''
+                         ]"
+                         @click="isSelectingAll ? toggleAllSelection(po.id) : showDetails(po.id)">
                         <div class="flex items-center justify-between">
-                            <div class="flex-1">
+                            <div class="flex items-center gap-2 flex-1">
+                                <input 
+                                    v-if="isSelectingAll"
+                                    type="checkbox"
+                                    :checked="selectedAllApprovals.has(po.id)"
+                                    @click.stop="toggleAllSelection(po.id)"
+                                    class="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500"
+                                />
+                                <div class="flex-1">
                                 <div class="font-semibold text-sm" :class="isNight ? 'text-white' : 'text-slate-800'">
                                     {{ po.number }}
                                 </div>
@@ -328,6 +377,7 @@
                                 </div>
                                 <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
                                     {{ formatDate(po.date) }}
+                                </div>
                                 </div>
                             </div>
                             <div class="text-xs text-indigo-500 font-medium">
@@ -641,6 +691,9 @@ const dateFilter = ref('');
 const sortBy = ref('newest');
 const currentPage = ref(1);
 const perPage = ref(10);
+// Multi-select for All Modal
+const isSelectingAll = ref(false);
+const selectedAllApprovals = ref(new Set());
 
 async function loadAllApprovals() {
     loadingAll.value = true;
@@ -660,6 +713,100 @@ async function loadAllApprovals() {
 function openAllModal() {
     showAllModal.value = true;
     loadAllApprovals();
+    // Reset selection when opening modal
+    isSelectingAll.value = false;
+    selectedAllApprovals.value.clear();
+}
+
+// Multi-select functions for All Modal
+function toggleAllSelection(poId) {
+    if (selectedAllApprovals.value.has(poId)) {
+        selectedAllApprovals.value.delete(poId);
+    } else {
+        selectedAllApprovals.value.add(poId);
+    }
+}
+
+function selectAllAllApprovals() {
+    paginatedApprovals.value.forEach(po => {
+        selectedAllApprovals.value.add(po.id);
+    });
+}
+
+async function approveMultipleAll() {
+    if (selectedAllApprovals.value.size === 0) {
+        Swal.fire('Warning', 'Pilih minimal satu PO Food untuk di-approve', 'warning');
+        return;
+    }
+    
+    const result = await Swal.fire({
+        title: 'Approve Multiple PO Foods?',
+        text: `Apakah Anda yakin ingin approve ${selectedAllApprovals.value.size} PO Food?`,
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonText: 'Ya, Approve',
+        cancelButtonText: 'Batal',
+        confirmButtonColor: '#6366f1',
+    });
+    
+    if (!result.isConfirmed) return;
+    
+    try {
+        Swal.fire({
+            title: 'Processing...',
+            text: 'Sedang memproses approval...',
+            allowOutsideClick: false,
+            didOpen: () => {
+                Swal.showLoading();
+            }
+        });
+        
+        const poIds = Array.from(selectedAllApprovals.value);
+        const promises = poIds.map(async (poId) => {
+            const po = allApprovals.value.find(p => p.id === poId);
+            if (!po) return { error: new Error('PO not found'), poId };
+            
+            try {
+                let endpoint = '';
+                const approvalLevel = po.approval_level;
+                
+                if (approvalLevel === 'purchasing_manager') {
+                    endpoint = `/po-foods/${poId}/approve`;
+                } else if (approvalLevel === 'gm_finance') {
+                    endpoint = `/po-foods/${poId}/approve-gm-finance`;
+                } else {
+                    return { error: new Error('Unknown approval level'), poId };
+                }
+                
+                await axios.post(endpoint, {
+                    approved: true,
+                    note: ''
+                });
+                
+                return { success: true, poId };
+            } catch (err) {
+                return { error: err, poId };
+            }
+        });
+        
+        const results = await Promise.all(promises);
+        const success = results.filter(r => r.success).length;
+        const failed = results.filter(r => r.error).length;
+        
+        selectedAllApprovals.value.clear();
+        isSelectingAll.value = false;
+        loadAllApprovals();
+        loadPendingApprovals();
+        
+        if (failed === 0) {
+            Swal.fire('Success', `${success} PO Food berhasil disetujui`, 'success');
+        } else {
+            Swal.fire('Partial Success', `${success} berhasil, ${failed} gagal`, 'warning');
+        }
+    } catch (error) {
+        console.error('Error approving multiple PO Foods:', error);
+        Swal.fire('Error', 'Gagal menyetujui PO Foods', 'error');
+    }
 }
 
 function closeAllModal() {

@@ -218,9 +218,46 @@
                         <i class="fa fa-list mr-2 text-green-500"></i>
                         Semua Food Payment Pending
                     </h3>
-                    <button @click="closeAllModal" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
-                        <i class="fa fa-times text-xl"></i>
-                    </button>
+                    <div class="flex items-center gap-2">
+                        <button 
+                            v-if="!isSelectingAll"
+                            @click.stop="isSelectingAll = true"
+                            class="text-xs bg-green-500 text-white px-2 py-1 rounded hover:bg-green-600 transition"
+                        >
+                            <i class="fa fa-check-square mr-1"></i>Multi Approve
+                        </button>
+                        <button 
+                            v-else
+                            @click.stop="isSelectingAll = false; selectedAllApprovals.clear()"
+                            class="text-xs bg-gray-500 text-white px-2 py-1 rounded hover:bg-gray-600 transition"
+                        >
+                            <i class="fa fa-times mr-1"></i>Cancel
+                        </button>
+                        <button @click="closeAllModal" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                            <i class="fa fa-times text-xl"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Multi-approve actions -->
+                <div v-if="isSelectingAll && selectedAllApprovals.size > 0" class="mb-4 p-2 bg-green-100 dark:bg-green-900/30 rounded-lg flex items-center justify-between">
+                    <span class="text-sm font-medium text-green-800 dark:text-green-200">
+                        {{ selectedAllApprovals.size }} item dipilih
+                    </span>
+                    <div class="flex gap-2">
+                        <button 
+                            @click="selectAllAllApprovals"
+                            class="text-xs bg-blue-500 text-white px-2 py-1 rounded hover:bg-blue-600 transition"
+                        >
+                            <i class="fa fa-check-double mr-1"></i>Select All
+                        </button>
+                        <button 
+                            @click="approveMultipleAll"
+                            class="text-xs bg-green-600 text-white px-2 py-1 rounded hover:bg-green-700 transition"
+                        >
+                            <i class="fa fa-check mr-1"></i>Approve Selected
+                        </button>
+                    </div>
                 </div>
 
                 <!-- Filters and Search -->
@@ -271,11 +308,23 @@
 
                 <div v-else class="space-y-2">
                     <div v-for="fp in paginatedApprovals" :key="'all-fp-' + fp.id"
-                         @click="showDetails(fp.id)"
-                         class="p-3 rounded-lg cursor-pointer transition-all duration-200 hover:scale-[1.02] border border-gray-200 dark:border-gray-700 hover:border-green-500 dark:hover:border-green-500"
-                         :class="isNight ? 'bg-slate-700/50 hover:bg-slate-600/50' : 'bg-gray-50 hover:bg-green-50'">
+                         class="p-3 rounded-lg transition-all duration-200 border border-gray-200 dark:border-gray-700"
+                         :class="[
+                             isSelectingAll ? 'cursor-default' : 'cursor-pointer hover:scale-[1.02] hover:border-green-500 dark:hover:border-green-500',
+                             isNight ? 'bg-slate-700/50 hover:bg-slate-600/50' : 'bg-gray-50 hover:bg-green-50',
+                             selectedAllApprovals.has(fp.id) ? 'ring-2 ring-green-500' : ''
+                         ]"
+                         @click="isSelectingAll ? toggleAllSelection(fp.id) : showDetails(fp.id)">
                         <div class="flex items-center justify-between">
-                            <div class="flex-1">
+                            <div class="flex items-center gap-2 flex-1">
+                                <input 
+                                    v-if="isSelectingAll"
+                                    type="checkbox"
+                                    :checked="selectedAllApprovals.has(fp.id)"
+                                    @click.stop="toggleAllSelection(fp.id)"
+                                    class="w-4 h-4 text-green-600 rounded focus:ring-green-500"
+                                />
+                                <div class="flex-1">
                                 <div class="font-semibold text-sm" :class="isNight ? 'text-white' : 'text-slate-800'">
                                     {{ fp.number }}
                                 </div>
@@ -294,6 +343,7 @@
                                 </div>
                                 <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
                                     {{ formatDate(fp.date) }}
+                                </div>
                                 </div>
                             </div>
                             <div class="text-xs text-green-500 font-medium">
@@ -356,6 +406,9 @@ const loadingDetail = ref(false);
 const showAllModal = ref(false);
 const allApprovals = ref([]);
 const loadingAll = ref(false);
+// Multi-select for All Modal
+const isSelectingAll = ref(false);
+const selectedAllApprovals = ref(new Set());
 
 // Filters and pagination for "All" modal
 const searchQuery = ref('');
@@ -639,6 +692,93 @@ async function loadAllApprovals() {
 function openAllModal() {
     showAllModal.value = true;
     loadAllApprovals();
+    // Reset selection when opening modal
+    isSelectingAll.value = false;
+    selectedAllApprovals.value.clear();
+}
+
+// Multi-select functions for All Modal
+function toggleAllSelection(fpId) {
+    if (selectedAllApprovals.value.has(fpId)) {
+        selectedAllApprovals.value.delete(fpId);
+    } else {
+        selectedAllApprovals.value.add(fpId);
+    }
+}
+
+function selectAllAllApprovals() {
+    paginatedApprovals.value.forEach(fp => {
+        selectedAllApprovals.value.add(fp.id);
+    });
+}
+
+async function approveMultipleAll() {
+    if (selectedAllApprovals.value.size === 0) {
+        Swal.fire('Warning', 'Pilih minimal satu Food Payment untuk di-approve', 'warning');
+        return;
+    }
+    
+    const result = await Swal.fire({
+        title: 'Approve Multiple Food Payments?',
+        text: `Apakah Anda yakin ingin approve ${selectedAllApprovals.value.size} Food Payment?`,
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonText: 'Ya, Approve',
+        cancelButtonText: 'Batal',
+        confirmButtonColor: '#10b981',
+    });
+    
+    if (!result.isConfirmed) return;
+    
+    try {
+        Swal.fire({
+            title: 'Processing...',
+            text: 'Sedang memproses approval...',
+            allowOutsideClick: false,
+            didOpen: () => {
+                Swal.showLoading();
+            }
+        });
+        
+        const fpIds = Array.from(selectedAllApprovals.value);
+        const promises = fpIds.map(async (fpId) => {
+            const fp = allApprovals.value.find(p => p.id === fpId);
+            if (!fp) return { error: new Error('Food Payment not found'), fpId };
+            
+            try {
+                const response = await axios.post(`/food-payments/${fpId}/approve`, {
+                    approved: true,
+                    note: ''
+                });
+                
+                if (response.status >= 200 && response.status < 300 && response.data && response.data.success) {
+                    return { success: true, fpId };
+                } else {
+                    return { error: new Error(response.data?.message || 'Approval failed'), fpId };
+                }
+            } catch (err) {
+                return { error: err, fpId };
+            }
+        });
+        
+        const results = await Promise.all(promises);
+        const success = results.filter(r => r.success).length;
+        const failed = results.filter(r => r.error).length;
+        
+        selectedAllApprovals.value.clear();
+        isSelectingAll.value = false;
+        loadAllApprovals();
+        loadPendingApprovals();
+        
+        if (failed === 0) {
+            Swal.fire('Success', `${success} Food Payment berhasil disetujui`, 'success');
+        } else {
+            Swal.fire('Partial Success', `${success} berhasil, ${failed} gagal`, 'warning');
+        }
+    } catch (error) {
+        console.error('Error approving multiple Food Payments:', error);
+        Swal.fire('Error', 'Gagal menyetujui Food Payments', 'error');
+    }
 }
 
 function closeAllModal() {

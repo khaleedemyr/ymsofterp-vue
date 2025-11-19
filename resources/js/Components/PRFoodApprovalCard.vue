@@ -216,9 +216,46 @@
                         <i class="fa fa-list mr-2 text-purple-500"></i>
                         Semua PR Foods Pending
                     </h3>
-                    <button @click="closeAllModal" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
-                        <i class="fa fa-times text-xl"></i>
-                    </button>
+                    <div class="flex items-center gap-2">
+                        <button 
+                            v-if="!isSelectingAll"
+                            @click.stop="isSelectingAll = true"
+                            class="text-xs bg-purple-500 text-white px-2 py-1 rounded hover:bg-purple-600 transition"
+                        >
+                            <i class="fa fa-check-square mr-1"></i>Multi Approve
+                        </button>
+                        <button 
+                            v-else
+                            @click.stop="isSelectingAll = false; selectedAllApprovals.clear()"
+                            class="text-xs bg-gray-500 text-white px-2 py-1 rounded hover:bg-gray-600 transition"
+                        >
+                            <i class="fa fa-times mr-1"></i>Cancel
+                        </button>
+                        <button @click="closeAllModal" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                            <i class="fa fa-times text-xl"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Multi-approve actions -->
+                <div v-if="isSelectingAll && selectedAllApprovals.size > 0" class="mb-4 p-2 bg-purple-100 dark:bg-purple-900/30 rounded-lg flex items-center justify-between">
+                    <span class="text-sm font-medium text-purple-800 dark:text-purple-200">
+                        {{ selectedAllApprovals.size }} item dipilih
+                    </span>
+                    <div class="flex gap-2">
+                        <button 
+                            @click="selectAllAllApprovals"
+                            class="text-xs bg-blue-500 text-white px-2 py-1 rounded hover:bg-blue-600 transition"
+                        >
+                            <i class="fa fa-check-double mr-1"></i>Select All
+                        </button>
+                        <button 
+                            @click="approveMultipleAll"
+                            class="text-xs bg-purple-600 text-white px-2 py-1 rounded hover:bg-purple-700 transition"
+                        >
+                            <i class="fa fa-check mr-1"></i>Approve Selected
+                        </button>
+                    </div>
                 </div>
 
                 <!-- Filters and Search -->
@@ -264,11 +301,23 @@
 
                 <div v-else class="space-y-2">
                     <div v-for="pr in paginatedApprovals" :key="'all-pr-' + pr.id"
-                         @click="showDetails(pr.id)"
-                         class="p-3 rounded-lg cursor-pointer transition-all duration-200 hover:scale-[1.02] border border-gray-200 dark:border-gray-700 hover:border-purple-500 dark:hover:border-purple-500"
-                         :class="isNight ? 'bg-slate-700/50 hover:bg-slate-600/50' : 'bg-gray-50 hover:bg-purple-50'">
+                         class="p-3 rounded-lg transition-all duration-200 border border-gray-200 dark:border-gray-700"
+                         :class="[
+                             isSelectingAll ? 'cursor-default' : 'cursor-pointer hover:scale-[1.02] hover:border-purple-500 dark:hover:border-purple-500',
+                             isNight ? 'bg-slate-700/50 hover:bg-slate-600/50' : 'bg-gray-50 hover:bg-purple-50',
+                             selectedAllApprovals.has(pr.id) ? 'ring-2 ring-purple-500' : ''
+                         ]"
+                         @click="isSelectingAll ? toggleAllSelection(pr.id) : showDetails(pr.id)">
                         <div class="flex items-center justify-between">
-                            <div class="flex-1">
+                            <div class="flex items-center gap-2 flex-1">
+                                <input 
+                                    v-if="isSelectingAll"
+                                    type="checkbox"
+                                    :checked="selectedAllApprovals.has(pr.id)"
+                                    @click.stop="toggleAllSelection(pr.id)"
+                                    class="w-4 h-4 text-purple-600 rounded focus:ring-purple-500"
+                                />
+                                <div class="flex-1">
                                 <div class="font-semibold text-sm" :class="isNight ? 'text-white' : 'text-slate-800'">
                                     {{ pr.pr_number }}
                                 </div>
@@ -284,6 +333,7 @@
                                 </div>
                                 <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
                                     {{ formatDate(pr.tanggal) }}
+                                </div>
                                 </div>
                             </div>
                             <div class="text-xs text-purple-500 font-medium">
@@ -642,6 +692,9 @@ const dateFilter = ref('');
 const sortBy = ref('newest');
 const currentPage = ref(1);
 const perPage = ref(10);
+// Multi-select for All Modal
+const isSelectingAll = ref(false);
+const selectedAllApprovals = ref(new Set());
 
 async function loadAllApprovals() {
     loadingAll.value = true;
@@ -661,6 +714,112 @@ async function loadAllApprovals() {
 function openAllModal() {
     showAllModal.value = true;
     loadAllApprovals();
+    // Reset selection when opening modal
+    isSelectingAll.value = false;
+    selectedAllApprovals.value.clear();
+}
+
+// Multi-select functions for All Modal
+function toggleAllSelection(prId) {
+    if (selectedAllApprovals.value.has(prId)) {
+        selectedAllApprovals.value.delete(prId);
+    } else {
+        selectedAllApprovals.value.add(prId);
+    }
+}
+
+function selectAllAllApprovals() {
+    paginatedApprovals.value.forEach(pr => {
+        selectedAllApprovals.value.add(pr.id);
+    });
+}
+
+async function approveMultipleAll() {
+    if (selectedAllApprovals.value.size === 0) {
+        Swal.fire('Warning', 'Pilih minimal satu PR Food untuk di-approve', 'warning');
+        return;
+    }
+    
+    const result = await Swal.fire({
+        title: 'Approve Multiple PR Foods?',
+        text: `Apakah Anda yakin ingin approve ${selectedAllApprovals.value.size} PR Food?`,
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonText: 'Ya, Approve',
+        cancelButtonText: 'Batal',
+        confirmButtonColor: '#9333ea',
+    });
+    
+    if (!result.isConfirmed) return;
+    
+    try {
+        Swal.fire({
+            title: 'Processing...',
+            text: 'Sedang memproses approval...',
+            allowOutsideClick: false,
+            didOpen: () => {
+                Swal.showLoading();
+            }
+        });
+        
+        const prIds = Array.from(selectedAllApprovals.value);
+        const promises = prIds.map(async (prId) => {
+            const pr = allApprovals.value.find(p => p.id === prId);
+            if (!pr) return { error: new Error('PR not found'), prId };
+            
+            try {
+                let endpoint = '';
+                const approvalLevel = pr.approval_level;
+                
+                if (approvalLevel === 'assistant_ssd_manager') {
+                    endpoint = `/pr-foods/${prId}/approve-assistant-ssd-manager`;
+                } else if (approvalLevel === 'ssd_manager' || approvalLevel === 'sous_chef_mk') {
+                    endpoint = `/pr-foods/${prId}/approve-ssd-manager`;
+                } else {
+                    return { error: new Error('Unknown approval level'), prId };
+                }
+                
+                const requestData = {
+                    approved: true
+                };
+                
+                if (approvalLevel === 'assistant_ssd_manager') {
+                    requestData.assistant_ssd_manager_note = '';
+                } else if (approvalLevel === 'ssd_manager' || approvalLevel === 'sous_chef_mk') {
+                    requestData.ssd_manager_note = '';
+                }
+                
+                await axios.post(endpoint, requestData, {
+                    headers: {
+                        'Accept': 'application/json',
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                return { success: true, prId };
+            } catch (err) {
+                return { error: err, prId };
+            }
+        });
+        
+        const results = await Promise.all(promises);
+        const success = results.filter(r => r.success).length;
+        const failed = results.filter(r => r.error).length;
+        
+        selectedAllApprovals.value.clear();
+        isSelectingAll.value = false;
+        loadAllApprovals();
+        loadPendingApprovals();
+        
+        if (failed === 0) {
+            Swal.fire('Success', `${success} PR Food berhasil disetujui`, 'success');
+        } else {
+            Swal.fire('Partial Success', `${success} berhasil, ${failed} gagal`, 'warning');
+        }
+    } catch (error) {
+        console.error('Error approving multiple PR Foods:', error);
+        Swal.fire('Error', 'Gagal menyetujui PR Foods', 'error');
+    }
 }
 
 function closeAllModal() {

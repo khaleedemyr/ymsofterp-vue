@@ -228,9 +228,46 @@
                         <i class="fa fa-list mr-2 text-teal-500"></i>
                         Semua RO Khusus Pending
                     </h3>
-                    <button @click="closeAllModal" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
-                        <i class="fa fa-times text-xl"></i>
-                    </button>
+                    <div class="flex items-center gap-2">
+                        <button 
+                            v-if="!isSelectingAll"
+                            @click.stop="isSelectingAll = true"
+                            class="text-xs bg-teal-500 text-white px-2 py-1 rounded hover:bg-teal-600 transition"
+                        >
+                            <i class="fa fa-check-square mr-1"></i>Multi Approve
+                        </button>
+                        <button 
+                            v-else
+                            @click.stop="isSelectingAll = false; selectedAllApprovals.clear()"
+                            class="text-xs bg-gray-500 text-white px-2 py-1 rounded hover:bg-gray-600 transition"
+                        >
+                            <i class="fa fa-times mr-1"></i>Cancel
+                        </button>
+                        <button @click="closeAllModal" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                            <i class="fa fa-times text-xl"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Multi-approve actions -->
+                <div v-if="isSelectingAll && selectedAllApprovals.size > 0" class="mb-4 p-2 bg-teal-100 dark:bg-teal-900/30 rounded-lg flex items-center justify-between">
+                    <span class="text-sm font-medium text-teal-800 dark:text-teal-200">
+                        {{ selectedAllApprovals.size }} item dipilih
+                    </span>
+                    <div class="flex gap-2">
+                        <button 
+                            @click="selectAllAllApprovals"
+                            class="text-xs bg-blue-500 text-white px-2 py-1 rounded hover:bg-blue-600 transition"
+                        >
+                            <i class="fa fa-check-double mr-1"></i>Select All
+                        </button>
+                        <button 
+                            @click="approveMultipleAll"
+                            class="text-xs bg-teal-600 text-white px-2 py-1 rounded hover:bg-teal-700 transition"
+                        >
+                            <i class="fa fa-check mr-1"></i>Approve Selected
+                        </button>
+                    </div>
                 </div>
 
                 <!-- Filters and Search -->
@@ -276,11 +313,23 @@
 
                 <div v-else class="space-y-2">
                     <div v-for="ro in paginatedApprovals" :key="'all-ro-' + ro.id"
-                         @click="showDetails(ro.id)"
-                         class="p-3 rounded-lg cursor-pointer transition-all duration-200 hover:scale-[1.02] border border-gray-200 dark:border-gray-700 hover:border-teal-500 dark:hover:border-teal-500"
-                         :class="isNight ? 'bg-slate-700/50 hover:bg-slate-600/50' : 'bg-gray-50 hover:bg-teal-50'">
+                         class="p-3 rounded-lg transition-all duration-200 border border-gray-200 dark:border-gray-700"
+                         :class="[
+                             isSelectingAll ? 'cursor-default' : 'cursor-pointer hover:scale-[1.02] hover:border-teal-500 dark:hover:border-teal-500',
+                             isNight ? 'bg-slate-700/50 hover:bg-slate-600/50' : 'bg-gray-50 hover:bg-teal-50',
+                             selectedAllApprovals.has(ro.id) ? 'ring-2 ring-teal-500' : ''
+                         ]"
+                         @click="isSelectingAll ? toggleAllSelection(ro.id) : showDetails(ro.id)">
                         <div class="flex items-center justify-between">
-                            <div class="flex-1">
+                            <div class="flex items-center gap-2 flex-1">
+                                <input 
+                                    v-if="isSelectingAll"
+                                    type="checkbox"
+                                    :checked="selectedAllApprovals.has(ro.id)"
+                                    @click.stop="toggleAllSelection(ro.id)"
+                                    class="w-4 h-4 text-teal-600 rounded focus:ring-teal-500"
+                                />
+                                <div class="flex-1">
                                 <div class="font-semibold text-sm" :class="isNight ? 'text-white' : 'text-slate-800'">
                                     {{ ro.order_number }}
                                 </div>
@@ -300,6 +349,7 @@
                                 </div>
                                 <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
                                     {{ formatDate(ro.tanggal) }}
+                                </div>
                                 </div>
                             </div>
                             <div class="text-xs text-teal-500 font-medium">
@@ -583,6 +633,9 @@ const dateFilter = ref('');
 const sortBy = ref('newest');
 const currentPage = ref(1);
 const perPage = ref(10);
+// Multi-select for All Modal
+const isSelectingAll = ref(false);
+const selectedAllApprovals = ref(new Set());
 
 async function loadAllApprovals() {
     loadingAll.value = true;
@@ -602,6 +655,84 @@ async function loadAllApprovals() {
 function openAllModal() {
     showAllModal.value = true;
     loadAllApprovals();
+    // Reset selection when opening modal
+    isSelectingAll.value = false;
+    selectedAllApprovals.value.clear();
+}
+
+// Multi-select functions for All Modal
+function toggleAllSelection(roId) {
+    if (selectedAllApprovals.value.has(roId)) {
+        selectedAllApprovals.value.delete(roId);
+    } else {
+        selectedAllApprovals.value.add(roId);
+    }
+}
+
+function selectAllAllApprovals() {
+    paginatedApprovals.value.forEach(ro => {
+        selectedAllApprovals.value.add(ro.id);
+    });
+}
+
+async function approveMultipleAll() {
+    if (selectedAllApprovals.value.size === 0) {
+        Swal.fire('Warning', 'Pilih minimal satu RO Khusus untuk di-approve', 'warning');
+        return;
+    }
+    
+    const result = await Swal.fire({
+        title: 'Approve Multiple RO Khusus?',
+        text: `Apakah Anda yakin ingin approve ${selectedAllApprovals.value.size} RO Khusus?`,
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonText: 'Ya, Approve',
+        cancelButtonText: 'Batal',
+        confirmButtonColor: '#14b8a6',
+    });
+    
+    if (!result.isConfirmed) return;
+    
+    try {
+        Swal.fire({
+            title: 'Processing...',
+            text: 'Sedang memproses approval...',
+            allowOutsideClick: false,
+            didOpen: () => {
+                Swal.showLoading();
+            }
+        });
+        
+        const roIds = Array.from(selectedAllApprovals.value);
+        const promises = roIds.map(async (roId) => {
+            try {
+                await axios.post(`/floor-order/${roId}/approve`, {
+                    notes: ''
+                });
+                return { success: true, roId };
+            } catch (err) {
+                return { error: err, roId };
+            }
+        });
+        
+        const results = await Promise.all(promises);
+        const success = results.filter(r => r.success).length;
+        const failed = results.filter(r => r.error).length;
+        
+        selectedAllApprovals.value.clear();
+        isSelectingAll.value = false;
+        loadAllApprovals();
+        loadPendingApprovals();
+        
+        if (failed === 0) {
+            Swal.fire('Success', `${success} RO Khusus berhasil disetujui`, 'success');
+        } else {
+            Swal.fire('Partial Success', `${success} berhasil, ${failed} gagal`, 'warning');
+        }
+    } catch (error) {
+        console.error('Error approving multiple RO Khusus:', error);
+        Swal.fire('Error', 'Gagal menyetujui RO Khusus', 'error');
+    }
 }
 
 function closeAllModal() {
