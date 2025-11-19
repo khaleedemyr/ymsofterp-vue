@@ -131,7 +131,7 @@ class FoodPaymentController extends Controller
         $payment = FoodPayment::with(['supplier', 'creator', 'financeManager', 'gmFinance', 'contraBons.purchaseOrder', 'contraBons.retailFood'])->findOrFail($id);
         
         // Transform contra bons to include source type and outlet information
-        $payment->contra_bons = $payment->contra_bons->map(function($contraBon) {
+        $payment->contra_bons = $payment->contraBons ? $payment->contraBons->map(function($contraBon) {
             $sourceTypeDisplay = 'Unknown';
             $outletNames = [];
             
@@ -163,7 +163,7 @@ class FoodPaymentController extends Controller
             $contraBon->outlet_names = $outletNames;
             
             return $contraBon;
-        });
+        }) : collect();
         
         return inertia('FoodPayment/Show', [
             'payment' => $payment
@@ -426,7 +426,7 @@ class FoodPaymentController extends Controller
             ])->findOrFail($id);
             
             // Transform contra bons to include source type and outlet information
-            $foodPayment->contra_bons = $foodPayment->contraBons->map(function($contraBon) {
+            $foodPayment->contra_bons = $foodPayment->contraBons ? $foodPayment->contraBons->map(function($contraBon) {
                 $sourceTypeDisplay = 'Unknown';
                 $sourceNumbers = [];
                 $sourceOutlets = [];
@@ -477,7 +477,7 @@ class FoodPaymentController extends Controller
                 $contraBon->source_outlets = $sourceOutlets;
                 
                 return $contraBon;
-            });
+            }) : collect();
             
             return response()->json([
                 'success' => true,
@@ -548,7 +548,7 @@ class FoodPaymentController extends Controller
         $payment = FoodPayment::with(['supplier', 'creator', 'financeManager', 'gmFinance', 'contraBons.purchaseOrder', 'contraBons.retailFood'])->findOrFail($id);
         
         // Transform contra bons to include source type and outlet information (same as show)
-        $payment->contra_bons = $payment->contra_bons->map(function($contraBon) {
+        $payment->contra_bons = $payment->contraBons ? $payment->contraBons->map(function($contraBon) {
             $sourceTypeDisplay = 'Unknown';
             $outletNames = [];
             
@@ -580,7 +580,7 @@ class FoodPaymentController extends Controller
             $contraBon->outlet_names = $outletNames;
             
             return $contraBon;
-        });
+        }) : collect();
         
         return inertia('FoodPayment/Form', [
             'payment' => $payment
@@ -635,7 +635,7 @@ class FoodPaymentController extends Controller
             // Update status contra bon lama menjadi approved (jika payment belum paid)
             if ($payment->status !== 'paid') {
                 ContraBon::whereIn('id', $oldContraBonIds)
-                    ->update(['status' => 'approved']);
+                ->update(['status' => 'approved']);
             }
 
             // Buat relasi baru

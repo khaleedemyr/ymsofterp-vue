@@ -317,14 +317,33 @@
                                     PR Attachments ({{ outletGroup.pr_attachments.length }})
                                 </h5>
                                 <div class="flex flex-wrap gap-2">
-                                    <a v-for="attachment in outletGroup.pr_attachments" 
-                                       :key="'pr-attachment-' + attachment.id"
-                                       :href="`/purchase-requisitions/attachments/${attachment.id}/download`" 
-                                       target="_blank"
-                                       class="inline-flex items-center px-2 py-1 bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 rounded text-xs hover:bg-green-200 dark:hover:bg-green-800 transition">
-                                        <i class="fa fa-file mr-1"></i>
-                                        {{ attachment.file_name }}
-                                    </a>
+                                    <!-- Image attachments with thumbnail -->
+                                    <div v-for="attachment in outletGroup.pr_attachments" 
+                                         :key="'pr-attachment-' + attachment.id"
+                                         class="relative">
+                                        <div v-if="isImageFile(attachment.file_name)" 
+                                             @click="openLightbox(`/purchase-requisitions/attachments/${attachment.id}/download`, attachment.file_name)"
+                                             class="cursor-pointer group">
+                                            <img :src="`/purchase-requisitions/attachments/${attachment.id}/download`" 
+                                                 :alt="attachment.file_name"
+                                                 class="w-20 h-20 object-cover rounded border-2 border-green-200 dark:border-green-700 hover:border-green-400 dark:hover:border-green-500 transition-all hover:scale-105 shadow-md"
+                                                 @error="handleImageError($event)" />
+                                            <div class="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 rounded transition-all flex items-center justify-center">
+                                                <i class="fa fa-search-plus text-white opacity-0 group-hover:opacity-100 transition-opacity"></i>
+                                            </div>
+                                            <div class="text-xs text-gray-600 dark:text-gray-400 mt-1 truncate w-20" :title="attachment.file_name">
+                                                {{ attachment.file_name }}
+                                            </div>
+                                        </div>
+                                        <!-- PDF/DOC attachments - direct download -->
+                                        <a v-else
+                                           :href="`/purchase-requisitions/attachments/${attachment.id}/download`" 
+                                           @click="handleFileDownload($event, attachment.file_name)"
+                                           class="inline-flex items-center px-2 py-1 bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 rounded text-xs hover:bg-green-200 dark:hover:bg-green-800 transition">
+                                            <i :class="getFileIcon(attachment.file_name) + ' mr-1'"></i>
+                                            {{ attachment.file_name }}
+                                        </a>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -338,14 +357,33 @@
                             PO Attachments ({{ selectedPayment.po_attachments.length }})
                         </h4>
                         <div class="flex flex-wrap gap-2">
-                            <a v-for="attachment in selectedPayment.po_attachments" 
-                               :key="'po-attachment-' + attachment.id"
-                               :href="`/po-ops/attachments/${attachment.id}/download`" 
-                               target="_blank"
-                               class="inline-flex items-center px-3 py-2 bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300 rounded text-sm hover:bg-purple-200 dark:hover:bg-purple-800 transition">
-                                <i class="fa fa-file mr-2"></i>
-                                {{ attachment.file_name }}
-                            </a>
+                            <!-- Image attachments with thumbnail -->
+                            <div v-for="attachment in selectedPayment.po_attachments" 
+                                 :key="'po-attachment-' + attachment.id"
+                                 class="relative">
+                                <div v-if="isImageFile(attachment.file_name)" 
+                                     @click="openLightbox(`/po-ops/attachments/${attachment.id}/download`, attachment.file_name)"
+                                     class="cursor-pointer group">
+                                    <img :src="`/po-ops/attachments/${attachment.id}/download`" 
+                                         :alt="attachment.file_name"
+                                         class="w-24 h-24 object-cover rounded border-2 border-purple-200 dark:border-purple-700 hover:border-purple-400 dark:hover:border-purple-500 transition-all hover:scale-105 shadow-md"
+                                         @error="handleImageError($event)" />
+                                    <div class="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 rounded transition-all flex items-center justify-center">
+                                        <i class="fa fa-search-plus text-white opacity-0 group-hover:opacity-100 transition-opacity"></i>
+                                    </div>
+                                    <div class="text-xs text-gray-600 dark:text-gray-400 mt-1 truncate w-24" :title="attachment.file_name">
+                                        {{ attachment.file_name }}
+                                    </div>
+                                </div>
+                                <!-- PDF/DOC attachments - direct download -->
+                                <a v-else
+                                   :href="`/po-ops/attachments/${attachment.id}/download`" 
+                                   @click="handleFileDownload($event, attachment.file_name)"
+                                   class="inline-flex items-center px-3 py-2 bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300 rounded text-sm hover:bg-purple-200 dark:hover:bg-purple-800 transition">
+                                    <i :class="getFileIcon(attachment.file_name) + ' mr-2'"></i>
+                                    {{ attachment.file_name }}
+                                </a>
+                            </div>
                         </div>
                     </div>
 
@@ -357,14 +395,33 @@
                             PR Attachments ({{ selectedPayment.pr_attachments.length }})
                         </h4>
                         <div class="flex flex-wrap gap-2">
-                            <a v-for="attachment in selectedPayment.pr_attachments" 
-                               :key="'pr-attachment-' + attachment.id"
-                               :href="`/purchase-requisitions/attachments/${attachment.id}/download`" 
-                               target="_blank"
-                               class="inline-flex items-center px-3 py-2 bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300 rounded text-sm hover:bg-purple-200 dark:hover:bg-purple-800 transition">
-                                <i class="fa fa-file mr-2"></i>
-                                {{ attachment.file_name }}
-                            </a>
+                            <!-- Image attachments with thumbnail -->
+                            <div v-for="attachment in selectedPayment.pr_attachments" 
+                                 :key="'pr-attachment-' + attachment.id"
+                                 class="relative">
+                                <div v-if="isImageFile(attachment.file_name)" 
+                                     @click="openLightbox(`/purchase-requisitions/attachments/${attachment.id}/download`, attachment.file_name)"
+                                     class="cursor-pointer group">
+                                    <img :src="`/purchase-requisitions/attachments/${attachment.id}/download`" 
+                                         :alt="attachment.file_name"
+                                         class="w-24 h-24 object-cover rounded border-2 border-purple-200 dark:border-purple-700 hover:border-purple-400 dark:hover:border-purple-500 transition-all hover:scale-105 shadow-md"
+                                         @error="handleImageError($event)" />
+                                    <div class="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 rounded transition-all flex items-center justify-center">
+                                        <i class="fa fa-search-plus text-white opacity-0 group-hover:opacity-100 transition-opacity"></i>
+                                    </div>
+                                    <div class="text-xs text-gray-600 dark:text-gray-400 mt-1 truncate w-24" :title="attachment.file_name">
+                                        {{ attachment.file_name }}
+                                    </div>
+                                </div>
+                                <!-- PDF/DOC attachments - direct download -->
+                                <a v-else
+                                   :href="`/purchase-requisitions/attachments/${attachment.id}/download`" 
+                                   @click="handleFileDownload($event, attachment.file_name)"
+                                   class="inline-flex items-center px-3 py-2 bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300 rounded text-sm hover:bg-purple-200 dark:hover:bg-purple-800 transition">
+                                    <i :class="getFileIcon(attachment.file_name) + ' mr-2'"></i>
+                                    {{ attachment.file_name }}
+                                </a>
+                            </div>
                         </div>
                     </div>
 
@@ -379,6 +436,24 @@
                             <i class="fa fa-check mr-2"></i>Setujui
                         </button>
                     </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Lightbox Modal for Images -->
+        <div v-if="lightboxImage" 
+             class="fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-[10000]" 
+             @click="closeLightbox">
+            <div class="relative max-w-7xl max-h-[95vh] p-4" @click.stop>
+                <button @click="closeLightbox" 
+                        class="absolute top-2 right-2 text-white hover:text-gray-300 text-3xl font-bold z-10 bg-black bg-opacity-50 rounded-full w-10 h-10 flex items-center justify-center">
+                    <i class="fa fa-times"></i>
+                </button>
+                <img :src="lightboxImage" 
+                     :alt="lightboxImageName"
+                     class="max-w-full max-h-[90vh] object-contain rounded-lg shadow-2xl" />
+                <div class="text-center mt-4 text-white">
+                    <p class="text-sm">{{ lightboxImageName }}</p>
                 </div>
             </div>
         </div>
@@ -647,6 +722,47 @@ const showAllModal = ref(false);
 const allApprovals = ref([]);
 const loadingAll = ref(false);
 const searchQuery = ref('');
+
+// Lightbox state
+const lightboxImage = ref(null);
+const lightboxImageName = ref('');
+
+// Helper functions for file handling
+function isImageFile(fileName) {
+    if (!fileName) return false;
+    const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.svg'];
+    const lowerFileName = fileName.toLowerCase();
+    return imageExtensions.some(ext => lowerFileName.endsWith(ext));
+}
+
+function getFileIcon(fileName) {
+    if (!fileName) return 'fa fa-file';
+    const lowerFileName = fileName.toLowerCase();
+    if (lowerFileName.endsWith('.pdf')) return 'fa fa-file-pdf';
+    if (lowerFileName.endsWith('.doc') || lowerFileName.endsWith('.docx')) return 'fa fa-file-word';
+    if (lowerFileName.endsWith('.xls') || lowerFileName.endsWith('.xlsx')) return 'fa fa-file-excel';
+    return 'fa fa-file';
+}
+
+function openLightbox(imageUrl, fileName) {
+    lightboxImage.value = imageUrl;
+    lightboxImageName.value = fileName;
+}
+
+function closeLightbox() {
+    lightboxImage.value = null;
+    lightboxImageName.value = '';
+}
+
+function handleFileDownload(event, fileName) {
+    // Let the browser handle the download naturally
+    // The href will trigger the download
+}
+
+function handleImageError(event) {
+    // If image fails to load, show a placeholder
+    event.target.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="100" height="100"%3E%3Crect fill="%23ddd" width="100" height="100"/%3E%3Ctext fill="%23999" font-family="sans-serif" font-size="12" x="50%25" y="50%25" text-anchor="middle" dy=".3em"%3EImage%3C/text%3E%3C/svg%3E';
+}
 const statusFilter = ref('');
 const dateFilter = ref('');
 const sortBy = ref('newest');

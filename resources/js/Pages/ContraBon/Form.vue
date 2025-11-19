@@ -1029,7 +1029,7 @@ function toggleAllItems(event) {
                        {{ formatCurrency(item.po_item_total) }}
                      </span>
                      <span v-else>
-                       {{ formatCurrency(item.quantity * (item.price || 0)) }}
+                     {{ formatCurrency(item.quantity * (item.price || 0)) }}
                      </span>
                    </td>
                    <td class="px-3 py-2 min-w-[120px]">

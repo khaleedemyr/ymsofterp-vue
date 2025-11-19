@@ -784,10 +784,10 @@ onMounted(() => {
               <span class="font-medium text-blue-600">{{ new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format((subtotalAfterDiscountTotal * 0.11)) }}</span>
             </div>
             <div class="flex justify-between border-t pt-2">
-              <span class="text-lg font-semibold">Grand Total:</span>
+            <span class="text-lg font-semibold">Grand Total:</span>
               <span class="text-xl font-bold text-green-600">
-                {{ new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(grandTotal) }}
-              </span>
+              {{ new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(grandTotal) }}
+            </span>
             </div>
           </div>
         </div>

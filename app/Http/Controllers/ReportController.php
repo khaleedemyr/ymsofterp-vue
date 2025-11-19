@@ -921,12 +921,15 @@ class ReportController extends Controller
         $report = $mergedReport->sortByDesc('is_outlet')->sortBy('customer')->values();
 
         // Query untuk retail warehouse sales dengan filter yang benar
+        // Gunakan warehouse dari item (warehouse_division), bukan dari rws.warehouse_id
         $retailQuery = DB::table('retail_warehouse_sales as rws')
             ->join('retail_warehouse_sale_items as rwsi', 'rws.id', '=', 'rwsi.retail_warehouse_sale_id')
             ->join('customers as c', 'rws.customer_id', '=', 'c.id')
             ->join('items as it', 'rwsi.item_id', '=', 'it.id')
             ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
-            ->join('warehouses as w', 'rws.warehouse_id', '=', 'w.id')
+            ->leftJoin('warehouse_division as wd', 'it.warehouse_division_id', '=', 'wd.id')
+            ->leftJoin('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
+            ->whereNotNull('w.name') // Filter only items with valid warehouse (to ensure proper categorization)
             ->select(
                 'c.name as customer',
                 DB::raw("SUM(CASE WHEN w.name IN ('MK1 Hot Kitchen', 'MK2 Cold Kitchen') THEN rwsi.subtotal ELSE 0 END) as main_kitchen"),
@@ -1163,12 +1166,15 @@ class ReportController extends Controller
             $report = $mergedReport->sortByDesc('is_outlet')->sortBy('customer')->values();
 
             // Query untuk retail warehouse sales dengan filter yang benar
+            // Gunakan warehouse dari item (warehouse_division), bukan dari rws.warehouse_id
             $retailQuery = DB::table('retail_warehouse_sales as rws')
                 ->join('retail_warehouse_sale_items as rwsi', 'rws.id', '=', 'rwsi.retail_warehouse_sale_id')
                 ->join('customers as c', 'rws.customer_id', '=', 'c.id')
                 ->join('items as it', 'rwsi.item_id', '=', 'it.id')
                 ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
-                ->join('warehouses as w', 'rws.warehouse_id', '=', 'w.id')
+                ->leftJoin('warehouse_division as wd', 'it.warehouse_division_id', '=', 'wd.id')
+                ->leftJoin('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
+                ->whereNotNull('w.name') // Filter only items with valid warehouse (to ensure proper categorization)
                 ->select(
                     'c.name as customer',
                     DB::raw("SUM(CASE WHEN w.name IN ('MK1 Hot Kitchen', 'MK2 Cold Kitchen') THEN rwsi.subtotal ELSE 0 END) as main_kitchen"),

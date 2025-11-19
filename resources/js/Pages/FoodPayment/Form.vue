@@ -183,7 +183,7 @@ function formatCurrency(value) {
 
 async function onSupplierChange() {
   if (!isEditMode.value) {
-    form.value.selected_contra_bon_ids = [];
+  form.value.selected_contra_bon_ids = [];
   }
   contraBons.value = [];
   if (!selectedSupplierId.value) return;
