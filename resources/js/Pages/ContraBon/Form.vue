@@ -12,27 +12,22 @@ const props = defineProps({
 const isEdit = computed(() => !!props.contraBon);
 
 const poWithGRList = ref([]);
-const selectedPOGR = ref(null);
 const loadingPOGR = ref(false);
-const selectedPOGRKey = ref('');
 const supplierDetail = ref(null);
 const fileImage = ref(null);
 const fileImagePreview = ref(null);
 
 // Retail Food variables
 const retailFoodList = ref([]);
-const selectedRetailFood = ref(null);
-const selectedRetailFoodKey = ref('');
 
 // Warehouse Retail Food variables
 const warehouseRetailFoodList = ref([]);
-const selectedWarehouseRetailFood = ref(null);
-const selectedWarehouseRetailFoodKey = ref('');
 
 // Loading state untuk initial load
-const initialLoading = ref(true);
+const initialLoading = ref(false);
 
-const sourceType = ref('purchase_order'); // 'purchase_order', 'retail_food', or 'warehouse_retail_food'
+// Multiple sources support - array untuk menyimpan semua sources yang sudah dipilih
+const selectedSources = ref([]); // Array of { type, id, display, data }
 
 // Modal search functionality
 const showPOListModal = ref(false);
@@ -47,12 +42,8 @@ const filteredWarehouseRetailFoodList = ref([]);
 
 const form = useForm({
   date: props.contraBon?.date ? props.contraBon.date.substring(0, 10) : '',
-  po_id: props.contraBon?.po_id || '',
-  gr_id: props.contraBon?.gr_id || '',
   notes: props.contraBon?.notes || '',
   supplier_invoice_number: props.contraBon?.supplier_invoice_number || '',
-  source_type: props.contraBon?.source_type || 'purchase_order',
-  source_id: props.contraBon?.source_id || '',
   items: props.contraBon?.items?.map(i => ({
     gr_item_id: i.gr_item_id,
     item_id: i.item_id,
@@ -65,6 +56,12 @@ const form = useForm({
     notes: i.notes || '',
     item: i.item,
     unit: i.unit,
+    // Source info untuk multiple sources
+    source_type: props.contraBon?.source_type || 'purchase_order',
+    source_id: props.contraBon?.source_id || '',
+    source_display: props.contraBon?.source_type_display || '',
+    po_id: props.contraBon?.po_id || null,
+    gr_id: props.contraBon?.gr_id || null,
     selected: true, // Default selected untuk edit mode
     _rowKey: Date.now() + '-' + Math.random(),
   })) || [],
@@ -80,46 +77,57 @@ onMounted(async () => {
     const dd = String(today.getDate()).padStart(2, '0');
     form.date = `${yyyy}-${mm}-${dd}`;
     
-    // Load semua data secara parallel untuk mempercepat loading
-    initialLoading.value = true;
-    
-    try {
-      // Load semua data secara bersamaan (parallel)
-      const [poRes, retailFoodRes, warehouseRetailFoodRes] = await Promise.all([
-        axios.get('/api/contra-bon/po-with-approved-gr').catch(e => {
-          console.error('Error loading PO/GR:', e);
-          return { data: [] };
-        }),
-        axios.get('/api/contra-bon/retail-food-contra-bon').catch(e => {
-          console.error('Error loading retail food:', e);
-          return { data: [] };
-        }),
-        axios.get('/api/contra-bon/warehouse-retail-food-contra-bon').catch(e => {
-          console.error('Error loading warehouse retail food:', e);
-          return { data: [] };
-        })
-      ]);
-      
-      poWithGRList.value = poRes.data || [];
-      retailFoodList.value = retailFoodRes.data || [];
-      warehouseRetailFoodList.value = warehouseRetailFoodRes.data || [];
-      
-      // Initialize filtered lists
-      filteredPOList.value = poWithGRList.value;
-      filteredRetailFoodList.value = retailFoodList.value;
-      filteredWarehouseRetailFoodList.value = warehouseRetailFoodList.value;
-      
-    } catch (e) {
-      console.error('Error loading data:', e);
-      Swal.fire('Error', 'Gagal mengambil data', 'error');
-    } finally {
-      initialLoading.value = false;
-    }
+    // Tidak load data di sini - akan di-load saat diperlukan (lazy loading)
+    initialLoading.value = false;
   } else {
     // Mode edit: set preview image jika ada
     if (props.contraBon?.image_path) {
       fileImagePreview.value = `/storage/${props.contraBon.image_path}`;
     }
+    
+    // Initialize selectedSources for edit mode
+    if (props.contraBon) {
+      if (props.contraBon.source_type === 'purchase_order' && props.contraBon.po_id && props.contraBon.gr_id) {
+        selectedSources.value.push({
+          key: `po-${props.contraBon.po_id}-${props.contraBon.gr_id}`,
+          type: 'purchase_order',
+          po_id: props.contraBon.po_id,
+          gr_id: props.contraBon.gr_id,
+          display: props.contraBon.purchase_order?.number ? `${props.contraBon.purchase_order.number} - GR` : 'PO/GR',
+          supplier_id: props.contraBon.supplier_id,
+          supplier_name: props.contraBon.supplier?.name || '',
+          data: null
+        });
+      } else if (props.contraBon.source_type === 'retail_food' && props.contraBon.source_id) {
+        selectedSources.value.push({
+          key: `rf-${props.contraBon.source_id}`,
+          type: 'retail_food',
+          source_id: props.contraBon.source_id,
+          display: props.contraBon.retailFood?.retail_number || 'Retail Food',
+          supplier_id: props.contraBon.supplier_id,
+          supplier_name: props.contraBon.supplier?.name || '',
+          data: null
+        });
+      } else if (props.contraBon.source_type === 'warehouse_retail_food' && props.contraBon.source_id) {
+        selectedSources.value.push({
+          key: `rwf-${props.contraBon.source_id}`,
+          type: 'warehouse_retail_food',
+          source_id: props.contraBon.source_id,
+          display: props.contraBon.warehouseRetailFood?.retail_number || 'Warehouse Retail Food',
+          supplier_id: props.contraBon.supplier_id,
+          supplier_name: props.contraBon.supplier?.name || '',
+          data: null
+        });
+      }
+      
+      // Load supplier detail
+      if (props.contraBon.supplier_id) {
+        axios.get(`/api/suppliers/${props.contraBon.supplier_id}`)
+          .then(res => supplierDetail.value = res.data)
+          .catch(() => supplierDetail.value = null);
+      }
+    }
+    
     initialLoading.value = false;
   }
 });
@@ -171,22 +179,76 @@ function filterWarehouseRetailFoodList() {
 }
 
 // Modal functions
-function openPOListModal() {
+async function openPOListModal() {
   showPOListModal.value = true;
   poSearchQuery.value = '';
-  filteredPOList.value = poWithGRList.value;
+  
+  // Lazy load: hanya load data jika belum pernah di-load
+  if (poWithGRList.value.length === 0) {
+    loadingPOGR.value = true;
+    try {
+      const response = await axios.get('/api/contra-bon/po-with-approved-gr');
+      poWithGRList.value = response.data || [];
+      filteredPOList.value = poWithGRList.value;
+    } catch (e) {
+      console.error('Error loading PO/GR:', e);
+      Swal.fire('Error', 'Gagal mengambil data PO/GR', 'error');
+      poWithGRList.value = [];
+      filteredPOList.value = [];
+    } finally {
+      loadingPOGR.value = false;
+    }
+  } else {
+    filteredPOList.value = poWithGRList.value;
+  }
 }
 
-function openRetailFoodModal() {
+async function openRetailFoodModal() {
   showRetailFoodModal.value = true;
   retailFoodSearchQuery.value = '';
-  filteredRetailFoodList.value = retailFoodList.value;
+  
+  // Lazy load: hanya load data jika belum pernah di-load
+  if (retailFoodList.value.length === 0) {
+    loadingPOGR.value = true;
+    try {
+      const response = await axios.get('/api/contra-bon/retail-food-contra-bon');
+      retailFoodList.value = response.data || [];
+      filteredRetailFoodList.value = retailFoodList.value;
+    } catch (e) {
+      console.error('Error loading retail food:', e);
+      Swal.fire('Error', 'Gagal mengambil data Retail Food', 'error');
+      retailFoodList.value = [];
+      filteredRetailFoodList.value = [];
+    } finally {
+      loadingPOGR.value = false;
+    }
+  } else {
+    filteredRetailFoodList.value = retailFoodList.value;
+  }
 }
 
-function openWarehouseRetailFoodModal() {
+async function openWarehouseRetailFoodModal() {
   showWarehouseRetailFoodModal.value = true;
   warehouseRetailFoodSearchQuery.value = '';
-  filteredWarehouseRetailFoodList.value = warehouseRetailFoodList.value;
+  
+  // Lazy load: hanya load data jika belum pernah di-load
+  if (warehouseRetailFoodList.value.length === 0) {
+    loadingPOGR.value = true;
+    try {
+      const response = await axios.get('/api/contra-bon/warehouse-retail-food-contra-bon');
+      warehouseRetailFoodList.value = response.data || [];
+      filteredWarehouseRetailFoodList.value = warehouseRetailFoodList.value;
+    } catch (e) {
+      console.error('Error loading warehouse retail food:', e);
+      Swal.fire('Error', 'Gagal mengambil data Warehouse Retail Food', 'error');
+      warehouseRetailFoodList.value = [];
+      filteredWarehouseRetailFoodList.value = [];
+    } finally {
+      loadingPOGR.value = false;
+    }
+  } else {
+    filteredWarehouseRetailFoodList.value = warehouseRetailFoodList.value;
+  }
 }
 
 function closePOListModal() {
@@ -205,13 +267,34 @@ function closeWarehouseRetailFoodModal() {
 }
 
 function selectPOFromModal(po) {
-  selectedPOGR.value = po;
-  selectedPOGRKey.value = `${po.po_id}-${po.gr_id}`;
-  form.po_id = po.po_id;
-  form.gr_id = po.gr_id;
+  // Check if this source already exists
+  const existingSource = selectedSources.value.find(s => 
+    s.type === 'purchase_order' && s.po_id === po.po_id && s.gr_id === po.gr_id
+  );
   
-  if (po.items) {
-    form.items = po.items.map(item => ({
+  if (existingSource) {
+    Swal.fire('Info', 'Source ini sudah ditambahkan', 'info');
+    closePOListModal();
+    return;
+  }
+  
+  // Add source to selectedSources
+  const sourceKey = `po-${po.po_id}-${po.gr_id}`;
+  const sourceData = {
+    key: sourceKey,
+    type: 'purchase_order',
+    po_id: po.po_id,
+    gr_id: po.gr_id,
+    display: `${po.po_number} - ${po.gr_number} - ${po.supplier_name}`,
+    supplier_id: po.supplier_id,
+    supplier_name: po.supplier_name,
+    data: po
+  };
+  selectedSources.value.push(sourceData);
+  
+  // Add items from this source to form.items
+  if (po.items && po.items.length > 0) {
+    const newItems = po.items.map(item => ({
       gr_item_id: item.id,
       item_id: item.item_id,
       po_item_id: item.po_item_id,
@@ -223,30 +306,60 @@ function selectPOFromModal(po) {
       po_item_total: item.po_item_total || (item.po_price * item.qty_received),
       notes: '',
       selected: false, // Default tidak dicentang
-      _rowKey: Date.now() + '-' + Math.random(),
+      // Source info
+      source_type: 'purchase_order',
+      source_id: `${po.po_id}-${po.gr_id}`,
+      source_display: `${po.po_number} - ${po.gr_number}`,
+      po_id: po.po_id,
+      gr_id: po.gr_id,
+      _rowKey: Date.now() + '-' + Math.random() + '-po',
     }));
-  } else {
-    form.items = [];
+    form.items.push(...newItems);
   }
   
-  // Fetch supplier detail
+  // Update supplier detail (use first supplier or merge if multiple)
   if (po.supplier_id) {
-    axios.get(`/api/suppliers/${po.supplier_id}`)
-      .then(res => supplierDetail.value = res.data)
-      .catch(() => supplierDetail.value = null);
-  } else {
-    supplierDetail.value = null;
+    if (!supplierDetail.value) {
+      axios.get(`/api/suppliers/${po.supplier_id}`)
+        .then(res => supplierDetail.value = res.data)
+        .catch(() => supplierDetail.value = null);
+    } else if (supplierDetail.value.id !== po.supplier_id) {
+      // Multiple suppliers - show info
+      Swal.fire('Info', 'Contra Bon ini memiliki beberapa supplier. Supplier detail akan menampilkan supplier pertama.', 'info');
+    }
   }
   
   closePOListModal();
 }
 
 function selectRetailFoodFromModal(rf) {
-  selectedRetailFood.value = rf;
-  selectedRetailFoodKey.value = rf.retail_food_id;
+  // Check if this source already exists
+  const existingSource = selectedSources.value.find(s => 
+    s.type === 'retail_food' && s.source_id === rf.retail_food_id
+  );
   
-  if (rf.items) {
-    form.items = rf.items.map(item => ({
+  if (existingSource) {
+    Swal.fire('Info', 'Source ini sudah ditambahkan', 'info');
+    closeRetailFoodModal();
+    return;
+  }
+  
+  // Add source to selectedSources
+  const sourceKey = `rf-${rf.retail_food_id}`;
+  const sourceData = {
+    key: sourceKey,
+    type: 'retail_food',
+    source_id: rf.retail_food_id,
+    display: `${rf.retail_number} - ${rf.supplier_name}`,
+    supplier_id: rf.supplier_id,
+    supplier_name: rf.supplier_name,
+    data: rf
+  };
+  selectedSources.value.push(sourceData);
+  
+  // Add items from this source to form.items
+  if (rf.items && rf.items.length > 0) {
+    const newItems = rf.items.map(item => ({
       gr_item_id: null,
       item_id: null,
       po_item_id: null,
@@ -258,30 +371,59 @@ function selectRetailFoodFromModal(rf) {
       unit_name: item.unit_name,
       retail_food_item_id: item.id, // Simpan ID item dari retail food
       selected: false, // Default tidak dicentang
-      _rowKey: Date.now() + '-' + Math.random(),
+      // Source info
+      source_type: 'retail_food',
+      source_id: rf.retail_food_id,
+      source_display: rf.retail_number,
+      po_id: null,
+      gr_id: null,
+      _rowKey: Date.now() + '-' + Math.random() + '-rf',
     }));
-  } else {
-    form.items = [];
+    form.items.push(...newItems);
   }
   
-  // Fetch supplier detail
+  // Update supplier detail
   if (rf.supplier_id) {
-    axios.get(`/api/suppliers/${rf.supplier_id}`)
-      .then(res => supplierDetail.value = res.data)
-      .catch(() => supplierDetail.value = null);
-  } else {
-    supplierDetail.value = null;
+    if (!supplierDetail.value) {
+      axios.get(`/api/suppliers/${rf.supplier_id}`)
+        .then(res => supplierDetail.value = res.data)
+        .catch(() => supplierDetail.value = null);
+    } else if (supplierDetail.value.id !== rf.supplier_id) {
+      Swal.fire('Info', 'Contra Bon ini memiliki beberapa supplier. Supplier detail akan menampilkan supplier pertama.', 'info');
+    }
   }
   
   closeRetailFoodModal();
 }
 
 function selectWarehouseRetailFoodFromModal(rwf) {
-  selectedWarehouseRetailFood.value = rwf;
-  selectedWarehouseRetailFoodKey.value = rwf.retail_warehouse_food_id;
+  // Check if this source already exists
+  const existingSource = selectedSources.value.find(s => 
+    s.type === 'warehouse_retail_food' && s.source_id === rwf.retail_warehouse_food_id
+  );
   
-  if (rwf.items) {
-    form.items = rwf.items.map(item => ({
+  if (existingSource) {
+    Swal.fire('Info', 'Source ini sudah ditambahkan', 'info');
+    closeWarehouseRetailFoodModal();
+    return;
+  }
+  
+  // Add source to selectedSources
+  const sourceKey = `rwf-${rwf.retail_warehouse_food_id}`;
+  const sourceData = {
+    key: sourceKey,
+    type: 'warehouse_retail_food',
+    source_id: rwf.retail_warehouse_food_id,
+    display: `${rwf.retail_number} - ${rwf.supplier_name}`,
+    supplier_id: rwf.supplier_id,
+    supplier_name: rwf.supplier_name,
+    data: rwf
+  };
+  selectedSources.value.push(sourceData);
+  
+  // Add items from this source to form.items
+  if (rwf.items && rwf.items.length > 0) {
+    const newItems = rwf.items.map(item => ({
       gr_item_id: null,
       item_id: null,
       po_item_id: null,
@@ -293,145 +435,55 @@ function selectWarehouseRetailFoodFromModal(rwf) {
       unit_name: item.unit_name,
       warehouse_retail_food_item_id: item.id, // Simpan ID item dari warehouse retail food
       selected: false, // Default tidak dicentang
-      _rowKey: Date.now() + '-' + Math.random(),
+      // Source info
+      source_type: 'warehouse_retail_food',
+      source_id: rwf.retail_warehouse_food_id,
+      source_display: rwf.retail_number,
+      po_id: null,
+      gr_id: null,
+      _rowKey: Date.now() + '-' + Math.random() + '-rwf',
     }));
-  } else {
-    form.items = [];
+    form.items.push(...newItems);
   }
   
-  // Fetch supplier detail
+  // Update supplier detail
   if (rwf.supplier_id) {
-    axios.get(`/api/suppliers/${rwf.supplier_id}`)
-      .then(res => supplierDetail.value = res.data)
-      .catch(() => supplierDetail.value = null);
-  } else {
-    supplierDetail.value = null;
+    if (!supplierDetail.value) {
+      axios.get(`/api/suppliers/${rwf.supplier_id}`)
+        .then(res => supplierDetail.value = res.data)
+        .catch(() => supplierDetail.value = null);
+    } else if (supplierDetail.value.id !== rwf.supplier_id) {
+      Swal.fire('Info', 'Contra Bon ini memiliki beberapa supplier. Supplier detail akan menampilkan supplier pertama.', 'info');
+    }
   }
   
   closeWarehouseRetailFoodModal();
 }
 
-async function onPOGRChange() {
-  if (!selectedPOGRKey.value) {
-    selectedPOGR.value = null;
-    form.po_id = '';
-    form.gr_id = '';
-    form.items = [];
-    supplierDetail.value = null;
-    fileImage.value = null;
-    fileImagePreview.value = null;
-    poSearchQuery.value = '';
-    return;
-  }
-  const sepIdx = selectedPOGRKey.value.lastIndexOf('-');
-  const poId = selectedPOGRKey.value.substring(0, sepIdx);
-  const grId = selectedPOGRKey.value.substring(sepIdx + 1);
-  form.po_id = poId;
-  form.gr_id = grId;
-  const pogr = poWithGRList.value.find(p => String(p.po_id) === poId && String(p.gr_id) === grId);
-  selectedPOGR.value = pogr;
-  if (pogr) {
-    poSearchQuery.value = `${pogr.po_number} - ${pogr.gr_number} - ${pogr.supplier_name}`;
-    form.items = pogr.items.map(item => ({
-      gr_item_id: item.id,
-      item_id: item.item_id,
-      po_item_id: item.po_item_id,
-      unit_id: item.unit_id,
-      quantity: item.qty_received,
-      price: item.po_price,
-      notes: '',
-      selected: false, // Default tidak dicentang
-      _rowKey: Date.now() + '-' + Math.random(),
-    }));
-    // Fetch supplier detail
-    if (pogr.supplier_id) {
-      try {
-        const res = await axios.get(`/api/suppliers/${pogr.supplier_id}`);
-        supplierDetail.value = res.data;
-      } catch (e) {
-        supplierDetail.value = null;
-      }
-    } else {
-      supplierDetail.value = null;
+// Function to remove a source and its items
+function removeSource(sourceKey) {
+  // Remove items from this source
+  form.items = form.items.filter(item => {
+    if (item.source_type === 'purchase_order') {
+      const itemSourceKey = `po-${item.po_id}-${item.gr_id}`;
+      return itemSourceKey !== sourceKey;
+    } else if (item.source_type === 'retail_food') {
+      const itemSourceKey = `rf-${item.source_id}`;
+      return itemSourceKey !== sourceKey;
+    } else if (item.source_type === 'warehouse_retail_food') {
+      const itemSourceKey = `rwf-${item.source_id}`;
+      return itemSourceKey !== sourceKey;
     }
-  } else {
-    form.items = [];
-    supplierDetail.value = null;
-  }
-}
-
-
-async function onRetailFoodChange() {
-  if (!selectedRetailFoodKey.value) {
-    selectedRetailFood.value = null;
-    form.po_id = '';
-    form.gr_id = '';
-    form.items = [];
-    supplierDetail.value = null;
-    fileImage.value = null;
-    fileImagePreview.value = null;
-    return;
-  }
+    return true;
+  });
   
-  // Data sudah dimuat di onMounted, tidak perlu loading spinner
-  try {
-    const retailFood = retailFoodList.value.find(rf => 
-      rf.retail_food_id == selectedRetailFoodKey.value
-    );
-    
-    selectedRetailFood.value = retailFood;
-    
-    if (retailFood) {
-      form.items = retailFood.items.map(item => ({
-        gr_item_id: null,
-        item_id: null, // Tidak ada item_id karena menggunakan item_name
-        po_item_id: null,
-        unit_id: null, // Tidak ada unit_id karena menggunakan unit string
-        quantity: item.qty,
-        price: item.price,
-        notes: '',
-        item_name: item.item_name,
-        unit_name: item.unit_name,
-        retail_food_item_id: item.id, // Simpan ID item dari retail food
-        selected: false, // Default tidak dicentang
-        _rowKey: Date.now() + '-' + Math.random(),
-      }));
-    
-      // Fetch supplier detail
-      if (retailFood.supplier_id) {
-        try {
-          const res = await axios.get(`/api/suppliers/${retailFood.supplier_id}`);
-          supplierDetail.value = res.data;
-        } catch (e) {
-          supplierDetail.value = null;
-        }
-      } else {
-        supplierDetail.value = null;
-      }
-    } else {
-      form.items = [];
-      supplierDetail.value = null;
-    }
-  } catch (error) {
-    console.error('Error in onRetailFoodChange:', error);
-    Swal.fire('Error', 'Gagal memuat data retail food', 'error');
+  // Remove source from selectedSources
+  selectedSources.value = selectedSources.value.filter(s => s.key !== sourceKey);
+  
+  // Update supplier detail if needed
+  if (selectedSources.value.length === 0) {
+    supplierDetail.value = null;
   }
-}
-
-function onSourceTypeChange() {
-  // Reset selections when switching source type
-  selectedPOGRKey.value = '';
-  selectedRetailFoodKey.value = '';
-  selectedWarehouseRetailFoodKey.value = '';
-  selectedPOGR.value = null;
-  selectedRetailFood.value = null;
-  selectedWarehouseRetailFood.value = null;
-  form.po_id = '';
-  form.gr_id = '';
-  form.items = [];
-  supplierDetail.value = null;
-  fileImage.value = null;
-  fileImagePreview.value = null;
 }
 
 function onFileChange(e) {
@@ -469,7 +521,7 @@ function calculateItemTotal(item) {
   const subtotal = quantity * price;
   
   // Apply discount if available (for purchase_order source type)
-  if (sourceType.value === 'purchase_order') {
+  if (item.source_type === 'purchase_order') {
     const discountPercent = Number(item.discount_percent) || 0;
     const discountAmount = Number(item.discount_amount) || 0;
     
@@ -479,11 +531,18 @@ function calculateItemTotal(item) {
       discount = subtotal * (discountPercent / 100);
     } else if (discountAmount > 0) {
       // Discount amount is proportional to quantity ratio
-      // Get original PO item quantity for ratio calculation
-      const poItem = selectedPOGR?.items?.find(i => i.item_id === item.item_id || i.id === item.gr_item_id);
-      if (poItem && poItem.qty_received > 0) {
-        const quantityRatio = quantity / poItem.qty_received;
-        discount = discountAmount * quantityRatio;
+      // Find the source data to get original PO item quantity
+      const source = selectedSources.value.find(s => 
+        s.type === 'purchase_order' && s.po_id === item.po_id && s.gr_id === item.gr_id
+      );
+      if (source && source.data && source.data.items) {
+        const poItem = source.data.items.find(i => i.id === item.gr_item_id || i.item_id === item.item_id);
+        if (poItem && poItem.qty_received > 0) {
+          const quantityRatio = quantity / poItem.qty_received;
+          discount = discountAmount * quantityRatio;
+        } else {
+          discount = discountAmount;
+        }
       } else {
         discount = discountAmount;
       }
@@ -531,19 +590,38 @@ async function onSubmit() {
   if (fileImage.value) {
     const fd = new FormData();
     fd.append('date', form.date);
-    fd.append('po_id', form.po_id);
-    fd.append('gr_id', form.gr_id);
+    
+    // For multiple sources, use first selected item's source info as primary (for backward compatibility)
+    // Or use first source from selectedSources
+    const firstSource = selectedSources.value.length > 0 ? selectedSources.value[0] : null;
+    if (firstSource) {
+      if (firstSource.type === 'purchase_order') {
+        fd.append('po_id', firstSource.po_id);
+        fd.append('gr_id', firstSource.gr_id);
+        fd.append('source_type', 'purchase_order');
+        fd.append('source_id', `${firstSource.po_id}-${firstSource.gr_id}`);
+      } else if (firstSource.type === 'retail_food') {
+        fd.append('po_id', '');
+        fd.append('gr_id', '');
+        fd.append('source_type', 'retail_food');
+        fd.append('source_id', firstSource.source_id);
+      } else if (firstSource.type === 'warehouse_retail_food') {
+        fd.append('po_id', '');
+        fd.append('gr_id', '');
+        fd.append('source_type', 'warehouse_retail_food');
+        fd.append('source_id', firstSource.source_id);
+      }
+    } else {
+      // Fallback if no sources
+      fd.append('po_id', '');
+      fd.append('gr_id', '');
+      fd.append('source_type', 'purchase_order');
+      fd.append('source_id', '');
+    }
+    
     fd.append('notes', form.notes);
     fd.append('supplier_invoice_number', form.supplier_invoice_number);
-      fd.append('source_type', sourceType.value);
-      if (sourceType.value === 'retail_food') {
-        fd.append('source_id', selectedRetailFoodKey.value);
-      } else if (sourceType.value === 'warehouse_retail_food') {
-        fd.append('source_id', selectedWarehouseRetailFoodKey.value);
-      } else {
-        fd.append('source_id', '');
-      }
-      fd.append('image', fileImage.value);
+    fd.append('image', fileImage.value);
     // Hanya kirim item yang dicentang
     selectedItems.forEach((item, idx) => {
       Object.keys(item).forEach(key => {
@@ -638,13 +716,30 @@ async function onSubmit() {
     return;
   }
   // Tanpa file, pakai inertia
-  // Set source_type dan source_id ke form
-  form.source_type = sourceType.value;
-  if (sourceType.value === 'retail_food') {
-    form.source_id = selectedRetailFoodKey.value;
-  } else if (sourceType.value === 'warehouse_retail_food') {
-    form.source_id = selectedWarehouseRetailFoodKey.value;
+  // Set source_type dan source_id ke form (use first source for backward compatibility)
+  const firstSource = selectedSources.value.length > 0 ? selectedSources.value[0] : null;
+  if (firstSource) {
+    if (firstSource.type === 'purchase_order') {
+      form.po_id = firstSource.po_id;
+      form.gr_id = firstSource.gr_id;
+      form.source_type = 'purchase_order';
+      form.source_id = `${firstSource.po_id}-${firstSource.gr_id}`;
+    } else if (firstSource.type === 'retail_food') {
+      form.po_id = '';
+      form.gr_id = '';
+      form.source_type = 'retail_food';
+      form.source_id = firstSource.source_id;
+    } else if (firstSource.type === 'warehouse_retail_food') {
+      form.po_id = '';
+      form.gr_id = '';
+      form.source_type = 'warehouse_retail_food';
+      form.source_id = firstSource.source_id;
+    }
   } else {
+    // Fallback
+    form.po_id = '';
+    form.gr_id = '';
+    form.source_type = 'purchase_order';
     form.source_id = '';
   }
   
@@ -741,228 +836,77 @@ function toggleAllItems(event) {
         </h1>
       </div>
       <form @submit.prevent="onSubmit" class="space-y-6">
-        <!-- Source Type Selector -->
+        <!-- Date Input -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700">Tanggal</label>
+            <input type="date" v-model="form.date" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500" />
+            <div v-if="form.errors.date" class="text-xs text-red-500 mt-1">{{ form.errors.date }}</div>
+          </div>
+        </div>
+
+        <!-- Add Source Section -->
         <div class="mb-6">
-          <label class="block text-sm font-medium text-gray-700 mb-2">Sumber Data</label>
-          <div class="flex gap-4">
-            <label class="flex items-center">
-              <input type="radio" v-model="sourceType" value="purchase_order" @change="onSourceTypeChange" class="mr-2">
-              <span>Purchase Order / Good Receive</span>
-            </label>
-            <label class="flex items-center">
-              <input type="radio" v-model="sourceType" value="retail_food" @change="onSourceTypeChange" class="mr-2">
-              <span>Retail Food Outlet (Contra Bon)</span>
-            </label>
-            <label class="flex items-center">
-              <input type="radio" v-model="sourceType" value="warehouse_retail_food" @change="onSourceTypeChange" class="mr-2">
-              <span>Warehouse Retail Food (Contra Bon)</span>
-            </label>
+          <label class="block text-sm font-medium text-gray-700 mb-3">Tambah Sumber Data</label>
+          <div class="flex flex-wrap gap-3">
+            <button 
+              type="button" 
+              @click="openPOListModal"
+              class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 flex items-center gap-2"
+            >
+              <i class="fa fa-plus"></i>
+              <span>Tambah PO/GR</span>
+            </button>
+            <button 
+              type="button" 
+              @click="openRetailFoodModal"
+              class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 focus:ring-2 focus:ring-purple-500 flex items-center gap-2"
+            >
+              <i class="fa fa-plus"></i>
+              <span>Tambah Retail Food</span>
+            </button>
+            <button 
+              type="button" 
+              @click="openWarehouseRetailFoodModal"
+              class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 focus:ring-2 focus:ring-indigo-500 flex items-center gap-2"
+            >
+              <i class="fa fa-plus"></i>
+              <span>Tambah Warehouse Retail Food</span>
+            </button>
           </div>
         </div>
 
-        <!-- Purchase Order Selection -->
-        <div v-if="sourceType === 'purchase_order'" class="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label class="block text-sm font-medium text-gray-700">Purchase Order</label>
-            <div class="flex gap-2">
-              <input 
-                :value="selectedPOGR ? `${selectedPOGR.po_number} - ${selectedPOGR.gr_number} - ${selectedPOGR.supplier_name}` : ''"
-                readonly
-                class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm bg-gray-50"
-                placeholder="Pilih PO - GR - Supplier"
-              />
+        <!-- Selected Sources List -->
+        <div v-if="selectedSources.length > 0" class="mb-6">
+          <label class="block text-sm font-medium text-gray-700 mb-2">Sumber Data yang Dipilih</label>
+          <div class="space-y-2">
+            <div 
+              v-for="source in selectedSources" 
+              :key="source.key"
+              class="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200"
+            >
+              <div class="flex items-center gap-2">
+                <span v-if="source.type === 'purchase_order'" class="text-blue-500">
+                  <i class="fa fa-file-invoice"></i>
+                </span>
+                <span v-else-if="source.type === 'retail_food'" class="text-purple-500">
+                  <i class="fa fa-shopping-cart"></i>
+                </span>
+                <span v-else-if="source.type === 'warehouse_retail_food'" class="text-indigo-500">
+                  <i class="fa fa-warehouse"></i>
+                </span>
+                <span class="font-medium text-gray-700">{{ source.display }}</span>
+              </div>
               <button 
-                type="button" 
-                @click="openPOListModal"
-                class="mt-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:ring-2 focus:ring-blue-500"
+                type="button"
+                @click="removeSource(source.key)"
+                class="text-red-500 hover:text-red-700 px-2 py-1 rounded hover:bg-red-50"
+                title="Hapus source dan semua item-nya"
               >
-                <i class="fa fa-search"></i> Cari
+                <i class="fa fa-times"></i>
               </button>
             </div>
-            <input type="hidden" v-model="form.po_id" />
-            <input type="hidden" v-model="form.gr_id" />
-            <div v-if="form.errors.po_id" class="text-xs text-red-500 mt-1">{{ form.errors.po_id }}</div>
           </div>
-          <div>
-            <label class="block text-sm font-medium text-gray-700">Tanggal</label>
-            <input type="date" v-model="form.date" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500" />
-            <div v-if="form.errors.date" class="text-xs text-red-500 mt-1">{{ form.errors.date }}</div>
-          </div>
-        </div>
-
-        <!-- Retail Food Selection -->
-        <div v-if="sourceType === 'retail_food'" class="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label class="block text-sm font-medium text-gray-700">Retail Food</label>
-            <div class="flex gap-2">
-              <input 
-                :value="selectedRetailFood ? `${selectedRetailFood.retail_number} - ${selectedRetailFood.supplier_name}` : ''"
-                readonly
-                class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm bg-gray-50"
-                placeholder="Pilih Retail Food - Supplier"
-              />
-              <button 
-                type="button" 
-                @click="openRetailFoodModal"
-                class="mt-1 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 focus:ring-2 focus:ring-purple-500"
-              >
-                <i class="fa fa-search"></i> Cari
-              </button>
-            </div>
-            <input type="hidden" v-model="form.po_id" />
-            <input type="hidden" v-model="form.gr_id" />
-            <div v-if="form.errors.po_id" class="text-xs text-red-500 mt-1">{{ form.errors.po_id }}</div>
-          </div>
-          <div>
-            <label class="block text-sm font-medium text-gray-700">Tanggal</label>
-            <input type="date" v-model="form.date" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500" />
-            <div v-if="form.errors.date" class="text-xs text-red-500 mt-1">{{ form.errors.date }}</div>
-          </div>
-        </div>
-
-        <!-- Warehouse Retail Food Selection -->
-        <div v-if="sourceType === 'warehouse_retail_food'" class="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label class="block text-sm font-medium text-gray-700">Warehouse Retail Food</label>
-            <div class="flex gap-2">
-              <input 
-                :value="selectedWarehouseRetailFood ? `${selectedWarehouseRetailFood.retail_number} - ${selectedWarehouseRetailFood.supplier_name}` : ''"
-                readonly
-                class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm bg-gray-50"
-                placeholder="Pilih Warehouse Retail Food - Supplier"
-              />
-              <button 
-                type="button" 
-                @click="openWarehouseRetailFoodModal"
-                class="mt-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 focus:ring-2 focus:ring-indigo-500"
-              >
-                <i class="fa fa-search"></i> Cari
-              </button>
-            </div>
-            <input type="hidden" v-model="form.po_id" />
-            <input type="hidden" v-model="form.gr_id" />
-            <div v-if="form.errors.po_id" class="text-xs text-red-500 mt-1">{{ form.errors.po_id }}</div>
-          </div>
-          <div>
-            <label class="block text-sm font-medium text-gray-700">Tanggal</label>
-            <input type="date" v-model="form.date" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500" />
-            <div v-if="form.errors.date" class="text-xs text-red-500 mt-1">{{ form.errors.date }}</div>
-          </div>
-        </div>
-
-        <!-- Card Info PO & GR (for create mode) -->
-        <div v-if="!isEdit && selectedPOGR" class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-          <div class="bg-blue-50 rounded-lg p-4 shadow">
-            <h3 class="font-bold mb-2">Info PO</h3>
-            <div>No. PO: {{ selectedPOGR.po_number }}</div>
-            <div>Tanggal PO: {{ selectedPOGR.po_date }}</div>
-            <div>Supplier: <b>{{ selectedPOGR.supplier_name }}</b></div>
-            <div>Dibuat oleh: {{ selectedPOGR.po_creator_name }}</div>
-            <div v-if="selectedPOGR.source_type_display">
-              Source Type: 
-              <span :class="{
-                'bg-blue-100 text-blue-700': selectedPOGR.source_type_display === 'PR Foods',
-                'bg-green-100 text-green-700': selectedPOGR.source_type_display === 'RO Supplier'
-              }" class="px-2 py-1 rounded-full text-xs font-semibold">
-                {{ selectedPOGR.source_type_display }}
-              </span>
-            </div>
-            <div v-if="selectedPOGR.outlet_names && selectedPOGR.outlet_names.length > 0">
-              Outlet: 
-              <span v-for="outlet in selectedPOGR.outlet_names" :key="outlet" 
-                    class="bg-orange-100 text-orange-800 text-xs px-2 py-1 rounded-full ml-1">
-                {{ outlet }}
-              </span>
-            </div>
-            <!-- Discount Info -->
-            <div v-if="selectedPOGR.po_discount_info && (selectedPOGR.po_discount_info.discount_total_percent > 0 || selectedPOGR.po_discount_info.discount_total_amount > 0)" class="mt-3 pt-3 border-t border-blue-200">
-              <div class="text-sm font-semibold text-blue-800 mb-1">Informasi Diskon PO:</div>
-              <div v-if="selectedPOGR.po_discount_info.discount_total_percent > 0" class="text-xs">
-                Diskon Total: <span class="font-semibold text-red-600">{{ selectedPOGR.po_discount_info.discount_total_percent }}%</span>
-              </div>
-              <div v-if="selectedPOGR.po_discount_info.discount_total_amount > 0" class="text-xs">
-                Diskon Total: <span class="font-semibold text-red-600">{{ formatCurrency(selectedPOGR.po_discount_info.discount_total_amount) }}</span>
-              </div>
-              <div class="text-xs mt-1">
-                Subtotal PO: <span class="font-semibold">{{ formatCurrency(selectedPOGR.po_discount_info.subtotal) }}</span>
-              </div>
-              <div class="text-xs">
-                Grand Total PO: <span class="font-semibold text-green-600">{{ formatCurrency(selectedPOGR.po_discount_info.grand_total) }}</span>
-              </div>
-            </div>
-          </div>
-          <div class="bg-green-50 rounded-lg p-4 shadow">
-            <h3 class="font-bold mb-2">Info Good Receive</h3>
-            <div>No. GR: {{ selectedPOGR.gr_number }}</div>
-            <div>Tanggal GR: {{ selectedPOGR.gr_date }}</div>
-            <div>Diterima oleh: {{ selectedPOGR.gr_receiver_name }}</div>
-            <div>Supplier: <b>{{ selectedPOGR.supplier_name }}</b></div>
-          </div>
-        </div>
-
-        <!-- Card Info PO & GR (for edit mode) -->
-        <div v-if="isEdit && contraBon && contraBon.purchase_order && contraBon.source_type === 'purchase_order'" class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-          <div class="bg-blue-50 rounded-lg p-4 shadow">
-            <h3 class="font-bold mb-2">Info PO</h3>
-            <div>No. PO: {{ contraBon.purchase_order?.number || '-' }}</div>
-            <div>Tanggal PO: {{ contraBon.purchase_order?.date ? new Date(contraBon.purchase_order.date).toLocaleDateString('id-ID') : '-' }}</div>
-            <div>Supplier: <b>{{ contraBon.supplier?.name || '-' }}</b></div>
-            <div v-if="contraBon.source_type_display">
-              Source Type: 
-              <span :class="{
-                'bg-blue-100 text-blue-700': contraBon.source_type_display === 'PR Foods',
-                'bg-green-100 text-green-700': contraBon.source_type_display === 'RO Supplier'
-              }" class="px-2 py-1 rounded-full text-xs font-semibold">
-                {{ contraBon.source_type_display }}
-              </span>
-            </div>
-            <div v-if="contraBon.po_discount_info && (contraBon.po_discount_info.discount_total_percent > 0 || contraBon.po_discount_info.discount_total_amount > 0)" class="mt-3 pt-3 border-t border-blue-200">
-              <div class="text-sm font-semibold text-blue-800 mb-1">Informasi Diskon PO:</div>
-              <div v-if="contraBon.po_discount_info.discount_total_percent > 0" class="text-xs">
-                Diskon Total: <span class="font-semibold text-red-600">{{ contraBon.po_discount_info.discount_total_percent }}%</span>
-              </div>
-              <div v-if="contraBon.po_discount_info.discount_total_amount > 0" class="text-xs">
-                Diskon Total: <span class="font-semibold text-red-600">{{ formatCurrency(contraBon.po_discount_info.discount_total_amount) }}</span>
-              </div>
-              <div class="text-xs mt-1">
-                Subtotal PO: <span class="font-semibold">{{ formatCurrency(contraBon.po_discount_info.subtotal) }}</span>
-              </div>
-              <div class="text-xs">
-                Grand Total PO: <span class="font-semibold text-green-600">{{ formatCurrency(contraBon.po_discount_info.grand_total) }}</span>
-              </div>
-            </div>
-          </div>
-          <div class="bg-green-50 rounded-lg p-4 shadow">
-            <h3 class="font-bold mb-2">Info Good Receive</h3>
-            <div>No. GR: {{ contraBon.gr_number || '-' }}</div>
-            <div>Tanggal GR: {{ contraBon.gr_date ? new Date(contraBon.gr_date).toLocaleDateString('id-ID') : '-' }}</div>
-          </div>
-        </div>
-
-                 <!-- Card Info Retail Food -->
-         <div v-if="selectedRetailFood" class="bg-purple-50 rounded-lg p-4 shadow mb-4">
-           <h3 class="font-bold mb-2">Info Retail Food</h3>
-           <div>No. Retail Food: {{ selectedRetailFood.retail_number }}</div>
-           <div>Tanggal Transaksi: {{ selectedRetailFood.transaction_date }}</div>
-           <div>Outlet: <b>{{ selectedRetailFood.outlet_name || '-' }}</b></div>
-           <div>Warehouse Outlet: <b>{{ selectedRetailFood.warehouse_outlet_name || '-' }}</b></div>
-           <div>Supplier: <b>{{ selectedRetailFood.supplier_name }}</b></div>
-           <div>Dibuat oleh: {{ selectedRetailFood.creator_name }}</div>
-           <div>Total Amount: <b>{{ formatCurrency(selectedRetailFood.total_amount) }}</b></div>
-           <div v-if="selectedRetailFood.notes">Notes: {{ selectedRetailFood.notes }}</div>
-         </div>
-
-        <!-- Card Info Warehouse Retail Food -->
-        <div v-if="selectedWarehouseRetailFood" class="bg-indigo-50 rounded-lg p-4 shadow mb-4">
-          <h3 class="font-bold mb-2">Info Warehouse Retail Food</h3>
-          <div>No. Warehouse Retail Food: {{ selectedWarehouseRetailFood.retail_number }}</div>
-          <div>Tanggal Transaksi: {{ selectedWarehouseRetailFood.transaction_date }}</div>
-          <div>Warehouse: <b>{{ selectedWarehouseRetailFood.warehouse_name || '-' }}</b></div>
-          <div>Warehouse Division: <b>{{ selectedWarehouseRetailFood.warehouse_division_name || '-' }}</b></div>
-          <div>Supplier: <b>{{ selectedWarehouseRetailFood.supplier_name }}</b></div>
-          <div>Dibuat oleh: {{ selectedWarehouseRetailFood.creator_name }}</div>
-          <div>Total Amount: <b>{{ formatCurrency(selectedWarehouseRetailFood.total_amount) }}</b></div>
-          <div v-if="selectedWarehouseRetailFood.notes">Notes: {{ selectedWarehouseRetailFood.notes }}</div>
         </div>
 
         <!-- Card Info Supplier -->
@@ -1015,18 +959,19 @@ function toggleAllItems(event) {
                        class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                      />
                    </th>
+                   <th class="px-3 py-2 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Source</th>
                    <th class="px-3 py-2 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Item</th>
                    <th class="px-3 py-2 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Qty</th>
                    <th class="px-3 py-2 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Unit</th>
                    <th class="px-3 py-2 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Price</th>
-                   <th v-if="sourceType === 'purchase_order'" class="px-3 py-2 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Diskon</th>
+                   <th class="px-3 py-2 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Diskon</th>
                    <th class="px-3 py-2 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Total</th>
                    <th class="px-3 py-2 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Notes</th>
                  </tr>
                </thead>
                <tbody>
                  <tr v-if="form.items.length === 0" class="text-center text-gray-500">
-                   <td :colspan="sourceType === 'purchase_order' ? 8 : 7" class="px-3 py-4">Tidak ada data item</td>
+                   <td colspan="9" class="px-3 py-4">Tidak ada data item</td>
                  </tr>
                  <tr v-for="(item, idx) in form.items" :key="item._rowKey || idx" :class="{ 'bg-gray-50': !item.selected }">
                    <td class="px-3 py-2 text-center">
@@ -1036,14 +981,29 @@ function toggleAllItems(event) {
                        class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                      />
                    </td>
+                   <td class="px-3 py-2 min-w-[150px] text-xs">
+                     <span v-if="item.source_type === 'purchase_order'" class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                       <i class="fa fa-file-invoice mr-1"></i>
+                       {{ item.source_display || 'PO/GR' }}
+                     </span>
+                     <span v-else-if="item.source_type === 'retail_food'" class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                       <i class="fa fa-shopping-cart mr-1"></i>
+                       {{ item.source_display || 'Retail Food' }}
+                     </span>
+                     <span v-else-if="item.source_type === 'warehouse_retail_food'" class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800">
+                       <i class="fa fa-warehouse mr-1"></i>
+                       {{ item.source_display || 'Warehouse RF' }}
+                     </span>
+                     <span v-else class="text-gray-400">-</span>
+                   </td>
                    <td class="px-3 py-2 min-w-[200px]">
-                     {{ isEdit ? (item.item?.name || '-') : (sourceType === 'retail_food' || sourceType === 'warehouse_retail_food' ? (item.item_name || '-') : (selectedPOGR?.items.find(i => i.item_id === item.item_id)?.item_name || '-')) }}
+                     {{ isEdit ? (item.item?.name || item.item_name || '-') : (item.item_name || (item.item?.name || '-')) }}
                    </td>
                    <td class="px-3 py-2 min-w-[100px]">
                      {{ item.quantity }}
                    </td>
                    <td class="px-3 py-2 min-w-[100px]">
-                     {{ (sourceType === 'retail_food' || sourceType === 'warehouse_retail_food') ? (item.unit_name || '-') : (selectedPOGR?.items.find(i => i.item_id === item.item_id)?.unit_name || item.unit?.name || '-') }}
+                     {{ item.unit_name || (item.unit?.name || '-') }}
                    </td>
                    <td class="px-3 py-2 min-w-[120px]">
                      <input 
@@ -1057,8 +1017,8 @@ function toggleAllItems(event) {
                        placeholder="0.00"
                      />
                    </td>
-                   <td v-if="sourceType === 'purchase_order'" class="px-3 py-2 min-w-[100px] text-xs">
-                     <div v-if="item.discount_percent > 0 || item.discount_amount > 0" class="text-red-600">
+                   <td class="px-3 py-2 min-w-[100px] text-xs">
+                     <div v-if="item.source_type === 'purchase_order' && (item.discount_percent > 0 || item.discount_amount > 0)" class="text-red-600">
                        <div v-if="item.discount_percent > 0">{{ item.discount_percent }}%</div>
                        <div v-if="item.discount_amount > 0">{{ formatCurrency(item.discount_amount) }}</div>
                      </div>
@@ -1074,15 +1034,13 @@ function toggleAllItems(event) {
                </tbody>
                <tfoot class="bg-gray-100">
                  <tr>
-                   <td colspan="1" class="px-3 py-3"></td>
-                   <td :colspan="sourceType === 'purchase_order' ? 4 : 3" class="px-3 py-3 text-right font-bold text-gray-700">
+                   <td colspan="6" class="px-3 py-3 text-right font-bold text-gray-700">
                      Total:
                    </td>
                    <td class="px-3 py-3 font-bold text-blue-700">
                      {{ formatCurrency(totalAmount) }}
                    </td>
-                   <td v-if="sourceType === 'purchase_order'" class="px-3 py-3"></td>
-                   <td class="px-3 py-3"></td>
+                   <td colspan="2" class="px-3 py-3"></td>
                  </tr>
                </tfoot>
              </table>
@@ -1121,7 +1079,11 @@ function toggleAllItems(event) {
           </div>
         </div>
         <div class="flex-1 overflow-y-auto">
-          <div v-if="filteredPOList.length === 0" class="p-8 text-center text-gray-500">
+          <div v-if="loadingPOGR" class="p-8 text-center">
+            <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+            <p class="mt-2 text-gray-600">Memuat data...</p>
+          </div>
+          <div v-else-if="filteredPOList.length === 0" class="p-8 text-center text-gray-500">
             Tidak ada data yang ditemukan
           </div>
           <div v-else class="divide-y divide-gray-200">
@@ -1176,7 +1138,11 @@ function toggleAllItems(event) {
           </div>
         </div>
         <div class="flex-1 overflow-y-auto">
-          <div v-if="filteredRetailFoodList.length === 0" class="p-8 text-center text-gray-500">
+          <div v-if="loadingPOGR" class="p-8 text-center">
+            <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600"></div>
+            <p class="mt-2 text-gray-600">Memuat data...</p>
+          </div>
+          <div v-else-if="filteredRetailFoodList.length === 0" class="p-8 text-center text-gray-500">
             Tidak ada data yang ditemukan
           </div>
           <div v-else class="divide-y divide-gray-200">
@@ -1227,7 +1193,11 @@ function toggleAllItems(event) {
           </div>
         </div>
         <div class="flex-1 overflow-y-auto">
-          <div v-if="filteredWarehouseRetailFoodList.length === 0" class="p-8 text-center text-gray-500">
+          <div v-if="loadingPOGR" class="p-8 text-center">
+            <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+            <p class="mt-2 text-gray-600">Memuat data...</p>
+          </div>
+          <div v-else-if="filteredWarehouseRetailFoodList.length === 0" class="p-8 text-center text-gray-500">
             Tidak ada data yang ditemukan
           </div>
           <div v-else class="divide-y divide-gray-200">

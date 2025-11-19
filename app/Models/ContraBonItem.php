@@ -16,6 +16,8 @@ class ContraBonItem extends Model
         'item_id',
         'po_item_id',
         'gr_item_id', // Untuk tracking item dari good receive yang sudah dibuat contra bon
+        'retail_food_item_id', // OPSIONAL: Untuk tracking item dari retail food (jika kolom ada)
+        'warehouse_retail_food_item_id', // OPSIONAL: Untuk tracking item dari warehouse retail food (jika kolom ada)
         'quantity',
         'unit_id',
         'price',
