@@ -407,7 +407,29 @@ class ContraBonController extends Controller
                     if ($poItem) {
                         $item->discount_percent = $poItem->discount_percent ?? 0;
                         $item->discount_amount = $poItem->discount_amount ?? 0;
-                        $item->po_item_total = $poItem->total ?? ($poItem->price * $poItem->quantity);
+                        
+                        // Calculate total based on Contra Bon item quantity (not PO item quantity)
+                        // Formula: (price * contra_bon_quantity) - (discount proportional to quantity)
+                        $contraBonQuantity = $item->quantity ?? 0;
+                        $poQuantity = $poItem->quantity ?? 1; // Avoid division by zero
+                        $price = $poItem->price ?? 0;
+                        
+                        // Calculate subtotal for Contra Bon quantity
+                        $subtotal = $price * $contraBonQuantity;
+                        
+                        // Calculate discount proportional to quantity ratio
+                        $quantityRatio = $poQuantity > 0 ? ($contraBonQuantity / $poQuantity) : 0;
+                        $discount = 0;
+                        
+                        if ($poItem->discount_percent > 0) {
+                            // Discount percent applies to subtotal
+                            $discount = $subtotal * ($poItem->discount_percent / 100);
+                        } elseif ($poItem->discount_amount > 0) {
+                            // Discount amount is proportional to quantity
+                            $discount = $poItem->discount_amount * $quantityRatio;
+                        }
+                        
+                        $item->po_item_total = $subtotal - $discount;
                     }
                 }
             });
@@ -564,7 +586,29 @@ class ContraBonController extends Controller
                         if ($poItem) {
                             $item->discount_percent = $poItem->discount_percent ?? 0;
                             $item->discount_amount = $poItem->discount_amount ?? 0;
-                            $item->po_item_total = $poItem->total ?? ($poItem->price * $poItem->quantity);
+                            
+                            // Calculate total based on Contra Bon item quantity (not PO item quantity)
+                            // Formula: (price * contra_bon_quantity) - (discount proportional to quantity)
+                            $contraBonQuantity = $item->quantity ?? 0;
+                            $poQuantity = $poItem->quantity ?? 1; // Avoid division by zero
+                            $price = $poItem->price ?? 0;
+                            
+                            // Calculate subtotal for Contra Bon quantity
+                            $subtotal = $price * $contraBonQuantity;
+                            
+                            // Calculate discount proportional to quantity ratio
+                            $quantityRatio = $poQuantity > 0 ? ($contraBonQuantity / $poQuantity) : 0;
+                            $discount = 0;
+                            
+                            if ($poItem->discount_percent > 0) {
+                                // Discount percent applies to subtotal
+                                $discount = $subtotal * ($poItem->discount_percent / 100);
+                            } elseif ($poItem->discount_amount > 0) {
+                                // Discount amount is proportional to quantity
+                                $discount = $poItem->discount_amount * $quantityRatio;
+                            }
+                            
+                            $item->po_item_total = $subtotal - $discount;
                         }
                     }
                 });
@@ -1051,7 +1095,29 @@ class ContraBonController extends Controller
                     if ($poItem) {
                         $item->discount_percent = $poItem->discount_percent ?? 0;
                         $item->discount_amount = $poItem->discount_amount ?? 0;
-                        $item->po_item_total = $poItem->total ?? ($poItem->price * $poItem->quantity);
+                        
+                        // Calculate total based on Contra Bon item quantity (not PO item quantity)
+                        // Formula: (price * contra_bon_quantity) - (discount proportional to quantity)
+                        $contraBonQuantity = $item->quantity ?? 0;
+                        $poQuantity = $poItem->quantity ?? 1; // Avoid division by zero
+                        $price = $poItem->price ?? 0;
+                        
+                        // Calculate subtotal for Contra Bon quantity
+                        $subtotal = $price * $contraBonQuantity;
+                        
+                        // Calculate discount proportional to quantity ratio
+                        $quantityRatio = $poQuantity > 0 ? ($contraBonQuantity / $poQuantity) : 0;
+                        $discount = 0;
+                        
+                        if ($poItem->discount_percent > 0) {
+                            // Discount percent applies to subtotal
+                            $discount = $subtotal * ($poItem->discount_percent / 100);
+                        } elseif ($poItem->discount_amount > 0) {
+                            // Discount amount is proportional to quantity
+                            $discount = $poItem->discount_amount * $quantityRatio;
+                        }
+                        
+                        $item->po_item_total = $subtotal - $discount;
                     }
                 }
             });
