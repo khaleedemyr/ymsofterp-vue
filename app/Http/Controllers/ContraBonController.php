@@ -235,6 +235,23 @@ class ContraBonController extends Controller
                 $itemId = $item['item_id'] ?? null;
                 $unitId = $item['unit_id'] ?? null;
                 
+                // Fix: Jika dari PO-GR dan item_id/unit_id null tapi ada gr_item_id, ambil dari GR item
+                if ($sourceType === 'purchase_order' && (!$itemId || !$unitId) && isset($item['gr_item_id'])) {
+                    $grItem = DB::table('food_good_receive_items as gri')
+                        ->where('gri.id', $item['gr_item_id'])
+                        ->select('gri.item_id', 'gri.unit_id')
+                        ->first();
+                    
+                    if ($grItem) {
+                        if (!$itemId && $grItem->item_id) {
+                            $itemId = $grItem->item_id;
+                        }
+                        if (!$unitId && $grItem->unit_id) {
+                            $unitId = $grItem->unit_id;
+                        }
+                    }
+                }
+                
                 // Jika dari retail food atau warehouse retail food dan tidak ada item_id, coba cari berdasarkan item_name
                 if (($sourceType === 'retail_food' || $sourceType === 'warehouse_retail_food') && !$itemId && isset($item['item_name'])) {
                     $foundItem = \DB::table('items')->where('name', $item['item_name'])->first();
@@ -350,6 +367,8 @@ class ContraBonController extends Controller
             'purchaseOrder',
             'items.item',
             'items.unit',
+            'items.grItem.item',
+            'items.grItem.unit',
             'creator',
             'approver',
             'financeManager',
@@ -402,8 +421,52 @@ class ContraBonController extends Controller
                 $contraBon->source_type_display = 'Unknown';
             }
             
-            // Add discount info to items
+            // Add discount info to items and fix missing item/unit from GR
             $contraBon->items->each(function($item) {
+                // Fix: Jika item_id atau unit_id null tapi ada gr_item_id, ambil dari GR item
+                if ((!$item->item_id || !$item->unit_id) && $item->gr_item_id) {
+                    $grItem = DB::table('food_good_receive_items as gri')
+                        ->join('items as i', 'gri.item_id', '=', 'i.id')
+                        ->join('units as u', 'gri.unit_id', '=', 'u.id')
+                        ->where('gri.id', $item->gr_item_id)
+                        ->select('i.id as item_id', 'i.name as item_name', 'u.id as unit_id', 'u.name as unit_name')
+                        ->first();
+                    
+                    if ($grItem) {
+                        // Set item relationship jika belum ada
+                        if (!$item->item_id && $grItem->item_id) {
+                            $item->item_id = $grItem->item_id;
+                            $item->setRelation('item', \App\Models\Item::find($grItem->item_id));
+                        }
+                        
+                        // Set unit relationship jika belum ada
+                        if (!$item->unit_id && $grItem->unit_id) {
+                            $item->unit_id = $grItem->unit_id;
+                            $item->setRelation('unit', \App\Models\Unit::find($grItem->unit_id));
+                        }
+                        
+                        // Tambahkan item_name dan unit_name sebagai attribute langsung
+                        $item->item_name = $grItem->item_name;
+                        $item->unit_name = $grItem->unit_name;
+                    }
+                }
+                
+                // Pastikan item_name dan unit_name selalu ada (dari relasi jika belum ada)
+                if (!$item->item_name) {
+                    if ($item->item) {
+                        $item->item_name = $item->item->name;
+                    } elseif ($item->grItem && $item->grItem->item) {
+                        $item->item_name = $item->grItem->item->name;
+                    }
+                }
+                if (!$item->unit_name) {
+                    if ($item->unit) {
+                        $item->unit_name = $item->unit->name;
+                    } elseif ($item->grItem && $item->grItem->unit) {
+                        $item->unit_name = $item->grItem->unit->name;
+                    }
+                }
+                
                 if ($item->po_item_id) {
                     $poItem = PurchaseOrderFoodItem::find($item->po_item_id);
                     if ($poItem) {
@@ -530,6 +593,8 @@ class ContraBonController extends Controller
                 'purchaseOrder',
                 'items.item',
                 'items.unit',
+                'items.grItem.item',
+                'items.grItem.unit',
                 'creator',
                 'approver',
                 'financeManager',
@@ -581,8 +646,52 @@ class ContraBonController extends Controller
                     $contraBon->source_type_display = 'Unknown';
                 }
                 
-                // Add discount info to items
+                // Add discount info to items and fix missing item/unit from GR
                 $contraBon->items->each(function($item) {
+                    // Fix: Jika item_id atau unit_id null tapi ada gr_item_id, ambil dari GR item
+                    if ((!$item->item_id || !$item->unit_id) && $item->gr_item_id) {
+                        $grItem = DB::table('food_good_receive_items as gri')
+                            ->join('items as i', 'gri.item_id', '=', 'i.id')
+                            ->join('units as u', 'gri.unit_id', '=', 'u.id')
+                            ->where('gri.id', $item->gr_item_id)
+                            ->select('i.id as item_id', 'i.name as item_name', 'u.id as unit_id', 'u.name as unit_name')
+                            ->first();
+                        
+                        if ($grItem) {
+                            // Set item relationship jika belum ada
+                            if (!$item->item_id && $grItem->item_id) {
+                                $item->item_id = $grItem->item_id;
+                                $item->setRelation('item', \App\Models\Item::find($grItem->item_id));
+                            }
+                            
+                            // Set unit relationship jika belum ada
+                            if (!$item->unit_id && $grItem->unit_id) {
+                                $item->unit_id = $grItem->unit_id;
+                                $item->setRelation('unit', \App\Models\Unit::find($grItem->unit_id));
+                            }
+                            
+                            // Tambahkan item_name dan unit_name sebagai attribute langsung
+                            $item->item_name = $grItem->item_name;
+                            $item->unit_name = $grItem->unit_name;
+                        }
+                    }
+                    
+                    // Pastikan item_name dan unit_name selalu ada (dari relasi jika belum ada)
+                    if (!$item->item_name) {
+                        if ($item->item) {
+                            $item->item_name = $item->item->name;
+                        } elseif ($item->grItem && $item->grItem->item) {
+                            $item->item_name = $item->grItem->item->name;
+                        }
+                    }
+                    if (!$item->unit_name) {
+                        if ($item->unit) {
+                            $item->unit_name = $item->unit->name;
+                        } elseif ($item->grItem && $item->grItem->unit) {
+                            $item->unit_name = $item->grItem->unit->name;
+                        }
+                    }
+                    
                     if ($item->po_item_id) {
                         $poItem = PurchaseOrderFoodItem::find($item->po_item_id);
                         if ($poItem) {
@@ -714,11 +823,11 @@ class ContraBonController extends Controller
     // API: Get approved Good Receives with PO, supplier, and items (with PO price)
     public function getApprovedGoodReceives()
     {
+        // Note: food_good_receives table doesn't have 'status' column
         $goodReceives = \DB::table('food_good_receives as gr')
             ->join('purchase_order_foods as po', 'gr.po_id', '=', 'po.id')
             ->join('suppliers as s', 'gr.supplier_id', '=', 's.id')
             ->join('pr_foods as pr', 'po.pr_food_id', '=', 'pr.id')
-            ->where('gr.status', 'approved')
             ->select('gr.id', 'gr.gr_number', 'gr.receive_date', 'gr.po_id', 'po.number as po_number', 'pr.pr_number as pr_number', 's.name as supplier_name')
             ->orderByDesc('gr.receive_date')
             ->get();
@@ -755,16 +864,27 @@ class ContraBonController extends Controller
     }
 
     // API: Get PO list with approved GR for Contra Bon create
-    public function getPOWithApprovedGR()
+    public function getPOWithApprovedGR(Request $request)
     {
+        // Log di level paling awal, bahkan sebelum try-catch
+        \Log::info('=== getPOWithApprovedGR CALLED ===', [
+            'request_method' => $request->method(),
+            'request_url' => $request->fullUrl(),
+            'user_id' => auth()->id(),
+        ]);
+        
         try {
+            
             // Ambil semua gr_item_id yang sudah ada di contra bon items
             $usedGRItemIds = \DB::table('food_contra_bon_items')
                 ->whereNotNull('gr_item_id')
                 ->pluck('gr_item_id')
                 ->toArray();
 
+            \Log::info('Used GR Item IDs count: ' . count($usedGRItemIds));
+
             // Get all PO with GR in one query
+            // Note: food_good_receives table doesn't have 'status' column, so we get all GRs
             $poWithGR = \DB::table('purchase_order_foods as po')
                 ->join('food_good_receives as gr', 'gr.po_id', '=', 'po.id')
                 ->join('suppliers as s', 'po.supplier_id', '=', 's.id')
@@ -788,10 +908,13 @@ class ContraBonController extends Controller
                     's.name as supplier_name'
                 )
                 ->orderByDesc('gr.receive_date')
-                ->limit(500) // Limit untuk performa
+                ->limit(500)
                 ->get();
 
+            \Log::info('PO with GR count: ' . $poWithGR->count());
+
             if ($poWithGR->isEmpty()) {
+                \Log::info('No PO with GR found');
                 return response()->json([]);
             }
 
@@ -800,11 +923,12 @@ class ContraBonController extends Controller
             $poIds = $poWithGR->pluck('po_id')->unique()->toArray();
             $roSupplierPoIds = $poWithGR->where('source_type', 'ro_supplier')->pluck('po_id')->unique()->toArray();
 
-            // Batch query: Get all items for all GRs at once
-            $allItems = \DB::table('food_good_receive_items as gri')
-                ->join('items as i', 'gri.item_id', '=', 'i.id')
-                ->join('units as u', 'gri.unit_id', '=', 'u.id')
-                ->join('purchase_order_food_items as poi', 'gri.po_item_id', '=', 'poi.id')
+            \Log::info('GR IDs to fetch items: ' . count($grIds));
+
+            // REFACTOR: Query items dan units secara terpisah untuk memastikan data benar-benar ada
+            // Step 1: Query semua GR items
+            $allGRItems = \DB::table('food_good_receive_items as gri')
+                ->leftJoin('purchase_order_food_items as poi', 'gri.po_item_id', '=', 'poi.id')
                 ->whereIn('gri.good_receive_id', $grIds)
                 ->whereNotIn('gri.id', $usedGRItemIds)
                 ->select(
@@ -812,17 +936,74 @@ class ContraBonController extends Controller
                     'gri.id',
                     'gri.item_id',
                     'gri.po_item_id',
-                    'i.name as item_name',
                     'gri.unit_id',
-                    'u.name as unit_name',
                     'gri.qty_received',
                     'poi.price as po_price',
                     'poi.discount_percent',
                     'poi.discount_amount',
                     'poi.total as po_item_total'
                 )
-                ->get()
-                ->groupBy('good_receive_id');
+                ->get();
+
+            \Log::info('All GR items fetched: ' . $allGRItems->count());
+
+            // Step 2: Get semua item_id dan unit_id yang unik
+            $itemIds = $allGRItems->pluck('item_id')->filter()->unique()->toArray();
+            $unitIds = $allGRItems->pluck('unit_id')->filter()->unique()->toArray();
+
+            \Log::info('Unique item_ids: ' . count($itemIds), ['item_ids' => array_slice($itemIds, 0, 5)]);
+            \Log::info('Unique unit_ids: ' . count($unitIds), ['unit_ids' => array_slice($unitIds, 0, 5)]);
+
+            // Step 3: Query items dan units secara batch
+            $itemsMap = [];
+            if (!empty($itemIds)) {
+                $itemsData = \DB::table('items')->whereIn('id', $itemIds)->get();
+                foreach ($itemsData as $item) {
+                    $itemsMap[$item->id] = $item->name;
+                }
+                \Log::info('Items map created: ' . count($itemsMap));
+            }
+
+            $unitsMap = [];
+            if (!empty($unitIds)) {
+                $unitsData = \DB::table('units')->whereIn('id', $unitIds)->get();
+                foreach ($unitsData as $unit) {
+                    $unitsMap[$unit->id] = $unit->name;
+                }
+                \Log::info('Units map created: ' . count($unitsMap));
+            }
+
+            // Step 4: Map items dengan item_name dan unit_name - pastikan sebagai array untuk JSON serialization
+            $allItems = $allGRItems->map(function($gri) use ($itemsMap, $unitsMap) {
+                return (object)[
+                    'good_receive_id' => $gri->good_receive_id,
+                    'id' => $gri->id,
+                    'item_id' => $gri->item_id,
+                    'po_item_id' => $gri->po_item_id,
+                    'unit_id' => $gri->unit_id,
+                    'item_name' => (string)($itemsMap[$gri->item_id] ?? ''), // Pastikan string
+                    'unit_name' => (string)($unitsMap[$gri->unit_id] ?? ''), // Pastikan string
+                    'qty_received' => $gri->qty_received,
+                    'po_price' => $gri->po_price,
+                    'discount_percent' => $gri->discount_percent,
+                    'discount_amount' => $gri->discount_amount,
+                    'po_item_total' => $gri->po_item_total,
+                ];
+            });
+
+            \Log::info('All items mapped: ' . $allItems->count());
+            if ($allItems->count() > 0) {
+                $firstItem = $allItems->first();
+                \Log::info('First item after mapping:', [
+                    'id' => $firstItem->id ?? null,
+                    'item_id' => $firstItem->item_id ?? null,
+                    'item_name' => $firstItem->item_name ?? 'EMPTY',
+                    'unit_id' => $firstItem->unit_id ?? null,
+                    'unit_name' => $firstItem->unit_name ?? 'EMPTY',
+                ]);
+            }
+
+            $allItemsGrouped = $allItems->groupBy('good_receive_id');
 
             // Batch query: Get all outlet data for RO Supplier POs at once
             $outletDataMap = [];
@@ -848,12 +1029,27 @@ class ContraBonController extends Controller
             // Build result array
             $result = [];
             foreach ($poWithGR as $row) {
-                $items = $allItems->get($row->gr_id, collect());
+                $items = $allItemsGrouped->get($row->gr_id, collect());
                 
                 // Skip if no items available
                 if ($items->isEmpty()) {
                     continue;
                 }
+                
+                // Debug: Log items untuk troubleshooting
+                $firstItem = $items->first();
+                \Log::info('PO-GR Items for API response', [
+                    'po_id' => $row->po_id,
+                    'gr_id' => $row->gr_id,
+                    'items_count' => $items->count(),
+                    'first_item' => $firstItem ? [
+                        'id' => $firstItem->id ?? null,
+                        'item_id' => $firstItem->item_id ?? null,
+                        'item_name' => $firstItem->item_name ?? 'MISSING',
+                        'unit_id' => $firstItem->unit_id ?? null,
+                        'unit_name' => $firstItem->unit_name ?? 'MISSING',
+                    ] : null
+                ]);
                 
                 // Get source type display and outlet information
                 $sourceTypeDisplay = $row->source_type === 'ro_supplier' ? 'RO Supplier' : 'PR Foods';
@@ -866,6 +1062,47 @@ class ContraBonController extends Controller
                     'subtotal' => $row->subtotal ?? 0,
                     'grand_total' => $row->grand_total ?? 0,
                 ];
+                
+                // Convert items to array - data sudah di-map dengan item_name dan unit_name di step sebelumnya
+                $itemsArray = [];
+                foreach ($items as $item) {
+                    // Data sudah di-map dengan item_name dan unit_name di query sebelumnya
+                    $itemName = (string)($item->item_name ?? '');
+                    $unitName = (string)($item->unit_name ?? '');
+                    
+                    // Warn jika masih kosong
+                    if (empty($itemName) || empty($unitName)) {
+                        \Log::warning('Item missing name/unit in final mapping', [
+                            'gr_item_id' => $item->id,
+                            'item_id' => $item->item_id,
+                            'unit_id' => $item->unit_id,
+                            'item_name' => $itemName,
+                            'unit_name' => $unitName,
+                            'raw_item' => (array)$item
+                        ]);
+                    }
+                    
+                    $itemsArray[] = [
+                        'id' => (int)$item->id,
+                        'item_id' => $item->item_id ? (int)$item->item_id : null,
+                        'po_item_id' => $item->po_item_id ? (int)$item->po_item_id : null,
+                        'unit_id' => $item->unit_id ? (int)$item->unit_id : null,
+                        'item_name' => $itemName, // Sudah di-map sebelumnya
+                        'unit_name' => $unitName, // Sudah di-map sebelumnya
+                        'qty_received' => (float)$item->qty_received,
+                        'po_price' => (float)$item->po_price,
+                        'discount_percent' => $item->discount_percent ? (float)$item->discount_percent : 0,
+                        'discount_amount' => $item->discount_amount ? (float)$item->discount_amount : 0,
+                        'po_item_total' => $item->po_item_total ? (float)$item->po_item_total : ((float)$item->po_price * (float)$item->qty_received),
+                    ];
+                }
+                
+                \Log::info('Items array created for PO-GR', [
+                    'po_id' => $row->po_id,
+                    'gr_id' => $row->gr_id,
+                    'items_count' => count($itemsArray),
+                    'first_item' => $itemsArray[0] ?? null
+                ]);
                 
                 $result[] = [
                     'po_id' => $row->po_id,
@@ -881,15 +1118,108 @@ class ContraBonController extends Controller
                     'source_type' => $row->source_type,
                     'source_type_display' => $sourceTypeDisplay,
                     'outlet_names' => array_unique($outletNames),
-                    'items' => $items->values(),
+                    'items' => $itemsArray, // Gunakan array yang sudah di-map
                     'po_discount_info' => $poDiscountInfo,
                 ];
+            }
+            
+            \Log::info('Final result count: ' . count($result));
+            if (count($result) > 0 && isset($result[0]['items'])) {
+                \Log::info('First result items sample:', [
+                    'po_number' => $result[0]['po_number'] ?? null,
+                    'items_count' => count($result[0]['items'] ?? []),
+                    'first_item' => $result[0]['items'][0] ?? null
+                ]);
             }
             
             return response()->json($result);
         } catch (\Exception $e) {
             \Log::error('Error in getPOWithApprovedGR: ' . $e->getMessage());
+            \Log::error('Stack trace: ' . $e->getTraceAsString());
             return response()->json(['error' => 'Gagal mengambil data PO/GR: ' . $e->getMessage()], 500);
+        }
+    }
+    
+    // Simple test endpoint - langsung return data test
+    public function testAPI()
+    {
+        \Log::info('=== testAPI CALLED ===');
+        return response()->json([
+            'message' => 'API is working',
+            'timestamp' => now(),
+            'test_data' => [
+                'item_name' => 'Test Item',
+                'unit_name' => 'Test Unit'
+            ]
+        ]);
+    }
+    
+    // Test endpoint untuk debug
+    public function testPOGRItems($grId)
+    {
+        try {
+            // Test 1: Query langsung dari food_good_receive_items
+            $grItems = DB::table('food_good_receive_items')
+                ->where('good_receive_id', $grId)
+                ->select('id', 'item_id', 'unit_id', 'qty_received')
+                ->get();
+            
+            // Test 2: Query dengan join
+            $itemsWithJoin = DB::table('food_good_receive_items as gri')
+                ->leftJoin('items as i', 'gri.item_id', '=', 'i.id')
+                ->leftJoin('units as u', 'gri.unit_id', '=', 'u.id')
+                ->where('gri.good_receive_id', $grId)
+                ->select(
+                    'gri.id',
+                    'gri.item_id',
+                    'gri.unit_id',
+                    'i.name as item_name',
+                    'u.name as unit_name'
+                )
+                ->get();
+            
+            // Test 3: Query items dan units secara terpisah
+            $itemIds = $grItems->pluck('item_id')->filter()->unique()->toArray();
+            $unitIds = $grItems->pluck('unit_id')->filter()->unique()->toArray();
+            
+            $itemsMap = [];
+            if (!empty($itemIds)) {
+                $itemsData = DB::table('items')->whereIn('id', $itemIds)->get();
+                foreach ($itemsData as $item) {
+                    $itemsMap[$item->id] = $item->name;
+                }
+            }
+            
+            $unitsMap = [];
+            if (!empty($unitIds)) {
+                $unitsData = DB::table('units')->whereIn('id', $unitIds)->get();
+                foreach ($unitsData as $unit) {
+                    $unitsMap[$unit->id] = $unit->name;
+                }
+            }
+            
+            // Build result dengan manual mapping
+            $itemsManual = [];
+            foreach ($grItems as $gri) {
+                $itemsManual[] = [
+                    'id' => $gri->id,
+                    'item_id' => $gri->item_id,
+                    'unit_id' => $gri->unit_id,
+                    'item_name' => $itemsMap[$gri->item_id] ?? 'NOT FOUND',
+                    'unit_name' => $unitsMap[$gri->unit_id] ?? 'NOT FOUND',
+                ];
+            }
+            
+            return response()->json([
+                'gr_id' => $grId,
+                'test1_raw_items' => $grItems,
+                'test2_with_join' => $itemsWithJoin,
+                'test3_manual_mapping' => $itemsManual,
+                'items_map' => $itemsMap,
+                'units_map' => $unitsMap,
+            ]);
+        } catch (\Exception $e) {
+            return response()->json(['error' => $e->getMessage()], 500);
         }
     }
 
@@ -1062,6 +1392,8 @@ class ContraBonController extends Controller
             'purchaseOrder',
             'items.item',
             'items.unit',
+            'items.grItem.item',
+            'items.grItem.unit',
             'creator',
             'approver',
             'financeManager',
@@ -1080,8 +1412,69 @@ class ContraBonController extends Controller
                 'grand_total' => $po->grand_total ?? 0,
             ];
             
-            // Add discount info to items
+            // Add discount info to items and fix missing item/unit from GR
             $contraBon->items->each(function($item) {
+                // Pastikan item_name dan unit_name selalu ada
+                // Prioritas: 1. Dari relasi item/unit, 2. Dari grItem, 3. Query langsung dari database
+                
+                // Ambil item_name
+                if (!$item->item_name) {
+                    if ($item->item && $item->item->name) {
+                        $item->item_name = $item->item->name;
+                    } elseif ($item->grItem && $item->grItem->item && $item->grItem->item->name) {
+                        $item->item_name = $item->grItem->item->name;
+                    } elseif ($item->item_id) {
+                        // Query langsung dari database jika relasi tidak ter-load
+                        $itemData = DB::table('items')->where('id', $item->item_id)->first();
+                        if ($itemData && $itemData->name) {
+                            $item->item_name = $itemData->name;
+                            // Set relasi juga jika belum ada
+                            if (!$item->item) {
+                                $item->setRelation('item', \App\Models\Item::find($item->item_id));
+                            }
+                        } elseif ($item->gr_item_id) {
+                            // Fallback: ambil dari GR item
+                            $grItem = DB::table('food_good_receive_items as gri')
+                                ->join('items as i', 'gri.item_id', '=', 'i.id')
+                                ->where('gri.id', $item->gr_item_id)
+                                ->select('i.name as item_name')
+                                ->first();
+                            if ($grItem && $grItem->item_name) {
+                                $item->item_name = $grItem->item_name;
+                            }
+                        }
+                    }
+                }
+                
+                // Ambil unit_name
+                if (!$item->unit_name) {
+                    if ($item->unit && $item->unit->name) {
+                        $item->unit_name = $item->unit->name;
+                    } elseif ($item->grItem && $item->grItem->unit && $item->grItem->unit->name) {
+                        $item->unit_name = $item->grItem->unit->name;
+                    } elseif ($item->unit_id) {
+                        // Query langsung dari database jika relasi tidak ter-load
+                        $unitData = DB::table('units')->where('id', $item->unit_id)->first();
+                        if ($unitData && $unitData->name) {
+                            $item->unit_name = $unitData->name;
+                            // Set relasi juga jika belum ada
+                            if (!$item->unit) {
+                                $item->setRelation('unit', \App\Models\Unit::find($item->unit_id));
+                            }
+                        } elseif ($item->gr_item_id) {
+                            // Fallback: ambil dari GR item
+                            $grItem = DB::table('food_good_receive_items as gri')
+                                ->join('units as u', 'gri.unit_id', '=', 'u.id')
+                                ->where('gri.id', $item->gr_item_id)
+                                ->select('u.name as unit_name')
+                                ->first();
+                            if ($grItem && $grItem->unit_name) {
+                                $item->unit_name = $grItem->unit_name;
+                            }
+                        }
+                    }
+                }
+                
                 if ($item->po_item_id) {
                     $poItem = PurchaseOrderFoodItem::find($item->po_item_id);
                     if ($poItem) {

@@ -56,6 +56,9 @@ const form = useForm({
     notes: i.notes || '',
     item: i.item,
     unit: i.unit,
+    // Fix: Tambahkan item_name dan unit_name dari relasi jika ada
+    item_name: i.item?.name || i.item_name || null,
+    unit_name: i.unit?.name || i.unit_name || null,
     // Source info untuk multiple sources
     source_type: props.contraBon?.source_type || 'purchase_order',
     source_id: props.contraBon?.source_id || '',
@@ -186,13 +189,41 @@ async function openPOListModal() {
   // Lazy load: hanya load data jika belum pernah di-load
   if (poWithGRList.value.length === 0) {
     loadingPOGR.value = true;
+    console.log('=== Loading PO/GR Data ===');
     try {
+      console.log('Calling API: /api/contra-bon/po-with-approved-gr');
       const response = await axios.get('/api/contra-bon/po-with-approved-gr');
+      console.log('=== API Response ===');
+      console.log('Response status:', response.status);
+      console.log('Full response:', response.data);
+      console.log('Response data type:', typeof response.data);
+      console.log('Response data is array:', Array.isArray(response.data));
+      
+      if (response.data && response.data.length > 0) {
+        console.log('First PO:', response.data[0]);
+        console.log('First PO keys:', Object.keys(response.data[0]));
+        if (response.data[0].items && response.data[0].items.length > 0) {
+          console.log('First item from API:', response.data[0].items[0]);
+          console.log('First item keys:', Object.keys(response.data[0].items[0]));
+          console.log('First item item_name:', response.data[0].items[0].item_name);
+          console.log('First item unit_name:', response.data[0].items[0].unit_name);
+        } else {
+          console.warn('First PO has no items or items is empty');
+        }
+      } else {
+        console.warn('Response data is empty or not an array');
+      }
       poWithGRList.value = response.data || [];
       filteredPOList.value = poWithGRList.value;
+      console.log('PO/GR list loaded:', poWithGRList.value.length, 'items');
     } catch (e) {
-      console.error('Error loading PO/GR:', e);
-      Swal.fire('Error', 'Gagal mengambil data PO/GR', 'error');
+      console.error('=== Error loading PO/GR ===');
+      console.error('Error object:', e);
+      console.error('Error message:', e.message);
+      console.error('Error response:', e.response);
+      console.error('Error status:', e.response?.status);
+      console.error('Error data:', e.response?.data);
+      Swal.fire('Error', 'Gagal mengambil data PO/GR: ' + (e.response?.data?.error || e.message), 'error');
       poWithGRList.value = [];
       filteredPOList.value = [];
     } finally {
@@ -267,6 +298,10 @@ function closeWarehouseRetailFoodModal() {
 }
 
 function selectPOFromModal(po) {
+  console.log('=== selectPOFromModal CALLED ===');
+  console.log('PO data:', po);
+  console.log('PO items:', po.items);
+  
   // Check if this source already exists
   const existingSource = selectedSources.value.find(s => 
     s.type === 'purchase_order' && s.po_id === po.po_id && s.gr_id === po.gr_id
@@ -294,27 +329,57 @@ function selectPOFromModal(po) {
   
   // Add items from this source to form.items
   if (po.items && po.items.length > 0) {
-    const newItems = po.items.map(item => ({
-      gr_item_id: item.id,
-      item_id: item.item_id,
-      po_item_id: item.po_item_id,
-      unit_id: item.unit_id,
-      quantity: item.qty_received,
-      price: item.po_price,
-      discount_percent: item.discount_percent || 0,
-      discount_amount: item.discount_amount || 0,
-      po_item_total: item.po_item_total || (item.po_price * item.qty_received),
-      notes: '',
-      selected: false, // Default tidak dicentang
-      // Source info
-      source_type: 'purchase_order',
-      source_id: `${po.po_id}-${po.gr_id}`,
-      source_display: `${po.po_number} - ${po.gr_number}`,
-      po_id: po.po_id,
-      gr_id: po.gr_id,
-      _rowKey: Date.now() + '-' + Math.random() + '-po',
-    }));
+    const newItems = po.items.map(item => {
+      // Debug: Log item data untuk troubleshooting
+      console.log('Raw item from API:', item);
+      if (!item.item_name || !item.unit_name) {
+        console.warn('Item missing name/unit:', item);
+        console.warn('Available keys:', Object.keys(item));
+      }
+      
+      // Pastikan item_name dan unit_name selalu ada
+      const itemName = item.item_name || '';
+      const unitName = item.unit_name || '';
+      
+      const mappedItem = {
+        gr_item_id: item.id,
+        item_id: item.item_id,
+        po_item_id: item.po_item_id,
+        unit_id: item.unit_id,
+        item_name: itemName, // Langsung gunakan dari API
+        unit_name: unitName, // Langsung gunakan dari API
+        quantity: item.qty_received,
+        price: item.po_price,
+        discount_percent: item.discount_percent || 0,
+        discount_amount: item.discount_amount || 0,
+        po_item_total: item.po_item_total || (item.po_price * item.qty_received),
+        notes: '',
+        selected: false, // Default tidak dicentang
+        // Source info
+        source_type: 'purchase_order',
+        source_id: `${po.po_id}-${po.gr_id}`,
+        source_display: `${po.po_number} - ${po.gr_number}`,
+        po_id: po.po_id,
+        gr_id: po.gr_id,
+        _rowKey: Date.now() + '-' + Math.random() + '-po',
+      };
+      
+      // Warn jika masih kosong setelah mapping
+      if (!mappedItem.item_name || !mappedItem.unit_name) {
+        console.error('WARNING: Item still missing name/unit after mapping:', {
+          item_id: mappedItem.item_id,
+          unit_id: mappedItem.unit_id,
+          item_name: mappedItem.item_name,
+          unit_name: mappedItem.unit_name,
+          raw_item: item
+        });
+      }
+      
+      console.log('Mapped item:', mappedItem);
+      return mappedItem;
+    });
     form.items.push(...newItems);
+    console.log('All form items after adding:', form.items);
   }
   
   // Update supplier detail (use first supplier or merge if multiple)
@@ -825,6 +890,66 @@ function toggleAllItems(event) {
     item.selected = checked;
   });
 }
+
+// Helper function untuk mendapatkan item_name dari item atau source data
+function getItemName(item) {
+  // Debug
+  if (!item.item_name && !item.item?.name) {
+    console.log('getItemName - item missing name:', item);
+  }
+  
+  if (item.item_name) return item.item_name;
+  if (item.item?.name) return item.item.name;
+  
+  // Jika tidak ada, coba ambil dari source data
+  if (item.source_type === 'purchase_order' && item.gr_item_id) {
+    const source = selectedSources.value.find(s => 
+      s.type === 'purchase_order' && s.po_id === item.po_id && s.gr_id === item.gr_id
+    );
+    if (source && source.data && source.data.items) {
+      const grItem = source.data.items.find(i => i.id === item.gr_item_id || i.id === item.gr_item_id);
+      if (grItem) {
+        console.log('Found grItem in source:', grItem);
+        if (grItem.item_name) {
+          item.item_name = grItem.item_name; // Cache untuk next time
+          return grItem.item_name;
+        }
+      }
+    }
+  }
+  
+  return '-';
+}
+
+// Helper function untuk mendapatkan unit_name dari item atau source data
+function getUnitName(item) {
+  // Debug
+  if (!item.unit_name && !item.unit?.name) {
+    console.log('getUnitName - item missing unit:', item);
+  }
+  
+  if (item.unit_name) return item.unit_name;
+  if (item.unit?.name) return item.unit.name;
+  
+  // Jika tidak ada, coba ambil dari source data
+  if (item.source_type === 'purchase_order' && item.gr_item_id) {
+    const source = selectedSources.value.find(s => 
+      s.type === 'purchase_order' && s.po_id === item.po_id && s.gr_id === item.gr_id
+    );
+    if (source && source.data && source.data.items) {
+      const grItem = source.data.items.find(i => i.id === item.gr_item_id || i.id === item.gr_item_id);
+      if (grItem) {
+        console.log('Found grItem in source for unit:', grItem);
+        if (grItem.unit_name) {
+          item.unit_name = grItem.unit_name; // Cache untuk next time
+          return grItem.unit_name;
+        }
+      }
+    }
+  }
+  
+  return '-';
+}
 </script>
 <template>
   <AppLayout>
@@ -997,13 +1122,29 @@ function toggleAllItems(event) {
                      <span v-else class="text-gray-400">-</span>
                    </td>
                    <td class="px-3 py-2 min-w-[200px]">
-                     {{ isEdit ? (item.item?.name || item.item_name || '-') : (item.item_name || (item.item?.name || '-')) }}
+                     <template v-if="item.item_name && item.item_name !== '-' && item.item_name !== ''">
+                       {{ item.item_name }}
+                     </template>
+                     <template v-else-if="item.item && item.item.name">
+                       {{ item.item.name }}
+                     </template>
+                     <template v-else>
+                       {{ getItemName(item) }}
+                     </template>
                    </td>
                    <td class="px-3 py-2 min-w-[100px]">
                      {{ item.quantity }}
                    </td>
                    <td class="px-3 py-2 min-w-[100px]">
-                     {{ item.unit_name || (item.unit?.name || '-') }}
+                     <template v-if="item.unit_name && item.unit_name !== '-' && item.unit_name !== ''">
+                       {{ item.unit_name }}
+                     </template>
+                     <template v-else-if="item.unit && item.unit.name">
+                       {{ item.unit.name }}
+                     </template>
+                     <template v-else>
+                       {{ getUnitName(item) }}
+                     </template>
                    </td>
                    <td class="px-3 py-2 min-w-[120px]">
                      <input 
