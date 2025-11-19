@@ -18,6 +18,8 @@ const notes = ref('');
 const poForm = useForm({
     items_by_supplier: {}, // Akan diisi array per item
     ppn_enabled: false, // PPN switch
+    discount_total_percent: 0, // Discount total percent
+    discount_total_amount: 0, // Discount total amount
 });
 
 // Fetch PR list yang belum di-PO
@@ -44,6 +46,8 @@ const fetchPRList = async () => {
                             supplier_id: null,
                             qty: item.qty,
                             price: '',
+                            discount_percent: 0,
+                            discount_amount: 0,
                             last_price: '',
                             min_price: '',
                             max_price: ''
@@ -97,6 +101,8 @@ const addItemRow = (itemId, supplierId) => {
         supplier_id: supplierId,
         qty: 0,
         price: '',
+        discount_percent: 0,
+        discount_amount: 0,
         last_price: '',
         min_price: '',
         max_price: ''
@@ -116,13 +122,37 @@ const removeItemRow = (itemId, index) => {
 const calculateItemTotal = (itemId, index) => {
     const item = poForm.items_by_supplier[itemId][index];
     if (item && item.qty && item.price) {
-        return parseFloat(item.qty) * parseFloat(item.price);
+        const subtotal = parseFloat(item.qty) * parseFloat(item.price);
+        const discount = parseFloat(item.discount_amount || 0);
+        return subtotal - discount;
     }
     return 0;
 };
 
-// Calculate grand total
-const grandTotal = computed(() => {
+// Calculate item discount amount from percent
+function calculateItemDiscount(itemId, index) {
+    const item = poForm.items_by_supplier[itemId][index];
+    if (item && item.discount_percent > 0 && item.price && item.qty) {
+        const subtotal = parseFloat(item.price) * parseFloat(item.qty);
+        item.discount_amount = subtotal * (item.discount_percent / 100);
+    } else if (item && item.discount_percent === 0) {
+        item.discount_amount = 0;
+    }
+}
+
+// Calculate item discount percent from amount
+function calculateItemDiscountPercent(itemId, index) {
+    const item = poForm.items_by_supplier[itemId][index];
+    if (item && item.discount_amount > 0 && item.price && item.qty) {
+        const subtotal = parseFloat(item.price) * parseFloat(item.qty);
+        item.discount_percent = (item.discount_amount / subtotal) * 100;
+    } else if (item && item.discount_amount === 0) {
+        item.discount_percent = 0;
+    }
+}
+
+// Calculate subtotal before discount
+const subtotalBeforeDiscount = computed(() => {
     let total = 0;
     Object.values(poForm.items_by_supplier).forEach(items => {
         items.forEach(item => {
@@ -131,6 +161,54 @@ const grandTotal = computed(() => {
             }
         });
     });
+    return total;
+});
+
+// Calculate total item discount
+const totalItemDiscount = computed(() => {
+    let totalDiscount = 0;
+    Object.values(poForm.items_by_supplier).forEach(items => {
+        items.forEach(item => {
+            if (item.qty && item.price) {
+                const itemSubtotal = parseFloat(item.qty) * parseFloat(item.price);
+                const discountPercent = parseFloat(item.discount_percent || 0);
+                const discountAmount = parseFloat(item.discount_amount || 0);
+                
+                if (discountPercent > 0) {
+                    totalDiscount += itemSubtotal * (discountPercent / 100);
+                } else {
+                    totalDiscount += discountAmount;
+                }
+            }
+        });
+    });
+    return totalDiscount;
+});
+
+// Calculate subtotal after item discount
+const subtotalAfterItemDiscount = computed(() => {
+    return subtotalBeforeDiscount.value - totalItemDiscount.value;
+});
+
+// Calculate total discount amount
+const totalDiscountAmount = computed(() => {
+    const discountTotalPercent = parseFloat(poForm.discount_total_percent || 0);
+    const discountTotalAmount = parseFloat(poForm.discount_total_amount || 0);
+    
+    if (discountTotalPercent > 0) {
+        return subtotalAfterItemDiscount.value * (discountTotalPercent / 100);
+    }
+    return discountTotalAmount;
+});
+
+// Calculate subtotal after discount total
+const subtotalAfterDiscountTotal = computed(() => {
+    return subtotalAfterItemDiscount.value - totalDiscountAmount.value;
+});
+
+// Calculate grand total
+const grandTotal = computed(() => {
+    let total = subtotalAfterDiscountTotal.value;
     
     if (poForm.ppn_enabled) {
         total += total * 0.11; // 11% PPN
@@ -138,6 +216,24 @@ const grandTotal = computed(() => {
     
     return total;
 });
+
+// Calculate total discount amount from percent
+function calculateTotalDiscount() {
+    if (poForm.discount_total_percent > 0 && subtotalAfterItemDiscount.value > 0) {
+        poForm.discount_total_amount = subtotalAfterItemDiscount.value * (poForm.discount_total_percent / 100);
+    } else if (poForm.discount_total_percent === 0) {
+        poForm.discount_total_amount = 0;
+    }
+}
+
+// Calculate total discount percent from amount
+function calculateTotalDiscountPercent() {
+    if (poForm.discount_total_amount > 0 && subtotalAfterItemDiscount.value > 0) {
+        poForm.discount_total_percent = (poForm.discount_total_amount / subtotalAfterItemDiscount.value) * 100;
+    } else if (poForm.discount_total_amount === 0) {
+        poForm.discount_total_percent = 0;
+    }
+}
 
 // Submit form
 const submitForm = async () => {
@@ -179,6 +275,8 @@ const submitForm = async () => {
                         supplier_id: supplierId,
                         qty: parseFloat(item.qty),
                         price: parseFloat(item.price),
+                        discount_percent: parseFloat(item.discount_percent || 0),
+                        discount_amount: parseFloat(item.discount_amount || 0),
                         pr_id: originalItem?.pr_id,
                         item_name: originalItem?.item_name,
                         unit: originalItem?.unit,
@@ -327,6 +425,20 @@ onMounted(() => {
       </div>
 
       <div class="bg-white rounded-xl shadow-lg p-6">
+        <!-- Discount Total -->
+        <div class="mb-6 p-4 bg-yellow-50 rounded-lg border border-yellow-200">
+          <h4 class="text-sm font-semibold text-yellow-800 mb-3">Diskon Total</h4>
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">Diskon (%)</label>
+              <input type="number" v-model.number="poForm.discount_total_percent" min="0" max="100" step="0.01" placeholder="0" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-blue-500 focus:border-blue-500" @input="calculateTotalDiscount" />
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">Diskon (Rp)</label>
+              <input type="number" v-model.number="poForm.discount_total_amount" min="0" step="0.01" placeholder="0" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-blue-500 focus:border-blue-500" @input="calculateTotalDiscountPercent" />
+            </div>
+          </div>
+        </div>
         <!-- PPN Toggle -->
         <div class="mb-6">
           <label class="flex items-center">
@@ -546,7 +658,7 @@ onMounted(() => {
 
                   <!-- Item Rows -->
                   <div class="space-y-3">
-                    <div v-for="(row, index) in poForm.items_by_supplier[item.id]" :key="index" class="grid grid-cols-1 md:grid-cols-6 gap-3 items-end">
+                    <div v-for="(row, index) in poForm.items_by_supplier[item.id]" :key="index" class="grid grid-cols-1 md:grid-cols-8 gap-3 items-end">
                       <!-- Supplier -->
                       <div>
                         <label class="block text-xs font-medium text-gray-700 mb-1">Supplier</label>
@@ -583,6 +695,35 @@ onMounted(() => {
                         />
                       </div>
 
+                      <!-- Discount Percent -->
+                      <div>
+                        <label class="block text-xs font-medium text-gray-700 mb-1">Diskon %</label>
+                        <input
+                          type="number"
+                          v-model.number="row.discount_percent"
+                          min="0"
+                          max="100"
+                          step="0.01"
+                          @input="calculateItemDiscount(item.id, index)"
+                          class="w-full px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          placeholder="%"
+                        />
+                      </div>
+
+                      <!-- Discount Amount -->
+                      <div>
+                        <label class="block text-xs font-medium text-gray-700 mb-1">Diskon (Rp)</label>
+                        <input
+                          type="number"
+                          v-model.number="row.discount_amount"
+                          min="0"
+                          step="0.01"
+                          @input="calculateItemDiscountPercent(item.id, index)"
+                          class="w-full px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          placeholder="Rp"
+                        />
+                      </div>
+
                       <!-- Last Price Info -->
                       <div v-if="row.last_price" class="text-xs text-gray-600">
                         <div>Last: {{ new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(row.last_price) }}</div>
@@ -614,13 +755,40 @@ onMounted(() => {
           </div>
         </div>
 
-        <!-- Grand Total -->
+        <!-- Total Calculation -->
         <div class="mt-6 p-4 bg-gray-50 rounded-lg">
-          <div class="flex justify-between items-center">
-            <span class="text-lg font-semibold">Grand Total:</span>
-            <span class="text-xl font-bold text-blue-600">
-              {{ new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(grandTotal) }}
-            </span>
+          <h3 class="text-lg font-semibold mb-3">Total Calculation</h3>
+          <div class="space-y-2">
+            <div class="flex justify-between">
+              <span class="text-gray-600">Subtotal:</span>
+              <span class="font-medium">{{ new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(subtotalBeforeDiscount) }}</span>
+            </div>
+            <div v-if="totalItemDiscount > 0" class="flex justify-between">
+              <span class="text-gray-600">Diskon per Item:</span>
+              <span class="font-medium text-red-600">- {{ new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(totalItemDiscount) }}</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-gray-600">Subtotal setelah Diskon Item:</span>
+              <span class="font-medium">{{ new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(subtotalAfterItemDiscount) }}</span>
+            </div>
+            <div v-if="totalDiscountAmount > 0" class="flex justify-between">
+              <span class="text-gray-600">Diskon Total:</span>
+              <span class="font-medium text-red-600">- {{ new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(totalDiscountAmount) }}</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-gray-600">Subtotal setelah Diskon Total:</span>
+              <span class="font-medium">{{ new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(subtotalAfterDiscountTotal) }}</span>
+            </div>
+            <div v-if="poForm.ppn_enabled" class="flex justify-between">
+              <span class="text-gray-600">PPN (11%):</span>
+              <span class="font-medium text-blue-600">{{ new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format((subtotalAfterDiscountTotal * 0.11)) }}</span>
+            </div>
+            <div class="flex justify-between border-t pt-2">
+              <span class="text-lg font-semibold">Grand Total:</span>
+              <span class="text-xl font-bold text-green-600">
+                {{ new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(grandTotal) }}
+              </span>
+            </div>
           </div>
         </div>
 

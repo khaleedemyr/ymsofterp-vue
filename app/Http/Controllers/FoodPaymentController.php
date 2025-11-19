@@ -99,7 +99,7 @@ class FoodPaymentController extends Controller
                 'payment_type' => $validated['payment_type'],
                 'notes' => $validated['notes'] ?? null,
                 'bukti_transfer_path' => $buktiPath,
-                'status' => 'paid',
+                'status' => 'draft',
                 'created_by' => Auth::id(),
             ]);
             \Log::info('FoodPaymentController@store - FoodPayment created', $payment->toArray());
@@ -110,9 +110,7 @@ class FoodPaymentController extends Controller
                     'food_payment_id' => $payment->id,
                     'contra_bon_id' => $cb->id,
                 ]);
-                // Update status contra bon menjadi paid
-                $cb->status = 'paid';
-                $cb->save();
+                // Status contra bon tetap 'approved', tidak diubah menjadi 'paid' sampai payment di-mark as paid
             }
 
             DB::commit();
@@ -130,7 +128,7 @@ class FoodPaymentController extends Controller
     // Show detail food payment
     public function show($id)
     {
-        $payment = FoodPayment::with(['supplier', 'creator', 'financeManager', 'contraBons.purchaseOrder', 'contraBons.retailFood'])->findOrFail($id);
+        $payment = FoodPayment::with(['supplier', 'creator', 'financeManager', 'gmFinance', 'contraBons.purchaseOrder', 'contraBons.retailFood'])->findOrFail($id);
         
         // Transform contra bons to include source type and outlet information
         $payment->contra_bons = $payment->contra_bons->map(function($contraBon) {
@@ -547,7 +545,43 @@ class FoodPaymentController extends Controller
 
     public function edit($id)
     {
-        $payment = FoodPayment::with(['supplier', 'creator', 'financeManager', 'contraBons'])->findOrFail($id);
+        $payment = FoodPayment::with(['supplier', 'creator', 'financeManager', 'gmFinance', 'contraBons.purchaseOrder', 'contraBons.retailFood'])->findOrFail($id);
+        
+        // Transform contra bons to include source type and outlet information (same as show)
+        $payment->contra_bons = $payment->contra_bons->map(function($contraBon) {
+            $sourceTypeDisplay = 'Unknown';
+            $outletNames = [];
+            
+            if ($contraBon->source_type === 'purchase_order' && $contraBon->purchaseOrder) {
+                if ($contraBon->purchaseOrder->source_type === 'pr_foods') {
+                    $sourceTypeDisplay = 'PR Foods';
+                } elseif ($contraBon->purchaseOrder->source_type === 'ro_supplier') {
+                    $sourceTypeDisplay = 'RO Supplier';
+                    // Get outlet names for RO Supplier
+                    $outletData = \DB::table('food_floor_orders as fo')
+                        ->join('purchase_order_food_items as poi', 'fo.id', '=', 'poi.ro_id')
+                        ->leftJoin('tbl_data_outlet as o', 'fo.id_outlet', '=', 'o.id_outlet')
+                        ->where('poi.purchase_order_food_id', $contraBon->purchaseOrder->id)
+                        ->select('o.nama_outlet')
+                        ->distinct()
+                        ->get();
+                    
+                    $outletNames = $outletData->pluck('nama_outlet')->filter()->unique()->toArray();
+                }
+            } elseif ($contraBon->source_type === 'retail_food') {
+                $sourceTypeDisplay = 'Retail Food';
+                // Get outlet name for Retail Food
+                if ($contraBon->retailFood) {
+                    $outletNames = [$contraBon->retailFood->outlet_name];
+                }
+            }
+            
+            $contraBon->source_type_display = $sourceTypeDisplay;
+            $contraBon->outlet_names = $outletNames;
+            
+            return $contraBon;
+        });
+        
         return inertia('FoodPayment/Form', [
             'payment' => $payment
         ]);
@@ -595,11 +629,14 @@ class FoodPaymentController extends Controller
             ]);
 
             // Hapus relasi lama
+            $oldContraBonIds = $payment->contraBons->pluck('id')->toArray();
             FoodPaymentContraBon::where('food_payment_id', $payment->id)->delete();
 
-            // Update status contra bon lama menjadi approved
-            ContraBon::whereIn('id', $payment->contraBons->pluck('id'))
-                ->update(['status' => 'approved']);
+            // Update status contra bon lama menjadi approved (jika payment belum paid)
+            if ($payment->status !== 'paid') {
+                ContraBon::whereIn('id', $oldContraBonIds)
+                    ->update(['status' => 'approved']);
+            }
 
             // Buat relasi baru
             foreach ($contraBons as $cb) {
@@ -607,9 +644,7 @@ class FoodPaymentController extends Controller
                     'food_payment_id' => $payment->id,
                     'contra_bon_id' => $cb->id,
                 ]);
-                // Update status contra bon baru menjadi paid
-                $cb->status = 'paid';
-                $cb->save();
+                // Status contra bon tetap 'approved', tidak diubah menjadi 'paid' sampai payment di-mark as paid
             }
 
             DB::commit();

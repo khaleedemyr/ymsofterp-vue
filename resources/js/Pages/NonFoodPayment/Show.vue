@@ -92,6 +92,18 @@
                   {{ payment.purchase_order_ops.status }}
                 </span>
               </div>
+              <div v-if="payment.purchase_order_ops.subtotal">
+                <label class="block text-sm font-medium text-gray-700">Subtotal</label>
+                <p class="mt-1 text-gray-900">{{ formatCurrency(payment.purchase_order_ops.subtotal) }}</p>
+              </div>
+              <div v-if="payment.purchase_order_ops.discount_total_percent > 0 || payment.purchase_order_ops.discount_total_amount > 0">
+                <label class="block text-sm font-medium text-gray-700">Diskon Total PO</label>
+                <p class="mt-1 text-red-600 font-semibold">
+                  <span v-if="payment.purchase_order_ops.discount_total_percent > 0">{{ payment.purchase_order_ops.discount_total_percent }}%</span>
+                  <span v-if="payment.purchase_order_ops.discount_total_percent > 0 && payment.purchase_order_ops.discount_total_amount > 0"> / </span>
+                  <span v-if="payment.purchase_order_ops.discount_total_amount > 0">{{ formatCurrency(payment.purchase_order_ops.discount_total_amount) }}</span>
+                </p>
+              </div>
               <div>
                 <label class="block text-sm font-medium text-gray-700">Grand Total</label>
                 <p class="mt-1 text-lg font-bold text-blue-600">{{ formatCurrency(payment.purchase_order_ops.grand_total) }}</p>
@@ -109,6 +121,7 @@
                       <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Quantity</th>
                       <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Unit</th>
                       <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Price</th>
+                      <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Diskon</th>
                       <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
                     </tr>
                   </thead>
@@ -118,6 +131,13 @@
                       <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ item.quantity }}</td>
                       <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ item.unit }}</td>
                       <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ formatCurrency(item.price) }}</td>
+                      <td class="px-6 py-4 whitespace-nowrap text-sm text-xs">
+                        <div v-if="item.discount_percent > 0 || item.discount_amount > 0" class="text-red-600">
+                          <div v-if="item.discount_percent > 0">{{ item.discount_percent }}%</div>
+                          <div v-if="item.discount_amount > 0">{{ formatCurrency(item.discount_amount) }}</div>
+                        </div>
+                        <span v-else class="text-gray-400">-</span>
+                      </td>
                       <td class="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">{{ formatCurrency(item.total) }}</td>
                     </tr>
                   </tbody>

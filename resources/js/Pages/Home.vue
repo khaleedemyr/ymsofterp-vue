@@ -5905,6 +5905,18 @@ watch(locale, () => {
                                 </span>
                             </div>
                             <div>
+                                <label class="text-sm font-medium text-gray-600 dark:text-gray-400">Subtotal</label>
+                                <p class="text-gray-900 dark:text-white font-semibold">{{ new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(selectedPoOpsApproval.subtotal || 0) }}</p>
+                            </div>
+                            <div v-if="selectedPoOpsApproval.discount_total_percent > 0 || selectedPoOpsApproval.discount_total_amount > 0">
+                                <label class="text-sm font-medium text-gray-600 dark:text-gray-400">Diskon Total</label>
+                                <p class="text-gray-900 dark:text-white font-semibold text-red-600">
+                                    <span v-if="selectedPoOpsApproval.discount_total_percent > 0">{{ selectedPoOpsApproval.discount_total_percent }}%</span>
+                                    <span v-if="selectedPoOpsApproval.discount_total_percent > 0 && selectedPoOpsApproval.discount_total_amount > 0"> / </span>
+                                    <span v-if="selectedPoOpsApproval.discount_total_amount > 0">{{ new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(selectedPoOpsApproval.discount_total_amount || 0) }}</span>
+                                </p>
+                            </div>
+                            <div>
                                 <label class="text-sm font-medium text-gray-600 dark:text-gray-400">Grand Total</label>
                                 <p class="text-gray-900 dark:text-white font-semibold text-lg">
                                     Rp {{ new Intl.NumberFormat('id-ID').format(selectedPoOpsApproval.grand_total) }}
@@ -6053,6 +6065,7 @@ watch(locale, () => {
                                         <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Qty</th>
                                         <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Unit</th>
                                         <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Price</th>
+                                        <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Diskon</th>
                                         <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Total</th>
                                     </tr>
                                 </thead>
@@ -6062,6 +6075,13 @@ watch(locale, () => {
                                         <td class="px-3 py-2 text-sm text-gray-900 dark:text-white">{{ item.quantity }}</td>
                                         <td class="px-3 py-2 text-sm text-gray-900 dark:text-white">{{ item.unit }}</td>
                                         <td class="px-3 py-2 text-sm text-gray-900 dark:text-white">Rp {{ new Intl.NumberFormat('id-ID').format(item.price) }}</td>
+                                        <td class="px-3 py-2 text-sm text-xs">
+                                            <div v-if="item.discount_percent > 0 || item.discount_amount > 0" class="text-red-600">
+                                                <div v-if="item.discount_percent > 0">{{ item.discount_percent }}%</div>
+                                                <div v-if="item.discount_amount > 0">Rp {{ new Intl.NumberFormat('id-ID').format(item.discount_amount || 0) }}</div>
+                                            </div>
+                                            <span v-else class="text-gray-400">-</span>
+                                        </td>
                                         <td class="px-3 py-2 text-sm text-gray-900 dark:text-white font-semibold">Rp {{ new Intl.NumberFormat('id-ID').format(item.total) }}</td>
                                     </tr>
                                 </tbody>
@@ -6296,6 +6316,24 @@ watch(locale, () => {
                                 <label class="text-sm font-medium text-gray-600 dark:text-gray-400">Source Type</label>
                                 <p class="text-gray-900 dark:text-white">{{ selectedContraBonApproval.source_type_display }}</p>
                             </div>
+                            <!-- Discount Info -->
+                            <div v-if="selectedContraBonApproval.po_discount_info && (selectedContraBonApproval.po_discount_info.discount_total_percent > 0 || selectedContraBonApproval.po_discount_info.discount_total_amount > 0)" class="md:col-span-2">
+                                <label class="text-sm font-medium text-gray-600 dark:text-gray-400">Informasi Diskon PO</label>
+                                <div class="mt-1 p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg border border-yellow-200 dark:border-yellow-800">
+                                    <div v-if="selectedContraBonApproval.po_discount_info.discount_total_percent > 0" class="text-sm">
+                                        Diskon Total: <span class="font-semibold text-red-600">{{ selectedContraBonApproval.po_discount_info.discount_total_percent }}%</span>
+                                    </div>
+                                    <div v-if="selectedContraBonApproval.po_discount_info.discount_total_amount > 0" class="text-sm">
+                                        Diskon Total: <span class="font-semibold text-red-600">Rp {{ new Intl.NumberFormat('id-ID').format(selectedContraBonApproval.po_discount_info.discount_total_amount || 0) }}</span>
+                                    </div>
+                                    <div class="text-sm mt-1">
+                                        Subtotal PO: <span class="font-semibold">Rp {{ new Intl.NumberFormat('id-ID').format(selectedContraBonApproval.po_discount_info.subtotal || 0) }}</span>
+                                    </div>
+                                    <div class="text-sm">
+                                        Grand Total PO: <span class="font-semibold text-green-600">Rp {{ new Intl.NumberFormat('id-ID').format(selectedContraBonApproval.po_discount_info.grand_total || 0) }}</span>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
@@ -6310,6 +6348,7 @@ watch(locale, () => {
                                         <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Qty</th>
                                         <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Unit</th>
                                         <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Price</th>
+                                        <th v-if="selectedContraBonApproval.source_type === 'purchase_order'" class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Diskon</th>
                                         <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Total</th>
                                     </tr>
                                 </thead>
@@ -6319,7 +6358,21 @@ watch(locale, () => {
                                         <td class="px-3 py-2 text-sm text-gray-900 dark:text-white">{{ item.quantity }}</td>
                                         <td class="px-3 py-2 text-sm text-gray-900 dark:text-white">{{ item.unit?.name || item.unit_name || '-' }}</td>
                                         <td class="px-3 py-2 text-sm text-gray-900 dark:text-white">Rp {{ new Intl.NumberFormat('id-ID').format(item.price || 0) }}</td>
-                                        <td class="px-3 py-2 text-sm text-gray-900 dark:text-white font-semibold">Rp {{ new Intl.NumberFormat('id-ID').format(item.total || 0) }}</td>
+                                        <td v-if="selectedContraBonApproval.source_type === 'purchase_order'" class="px-3 py-2 text-sm text-xs">
+                                            <div v-if="item.discount_percent > 0 || item.discount_amount > 0" class="text-red-600">
+                                                <div v-if="item.discount_percent > 0">{{ item.discount_percent }}%</div>
+                                                <div v-if="item.discount_amount > 0">Rp {{ new Intl.NumberFormat('id-ID').format(item.discount_amount || 0) }}</div>
+                                            </div>
+                                            <span v-else class="text-gray-400">-</span>
+                                        </td>
+                                        <td class="px-3 py-2 text-sm text-gray-900 dark:text-white font-semibold">
+                                            <span v-if="selectedContraBonApproval.source_type === 'purchase_order' && item.po_item_total">
+                                                Rp {{ new Intl.NumberFormat('id-ID').format(item.po_item_total || 0) }}
+                                            </span>
+                                            <span v-else>
+                                                Rp {{ new Intl.NumberFormat('id-ID').format(item.total || 0) }}
+                                            </span>
+                                        </td>
                                     </tr>
                                 </tbody>
                             </table>

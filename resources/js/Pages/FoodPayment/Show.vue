@@ -8,6 +8,14 @@
         </h1>
       </div>
       <div class="bg-white rounded-lg shadow p-6 mb-6">
+        <div class="flex justify-between items-center mb-4">
+          <h2 class="text-xl font-bold text-gray-800">Informasi Food Payment</h2>
+          <div class="flex gap-2">
+            <a v-if="payment.status === 'draft' || payment.status === 'approved'" :href="`/food-payments/${payment.id}/edit`" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">
+              <i class="fa fa-edit mr-1"></i> Edit
+            </a>
+          </div>
+        </div>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
           <div>
             <div class="mb-2"><span class="font-semibold">Nomor:</span> {{ payment.number }}</div>
@@ -20,6 +28,7 @@
             <div class="mb-2"><span class="font-semibold">Total:</span> {{ formatCurrency(payment.total) }}</div>
             <div class="mb-2"><span class="font-semibold">Notes:</span> {{ payment.notes || '-' }}</div>
             <div class="mb-2"><span class="font-semibold">Dibuat oleh:</span> {{ payment.creator?.nama_lengkap }}</div>
+            <div v-if="payment.created_at" class="mb-2"><span class="font-semibold">Dibuat pada:</span> {{ formatDateTime(payment.created_at) }}</div>
           </div>
         </div>
         <div class="mb-4">
@@ -33,6 +42,32 @@
           <div v-else class="text-gray-400">Tidak ada bukti transfer</div>
         </div>
       </div>
+
+      <!-- Approval Information -->
+      <div v-if="payment.finance_manager_approved_at || payment.gm_finance_approved_at" class="bg-green-50 rounded-lg shadow p-6 mb-6">
+        <h3 class="font-bold mb-4 text-gray-800">Informasi Approval</h3>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div v-if="payment.finance_manager_approved_at" class="bg-white rounded-lg p-4 border border-green-200">
+            <h4 class="font-semibold text-green-700 mb-2">Finance Manager Approval</h4>
+            <div class="text-sm">
+              <div class="mb-1"><span class="font-medium">Status:</span> <span class="text-green-600 font-semibold">Approved</span></div>
+              <div class="mb-1"><span class="font-medium">Oleh:</span> {{ payment.finance_manager?.nama_lengkap || '-' }}</div>
+              <div class="mb-1"><span class="font-medium">Tanggal:</span> {{ formatDateTime(payment.finance_manager_approved_at) }}</div>
+              <div v-if="payment.finance_manager_note"><span class="font-medium">Catatan:</span> {{ payment.finance_manager_note }}</div>
+            </div>
+          </div>
+          <div v-if="payment.gm_finance_approved_at" class="bg-white rounded-lg p-4 border border-green-200">
+            <h4 class="font-semibold text-green-700 mb-2">GM Finance Approval</h4>
+            <div class="text-sm">
+              <div class="mb-1"><span class="font-medium">Status:</span> <span class="text-green-600 font-semibold">Approved</span></div>
+              <div class="mb-1"><span class="font-medium">Oleh:</span> {{ payment.gm_finance?.nama_lengkap || '-' }}</div>
+              <div class="mb-1"><span class="font-medium">Tanggal:</span> {{ formatDateTime(payment.gm_finance_approved_at) }}</div>
+              <div v-if="payment.gm_finance_note"><span class="font-medium">Catatan:</span> {{ payment.gm_finance_note }}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div class="bg-blue-50 rounded-lg shadow p-6 mb-6">
         <h3 class="font-bold mb-2">Daftar Contra Bon yang Dibayar</h3>
         <div class="space-y-3">
@@ -81,6 +116,11 @@ function formatDate(date) {
   if (!date) return '-';
   const d = new Date(date);
   return d.toLocaleDateString('id-ID', { year: 'numeric', month: 'short', day: 'numeric' });
+}
+function formatDateTime(date) {
+  if (!date) return '-';
+  const d = new Date(date);
+  return d.toLocaleString('id-ID', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 function formatCurrency(value) {
   if (value == null) return '-';

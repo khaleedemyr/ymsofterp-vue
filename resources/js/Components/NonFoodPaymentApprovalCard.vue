@@ -161,6 +161,20 @@
                                 <label class="text-sm font-medium text-gray-600 dark:text-gray-400">Title</label>
                                 <p class="text-gray-900 dark:text-white">{{ selectedPayment.source_info.title }}</p>
                             </div>
+                            <div v-if="selectedPayment.source_info.subtotal">
+                                <label class="text-sm font-medium text-gray-600 dark:text-gray-400">Subtotal</label>
+                                <p class="text-gray-900 dark:text-white font-semibold">
+                                    Rp {{ new Intl.NumberFormat('id-ID').format(selectedPayment.source_info.subtotal) }}
+                                </p>
+                            </div>
+                            <div v-if="selectedPayment.source_info.type === 'PO' && (selectedPayment.source_info.discount_total_percent > 0 || selectedPayment.source_info.discount_total_amount > 0)">
+                                <label class="text-sm font-medium text-gray-600 dark:text-gray-400">Diskon Total PO</label>
+                                <p class="text-gray-900 dark:text-white font-semibold text-red-600">
+                                    <span v-if="selectedPayment.source_info.discount_total_percent > 0">{{ selectedPayment.source_info.discount_total_percent }}%</span>
+                                    <span v-if="selectedPayment.source_info.discount_total_percent > 0 && selectedPayment.source_info.discount_total_amount > 0"> / </span>
+                                    <span v-if="selectedPayment.source_info.discount_total_amount > 0">Rp {{ new Intl.NumberFormat('id-ID').format(selectedPayment.source_info.discount_total_amount) }}</span>
+                                </p>
+                            </div>
                             <div v-if="selectedPayment.source_info.grand_total">
                                 <label class="text-sm font-medium text-gray-600 dark:text-gray-400">Grand Total</label>
                                 <p class="text-gray-900 dark:text-white font-semibold">
@@ -258,6 +272,7 @@
                                             <th class="px-2 py-1 text-left text-gray-700 dark:text-gray-300">Qty</th>
                                             <th class="px-2 py-1 text-left text-gray-700 dark:text-gray-300">Unit</th>
                                             <th class="px-2 py-1 text-left text-gray-700 dark:text-gray-300">Price</th>
+                                            <th v-if="selectedPayment.source_info && selectedPayment.source_info.type === 'PO'" class="px-2 py-1 text-left text-gray-700 dark:text-gray-300">Diskon</th>
                                             <th class="px-2 py-1 text-left text-gray-700 dark:text-gray-300">Total</th>
                                         </tr>
                                     </thead>
@@ -273,12 +288,20 @@
                                             <td class="px-2 py-1 text-gray-900 dark:text-white">{{ item.quantity || 0 }}</td>
                                             <td class="px-2 py-1 text-gray-900 dark:text-white">{{ item.unit || '-' }}</td>
                                             <td class="px-2 py-1 text-gray-900 dark:text-white">Rp {{ new Intl.NumberFormat('id-ID').format(item.price || 0) }}</td>
+                                            <td v-if="selectedPayment.source_info && selectedPayment.source_info.type === 'PO'" class="px-2 py-1 text-xs">
+                                                <div v-if="item.discount_percent > 0 || item.discount_amount > 0" class="text-red-600">
+                                                    <div v-if="item.discount_percent > 0">{{ item.discount_percent }}%</div>
+                                                    <div v-if="item.discount_amount > 0">Rp {{ new Intl.NumberFormat('id-ID').format(item.discount_amount || 0) }}</div>
+                                                </div>
+                                                <span v-else class="text-gray-400">-</span>
+                                            </td>
                                             <td class="px-2 py-1 text-gray-900 dark:text-white font-semibold">Rp {{ new Intl.NumberFormat('id-ID').format(item.total || 0) }}</td>
                                         </tr>
                                     </tbody>
                                     <tfoot class="bg-gray-50 dark:bg-gray-800">
                                         <tr>
-                                            <td colspan="4" class="px-2 py-1 text-right font-medium text-gray-700 dark:text-gray-300">Subtotal:</td>
+                                            <td :colspan="selectedPayment.source_info && selectedPayment.source_info.type === 'PO' ? 4 : 3" class="px-2 py-1 text-right font-medium text-gray-700 dark:text-gray-300">Subtotal:</td>
+                                            <td v-if="selectedPayment.source_info && selectedPayment.source_info.type === 'PO'"></td>
                                             <td class="px-2 py-1 font-semibold text-gray-900 dark:text-white">
                                                 Rp {{ new Intl.NumberFormat('id-ID').format(outletGroup.subtotal || 0) }}
                                             </td>
@@ -296,7 +319,7 @@
                                 <div class="flex flex-wrap gap-2">
                                     <a v-for="attachment in outletGroup.pr_attachments" 
                                        :key="'pr-attachment-' + attachment.id"
-                                       :href="attachment.file_path" 
+                                       :href="`/purchase-requisitions/attachments/${attachment.id}/download`" 
                                        target="_blank"
                                        class="inline-flex items-center px-2 py-1 bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 rounded text-xs hover:bg-green-200 dark:hover:bg-green-800 transition">
                                         <i class="fa fa-file mr-1"></i>
@@ -317,7 +340,7 @@
                         <div class="flex flex-wrap gap-2">
                             <a v-for="attachment in selectedPayment.po_attachments" 
                                :key="'po-attachment-' + attachment.id"
-                               :href="attachment.file_path" 
+                               :href="`/po-ops/attachments/${attachment.id}/download`" 
                                target="_blank"
                                class="inline-flex items-center px-3 py-2 bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300 rounded text-sm hover:bg-purple-200 dark:hover:bg-purple-800 transition">
                                 <i class="fa fa-file mr-2"></i>
@@ -336,7 +359,7 @@
                         <div class="flex flex-wrap gap-2">
                             <a v-for="attachment in selectedPayment.pr_attachments" 
                                :key="'pr-attachment-' + attachment.id"
-                               :href="attachment.file_path" 
+                               :href="`/purchase-requisitions/attachments/${attachment.id}/download`" 
                                target="_blank"
                                class="inline-flex items-center px-3 py-2 bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300 rounded text-sm hover:bg-purple-200 dark:hover:bg-purple-800 transition">
                                 <i class="fa fa-file mr-2"></i>

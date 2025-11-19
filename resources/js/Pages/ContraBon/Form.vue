@@ -59,6 +59,9 @@ const form = useForm({
     quantity: i.quantity,
     unit_id: i.unit_id,
     price: i.price,
+    discount_percent: i.discount_percent || 0,
+    discount_amount: i.discount_amount || 0,
+    po_item_total: i.po_item_total || null,
     notes: i.notes || '',
     item: i.item,
     unit: i.unit,
@@ -215,6 +218,9 @@ function selectPOFromModal(po) {
       unit_id: item.unit_id,
       quantity: item.qty_received,
       price: item.po_price,
+      discount_percent: item.discount_percent || 0,
+      discount_amount: item.discount_amount || 0,
+      po_item_total: item.po_item_total || (item.po_price * item.qty_received),
       notes: '',
       selected: false, // Default tidak dicentang
       _rowKey: Date.now() + '-' + Math.random(),
@@ -804,8 +810,8 @@ function toggleAllItems(event) {
           </div>
         </div>
 
-        <!-- Card Info PO & GR -->
-        <div v-if="selectedPOGR" class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+        <!-- Card Info PO & GR (for create mode) -->
+        <div v-if="!isEdit && selectedPOGR" class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
           <div class="bg-blue-50 rounded-lg p-4 shadow">
             <h3 class="font-bold mb-2">Info PO</h3>
             <div>No. PO: {{ selectedPOGR.po_number }}</div>
@@ -828,6 +834,22 @@ function toggleAllItems(event) {
                 {{ outlet }}
               </span>
             </div>
+            <!-- Discount Info -->
+            <div v-if="selectedPOGR.po_discount_info && (selectedPOGR.po_discount_info.discount_total_percent > 0 || selectedPOGR.po_discount_info.discount_total_amount > 0)" class="mt-3 pt-3 border-t border-blue-200">
+              <div class="text-sm font-semibold text-blue-800 mb-1">Informasi Diskon PO:</div>
+              <div v-if="selectedPOGR.po_discount_info.discount_total_percent > 0" class="text-xs">
+                Diskon Total: <span class="font-semibold text-red-600">{{ selectedPOGR.po_discount_info.discount_total_percent }}%</span>
+              </div>
+              <div v-if="selectedPOGR.po_discount_info.discount_total_amount > 0" class="text-xs">
+                Diskon Total: <span class="font-semibold text-red-600">{{ formatCurrency(selectedPOGR.po_discount_info.discount_total_amount) }}</span>
+              </div>
+              <div class="text-xs mt-1">
+                Subtotal PO: <span class="font-semibold">{{ formatCurrency(selectedPOGR.po_discount_info.subtotal) }}</span>
+              </div>
+              <div class="text-xs">
+                Grand Total PO: <span class="font-semibold text-green-600">{{ formatCurrency(selectedPOGR.po_discount_info.grand_total) }}</span>
+              </div>
+            </div>
           </div>
           <div class="bg-green-50 rounded-lg p-4 shadow">
             <h3 class="font-bold mb-2">Info Good Receive</h3>
@@ -835,6 +857,45 @@ function toggleAllItems(event) {
             <div>Tanggal GR: {{ selectedPOGR.gr_date }}</div>
             <div>Diterima oleh: {{ selectedPOGR.gr_receiver_name }}</div>
             <div>Supplier: <b>{{ selectedPOGR.supplier_name }}</b></div>
+          </div>
+        </div>
+
+        <!-- Card Info PO & GR (for edit mode) -->
+        <div v-if="isEdit && contraBon && contraBon.purchase_order && contraBon.source_type === 'purchase_order'" class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+          <div class="bg-blue-50 rounded-lg p-4 shadow">
+            <h3 class="font-bold mb-2">Info PO</h3>
+            <div>No. PO: {{ contraBon.purchase_order?.number || '-' }}</div>
+            <div>Tanggal PO: {{ contraBon.purchase_order?.date ? new Date(contraBon.purchase_order.date).toLocaleDateString('id-ID') : '-' }}</div>
+            <div>Supplier: <b>{{ contraBon.supplier?.name || '-' }}</b></div>
+            <div v-if="contraBon.source_type_display">
+              Source Type: 
+              <span :class="{
+                'bg-blue-100 text-blue-700': contraBon.source_type_display === 'PR Foods',
+                'bg-green-100 text-green-700': contraBon.source_type_display === 'RO Supplier'
+              }" class="px-2 py-1 rounded-full text-xs font-semibold">
+                {{ contraBon.source_type_display }}
+              </span>
+            </div>
+            <div v-if="contraBon.po_discount_info && (contraBon.po_discount_info.discount_total_percent > 0 || contraBon.po_discount_info.discount_total_amount > 0)" class="mt-3 pt-3 border-t border-blue-200">
+              <div class="text-sm font-semibold text-blue-800 mb-1">Informasi Diskon PO:</div>
+              <div v-if="contraBon.po_discount_info.discount_total_percent > 0" class="text-xs">
+                Diskon Total: <span class="font-semibold text-red-600">{{ contraBon.po_discount_info.discount_total_percent }}%</span>
+              </div>
+              <div v-if="contraBon.po_discount_info.discount_total_amount > 0" class="text-xs">
+                Diskon Total: <span class="font-semibold text-red-600">{{ formatCurrency(contraBon.po_discount_info.discount_total_amount) }}</span>
+              </div>
+              <div class="text-xs mt-1">
+                Subtotal PO: <span class="font-semibold">{{ formatCurrency(contraBon.po_discount_info.subtotal) }}</span>
+              </div>
+              <div class="text-xs">
+                Grand Total PO: <span class="font-semibold text-green-600">{{ formatCurrency(contraBon.po_discount_info.grand_total) }}</span>
+              </div>
+            </div>
+          </div>
+          <div class="bg-green-50 rounded-lg p-4 shadow">
+            <h3 class="font-bold mb-2">Info Good Receive</h3>
+            <div>No. GR: {{ contraBon.gr_number || '-' }}</div>
+            <div>Tanggal GR: {{ contraBon.gr_date ? new Date(contraBon.gr_date).toLocaleDateString('id-ID') : '-' }}</div>
           </div>
         </div>
 
@@ -918,13 +979,14 @@ function toggleAllItems(event) {
                    <th class="px-3 py-2 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Qty</th>
                    <th class="px-3 py-2 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Unit</th>
                    <th class="px-3 py-2 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Price</th>
+                   <th v-if="sourceType === 'purchase_order'" class="px-3 py-2 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Diskon</th>
                    <th class="px-3 py-2 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Total</th>
                    <th class="px-3 py-2 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Notes</th>
                  </tr>
                </thead>
                <tbody>
                  <tr v-if="form.items.length === 0" class="text-center text-gray-500">
-                   <td colspan="7" class="px-3 py-4">Tidak ada data item</td>
+                   <td :colspan="sourceType === 'purchase_order' ? 8 : 7" class="px-3 py-4">Tidak ada data item</td>
                  </tr>
                  <tr v-for="(item, idx) in form.items" :key="item._rowKey || idx" :class="{ 'bg-gray-50': !item.selected }">
                    <td class="px-3 py-2 text-center">
@@ -955,8 +1017,20 @@ function toggleAllItems(event) {
                        placeholder="0.00"
                      />
                    </td>
+                   <td v-if="sourceType === 'purchase_order'" class="px-3 py-2 min-w-[100px] text-xs">
+                     <div v-if="item.discount_percent > 0 || item.discount_amount > 0" class="text-red-600">
+                       <div v-if="item.discount_percent > 0">{{ item.discount_percent }}%</div>
+                       <div v-if="item.discount_amount > 0">{{ formatCurrency(item.discount_amount) }}</div>
+                     </div>
+                     <span v-else class="text-gray-400">-</span>
+                   </td>
                    <td class="px-3 py-2 min-w-[100px]">
-                     {{ formatCurrency(item.quantity * (item.price || 0)) }}
+                     <span v-if="sourceType === 'purchase_order' && item.po_item_total">
+                       {{ formatCurrency(item.po_item_total) }}
+                     </span>
+                     <span v-else>
+                       {{ formatCurrency(item.quantity * (item.price || 0)) }}
+                     </span>
                    </td>
                    <td class="px-3 py-2 min-w-[120px]">
                      <input type="text" v-model="item.notes" class="w-full rounded border-gray-300" />
@@ -966,12 +1040,13 @@ function toggleAllItems(event) {
                <tfoot class="bg-gray-100">
                  <tr>
                    <td colspan="1" class="px-3 py-3"></td>
-                   <td colspan="4" class="px-3 py-3 text-right font-bold text-gray-700">
+                   <td :colspan="sourceType === 'purchase_order' ? 4 : 3" class="px-3 py-3 text-right font-bold text-gray-700">
                      Total:
                    </td>
                    <td class="px-3 py-3 font-bold text-blue-700">
                      {{ formatCurrency(totalAmount) }}
                    </td>
+                   <td v-if="sourceType === 'purchase_order'" class="px-3 py-3"></td>
                    <td class="px-3 py-3"></td>
                  </tr>
                </tfoot>

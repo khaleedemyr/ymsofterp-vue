@@ -326,6 +326,8 @@ class NonFoodPaymentController extends Controller
                         'poi.quantity',
                         'poi.unit',
                         'poi.price',
+                        'poi.discount_percent',
+                        'poi.discount_amount',
                         'poi.total',
                         'pr.id as pr_id',
                         'pr.outlet_id',
@@ -349,6 +351,8 @@ class NonFoodPaymentController extends Controller
                         'poi.quantity',
                         'poi.unit',
                         'poi.price',
+                        'poi.discount_percent',
+                        'poi.discount_amount',
                         'poi.total'
                     )
                     ->get();
@@ -423,6 +427,8 @@ class NonFoodPaymentController extends Controller
                             'quantity' => $item->quantity,
                             'unit' => $item->unit,
                             'price' => $item->price,
+                            'discount_percent' => $item->discount_percent ?? 0,
+                            'discount_amount' => $item->discount_amount ?? 0,
                             'total' => $item->total,
                         ];
                     }),
@@ -430,11 +436,23 @@ class NonFoodPaymentController extends Controller
                 ];
             });
 
+            // Add PO discount info
+            $poDiscountInfo = null;
+            if ($po) {
+                $poDiscountInfo = [
+                    'discount_total_percent' => $po->discount_total_percent ?? 0,
+                    'discount_total_amount' => $po->discount_total_amount ?? 0,
+                    'subtotal' => $po->subtotal ?? 0,
+                    'grand_total' => $po->grand_total ?? 0,
+                ];
+            }
+
             return response()->json([
                 'po' => $po,
                 'items_by_outlet' => $itemsByOutlet,
                 'total_amount' => $items->sum('total'),
-                'po_attachments' => $poAttachments
+                'po_attachments' => $poAttachments,
+                'po_discount_info' => $poDiscountInfo
             ]);
 
         } catch (\Exception $e) {
@@ -1483,6 +1501,8 @@ class NonFoodPaymentController extends Controller
                             'poi.quantity',
                             'poi.unit',
                             'poi.price',
+                            'poi.discount_percent',
+                            'poi.discount_amount',
                             'poi.total',
                             'pr.id as pr_id',
                             'pr.outlet_id',
@@ -1562,6 +1582,8 @@ class NonFoodPaymentController extends Controller
                                 'quantity' => $item->quantity,
                                 'unit' => $item->unit,
                                 'price' => $item->price,
+                                'discount_percent' => $item->discount_percent ?? 0,
+                                'discount_amount' => $item->discount_amount ?? 0,
                                 'total' => $item->total,
                             ];
                         }),
@@ -1574,6 +1596,9 @@ class NonFoodPaymentController extends Controller
                     'number' => $po->number,
                     'date' => $po->date,
                     'grand_total' => $po->grand_total,
+                    'subtotal' => $po->subtotal ?? 0,
+                    'discount_total_percent' => $po->discount_total_percent ?? 0,
+                    'discount_total_amount' => $po->discount_total_amount ?? 0,
                     'supplier' => $po->supplier ? [
                         'name' => $po->supplier->name
                     ] : null,

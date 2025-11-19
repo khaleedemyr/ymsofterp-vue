@@ -4,7 +4,7 @@
       <div class="flex items-center gap-2 mb-6">
         <button @click="goBack" class="text-blue-500 hover:underline"><i class="fa fa-arrow-left"></i> Kembali</button>
         <h1 class="text-2xl font-bold text-gray-800 flex items-center gap-2 ml-4">
-          <i class="fa-solid fa-money-bill-transfer text-blue-500"></i> Buat Food Payment
+          <i class="fa-solid fa-money-bill-transfer text-blue-500"></i> {{ isEditMode ? 'Edit' : 'Buat' }} Food Payment
         </h1>
       </div>
       <form @submit.prevent="onSubmit" class="space-y-6">
@@ -74,6 +74,16 @@
         <div class="mb-4">
           <label class="block text-sm font-medium text-gray-700">Upload Bukti Transfer (image/pdf)</label>
           <input type="file" accept="image/*,application/pdf" @change="onFileChange" class="mt-1 block" />
+          <div v-if="existingBuktiPath && !filePreview" class="mt-2">
+            <div v-if="isImageFile(existingBuktiPath)" class="mt-2">
+              <img :src="`/storage/${existingBuktiPath}`" alt="Current Bukti" class="max-w-xs rounded shadow" />
+            </div>
+            <div v-else class="mt-2">
+              <a :href="`/storage/${existingBuktiPath}`" target="_blank" class="text-blue-500 hover:underline">
+                <i class="fas fa-file-pdf mr-1"></i> Lihat Bukti Transfer Saat Ini
+              </a>
+            </div>
+          </div>
           <div v-if="filePreview && isImage" class="mt-2">
             <img :src="filePreview" alt="Preview" class="max-w-xs rounded shadow" />
           </div>
@@ -103,6 +113,15 @@ import AppLayout from '@/Layouts/AppLayout.vue';
 import Swal from 'sweetalert2';
 import axios from 'axios';
 
+const props = defineProps({
+  payment: {
+    type: Object,
+    default: null
+  }
+});
+
+const isEditMode = computed(() => !!props.payment);
+
 const suppliers = ref([]);
 const selectedSupplierId = ref('');
 const contraBons = ref([]);
@@ -117,6 +136,7 @@ const file = ref(null);
 const filePreview = ref(null);
 const isImage = ref(false);
 const isPdf = ref(false);
+const existingBuktiPath = ref(null);
 
 const totalBayar = computed(() => {
   return contraBons.value
@@ -162,17 +182,41 @@ function formatCurrency(value) {
 }
 
 async function onSupplierChange() {
-  form.value.selected_contra_bon_ids = [];
+  if (!isEditMode.value) {
+    form.value.selected_contra_bon_ids = [];
+  }
   contraBons.value = [];
   if (!selectedSupplierId.value) return;
   try {
     const res = await axios.get('/api/food-payments/contra-bon-unpaid');
     // Filter hanya yang supplier_id sesuai
-    contraBons.value = res.data.filter(cb => cb.supplier_id == selectedSupplierId.value);
+    let availableContraBons = res.data.filter(cb => cb.supplier_id == selectedSupplierId.value);
+    
+    // Jika edit mode, tambahkan contra bon yang sudah dipilih meskipun sudah paid
+    if (isEditMode.value && props.payment?.contra_bons) {
+      const selectedIds = props.payment.contra_bons.map(cb => cb.id);
+      const selectedContraBons = props.payment.contra_bons.map(cb => ({
+        ...cb,
+        total_amount: cb.total_amount || cb.pivot?.total_amount || 0
+      }));
+      // Gabungkan dengan yang available, pastikan tidak duplikat
+      const existingIds = availableContraBons.map(cb => cb.id);
+      selectedContraBons.forEach(cb => {
+        if (!existingIds.includes(cb.id)) {
+          availableContraBons.push(cb);
+        }
+      });
+    }
+    
+    contraBons.value = availableContraBons;
   } catch (e) {
     contraBons.value = [];
     Swal.fire('Error', 'Gagal mengambil data Contra Bon', 'error');
   }
+}
+
+function isImageFile(path) {
+  return path && (path.endsWith('.jpg') || path.endsWith('.jpeg') || path.endsWith('.png'));
 }
 
 async function onSubmit() {
@@ -182,7 +226,7 @@ async function onSubmit() {
   }
   try {
     Swal.fire({
-      title: 'Menyimpan Data...',
+      title: isEditMode.value ? 'Memperbarui Data...' : 'Menyimpan Data...',
       allowOutsideClick: false,
       showConfirmButton: false,
       didOpen: () => Swal.showLoading(),
@@ -200,11 +244,16 @@ async function onSubmit() {
       formData.append('bukti_transfer', file.value);
     }
 
-    const response = await axios.post('/food-payments', formData, {
+    const url = isEditMode.value 
+      ? `/food-payments/${props.payment.id}`
+      : '/food-payments';
+    const method = isEditMode.value ? 'put' : 'post';
+
+    const response = await axios[method](url, formData, {
       headers: { 'Content-Type': 'multipart/form-data' }
     });
 
-    Swal.fire('Berhasil', 'Data berhasil disimpan', 'success').then(() => {
+    Swal.fire('Berhasil', isEditMode.value ? 'Data berhasil diperbarui' : 'Data berhasil disimpan', 'success').then(() => {
       router.visit('/food-payments');
     });
   } catch (error) {
@@ -216,25 +265,41 @@ async function onSubmit() {
         Swal.fire('Error', errors[key][0], 'error');
       });
     } else {
-      Swal.fire('Error', 'Terjadi kesalahan saat menyimpan data', 'error');
+      Swal.fire('Error', `Terjadi kesalahan saat ${isEditMode.value ? 'memperbarui' : 'menyimpan'} data`, 'error');
     }
   }
 }
 
 onMounted(async () => {
-  // Set default date ke hari ini
-  const today = new Date();
-  const yyyy = today.getFullYear();
-  const mm = String(today.getMonth() + 1).padStart(2, '0');
-  const dd = String(today.getDate()).padStart(2, '0');
-  form.value.date = `${yyyy}-${mm}-${dd}`;
-
   try {
     const res = await axios.get('/api/suppliers');
     suppliers.value = res.data;
   } catch (e) {
     suppliers.value = [];
     Swal.fire('Error', 'Gagal mengambil data supplier', 'error');
+  }
+
+  if (isEditMode.value && props.payment) {
+    // Load data payment untuk edit
+    form.value.date = props.payment.date || '';
+    form.value.payment_type = props.payment.payment_type || '';
+    form.value.notes = props.payment.notes || '';
+    selectedSupplierId.value = props.payment.supplier_id || '';
+    existingBuktiPath.value = props.payment.bukti_transfer_path || null;
+    
+    // Load contra bon yang sudah dipilih
+    if (props.payment.contra_bons && props.payment.contra_bons.length > 0) {
+      form.value.selected_contra_bon_ids = props.payment.contra_bons.map(cb => cb.id);
+      // Trigger load contra bon untuk supplier ini
+      await onSupplierChange();
+    }
+  } else {
+    // Set default date ke hari ini untuk create mode
+    const today = new Date();
+    const yyyy = today.getFullYear();
+    const mm = String(today.getMonth() + 1).padStart(2, '0');
+    const dd = String(today.getDate()).padStart(2, '0');
+    form.value.date = `${yyyy}-${mm}-${dd}`;
   }
 });
 </script>

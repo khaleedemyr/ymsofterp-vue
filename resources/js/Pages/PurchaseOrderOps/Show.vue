@@ -536,6 +536,14 @@ const canDeleteAttachment = (attachment) => {
                 <label class="text-sm font-medium text-gray-600">Subtotal</label>
                 <p class="text-lg font-semibold text-gray-900">{{ formatCurrency(po.subtotal) }}</p>
               </div>
+              <div v-if="po.discount_total_percent > 0 || po.discount_total_amount > 0">
+                <label class="text-sm font-medium text-gray-600">Diskon Total</label>
+                <p class="text-lg font-semibold text-red-600">
+                  <span v-if="po.discount_total_percent > 0">{{ po.discount_total_percent }}%</span>
+                  <span v-if="po.discount_total_percent > 0 && po.discount_total_amount > 0"> / </span>
+                  <span v-if="po.discount_total_amount > 0">{{ formatCurrency(po.discount_total_amount) }}</span>
+                </p>
+              </div>
               <div>
                 <label class="text-sm font-medium text-gray-600">PPN (11%)</label>
                 <p class="text-lg font-semibold text-gray-900">{{ formatCurrency(po.ppn_amount) }}</p>
@@ -744,6 +752,7 @@ const canDeleteAttachment = (attachment) => {
                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Qty</th>
                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Unit</th>
                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Price</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Diskon</th>
                     <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
                   </tr>
                 </thead>
@@ -753,10 +762,17 @@ const canDeleteAttachment = (attachment) => {
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ item.quantity }}</td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ item.unit }}</td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ formatCurrency(item.price) }}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-xs">
+                      <div v-if="item.discount_percent > 0 || item.discount_amount > 0" class="text-red-600">
+                        <div v-if="item.discount_percent > 0">{{ item.discount_percent }}%</div>
+                        <div v-if="item.discount_amount > 0">{{ formatCurrency(item.discount_amount) }}</div>
+                      </div>
+                      <span v-else class="text-gray-400">-</span>
+                    </td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{{ formatCurrency(item.total) }}</td>
                   </tr>
                   <tr v-if="!po.items || po.items.length === 0">
-                    <td colspan="5" class="px-6 py-4 text-center text-sm text-gray-500">
+                    <td colspan="6" class="px-6 py-4 text-center text-sm text-gray-500">
                       No items found. Debug: {{ JSON.stringify(po.items) }}
                     </td>
                   </tr>

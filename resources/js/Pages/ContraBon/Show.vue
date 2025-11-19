@@ -56,6 +56,22 @@
                       </span>
                     </div>
                   </div>
+                  <!-- Discount Info -->
+                  <div v-if="contraBon.po_discount_info && (contraBon.po_discount_info.discount_total_percent > 0 || contraBon.po_discount_info.discount_total_amount > 0)" class="mt-3 pt-3 border-t border-gray-200">
+                    <p class="text-sm font-semibold text-blue-800 mb-1">Informasi Diskon PO:</p>
+                    <div v-if="contraBon.po_discount_info.discount_total_percent > 0" class="text-xs">
+                      Diskon Total: <span class="font-semibold text-red-600">{{ contraBon.po_discount_info.discount_total_percent }}%</span>
+                    </div>
+                    <div v-if="contraBon.po_discount_info.discount_total_amount > 0" class="text-xs">
+                      Diskon Total: <span class="font-semibold text-red-600">{{ formatRupiah(contraBon.po_discount_info.discount_total_amount) }}</span>
+                    </div>
+                    <div class="text-xs mt-1">
+                      Subtotal PO: <span class="font-semibold">{{ formatRupiah(contraBon.po_discount_info.subtotal) }}</span>
+                    </div>
+                    <div class="text-xs">
+                      Grand Total PO: <span class="font-semibold text-green-600">{{ formatRupiah(contraBon.po_discount_info.grand_total) }}</span>
+                    </div>
+                  </div>
                 </div>
               </div>
               <div>
@@ -150,6 +166,7 @@
                       <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Qty</th>
                       <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Unit</th>
                       <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Harga</th>
+                      <th v-if="contraBon.source_type === 'purchase_order'" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Diskon</th>
                       <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
                       <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Notes</th>
                     </tr>
@@ -160,14 +177,29 @@
                       <td class="px-6 py-4 whitespace-nowrap">{{ item.quantity }}</td>
                       <td class="px-6 py-4 whitespace-nowrap">{{ item.unit?.name }}</td>
                       <td class="px-6 py-4 whitespace-nowrap">{{ formatRupiah(item.price) }}</td>
-                      <td class="px-6 py-4 whitespace-nowrap">{{ formatRupiah(item.total) }}</td>
+                      <td v-if="contraBon.source_type === 'purchase_order'" class="px-6 py-4 whitespace-nowrap text-xs">
+                        <div v-if="item.discount_percent > 0 || item.discount_amount > 0" class="text-red-600">
+                          <div v-if="item.discount_percent > 0">{{ item.discount_percent }}%</div>
+                          <div v-if="item.discount_amount > 0">{{ formatRupiah(item.discount_amount) }}</div>
+                        </div>
+                        <span v-else class="text-gray-400">-</span>
+                      </td>
+                      <td class="px-6 py-4 whitespace-nowrap">
+                        <span v-if="contraBon.source_type === 'purchase_order' && item.po_item_total">
+                          {{ formatRupiah(item.po_item_total) }}
+                        </span>
+                        <span v-else>
+                          {{ formatRupiah(item.total) }}
+                        </span>
+                      </td>
                       <td class="px-6 py-4 whitespace-nowrap">{{ item.notes || '-' }}</td>
                     </tr>
                   </tbody>
                   <tfoot>
                     <tr class="bg-gray-50">
-                      <td colspan="4" class="px-6 py-4 text-right font-medium">Total:</td>
+                      <td :colspan="contraBon.source_type === 'purchase_order' ? 4 : 3" class="px-6 py-4 text-right font-medium">Total:</td>
                       <td class="px-6 py-4 font-medium">{{ formatRupiah(contraBon.total_amount) }}</td>
+                      <td v-if="contraBon.source_type === 'purchase_order'"></td>
                       <td></td>
                     </tr>
                   </tfoot>

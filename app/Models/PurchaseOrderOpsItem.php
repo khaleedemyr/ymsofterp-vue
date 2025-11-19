@@ -17,6 +17,8 @@ class PurchaseOrderOpsItem extends Model
         'quantity',
         'unit',
         'price',
+        'discount_percent',
+        'discount_amount',
         'total',
         'created_by',
         'arrival_date',
@@ -28,6 +30,8 @@ class PurchaseOrderOpsItem extends Model
     protected $casts = [
         'quantity' => 'decimal:2',
         'price' => 'decimal:2',
+        'discount_percent' => 'decimal:2',
+        'discount_amount' => 'decimal:2',
         'total' => 'decimal:2',
         'arrival_date' => 'date',
     ];
@@ -67,6 +71,8 @@ class PurchaseOrderOpsItem extends Model
     // Methods
     public function calculateTotal()
     {
-        return round($this->quantity * $this->price, 2);
+        $subtotal = $this->quantity * $this->price;
+        $discount = $this->discount_amount ?? 0;
+        return round($subtotal - $discount, 2);
     }
 }

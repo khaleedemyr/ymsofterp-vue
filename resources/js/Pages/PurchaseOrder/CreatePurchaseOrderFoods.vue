@@ -22,6 +22,8 @@ const router = useRouter()
 const poForm = useForm({
     items_by_supplier: {}, // Akan diisi array per item
     ppn_enabled: false, // PPN switch
+    discount_total_percent: 0, // Discount total percent
+    discount_total_amount: 0, // Discount total amount
 });
 
 // Fetch PR list yang belum di-PO
@@ -38,6 +40,8 @@ const fetchPRList = async () => {
                         supplier_id: null,
                         qty: item.quantity,
                         price: '',
+                        discount_percent: 0,
+                        discount_amount: 0,
                         last_price: '',
                         min_price: '',
                         max_price: ''
@@ -84,6 +88,8 @@ const fetchROSupplierList = async () => {
                             supplier_id: null,
                             qty: item.qty,
                             price: '',
+                            discount_percent: 0,
+                            discount_amount: 0,
                             last_price: '',
                             min_price: '',
                             max_price: '',
@@ -237,6 +243,8 @@ function addSplit(itemId) {
         supplier_id: null,
         qty: 0,
         price: '',
+        discount_percent: 0,
+        discount_amount: 0,
         last_price: '',
         min_price: '',
         max_price: ''
@@ -307,6 +315,8 @@ const generatePO = async () => {
                     supplier_id: supplierId,
                     qty: split.qty,
                     price: split.price,
+                    discount_percent: split.discount_percent || 0,
+                    discount_amount: split.discount_amount || 0,
                     source: 'ro_supplier'
                 });
             } else {
@@ -319,6 +329,8 @@ const generatePO = async () => {
                     supplier_id: supplierId,
                     qty: split.qty,
                     price: split.price,
+                    discount_percent: split.discount_percent || 0,
+                    discount_amount: split.discount_amount || 0,
                     arrival_date: prItem?.arrival_date || null,
                     source: 'pr_foods',
                     pr_item_id: prItem?.id || null
@@ -334,7 +346,9 @@ const generatePO = async () => {
         const response = await axios.post('/api/po-foods/generate', {
             items_by_supplier: itemsBySupplier,
             notes: notes.value,
-            ppn_enabled: poForm.ppn_enabled
+            ppn_enabled: poForm.ppn_enabled,
+            discount_total_percent: poForm.discount_total_percent || 0,
+            discount_total_amount: poForm.discount_total_amount || 0
         });
         Swal.fire('Success', 'PO has been generated successfully', 'success')
             .then(() => {
@@ -374,6 +388,54 @@ function convertPrice(priceSmall, item) {
     };
 }
 
+// Calculate item discount amount from percent
+function calculateItemDiscount(split) {
+    if (split.discount_percent > 0 && split.price && split.qty) {
+        const subtotal = split.price * split.qty;
+        split.discount_amount = subtotal * (split.discount_percent / 100);
+    } else if (split.discount_percent === 0) {
+        split.discount_amount = 0;
+    }
+}
+
+// Calculate item discount percent from amount
+function calculateItemDiscountPercent(split) {
+    if (split.discount_amount > 0 && split.price && split.qty) {
+        const subtotal = split.price * split.qty;
+        split.discount_percent = (split.discount_amount / subtotal) * 100;
+    } else if (split.discount_amount === 0) {
+        split.discount_percent = 0;
+    }
+}
+
+// Calculate item total after discount
+function calculateItemTotal(split) {
+    if (!split.price || !split.qty) return 0;
+    const subtotal = split.price * split.qty;
+    const discount = split.discount_amount || 0;
+    return subtotal - discount;
+}
+
+// Calculate total discount amount from percent
+function calculateTotalDiscount() {
+    const subtotalAfterItemDiscount = calculateTotal();
+    if (poForm.discount_total_percent > 0 && subtotalAfterItemDiscount > 0) {
+        poForm.discount_total_amount = subtotalAfterItemDiscount * (poForm.discount_total_percent / 100);
+    } else if (poForm.discount_total_percent === 0) {
+        poForm.discount_total_amount = 0;
+    }
+}
+
+// Calculate total discount percent from amount
+function calculateTotalDiscountPercent() {
+    const subtotalAfterItemDiscount = calculateTotal();
+    if (poForm.discount_total_amount > 0 && subtotalAfterItemDiscount > 0) {
+        poForm.discount_total_percent = (poForm.discount_total_amount / subtotalAfterItemDiscount) * 100;
+    } else if (poForm.discount_total_amount === 0) {
+        poForm.discount_total_percent = 0;
+    }
+}
+
 function formatRupiah(value) {
     if (!value) return 'Rp 0';
     return 'Rp ' + Number(value).toLocaleString('id-ID');
@@ -405,8 +467,8 @@ function goBack() {
     }
 }
 
-// Calculate total for all items
-const calculateTotal = () => {
+// Calculate subtotal for all items (before discount per item)
+const calculateSubtotalBeforeDiscount = () => {
     let total = 0;
     Object.values(poForm.items_by_supplier).forEach(splits => {
         splits.forEach(split => {
@@ -418,15 +480,58 @@ const calculateTotal = () => {
     return total;
 };
 
-// Calculate PPN amount
+// Calculate total discount per item
+const calculateTotalItemDiscount = () => {
+    let totalDiscount = 0;
+    Object.values(poForm.items_by_supplier).forEach(splits => {
+        splits.forEach(split => {
+            if (split.price && split.qty) {
+                const itemSubtotal = Number(split.price) * Number(split.qty);
+                const discountPercent = Number(split.discount_percent || 0);
+                const discountAmount = Number(split.discount_amount || 0);
+                
+                if (discountPercent > 0) {
+                    totalDiscount += itemSubtotal * (discountPercent / 100);
+                } else {
+                    totalDiscount += discountAmount;
+                }
+            }
+        });
+    });
+    return totalDiscount;
+};
+
+// Calculate total for all items (after discount per item)
+const calculateTotal = () => {
+    return calculateSubtotalBeforeDiscount() - calculateTotalItemDiscount();
+};
+
+// Calculate total discount amount (from discount_total_percent or discount_total_amount)
+const calculateTotalDiscountAmount = () => {
+    const subtotalAfterItemDiscount = calculateTotal();
+    const discountTotalPercent = Number(poForm.discount_total_percent || 0);
+    const discountTotalAmount = Number(poForm.discount_total_amount || 0);
+    
+    if (discountTotalPercent > 0) {
+        return subtotalAfterItemDiscount * (discountTotalPercent / 100);
+    }
+    return discountTotalAmount;
+};
+
+// Calculate subtotal after discount total
+const calculateSubtotalAfterDiscountTotal = () => {
+    return calculateTotal() - calculateTotalDiscountAmount();
+};
+
+// Calculate PPN amount (after all discounts)
 const calculatePPN = () => {
     if (!poForm.ppn_enabled) return 0;
-    return calculateTotal() * 0.11;
+    return calculateSubtotalAfterDiscountTotal() * 0.11;
 };
 
 // Calculate grand total
 const calculateGrandTotal = () => {
-    return calculateTotal() + calculatePPN();
+    return calculateSubtotalAfterDiscountTotal() + calculatePPN();
 };
 
 // Fungsi untuk mengambil harga terakhir untuk semua item
@@ -540,6 +645,20 @@ onMounted(async () => {
                             <label class="block text-sm font-medium text-gray-700 mb-1">Notes</label>
                             <textarea v-model="notes" rows="2" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-blue-500 focus:border-blue-500"></textarea>
                         </div>
+                                                 <!-- Discount Total -->
+                         <div class="mb-6 p-4 bg-yellow-50 rounded-lg border border-yellow-200">
+                             <h4 class="text-sm font-semibold text-yellow-800 mb-3">Diskon Total</h4>
+                             <div class="grid grid-cols-2 gap-4">
+                                 <div>
+                                     <label class="block text-sm font-medium text-gray-700 mb-1">Diskon (%)</label>
+                                     <input type="number" v-model.number="poForm.discount_total_percent" min="0" max="100" step="0.01" placeholder="0" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-blue-500 focus:border-blue-500" @input="calculateTotalDiscount" />
+                                 </div>
+                                 <div>
+                                     <label class="block text-sm font-medium text-gray-700 mb-1">Diskon (Rp)</label>
+                                     <input type="number" v-model.number="poForm.discount_total_amount" min="0" step="0.01" placeholder="0" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-blue-500 focus:border-blue-500" @input="calculateTotalDiscountPercent" />
+                                 </div>
+                             </div>
+                         </div>
                                                  <!-- PPN Switch -->
                          <div class="mb-6 flex items-center">
                              <input type="checkbox" id="ppnSwitch" v-model="poForm.ppn_enabled" class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded">
@@ -671,6 +790,8 @@ onMounted(async () => {
                                                              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Notes</th>
                                                              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Supplier</th>
                                                              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Price</th>
+                                                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Diskon %</th>
+                                                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Diskon (Rp)</th>
                                                              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Subtotal</th>
                                                              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Aksi</th>
                                                          </tr>
@@ -732,7 +853,13 @@ onMounted(async () => {
                                                                     </div>
                                                                 </td>
                                                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                                                    {{ formatRupiah((split.price || 0) * split.qty) }}
+                                                                    <input type="number" v-model.number="split.discount_percent" min="0" max="100" step="0.01" placeholder="%" class="w-20 border rounded px-2 py-1" @input="calculateItemDiscount(split)" />
+                                                                </td>
+                                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                                                    <input type="number" v-model.number="split.discount_amount" min="0" step="0.01" placeholder="Rp" class="w-24 border rounded px-2 py-1" @input="calculateItemDiscountPercent(split)" />
+                                                                </td>
+                                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                                                    {{ formatRupiah(calculateItemTotal(split)) }}
                                                                 </td>
                                                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                                                                     <button type="button" @click="addSplit(item.id)" class="bg-blue-100 hover:bg-blue-200 text-blue-700 px-2 py-1 rounded text-xs mr-1">Split</button>
@@ -824,6 +951,8 @@ onMounted(async () => {
                                                              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Notes</th>
                                                              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Supplier</th>
                                                              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Price</th>
+                                                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Diskon %</th>
+                                                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Diskon (Rp)</th>
                                                              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Subtotal</th>
                                                              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Aksi</th>
                                                          </tr>
@@ -884,7 +1013,13 @@ onMounted(async () => {
                                                                         </div>
                                                                     </td>
                                                                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                                                        {{ formatRupiah((split.price || 0) * split.qty) }}
+                                                                        <input type="number" v-model.number="split.discount_percent" min="0" max="100" step="0.01" placeholder="%" class="w-20 border rounded px-2 py-1" @input="calculateItemDiscount(split)" />
+                                                                    </td>
+                                                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                                                        <input type="number" v-model.number="split.discount_amount" min="0" step="0.01" placeholder="Rp" class="w-24 border rounded px-2 py-1" @input="calculateItemDiscountPercent(split)" />
+                                                                    </td>
+                                                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                                                        {{ formatRupiah(calculateItemTotal(split)) }}
                                                                     </td>
                                                                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                                                                         <button type="button" @click="addSplit(item.itemKey)" class="bg-blue-100 hover:bg-blue-200 text-blue-700 px-2 py-1 rounded text-xs mr-1">Split</button>
@@ -907,7 +1042,23 @@ onMounted(async () => {
                                 <div class="space-y-2">
                                     <div class="flex justify-between">
                                         <span class="text-gray-600">Subtotal:</span>
+                                        <span class="font-medium">{{ formatRupiah(calculateSubtotalBeforeDiscount()) }}</span>
+                                    </div>
+                                    <div v-if="calculateTotalItemDiscount() > 0" class="flex justify-between">
+                                        <span class="text-gray-600">Diskon per Item:</span>
+                                        <span class="font-medium text-red-600">- {{ formatRupiah(calculateTotalItemDiscount()) }}</span>
+                                    </div>
+                                    <div class="flex justify-between">
+                                        <span class="text-gray-600">Subtotal setelah Diskon Item:</span>
                                         <span class="font-medium">{{ formatRupiah(calculateTotal()) }}</span>
+                                    </div>
+                                    <div v-if="calculateTotalDiscountAmount() > 0" class="flex justify-between">
+                                        <span class="text-gray-600">Diskon Total:</span>
+                                        <span class="font-medium text-red-600">- {{ formatRupiah(calculateTotalDiscountAmount()) }}</span>
+                                    </div>
+                                    <div class="flex justify-between">
+                                        <span class="text-gray-600">Subtotal setelah Diskon Total:</span>
+                                        <span class="font-medium">{{ formatRupiah(calculateSubtotalAfterDiscountTotal()) }}</span>
                                     </div>
                                     <div v-if="poForm.ppn_enabled" class="flex justify-between">
                                         <span class="text-gray-600">PPN (11%):</span>

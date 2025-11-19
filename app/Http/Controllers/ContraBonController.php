@@ -358,6 +358,14 @@ class ContraBonController extends Controller
         if ($contraBon->source_type === 'purchase_order' && $contraBon->purchaseOrder) {
             $po = $contraBon->purchaseOrder;
             
+            // Get PO discount information
+            $contraBon->po_discount_info = [
+                'discount_total_percent' => $po->discount_total_percent ?? 0,
+                'discount_total_amount' => $po->discount_total_amount ?? 0,
+                'subtotal' => $po->subtotal ?? 0,
+                'grand_total' => $po->grand_total ?? 0,
+            ];
+            
             // Get source information based on PO source_type
             if ($po->source_type === 'pr_foods' || !$po->source_type) {
                 // For PR Foods, get PR numbers
@@ -391,6 +399,18 @@ class ContraBonController extends Controller
                 $contraBon->source_outlets = [];
                 $contraBon->source_type_display = 'Unknown';
             }
+            
+            // Add discount info to items
+            $contraBon->items->each(function($item) {
+                if ($item->po_item_id) {
+                    $poItem = PurchaseOrderFoodItem::find($item->po_item_id);
+                    if ($poItem) {
+                        $item->discount_percent = $poItem->discount_percent ?? 0;
+                        $item->discount_amount = $poItem->discount_amount ?? 0;
+                        $item->po_item_total = $poItem->total ?? ($poItem->price * $poItem->quantity);
+                    }
+                }
+            });
         } elseif ($contraBon->source_type === 'retail_food') {
             $retailFood = \App\Models\RetailFood::find($contraBon->source_id);
             $contraBon->source_numbers = [$retailFood->retail_number ?? ''];
@@ -496,6 +516,14 @@ class ContraBonController extends Controller
             if ($contraBon->source_type === 'purchase_order' && $contraBon->purchaseOrder) {
                 $po = $contraBon->purchaseOrder;
                 
+                // Get PO discount information
+                $contraBon->po_discount_info = [
+                    'discount_total_percent' => $po->discount_total_percent ?? 0,
+                    'discount_total_amount' => $po->discount_total_amount ?? 0,
+                    'subtotal' => $po->subtotal ?? 0,
+                    'grand_total' => $po->grand_total ?? 0,
+                ];
+                
                 // Get source information based on PO source_type
                 if ($po->source_type === 'pr_foods' || !$po->source_type) {
                     // For PR Foods, get PR numbers
@@ -528,6 +556,18 @@ class ContraBonController extends Controller
                     $contraBon->source_outlets = [];
                     $contraBon->source_type_display = 'Unknown';
                 }
+                
+                // Add discount info to items
+                $contraBon->items->each(function($item) {
+                    if ($item->po_item_id) {
+                        $poItem = PurchaseOrderFoodItem::find($item->po_item_id);
+                        if ($poItem) {
+                            $item->discount_percent = $poItem->discount_percent ?? 0;
+                            $item->discount_amount = $poItem->discount_amount ?? 0;
+                            $item->po_item_total = $poItem->total ?? ($poItem->price * $poItem->quantity);
+                        }
+                    }
+                });
             } elseif ($contraBon->source_type === 'retail_food') {
                 $retailFood = \App\Models\RetailFood::find($contraBon->source_id);
                 $contraBon->source_numbers = [$retailFood->retail_number ?? ''];
@@ -734,7 +774,10 @@ class ContraBonController extends Controller
                         'gri.unit_id',
                         'u.name as unit_name',
                         'gri.qty_received',
-                        'poi.price as po_price'
+                        'poi.price as po_price',
+                        'poi.discount_percent',
+                        'poi.discount_amount',
+                        'poi.total as po_item_total'
                     )
                     ->get();
                 
@@ -758,6 +801,18 @@ class ContraBonController extends Controller
                 
                 // Hanya tambahkan ke result jika masih ada item yang belum dibuat contra bon
                 if ($items->count() > 0) {
+                    // Get PO discount information
+                    $po = PurchaseOrderFood::find($row->po_id);
+                    $poDiscountInfo = null;
+                    if ($po) {
+                        $poDiscountInfo = [
+                            'discount_total_percent' => $po->discount_total_percent ?? 0,
+                            'discount_total_amount' => $po->discount_total_amount ?? 0,
+                            'subtotal' => $po->subtotal ?? 0,
+                            'grand_total' => $po->grand_total ?? 0,
+                        ];
+                    }
+                    
                     $result[] = [
                         'po_id' => $row->po_id,
                         'po_number' => $row->po_number,
@@ -773,6 +828,7 @@ class ContraBonController extends Controller
                         'source_type_display' => $sourceTypeDisplay,
                         'outlet_names' => $outletNames,
                         'items' => $items,
+                        'po_discount_info' => $poDiscountInfo,
                     ];
                 }
             }
@@ -975,6 +1031,31 @@ class ContraBonController extends Controller
             'financeManager',
             'gmFinance'
         ])->findOrFail($id);
+
+        // Add source information and discount info for purchase orders
+        if ($contraBon->source_type === 'purchase_order' && $contraBon->purchaseOrder) {
+            $po = $contraBon->purchaseOrder;
+            
+            // Get PO discount information
+            $contraBon->po_discount_info = [
+                'discount_total_percent' => $po->discount_total_percent ?? 0,
+                'discount_total_amount' => $po->discount_total_amount ?? 0,
+                'subtotal' => $po->subtotal ?? 0,
+                'grand_total' => $po->grand_total ?? 0,
+            ];
+            
+            // Add discount info to items
+            $contraBon->items->each(function($item) {
+                if ($item->po_item_id) {
+                    $poItem = PurchaseOrderFoodItem::find($item->po_item_id);
+                    if ($poItem) {
+                        $item->discount_percent = $poItem->discount_percent ?? 0;
+                        $item->discount_amount = $poItem->discount_amount ?? 0;
+                        $item->po_item_total = $poItem->total ?? ($poItem->price * $poItem->quantity);
+                    }
+                }
+            });
+        }
 
         return inertia('ContraBon/Form', [
             'contraBon' => $contraBon

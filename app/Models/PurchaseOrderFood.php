@@ -28,6 +28,8 @@ class PurchaseOrderFood extends Model
         'ppn_enabled',
         'ppn_amount',
         'subtotal',
+        'discount_total_percent',
+        'discount_total_amount',
         'grand_total',
         'source_type',
         'source_id',
@@ -38,6 +40,8 @@ class PurchaseOrderFood extends Model
         'ppn_enabled' => 'boolean',
         'ppn_amount' => 'decimal:2',
         'subtotal' => 'decimal:2',
+        'discount_total_percent' => 'decimal:2',
+        'discount_total_amount' => 'decimal:2',
         'grand_total' => 'decimal:2',
     ];
 

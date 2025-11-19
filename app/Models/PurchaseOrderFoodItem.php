@@ -17,6 +17,8 @@ class PurchaseOrderFoodItem extends Model
         'quantity',
         'unit_id',
         'price',
+        'discount_percent',
+        'discount_amount',
         'total',
         'created_by',
         'arrival_date',
@@ -30,6 +32,8 @@ class PurchaseOrderFoodItem extends Model
     protected $casts = [
         'quantity' => 'decimal:2',
         'price' => 'decimal:2',
+        'discount_percent' => 'decimal:2',
+        'discount_amount' => 'decimal:2',
         'total' => 'decimal:2',
         'subtotal' => 'decimal:2'
     ];

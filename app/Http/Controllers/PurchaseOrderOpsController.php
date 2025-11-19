@@ -309,6 +309,10 @@ class PurchaseOrderOpsController extends Controller
             'items_by_supplier.*.*.supplier_id' => 'required|exists:suppliers,id',
             'items_by_supplier.*.*.qty' => 'required|numeric|min:0',
             'items_by_supplier.*.*.price' => 'required|numeric|min:0',
+            'items_by_supplier.*.*.discount_percent' => 'nullable|numeric|min:0|max:100',
+            'items_by_supplier.*.*.discount_amount' => 'nullable|numeric|min:0',
+            'discount_total_percent' => 'nullable|numeric|min:0|max:100',
+            'discount_total_amount' => 'nullable|numeric|min:0',
             'ppn_enabled' => 'boolean',
             'notes' => 'nullable|string',
         ]);
@@ -353,6 +357,8 @@ class PurchaseOrderOpsController extends Controller
                             'supplier_id' => $row['supplier_id'],
                             'qty' => $row['qty'],
                             'price' => $row['price'],
+                            'discount_percent' => $row['discount_percent'] ?? 0,
+                            'discount_amount' => $row['discount_amount'] ?? 0,
                             'pr_id' => $row['pr_id'] ?? null,
                         ];
                     }
@@ -371,17 +377,36 @@ class PurchaseOrderOpsController extends Controller
                 // Generate PO number
                 $poNumber = $this->generatePONumber();
 
-                // Calculate subtotal for this PO
+                // Calculate subtotal for this PO (after discount per item)
                 $subtotal = collect($items)->sum(function ($item) {
-                    return $item['price'] * $item['qty'];
+                    $itemSubtotal = $item['price'] * $item['qty'];
+                    // Apply discount per item
+                    $discountPercent = isset($item['discount_percent']) ? floatval($item['discount_percent']) : 0;
+                    $discountAmount = isset($item['discount_amount']) ? floatval($item['discount_amount']) : 0;
+                    
+                    if ($discountPercent > 0) {
+                        $discountAmount = $itemSubtotal * ($discountPercent / 100);
+                    }
+                    
+                    return $itemSubtotal - $discountAmount;
                 });
 
-                // Calculate PPN if enabled
+                // Apply discount total
+                $discountTotalPercent = isset($request->discount_total_percent) ? floatval($request->discount_total_percent) : 0;
+                $discountTotalAmount = isset($request->discount_total_amount) ? floatval($request->discount_total_amount) : 0;
+                
+                if ($discountTotalPercent > 0) {
+                    $discountTotalAmount = $subtotal * ($discountTotalPercent / 100);
+                }
+                
+                $subtotalAfterDiscount = $subtotal - $discountTotalAmount;
+
+                // Calculate PPN if enabled (PPN calculated after discount)
                 $ppnAmount = 0;
-                $grandTotal = $subtotal;
+                $grandTotal = $subtotalAfterDiscount;
                 if ($request->ppn_enabled) {
-                    $ppnAmount = $subtotal * 0.11; // 11% PPN
-                    $grandTotal = $subtotal + $ppnAmount;
+                    $ppnAmount = $subtotalAfterDiscount * 0.11; // 11% PPN
+                    $grandTotal = $subtotalAfterDiscount + $ppnAmount;
                 }
 
                 // Get arrival_date from items (use the earliest arrival date)
@@ -403,6 +428,8 @@ class PurchaseOrderOpsController extends Controller
                     'ppn_enabled' => $request->ppn_enabled ?? false,
                     'ppn_amount' => $ppnAmount,
                     'subtotal' => $subtotal,
+                    'discount_total_percent' => $discountTotalPercent,
+                    'discount_total_amount' => $discountTotalAmount,
                     'grand_total' => $grandTotal,
                     'source_type' => 'purchase_requisition_ops',
                     'source_id' => $prIds->first(),
@@ -433,7 +460,17 @@ class PurchaseOrderOpsController extends Controller
                     
                     $quantity = floatval($itemData['qty']);
                     $price = floatval($itemData['price']);
-                    $total = round($quantity * $price, 2);
+                    $itemSubtotal = $quantity * $price;
+                    
+                    // Calculate discount per item
+                    $discountPercent = isset($itemData['discount_percent']) ? floatval($itemData['discount_percent']) : 0;
+                    $discountAmount = isset($itemData['discount_amount']) ? floatval($itemData['discount_amount']) : 0;
+                    
+                    if ($discountPercent > 0) {
+                        $discountAmount = $itemSubtotal * ($discountPercent / 100);
+                    }
+                    
+                    $total = round($itemSubtotal - $discountAmount, 2);
 
                     $poItemData = [
                         'purchase_order_ops_id' => $po->id,
@@ -441,6 +478,8 @@ class PurchaseOrderOpsController extends Controller
                         'quantity' => $quantity,
                         'unit' => $prItem->unit,
                         'price' => $price,
+                        'discount_percent' => $discountPercent,
+                        'discount_amount' => $discountAmount,
                         'total' => $total,
                         'created_by' => auth()->id(),
                         'arrival_date' => $prItem->arrival_date,
@@ -738,12 +777,18 @@ class PurchaseOrderOpsController extends Controller
             'items' => 'required|array',
             'items.*.id' => 'nullable|exists:purchase_order_ops_items,id',
             'items.*.price' => 'required|numeric|min:0',
+            'items.*.discount_percent' => 'nullable|numeric|min:0|max:100',
+            'items.*.discount_amount' => 'nullable|numeric|min:0',
             'items.*.total' => 'required|numeric|min:0',
             'new_items' => 'nullable|array',
             'new_items.*.item_name' => 'required|string',
             'new_items.*.quantity' => 'required|numeric|min:0',
             'new_items.*.unit' => 'required|string',
             'new_items.*.price' => 'required|numeric|min:0',
+            'new_items.*.discount_percent' => 'nullable|numeric|min:0|max:100',
+            'new_items.*.discount_amount' => 'nullable|numeric|min:0',
+            'discount_total_percent' => 'nullable|numeric|min:0|max:100',
+            'discount_total_amount' => 'nullable|numeric|min:0',
             'deleted_items' => 'nullable|array',
             'deleted_items.*' => 'exists:purchase_order_ops_items,id',
         ]);
@@ -759,39 +804,83 @@ class PurchaseOrderOpsController extends Controller
             // Update existing items
             foreach ($request->items as $item) {
                 if ($item['id']) {
-                    PurchaseOrderOpsItem::where('id', $item['id'])
-                        ->update([
-                            'price' => $item['price'],
-                            'total' => $item['total'],
+                    $poItem = PurchaseOrderOpsItem::find($item['id']);
+                    if ($poItem) {
+                        $quantity = floatval($poItem->quantity);
+                        $price = floatval($item['price']);
+                        $itemSubtotal = $quantity * $price;
+                        
+                        // Calculate discount per item
+                        $discountPercent = isset($item['discount_percent']) ? floatval($item['discount_percent']) : 0;
+                        $discountAmount = isset($item['discount_amount']) ? floatval($item['discount_amount']) : 0;
+                        
+                        if ($discountPercent > 0) {
+                            $discountAmount = $itemSubtotal * ($discountPercent / 100);
+                        }
+                        
+                        $total = round($itemSubtotal - $discountAmount, 2);
+                        
+                        $poItem->update([
+                            'price' => $price,
+                            'discount_percent' => $discountPercent,
+                            'discount_amount' => $discountAmount,
+                            'total' => $total,
                         ]);
+                    }
                 }
             }
 
             // Add new items
             if ($request->new_items) {
                 foreach ($request->new_items as $newItem) {
+                    $quantity = floatval($newItem['quantity']);
+                    $price = floatval($newItem['price']);
+                    $itemSubtotal = $quantity * $price;
+                    
+                    // Calculate discount per item
+                    $discountPercent = isset($newItem['discount_percent']) ? floatval($newItem['discount_percent']) : 0;
+                    $discountAmount = isset($newItem['discount_amount']) ? floatval($newItem['discount_amount']) : 0;
+                    
+                    if ($discountPercent > 0) {
+                        $discountAmount = $itemSubtotal * ($discountPercent / 100);
+                    }
+                    
+                    $total = round($itemSubtotal - $discountAmount, 2);
+                    
                     PurchaseOrderOpsItem::create([
                         'purchase_order_ops_id' => $po->id,
                         'item_name' => $newItem['item_name'],
-                        'quantity' => $newItem['quantity'],
+                        'quantity' => $quantity,
                         'unit' => $newItem['unit'],
-                        'price' => $newItem['price'],
-                        'total' => round(floatval($newItem['quantity']) * floatval($newItem['price']), 2),
+                        'price' => $price,
+                        'discount_percent' => $discountPercent,
+                        'discount_amount' => $discountAmount,
+                        'total' => $total,
                         'created_by' => auth()->id(),
                     ]);
                 }
             }
 
-            // Recalculate totals
+            // Recalculate totals (after discount per item)
             $allItems = PurchaseOrderOpsItem::where('purchase_order_ops_id', $po->id)->get();
             $subtotal = $allItems->sum('total');
             
-            // Calculate PPN if enabled
+            // Apply discount total
+            $discountTotalPercent = isset($request->discount_total_percent) ? floatval($request->discount_total_percent) : 0;
+            $discountTotalAmount = isset($request->discount_total_amount) ? floatval($request->discount_total_amount) : 0;
+            
+            if ($discountTotalPercent > 0) {
+                $discountTotalAmount = $subtotal * ($discountTotalPercent / 100);
+            }
+            
+            $subtotalAfterDiscount = $subtotal - $discountTotalAmount;
+            
+            // Calculate PPN if enabled (PPN calculated after discount)
             $ppnAmount = 0;
-            $grandTotal = $subtotal;
+            $grandTotal = $subtotalAfterDiscount;
             if ($request->ppn_enabled) {
-                $ppnAmount = $subtotal * 0.11; // 11% PPN
-                $grandTotal = $subtotal + $ppnAmount;
+                $ppnAmount = $subtotalAfterDiscount * 0.11; // 11% PPN
+                $grandTotal = $subtotalAfterDiscount + $ppnAmount;
             }
 
             // Update PO notes and PPN
@@ -800,6 +889,8 @@ class PurchaseOrderOpsController extends Controller
                 'ppn_enabled' => $request->ppn_enabled ?? false,
                 'ppn_amount' => $ppnAmount,
                 'subtotal' => $subtotal,
+                'discount_total_percent' => $discountTotalPercent,
+                'discount_total_amount' => $discountTotalAmount,
                 'grand_total' => $grandTotal,
             ]);
 
