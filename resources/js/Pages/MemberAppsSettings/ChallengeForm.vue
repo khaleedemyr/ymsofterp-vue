@@ -61,21 +61,73 @@
             </div>
             
             <div v-if="form.rules.reward_type === 'item'">
-              <label class="block text-sm font-medium text-gray-700 mb-2">Free Item *</label>
-              <select v-model="form.rules.reward_value" class="form-select w-full rounded border px-3 py-2" required>
-                <option value="">Pilih Item</option>
-                <option v-for="item in challengeItems" :key="item.id" :value="item.name">{{ item.name }}</option>
-              </select>
+              <label class="block text-sm font-medium text-gray-700 mb-2">Pilih Items (Bisa Multiple) *</label>
+              <multiselect
+                v-model="form.rules.reward_value"
+                :options="challengeItems || []"
+                :multiple="true"
+                :searchable="true"
+                :close-on-select="false"
+                :show-labels="false"
+                placeholder="Pilih Items (bisa lebih dari satu)"
+                label="name"
+                track-by="id"
+                class="mt-1"
+                required
+              >
+                <template #noOptions>
+                  <span>Tidak ada item ditemukan</span>
+                </template>
+                <template #noResult>
+                  <span>Tidak ada item ditemukan</span>
+                </template>
+              </multiselect>
+              <p class="mt-1 text-xs text-gray-500">Anda bisa memilih lebih dari satu item</p>
             </div>
             
             <div v-else-if="form.rules.reward_type === 'points'">
               <label class="block text-sm font-medium text-gray-700 mb-2">Points Amount *</label>
-              <input v-model="form.rules.reward_value" type="number" class="form-input w-full rounded border px-3 py-2" placeholder="100" required />
+              <input v-model="form.rules.reward_value" type="number" class="form-input w-full rounded border px-3 py-2" placeholder="100" min="0" required />
             </div>
             
             <div v-else-if="form.rules.reward_type === 'voucher'">
-              <label class="block text-sm font-medium text-gray-700 mb-2">Voucher Amount (IDR) *</label>
-              <input v-model="form.rules.reward_value" type="number" class="form-input w-full rounded border px-3 py-2" placeholder="100000" required />
+              <label class="block text-sm font-medium text-gray-700 mb-2">Pilih Vouchers (Bisa Multiple) *</label>
+              <multiselect
+                v-model="form.rules.reward_value"
+                :options="vouchers || []"
+                :multiple="true"
+                :searchable="true"
+                :close-on-select="false"
+                :show-labels="false"
+                placeholder="Pilih Vouchers (bisa lebih dari satu)"
+                label="name"
+                track-by="id"
+                class="mt-1"
+                required
+              >
+                <template #option="{ option }">
+                  <div>
+                    <strong>{{ option.name }}</strong>
+                    <span v-if="option.code" class="text-gray-500 text-sm ml-2">({{ option.code }})</span>
+                  </div>
+                </template>
+                <template #singleLabel="{ option }">
+                  <strong>{{ option.name }}</strong>
+                  <span v-if="option.code" class="text-gray-500 text-sm ml-2">({{ option.code }})</span>
+                </template>
+                <template #tag="{ option, remove }">
+                  <span class="multiselect__tag">
+                    <span>{{ option.name }}</span>
+                    <i class="multiselect__tag-icon" @click.prevent="remove(option)"></i>
+                  </span>
+                </template>
+                <template #noOptions>
+                  <span>Tidak ada voucher ditemukan</span>
+                </template>
+                <template #noResult>
+                  <span>Tidak ada voucher ditemukan</span>
+                </template>
+              </multiselect>
             </div>
             
             <div class="flex items-center">
@@ -97,19 +149,43 @@
               </div>
             </div>
             
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label class="block text-sm font-medium text-gray-700 mb-2">Reward Type *</label>
-                <select v-model="form.rules.reward_type" class="form-select w-full rounded border px-3 py-2" required>
-                  <option value="">Pilih Reward Type</option>
-                  <option value="points">Points</option>
-                  <option value="item">Item</option>
-                </select>
-              </div>
-              <div>
-                <label class="block text-sm font-medium text-gray-700 mb-2">Reward Value *</label>
-                <input v-model="form.rules.reward_value" type="text" class="form-input w-full rounded border px-3 py-2" placeholder="100 points" required />
-              </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-2">Reward Type *</label>
+              <select v-model="form.rules.reward_type" class="form-select w-full rounded border px-3 py-2" required>
+                <option value="">Pilih Reward Type</option>
+                <option value="points">Points</option>
+                <option value="item">Item</option>
+              </select>
+            </div>
+            
+            <div v-if="form.rules.reward_type === 'item'">
+              <label class="block text-sm font-medium text-gray-700 mb-2">Pilih Items (Bisa Multiple) *</label>
+              <multiselect
+                v-model="form.rules.reward_value"
+                :options="challengeItems || []"
+                :multiple="true"
+                :searchable="true"
+                :close-on-select="false"
+                :show-labels="false"
+                placeholder="Pilih Items (bisa lebih dari satu)"
+                label="name"
+                track-by="id"
+                class="mt-1"
+                required
+              >
+                <template #noOptions>
+                  <span>Tidak ada item ditemukan</span>
+                </template>
+                <template #noResult>
+                  <span>Tidak ada item ditemukan</span>
+                </template>
+              </multiselect>
+              <p class="mt-1 text-xs text-gray-500">Anda bisa memilih lebih dari satu item</p>
+            </div>
+            
+            <div v-else-if="form.rules.reward_type === 'points'">
+              <label class="block text-sm font-medium text-gray-700 mb-2">Points Amount *</label>
+              <input v-model="form.rules.reward_value" type="number" class="form-input w-full rounded border px-3 py-2" placeholder="100" min="0" required />
             </div>
           </div>
 
@@ -130,20 +206,84 @@
               </div>
             </div>
             
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label class="block text-sm font-medium text-gray-700 mb-2">Reward Type *</label>
-                <select v-model="form.rules.reward_type" class="form-select w-full rounded border px-3 py-2" required>
-                  <option value="">Pilih Reward Type</option>
-                  <option value="voucher">Voucher</option>
-                  <option value="item">Item</option>
-                  <option value="points">Points</option>
-                </select>
-              </div>
-              <div>
-                <label class="block text-sm font-medium text-gray-700 mb-2">Reward Value *</label>
-                <input v-model="form.rules.reward_value" type="text" class="form-input w-full rounded border px-3 py-2" placeholder="IDR 100.000" required />
-              </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-2">Reward Type *</label>
+              <select v-model="form.rules.reward_type" class="form-select w-full rounded border px-3 py-2" required>
+                <option value="">Pilih Reward Type</option>
+                <option value="voucher">Voucher</option>
+                <option value="item">Item</option>
+                <option value="points">Points</option>
+              </select>
+            </div>
+            
+            <div v-if="form.rules.reward_type === 'item'">
+              <label class="block text-sm font-medium text-gray-700 mb-2">Pilih Items (Bisa Multiple) *</label>
+              <multiselect
+                v-model="form.rules.reward_value"
+                :options="challengeItems || []"
+                :multiple="true"
+                :searchable="true"
+                :close-on-select="false"
+                :show-labels="false"
+                placeholder="Pilih Items (bisa lebih dari satu)"
+                label="name"
+                track-by="id"
+                class="mt-1"
+                required
+              >
+                <template #noOptions>
+                  <span>Tidak ada item ditemukan</span>
+                </template>
+                <template #noResult>
+                  <span>Tidak ada item ditemukan</span>
+                </template>
+              </multiselect>
+              <p class="mt-1 text-xs text-gray-500">Anda bisa memilih lebih dari satu item</p>
+            </div>
+            
+            <div v-else-if="form.rules.reward_type === 'points'">
+              <label class="block text-sm font-medium text-gray-700 mb-2">Points Amount *</label>
+              <input v-model="form.rules.reward_value" type="number" class="form-input w-full rounded border px-3 py-2" placeholder="100" min="0" required />
+            </div>
+            
+            <div v-else-if="form.rules.reward_type === 'voucher'">
+              <label class="block text-sm font-medium text-gray-700 mb-2">Pilih Vouchers (Bisa Multiple) *</label>
+              <multiselect
+                v-model="form.rules.reward_value"
+                :options="vouchers || []"
+                :multiple="true"
+                :searchable="true"
+                :close-on-select="false"
+                :show-labels="false"
+                placeholder="Pilih Vouchers (bisa lebih dari satu)"
+                label="name"
+                track-by="id"
+                class="mt-1"
+                required
+              >
+                <template #option="{ option }">
+                  <div>
+                    <strong>{{ option.name }}</strong>
+                    <span v-if="option.code" class="text-gray-500 text-sm ml-2">({{ option.code }})</span>
+                  </div>
+                </template>
+                <template #singleLabel="{ option }">
+                  <strong>{{ option.name }}</strong>
+                  <span v-if="option.code" class="text-gray-500 text-sm ml-2">({{ option.code }})</span>
+                </template>
+                <template #tag="{ option, remove }">
+                  <span class="multiselect__tag">
+                    <span>{{ option.name }}</span>
+                    <i class="multiselect__tag-icon" @click.prevent="remove(option)"></i>
+                  </span>
+                </template>
+                <template #noOptions>
+                  <span>Tidak ada voucher ditemukan</span>
+                </template>
+                <template #noResult>
+                  <span>Tidak ada voucher ditemukan</span>
+                </template>
+              </multiselect>
             </div>
           </div>
         </div>
@@ -212,21 +352,68 @@ import AppLayout from '@/Layouts/AppLayout.vue'
 import { router } from '@inertiajs/vue3'
 import { ref, computed, watch } from 'vue'
 import axios from 'axios'
+import Multiselect from 'vue-multiselect'
+import 'vue-multiselect/dist/vue-multiselect.min.css'
 
 const props = defineProps({
-  challengeTypes: Array,
-  challengeItems: Array,
-  outlets: Array,
-  challenge: Object
+  challengeTypes: {
+    type: Array,
+    default: () => []
+  },
+  challengeItems: {
+    type: Array,
+    default: () => []
+  },
+  vouchers: {
+    type: Array,
+    default: () => []
+  },
+  outlets: {
+    type: Array,
+    default: () => []
+  },
+  challenge: {
+    type: Object,
+    default: null
+  }
 })
 
 const isEdit = computed(() => !!props.challenge)
+
+// Initialize reward_value based on reward_type
+const initializeRewardValue = (rules) => {
+  if (!rules || !rules.reward_type) return null
+  
+  if (rules.reward_type === 'points') {
+    // For points, reward_value should be a number
+    return typeof rules.reward_value === 'number' ? rules.reward_value : (parseInt(rules.reward_value) || 0)
+  } else if (rules.reward_type === 'item' || rules.reward_type === 'voucher') {
+    // For items and vouchers, reward_value should be an array
+    if (Array.isArray(rules.reward_value)) {
+      return rules.reward_value
+    } else if (rules.reward_value) {
+      // If it's a string or single value, try to find the item/voucher and convert to array
+      if (rules.reward_type === 'item') {
+        const item = props.challengeItems.find(i => i.id == rules.reward_value || i.name === rules.reward_value)
+        return item ? [item] : []
+      } else if (rules.reward_type === 'voucher') {
+        const voucher = props.vouchers.find(v => v.id == rules.reward_value || v.name === rules.reward_value)
+        return voucher ? [voucher] : []
+      }
+    }
+    return []
+  }
+  return null
+}
 
 const form = ref({
   challenge_type_id: props.challenge?.challenge_type_id || '',
   name: props.challenge?.name || '',
   description: props.challenge?.description || '',
-  rules: props.challenge?.rules || {},
+  rules: props.challenge?.rules ? {
+    ...props.challenge.rules,
+    reward_value: initializeRewardValue(props.challenge.rules)
+  } : {},
   validity_period_days: props.challenge?.validity_period_days || 30,
   start_date: props.challenge?.start_date || '',
   end_date: props.challenge?.end_date || '',
@@ -242,8 +429,16 @@ function onTypeChange() {
     const type = props.challengeTypes.find(t => t.id == form.value.challenge_type_id)
     selectedTypeConfig.value = type
     
-    // Reset rules when type changes
-    form.value.rules = {}
+    // Reset rules when type changes (but preserve reward_value if editing)
+    if (!isEdit.value) {
+      form.value.rules = {}
+    } else {
+      // Keep existing rules but reset reward_value format
+      form.value.rules = {
+        ...form.value.rules,
+        reward_value: initializeRewardValue(form.value.rules)
+      }
+    }
     
     // Load challenge items for the type
     loadChallengeItems()
@@ -251,6 +446,17 @@ function onTypeChange() {
     selectedTypeConfig.value = null
   }
 }
+
+// Watch reward_type changes to reset reward_value format
+watch(() => form.value.rules?.reward_type, (newType, oldType) => {
+  if (newType !== oldType) {
+    if (newType === 'points') {
+      form.value.rules.reward_value = 0
+    } else if (newType === 'item' || newType === 'voucher') {
+      form.value.rules.reward_value = []
+    }
+  }
+})
 
 async function loadChallengeItems() {
   try {
@@ -264,13 +470,30 @@ async function loadChallengeItems() {
 function submitForm() {
   loading.value = true
   
+  // Format reward_value before submitting
+  const formData = { ...form.value }
+  
+  if (formData.rules?.reward_type && formData.rules?.reward_value) {
+    if (formData.rules.reward_type === 'item' || formData.rules.reward_type === 'voucher') {
+      // For items and vouchers, send array of IDs
+      if (Array.isArray(formData.rules.reward_value)) {
+        formData.rules.reward_value = formData.rules.reward_value.map(item => 
+          typeof item === 'object' ? item.id : item
+        )
+      }
+    } else if (formData.rules.reward_type === 'points') {
+      // For points, ensure it's a number
+      formData.rules.reward_value = parseInt(formData.rules.reward_value) || 0
+    }
+  }
+  
   const url = isEdit.value 
     ? route('challenges.update', props.challenge.id)
     : route('challenges.store')
     
   const method = isEdit.value ? 'put' : 'post'
   
-  router[method](url, form.value, {
+  router[method](url, formData, {
     onSuccess: () => {
       loading.value = false
     },

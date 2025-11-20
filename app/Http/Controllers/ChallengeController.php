@@ -6,6 +6,7 @@ use App\Models\Challenge;
 use App\Models\ChallengeType;
 use App\Models\ChallengeItem;
 use App\Models\Outlet;
+use App\Models\MemberAppsVoucher;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
@@ -61,6 +62,10 @@ class ChallengeController extends Controller
         return Inertia::render('MemberAppsSettings/ChallengeForm', [
             'challengeTypes' => ChallengeType::all(),
             'challengeItems' => ChallengeItem::available()->get(),
+            'vouchers' => MemberAppsVoucher::where('is_active', true)
+                ->select('id', 'name', 'code')
+                ->orderBy('name')
+                ->get(),
             'outlets' => Outlet::select('id_outlet as id', 'nama_outlet as name')->get(),
             'challenge' => null
         ]);
@@ -131,6 +136,10 @@ class ChallengeController extends Controller
         return Inertia::render('MemberAppsSettings/ChallengeForm', [
             'challengeTypes' => ChallengeType::all(),
             'challengeItems' => ChallengeItem::available()->get(),
+            'vouchers' => MemberAppsVoucher::where('is_active', true)
+                ->select('id', 'name', 'code')
+                ->orderBy('name')
+                ->get(),
             'outlets' => Outlet::select('id_outlet as id', 'nama_outlet as name')->get(),
             'challenge' => $challenge
         ]);

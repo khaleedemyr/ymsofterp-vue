@@ -22,6 +22,8 @@ class ContraBonItem extends Model
         'quantity',
         'unit_id',
         'price',
+        'discount_percent',
+        'discount_amount',
         'total',
         'notes'
     ];
@@ -29,6 +31,8 @@ class ContraBonItem extends Model
     protected $casts = [
         'quantity' => 'decimal:2',
         'price' => 'decimal:2',
+        'discount_percent' => 'decimal:2',
+        'discount_amount' => 'decimal:2',
         'total' => 'decimal:2'
     ];
 

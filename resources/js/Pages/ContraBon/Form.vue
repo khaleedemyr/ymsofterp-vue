@@ -47,6 +47,9 @@ const form = useForm({
   date: props.contraBon?.date ? props.contraBon.date.substring(0, 10) : '',
   notes: props.contraBon?.notes || '',
   supplier_invoice_number: props.contraBon?.supplier_invoice_number || '',
+  // Discount total fields
+  discount_total_percent: props.contraBon?.discount_total_percent || 0,
+  discount_total_amount: props.contraBon?.discount_total_amount || 0,
   // Source info fields - akan di-update saat submit
   source_type: props.contraBon?.source_type || 'purchase_order',
   source_id: props.contraBon?.source_id || null,
@@ -453,6 +456,8 @@ function selectRetailFoodFromModal(rf) {
       unit_id: item.unit_id || null, // Ambil dari join dengan units table
       quantity: item.qty,
       price: item.price,
+      discount_percent: 0,
+      discount_amount: 0,
       notes: '',
       item_name: item.item_name,
       unit_name: item.unit_name,
@@ -517,6 +522,8 @@ function selectWarehouseRetailFoodFromModal(rwf) {
       unit_id: item.unit_id || null, // Ambil dari join dengan units table
       quantity: item.qty,
       price: item.price,
+      discount_percent: 0,
+      discount_amount: 0,
       notes: '',
       item_name: item.item_name,
       unit_name: item.unit_name,
@@ -592,13 +599,31 @@ function formatCurrency(value) {
   return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(value);
 }
 
-// Computed untuk menghitung total dari item yang dicentang (with discount)
-const totalAmount = computed(() => {
+// Computed untuk menghitung subtotal dari item yang dicentang (with discount item)
+const subtotalAmount = computed(() => {
   return form.items
     .filter(item => item.selected)
     .reduce((sum, item) => {
       return sum + calculateItemTotal(item);
     }, 0);
+});
+
+// Computed untuk menghitung total setelah discount total
+const totalAmount = computed(() => {
+  const subtotal = subtotalAmount.value;
+  const discountTotalPercent = Number(form.discount_total_percent) || 0;
+  const discountTotalAmount = Number(form.discount_total_amount) || 0;
+  
+  let discountTotal = 0;
+  if (discountTotalPercent > 0) {
+    // Discount total percent applies to subtotal
+    discountTotal = subtotal * (discountTotalPercent / 100);
+  } else if (discountTotalAmount > 0) {
+    // Use discount total amount directly
+    discountTotal = discountTotalAmount;
+  }
+  
+  return subtotal - discountTotal;
 });
 
 // Function to calculate item total (with discount)
@@ -607,17 +632,17 @@ function calculateItemTotal(item) {
   const price = Number(item.price) || 0;
   const subtotal = quantity * price;
   
-  // Apply discount if available (for purchase_order source type)
-  if (item.source_type === 'purchase_order') {
-    const discountPercent = Number(item.discount_percent) || 0;
-    const discountAmount = Number(item.discount_amount) || 0;
-    
-    let discount = 0;
-    if (discountPercent > 0) {
-      // Discount percent applies to subtotal
-      discount = subtotal * (discountPercent / 100);
-    } else if (discountAmount > 0) {
-      // Discount amount is proportional to quantity ratio
+  // Apply discount item if available (for all source types)
+  const discountPercent = Number(item.discount_percent) || 0;
+  const discountAmount = Number(item.discount_amount) || 0;
+  
+  let discount = 0;
+  if (discountPercent > 0) {
+    // Discount percent applies to subtotal
+    discount = subtotal * (discountPercent / 100);
+  } else if (discountAmount > 0) {
+    // For purchase_order, discount amount might be proportional to quantity ratio
+    if (item.source_type === 'purchase_order') {
       // Find the source data to get original PO item quantity
       const source = selectedSources.value.find(s => 
         s.type === 'purchase_order' && s.po_id === item.po_id && s.gr_id === item.gr_id
@@ -633,13 +658,13 @@ function calculateItemTotal(item) {
       } else {
         discount = discountAmount;
       }
+    } else {
+      // For retail_food and warehouse_retail_food, use discount amount directly
+      discount = discountAmount;
     }
-    
-    return subtotal - discount;
   }
   
-  // For retail_food and warehouse_retail_food, no discount
-  return subtotal;
+  return subtotal - discount;
 }
 
 // Function to update item total when price changes
@@ -654,8 +679,36 @@ function updateItemTotal(item) {
     item.price = numPrice >= 0 ? numPrice : 0;
   }
   // Update po_item_total untuk purchase_order (jika ada)
-  if (sourceType.value === 'purchase_order' && item.po_item_id) {
+  if (item.source_type === 'purchase_order' && item.po_item_id) {
     item.po_item_total = calculateItemTotal(item);
+  }
+}
+
+// Function to handle discount item input - make discount_percent and discount_amount mutually exclusive
+function onDiscountItemPercentChange(item) {
+  if (item.discount_percent > 0) {
+    item.discount_amount = 0;
+  }
+  updateItemTotal(item);
+}
+
+function onDiscountItemAmountChange(item) {
+  if (item.discount_amount > 0) {
+    item.discount_percent = 0;
+  }
+  updateItemTotal(item);
+}
+
+// Function to handle discount total input - make discount_total_percent and discount_total_amount mutually exclusive
+function onDiscountTotalPercentChange() {
+  if (form.discount_total_percent > 0) {
+    form.discount_total_amount = 0;
+  }
+}
+
+function onDiscountTotalAmountChange() {
+  if (form.discount_total_amount > 0) {
+    form.discount_total_percent = 0;
   }
 }
 
@@ -786,6 +839,8 @@ async function onSubmit() {
     
     fd.append('notes', form.notes);
     fd.append('supplier_invoice_number', form.supplier_invoice_number);
+    fd.append('discount_total_percent', form.discount_total_percent || 0);
+    fd.append('discount_total_amount', form.discount_total_amount || 0);
     fd.append('image', fileImage.value);
     
     // Hanya kirim item yang dicentang
@@ -1228,7 +1283,7 @@ function getUnitName(item) {
                    <th class="px-3 py-2 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Qty</th>
                    <th class="px-3 py-2 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Unit</th>
                    <th class="px-3 py-2 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Price</th>
-                   <th class="px-3 py-2 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Diskon</th>
+                   <th class="px-3 py-2 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Diskon Item</th>
                    <th class="px-3 py-2 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Total</th>
                    <th class="px-3 py-2 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Notes</th>
                  </tr>
@@ -1297,12 +1352,36 @@ function getUnitName(item) {
                        placeholder="0.00"
                      />
                    </td>
-                   <td class="px-3 py-2 min-w-[100px] text-xs">
-                     <div v-if="item.source_type === 'purchase_order' && (item.discount_percent > 0 || item.discount_amount > 0)" class="text-red-600">
-                       <div v-if="item.discount_percent > 0">{{ item.discount_percent }}%</div>
-                       <div v-if="item.discount_amount > 0">{{ formatCurrency(item.discount_amount) }}</div>
+                   <td class="px-3 py-2 min-w-[150px]">
+                     <div class="space-y-1">
+                       <div>
+                         <label class="block text-[10px] text-gray-600 font-medium mb-0.5">Diskon %</label>
+                         <input 
+                           type="number" 
+                           v-model.number="item.discount_percent" 
+                           @input="onDiscountItemPercentChange(item)"
+                           @blur="onDiscountItemPercentChange(item)"
+                           step="0.01"
+                           min="0"
+                           max="100"
+                           class="w-full px-2 py-1 rounded border-gray-300 text-xs focus:ring-blue-500 focus:border-blue-500"
+                           placeholder="0"
+                         />
+                       </div>
+                       <div>
+                         <label class="block text-[10px] text-gray-600 font-medium mb-0.5">Diskon Rp</label>
+                         <input 
+                           type="number" 
+                           v-model.number="item.discount_amount" 
+                           @input="onDiscountItemAmountChange(item)"
+                           @blur="onDiscountItemAmountChange(item)"
+                           step="0.01"
+                           min="0"
+                           class="w-full px-2 py-1 rounded border-gray-300 text-xs focus:ring-blue-500 focus:border-blue-500"
+                           placeholder="0"
+                         />
+                       </div>
                      </div>
-                     <span v-else class="text-gray-400">-</span>
                    </td>
                    <td class="px-3 py-2 min-w-[100px]">
                      {{ formatCurrency(calculateItemTotal(item)) }}
@@ -1313,6 +1392,55 @@ function getUnitName(item) {
                  </tr>
                </tbody>
                <tfoot class="bg-gray-100">
+                 <tr>
+                   <td colspan="6" class="px-3 py-3 text-right font-bold text-gray-700">
+                     Subtotal:
+                   </td>
+                   <td class="px-3 py-3 font-bold text-gray-700">
+                     {{ formatCurrency(subtotalAmount) }}
+                   </td>
+                   <td colspan="2" class="px-3 py-3"></td>
+                 </tr>
+                 <tr>
+                   <td colspan="4" class="px-3 py-3 text-right font-medium text-gray-700">
+                     Discount Total:
+                   </td>
+                   <td class="px-3 py-3">
+                     <div>
+                       <label class="block text-xs text-gray-600 font-medium mb-1">Diskon %</label>
+                       <input 
+                         type="number" 
+                         v-model.number="form.discount_total_percent" 
+                         @input="onDiscountTotalPercentChange"
+                         @blur="onDiscountTotalPercentChange"
+                         step="0.01"
+                         min="0"
+                         max="100"
+                         class="w-full px-2 py-1 rounded border-gray-300 text-sm focus:ring-blue-500 focus:border-blue-500"
+                         placeholder="0"
+                       />
+                     </div>
+                   </td>
+                   <td class="px-3 py-3">
+                     <div>
+                       <label class="block text-xs text-gray-600 font-medium mb-1">Diskon Rp</label>
+                       <input 
+                         type="number" 
+                         v-model.number="form.discount_total_amount" 
+                         @input="onDiscountTotalAmountChange"
+                         @blur="onDiscountTotalAmountChange"
+                         step="0.01"
+                         min="0"
+                         class="w-full px-2 py-1 rounded border-gray-300 text-sm focus:ring-blue-500 focus:border-blue-500"
+                         placeholder="0"
+                       />
+                     </div>
+                   </td>
+                   <td class="px-3 py-3 font-medium text-red-600">
+                     {{ formatCurrency(subtotalAmount - totalAmount) }}
+                   </td>
+                   <td colspan="2" class="px-3 py-3"></td>
+                 </tr>
                  <tr>
                    <td colspan="6" class="px-3 py-3 text-right font-bold text-gray-700">
                      Total:

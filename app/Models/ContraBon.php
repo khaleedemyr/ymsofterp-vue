@@ -17,6 +17,8 @@ class ContraBon extends Model
         'supplier_id',
         'po_id',
         'total_amount',
+        'discount_total_percent',
+        'discount_total_amount',
         'notes',
         'image_path',
         'status',
@@ -37,7 +39,9 @@ class ContraBon extends Model
     protected $casts = [
         'date' => 'date',
         'approved_at' => 'datetime',
-        'total_amount' => 'decimal:2'
+        'total_amount' => 'decimal:2',
+        'discount_total_percent' => 'decimal:2',
+        'discount_total_amount' => 'decimal:2'
     ];
 
     public function supplier()

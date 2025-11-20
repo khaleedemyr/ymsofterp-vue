@@ -284,10 +284,39 @@ class ContraBonController extends Controller
             $countToday = ContraBon::whereDate('date', $request->date)->count();
             $number = 'CB-' . $dateStr . '-' . str_pad($countToday + 1, 4, '0', STR_PAD_LEFT);
 
-            // Calculate total amount
-            $totalAmount = collect($request->items)->sum(function ($item) {
-                return $item['quantity'] * $item['price'];
+            // Calculate total amount with discount item
+            $subtotal = collect($request->items)->sum(function ($item) {
+                $quantity = floatval($item['quantity'] ?? 0);
+                $price = floatval($item['price'] ?? 0);
+                $subtotalItem = $quantity * $price;
+                
+                // Apply discount item
+                $discountPercent = floatval($item['discount_percent'] ?? 0);
+                $discountAmount = floatval($item['discount_amount'] ?? 0);
+                
+                if ($discountPercent > 0) {
+                    $discount = $subtotalItem * ($discountPercent / 100);
+                } else if ($discountAmount > 0) {
+                    $discount = $discountAmount;
+                } else {
+                    $discount = 0;
+                }
+                
+                return $subtotalItem - $discount;
             });
+            
+            // Apply discount total
+            $discountTotalPercent = floatval($request->discount_total_percent ?? 0);
+            $discountTotalAmount = floatval($request->discount_total_amount ?? 0);
+            
+            $discountTotal = 0;
+            if ($discountTotalPercent > 0) {
+                $discountTotal = $subtotal * ($discountTotalPercent / 100);
+            } else if ($discountTotalAmount > 0) {
+                $discountTotal = $discountTotalAmount;
+            }
+            
+            $totalAmount = $subtotal - $discountTotal;
 
             // Handle image upload
             $imagePath = null;
@@ -309,6 +338,8 @@ class ContraBonController extends Controller
                 'date' => $request->date,
                 'supplier_id' => $supplierId,
                 'total_amount' => $totalAmount,
+                'discount_total_percent' => $discountTotalPercent,
+                'discount_total_amount' => $discountTotalAmount,
                 'notes' => $request->notes,
                 'image_path' => $imagePath,
                 'status' => 'draft',
@@ -518,6 +549,23 @@ class ContraBonController extends Controller
                     throw new \Exception("Unit ID tidak boleh kosong. Pastikan unit_name terisi dan unit sudah terdaftar di master unit.");
                 }
                 
+                // Calculate item total with discount
+                $quantity = floatval($item['quantity'] ?? 0);
+                $price = floatval($item['price'] ?? 0);
+                $subtotalItem = $quantity * $price;
+                
+                $discountPercent = floatval($item['discount_percent'] ?? 0);
+                $discountAmount = floatval($item['discount_amount'] ?? 0);
+                
+                $discount = 0;
+                if ($discountPercent > 0) {
+                    $discount = $subtotalItem * ($discountPercent / 100);
+                } else if ($discountAmount > 0) {
+                    $discount = $discountAmount;
+                }
+                
+                $itemTotal = $subtotalItem - $discount;
+                
                 // Prepare data for contra bon item
                 $contraBonItemData = [
                     'contra_bon_id' => $contraBon->id,
@@ -525,7 +573,9 @@ class ContraBonController extends Controller
                     'unit_id' => $unitId,
                     'quantity' => $item['quantity'],
                     'price' => $item['price'],
-                    'total' => $item['quantity'] * $item['price'],
+                    'discount_percent' => $discountPercent,
+                    'discount_amount' => $discountAmount,
+                    'total' => $itemTotal,
                     'notes' => $item['notes'] ?? null
                 ];
                 

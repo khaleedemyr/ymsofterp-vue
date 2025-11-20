@@ -1415,9 +1415,6 @@
                     <option value="">Pilih Challenge Type</option>
                     <option value="spending">Spending-based</option>
                     <option value="product">Product-based</option>
-                    <option value="multi-condition">Multi-condition</option>
-                    <option value="recurring">Recurring</option>
-                    <option value="custom">Custom</option>
                   </select>
                 </div>
                 <div>
@@ -1453,49 +1450,145 @@
                   </div>
                 </div>
                 <div v-if="challengeForm.rules.reward_type">
-                  <label class="block text-sm font-medium text-gray-700 mb-2">Reward Value *</label>
-                  <!-- Item Autocomplete (for item reward type) -->
+                  <!-- Item Multiselect (for item reward type) -->
                   <div v-if="challengeForm.rules.reward_type === 'item'">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Pilih Items (Bisa Multiple) *</label>
                     <Multiselect
-                      v-model="challengeForm.rules.reward_item"
+                      v-model="challengeForm.rules.reward_value"
                       :options="items"
                       :searchable="true"
                       :clear-on-select="false"
-                      :close-on-select="true"
+                      :close-on-select="false"
                       :show-labels="false"
+                      :multiple="true"
                       track-by="id"
                       label="name"
-                      placeholder="Select Item"
-                      :allow-empty="false"
-                      :multiple="false"
-                      :select-label="''"
-                      :selected-label="''"
-                      :deselect-label="''"
-                      :custom-label="(option) => option.name"
+                      placeholder="Pilih Items (bisa lebih dari satu)"
                       required
                     >
-                      <template #option="{ option }">
-                        <div class="flex justify-between items-center">
-                          <span>{{ option.name }}</span>
-                        </div>
+                      <template #noOptions>
+                        <span>Tidak ada item ditemukan</span>
                       </template>
-                      <template #singleLabel="{ value }">
-                        <div class="flex justify-between items-center">
-                          <span>{{ value?.name || '' }}</span>
-                        </div>
+                      <template #noResult>
+                        <span>Tidak ada item ditemukan</span>
                       </template>
                     </Multiselect>
-                    <div v-if="challengeForm.rules.reward_item && challengeForm.rules.reward_item.name" class="mt-2 p-2 bg-green-50 border border-green-200 rounded-lg">
-                      <div class="flex items-center gap-2">
-                        <i class="fa-solid fa-check-circle text-green-600"></i>
-                        <span class="text-sm text-green-800">
-                          Selected: <strong>{{ challengeForm.rules.reward_item?.name || 'Unknown Item' }}</strong>
-                        </span>
+                    <p class="mt-1 text-xs text-gray-500">Anda bisa memilih lebih dari satu item</p>
+                    
+                    <div class="mt-4">
+                      <label class="block text-sm font-medium text-gray-700 mb-2">Reward Bisa Ditukar Di *</label>
+                      <div class="space-y-2">
+                        <label class="flex items-center">
+                          <input 
+                            type="checkbox" 
+                            v-model="challengeForm.rules.reward_all_outlets"
+                            @change="onRewardAllOutletsChange('spending', 'item')"
+                            class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                          >
+                          <span class="ml-2 text-sm text-gray-700">Semua Outlet</span>
+                        </label>
+                        <div v-if="!challengeForm.rules.reward_all_outlets">
+                          <Multiselect
+                            v-model="challengeForm.rules.reward_outlet_ids"
+                            :options="outlets"
+                            :searchable="true"
+                            :clear-on-select="false"
+                            :close-on-select="false"
+                            :show-labels="false"
+                            :multiple="true"
+                            track-by="id"
+                            label="name"
+                            placeholder="Pilih Outlet untuk Reward (kosongkan untuk semua outlet)"
+                          >
+                            <template #noOptions>
+                              <span>Tidak ada outlet ditemukan</span>
+                            </template>
+                            <template #noResult>
+                              <span>Tidak ada outlet ditemukan</span>
+                            </template>
+                          </Multiselect>
+                        </div>
                       </div>
                     </div>
                   </div>
-                  <!-- Text Input (for other reward types) -->
-                  <input v-else v-model="challengeForm.rules.reward_value" type="text" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" :placeholder="challengeForm.rules.reward_type === 'points' ? '100 points' : challengeForm.rules.reward_type === 'voucher' ? 'IDR 100.000' : 'Reward Value'" required>
+                  <!-- Points Input (for points reward type) -->
+                  <div v-else-if="challengeForm.rules.reward_type === 'points'">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Points Amount *</label>
+                    <input v-model="challengeForm.rules.reward_value" type="number" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="100" min="0" required>
+                  </div>
+                  <!-- Voucher Multiselect (for voucher reward type) -->
+                  <div v-else-if="challengeForm.rules.reward_type === 'voucher'">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Pilih Vouchers (Bisa Multiple) *</label>
+                    <Multiselect
+                      v-model="challengeForm.rules.reward_value"
+                      :options="vouchers || []"
+                      :searchable="true"
+                      :clear-on-select="false"
+                      :close-on-select="false"
+                      :show-labels="false"
+                      :multiple="true"
+                      track-by="id"
+                      label="name"
+                      placeholder="Pilih Vouchers (bisa lebih dari satu)"
+                      required
+                    >
+                      <template #option="{ option }">
+                        <div>
+                          <strong>{{ option.name }}</strong>
+                          <span v-if="option.code" class="text-gray-500 text-sm ml-2">({{ option.code }})</span>
+                        </div>
+                      </template>
+                      <template #tag="{ option, remove }">
+                        <span class="multiselect__tag">
+                          <span>{{ option.name }}</span>
+                          <i class="multiselect__tag-icon" @click.prevent="remove(option)"></i>
+                        </span>
+                      </template>
+                      <template #noOptions>
+                        <span>Tidak ada voucher ditemukan</span>
+                      </template>
+                      <template #noResult>
+                        <span>Tidak ada voucher ditemukan</span>
+                      </template>
+                    </Multiselect>
+                    <p class="mt-1 text-xs text-gray-500">Anda bisa memilih lebih dari satu voucher</p>
+                    
+                    <div class="mt-4">
+                      <label class="block text-sm font-medium text-gray-700 mb-2">Reward Bisa Ditukar Di *</label>
+                      <div class="space-y-2">
+                        <label class="flex items-center">
+                          <input 
+                            type="checkbox" 
+                            v-model="challengeForm.rules.reward_all_outlets"
+                            @change="onRewardAllOutletsChange('spending', 'voucher')"
+                            class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                          >
+                          <span class="ml-2 text-sm text-gray-700">Semua Outlet</span>
+                        </label>
+                        <div v-if="!challengeForm.rules.reward_all_outlets">
+                          <Multiselect
+                            v-model="challengeForm.rules.reward_outlet_ids"
+                            :options="outlets"
+                            :searchable="true"
+                            :clear-on-select="false"
+                            :close-on-select="false"
+                            :show-labels="false"
+                            :multiple="true"
+                            track-by="id"
+                            label="name"
+                            placeholder="Pilih Outlet untuk Reward (kosongkan untuk semua outlet)"
+                          >
+                            <template #noOptions>
+                              <span>Tidak ada outlet ditemukan</span>
+                            </template>
+                            <template #noResult>
+                              <span>Tidak ada outlet ditemukan</span>
+                            </template>
+                          </Multiselect>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
                 <div class="flex items-center">
                   <input v-model="challengeForm.rules.immediate" type="checkbox" class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded">
@@ -1505,72 +1598,222 @@
 
               <!-- Product-based Rules -->
               <div v-else-if="challengeForm.challenge_type_id === 'product'" class="space-y-4">
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Product Category *</label>
-                    <input v-model="challengeForm.rules.product_category" type="text" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="New Product Development" required>
-                  </div>
-                  <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Quantity Required *</label>
-                    <input v-model="challengeForm.rules.quantity_required" type="number" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="2" required>
-                  </div>
-                </div>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Reward Type *</label>
-                    <select v-model="challengeForm.rules.reward_type" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" required>
-                      <option value="">Pilih Reward Type</option>
-                      <option value="points">Points</option>
-                      <option value="item">Item</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Reward Value *</label>
-                    <input v-model="challengeForm.rules.reward_value" type="text" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="100 points" required>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Multi-condition Rules -->
-              <div v-else-if="challengeForm.challenge_type_id === 'multi-condition'" class="space-y-4">
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Min Spending (IDR) *</label>
-                    <input v-model="challengeForm.rules.min_spending" type="number" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="1000000" required>
-                  </div>
-                  <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Min Transactions *</label>
-                    <input v-model="challengeForm.rules.min_transactions" type="number" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="2" required>
-                  </div>
-                  <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Min Visits *</label>
-                    <input v-model="challengeForm.rules.min_visits" type="number" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="2" required>
-                  </div>
-                </div>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Reward Type *</label>
-                    <select v-model="challengeForm.rules.reward_type" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" required>
-                      <option value="">Pilih Reward Type</option>
-                      <option value="voucher">Voucher</option>
-                      <option value="item">Item</option>
-                      <option value="points">Points</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Reward Value *</label>
-                    <input v-model="challengeForm.rules.reward_value" type="text" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="IDR 100.000" required>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Custom Rules -->
-              <div v-else-if="challengeForm.challenge_type_id === 'custom'" class="space-y-4">
                 <div>
-                  <label class="block text-sm font-medium text-gray-700 mb-2">Custom Rules *</label>
-                  <textarea v-model="challengeForm.rules" rows="4" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="Masukkan rules challenge secara detail..."></textarea>
+                  <label class="block text-sm font-medium text-gray-700 mb-2">Pilih Products (Bisa Multiple) *</label>
+                  <Multiselect
+                    v-model="challengeForm.rules.products"
+                    :options="items"
+                    :searchable="true"
+                    :clear-on-select="false"
+                    :close-on-select="false"
+                    :show-labels="false"
+                    :multiple="true"
+                    track-by="id"
+                    label="name"
+                    placeholder="Pilih Products (bisa lebih dari satu)"
+                    required
+                  >
+                    <template #noOptions>
+                      <span>Tidak ada product ditemukan</span>
+                    </template>
+                    <template #noResult>
+                      <span>Tidak ada product ditemukan</span>
+                    </template>
+                  </Multiselect>
+                  <p class="mt-1 text-xs text-gray-500">Anda bisa memilih lebih dari satu product</p>
+                </div>
+                
+                <div>
+                  <label class="block text-sm font-medium text-gray-700 mb-2">Quantity Required *</label>
+                  <input v-model="challengeForm.rules.quantity_required" type="number" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="2" min="1" required>
+                </div>
+                
+                <div>
+                  <label class="block text-sm font-medium text-gray-700 mb-2">Pilih Outlet *</label>
+                  <div class="space-y-2">
+                    <label class="flex items-center">
+                      <input 
+                        type="checkbox" 
+                        v-model="challengeForm.rules.all_outlets"
+                        @change="onAllOutletsChange('product')"
+                        class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                      >
+                      <span class="ml-2 text-sm text-gray-700">Semua Outlet</span>
+                    </label>
+                    <div v-if="!challengeForm.rules.all_outlets">
+                      <Multiselect
+                        v-model="challengeForm.rules.outlet_ids"
+                        :options="outlets"
+                        :searchable="true"
+                        :clear-on-select="false"
+                        :close-on-select="false"
+                        :show-labels="false"
+                        :multiple="true"
+                        track-by="id"
+                        label="name"
+                        placeholder="Pilih Outlet (kosongkan untuk semua outlet)"
+                      >
+                        <template #noOptions>
+                          <span>Tidak ada outlet ditemukan</span>
+                        </template>
+                        <template #noResult>
+                          <span>Tidak ada outlet ditemukan</span>
+                        </template>
+                      </Multiselect>
+                    </div>
+                  </div>
+                </div>
+                
+                <div>
+                  <label class="block text-sm font-medium text-gray-700 mb-2">Reward Type *</label>
+                  <select v-model="challengeForm.rules.reward_type" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" required>
+                    <option value="">Pilih Reward Type</option>
+                    <option value="item">Item</option>
+                    <option value="points">Points</option>
+                    <option value="voucher">Voucher</option>
+                  </select>
+                </div>
+                
+                <div v-if="challengeForm.rules.reward_type === 'item'">
+                  <label class="block text-sm font-medium text-gray-700 mb-2">Pilih Items (Bisa Multiple) *</label>
+                  <Multiselect
+                    v-model="challengeForm.rules.reward_value"
+                    :options="items"
+                    :searchable="true"
+                    :clear-on-select="false"
+                    :close-on-select="false"
+                    :show-labels="false"
+                    :multiple="true"
+                    track-by="id"
+                    label="name"
+                    placeholder="Pilih Items (bisa lebih dari satu)"
+                    required
+                  >
+                    <template #noOptions>
+                      <span>Tidak ada item ditemukan</span>
+                    </template>
+                    <template #noResult>
+                      <span>Tidak ada item ditemukan</span>
+                    </template>
+                  </Multiselect>
+                  <p class="mt-1 text-xs text-gray-500">Anda bisa memilih lebih dari satu item</p>
+                  
+                  <div class="mt-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Reward Bisa Ditukar Di *</label>
+                    <div class="space-y-2">
+                      <label class="flex items-center">
+                        <input 
+                          type="checkbox" 
+                          v-model="challengeForm.rules.reward_all_outlets"
+                          @change="onRewardAllOutletsChange('product', 'item')"
+                          class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                        >
+                        <span class="ml-2 text-sm text-gray-700">Semua Outlet</span>
+                      </label>
+                      <div v-if="!challengeForm.rules.reward_all_outlets">
+                        <Multiselect
+                          v-model="challengeForm.rules.reward_outlet_ids"
+                          :options="outlets"
+                          :searchable="true"
+                          :clear-on-select="false"
+                          :close-on-select="false"
+                          :show-labels="false"
+                          :multiple="true"
+                          track-by="id"
+                          label="name"
+                          placeholder="Pilih Outlet untuk Reward (kosongkan untuk semua outlet)"
+                        >
+                          <template #noOptions>
+                            <span>Tidak ada outlet ditemukan</span>
+                          </template>
+                          <template #noResult>
+                            <span>Tidak ada outlet ditemukan</span>
+                          </template>
+                        </Multiselect>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                
+                <div v-else-if="challengeForm.rules.reward_type === 'points'">
+                  <label class="block text-sm font-medium text-gray-700 mb-2">Points Amount *</label>
+                  <input v-model="challengeForm.rules.reward_value" type="number" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="100" min="0" required>
+                </div>
+                
+                <div v-else-if="challengeForm.rules.reward_type === 'voucher'">
+                  <label class="block text-sm font-medium text-gray-700 mb-2">Pilih Vouchers (Bisa Multiple) *</label>
+                  <Multiselect
+                    v-model="challengeForm.rules.reward_value"
+                    :options="vouchers || []"
+                    :searchable="true"
+                    :clear-on-select="false"
+                    :close-on-select="false"
+                    :show-labels="false"
+                    :multiple="true"
+                    track-by="id"
+                    label="name"
+                    placeholder="Pilih Vouchers (bisa lebih dari satu)"
+                    required
+                  >
+                    <template #option="{ option }">
+                      <div>
+                        <strong>{{ option.name }}</strong>
+                        <span v-if="option.code" class="text-gray-500 text-sm ml-2">({{ option.code }})</span>
+                      </div>
+                    </template>
+                    <template #tag="{ option, remove }">
+                      <span class="multiselect__tag">
+                        <span>{{ option.name }}</span>
+                        <i class="multiselect__tag-icon" @click.prevent="remove(option)"></i>
+                      </span>
+                    </template>
+                    <template #noOptions>
+                      <span>Tidak ada voucher ditemukan</span>
+                    </template>
+                    <template #noResult>
+                      <span>Tidak ada voucher ditemukan</span>
+                    </template>
+                  </Multiselect>
+                  <p class="mt-1 text-xs text-gray-500">Anda bisa memilih lebih dari satu voucher</p>
+                  
+                  <div class="mt-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Reward Bisa Ditukar Di *</label>
+                    <div class="space-y-2">
+                      <label class="flex items-center">
+                        <input 
+                          type="checkbox" 
+                          v-model="challengeForm.rules.reward_all_outlets"
+                          @change="onRewardAllOutletsChange('product', 'voucher')"
+                          class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                        >
+                        <span class="ml-2 text-sm text-gray-700">Semua Outlet</span>
+                      </label>
+                      <div v-if="!challengeForm.rules.reward_all_outlets">
+                        <Multiselect
+                          v-model="challengeForm.rules.reward_outlet_ids"
+                          :options="outlets"
+                          :searchable="true"
+                          :clear-on-select="false"
+                          :close-on-select="false"
+                          :show-labels="false"
+                          :multiple="true"
+                          track-by="id"
+                          label="name"
+                          placeholder="Pilih Outlet untuk Reward (kosongkan untuk semua outlet)"
+                        >
+                          <template #noOptions>
+                            <span>Tidak ada outlet ditemukan</span>
+                          </template>
+                          <template #noResult>
+                            <span>Tidak ada outlet ditemukan</span>
+                          </template>
+                        </Multiselect>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
+
             </div>
             <!-- Validity & Settings -->
             <div class="bg-gray-50 rounded-lg p-4">
@@ -1579,10 +1822,6 @@
                 <div>
                   <label class="block text-sm font-medium text-gray-700 mb-2">Validity Period (Days) *</label>
                   <input v-model="challengeForm.validity_period_days" type="number" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="30" required>
-                </div>
-                <div>
-                  <label class="block text-sm font-medium text-gray-700 mb-2">Points Reward</label>
-                  <input v-model.number="challengeForm.points_reward" type="number" min="0" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
                 </div>
               </div>
               <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
@@ -2465,7 +2704,6 @@ const challengeForm = ref({
   rules: {},
   validity_period_days: 30,
   image: null,
-  points_reward: 0,
   start_date: '',
   end_date: '',
   is_active: true
@@ -2690,7 +2928,6 @@ const openChallengeModal = () => {
     rules: {},
     validity_period_days: 30,
     image: null,
-    points_reward: 0,
     start_date: '',
     end_date: '',
     is_active: true
@@ -2701,6 +2938,18 @@ const openChallengeModal = () => {
 const onChallengeTypeChange = () => {
   // Reset rules when type changes
   challengeForm.value.rules = {}
+}
+
+const onAllOutletsChange = (type) => {
+  if (challengeForm.value.rules.all_outlets) {
+    challengeForm.value.rules.outlet_ids = []
+  }
+}
+
+const onRewardAllOutletsChange = (challengeType, rewardType) => {
+  if (challengeForm.value.rules.reward_all_outlets) {
+    challengeForm.value.rules.reward_outlet_ids = []
+  }
 }
 
 const openWhatsOnModal = () => {
@@ -2884,12 +3133,96 @@ const editChallenge = (challenge) => {
     }
   }
   
-  // If reward_type is 'item' and item_id exists, find the item and set as reward_item
-  if (rules.reward_type === 'item' && rules.item_id) {
-    const selectedItem = items.value.find(item => item.id === rules.item_id)
-    if (selectedItem) {
-      rules.reward_item = selectedItem
+  // Initialize products for product-based challenge
+  if (challenge.challenge_type_id === 'product' && rules.products) {
+    if (Array.isArray(rules.products)) {
+      rules.products = rules.products.map(id => {
+        const item = items.value.find(i => i.id == id)
+        return item || { id: id, name: 'Unknown Product' }
+      }).filter(Boolean)
+    } else {
+      rules.products = []
     }
+  }
+  
+  // Initialize outlet_ids for product-based challenge
+  if (challenge.challenge_type_id === 'product') {
+    if (rules.all_outlets) {
+      rules.all_outlets = true
+      rules.outlet_ids = []
+    } else if (rules.outlet_ids) {
+      if (Array.isArray(rules.outlet_ids)) {
+        rules.outlet_ids = rules.outlet_ids.map(id => {
+          const outlet = props.outlets.find(o => o.id == id)
+          return outlet || { id: id, name: 'Unknown Outlet' }
+        }).filter(Boolean)
+      }
+    } else {
+      rules.all_outlets = false
+      rules.outlet_ids = []
+    }
+  }
+  
+  // Initialize reward_value and reward outlet_ids based on reward_type
+  if (rules.reward_type === 'item' && rules.reward_value) {
+    // For items, convert IDs to array of item objects
+    if (Array.isArray(rules.reward_value)) {
+      rules.reward_value = rules.reward_value.map(id => {
+        const item = items.value.find(i => i.id == id)
+        return item || { id: id, name: 'Unknown Item' }
+      }).filter(Boolean)
+    } else if (rules.item_id) {
+      // Backward compatibility: if item_id exists, convert to array
+      const selectedItem = items.value.find(item => item.id === rules.item_id)
+      rules.reward_value = selectedItem ? [selectedItem] : []
+    } else {
+      rules.reward_value = []
+    }
+    
+    // Initialize reward outlet_ids for item reward
+    if (rules.reward_all_outlets) {
+      rules.reward_all_outlets = true
+      rules.reward_outlet_ids = []
+    } else if (rules.reward_outlet_ids) {
+      if (Array.isArray(rules.reward_outlet_ids)) {
+        rules.reward_outlet_ids = rules.reward_outlet_ids.map(id => {
+          const outlet = props.outlets.find(o => o.id == id)
+          return outlet || { id: id, name: 'Unknown Outlet' }
+        }).filter(Boolean)
+      }
+    } else {
+      rules.reward_all_outlets = false
+      rules.reward_outlet_ids = []
+    }
+  } else if (rules.reward_type === 'voucher' && rules.reward_value) {
+    // For vouchers, convert IDs to array of voucher objects
+    if (Array.isArray(rules.reward_value)) {
+      rules.reward_value = rules.reward_value.map(id => {
+        const voucher = props.vouchers.find(v => v.id == id)
+        return voucher || { id: id, name: 'Unknown Voucher' }
+      }).filter(Boolean)
+    } else {
+      rules.reward_value = []
+    }
+    
+    // Initialize reward outlet_ids for voucher reward
+    if (rules.reward_all_outlets) {
+      rules.reward_all_outlets = true
+      rules.reward_outlet_ids = []
+    } else if (rules.reward_outlet_ids) {
+      if (Array.isArray(rules.reward_outlet_ids)) {
+        rules.reward_outlet_ids = rules.reward_outlet_ids.map(id => {
+          const outlet = props.outlets.find(o => o.id == id)
+          return outlet || { id: id, name: 'Unknown Outlet' }
+        }).filter(Boolean)
+      }
+    } else {
+      rules.reward_all_outlets = false
+      rules.reward_outlet_ids = []
+    }
+  } else if (rules.reward_type === 'points') {
+    // For points, ensure it's a number
+    rules.reward_value = parseInt(rules.reward_value) || 0
   }
   
   challengeForm.value = {
@@ -2899,7 +3232,6 @@ const editChallenge = (challenge) => {
     rules: rules,
     validity_period_days: challenge.validity_period_days || 30,
     image: null,
-    points_reward: challenge.points_reward || 0,
     start_date: challenge.start_date || '',
     end_date: challenge.end_date || '',
     is_active: challenge.is_active !== undefined ? challenge.is_active : true
@@ -3076,20 +3408,71 @@ const saveChallenge = () => {
   
   savingChallenge.value = true
   
-  // Prepare rules: if reward_type is 'item' and reward_item is selected, set reward_value and item_id
+  // Prepare rules: format all fields based on type
   const rules = { ...challengeForm.value.rules }
-  if (rules.reward_type === 'item' && rules.reward_item) {
-    rules.reward_value = rules.reward_item.name
-    rules.item_id = rules.reward_item.id
-    // Remove reward_item object from rules (keep only necessary data)
-    delete rules.reward_item
+  
+  // Format products for product-based challenge
+  if (challengeForm.value.challenge_type_id === 'product' && rules.products) {
+    if (Array.isArray(rules.products)) {
+      rules.products = rules.products.map(product => 
+        typeof product === 'object' ? product.id : product
+      )
+    }
+  }
+  
+  // Format outlet_ids for product-based challenge
+  if (challengeForm.value.challenge_type_id === 'product') {
+    if (rules.all_outlets) {
+      rules.outlet_ids = []
+    } else if (rules.outlet_ids && Array.isArray(rules.outlet_ids)) {
+      rules.outlet_ids = rules.outlet_ids.map(outlet => 
+        typeof outlet === 'object' ? outlet.id : outlet
+      )
+    }
+  }
+  
+  // Format reward_value based on reward_type
+  if (rules.reward_type === 'item' && rules.reward_value) {
+    // For items, convert array of objects to array of IDs
+    if (Array.isArray(rules.reward_value)) {
+      rules.reward_value = rules.reward_value.map(item => 
+        typeof item === 'object' ? item.id : item
+      )
+    }
+    
+    // Format reward outlet_ids for item reward
+    if (rules.reward_all_outlets) {
+      rules.reward_outlet_ids = []
+    } else if (rules.reward_outlet_ids && Array.isArray(rules.reward_outlet_ids)) {
+      rules.reward_outlet_ids = rules.reward_outlet_ids.map(outlet => 
+        typeof outlet === 'object' ? outlet.id : outlet
+      )
+    }
+  } else if (rules.reward_type === 'voucher' && rules.reward_value) {
+    // For vouchers, convert array of objects to array of IDs
+    if (Array.isArray(rules.reward_value)) {
+      rules.reward_value = rules.reward_value.map(voucher => 
+        typeof voucher === 'object' ? voucher.id : voucher
+      )
+    }
+    
+    // Format reward outlet_ids for voucher reward
+    if (rules.reward_all_outlets) {
+      rules.reward_outlet_ids = []
+    } else if (rules.reward_outlet_ids && Array.isArray(rules.reward_outlet_ids)) {
+      rules.reward_outlet_ids = rules.reward_outlet_ids.map(outlet => 
+        typeof outlet === 'object' ? outlet.id : outlet
+      )
+    }
+  } else if (rules.reward_type === 'points' && rules.reward_value) {
+    // For points, ensure it's a number
+    rules.reward_value = parseInt(rules.reward_value) || 0
   }
   
   const formData = new FormData()
   formData.append('title', challengeForm.value.title)
   formData.append('description', challengeForm.value.description)
   formData.append('rules', JSON.stringify(rules))
-  formData.append('points_reward', challengeForm.value.points_reward)
   formData.append('start_date', challengeForm.value.start_date)
   formData.append('end_date', challengeForm.value.end_date)
   formData.append('is_active', challengeForm.value.is_active ? '1' : '0')
