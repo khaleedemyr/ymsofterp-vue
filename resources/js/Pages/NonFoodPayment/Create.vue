@@ -108,9 +108,20 @@
         <div class="bg-white rounded-2xl shadow-2xl p-6">
           <div class="flex justify-between items-center mb-4">
             <h2 class="text-xl font-bold text-gray-800">{{ selectedPO ? 'Detail Purchase Order' : 'Detail Purchase Requisition' }}</h2>
-            <button type="button" @click="resetSelection" class="text-gray-500 hover:text-gray-700">
-              <i class="fa fa-times"></i>
-            </button>
+            <div class="flex items-center gap-2">
+              <button
+                v-if="selectedPO"
+                type="button"
+                @click="showTutorial = true"
+                class="text-blue-600 hover:text-blue-800 text-sm font-medium flex items-center gap-1 px-3 py-1 bg-blue-50 rounded-lg border border-blue-200"
+              >
+                <i class="fa fa-question-circle"></i>
+                <span class="text-red-600 font-semibold">Tutorial Payment Type</span>
+              </button>
+              <button type="button" @click="resetSelection" class="text-gray-500 hover:text-gray-700">
+                <i class="fa fa-times"></i>
+              </button>
+            </div>
           </div>
           
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
@@ -150,18 +161,39 @@
               <label class="block text-sm font-medium text-gray-700">Division</label>
               <p class="mt-1 text-gray-900">{{ selectedPR.division_name }}</p>
             </div>
-            <div v-if="selectedPO && selectedPO.payment_type">
-              <label class="block text-sm font-medium text-gray-700">Metode Pembayaran</label>
-              <div class="mt-1">
-                <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium"
-                      :class="selectedPO.payment_type === 'lunas' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'">
-                  <i :class="selectedPO.payment_type === 'lunas' ? 'fa fa-check-circle mr-1' : 'fa fa-calendar-alt mr-1'"></i>
-                  {{ selectedPO.payment_type === 'lunas' ? 'Bayar Lunas' : 'Termin Bayar' }}
-                </span>
+            <!-- Payment Type Information (always show if PO selected) -->
+            <div v-if="selectedPO" class="md:col-span-2">
+              <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <div class="flex items-center justify-between mb-2">
+                  <label class="block text-sm font-medium text-blue-800">Metode Pembayaran</label>
+                  <button
+                    type="button"
+                    @click="showTutorial = true"
+                    class="text-blue-600 hover:text-blue-800 text-xs font-medium flex items-center gap-1"
+                  >
+                    <i class="fa fa-question-circle"></i>
+                    <span class="text-red-600 font-semibold">Tutorial</span>
+                  </button>
+                </div>
+                <div v-if="selectedPO.payment_type" class="mt-2">
+                  <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium"
+                        :class="selectedPO.payment_type === 'lunas' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'">
+                    <i :class="selectedPO.payment_type === 'lunas' ? 'fa fa-check-circle mr-1' : 'fa fa-calendar-alt mr-1'"></i>
+                    {{ selectedPO.payment_type === 'lunas' ? 'Bayar Lunas' : 'Termin Bayar' }}
+                  </span>
+                  <p v-if="selectedPO.payment_type === 'termin' && selectedPO.payment_terms" class="mt-2 text-sm text-gray-700">
+                    <strong>Detail Termin:</strong> {{ selectedPO.payment_terms }}
+                  </p>
+                  <p v-else-if="selectedPO.payment_type === 'lunas'" class="mt-2 text-sm text-gray-600">
+                    <i class="fa fa-info-circle mr-1"></i>
+                    Pembayaran harus dilakukan sekaligus (lunas) dengan amount = Grand Total PO
+                  </p>
+                </div>
+                <div v-else class="mt-2 text-sm text-gray-500 italic">
+                  <i class="fa fa-info-circle mr-1"></i>
+                  Metode pembayaran belum ditentukan di PO
+                </div>
               </div>
-              <p v-if="selectedPO.payment_type === 'termin' && selectedPO.payment_terms" class="mt-2 text-sm text-gray-700">
-                <strong>Detail Termin:</strong> {{ selectedPO.payment_terms }}
-              </p>
             </div>
           </div>
 
@@ -667,7 +699,7 @@
           <div class="bg-blue-600 px-6 py-4 flex items-center justify-between">
             <h3 class="text-lg font-semibold text-white">
               <i class="fa fa-graduation-cap mr-2"></i>
-              Tutorial: Pembayaran Termin & Cara Bayar Sisa
+              Tutorial: Payment Type & Pembayaran Termin
             </h3>
             <button
               @click="showTutorial = false"
@@ -684,26 +716,67 @@
               <div class="bg-blue-50 border-l-4 border-blue-500 p-4 rounded">
                 <h4 class="font-semibold text-blue-800 mb-2">
                   <i class="fa fa-info-circle mr-2"></i>
-                  Pembayaran untuk PO dengan Metode Termin
+                  Payment Type di Purchase Order
                 </h4>
                 <p class="text-sm text-blue-700">
-                  Jika PO dibuat dengan metode <strong>Termin Bayar</strong>, Anda bisa membuat multiple payments 
-                  sampai PO lunas. Sistem akan menampilkan informasi progress pembayaran dan sisa yang harus dibayar.
+                  Setiap PO memiliki <strong>Payment Type</strong> yang ditentukan saat membuat PO di menu Purchase Order Ops.
+                  Ada dua jenis: <strong>Bayar Lunas</strong> (pembayaran penuh sekaligus) dan <strong>Termin Bayar</strong> (pembayaran bertahap).
+                  Payment type ini akan mempengaruhi cara pembayaran di menu Non Food Payment.
                 </p>
               </div>
 
-              <!-- Step 1: Pilih PO dengan Termin -->
+              <!-- Payment Type Overview -->
+              <div class="border border-gray-200 rounded-lg p-4">
+                <div class="flex items-start">
+                  <div class="flex-shrink-0 w-8 h-8 bg-purple-600 text-white rounded-full flex items-center justify-center font-bold">
+                    <i class="fa fa-info-circle text-sm"></i>
+                  </div>
+                  <div class="ml-4 flex-1">
+                    <h4 class="font-semibold text-gray-900 mb-2">Perbedaan Payment Type</h4>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mt-2">
+                      <div class="bg-green-50 p-3 rounded border border-green-200">
+                        <p class="text-xs font-semibold text-green-800 mb-1">
+                          <i class="fa fa-check-circle mr-1"></i>
+                          Bayar Lunas:
+                        </p>
+                        <ul class="text-xs text-gray-700 space-y-1 list-disc list-inside">
+                          <li>Pembayaran penuh sekaligus</li>
+                          <li>Hanya bisa 1x payment</li>
+                          <li>Amount harus = Grand Total PO</li>
+                          <li>Tidak bisa buat payment baru jika sudah ada payment</li>
+                        </ul>
+                      </div>
+                      <div class="bg-blue-50 p-3 rounded border border-blue-200">
+                        <p class="text-xs font-semibold text-blue-800 mb-1">
+                          <i class="fa fa-calendar-alt mr-1"></i>
+                          Termin Bayar:
+                        </p>
+                        <ul class="text-xs text-gray-700 space-y-1 list-disc list-inside">
+                          <li>Pembayaran bertahap</li>
+                          <li>Bisa multiple payments</li>
+                          <li>Amount bisa ≤ Sisa Pembayaran</li>
+                          <li>Bisa buat payment baru sampai lunas</li>
+                        </ul>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Step 1: Pilih PO dan Lihat Payment Type -->
               <div class="border border-gray-200 rounded-lg p-4">
                 <div class="flex items-start">
                   <div class="flex-shrink-0 w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center font-bold">
                     1
                   </div>
                   <div class="ml-4 flex-1">
-                    <h4 class="font-semibold text-gray-900 mb-2">Pilih PO dengan Payment Type = Termin</h4>
+                    <h4 class="font-semibold text-gray-900 mb-2">Pilih PO dan Lihat Payment Type</h4>
                     <ul class="text-sm text-gray-700 space-y-1 list-disc list-inside">
                       <li>Di form Create Payment, pilih PO yang sudah di-approve</li>
+                      <li>Di section "Detail Purchase Order", akan muncul informasi <strong>Metode Pembayaran</strong></li>
+                      <li>PO dengan payment_type = 'lunas' akan menampilkan badge <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">Bayar Lunas</span></li>
                       <li>PO dengan payment_type = 'termin' akan menampilkan badge <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">Termin Bayar</span></li>
-                      <li>Sistem akan otomatis menampilkan informasi pembayaran termin</li>
+                      <li>Jika termin, akan muncul detail termin yang diinput saat create PO</li>
                     </ul>
                   </div>
                 </div>

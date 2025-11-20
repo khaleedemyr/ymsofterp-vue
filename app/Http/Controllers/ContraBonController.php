@@ -759,7 +759,30 @@ class ContraBonController extends Controller
                     ->whereNull('finance_manager_approved_at')
                     ->get();
                 
+                \Log::info('Finance Manager Contra Bon Approvals', [
+                    'user_id' => $user->id,
+                    'user_jabatan' => $user->id_jabatan,
+                    'total_approvals' => $financeManagerApprovals->count(),
+                    'source_types' => $financeManagerApprovals->pluck('source_type')->toArray()
+                ]);
+                
                 foreach ($financeManagerApprovals as $cb) {
+                    // Debug logging for warehouse retail food
+                    if ($cb->source_type === 'warehouse_retail_food') {
+                        \Log::info('Warehouse Retail Food Contra Bon found', [
+                            'contra_bon_id' => $cb->id,
+                            'contra_bon_number' => $cb->number,
+                            'source_id' => $cb->source_id,
+                            'warehouse_retail_food_loaded' => $cb->relationLoaded('warehouseRetailFood'),
+                            'warehouse_retail_food_exists' => $cb->warehouseRetailFood ? 'yes' : 'no'
+                        ]);
+                        
+                        // Ensure warehouseRetailFood is loaded if source_type is warehouse_retail_food
+                        if (!$cb->relationLoaded('warehouseRetailFood')) {
+                            $cb->load('warehouseRetailFood');
+                        }
+                    }
+                    
                     $pendingApprovals[] = [
                         'id' => $cb->id,
                         'number' => $cb->number,

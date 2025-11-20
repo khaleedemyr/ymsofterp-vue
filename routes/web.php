@@ -616,6 +616,10 @@ Route::get('/test-approvers', [\App\Http\Controllers\PurchaseOrderOpsController:
     // PO Report routes
     Route::get('/po-report', [\App\Http\Controllers\PurchaseOrderReportController::class, 'index'])->name('po-report.index');
     Route::get('/po-report/export', [\App\Http\Controllers\PurchaseOrderReportController::class, 'export'])->name('po-report.export');
+    
+    // Debt Report
+    Route::get('/debt-report', [\App\Http\Controllers\DebtReportController::class, 'index'])->name('debt-report.index');
+    Route::get('/debt-report/export', [\App\Http\Controllers\DebtReportController::class, 'export'])->name('debt-report.export');
 
     // Good Receive routes
     Route::get('/food-good-receive', [FoodGoodReceiveController::class, 'index'])->name('food-good-receive.index');

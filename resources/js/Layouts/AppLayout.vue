@@ -220,6 +220,7 @@ const menuGroups = [
                 route: '/report-rekap-fj',
                 code: 'report_rekap_fj',
             },
+            { name: () => 'Report Hutang', icon: 'fa-solid fa-file-invoice-dollar', route: '/debt-report', code: 'debt_report' },
         ],
     },
     {
