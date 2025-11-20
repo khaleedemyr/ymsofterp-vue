@@ -1447,7 +1447,7 @@ class PurchaseOrderOpsController extends Controller
             'source_pr.attachments.uploader',
             'attachments.uploader',
             // include all flows to allow server-side filtering by level order
-            'approvalFlows'
+            'approvalFlows.approver'
         ])
         ->get();
 
@@ -1465,6 +1465,24 @@ class PurchaseOrderOpsController extends Controller
             }
             $nextFlow = $pending->first();
             return intval($nextFlow->approver_id) === intval($userId);
+        })->map(function ($po) {
+            // Get approver name from the next pending approval flow
+            $flows = collect($po->approvalFlows ?? []);
+            $pending = $flows->filter(function ($f) { return strtoupper($f->status) === 'PENDING'; })
+                             ->sortBy('approval_level');
+            
+            if ($pending->isNotEmpty()) {
+                $nextFlow = $pending->first();
+                if ($nextFlow->approver) {
+                    $po->approver_name = $nextFlow->approver->nama_lengkap;
+                } else {
+                    $po->approver_name = null;
+                }
+            } else {
+                $po->approver_name = null;
+            }
+            
+            return $po;
         })->values();
 
         return response()->json(['success' => true, 'data' => $pendingPOs]);

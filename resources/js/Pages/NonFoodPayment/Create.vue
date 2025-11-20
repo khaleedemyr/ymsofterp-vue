@@ -462,8 +462,11 @@
           
           <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
             <!-- Supplier -->
-            <div>
-              <label class="block text-sm font-medium text-gray-700 mb-2">Supplier *</label>
+            <div v-if="shouldShowSupplier">
+              <label class="block text-sm font-medium text-gray-700 mb-2">
+                Supplier 
+                <span v-if="isSupplierRequired">*</span>
+              </label>
               <multiselect
                 v-model="selectedSupplier"
                 :options="suppliers"
@@ -477,7 +480,7 @@
                 @select="onSupplierChange"
                 @remove="onSupplierRemove"
                 class="mt-1"
-                required
+                :required="isSupplierRequired"
               >
                 <template #noOptions>
                   <span>Tidak ada supplier ditemukan</span>
@@ -489,8 +492,11 @@
               <p v-if="selectedPO" class="mt-1 text-xs text-gray-500">
                 Supplier diambil dari Purchase Order
               </p>
-              <p v-if="selectedPR" class="mt-1 text-xs text-gray-500">
-                Pilih supplier untuk payment ini
+              <p v-if="selectedPR && isSupplierRequired" class="mt-1 text-xs text-gray-500">
+                Pilih supplier untuk payment ini (wajib)
+              </p>
+              <p v-if="selectedPR && !isSupplierRequired" class="mt-1 text-xs text-gray-500">
+                Pilih supplier untuk payment ini (opsional)
               </p>
             </div>
 
@@ -1010,6 +1016,53 @@ const form = reactive({
   is_partial_payment: false
 });
 
+// Computed properties for supplier field visibility and requirement
+const shouldShowSupplier = computed(() => {
+  // If PO is selected, always show supplier (taken from PO)
+  if (selectedPO.value) {
+    return true;
+  }
+  
+  // If PR is selected, check mode
+  if (selectedPR.value) {
+    const mode = selectedPR.value.mode;
+    // Hide supplier for travel_application and kasbon
+    if (mode === 'travel_application' || mode === 'kasbon') {
+      return false;
+    }
+    // Show supplier for pr_ops and purchase_payment
+    return true;
+  }
+  
+  // Default: show supplier
+  return true;
+});
+
+const isSupplierRequired = computed(() => {
+  // If PO is selected, supplier is always required (from PO)
+  if (selectedPO.value) {
+    return true;
+  }
+  
+  // If PR is selected, check mode
+  if (selectedPR.value) {
+    const mode = selectedPR.value.mode;
+    // Required for pr_ops
+    if (mode === 'pr_ops') {
+      return true;
+    }
+    // Optional for purchase_payment
+    if (mode === 'purchase_payment') {
+      return false;
+    }
+    // Not needed for travel_application and kasbon (field is hidden)
+    return false;
+  }
+  
+  // Default: required
+  return true;
+});
+
 function onSupplierChange(supplier) {
   if (supplier && supplier.id) {
     form.supplier_id = supplier.id;
@@ -1193,12 +1246,25 @@ async function selectPR(pr) {
   selectedPO.value = null;
   form.purchase_requisition_id = pr.id;
   form.purchase_order_ops_id = null;
-  form.supplier_id = ''; // PR tidak punya supplier, user harus pilih manual
+  
+  // Set supplier_id based on mode
+  const mode = pr.mode;
+  if (mode === 'travel_application' || mode === 'kasbon') {
+    // No supplier needed for these modes
+    form.supplier_id = '';
+    selectedSupplier.value = null;
+  } else if (mode === 'pr_ops') {
+    // Supplier required for pr_ops, user must select
+    form.supplier_id = '';
+    selectedSupplier.value = null;
+  } else {
+    // purchase_payment: supplier optional
+    form.supplier_id = '';
+    selectedSupplier.value = null;
+  }
+  
   form.amount = pr.amount;
   originalAmount.value = pr.amount;
-  
-  // Reset selected supplier for PR (user must select manually)
-  selectedSupplier.value = null;
   
   // Load PR items grouped by outlet
   loadingPOItems.value = true;
@@ -1237,12 +1303,17 @@ function submitForm() {
     return;
   }
 
-  // Validate supplier_id is filled
-  if (!form.supplier_id) {
+  // Validate supplier_id based on mode
+  if (shouldShowSupplier.value && isSupplierRequired.value && !form.supplier_id) {
     import('sweetalert2').then(({ default: Swal }) => {
       Swal.fire('Error', 'Supplier harus dipilih.', 'error');
     });
     return;
+  }
+  
+  // For travel_application and kasbon, set supplier_id to null
+  if (!shouldShowSupplier.value) {
+    form.supplier_id = '';
   }
 
   // Validate amount for termin payment

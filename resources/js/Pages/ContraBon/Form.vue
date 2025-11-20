@@ -47,6 +47,12 @@ const form = useForm({
   date: props.contraBon?.date ? props.contraBon.date.substring(0, 10) : '',
   notes: props.contraBon?.notes || '',
   supplier_invoice_number: props.contraBon?.supplier_invoice_number || '',
+  // Source info fields - akan di-update saat submit
+  source_type: props.contraBon?.source_type || 'purchase_order',
+  source_id: props.contraBon?.source_id || null,
+  po_id: props.contraBon?.po_id || null,
+  gr_id: props.contraBon?.gr_id || null,
+  sources: [], // Multiple sources support
   items: props.contraBon?.items?.map(i => ({
     gr_item_id: i.gr_item_id,
     item_id: i.item_id,
@@ -93,37 +99,85 @@ onMounted(async () => {
     
     // Initialize selectedSources for edit mode
     if (props.contraBon) {
-      if (props.contraBon.source_type === 'purchase_order' && props.contraBon.po_id && props.contraBon.gr_id) {
-        selectedSources.value.push({
-          key: `po-${props.contraBon.po_id}-${props.contraBon.gr_id}`,
-          type: 'purchase_order',
-          po_id: props.contraBon.po_id,
-          gr_id: props.contraBon.gr_id,
-          display: props.contraBon.purchase_order?.number ? `${props.contraBon.purchase_order.number} - GR` : 'PO/GR',
-          supplier_id: props.contraBon.supplier_id,
-          supplier_name: props.contraBon.supplier?.name || '',
-          data: null
+      // PRIORITAS: Gunakan sources array untuk multi-source (jika ada)
+      if (props.contraBon.sources && Array.isArray(props.contraBon.sources) && props.contraBon.sources.length > 0) {
+        // Multi-source: load dari sources array
+        props.contraBon.sources.forEach((source) => {
+          if (source.source_type === 'purchase_order' && source.po_id && source.gr_id) {
+            // Gunakan camelCase untuk relasi Laravel
+            const poNumber = (source.purchaseOrder || source.purchase_order)?.number || 'PO';
+            selectedSources.value.push({
+              key: `po-${source.po_id}-${source.gr_id}`,
+              type: 'purchase_order',
+              po_id: source.po_id,
+              gr_id: source.gr_id,
+              display: `${poNumber} - GR`,
+              supplier_id: props.contraBon.supplier_id,
+              supplier_name: props.contraBon.supplier?.name || '',
+              data: null
+            });
+          } else if (source.source_type === 'retail_food' && source.source_id) {
+            // Gunakan camelCase untuk relasi Laravel
+            const retailFood = source.retailFood || source.retail_food;
+            const retailNumber = retailFood?.retail_number || 'Retail Food';
+            selectedSources.value.push({
+              key: `rf-${source.source_id}`,
+              type: 'retail_food',
+              source_id: source.source_id,
+              display: retailNumber,
+              supplier_id: props.contraBon.supplier_id,
+              supplier_name: props.contraBon.supplier?.name || '',
+              data: null
+            });
+          } else if (source.source_type === 'warehouse_retail_food' && source.source_id) {
+            // Gunakan camelCase untuk relasi Laravel
+            const warehouseRetailFood = source.warehouseRetailFood || source.warehouse_retail_food;
+            const retailNumber = warehouseRetailFood?.retail_number || 'Warehouse Retail Food';
+            selectedSources.value.push({
+              key: `rwf-${source.source_id}`,
+              type: 'warehouse_retail_food',
+              source_id: source.source_id,
+              display: retailNumber,
+              supplier_id: props.contraBon.supplier_id,
+              supplier_name: props.contraBon.supplier?.name || '',
+              data: null
+            });
+          }
         });
-      } else if (props.contraBon.source_type === 'retail_food' && props.contraBon.source_id) {
-        selectedSources.value.push({
-          key: `rf-${props.contraBon.source_id}`,
-          type: 'retail_food',
-          source_id: props.contraBon.source_id,
-          display: props.contraBon.retailFood?.retail_number || 'Retail Food',
-          supplier_id: props.contraBon.supplier_id,
-          supplier_name: props.contraBon.supplier?.name || '',
-          data: null
-        });
-      } else if (props.contraBon.source_type === 'warehouse_retail_food' && props.contraBon.source_id) {
-        selectedSources.value.push({
-          key: `rwf-${props.contraBon.source_id}`,
-          type: 'warehouse_retail_food',
-          source_id: props.contraBon.source_id,
-          display: props.contraBon.warehouseRetailFood?.retail_number || 'Warehouse Retail Food',
-          supplier_id: props.contraBon.supplier_id,
-          supplier_name: props.contraBon.supplier?.name || '',
-          data: null
-        });
+      } else {
+        // Backward compatibility: gunakan source_type dan source_id untuk single source
+        if (props.contraBon.source_type === 'purchase_order' && props.contraBon.po_id && props.contraBon.gr_id) {
+          selectedSources.value.push({
+            key: `po-${props.contraBon.po_id}-${props.contraBon.gr_id}`,
+            type: 'purchase_order',
+            po_id: props.contraBon.po_id,
+            gr_id: props.contraBon.gr_id,
+            display: props.contraBon.purchase_order?.number ? `${props.contraBon.purchase_order.number} - GR` : 'PO/GR',
+            supplier_id: props.contraBon.supplier_id,
+            supplier_name: props.contraBon.supplier?.name || '',
+            data: null
+          });
+        } else if (props.contraBon.source_type === 'retail_food' && props.contraBon.source_id) {
+          selectedSources.value.push({
+            key: `rf-${props.contraBon.source_id}`,
+            type: 'retail_food',
+            source_id: props.contraBon.source_id,
+            display: props.contraBon.retailFood?.retail_number || 'Retail Food',
+            supplier_id: props.contraBon.supplier_id,
+            supplier_name: props.contraBon.supplier?.name || '',
+            data: null
+          });
+        } else if (props.contraBon.source_type === 'warehouse_retail_food' && props.contraBon.source_id) {
+          selectedSources.value.push({
+            key: `rwf-${props.contraBon.source_id}`,
+            type: 'warehouse_retail_food',
+            source_id: props.contraBon.source_id,
+            display: props.contraBon.warehouseRetailFood?.retail_number || 'Warehouse Retail Food',
+            supplier_id: props.contraBon.supplier_id,
+            supplier_name: props.contraBon.supplier?.name || '',
+            data: null
+          });
+        }
       }
       
       // Load supplier detail
@@ -192,40 +246,11 @@ async function openPOListModal() {
   // Lazy load: hanya load data jika belum pernah di-load
   if (poWithGRList.value.length === 0) {
     loadingPOGR.value = true;
-    console.log('=== Loading PO/GR Data ===');
     try {
-      console.log('Calling API: /api/contra-bon/po-with-approved-gr');
       const response = await axios.get('/api/contra-bon/po-with-approved-gr');
-      console.log('=== API Response ===');
-      console.log('Response status:', response.status);
-      console.log('Full response:', response.data);
-      console.log('Response data type:', typeof response.data);
-      console.log('Response data is array:', Array.isArray(response.data));
-      
-      if (response.data && response.data.length > 0) {
-        console.log('First PO:', response.data[0]);
-        console.log('First PO keys:', Object.keys(response.data[0]));
-        if (response.data[0].items && response.data[0].items.length > 0) {
-          console.log('First item from API:', response.data[0].items[0]);
-          console.log('First item keys:', Object.keys(response.data[0].items[0]));
-          console.log('First item item_name:', response.data[0].items[0].item_name);
-          console.log('First item unit_name:', response.data[0].items[0].unit_name);
-        } else {
-          console.warn('First PO has no items or items is empty');
-        }
-      } else {
-        console.warn('Response data is empty or not an array');
-      }
       poWithGRList.value = response.data || [];
       filteredPOList.value = poWithGRList.value;
-      console.log('PO/GR list loaded:', poWithGRList.value.length, 'items');
     } catch (e) {
-      console.error('=== Error loading PO/GR ===');
-      console.error('Error object:', e);
-      console.error('Error message:', e.message);
-      console.error('Error response:', e.response);
-      console.error('Error status:', e.response?.status);
-      console.error('Error data:', e.response?.data);
       Swal.fire('Error', 'Gagal mengambil data PO/GR: ' + (e.response?.data?.error || e.message), 'error');
       poWithGRList.value = [];
       filteredPOList.value = [];
@@ -301,9 +326,6 @@ function closeWarehouseRetailFoodModal() {
 }
 
 function selectPOFromModal(po) {
-  console.log('=== selectPOFromModal CALLED ===');
-  console.log('PO data:', po);
-  console.log('PO items:', po.items);
   
   // Check if this source already exists
   const existingSource = selectedSources.value.find(s => 
@@ -334,7 +356,6 @@ function selectPOFromModal(po) {
   if (po.items && po.items.length > 0) {
     const newItems = po.items.map(item => {
       // Debug: Log item data untuk troubleshooting
-      console.log('Raw item from API:', item);
       if (!item.item_name || !item.unit_name) {
         console.warn('Item missing name/unit:', item);
         console.warn('Available keys:', Object.keys(item));
@@ -378,11 +399,9 @@ function selectPOFromModal(po) {
         });
       }
       
-      console.log('Mapped item:', mappedItem);
       return mappedItem;
     });
     form.items.push(...newItems);
-    console.log('All form items after adding:', form.items);
   }
   
   // Update supplier detail (use first supplier or merge if multiple)
@@ -429,9 +448,9 @@ function selectRetailFoodFromModal(rf) {
   if (rf.items && rf.items.length > 0) {
     const newItems = rf.items.map(item => ({
       gr_item_id: null,
-      item_id: null,
+      item_id: item.item_id || null, // Ambil dari join dengan items table
       po_item_id: null,
-      unit_id: null,
+      unit_id: item.unit_id || null, // Ambil dari join dengan units table
       quantity: item.qty,
       price: item.price,
       notes: '',
@@ -493,9 +512,9 @@ function selectWarehouseRetailFoodFromModal(rwf) {
   if (rwf.items && rwf.items.length > 0) {
     const newItems = rwf.items.map(item => ({
       gr_item_id: null,
-      item_id: null,
+      item_id: item.item_id || null, // Ambil dari join dengan items table
       po_item_id: null,
-      unit_id: null,
+      unit_id: item.unit_id || null, // Ambil dari join dengan units table
       quantity: item.qty,
       price: item.price,
       notes: '',
@@ -648,54 +667,148 @@ async function onSubmit() {
     return;
   }
 
+  // REFACTORED: Tentukan source info dari item pertama yang dipilih
+  const firstItem = selectedItems[0];
+  
+  // PRIORITAS: Ambil source_type dari item, bukan dari selectedSources
+  const itemSourceType = firstItem?.source_type || 'purchase_order';
+  const itemPoId = firstItem?.po_id || null;
+  const itemGrId = firstItem?.gr_id || null;
+  const itemSourceId = firstItem?.source_id || null;
+
   const loadingSwal = Swal.fire({
     title: isEdit.value ? 'Menyimpan Perubahan...' : 'Menyimpan Data...',
     allowOutsideClick: false,
     showConfirmButton: false,
     didOpen: () => Swal.showLoading(),
   });
+  
+  // Helper function untuk set source info ke FormData
+  const setSourceInfo = (fd, sourceType, poId, grId, sourceId) => {
+    if (sourceType === 'purchase_order') {
+      fd.append('po_id', poId || '');
+      fd.append('gr_id', grId || '');
+      fd.append('source_type', 'purchase_order');
+      fd.append('source_id', poId && grId ? `${poId}-${grId}` : '');
+    } else if (sourceType === 'retail_food') {
+      fd.append('po_id', '');
+      fd.append('gr_id', '');
+      fd.append('source_type', 'retail_food');
+      fd.append('source_id', sourceId || '');
+    } else if (sourceType === 'warehouse_retail_food') {
+      fd.append('po_id', '');
+      fd.append('gr_id', '');
+      fd.append('source_type', 'warehouse_retail_food');
+      fd.append('source_id', sourceId || '');
+    }
+  };
+  
+  // Helper function untuk set source info ke form object
+  const setFormSourceInfo = (sourceType, poId, grId, sourceId) => {
+    if (sourceType === 'purchase_order') {
+      form.po_id = poId || '';
+      form.gr_id = grId || '';
+      form.source_type = 'purchase_order';
+      form.source_id = poId && grId ? `${poId}-${grId}` : '';
+    } else if (sourceType === 'retail_food') {
+      form.po_id = '';
+      form.gr_id = '';
+      form.source_type = 'retail_food';
+      form.source_id = sourceId || '';
+    } else if (sourceType === 'warehouse_retail_food') {
+      form.po_id = '';
+      form.gr_id = '';
+      form.source_type = 'warehouse_retail_food';
+      form.source_id = sourceId || '';
+    }
+  };
+  
   // Kirim pakai FormData jika ada file
   if (fileImage.value) {
     const fd = new FormData();
     fd.append('date', form.date);
     
-    // For multiple sources, use first selected item's source info as primary (for backward compatibility)
-    // Or use first source from selectedSources
-    const firstSource = selectedSources.value.length > 0 ? selectedSources.value[0] : null;
-    if (firstSource) {
-      if (firstSource.type === 'purchase_order') {
-        fd.append('po_id', firstSource.po_id);
-        fd.append('gr_id', firstSource.gr_id);
-        fd.append('source_type', 'purchase_order');
-        fd.append('source_id', `${firstSource.po_id}-${firstSource.gr_id}`);
-      } else if (firstSource.type === 'retail_food') {
-        fd.append('po_id', '');
-        fd.append('gr_id', '');
-        fd.append('source_type', 'retail_food');
-        fd.append('source_id', firstSource.source_id);
-      } else if (firstSource.type === 'warehouse_retail_food') {
-        fd.append('po_id', '');
-        fd.append('gr_id', '');
-        fd.append('source_type', 'warehouse_retail_food');
-        fd.append('source_id', firstSource.source_id);
-      }
+    // REFACTORED: Selalu gunakan source info dari item pertama yang dipilih
+    console.log('Setting FormData source info (with file):', {
+      itemSourceType,
+      itemPoId,
+      itemGrId,
+      itemSourceId
+    });
+    setSourceInfo(fd, itemSourceType, itemPoId, itemGrId, itemSourceId);
+    
+    // Send all sources as array for multiple source support
+    // Jika selectedSources kosong, buat source dari item pertama
+    if (selectedSources.value.length > 0) {
+      selectedSources.value.forEach((source, index) => {
+        fd.append(`sources[${index}][source_type]`, source.type);
+        // Handle undefined/null source_id - untuk purchase_order, tidak perlu source_id (gunakan po_id)
+        let sourceIdValue = source.source_id;
+        if (source.type === 'purchase_order') {
+          // Untuk purchase_order, source_id tidak diperlukan (akan diisi dengan po_id di backend)
+          sourceIdValue = source.po_id || '';
+        } else {
+          // Untuk retail_food dan warehouse_retail_food, gunakan source_id
+          sourceIdValue = source.source_id || '';
+        }
+        // Pastikan tidak mengirim undefined sebagai string
+        if (sourceIdValue === undefined || sourceIdValue === null) {
+          sourceIdValue = '';
+        }
+        fd.append(`sources[${index}][source_id]`, sourceIdValue);
+        if (source.type === 'purchase_order') {
+          fd.append(`sources[${index}][po_id]`, source.po_id || '');
+          fd.append(`sources[${index}][gr_id]`, source.gr_id || '');
+        } else {
+          fd.append(`sources[${index}][po_id]`, '');
+          fd.append(`sources[${index}][gr_id]`, '');
+        }
+      });
     } else {
-      // Fallback if no sources
-      fd.append('po_id', '');
-      fd.append('gr_id', '');
-      fd.append('source_type', 'purchase_order');
-      fd.append('source_id', '');
+      // Jika selectedSources kosong, buat source dari item pertama
+      fd.append(`sources[0][source_type]`, itemSourceType);
+      // Handle source_id - untuk purchase_order, gunakan po_id
+      let sourceIdValue = '';
+      if (itemSourceType === 'purchase_order') {
+        sourceIdValue = itemPoId || '';
+      } else {
+        sourceIdValue = itemSourceId || '';
+      }
+      fd.append(`sources[0][source_id]`, sourceIdValue);
+      if (itemSourceType === 'purchase_order') {
+        fd.append(`sources[0][po_id]`, itemPoId || '');
+        fd.append(`sources[0][gr_id]`, itemGrId || '');
+      } else {
+        fd.append(`sources[0][po_id]`, '');
+        fd.append(`sources[0][gr_id]`, '');
+      }
     }
     
     fd.append('notes', form.notes);
     fd.append('supplier_invoice_number', form.supplier_invoice_number);
     fd.append('image', fileImage.value);
+    
     // Hanya kirim item yang dicentang
     selectedItems.forEach((item, idx) => {
       Object.keys(item).forEach(key => {
         // Jangan kirim field selected dan _rowKey
         if (key !== 'selected' && key !== '_rowKey') {
-          fd.append(`items[${idx}][${key}]`, item[key]);
+          let value = item[key];
+          // Untuk FormData, null/undefined harus dikonversi
+          // Tapi untuk item_id dan unit_id, jangan convert null menjadi string kosong
+          // karena backend perlu tahu bahwa nilainya null (bukan string "null")
+          if (value === null || value === undefined) {
+            // Untuk field tertentu, kirim sebagai string "null" agar backend tahu
+            if (key === 'item_id' || key === 'unit_id' || key === 'po_id' || key === 'gr_id' || 
+                key === 'po_item_id' || key === 'gr_item_id' || key === 'retail_food_item_id' || 
+                key === 'warehouse_retail_food_item_id') {
+              // Kirim sebagai string kosong, backend akan handle
+              value = '';
+            } else {
+              value = '';
+            }
+          }
+          fd.append(`items[${idx}][${key}]`, value);
         }
       });
     });
@@ -784,40 +897,58 @@ async function onSubmit() {
     return;
   }
   // Tanpa file, pakai inertia
-  // Set source_type dan source_id ke form (use first source for backward compatibility)
-  const firstSource = selectedSources.value.length > 0 ? selectedSources.value[0] : null;
-  if (firstSource) {
-    if (firstSource.type === 'purchase_order') {
-      form.po_id = firstSource.po_id;
-      form.gr_id = firstSource.gr_id;
-      form.source_type = 'purchase_order';
-      form.source_id = `${firstSource.po_id}-${firstSource.gr_id}`;
-    } else if (firstSource.type === 'retail_food') {
-      form.po_id = '';
-      form.gr_id = '';
-      form.source_type = 'retail_food';
-      form.source_id = firstSource.source_id;
-    } else if (firstSource.type === 'warehouse_retail_food') {
-      form.po_id = '';
-      form.gr_id = '';
-      form.source_type = 'warehouse_retail_food';
-      form.source_id = firstSource.source_id;
-    }
+  // REFACTORED: Selalu gunakan source info dari item pertama yang dipilih
+  setFormSourceInfo(itemSourceType, itemPoId, itemGrId, itemSourceId);
+  
+  // Set all sources for multiple source support
+  if (selectedSources.value.length > 0) {
+    form.sources = selectedSources.value.map(source => {
+      // Untuk purchase_order, source_id diisi dengan po_id (integer)
+      // Untuk retail_food dan warehouse_retail_food, gunakan source_id
+      let sourceIdValue = null;
+      if (source.type === 'purchase_order') {
+        sourceIdValue = source.po_id || null;
+      } else {
+        sourceIdValue = source.source_id || null;
+      }
+      
+      return {
+        source_type: source.type,
+        source_id: sourceIdValue,
+        po_id: source.type === 'purchase_order' ? source.po_id : null,
+        gr_id: source.type === 'purchase_order' ? source.gr_id : null,
+      };
+    });
   } else {
-    // Fallback
-    form.po_id = '';
-    form.gr_id = '';
-    form.source_type = 'purchase_order';
-    form.source_id = '';
+    // Jika selectedSources kosong, buat source dari item pertama
+    let sourceIdValue = null;
+    if (itemSourceType === 'purchase_order') {
+      // Untuk purchase_order, source_id diisi dengan po_id
+      sourceIdValue = itemPoId || null;
+    } else {
+      // Untuk retail_food dan warehouse_retail_food, gunakan source_id
+      sourceIdValue = itemSourceId || null;
+    }
+    
+    form.sources = [{
+      source_type: itemSourceType,
+      source_id: sourceIdValue,
+      po_id: itemSourceType === 'purchase_order' ? itemPoId : null,
+      gr_id: itemSourceType === 'purchase_order' ? itemGrId : null,
+    }];
   }
   
   // Hanya kirim item yang dicentang (hapus field selected dan _rowKey)
   const itemsToSubmit = selectedItems.map(item => {
     const { selected, _rowKey, ...itemData } = item;
+    // Pastikan item_id dan unit_id dikirim dengan benar
+    // Jika null/undefined, tetap kirim null (bukan string kosong)
+    // Inertia akan handle null dengan benar
     return itemData;
   });
   form.items = itemsToSubmit;
   
+  // Pastikan source info sudah ter-update sebelum submit
   if (isEdit.value) {
     form.put(`/contra-bons/${props.contraBon.id}`, {
       onSuccess: async () => {
@@ -896,10 +1027,6 @@ function toggleAllItems(event) {
 
 // Helper function untuk mendapatkan item_name dari item atau source data
 function getItemName(item) {
-  // Debug
-  if (!item.item_name && !item.item?.name) {
-    console.log('getItemName - item missing name:', item);
-  }
   
   if (item.item_name) return item.item_name;
   if (item.item?.name) return item.item.name;
@@ -912,7 +1039,6 @@ function getItemName(item) {
     if (source && source.data && source.data.items) {
       const grItem = source.data.items.find(i => i.id === item.gr_item_id || i.id === item.gr_item_id);
       if (grItem) {
-        console.log('Found grItem in source:', grItem);
         if (grItem.item_name) {
           item.item_name = grItem.item_name; // Cache untuk next time
           return grItem.item_name;
@@ -926,10 +1052,6 @@ function getItemName(item) {
 
 // Helper function untuk mendapatkan unit_name dari item atau source data
 function getUnitName(item) {
-  // Debug
-  if (!item.unit_name && !item.unit?.name) {
-    console.log('getUnitName - item missing unit:', item);
-  }
   
   if (item.unit_name) return item.unit_name;
   if (item.unit?.name) return item.unit.name;
@@ -942,7 +1064,6 @@ function getUnitName(item) {
     if (source && source.data && source.data.items) {
       const grItem = source.data.items.find(i => i.id === item.gr_item_id || i.id === item.gr_item_id);
       if (grItem) {
-        console.log('Found grItem in source for unit:', grItem);
         if (grItem.unit_name) {
           item.unit_name = grItem.unit_name; // Cache untuk next time
           return grItem.unit_name;

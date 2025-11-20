@@ -57,10 +57,26 @@
               <td class="px-6 py-3">{{ formatDate(cb.date) }}</td>
               <td class="px-6 py-3">{{ cb.supplier?.name }}</td>
               <td class="px-6 py-3">
-                <span :class="{
+                <div v-if="cb.source_types && cb.source_types.length > 0" class="flex flex-wrap gap-1">
+                  <span 
+                    v-for="sourceType in cb.source_types" 
+                    :key="sourceType"
+                    :class="{
+                      'bg-blue-100 text-blue-700 border border-blue-300': sourceType === 'PR Foods',
+                      'bg-green-100 text-green-700 border border-green-300': sourceType === 'RO Supplier',
+                      'bg-purple-100 text-purple-700 border border-purple-300': sourceType === 'Retail Food',
+                      'bg-orange-100 text-orange-700 border border-orange-300': sourceType === 'Warehouse Retail Food',
+                      'bg-gray-100 text-gray-700 border border-gray-300': sourceType === 'Unknown',
+                    }" 
+                    class="px-2 py-1 rounded-full text-xs font-semibold">
+                    {{ sourceType === 'PR Foods' ? 'PRF' : sourceType === 'Retail Food' ? 'RF' : sourceType === 'Warehouse Retail Food' ? 'RWF' : sourceType }}
+                  </span>
+                </div>
+                <span v-else :class="{
                   'bg-blue-100 text-blue-700': cb.source_type_display === 'PR Foods',
                   'bg-green-100 text-green-700': cb.source_type_display === 'RO Supplier',
                   'bg-purple-100 text-purple-700': cb.source_type_display === 'Retail Food',
+                  'bg-orange-100 text-orange-700': cb.source_type_display === 'Warehouse Retail Food',
                   'bg-gray-100 text-gray-700': cb.source_type_display === 'Unknown',
                 }" class="px-2 py-1 rounded-full text-xs font-semibold">
                   {{ cb.source_type_display || (cb.source_type === 'purchase_order' ? 'PO/GR' : 'Retail Food') }}
@@ -72,12 +88,8 @@
               <td class="px-6 py-3">
                 <div v-if="cb.source_numbers && cb.source_numbers.length > 0" class="flex flex-wrap gap-1">
                   <span v-for="number in cb.source_numbers" :key="number" 
-                        :class="{
-                          'bg-blue-100 text-blue-800': cb.source_type_display === 'PR Foods',
-                          'bg-green-100 text-green-800': cb.source_type_display === 'RO Supplier',
-                          'bg-purple-100 text-purple-800': cb.source_type_display === 'Retail Food'
-                        }"
-                        class="text-xs px-2 py-1 rounded-full">
+                        :class="getSourceNumberBadgeClass(number, cb.source_types)"
+                        class="text-xs px-2 py-1 rounded-full font-semibold border">
                     {{ number }}
                   </span>
                 </div>
@@ -141,8 +153,8 @@
 </template>
 
 <script setup>
-import { ref, watch } from 'vue';
-import { router } from '@inertiajs/vue3';
+import { ref, watch, onMounted } from 'vue';
+import { router, usePage } from '@inertiajs/vue3';
 import { Link } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 
@@ -150,6 +162,8 @@ const props = defineProps({
   contraBons: Object,
   filters: Object,
 });
+
+const page = usePage();
 
 const search = ref(props.filters?.search || '');
 const selectedStatus = ref(props.filters?.status || '');
@@ -176,6 +190,38 @@ function formatDate(date) {
 function formatCurrency(value) {
   if (value == null) return '-';
   return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(value);
+}
+
+function getSourceNumberBadgeClass(number, sourceTypes) {
+  if (!number) return 'bg-gray-100 text-gray-800 border-gray-300';
+  
+  const numStr = String(number).toUpperCase();
+  
+  // Deteksi berdasarkan prefix number
+  if (numStr.startsWith('PRF-')) {
+    return 'bg-blue-100 text-blue-800 border-blue-300';
+  } else if (numStr.startsWith('RWF')) {
+    return 'bg-orange-100 text-orange-800 border-orange-300';
+  } else if (numStr.startsWith('RF')) {
+    return 'bg-purple-100 text-purple-800 border-purple-300';
+  }
+  
+  // Fallback: gunakan source_types jika tersedia
+  if (sourceTypes && sourceTypes.length > 0) {
+    // Jika ada multiple source types, gunakan yang pertama atau yang paling cocok
+    if (sourceTypes.includes('PR Foods')) {
+      return 'bg-blue-100 text-blue-800 border-blue-300';
+    } else if (sourceTypes.includes('Warehouse Retail Food')) {
+      return 'bg-orange-100 text-orange-800 border-orange-300';
+    } else if (sourceTypes.includes('Retail Food')) {
+      return 'bg-purple-100 text-purple-800 border-purple-300';
+    } else if (sourceTypes.includes('RO Supplier')) {
+      return 'bg-green-100 text-green-800 border-green-300';
+    }
+  }
+  
+  // Default
+  return 'bg-gray-100 text-gray-800 border-gray-300';
 }
 
 function debouncedSearch() {
@@ -221,15 +267,31 @@ function confirmDelete(id) {
     }).then((result) => {
       if (result.isConfirmed) {
         router.delete(`/contra-bons/${id}`, {
-          onSuccess: () => {
-            Swal.fire('Berhasil', 'Contra Bon berhasil dihapus!', 'success');
+          onSuccess: (page) => {
+            // Use message from flash or default message
+            const message = page.props.flash?.success || 'Contra Bon berhasil dihapus!';
+            Swal.fire('Berhasil', message, 'success');
           },
-          onError: () => {
-            Swal.fire('Gagal', 'Gagal menghapus Contra Bon', 'error');
+          onError: (errors) => {
+            // Use error message from flash or default message
+            const message = page.props.flash?.error || errors?.message || 'Gagal menghapus Contra Bon';
+            Swal.fire('Gagal', message, 'error');
           }
         });
       }
     });
   });
 }
+
+// Handle flash messages on page load
+onMounted(() => {
+  import('sweetalert2').then(({ default: Swal }) => {
+    if (page.props.flash?.success) {
+      Swal.fire('Berhasil', page.props.flash.success, 'success');
+    }
+    if (page.props.flash?.error) {
+      Swal.fire('Gagal', page.props.flash.error, 'error');
+    }
+  });
+});
 </script> 

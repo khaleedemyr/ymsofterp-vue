@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\ContraBon;
 use App\Models\ContraBonItem;
+use App\Models\ContraBonSource;
 use App\Models\PurchaseOrderFood;
 use App\Models\PurchaseOrderFoodItem;
 use Illuminate\Http\Request;
@@ -15,7 +16,7 @@ class ContraBonController extends Controller
 {
     public function index(Request $request)
     {
-        $query = ContraBon::with(['supplier', 'purchaseOrder', 'retailFood', 'warehouseRetailFood', 'creator'])->orderByDesc('created_at');
+        $query = ContraBon::with(['supplier', 'purchaseOrder', 'retailFood', 'warehouseRetailFood', 'creator', 'sources'])->orderByDesc('created_at');
 
         if ($request->search) {
             $search = $request->search;
@@ -51,8 +52,60 @@ class ContraBonController extends Controller
         
         // Transform data to include source information
         $contraBons->getCollection()->transform(function ($contraBon) {
-            // Add source information for purchase orders
-            if ($contraBon->source_type === 'purchase_order' && $contraBon->purchaseOrder) {
+            // Handle multiple sources (new) or single source (old data - backward compatibility)
+            if ($contraBon->sources && $contraBon->sources->count() > 0) {
+                // New data: multiple sources
+                $sourceNumbers = [];
+                $sourceOutlets = [];
+                $sourceTypeDisplays = [];
+                
+                foreach ($contraBon->sources as $source) {
+                    if ($source->source_type === 'purchase_order' && $source->purchaseOrder) {
+                        $po = $source->purchaseOrder;
+                        // Get source information based on PO source_type
+                        if ($po->source_type === 'pr_foods' || !$po->source_type) {
+                            $prNumbers = DB::table('pr_foods as pr')
+                                ->join('pr_food_items as pri', 'pr.id', '=', 'pri.pr_food_id')
+                                ->join('purchase_order_food_items as poi', 'pri.id', '=', 'poi.pr_food_item_id')
+                                ->where('poi.purchase_order_food_id', $po->id)
+                                ->distinct()
+                                ->pluck('pr.pr_number')
+                                ->toArray();
+                            $sourceNumbers = array_merge($sourceNumbers, $prNumbers);
+                            $sourceTypeDisplays[] = 'PR Foods';
+                        } elseif ($po->source_type === 'ro_supplier') {
+                            $roData = DB::table('food_floor_orders as fo')
+                                ->join('purchase_order_food_items as poi', 'fo.id', '=', 'poi.ro_id')
+                                ->leftJoin('tbl_data_outlet as o', 'fo.id_outlet', '=', 'o.id_outlet')
+                                ->where('poi.purchase_order_food_id', $po->id)
+                                ->select('fo.order_number', 'o.nama_outlet')
+                                ->distinct()
+                                ->get();
+                            $sourceNumbers = array_merge($sourceNumbers, $roData->pluck('order_number')->unique()->filter()->toArray());
+                            $sourceOutlets = array_merge($sourceOutlets, $roData->pluck('nama_outlet')->unique()->filter()->toArray());
+                            $sourceTypeDisplays[] = 'RO Supplier';
+                        }
+                    } elseif ($source->source_type === 'retail_food' && $source->retailFood) {
+                        $retailFood = $source->retailFood;
+                        $sourceNumbers[] = $retailFood->retail_number ?? '';
+                        $sourceOutlets[] = $retailFood->outlet ? $retailFood->outlet->nama_outlet : '';
+                        $sourceTypeDisplays[] = 'Retail Food';
+                    } elseif ($source->source_type === 'warehouse_retail_food' && $source->warehouseRetailFood) {
+                        $warehouseRetailFood = $source->warehouseRetailFood;
+                        $sourceNumbers[] = $warehouseRetailFood->retail_number ?? '';
+                        $warehouseName = $warehouseRetailFood->warehouse ? $warehouseRetailFood->warehouse->name : '';
+                        $divisionName = $warehouseRetailFood->warehouseDivision ? $warehouseRetailFood->warehouseDivision->name : '';
+                        $sourceOutlets[] = $warehouseName . ($divisionName ? ' - ' . $divisionName : '');
+                        $sourceTypeDisplays[] = 'Warehouse Retail Food';
+                    }
+                }
+                
+                $contraBon->source_numbers = array_unique(array_filter($sourceNumbers));
+                $contraBon->source_outlets = array_unique(array_filter($sourceOutlets));
+                $contraBon->source_type_display = implode(', ', array_unique($sourceTypeDisplays)) ?: 'Multiple Sources';
+                $contraBon->source_types = array_unique($sourceTypeDisplays); // Array untuk badge
+            } elseif ($contraBon->source_type === 'purchase_order' && $contraBon->purchaseOrder) {
+                // Old data: single source (backward compatibility)
                 $po = $contraBon->purchaseOrder;
                 
                 // Get source information based on PO source_type
@@ -69,6 +122,7 @@ class ContraBonController extends Controller
                     $contraBon->source_numbers = $prNumbers;
                     $contraBon->source_outlets = []; // PR Foods tidak punya outlet
                     $contraBon->source_type_display = 'PR Foods';
+                    $contraBon->source_types = ['PR Foods'];
                 } elseif ($po->source_type === 'ro_supplier') {
                     // Get RO Supplier numbers and outlet names
                     $roData = DB::table('food_floor_orders as fo')
@@ -83,16 +137,19 @@ class ContraBonController extends Controller
                     $contraBon->source_numbers = $roData->pluck('order_number')->unique()->filter()->toArray();
                     $contraBon->source_outlets = $roData->pluck('nama_outlet')->unique()->filter()->toArray();
                     $contraBon->source_type_display = 'RO Supplier';
+                    $contraBon->source_types = ['RO Supplier'];
                 } else {
                     $contraBon->source_numbers = [];
                     $contraBon->source_outlets = [];
                     $contraBon->source_type_display = 'Unknown';
+                    $contraBon->source_types = ['Unknown'];
                 }
             } elseif ($contraBon->source_type === 'retail_food') {
                 $retailFood = \App\Models\RetailFood::find($contraBon->source_id);
                 $contraBon->source_numbers = [$retailFood->retail_number ?? ''];
                 $contraBon->source_outlets = [$retailFood->outlet ? $retailFood->outlet->nama_outlet : ''];
                 $contraBon->source_type_display = 'Retail Food';
+                $contraBon->source_types = ['Retail Food'];
             } elseif ($contraBon->source_type === 'warehouse_retail_food') {
                 $warehouseRetailFood = \App\Models\RetailWarehouseFood::find($contraBon->source_id);
                 $contraBon->source_numbers = [$warehouseRetailFood->retail_number ?? ''];
@@ -100,10 +157,12 @@ class ContraBonController extends Controller
                 $divisionName = $warehouseRetailFood->warehouseDivision ? $warehouseRetailFood->warehouseDivision->name : '';
                 $contraBon->source_outlets = [$warehouseName . ($divisionName ? ' - ' . $divisionName : '')];
                 $contraBon->source_type_display = 'Warehouse Retail Food';
+                $contraBon->source_types = ['Warehouse Retail Food'];
             } else {
                 $contraBon->source_numbers = [];
                 $contraBon->source_outlets = [];
                 $contraBon->source_type_display = 'Unknown';
+                $contraBon->source_types = ['Unknown'];
             }
             
             return $contraBon;
@@ -139,11 +198,32 @@ class ContraBonController extends Controller
         if ($sourceType === 'purchase_order') {
             $rules['po_id'] = 'required|exists:purchase_order_foods,id';
             $rules['gr_id'] = 'required|exists:food_good_receives,id';
-            $rules['items.*.item_id'] = 'required|exists:items,id';
-            $rules['items.*.unit_id'] = 'required|exists:units,id';
+            // Untuk purchase_order, item_id dan unit_id harus ada (bisa dari item atau gr_item_id)
+            $rules['items.*.item_id'] = 'nullable|exists:items,id';
+            $rules['items.*.unit_id'] = 'nullable|exists:units,id';
+            $rules['items.*.gr_item_id'] = 'nullable|exists:food_good_receive_items,id';
         } else {
-            // For retail_food and warehouse_retail_food, item_id and unit_id are optional
-            $rules['source_id'] = 'required|integer';
+            // For retail_food and warehouse_retail_food:
+            // - po_id dan gr_id tidak required
+            // - source_id required
+            // - item_id dan unit_id tidak required jika ada item_name dan unit_name
+            $rules['source_id'] = 'required';
+            // Item_id dan unit_id tidak required, bisa dicari dari item_name dan unit_name
+            // Tapi jika item_id/unit_id ada, harus valid
+            $rules['items.*.item_id'] = 'nullable|exists:items,id';
+            $rules['items.*.unit_id'] = 'nullable|exists:units,id';
+            // Item_name dan unit_name required jika item_id/unit_id tidak ada
+            foreach ($request->input('items', []) as $index => $item) {
+                $itemId = $item['item_id'] ?? null;
+                $unitId = $item['unit_id'] ?? null;
+                // Convert string "null" atau empty string menjadi null
+                if ($itemId === 'null' || $itemId === '' || $itemId === null) {
+                    $rules["items.{$index}.item_name"] = 'required|string';
+                }
+                if ($unitId === 'null' || $unitId === '' || $unitId === null) {
+                    $rules["items.{$index}.unit_name"] = 'required|string';
+                }
+            }
         }
         
         try {
@@ -151,7 +231,9 @@ class ContraBonController extends Controller
         } catch (\Illuminate\Validation\ValidationException $e) {
             \Log::error('Contra Bon validation failed', [
                 'errors' => $e->errors(),
-                'request_data' => $request->except(['image'])
+                'request_data' => $request->except(['image']),
+                'source_type' => $sourceType,
+                'source_id' => $request->input('source_id')
             ]);
             
             // Return JSON error hanya jika request dari axios/ajax (bukan Inertia)
@@ -182,12 +264,16 @@ class ContraBonController extends Controller
                 $poId = $po->id;
                 $grId = $request->input('gr_id');
             } elseif ($sourceType === 'retail_food') {
-                $retailFood = \App\Models\RetailFood::findOrFail($sourceId);
+                // Convert source_id to integer if it's a string
+                $sourceIdInt = is_numeric($sourceId) ? (int)$sourceId : $sourceId;
+                $retailFood = \App\Models\RetailFood::findOrFail($sourceIdInt);
                 $supplierId = $retailFood->supplier_id;
                 $poId = null;
                 $grId = null;
             } elseif ($sourceType === 'warehouse_retail_food') {
-                $warehouseRetailFood = \App\Models\RetailWarehouseFood::findOrFail($sourceId);
+                // Convert source_id to integer if it's a string
+                $sourceIdInt = is_numeric($sourceId) ? (int)$sourceId : $sourceId;
+                $warehouseRetailFood = \App\Models\RetailWarehouseFood::findOrFail($sourceIdInt);
                 $supplierId = $warehouseRetailFood->supplier_id;
                 $poId = null;
                 $grId = null;
@@ -206,19 +292,22 @@ class ContraBonController extends Controller
             // Handle image upload
             $imagePath = null;
             if ($request->hasFile('image')) {
-                \Log::info('File ditemukan', [$request->file('image')]);
                 $imagePath = $request->file('image')->store('contra_bon_images', 'public');
-            } else {
-                \Log::info('File TIDAK ditemukan');
             }
-            \Log::info('Image path yang akan disimpan:', [$imagePath]);
 
-            // Create contra bon
-            $contraBon = ContraBon::create([
+            // Convert source_id to integer if needed (for retail_food and warehouse_retail_food)
+            // For purchase_order, source_id should be null because we have po_id and gr_id separately
+            $sourceIdForSave = null;
+            if ($sourceType === 'retail_food' || $sourceType === 'warehouse_retail_food') {
+                $sourceIdForSave = is_numeric($sourceId) ? (int)$sourceId : $sourceId;
+            }
+            // For purchase_order, source_id is not needed (we use po_id and gr_id)
+            
+            // Prepare data for contra bon creation
+            $contraBonData = [
                 'number' => $number,
                 'date' => $request->date,
                 'supplier_id' => $supplierId,
-                'po_id' => $poId,
                 'total_amount' => $totalAmount,
                 'notes' => $request->notes,
                 'image_path' => $imagePath,
@@ -226,19 +315,132 @@ class ContraBonController extends Controller
                 'created_by' => Auth::id(),
                 'supplier_invoice_number' => $request->supplier_invoice_number,
                 'source_type' => $sourceType,
-                'source_id' => $sourceId,
-            ]);
-
+            ];
+            
+            // Only include source_id if it's not null (for retail_food and warehouse_retail_food)
+            if ($sourceIdForSave !== null) {
+                $contraBonData['source_id'] = $sourceIdForSave;
+            }
+            
+            // Only include po_id if it's not null (for purchase_order)
+            if ($poId !== null) {
+                $contraBonData['po_id'] = $poId;
+            }
+            
+            // Create contra bon
+            $contraBon = ContraBon::create($contraBonData);
+            
+            // Save multiple sources if provided
+            $sources = $request->input('sources', []);
+            if (empty($sources) && $request->input('source_type')) {
+                // Backward compatibility: create source from single source_type and source_id
+                // For purchase_order, use po_id as source_id (or null if not available)
+                $sourceIdForPivot = null;
+                if ($sourceType === 'purchase_order') {
+                    // For purchase_order, source_id in pivot table should be po_id
+                    $sourceIdForPivot = $poId;
+                } else {
+                    $sourceIdForPivot = $sourceIdForSave;
+                }
+                
+                $sources = [[
+                    'source_type' => $sourceType,
+                    'source_id' => $sourceIdForPivot,
+                    'po_id' => $poId,
+                    'gr_id' => $grId,
+                ]];
+            }
+            
+            // Save all sources to pivot table
+            foreach ($sources as $source) {
+                $sourceTypeForSource = $source['source_type'] ?? $sourceType;
+                $sourceIdForSource = $source['source_id'] ?? null;
+                
+                // Handle string 'undefined' from frontend (FormData converts undefined to string 'undefined')
+                if ($sourceIdForSource === 'undefined' || $sourceIdForSource === 'null' || $sourceIdForSource === '') {
+                    $sourceIdForSource = null;
+                }
+                
+                // For purchase_order, use po_id as source_id if not provided or invalid
+                if ($sourceTypeForSource === 'purchase_order') {
+                    if ($sourceIdForSource === null || $sourceIdForSource === '' || $sourceIdForSource === 'null' || $sourceIdForSource === 'undefined') {
+                        $sourceIdForSource = $source['po_id'] ?? $poId;
+                    }
+                }
+                
+                // Convert source_id to integer if needed
+                if ($sourceIdForSource !== null && $sourceIdForSource !== '' && $sourceIdForSource !== 'null' && $sourceIdForSource !== 'undefined') {
+                    if (is_numeric($sourceIdForSource)) {
+                        $sourceIdForSource = (int)$sourceIdForSource;
+                    } else {
+                        // If not numeric and not null, log warning and set to null
+                        \Log::warning('Invalid source_id value for Contra Bon source', [
+                            'contra_bon_id' => $contraBon->id,
+                            'source_type' => $sourceTypeForSource,
+                            'source_id' => $sourceIdForSource,
+                            'po_id' => $source['po_id'] ?? null,
+                        ]);
+                        // For purchase_order, fallback to po_id
+                        if ($sourceTypeForSource === 'purchase_order') {
+                            $sourceIdForSource = $source['po_id'] ?? $poId;
+                        } else {
+                            $sourceIdForSource = null;
+                        }
+                    }
+                } else {
+                    $sourceIdForSource = null;
+                }
+                
+                // Final check: for purchase_order, ensure source_id is set to po_id if still null
+                if ($sourceTypeForSource === 'purchase_order' && $sourceIdForSource === null) {
+                    $sourceIdForSource = $source['po_id'] ?? $poId;
+                }
+                
+                ContraBonSource::create([
+                    'contra_bon_id' => $contraBon->id,
+                    'source_type' => $sourceTypeForSource,
+                    'source_id' => $sourceIdForSource,
+                    'po_id' => $source['po_id'] ?? ($sourceTypeForSource === 'purchase_order' ? $poId : null),
+                    'gr_id' => $source['gr_id'] ?? ($sourceTypeForSource === 'purchase_order' ? $grId : null),
+                ]);
+            }
+            
             // Create contra bon items
             foreach ($request->items as $item) {
+                // Handle string "null" dari FormData (FormData mengkonversi null menjadi string "null")
                 // Untuk retail food, item_id dan unit_id bisa null
                 $itemId = $item['item_id'] ?? null;
                 $unitId = $item['unit_id'] ?? null;
                 
+                // Convert string "null" atau empty string menjadi null
+                // FormData mengkonversi null menjadi string "null"
+                $originalItemId = $itemId;
+                $originalUnitId = $unitId;
+                
+                if ($itemId === 'null' || $itemId === '' || $itemId === null || (is_string($itemId) && strtolower(trim($itemId)) === 'null')) {
+                    $itemId = null;
+                } else {
+                    $itemId = is_numeric($itemId) ? (int)$itemId : $itemId;
+                }
+                
+                if ($unitId === 'null' || $unitId === '' || $unitId === null || (is_string($unitId) && strtolower(trim($unitId)) === 'null')) {
+                    $unitId = null;
+                } else {
+                    $unitId = is_numeric($unitId) ? (int)$unitId : $unitId;
+                }
+                
                 // Fix: Jika dari PO-GR dan item_id/unit_id null tapi ada gr_item_id, ambil dari GR item
-                if ($sourceType === 'purchase_order' && (!$itemId || !$unitId) && isset($item['gr_item_id'])) {
+                // Handle gr_item_id yang mungkin string "null" atau empty
+                $grItemId = $item['gr_item_id'] ?? null;
+                if ($grItemId === 'null' || $grItemId === '' || $grItemId === null) {
+                    $grItemId = null;
+                } else {
+                    $grItemId = is_numeric($grItemId) ? (int)$grItemId : $grItemId;
+                }
+                
+                if ($sourceType === 'purchase_order' && (!$itemId || !$unitId) && $grItemId) {
                     $grItem = DB::table('food_good_receive_items as gri')
-                        ->where('gri.id', $item['gr_item_id'])
+                        ->where('gri.id', $grItemId)
                         ->select('gri.item_id', 'gri.unit_id')
                         ->first();
                     
@@ -252,35 +454,104 @@ class ContraBonController extends Controller
                     }
                 }
                 
-                // Jika dari retail food atau warehouse retail food dan tidak ada item_id, coba cari berdasarkan item_name
-                if (($sourceType === 'retail_food' || $sourceType === 'warehouse_retail_food') && !$itemId && isset($item['item_name'])) {
-                    $foundItem = \DB::table('items')->where('name', $item['item_name'])->first();
+                // Jika tidak ada item_id tapi ada item_name, WAJIB cari berdasarkan item_name
+                // Ini berlaku untuk semua source type yang menggunakan item_name
+                if (!$itemId && isset($item['item_name']) && !empty(trim($item['item_name']))) {
+                    $itemName = trim($item['item_name']);
+                    
+                    // Try exact match first
+                    $foundItem = \DB::table('items')->where('name', $itemName)->first();
+                    // If not found, try case-insensitive match
+                    if (!$foundItem) {
+                        $foundItem = \DB::table('items')->whereRaw('LOWER(name) = LOWER(?)', [$itemName])->first();
+                    }
+                    // If still not found, try partial match (contains)
+                    if (!$foundItem) {
+                        $foundItem = \DB::table('items')->whereRaw('LOWER(name) LIKE LOWER(?)', ['%' . $itemName . '%'])->first();
+                    }
                     if ($foundItem) {
                         $itemId = $foundItem->id;
+                    } else {
+                        \Log::error('Item not found by name', [
+                            'item_name' => $itemName, 
+                            'source_type' => $sourceType,
+                            'item_source_type' => $item['source_type'] ?? 'none',
+                            'all_items_sample' => \DB::table('items')->select('name')->limit(5)->pluck('name')->toArray()
+                        ]);
+                        throw new \Exception("Item dengan nama '{$itemName}' tidak ditemukan di database. Silakan pastikan item sudah terdaftar di master item.");
                     }
                 }
                 
-                // Jika dari retail food atau warehouse retail food dan tidak ada unit_id, coba cari berdasarkan unit_name
-                if (($sourceType === 'retail_food' || $sourceType === 'warehouse_retail_food') && !$unitId && isset($item['unit_name'])) {
-                    $foundUnit = \DB::table('units')->where('name', $item['unit_name'])->first();
+                // Jika tidak ada unit_id tapi ada unit_name, WAJIB cari berdasarkan unit_name
+                // Ini berlaku untuk semua source type yang menggunakan unit_name
+                if (!$unitId && isset($item['unit_name']) && !empty(trim($item['unit_name']))) {
+                    $unitName = trim($item['unit_name']);
+                    
+                    // Try exact match first
+                    $foundUnit = \DB::table('units')->where('name', $unitName)->first();
+                    // If not found, try case-insensitive match
+                    if (!$foundUnit) {
+                        $foundUnit = \DB::table('units')->whereRaw('LOWER(name) = LOWER(?)', [$unitName])->first();
+                    }
+                    // If still not found, try partial match (contains)
+                    if (!$foundUnit) {
+                        $foundUnit = \DB::table('units')->whereRaw('LOWER(name) LIKE LOWER(?)', ['%' . $unitName . '%'])->first();
+                    }
                     if ($foundUnit) {
                         $unitId = $foundUnit->id;
+                    } else {
+                        \Log::error('Unit not found by name', [
+                            'unit_name' => $unitName, 
+                            'source_type' => $sourceType,
+                            'item_source_type' => $item['source_type'] ?? 'none',
+                            'all_units_sample' => \DB::table('units')->select('name')->limit(5)->pluck('name')->toArray()
+                        ]);
+                        throw new \Exception("Unit dengan nama '{$unitName}' tidak ditemukan di database. Silakan pastikan unit sudah terdaftar di master unit.");
                     }
                 }
                 
-                ContraBonItem::create([
+                // Validasi: item_id dan unit_id HARUS terisi
+                if (!$itemId) {
+                    throw new \Exception("Item ID tidak boleh kosong. Pastikan item_name terisi dan item sudah terdaftar di master item.");
+                }
+                if (!$unitId) {
+                    throw new \Exception("Unit ID tidak boleh kosong. Pastikan unit_name terisi dan unit sudah terdaftar di master unit.");
+                }
+                
+                // Prepare data for contra bon item
+                $contraBonItemData = [
                     'contra_bon_id' => $contraBon->id,
                     'item_id' => $itemId,
-                    'po_item_id' => $item['po_item_id'] ?? null,
-                    'gr_item_id' => $item['gr_item_id'] ?? null, // Simpan gr_item_id untuk tracking
-                    'retail_food_item_id' => $item['retail_food_item_id'] ?? null, // OPSIONAL: Jika kolom ada
-                    'warehouse_retail_food_item_id' => $item['warehouse_retail_food_item_id'] ?? null, // OPSIONAL: Jika kolom ada
-                    'quantity' => $item['quantity'],
                     'unit_id' => $unitId,
+                    'quantity' => $item['quantity'],
                     'price' => $item['price'],
                     'total' => $item['quantity'] * $item['price'],
                     'notes' => $item['notes'] ?? null
-                ]);
+                ];
+                
+                // Only include optional fields if they are not null
+                $poItemId = $item['po_item_id'] ?? null;
+                if ($poItemId !== null && $poItemId !== 'null' && $poItemId !== '') {
+                    $contraBonItemData['po_item_id'] = is_numeric($poItemId) ? (int)$poItemId : $poItemId;
+                }
+                
+                $grItemId = $item['gr_item_id'] ?? null;
+                if ($grItemId !== null && $grItemId !== 'null' && $grItemId !== '') {
+                    $contraBonItemData['gr_item_id'] = is_numeric($grItemId) ? (int)$grItemId : $grItemId;
+                }
+                
+                $retailFoodItemId = $item['retail_food_item_id'] ?? null;
+                if ($retailFoodItemId !== null && $retailFoodItemId !== 'null' && $retailFoodItemId !== '') {
+                    $contraBonItemData['retail_food_item_id'] = is_numeric($retailFoodItemId) ? (int)$retailFoodItemId : $retailFoodItemId;
+                }
+                
+                $warehouseRetailFoodItemId = $item['warehouse_retail_food_item_id'] ?? null;
+                if ($warehouseRetailFoodItemId !== null && $warehouseRetailFoodItemId !== 'null' && $warehouseRetailFoodItemId !== '') {
+                    $contraBonItemData['warehouse_retail_food_item_id'] = is_numeric($warehouseRetailFoodItemId) ? (int)$warehouseRetailFoodItemId : $warehouseRetailFoodItemId;
+                }
+                
+                // Create contra bon item
+                ContraBonItem::create($contraBonItemData);
             }
 
             // Activity log
@@ -311,13 +582,6 @@ class ContraBonController extends Controller
 
             DB::commit();
             
-            \Log::info('Contra Bon created successfully', [
-                'contra_bon_id' => $contraBon->id,
-                'number' => $contraBon->number,
-                'total_amount' => $contraBon->total_amount,
-                'items_count' => count($request->items)
-            ]);
-            
             // Return JSON response hanya jika request dari axios/ajax (bukan Inertia)
             // Inertia request akan memiliki header X-Inertia, jadi kita skip JSON response untuk itu
             if (($request->wantsJson() || $request->ajax() || $request->expectsJson()) && !$request->header('X-Inertia')) {
@@ -339,8 +603,11 @@ class ContraBonController extends Controller
             \Log::error('Error creating Contra Bon', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
+                'source_type' => $sourceType ?? 'unknown',
+                'source_id' => $sourceId ?? 'unknown',
                 'request_data' => [
                     'source_type' => $request->input('source_type'),
+                    'source_id' => $request->input('source_id'),
                     'items_count' => count($request->input('items', [])),
                 ]
             ]);
@@ -365,18 +632,86 @@ class ContraBonController extends Controller
         $contraBon = ContraBon::with([
             'supplier',
             'purchaseOrder',
+            'sources',
+            'sources.purchaseOrder',
+            'sources.retailFood',
+            'sources.warehouseRetailFood',
             'items.item',
             'items.unit',
-            'items.grItem.item',
-            'items.grItem.unit',
+            'items.grItem' => function($query) {
+                $query->with(['item', 'unit']);
+            },
             'creator',
             'approver',
             'financeManager',
             'gmFinance'
         ])->findOrFail($id);
 
-        // Add source information for purchase orders
-        if ($contraBon->source_type === 'purchase_order' && $contraBon->purchaseOrder) {
+        // Handle multiple sources (new) or single source (old data - backward compatibility)
+        if ($contraBon->sources && $contraBon->sources->count() > 0) {
+            // New data: multiple sources
+            $sourceNumbers = [];
+            $sourceOutlets = [];
+            $sourceTypeDisplays = [];
+            
+            foreach ($contraBon->sources as $source) {
+                if ($source->source_type === 'purchase_order' && $source->purchaseOrder) {
+                    $po = $source->purchaseOrder;
+                    
+                    // Get PO discount information (use first PO for discount info)
+                    if (!$contraBon->po_discount_info) {
+                        $contraBon->po_discount_info = [
+                            'discount_total_percent' => $po->discount_total_percent ?? 0,
+                            'discount_total_amount' => $po->discount_total_amount ?? 0,
+                            'subtotal' => $po->subtotal ?? 0,
+                            'grand_total' => $po->grand_total ?? 0,
+                        ];
+                    }
+                    
+                    // Get source information based on PO source_type
+                    if ($po->source_type === 'pr_foods' || !$po->source_type) {
+                        $prNumbers = DB::table('pr_foods as pr')
+                            ->join('pr_food_items as pri', 'pr.id', '=', 'pri.pr_food_id')
+                            ->join('purchase_order_food_items as poi', 'pri.id', '=', 'poi.pr_food_item_id')
+                            ->where('poi.purchase_order_food_id', $po->id)
+                            ->distinct()
+                            ->pluck('pr.pr_number')
+                            ->toArray();
+                        $sourceNumbers = array_merge($sourceNumbers, $prNumbers);
+                        $sourceTypeDisplays[] = 'PR Foods';
+                    } elseif ($po->source_type === 'ro_supplier') {
+                        $roData = DB::table('food_floor_orders as fo')
+                            ->join('purchase_order_food_items as poi', 'fo.id', '=', 'poi.ro_id')
+                            ->leftJoin('tbl_data_outlet as o', 'fo.id_outlet', '=', 'o.id_outlet')
+                            ->where('poi.purchase_order_food_id', $po->id)
+                            ->select('fo.order_number', 'o.nama_outlet')
+                            ->distinct()
+                            ->get();
+                        $sourceNumbers = array_merge($sourceNumbers, $roData->pluck('order_number')->unique()->filter()->toArray());
+                        $sourceOutlets = array_merge($sourceOutlets, $roData->pluck('nama_outlet')->unique()->filter()->toArray());
+                        $sourceTypeDisplays[] = 'RO Supplier';
+                    }
+                } elseif ($source->source_type === 'retail_food' && $source->retailFood) {
+                    $retailFood = $source->retailFood;
+                    $sourceNumbers[] = $retailFood->retail_number ?? '';
+                    $sourceOutlets[] = $retailFood->outlet ? $retailFood->outlet->nama_outlet : '';
+                    $sourceTypeDisplays[] = 'Retail Food';
+                } elseif ($source->source_type === 'warehouse_retail_food' && $source->warehouseRetailFood) {
+                    $warehouseRetailFood = $source->warehouseRetailFood;
+                    $sourceNumbers[] = $warehouseRetailFood->retail_number ?? '';
+                    $warehouseName = $warehouseRetailFood->warehouse ? $warehouseRetailFood->warehouse->name : '';
+                    $divisionName = $warehouseRetailFood->warehouseDivision ? $warehouseRetailFood->warehouseDivision->name : '';
+                    $sourceOutlets[] = $warehouseName . ($divisionName ? ' - ' . $divisionName : '');
+                    $sourceTypeDisplays[] = 'Warehouse Retail Food';
+                }
+            }
+            
+            $contraBon->source_numbers = array_unique(array_filter($sourceNumbers));
+            $contraBon->source_outlets = array_unique(array_filter($sourceOutlets));
+            $contraBon->source_type_display = implode(', ', array_unique($sourceTypeDisplays)) ?: 'Multiple Sources';
+            $contraBon->source_types = array_unique($sourceTypeDisplays);
+        } elseif ($contraBon->source_type === 'purchase_order' && $contraBon->purchaseOrder) {
+            // Old data: single source (backward compatibility)
             $po = $contraBon->purchaseOrder;
             
             // Get PO discount information
@@ -401,6 +736,7 @@ class ContraBonController extends Controller
                 $contraBon->source_numbers = $prNumbers;
                 $contraBon->source_outlets = []; // PR Foods tidak punya outlet
                 $contraBon->source_type_display = 'PR Foods';
+                $contraBon->source_types = ['PR Foods'];
             } elseif ($po->source_type === 'ro_supplier') {
                 // Get RO Supplier numbers and outlet names
                 $roData = DB::table('food_floor_orders as fo')
@@ -415,10 +751,12 @@ class ContraBonController extends Controller
                 $contraBon->source_numbers = $roData->pluck('order_number')->unique()->filter()->toArray();
                 $contraBon->source_outlets = $roData->pluck('nama_outlet')->unique()->filter()->toArray();
                 $contraBon->source_type_display = 'RO Supplier';
+                $contraBon->source_types = ['RO Supplier'];
             } else {
                 $contraBon->source_numbers = [];
                 $contraBon->source_outlets = [];
                 $contraBon->source_type_display = 'Unknown';
+                $contraBon->source_types = ['Unknown'];
             }
             
             // Add discount info to items and fix missing item/unit from GR
@@ -503,6 +841,7 @@ class ContraBonController extends Controller
             $contraBon->source_numbers = [$retailFood->retail_number ?? ''];
             $contraBon->source_outlets = [$retailFood->outlet ? $retailFood->outlet->nama_outlet : ''];
             $contraBon->source_type_display = 'Retail Food';
+            $contraBon->source_types = ['Retail Food'];
         } elseif ($contraBon->source_type === 'warehouse_retail_food') {
             $warehouseRetailFood = \App\Models\RetailWarehouseFood::find($contraBon->source_id);
             $contraBon->source_numbers = [$warehouseRetailFood->retail_number ?? ''];
@@ -510,10 +849,96 @@ class ContraBonController extends Controller
             $divisionName = $warehouseRetailFood->warehouseDivision ? $warehouseRetailFood->warehouseDivision->name : '';
             $contraBon->source_outlets = [$warehouseName . ($divisionName ? ' - ' . $divisionName : '')];
             $contraBon->source_type_display = 'Warehouse Retail Food';
+            $contraBon->source_types = ['Warehouse Retail Food'];
         } else {
             $contraBon->source_numbers = [];
             $contraBon->source_outlets = [];
             $contraBon->source_type_display = 'Unknown';
+            $contraBon->source_types = ['Unknown'];
+        }
+        
+        // Add discount info to items (for purchase_order sources)
+        $hasPurchaseOrderSource = $contraBon->source_type === 'purchase_order' || 
+                                  ($contraBon->sources && $contraBon->sources->where('source_type', 'purchase_order')->count() > 0);
+        
+        if ($hasPurchaseOrderSource) {
+            // Add discount info to items and fix missing item/unit from GR
+            $contraBon->items->each(function($item) {
+                // Fix: Jika item_id atau unit_id null tapi ada gr_item_id, ambil dari GR item
+                if ((!$item->item_id || !$item->unit_id) && $item->gr_item_id) {
+                    $grItem = DB::table('food_good_receive_items as gri')
+                        ->join('items as i', 'gri.item_id', '=', 'i.id')
+                        ->join('units as u', 'gri.unit_id', '=', 'u.id')
+                        ->where('gri.id', $item->gr_item_id)
+                        ->select('i.id as item_id', 'i.name as item_name', 'u.id as unit_id', 'u.name as unit_name')
+                        ->first();
+                    
+                    if ($grItem) {
+                        // Set item relationship jika belum ada
+                        if (!$item->item_id && $grItem->item_id) {
+                            $item->item_id = $grItem->item_id;
+                            $item->setRelation('item', \App\Models\Item::find($grItem->item_id));
+                        }
+                        
+                        // Set unit relationship jika belum ada
+                        if (!$item->unit_id && $grItem->unit_id) {
+                            $item->unit_id = $grItem->unit_id;
+                            $item->setRelation('unit', \App\Models\Unit::find($grItem->unit_id));
+                        }
+                        
+                        // Tambahkan item_name dan unit_name sebagai attribute langsung
+                        $item->item_name = $grItem->item_name;
+                        $item->unit_name = $grItem->unit_name;
+                    }
+                }
+                
+                // Pastikan item_name dan unit_name selalu ada (dari relasi jika belum ada)
+                if (!$item->item_name) {
+                    if ($item->item) {
+                        $item->item_name = $item->item->name;
+                    } elseif ($item->grItem && $item->grItem->item) {
+                        $item->item_name = $item->grItem->item->name;
+                    }
+                }
+                if (!$item->unit_name) {
+                    if ($item->unit) {
+                        $item->unit_name = $item->unit->name;
+                    } elseif ($item->grItem && $item->grItem->unit) {
+                        $item->unit_name = $item->grItem->unit->name;
+                    }
+                }
+                
+                if ($item->po_item_id) {
+                    $poItem = PurchaseOrderFoodItem::find($item->po_item_id);
+                    if ($poItem) {
+                        $item->discount_percent = $poItem->discount_percent ?? 0;
+                        $item->discount_amount = $poItem->discount_amount ?? 0;
+                        
+                        // Calculate total based on Contra Bon item quantity (not PO item quantity)
+                        // Formula: (price * contra_bon_quantity) - (discount proportional to quantity)
+                        $contraBonQuantity = $item->quantity ?? 0;
+                        $poQuantity = $poItem->quantity ?? 1; // Avoid division by zero
+                        $price = $poItem->price ?? 0;
+                        
+                        // Calculate subtotal for Contra Bon quantity
+                        $subtotal = $price * $contraBonQuantity;
+                        
+                        // Calculate discount proportional to quantity ratio
+                        $quantityRatio = $poQuantity > 0 ? ($contraBonQuantity / $poQuantity) : 0;
+                        $discount = 0;
+                        
+                        if ($poItem->discount_percent > 0) {
+                            // Discount percent applies to subtotal
+                            $discount = $subtotal * ($poItem->discount_percent / 100);
+                        } elseif ($poItem->discount_amount > 0) {
+                            // Discount amount is proportional to quantity
+                            $discount = $poItem->discount_amount * $quantityRatio;
+                        }
+                        
+                        $item->po_item_total = $subtotal - $discount;
+                    }
+                }
+            });
         }
 
         return inertia('ContraBon/Show', [
@@ -591,6 +1016,10 @@ class ContraBonController extends Controller
             $contraBon = ContraBon::with([
                 'supplier',
                 'purchaseOrder',
+                'sources',
+                'sources.purchaseOrder',
+                'sources.retailFood',
+                'sources.warehouseRetailFood',
                 'items.item',
                 'items.unit',
                 'items.grItem.item',
@@ -627,6 +1056,7 @@ class ContraBonController extends Controller
                     $contraBon->source_numbers = $prNumbers;
                     $contraBon->source_outlets = [];
                     $contraBon->source_type_display = 'PR Foods';
+                    $contraBon->source_types = ['PR Foods'];
                 } elseif ($po->source_type === 'ro_supplier') {
                     // Get RO Supplier numbers and outlet names
                     $roData = DB::table('food_floor_orders as fo')
@@ -640,10 +1070,12 @@ class ContraBonController extends Controller
                     $contraBon->source_numbers = $roData->pluck('order_number')->unique()->filter()->toArray();
                     $contraBon->source_outlets = $roData->pluck('nama_outlet')->unique()->filter()->toArray();
                     $contraBon->source_type_display = 'RO Supplier';
+                    $contraBon->source_types = ['RO Supplier'];
                 } else {
                     $contraBon->source_numbers = [];
                     $contraBon->source_outlets = [];
                     $contraBon->source_type_display = 'Unknown';
+                    $contraBon->source_types = ['Unknown'];
                 }
                 
                 // Add discount info to items and fix missing item/unit from GR
@@ -710,6 +1142,7 @@ class ContraBonController extends Controller
                 $contraBon->source_numbers = [$retailFood->retail_number ?? ''];
                 $contraBon->source_outlets = [$retailFood->outlet ? $retailFood->outlet->nama_outlet : ''];
                 $contraBon->source_type_display = 'Retail Food';
+                $contraBon->source_types = ['Retail Food'];
             } elseif ($contraBon->source_type === 'warehouse_retail_food') {
                 $warehouseRetailFood = \App\Models\RetailWarehouseFood::find($contraBon->source_id);
                 $contraBon->source_numbers = [$warehouseRetailFood->retail_number ?? ''];
@@ -717,11 +1150,16 @@ class ContraBonController extends Controller
                 $divisionName = $warehouseRetailFood->warehouseDivision ? $warehouseRetailFood->warehouseDivision->name : '';
                 $contraBon->source_outlets = [$warehouseName . ($divisionName ? ' - ' . $divisionName : '')];
                 $contraBon->source_type_display = 'Warehouse Retail Food';
+                $contraBon->source_types = ['Warehouse Retail Food'];
             } else {
                 $contraBon->source_numbers = [];
                 $contraBon->source_outlets = [];
                 $contraBon->source_type_display = 'Unknown';
+                $contraBon->source_types = ['Unknown'];
             }
+            
+            // Use getSourceTypes for multi-source support (overrides single source logic above)
+            $contraBon->source_types = $this->getSourceTypes($contraBon);
 
             return response()->json([
                 'success' => true,
@@ -747,7 +1185,7 @@ class ContraBonController extends Controller
             $user = Auth::user();
             $isSuperadmin = $user->id_role === '5af56935b011a' && $user->status === 'A';
             
-            $query = ContraBon::with(['supplier', 'purchaseOrder', 'retailFood', 'warehouseRetailFood', 'creator'])
+            $query = ContraBon::with(['supplier', 'purchaseOrder', 'retailFood', 'warehouseRetailFood', 'creator', 'sources'])
                 ->where('status', 'draft')
                 ->orderByDesc('created_at');
             
@@ -759,29 +1197,14 @@ class ContraBonController extends Controller
                     ->whereNull('finance_manager_approved_at')
                     ->get();
                 
-                \Log::info('Finance Manager Contra Bon Approvals', [
-                    'user_id' => $user->id,
-                    'user_jabatan' => $user->id_jabatan,
-                    'total_approvals' => $financeManagerApprovals->count(),
-                    'source_types' => $financeManagerApprovals->pluck('source_type')->toArray()
-                ]);
-                
                 foreach ($financeManagerApprovals as $cb) {
-                    // Debug logging for warehouse retail food
-                    if ($cb->source_type === 'warehouse_retail_food') {
-                        \Log::info('Warehouse Retail Food Contra Bon found', [
-                            'contra_bon_id' => $cb->id,
-                            'contra_bon_number' => $cb->number,
-                            'source_id' => $cb->source_id,
-                            'warehouse_retail_food_loaded' => $cb->relationLoaded('warehouseRetailFood'),
-                            'warehouse_retail_food_exists' => $cb->warehouseRetailFood ? 'yes' : 'no'
-                        ]);
-                        
-                        // Ensure warehouseRetailFood is loaded if source_type is warehouse_retail_food
-                        if (!$cb->relationLoaded('warehouseRetailFood')) {
-                            $cb->load('warehouseRetailFood');
-                        }
+                    // Ensure warehouseRetailFood is loaded if source_type is warehouse_retail_food
+                    if (!$cb->relationLoaded('warehouseRetailFood')) {
+                        $cb->load('warehouseRetailFood');
                     }
+                    
+                    // Get source_types array (same logic as index method)
+                    $sourceTypes = $this->getSourceTypes($cb);
                     
                     $pendingApprovals[] = [
                         'id' => $cb->id,
@@ -791,6 +1214,7 @@ class ContraBonController extends Controller
                         'supplier' => $cb->supplier ? ['name' => $cb->supplier->name] : null,
                         'source_type' => $cb->source_type,
                         'source_type_display' => $this->getSourceTypeDisplay($cb),
+                        'source_types' => $sourceTypes,
                         'creator' => $cb->creator ? ['nama_lengkap' => $cb->creator->nama_lengkap] : null,
                         'approval_level' => 'finance_manager',
                         'approval_level_display' => 'Finance Manager'
@@ -823,6 +1247,48 @@ class ContraBonController extends Controller
             return 'Warehouse Retail Food';
         }
         return 'Unknown';
+    }
+    
+    private function getSourceTypes($contraBon)
+    {
+        $sourceTypes = [];
+        
+        // Handle multiple sources (new) or single source (old data - backward compatibility)
+        if ($contraBon->sources && $contraBon->sources->count() > 0) {
+            // New data: multiple sources
+            foreach ($contraBon->sources as $source) {
+                if ($source->source_type === 'purchase_order' && $source->purchaseOrder) {
+                    $po = $source->purchaseOrder;
+                    if ($po->source_type === 'pr_foods' || !$po->source_type) {
+                        $sourceTypes[] = 'PR Foods';
+                    } elseif ($po->source_type === 'ro_supplier') {
+                        $sourceTypes[] = 'RO Supplier';
+                    }
+                } elseif ($source->source_type === 'retail_food' && $source->retailFood) {
+                    $sourceTypes[] = 'Retail Food';
+                } elseif ($source->source_type === 'warehouse_retail_food' && $source->warehouseRetailFood) {
+                    $sourceTypes[] = 'Warehouse Retail Food';
+                }
+            }
+        } elseif ($contraBon->source_type === 'purchase_order' && $contraBon->purchaseOrder) {
+            // Old data: single source
+            $po = $contraBon->purchaseOrder;
+            if ($po->source_type === 'pr_foods' || !$po->source_type) {
+                $sourceTypes[] = 'PR Foods';
+            } elseif ($po->source_type === 'ro_supplier') {
+                $sourceTypes[] = 'RO Supplier';
+            } else {
+                $sourceTypes[] = 'Unknown';
+            }
+        } elseif ($contraBon->source_type === 'retail_food') {
+            $sourceTypes[] = 'Retail Food';
+        } elseif ($contraBon->source_type === 'warehouse_retail_food') {
+            $sourceTypes[] = 'Warehouse Retail Food';
+        } else {
+            $sourceTypes[] = 'Unknown';
+        }
+        
+        return array_unique($sourceTypes);
     }
 
     private function sendNotification($userIds, $type, $title, $message, $url) {
@@ -889,22 +1355,12 @@ class ContraBonController extends Controller
     // API: Get PO list with approved GR for Contra Bon create
     public function getPOWithApprovedGR(Request $request)
     {
-        // Log di level paling awal, bahkan sebelum try-catch
-        \Log::info('=== getPOWithApprovedGR CALLED ===', [
-            'request_method' => $request->method(),
-            'request_url' => $request->fullUrl(),
-            'user_id' => auth()->id(),
-        ]);
-        
         try {
-            
             // Ambil semua gr_item_id yang sudah ada di contra bon items
             $usedGRItemIds = \DB::table('food_contra_bon_items')
                 ->whereNotNull('gr_item_id')
                 ->pluck('gr_item_id')
                 ->toArray();
-
-            \Log::info('Used GR Item IDs count: ' . count($usedGRItemIds));
 
             // Get all PO with GR in one query
             // Note: food_good_receives table doesn't have 'status' column, so we get all GRs
@@ -934,10 +1390,7 @@ class ContraBonController extends Controller
                 ->limit(500)
                 ->get();
 
-            \Log::info('PO with GR count: ' . $poWithGR->count());
-
             if ($poWithGR->isEmpty()) {
-                \Log::info('No PO with GR found');
                 return response()->json([]);
             }
 
@@ -945,8 +1398,6 @@ class ContraBonController extends Controller
             $grIds = $poWithGR->pluck('gr_id')->toArray();
             $poIds = $poWithGR->pluck('po_id')->unique()->toArray();
             $roSupplierPoIds = $poWithGR->where('source_type', 'ro_supplier')->pluck('po_id')->unique()->toArray();
-
-            \Log::info('GR IDs to fetch items: ' . count($grIds));
 
             // REFACTOR: Query items dan units secara terpisah untuk memastikan data benar-benar ada
             // Step 1: Query semua GR items
@@ -968,14 +1419,9 @@ class ContraBonController extends Controller
                 )
                 ->get();
 
-            \Log::info('All GR items fetched: ' . $allGRItems->count());
-
             // Step 2: Get semua item_id dan unit_id yang unik
             $itemIds = $allGRItems->pluck('item_id')->filter()->unique()->toArray();
             $unitIds = $allGRItems->pluck('unit_id')->filter()->unique()->toArray();
-
-            \Log::info('Unique item_ids: ' . count($itemIds), ['item_ids' => array_slice($itemIds, 0, 5)]);
-            \Log::info('Unique unit_ids: ' . count($unitIds), ['unit_ids' => array_slice($unitIds, 0, 5)]);
 
             // Step 3: Query items dan units secara batch
             $itemsMap = [];
@@ -984,7 +1430,6 @@ class ContraBonController extends Controller
                 foreach ($itemsData as $item) {
                     $itemsMap[$item->id] = $item->name;
                 }
-                \Log::info('Items map created: ' . count($itemsMap));
             }
 
             $unitsMap = [];
@@ -993,7 +1438,6 @@ class ContraBonController extends Controller
                 foreach ($unitsData as $unit) {
                     $unitsMap[$unit->id] = $unit->name;
                 }
-                \Log::info('Units map created: ' . count($unitsMap));
             }
 
             // Step 4: Map items dengan item_name dan unit_name - pastikan sebagai array untuk JSON serialization
@@ -1014,17 +1458,6 @@ class ContraBonController extends Controller
                 ];
             });
 
-            \Log::info('All items mapped: ' . $allItems->count());
-            if ($allItems->count() > 0) {
-                $firstItem = $allItems->first();
-                \Log::info('First item after mapping:', [
-                    'id' => $firstItem->id ?? null,
-                    'item_id' => $firstItem->item_id ?? null,
-                    'item_name' => $firstItem->item_name ?? 'EMPTY',
-                    'unit_id' => $firstItem->unit_id ?? null,
-                    'unit_name' => $firstItem->unit_name ?? 'EMPTY',
-                ]);
-            }
 
             $allItemsGrouped = $allItems->groupBy('good_receive_id');
 
@@ -1058,21 +1491,6 @@ class ContraBonController extends Controller
                 if ($items->isEmpty()) {
                     continue;
                 }
-                
-                // Debug: Log items untuk troubleshooting
-                $firstItem = $items->first();
-                \Log::info('PO-GR Items for API response', [
-                    'po_id' => $row->po_id,
-                    'gr_id' => $row->gr_id,
-                    'items_count' => $items->count(),
-                    'first_item' => $firstItem ? [
-                        'id' => $firstItem->id ?? null,
-                        'item_id' => $firstItem->item_id ?? null,
-                        'item_name' => $firstItem->item_name ?? 'MISSING',
-                        'unit_id' => $firstItem->unit_id ?? null,
-                        'unit_name' => $firstItem->unit_name ?? 'MISSING',
-                    ] : null
-                ]);
                 
                 // Get source type display and outlet information
                 $sourceTypeDisplay = $row->source_type === 'ro_supplier' ? 'RO Supplier' : 'PR Foods';
@@ -1120,13 +1538,6 @@ class ContraBonController extends Controller
                     ];
                 }
                 
-                \Log::info('Items array created for PO-GR', [
-                    'po_id' => $row->po_id,
-                    'gr_id' => $row->gr_id,
-                    'items_count' => count($itemsArray),
-                    'first_item' => $itemsArray[0] ?? null
-                ]);
-                
                 $result[] = [
                     'po_id' => $row->po_id,
                     'po_number' => $row->po_number,
@@ -1146,15 +1557,6 @@ class ContraBonController extends Controller
                 ];
             }
             
-            \Log::info('Final result count: ' . count($result));
-            if (count($result) > 0 && isset($result[0]['items'])) {
-                \Log::info('First result items sample:', [
-                    'po_number' => $result[0]['po_number'] ?? null,
-                    'items_count' => count($result[0]['items'] ?? []),
-                    'first_item' => $result[0]['items'][0] ?? null
-                ]);
-            }
-            
             return response()->json($result);
         } catch (\Exception $e) {
             \Log::error('Error in getPOWithApprovedGR: ' . $e->getMessage());
@@ -1166,7 +1568,6 @@ class ContraBonController extends Controller
     // Simple test endpoint - langsung return data test
     public function testAPI()
     {
-        \Log::info('=== testAPI CALLED ===');
         return response()->json([
             'message' => 'API is working',
             'timestamp' => now(),
@@ -1282,7 +1683,14 @@ class ContraBonController extends Controller
             $retailFoodIds = $retailFoods->pluck('retail_food_id')->toArray();
 
             // Batch query: Get all items for all retail foods at once
+            // Join ke items dan units untuk mendapatkan item_id dan unit_id
             $allItems = \DB::table('retail_food_items as rfi')
+                ->leftJoin('items as i', function($join) {
+                    $join->on(\DB::raw('LOWER(i.name)'), '=', \DB::raw('LOWER(rfi.item_name)'));
+                })
+                ->leftJoin('units as u', function($join) {
+                    $join->on(\DB::raw('LOWER(u.name)'), '=', \DB::raw('LOWER(rfi.unit)'));
+                })
                 ->whereIn('rfi.retail_food_id', $retailFoodIds)
                 ->select(
                     'rfi.retail_food_id',
@@ -1290,7 +1698,9 @@ class ContraBonController extends Controller
                     'rfi.item_name',
                     'rfi.unit as unit_name',
                     'rfi.qty',
-                    'rfi.price'
+                    'rfi.price',
+                    'i.id as item_id',
+                    'u.id as unit_id'
                 )
                 ->get()
                 ->groupBy('retail_food_id');
@@ -1363,7 +1773,14 @@ class ContraBonController extends Controller
             $warehouseRetailFoodIds = $warehouseRetailFoods->pluck('retail_warehouse_food_id')->toArray();
 
             // Batch query: Get all items for all warehouse retail foods at once
+            // Join ke items dan units untuk mendapatkan item_id dan unit_id
             $allItems = \DB::table('retail_warehouse_food_items as rwfi')
+                ->leftJoin('items as i', function($join) {
+                    $join->on(\DB::raw('LOWER(i.name)'), '=', \DB::raw('LOWER(rwfi.item_name)'));
+                })
+                ->leftJoin('units as u', function($join) {
+                    $join->on(\DB::raw('LOWER(u.name)'), '=', \DB::raw('LOWER(rwfi.unit)'));
+                })
                 ->whereIn('rwfi.retail_warehouse_food_id', $warehouseRetailFoodIds)
                 ->select(
                     'rwfi.retail_warehouse_food_id',
@@ -1371,7 +1788,9 @@ class ContraBonController extends Controller
                     'rwfi.item_name',
                     'rwfi.unit as unit_name',
                     'rwfi.qty',
-                    'rwfi.price'
+                    'rwfi.price',
+                    'i.id as item_id',
+                    'u.id as unit_id'
                 )
                 ->get()
                 ->groupBy('retail_warehouse_food_id');
@@ -1413,10 +1832,15 @@ class ContraBonController extends Controller
         $contraBon = ContraBon::with([
             'supplier',
             'purchaseOrder',
+            'sources',
+            'sources.purchaseOrder',
+            'sources.retailFood',
+            'sources.warehouseRetailFood',
             'items.item',
             'items.unit',
-            'items.grItem.item',
-            'items.grItem.unit',
+            'items.grItem' => function($query) {
+                $query->with(['item', 'unit']);
+            },
             'creator',
             'approver',
             'financeManager',
@@ -1538,7 +1962,7 @@ class ContraBonController extends Controller
 
     public function destroy($id)
     {
-        $contraBon = ContraBon::with('items')->findOrFail($id);
+        $contraBon = ContraBon::with(['items', 'sources', 'sources.purchaseOrder', 'sources.retailFood', 'sources.warehouseRetailFood'])->findOrFail($id);
         
         DB::beginTransaction();
         try {
@@ -1550,6 +1974,16 @@ class ContraBonController extends Controller
             
             DB::commit();
             
+            // Check if this is an Inertia request
+            $isInertiaRequest = request()->header('X-Inertia');
+            
+            if ($isInertiaRequest) {
+                // Return Inertia redirect for Inertia requests
+                return redirect()->route('contra-bons.index')
+                    ->with('success', 'Contra Bon berhasil dihapus. Item-item telah dikembalikan dan dapat digunakan lagi.');
+            }
+            
+            // Return JSON for AJAX/API requests
             if (request()->expectsJson() || request()->ajax()) {
                 return response()->json([
                     'success' => true,
@@ -1557,7 +1991,9 @@ class ContraBonController extends Controller
                 ]);
             }
             
-            return redirect()->route('contra-bons.index')->with('success', 'Contra Bon berhasil dihapus. Item-item telah dikembalikan dan dapat digunakan lagi.');
+            // Fallback to regular redirect
+            return redirect()->route('contra-bons.index')
+                ->with('success', 'Contra Bon berhasil dihapus. Item-item telah dikembalikan dan dapat digunakan lagi.');
         } catch (\Exception $e) {
             DB::rollBack();
             \Log::error('Error deleting Contra Bon', [
@@ -1566,6 +2002,16 @@ class ContraBonController extends Controller
                 'trace' => $e->getTraceAsString()
             ]);
             
+            // Check if this is an Inertia request
+            $isInertiaRequest = request()->header('X-Inertia');
+            
+            if ($isInertiaRequest) {
+                // Return Inertia redirect for Inertia requests
+                return redirect()->route('contra-bons.index')
+                    ->with('error', 'Gagal menghapus Contra Bon: ' . $e->getMessage());
+            }
+            
+            // Return JSON for AJAX/API requests
             if (request()->expectsJson() || request()->ajax()) {
                 return response()->json([
                     'success' => false,
@@ -1573,6 +2019,7 @@ class ContraBonController extends Controller
                 ], 500);
             }
             
+            // Fallback to regular redirect
             return redirect()->route('contra-bons.index')
                 ->with('error', 'Gagal menghapus Contra Bon: ' . $e->getMessage());
         }

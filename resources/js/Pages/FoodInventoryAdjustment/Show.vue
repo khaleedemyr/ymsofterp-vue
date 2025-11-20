@@ -92,7 +92,7 @@ const loading = ref(false)
 
 const canApprove = computed(() => {
   if (!props.user) return false
-  if (props.adjustment.status === 'waiting_approval' && props.user.id_jabatan === 161) return true
+  if (props.adjustment.status === 'waiting_approval' && [161, 172].includes(props.user.id_jabatan)) return true
   if (props.adjustment.status === 'waiting_cost_control' && props.user.id_jabatan === 167) return true
   if (props.user.id_role === '5af56935b011a' && props.user.status === 'A' && ['waiting_approval','waiting_cost_control'].includes(props.adjustment.status)) return true
   return false

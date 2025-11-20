@@ -41,7 +41,7 @@
             <div>
               <label class="block text-sm font-medium text-gray-700">Type Item (Opsional)</label>
               <select v-model="selectedType" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm">
-                <option value="">Semua Type</option>
+                <option value="">Semua Type (Food + Beverages)</option>
                 <option value="food">Food (Asian, Western, Food)</option>
                 <option value="beverages">Beverages</option>
               </select>
@@ -61,10 +61,17 @@
               <strong class="font-bold">Stock Cut Sudah Dilakukan!</strong>
               <div class="mt-2 text-sm">
                 <p>Outlet ini sudah melakukan potong stock pada tanggal {{ tanggal }}.</p>
+                <p v-if="stockCutStatus.log.type_filter">
+                  Type yang sudah dipotong: 
+                  <span class="font-semibold">
+                    {{ stockCutStatus.log.type_filter === 'food' ? 'Food' : (stockCutStatus.log.type_filter === 'beverages' ? 'Beverages' : 'Semua Type') }}
+                  </span>
+                </p>
+                <p v-else class="font-semibold">Type: Semua Type (Food + Beverages)</p>
                 <p>Total item dipotong: {{ stockCutStatus.log.total_items_cut }}</p>
                 <p>Total modifier dipotong: {{ stockCutStatus.log.total_modifiers_cut }}</p>
                 <p>Dilakukan pada: {{ new Date(stockCutStatus.log.created_at).toLocaleString('id-ID') }}</p>
-                <p class="mt-2 font-semibold text-red-600">⚠️ Stock cut tidak dapat dilakukan lagi untuk tanggal ini.</p>
+                <p class="mt-2 font-semibold text-red-600">⚠️ Stock cut tidak dapat dilakukan lagi untuk tanggal ini, terlepas dari type yang dipilih.</p>
               </div>
             </div>
             <div v-else class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">

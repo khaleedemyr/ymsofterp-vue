@@ -4994,7 +4994,7 @@ watch(locale, () => {
                                         </div>
                                     </div>
                                     <div class="text-xs text-green-500 font-medium">
-                                        <i class="fa fa-shopping-cart mr-1"></i>PR Approval
+                                        <i class="fa fa-user-check mr-1"></i>{{ pr.approver_name || 'PR Approval' }}
                                     </div>
                                 </div>
                             </div>
@@ -5114,7 +5114,7 @@ watch(locale, () => {
                                         </div>
                                     </div>
                                     <div class="text-xs text-orange-500 font-medium">
-                                        <i class="fa fa-file-invoice mr-1"></i>PO Ops
+                                        <i class="fa fa-user-check mr-1"></i>{{ po.approver_name || 'PO Ops' }}
                                     </div>
                                 </div>
                             </div>
@@ -5231,9 +5231,25 @@ watch(locale, () => {
                                             <div class="text-xs" :class="isNight ? 'text-slate-300' : 'text-slate-600'">
                                                 {{ cb.supplier?.name || 'Unknown Supplier' }}
                                             </div>
-                                            <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
+                                            <div class="text-xs flex flex-wrap gap-1 mt-1" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
                                                 <i class="fa fa-tag mr-1 text-blue-600"></i>
-                                                {{ cb.source_type_display }}
+                                                <span 
+                                                  v-if="cb.source_types && cb.source_types.length > 0"
+                                                  v-for="sourceType in cb.source_types" 
+                                                  :key="sourceType"
+                                                  :class="{
+                                                    'bg-blue-100 text-blue-700 border border-blue-300': sourceType === 'PR Foods',
+                                                    'bg-green-100 text-green-700 border border-green-300': sourceType === 'RO Supplier',
+                                                    'bg-purple-100 text-purple-700 border border-purple-300': sourceType === 'Retail Food',
+                                                    'bg-orange-100 text-orange-700 border border-orange-300': sourceType === 'Warehouse Retail Food',
+                                                    'bg-gray-100 text-gray-700 border border-gray-300': sourceType === 'Unknown',
+                                                  }" 
+                                                  class="px-1.5 py-0.5 rounded-full text-xs font-semibold">
+                                                  {{ sourceType === 'PR Foods' ? 'PRF' : sourceType === 'Retail Food' ? 'RF' : sourceType === 'Warehouse Retail Food' ? 'RWF' : sourceType }}
+                                                </span>
+                                                <span v-else class="px-1.5 py-0.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-700">
+                                                  {{ cb.source_type_display || 'N/A' }}
+                                                </span>
                                             </div>
                                             <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
                                                 Rp {{ new Intl.NumberFormat('id-ID').format(cb.total_amount) }}
@@ -6966,7 +6982,25 @@ watch(locale, () => {
                                 <label class="text-sm font-medium text-gray-600 dark:text-gray-400">Created By</label>
                                 <p class="text-gray-900 dark:text-white">{{ selectedContraBonApproval.creator?.nama_lengkap || 'Unknown' }}</p>
                             </div>
-                            <div v-if="selectedContraBonApproval.source_type_display">
+                            <div v-if="selectedContraBonApproval.source_types && selectedContraBonApproval.source_types.length > 0">
+                                <label class="text-sm font-medium text-gray-600 dark:text-gray-400">Source Type</label>
+                                <div class="flex flex-wrap gap-1 mt-1">
+                                    <span 
+                                      v-for="sourceType in selectedContraBonApproval.source_types" 
+                                      :key="sourceType"
+                                      :class="{
+                                        'bg-blue-100 text-blue-700 border border-blue-300 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-700': sourceType === 'PR Foods',
+                                        'bg-green-100 text-green-700 border border-green-300 dark:bg-green-900/30 dark:text-green-300 dark:border-green-700': sourceType === 'RO Supplier',
+                                        'bg-purple-100 text-purple-700 border border-purple-300 dark:bg-purple-900/30 dark:text-purple-300 dark:border-purple-700': sourceType === 'Retail Food',
+                                        'bg-orange-100 text-orange-700 border border-orange-300 dark:bg-orange-900/30 dark:text-orange-300 dark:border-orange-700': sourceType === 'Warehouse Retail Food',
+                                        'bg-gray-100 text-gray-700 border border-gray-300 dark:bg-gray-700 dark:text-gray-300 dark:border-gray-600': sourceType === 'Unknown',
+                                      }" 
+                                      class="px-2 py-1 rounded-full text-xs font-semibold">
+                                      {{ sourceType === 'PR Foods' ? 'PRF' : sourceType === 'Retail Food' ? 'RF' : sourceType === 'Warehouse Retail Food' ? 'RWF' : sourceType }}
+                                    </span>
+                                </div>
+                            </div>
+                            <div v-else-if="selectedContraBonApproval.source_type_display">
                                 <label class="text-sm font-medium text-gray-600 dark:text-gray-400">Source Type</label>
                                 <p class="text-gray-900 dark:text-white">{{ selectedContraBonApproval.source_type_display }}</p>
                             </div>
@@ -7216,9 +7250,25 @@ watch(locale, () => {
                                     <div class="text-xs text-gray-600 dark:text-gray-300 truncate">
                                         {{ cb.supplier?.name || 'Unknown Supplier' }} • Rp {{ new Intl.NumberFormat('id-ID').format(cb.total_amount || 0) }}
                                     </div>
-                                    <div v-if="cb.source_type_display" class="text-[11px] text-gray-500 dark:text-gray-400 truncate">
+                                    <div class="text-[11px] flex flex-wrap gap-1 items-center mt-1">
                                         <i class="fa fa-tag mr-1 text-blue-600"></i>
-                                        {{ cb.source_type_display }}
+                                        <span 
+                                          v-if="cb.source_types && cb.source_types.length > 0"
+                                          v-for="sourceType in cb.source_types" 
+                                          :key="sourceType"
+                                          :class="{
+                                            'bg-blue-100 text-blue-700 border border-blue-300 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-700': sourceType === 'PR Foods',
+                                            'bg-green-100 text-green-700 border border-green-300 dark:bg-green-900/30 dark:text-green-300 dark:border-green-700': sourceType === 'RO Supplier',
+                                            'bg-purple-100 text-purple-700 border border-purple-300 dark:bg-purple-900/30 dark:text-purple-300 dark:border-purple-700': sourceType === 'Retail Food',
+                                            'bg-orange-100 text-orange-700 border border-orange-300 dark:bg-orange-900/30 dark:text-orange-300 dark:border-orange-700': sourceType === 'Warehouse Retail Food',
+                                            'bg-gray-100 text-gray-700 border border-gray-300 dark:bg-gray-700 dark:text-gray-300 dark:border-gray-600': sourceType === 'Unknown',
+                                          }" 
+                                          class="px-1.5 py-0.5 rounded-full text-[10px] font-semibold">
+                                          {{ sourceType === 'PR Foods' ? 'PRF' : sourceType === 'Retail Food' ? 'RF' : sourceType === 'Warehouse Retail Food' ? 'RWF' : sourceType }}
+                                        </span>
+                                        <span v-else class="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-gray-100 text-gray-700">
+                                          {{ cb.source_type_display || 'N/A' }}
+                                        </span>
                                     </div>
                                     <div class="text-[11px] text-gray-500 dark:text-gray-400 truncate">
                                         <i class="fa fa-user mr-1 text-blue-500"></i>
@@ -7433,8 +7483,16 @@ watch(locale, () => {
                                     </div>
                                     </div>
                                 </div>
-                                <div class="text-xs text-gray-500 dark:text-gray-400 pl-3 whitespace-nowrap">
-                                    {{ new Date(po.date).toLocaleDateString('id-ID') }}
+                                <div class="flex flex-col items-end gap-1">
+                                    <div class="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                                        {{ new Date(po.date).toLocaleDateString('id-ID') }}
+                                    </div>
+                                    <div v-if="po.approver_name" class="text-xs text-orange-500 dark:text-orange-400 font-medium whitespace-nowrap">
+                                        <i class="fa fa-user-check mr-1"></i>{{ po.approver_name }}
+                                    </div>
+                                    <div v-else class="text-xs text-orange-500 dark:text-orange-400 font-medium whitespace-nowrap">
+                                        <i class="fa fa-file-invoice mr-1"></i>PO Ops
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -7609,8 +7667,16 @@ watch(locale, () => {
                                     </div>
                                     </div>
                                 </div>
-                                <div class="text-xs text-gray-500 dark:text-gray-400 pl-3 whitespace-nowrap">
-                                    {{ new Date(pr.created_at).toLocaleDateString('id-ID') }}
+                                <div class="flex flex-col items-end gap-1">
+                                    <div class="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                                        {{ new Date(pr.created_at).toLocaleDateString('id-ID') }}
+                                    </div>
+                                    <div v-if="pr.approver_name" class="text-xs text-green-500 dark:text-green-400 font-medium whitespace-nowrap">
+                                        <i class="fa fa-user-check mr-1"></i>{{ pr.approver_name }}
+                                    </div>
+                                    <div v-else class="text-xs text-green-500 dark:text-green-400 font-medium whitespace-nowrap">
+                                        <i class="fa fa-shopping-cart mr-1"></i>PR Approval
+                                    </div>
                                 </div>
                             </div>
                         </div>

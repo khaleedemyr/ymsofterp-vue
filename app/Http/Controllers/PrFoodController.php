@@ -541,6 +541,13 @@ class PrFoodController extends Controller
                     'count' => $assistantSsdApprovals->count()
                 ]);
                 
+                // Get approver name for this level
+                $approver = DB::table('users')
+                    ->where('id_jabatan', 172)
+                    ->where('status', 'A')
+                    ->select('nama_lengkap')
+                    ->first();
+                
                 foreach ($assistantSsdApprovals as $pr) {
                     $pendingApprovals[] = [
                         'id' => $pr->id,
@@ -552,6 +559,7 @@ class PrFoodController extends Controller
                         'description' => $pr->description,
                         'approval_level' => 'assistant_ssd_manager',
                         'approval_level_display' => 'Asisten SSD Manager',
+                        'approver_name' => $approver ? $approver->nama_lengkap : 'Asisten SSD Manager',
                         'created_at' => $pr->created_at
                     ];
                 }
@@ -577,6 +585,13 @@ class PrFoodController extends Controller
                     'count' => $ssdManagerApprovals->count()
                 ]);
                 
+                // Get approver name for this level
+                $approver = DB::table('users')
+                    ->where('id_jabatan', 161)
+                    ->where('status', 'A')
+                    ->select('nama_lengkap')
+                    ->first();
+                
                 foreach ($ssdManagerApprovals as $pr) {
                     $pendingApprovals[] = [
                         'id' => $pr->id,
@@ -588,6 +603,7 @@ class PrFoodController extends Controller
                         'description' => $pr->description,
                         'approval_level' => 'ssd_manager',
                         'approval_level_display' => 'SSD Manager',
+                        'approver_name' => $approver ? $approver->nama_lengkap : 'SSD Manager',
                         'created_at' => $pr->created_at
                     ];
                 }
@@ -603,6 +619,13 @@ class PrFoodController extends Controller
                         return in_array($pr->warehouse->name ?? '', ['MK1 Hot Kitchen', 'MK2 Cold Kitchen']);
                     });
                 
+                // Get approver name for this level
+                $approver = DB::table('users')
+                    ->where('id_jabatan', 179)
+                    ->where('status', 'A')
+                    ->select('nama_lengkap')
+                    ->first();
+                
                 foreach ($sousChefMKApprovals as $pr) {
                     $pendingApprovals[] = [
                         'id' => $pr->id,
@@ -614,6 +637,7 @@ class PrFoodController extends Controller
                         'description' => $pr->description,
                         'approval_level' => 'sous_chef_mk',
                         'approval_level_display' => 'Sous Chef MK',
+                        'approver_name' => $approver ? $approver->nama_lengkap : 'Sous Chef MK',
                         'created_at' => $pr->created_at
                     ];
                 }

@@ -55,7 +55,7 @@
                                 </div>
                             </div>
                             <div class="text-xs text-orange-500 font-medium">
-                                <i class="fa fa-money-bill-wave mr-1"></i>Finance Manager
+                                <i class="fa fa-user-check mr-1"></i>{{ nfp.approver_name || 'Finance Manager' }}
                             </div>
                         </div>
                     </div>
@@ -545,7 +545,7 @@
                                 </div>
                             </div>
                             <div class="text-xs text-orange-500 font-medium">
-                                <i class="fa fa-money-bill-wave mr-1"></i>Finance Manager
+                                <i class="fa fa-user-check mr-1"></i>{{ nfp.approver_name || 'Finance Manager' }}
                             </div>
                         </div>
                     </div>

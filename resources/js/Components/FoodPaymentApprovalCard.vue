@@ -51,7 +51,7 @@
                                 </div>
                             </div>
                             <div class="text-xs text-green-500 font-medium">
-                                <i class="fa fa-utensils mr-1"></i>{{ fp.approval_level_display }}
+                                <i class="fa fa-user-check mr-1"></i>{{ fp.approver_name || fp.approval_level_display }}
                             </div>
                         </div>
                     </div>
@@ -347,7 +347,7 @@
                                 </div>
                             </div>
                             <div class="text-xs text-green-500 font-medium">
-                                <i class="fa fa-utensils mr-1"></i>{{ fp.approval_level_display }}
+                                <i class="fa fa-user-check mr-1"></i>{{ fp.approver_name || fp.approval_level_display }}
                             </div>
                         </div>
                     </div>

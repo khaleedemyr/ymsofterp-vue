@@ -65,6 +65,11 @@ class ContraBon extends Model
         return $this->hasMany(ContraBonItem::class, 'contra_bon_id');
     }
 
+    public function sources()
+    {
+        return $this->hasMany(ContraBonSource::class, 'contra_bon_id');
+    }
+
     public function creator()
     {
         return $this->belongsTo(User::class, 'created_by');

@@ -1510,6 +1510,18 @@ class PurchaseRequisitionController extends Controller
                 });
             }
 
+            // Add approver_name to each PR
+            $pendingApprovals = $pendingApprovals->map(function($pr) {
+                $pendingFlows = $pr->approvalFlows->where('status', 'PENDING');
+                if ($pendingFlows->isEmpty()) {
+                    $pr->approver_name = null;
+                } else {
+                    $nextApprover = $pendingFlows->sortBy('approval_level')->first();
+                    $pr->approver_name = $nextApprover->approver->nama_lengkap ?? null;
+                }
+                return $pr;
+            });
+
             return response()->json([
                 'success' => true,
                 'purchase_requisitions' => $pendingApprovals->values()

@@ -98,7 +98,7 @@
                                 </div>
                             </div>
                             <div class="text-xs text-purple-500 font-medium">
-                                <i class="fa fa-shopping-basket mr-1"></i>{{ pr.approval_level_display }}
+                                <i class="fa fa-user-check mr-1"></i>{{ pr.approver_name || pr.approval_level_display }}
                             </div>
                         </div>
                     </div>
@@ -337,7 +337,7 @@
                                 </div>
                             </div>
                             <div class="text-xs text-purple-500 font-medium">
-                                <i class="fa fa-shopping-basket mr-1"></i>{{ pr.approval_level_display }}
+                                <i class="fa fa-user-check mr-1"></i>{{ pr.approver_name || pr.approval_level_display }}
                             </div>
                         </div>
                     </div>

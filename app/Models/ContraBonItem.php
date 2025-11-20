@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use App\Models\FoodGoodReceiveItem;
 
 class ContraBonItem extends Model
 {
@@ -49,5 +50,10 @@ class ContraBonItem extends Model
     public function unit()
     {
         return $this->belongsTo(Unit::class);
+    }
+
+    public function grItem()
+    {
+        return $this->belongsTo(FoodGoodReceiveItem::class, 'gr_item_id');
     }
 } 

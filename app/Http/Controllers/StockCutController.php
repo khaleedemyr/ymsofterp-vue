@@ -26,22 +26,24 @@ class StockCutController extends Controller
             return response()->json(['status' => 'error', 'message' => 'Tanggal dan id_outlet wajib diisi'], 422);
         }
 
-        // Cek apakah sudah pernah di-stock cut dengan status success
+        // Cek apakah sudah pernah di-stock cut dengan status success (tidak peduli type_filter)
+        // Jika sudah ada stock cut di tanggal yang sama, tidak boleh stock cut lagi
         $existingLog = StockCutLog::where('outlet_id', $id_outlet)
             ->where('tanggal', $tanggal)
-            ->where('type_filter', $type_filter ?: null)
             ->where('status', 'success')
             ->first();
         
         if ($existingLog) {
+            $typeInfo = $existingLog->type_filter ? " (Type: " . ($existingLog->type_filter === 'food' ? 'Food' : ($existingLog->type_filter === 'beverages' ? 'Beverages' : 'Semua Type')) . ")" : " (Semua Type)";
             return response()->json([
                 'status' => 'error',
-                'message' => 'Stock cut untuk outlet ini pada tanggal ' . $tanggal . ' sudah pernah dilakukan.',
+                'message' => 'Stock cut untuk outlet ini pada tanggal ' . $tanggal . ' sudah pernah dilakukan' . $typeInfo . '. Tidak dapat melakukan stock cut lagi di tanggal yang sama.',
                 'already_cut' => true,
                 'log' => [
                     'id' => $existingLog->id,
                     'total_items_cut' => $existingLog->total_items_cut,
                     'total_modifiers_cut' => $existingLog->total_modifiers_cut,
+                    'type_filter' => $existingLog->type_filter,
                     'created_at' => $existingLog->created_at
                 ]
             ], 409);
@@ -1123,9 +1125,9 @@ class StockCutController extends Controller
             return response()->json(['status' => 'error', 'message' => 'Tanggal dan id_outlet wajib diisi'], 422);
         }
 
+        // Cek apakah sudah ada stock cut di tanggal yang sama (tidak peduli type_filter)
         $log = StockCutLog::where('outlet_id', $id_outlet)
             ->where('tanggal', $tanggal)
-            ->where('type_filter', $type_filter)
             ->first();
 
         if ($log) {

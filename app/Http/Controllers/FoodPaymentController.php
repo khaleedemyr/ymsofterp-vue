@@ -401,6 +401,13 @@ class FoodPaymentController extends Controller
             
             // Finance Manager approvals (id_jabatan == 160) - First level
             if (($user->id_jabatan == 160 && $user->status == 'A') || $isSuperadmin) {
+                // Get approver name for this level
+                $approver = DB::table('users')
+                    ->where('id_jabatan', 160)
+                    ->where('status', 'A')
+                    ->select('nama_lengkap')
+                    ->first();
+                
                 $financeManagerApprovals = (clone $query)
                     ->whereNull('finance_manager_approved_at')
                     ->get();
@@ -416,6 +423,7 @@ class FoodPaymentController extends Controller
                         'creator' => $fp->creator ? ['nama_lengkap' => $fp->creator->nama_lengkap] : null,
                         'approval_level' => 'finance_manager',
                         'approval_level_display' => 'Finance Manager',
+                        'approver_name' => $approver ? $approver->nama_lengkap : 'Finance Manager',
                         'contra_bons_count' => $fp->contraBons->count(),
                         'notes' => $fp->notes,
                         'created_at' => $fp->created_at
@@ -425,6 +433,13 @@ class FoodPaymentController extends Controller
             
             // GM Finance approvals (id_jabatan == 152) - Second level
             if (($user->id_jabatan == 152 && $user->status == 'A') || $isSuperadmin) {
+                // Get approver name for this level
+                $approver = DB::table('users')
+                    ->where('id_jabatan', 152)
+                    ->where('status', 'A')
+                    ->select('nama_lengkap')
+                    ->first();
+                
                 $gmFinanceApprovals = (clone $query)
                     ->whereNotNull('finance_manager_approved_at')
                     ->whereNull('gm_finance_approved_at')
@@ -441,6 +456,7 @@ class FoodPaymentController extends Controller
                         'creator' => $fp->creator ? ['nama_lengkap' => $fp->creator->nama_lengkap] : null,
                         'approval_level' => 'gm_finance',
                         'approval_level_display' => 'GM Finance',
+                        'approver_name' => $approver ? $approver->nama_lengkap : 'GM Finance',
                         'contra_bons_count' => $fp->contraBons->count(),
                         'notes' => $fp->notes,
                         'created_at' => $fp->created_at

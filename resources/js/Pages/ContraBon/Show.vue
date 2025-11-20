@@ -23,26 +23,37 @@
                   </p>
                   <p><span class="font-medium">Supplier:</span> {{ contraBon.supplier?.name }}</p>
                   <p><span class="font-medium">Dibuat oleh:</span> {{ contraBon.creator?.nama_lengkap }}</p>
-                  <p><span class="font-medium">Source Type:</span> 
-                    <span :class="{
-                      'bg-blue-100 text-blue-700': contraBon.source_type_display === 'PR Foods',
-                      'bg-green-100 text-green-700': contraBon.source_type_display === 'RO Supplier',
-                      'bg-purple-100 text-purple-700': contraBon.source_type_display === 'Retail Food',
-                      'bg-gray-100 text-gray-700': contraBon.source_type_display === 'Unknown',
-                    }" class="px-2 py-1 rounded-full text-xs font-semibold">
-                      {{ contraBon.source_type_display || (contraBon.source_type === 'purchase_order' ? 'PO/GR' : 'Retail Food') }}
+                  <p><span class="font-medium">Source Type:</span></p>
+                  <div v-if="contraBon.source_types && contraBon.source_types.length > 0" class="flex flex-wrap gap-1 mt-1">
+                    <span 
+                      v-for="sourceType in contraBon.source_types" 
+                      :key="sourceType"
+                      :class="{
+                        'bg-blue-100 text-blue-700 border border-blue-300': sourceType === 'PR Foods',
+                        'bg-green-100 text-green-700 border border-green-300': sourceType === 'RO Supplier',
+                        'bg-purple-100 text-purple-700 border border-purple-300': sourceType === 'Retail Food',
+                        'bg-orange-100 text-orange-700 border border-orange-300': sourceType === 'Warehouse Retail Food',
+                        'bg-gray-100 text-gray-700 border border-gray-300': sourceType === 'Unknown',
+                      }" 
+                      class="px-2 py-1 rounded-full text-xs font-semibold">
+                      {{ sourceType === 'PR Foods' ? 'PRF' : sourceType === 'Retail Food' ? 'RF' : sourceType === 'Warehouse Retail Food' ? 'RWF' : sourceType }}
                     </span>
-                  </p>
-                  <div v-if="contraBon.source_numbers && contraBon.source_numbers.length > 0">
+                  </div>
+                  <span v-else :class="{
+                    'bg-blue-100 text-blue-700': contraBon.source_type_display === 'PR Foods',
+                    'bg-green-100 text-green-700': contraBon.source_type_display === 'RO Supplier',
+                    'bg-purple-100 text-purple-700': contraBon.source_type_display === 'Retail Food',
+                    'bg-orange-100 text-orange-700': contraBon.source_type_display === 'Warehouse Retail Food',
+                    'bg-gray-100 text-gray-700': contraBon.source_type_display === 'Unknown',
+                  }" class="px-2 py-1 rounded-full text-xs font-semibold inline-block mt-1">
+                    {{ contraBon.source_type_display || (contraBon.source_type === 'purchase_order' ? 'PO/GR' : 'Retail Food') }}
+                  </span>
+                  <div v-if="contraBon.source_numbers && contraBon.source_numbers.length > 0" class="mt-2">
                     <p><span class="font-medium">Source Numbers:</span></p>
                     <div class="flex flex-wrap gap-1 mt-1">
                       <span v-for="number in contraBon.source_numbers" :key="number" 
-                            :class="{
-                              'bg-blue-100 text-blue-800': contraBon.source_type_display === 'PR Foods',
-                              'bg-green-100 text-green-800': contraBon.source_type_display === 'RO Supplier',
-                              'bg-purple-100 text-purple-800': contraBon.source_type_display === 'Retail Food'
-                            }"
-                            class="text-xs px-2 py-1 rounded-full">
+                            :class="getSourceNumberBadgeClass(number, contraBon.source_types)"
+                            class="text-xs px-2 py-1 rounded-full font-semibold border">
                         {{ number }}
                       </span>
                     </div>
@@ -280,6 +291,37 @@ const getStatusClass = (status) => {
 const formatRupiah = (value) => {
   if (typeof value !== 'number') value = Number(value) || 0;
   return 'Rp ' + value.toLocaleString('id-ID');
+}
+
+const getSourceNumberBadgeClass = (number, sourceTypes) => {
+  if (!number) return 'bg-gray-100 text-gray-800 border-gray-300';
+  
+  const numStr = String(number).toUpperCase();
+  
+  // Deteksi berdasarkan prefix number
+  if (numStr.startsWith('PRF-')) {
+    return 'bg-blue-100 text-blue-800 border-blue-300';
+  } else if (numStr.startsWith('RWF')) {
+    return 'bg-orange-100 text-orange-800 border-orange-300';
+  } else if (numStr.startsWith('RF')) {
+    return 'bg-purple-100 text-purple-800 border-purple-300';
+  }
+  
+  // Fallback: gunakan source_types jika tersedia
+  if (sourceTypes && sourceTypes.length > 0) {
+    if (sourceTypes.includes('PR Foods')) {
+      return 'bg-blue-100 text-blue-800 border-blue-300';
+    } else if (sourceTypes.includes('Warehouse Retail Food')) {
+      return 'bg-orange-100 text-orange-800 border-orange-300';
+    } else if (sourceTypes.includes('Retail Food')) {
+      return 'bg-purple-100 text-purple-800 border-purple-300';
+    } else if (sourceTypes.includes('RO Supplier')) {
+      return 'bg-green-100 text-green-800 border-green-300';
+    }
+  }
+  
+  // Default
+  return 'bg-gray-100 text-gray-800 border-gray-300';
 }
 
 async function approveFinanceManager(approved) {

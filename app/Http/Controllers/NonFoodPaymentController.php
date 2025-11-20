@@ -213,7 +213,8 @@ class NonFoodPaymentController extends Controller
                 'pr.description',
                 'pr.is_held',
                 'pr.hold_reason',
-                'pr.division_id'
+                'pr.division_id',
+                'pr.mode'
             );
 
         // Apply filters
@@ -737,10 +738,20 @@ class NonFoodPaymentController extends Controller
 
     public function store(Request $request)
     {
-        $request->validate([
+        // Determine if supplier_id is required based on payment mode
+        $supplierRequired = true;
+        if ($request->purchase_requisition_id) {
+            $pr = \App\Models\PurchaseRequisition::find($request->purchase_requisition_id);
+            if ($pr) {
+                $mode = $pr->mode;
+                // pr_ops: required, purchase_payment: optional, travel_application/kasbon: not needed
+                $supplierRequired = ($mode === 'pr_ops');
+            }
+        }
+        
+        $validationRules = [
             'purchase_order_ops_id' => 'nullable|exists:purchase_order_ops,id',
             'purchase_requisition_id' => 'nullable|exists:purchase_requisitions,id',
-            'supplier_id' => 'required|exists:suppliers,id',
             'amount' => 'required|numeric|min:0',
             'payment_method' => 'required|in:cash,transfer,check',
             'payment_date' => 'required|date',
@@ -749,16 +760,42 @@ class NonFoodPaymentController extends Controller
             'reference_number' => 'nullable|string|max:100',
             'notes' => 'nullable|string|max:1000',
             'is_partial_payment' => 'nullable|boolean',
-        ]);
+        ];
+        
+        // Add supplier_id validation based on requirement
+        if ($supplierRequired) {
+            $validationRules['supplier_id'] = 'required|exists:suppliers,id';
+        } else {
+            $validationRules['supplier_id'] = 'nullable|exists:suppliers,id';
+        }
+        
+        $request->validate($validationRules);
 
         // Validate that at least one transaction is selected
         if (empty($request->purchase_order_ops_id) && empty($request->purchase_requisition_id)) {
             return back()->with('error', 'Pilih minimal satu transaksi (Purchase Order atau Purchase Requisition).');
         }
 
-        // Validate supplier_id is required for all payments
-        if (empty($request->supplier_id)) {
-            return back()->with('error', 'Supplier harus dipilih untuk payment.');
+        // Validate supplier_id based on payment mode
+        if ($request->purchase_requisition_id) {
+            $pr = \App\Models\PurchaseRequisition::find($request->purchase_requisition_id);
+            if ($pr) {
+                $mode = $pr->mode;
+                
+                // pr_ops: supplier wajib
+                if ($mode === 'pr_ops' && empty($request->supplier_id)) {
+                    return back()->with('error', 'Supplier harus dipilih untuk payment dengan mode PR Ops.');
+                }
+                
+                // purchase_payment: supplier optional (bisa kosong)
+                // travel_application dan kasbon: supplier tidak perlu (bisa kosong)
+                // No validation needed for these modes
+            }
+        } else if ($request->purchase_order_ops_id) {
+            // For PO, supplier is always required (from PO)
+            if (empty($request->supplier_id)) {
+                return back()->with('error', 'Supplier harus dipilih untuk payment.');
+            }
         }
 
         // Check if PO already has a payment (only for lunas payment)
@@ -843,7 +880,7 @@ class NonFoodPaymentController extends Controller
                 'payment_number' => $paymentNumber,
                 'purchase_order_ops_id' => $request->purchase_order_ops_id,
                 'purchase_requisition_id' => $request->purchase_requisition_id,
-                'supplier_id' => $request->supplier_id,
+                'supplier_id' => !empty($request->supplier_id) ? $request->supplier_id : null,
                 'amount' => $request->amount,
                 'payment_method' => $request->payment_method,
                 'payment_date' => $request->payment_date,
@@ -1480,6 +1517,13 @@ class NonFoodPaymentController extends Controller
             
             // Finance Manager approvals (id_jabatan == 160) and Superadmin
             if (($user->id_jabatan == 160 && $user->status == 'A') || $isSuperadmin) {
+                // Get approver name for this level
+                $approver = DB::table('users')
+                    ->where('id_jabatan', 160)
+                    ->where('status', 'A')
+                    ->select('nama_lengkap')
+                    ->first();
+                
                 $financeManagerApprovals = $query->get();
                 
                 foreach ($financeManagerApprovals as $nfp) {
@@ -1504,6 +1548,7 @@ class NonFoodPaymentController extends Controller
                         'creator' => $nfp->creator ? ['nama_lengkap' => $nfp->creator->nama_lengkap] : null,
                         'payment_type' => $paymentType,
                         'source_number' => $sourceNumber,
+                        'approver_name' => $approver ? $approver->nama_lengkap : 'Finance Manager',
                         'description' => $nfp->description,
                         'notes' => $nfp->notes,
                         'created_at' => $nfp->created_at

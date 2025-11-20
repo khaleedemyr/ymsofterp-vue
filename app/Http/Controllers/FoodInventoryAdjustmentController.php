@@ -139,7 +139,7 @@ class FoodInventoryAdjustmentController extends Controller
                 } else {
                     throw new \Exception('Status dokumen tidak valid untuk approval');
                 }
-            } else if ($user->id_jabatan == 161 && $adj->status == 'waiting_approval') {
+            } else if (in_array($user->id_jabatan, [161, 172]) && $adj->status == 'waiting_approval') {
                 $update['status'] = 'waiting_cost_control';
                 $update['approved_by_ssd_manager'] = $user->id;
                 $update['approved_at_ssd_manager'] = now();
@@ -197,7 +197,7 @@ class FoodInventoryAdjustmentController extends Controller
             $adj = DB::table('food_inventory_adjustments')->where('id', $id)->first();
             if (!$adj) throw new \Exception('Adjustment not found');
             $update = ['status' => 'rejected', 'updated_at' => now()];
-            if ($user->id_jabatan == 161) {
+            if (in_array($user->id_jabatan, [161, 172])) {
                 $update['ssd_manager_note'] = $request->note;
             } else if ($user->id_jabatan == 167) {
                 $update['cost_control_manager_note'] = $request->note;
