@@ -306,24 +306,25 @@
                                     <p class="text-sm">{{ message.message }}</p>
                                     
                                     <!-- File Attachments -->
-                                    <div v-if="message.file_path && selectedConversation" class="mt-2">
+                                    <div v-if="message.file_path" class="mt-2">
                                         <div v-for="(file, index) in getFileAttachments(message.file_path)" 
-                                             :key="index" 
+                                             :key="`file-${message.id}-${index}`"
                                              class="mb-2">
                                             <!-- Image thumbnail -->
-                                            <div v-if="isImageFile(file.original_name)" class="relative">
-                                                <img :src="`/api/support/conversations/${selectedConversation.id}/messages/${message.id}/files/${index}`" 
-                                                     @click="openLightbox(`/api/support/conversations/${selectedConversation.id}/messages/${message.id}/files/${index}`)"
-                                                     class="max-w-full h-32 object-cover rounded cursor-pointer hover:opacity-80 transition-opacity"
-                                                     alt="Attachment">
+                                            <div v-if="file && file.original_name && file.file_path && isImageFile(file.original_name)" class="relative">
+                                                <img :src="`/storage/${file.file_path}`" 
+                                                     @click="openLightbox(`/storage/${file.file_path}`)"
+                                                     class="max-w-full h-32 object-cover rounded cursor-pointer hover:opacity-80 transition-opacity border border-gray-300"
+                                                     :alt="file.original_name || 'Attachment'"
+                                                     @error="handleImageError">
                                             </div>
                                             <!-- File icon -->
-                                            <div v-else class="flex items-center gap-2 p-2 bg-white bg-opacity-20 rounded">
+                                            <div v-else-if="file && file.original_name && file.file_path" class="flex items-center gap-2 p-2 bg-white bg-opacity-20 rounded">
                                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
                                                 </svg>
                                                 <span class="text-xs flex-1 truncate">{{ file.original_name }}</span>
-                                                <a :href="`/api/support/conversations/${selectedConversation.id}/messages/${message.id}/files/${index}`" 
+                                                <a :href="`/storage/${file.file_path}`" 
                                                    target="_blank" 
                                                    class="text-xs hover:underline">
                                                     <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -636,6 +637,19 @@ const fetchMessages = async (conversationId) => {
     try {
         const response = await axios.get(`/api/support/conversations/${conversationId}/messages`);
         messages.value = response.data;
+        
+        // Debug: Log messages with attachments
+        messages.value.forEach(msg => {
+            if (msg.file_path) {
+                console.log('Message with file_path:', {
+                    id: msg.id,
+                    file_path: msg.file_path,
+                    file_path_type: typeof msg.file_path,
+                    is_array: Array.isArray(msg.file_path),
+                    parsed: getFileAttachments(msg.file_path)
+                });
+            }
+        });
     } catch (error) {
         console.error('Error fetching messages:', error);
     }
@@ -881,17 +895,40 @@ const getSubjectWithIcon = (subject) => {
 };
 
 const getFileAttachments = (filePath) => {
-    try {
-        return JSON.parse(filePath);
-    } catch (e) {
-        // Fallback for old single file format
-        return [{
-            original_name: 'attachment',
-            file_path: filePath,
-            file_size: 0,
-            mime_type: 'application/octet-stream'
-        }];
+    if (!filePath) {
+        return [];
     }
+    
+    // If already an array, return it directly
+    if (Array.isArray(filePath)) {
+        return filePath;
+    }
+    
+    // If it's a string, try to parse it
+    if (typeof filePath === 'string') {
+        try {
+            const parsed = JSON.parse(filePath);
+            // Ensure it's an array
+            if (Array.isArray(parsed)) {
+                return parsed;
+            }
+            // If it's an object, wrap it in array
+            if (parsed && typeof parsed === 'object') {
+                return [parsed];
+            }
+        } catch (e) {
+            console.error('Error parsing file_path:', e, filePath);
+            // Fallback for old single file format
+            return [{
+                original_name: 'attachment',
+                file_path: filePath,
+                file_size: 0,
+                mime_type: 'application/octet-stream'
+            }];
+        }
+    }
+    
+    return [];
 };
 
 const handleImageError = (event) => {
