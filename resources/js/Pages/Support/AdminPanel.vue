@@ -306,7 +306,13 @@
                                     <p class="text-sm">{{ message.message }}</p>
                                     
                                     <!-- File Attachments -->
-                                    <div v-if="message.file_path" class="mt-2">
+                                    <div v-if="message.file_path && getFileAttachments(message.file_path).length > 0" class="mt-2">
+                                        <div class="mb-1 text-xs opacity-75 flex items-center gap-1">
+                                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path>
+                                            </svg>
+                                            Attachment
+                                        </div>
                                         <div v-for="(file, index) in getFileAttachments(message.file_path)" :key="index" 
                                              class="mb-2">
                                             <!-- Image thumbnail -->
@@ -314,7 +320,8 @@
                                                 <img :src="`/api/support/conversations/${selectedConversation.id}/messages/${message.id}/files/${index}`" 
                                                      @click="openLightbox(`/api/support/conversations/${selectedConversation.id}/messages/${message.id}/files/${index}`)"
                                                      class="max-w-full h-32 object-cover rounded cursor-pointer hover:opacity-80 transition-opacity"
-                                                     alt="Attachment">
+                                                     alt="Attachment"
+                                                     @error="handleImageError">
                                             </div>
                                             <!-- File icon -->
                                             <div v-else class="flex items-center gap-2 p-2 bg-white bg-opacity-20 rounded">
@@ -880,17 +887,39 @@ const getSubjectWithIcon = (subject) => {
 };
 
 const getFileAttachments = (filePath) => {
-    try {
-        return JSON.parse(filePath);
-    } catch (e) {
-        // Fallback for old single file format
-        return [{
-            original_name: 'attachment',
-            file_path: filePath,
-            file_size: 0,
-            mime_type: 'application/octet-stream'
-        }];
+    if (!filePath) {
+        return [];
     }
+    
+    try {
+        const parsed = JSON.parse(filePath);
+        // Ensure it's an array
+        if (Array.isArray(parsed)) {
+            return parsed.filter(file => file && file.original_name); // Filter out invalid entries
+        }
+        // If it's an object (single file), wrap it in array
+        if (parsed && typeof parsed === 'object' && parsed.original_name) {
+            return [parsed];
+        }
+        return [];
+    } catch (e) {
+        // Fallback for old single file format (string path)
+        if (typeof filePath === 'string' && filePath.trim() !== '') {
+            return [{
+                original_name: filePath.split('/').pop() || 'attachment',
+                file_path: filePath,
+                file_size: 0,
+                mime_type: 'application/octet-stream'
+            }];
+        }
+        return [];
+    }
+};
+
+const handleImageError = (event) => {
+    console.error('Error loading attachment image:', event.target.src);
+    // Optionally show error message or placeholder
+    event.target.style.display = 'none';
 };
 
 const isImageFile = (fileName) => {
