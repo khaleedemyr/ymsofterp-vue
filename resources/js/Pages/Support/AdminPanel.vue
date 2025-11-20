@@ -308,18 +308,17 @@
                                     <!-- File Attachments -->
                                     <div v-if="message.file_path && selectedConversation" class="mt-2">
                                         <div v-for="(file, index) in getFileAttachments(message.file_path)" 
-                                             :key="`file-${message.id}-${index}`"
+                                             :key="index" 
                                              class="mb-2">
                                             <!-- Image thumbnail -->
-                                            <div v-if="file && file.original_name && isImageFile(file.original_name)" class="relative">
+                                            <div v-if="isImageFile(file.original_name)" class="relative">
                                                 <img :src="`/api/support/conversations/${selectedConversation.id}/messages/${message.id}/files/${index}`" 
                                                      @click="openLightbox(`/api/support/conversations/${selectedConversation.id}/messages/${message.id}/files/${index}`)"
-                                                     class="max-w-full h-32 object-cover rounded cursor-pointer hover:opacity-80 transition-opacity border border-gray-300"
-                                                     :alt="file.original_name"
-                                                     @error="handleImageError">
+                                                     class="max-w-full h-32 object-cover rounded cursor-pointer hover:opacity-80 transition-opacity"
+                                                     alt="Attachment">
                                             </div>
                                             <!-- File icon -->
-                                            <div v-else-if="file && file.original_name" class="flex items-center gap-2 p-2 bg-white bg-opacity-20 rounded">
+                                            <div v-else class="flex items-center gap-2 p-2 bg-white bg-opacity-20 rounded">
                                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
                                                 </svg>
@@ -882,29 +881,10 @@ const getSubjectWithIcon = (subject) => {
 };
 
 const getFileAttachments = (filePath) => {
-    if (!filePath) {
-        return [];
-    }
-    
     try {
-        const parsed = JSON.parse(filePath);
-        // Ensure it's an array
-        if (Array.isArray(parsed)) {
-            return parsed.filter(file => file && file.original_name); // Filter out invalid entries
-        }
-        // If it's an object (single file), wrap it in array
-        if (parsed && typeof parsed === 'object' && parsed.original_name) {
-            return [parsed];
-        }
-        // Fallback for old single file format
-        return [{
-            original_name: 'attachment',
-            file_path: filePath,
-            file_size: 0,
-            mime_type: 'application/octet-stream'
-        }];
+        return JSON.parse(filePath);
     } catch (e) {
-        // Fallback for old single file format (string path)
+        // Fallback for old single file format
         return [{
             original_name: 'attachment',
             file_path: filePath,
@@ -921,7 +901,6 @@ const handleImageError = (event) => {
 };
 
 const isImageFile = (fileName) => {
-    if (!fileName) return false;
     const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp'];
     const extension = fileName.toLowerCase().substring(fileName.lastIndexOf('.'));
     return imageExtensions.includes(extension);
