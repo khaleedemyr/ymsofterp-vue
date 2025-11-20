@@ -306,25 +306,20 @@
                                     <p class="text-sm">{{ message.message }}</p>
                                     
                                     <!-- File Attachments -->
-                                    <div v-if="message.file_path && getFileAttachments(message.file_path).length > 0" class="mt-2">
-                                        <div class="mb-1 text-xs opacity-75 flex items-center gap-1">
-                                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path>
-                                            </svg>
-                                            Attachment
-                                        </div>
-                                        <div v-for="(file, index) in getFileAttachments(message.file_path)" :key="index" 
+                                    <div v-if="message.file_path && selectedConversation" class="mt-2">
+                                        <div v-for="(file, index) in getFileAttachments(message.file_path)" 
+                                             :key="`file-${message.id}-${index}`"
                                              class="mb-2">
                                             <!-- Image thumbnail -->
-                                            <div v-if="isImageFile(file.original_name)" class="relative">
+                                            <div v-if="file && file.original_name && isImageFile(file.original_name)" class="relative">
                                                 <img :src="`/api/support/conversations/${selectedConversation.id}/messages/${message.id}/files/${index}`" 
                                                      @click="openLightbox(`/api/support/conversations/${selectedConversation.id}/messages/${message.id}/files/${index}`)"
-                                                     class="max-w-full h-32 object-cover rounded cursor-pointer hover:opacity-80 transition-opacity"
-                                                     alt="Attachment"
+                                                     class="max-w-full h-32 object-cover rounded cursor-pointer hover:opacity-80 transition-opacity border border-gray-300"
+                                                     :alt="file.original_name"
                                                      @error="handleImageError">
                                             </div>
                                             <!-- File icon -->
-                                            <div v-else class="flex items-center gap-2 p-2 bg-white bg-opacity-20 rounded">
+                                            <div v-else-if="file && file.original_name" class="flex items-center gap-2 p-2 bg-white bg-opacity-20 rounded">
                                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
                                                 </svg>
@@ -901,18 +896,21 @@ const getFileAttachments = (filePath) => {
         if (parsed && typeof parsed === 'object' && parsed.original_name) {
             return [parsed];
         }
-        return [];
+        // Fallback for old single file format
+        return [{
+            original_name: 'attachment',
+            file_path: filePath,
+            file_size: 0,
+            mime_type: 'application/octet-stream'
+        }];
     } catch (e) {
         // Fallback for old single file format (string path)
-        if (typeof filePath === 'string' && filePath.trim() !== '') {
-            return [{
-                original_name: filePath.split('/').pop() || 'attachment',
-                file_path: filePath,
-                file_size: 0,
-                mime_type: 'application/octet-stream'
-            }];
-        }
-        return [];
+        return [{
+            original_name: 'attachment',
+            file_path: filePath,
+            file_size: 0,
+            mime_type: 'application/octet-stream'
+        }];
     }
 };
 
@@ -923,6 +921,7 @@ const handleImageError = (event) => {
 };
 
 const isImageFile = (fileName) => {
+    if (!fileName) return false;
     const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp'];
     const extension = fileName.toLowerCase().substring(fileName.lastIndexOf('.'));
     return imageExtensions.includes(extension);
