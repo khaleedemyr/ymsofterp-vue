@@ -26,7 +26,9 @@ class NonFoodPayment extends Model
         'created_by',
         'approved_by',
         'approved_at',
-        'notes'
+        'notes',
+        'is_partial_payment',
+        'payment_sequence'
     ];
 
     protected $casts = [

@@ -478,12 +478,7 @@ async function approveMultiple() {
                     requestData.ssd_manager_note = '';
                 }
                 
-                await axios.post(endpoint, requestData, {
-                    headers: {
-                        'Accept': 'application/json',
-                        'Content-Type': 'application/json'
-                    }
-                });
+                await axios.post(endpoint, requestData);
                 
                 return { success: true, prId };
             } catch (err) {
@@ -597,12 +592,7 @@ async function approvePR() {
             requestData.ssd_manager_note = '';
         }
         
-        const response = await axios.post(endpoint, requestData, {
-            headers: {
-                'Accept': 'application/json',
-                'Content-Type': 'application/json'
-            }
-        });
+        const response = await axios.post(endpoint, requestData);
         
         if (response.data && response.data.success) {
             Swal.fire('Success', response.data.message || 'PR Food berhasil disetujui', 'success');
@@ -789,12 +779,7 @@ async function approveMultipleAll() {
                     requestData.ssd_manager_note = '';
                 }
                 
-                await axios.post(endpoint, requestData, {
-                    headers: {
-                        'Accept': 'application/json',
-                        'Content-Type': 'application/json'
-                    }
-                });
+                await axios.post(endpoint, requestData);
                 
                 return { success: true, prId };
             } catch (err) {

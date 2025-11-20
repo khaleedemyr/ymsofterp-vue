@@ -315,6 +315,8 @@ class PurchaseOrderOpsController extends Controller
             'discount_total_amount' => 'nullable|numeric|min:0',
             'ppn_enabled' => 'boolean',
             'notes' => 'nullable|string',
+            'payment_type' => 'required|in:lunas,termin',
+            'payment_terms' => 'nullable|string|max:500',
         ]);
 
         try {
@@ -431,6 +433,8 @@ class PurchaseOrderOpsController extends Controller
                     'discount_total_percent' => $discountTotalPercent,
                     'discount_total_amount' => $discountTotalAmount,
                     'grand_total' => $grandTotal,
+                    'payment_type' => $request->payment_type ?? 'lunas',
+                    'payment_terms' => $request->payment_terms ?? null,
                     'source_type' => 'purchase_requisition_ops',
                     'source_id' => $prIds->first(),
                 ];

@@ -558,6 +558,20 @@ const canDeleteAttachment = (attachment) => {
               <label class="text-sm font-medium text-gray-600">Notes</label>
               <p class="text-gray-900 mt-1">{{ po.notes }}</p>
             </div>
+            
+            <div class="mt-4">
+              <label class="text-sm font-medium text-gray-600">Metode Pembayaran</label>
+              <div class="mt-1">
+                <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium"
+                      :class="po.payment_type === 'lunas' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'">
+                  <i :class="po.payment_type === 'lunas' ? 'fa fa-check-circle mr-1' : 'fa fa-calendar-alt mr-1'"></i>
+                  {{ po.payment_type === 'lunas' ? 'Bayar Lunas' : 'Termin Bayar' }}
+                </span>
+              </div>
+              <p v-if="po.payment_type === 'termin' && po.payment_terms" class="text-gray-700 mt-2 text-sm">
+                <strong>Detail Termin:</strong> {{ po.payment_terms }}
+              </p>
+            </div>
           </div>
 
           <!-- Budget Information -->

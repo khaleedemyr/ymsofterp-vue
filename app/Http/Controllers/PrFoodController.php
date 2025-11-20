@@ -344,15 +344,15 @@ class PrFoodController extends Controller
             );
         }
         
-        if ($request->expectsJson() || $request->ajax()) {
-            return response()->json([
-                'success' => true,
-                'message' => $request->approved ? 'PR Food berhasil disetujui' : 'PR Food berhasil ditolak',
-                'pr_food' => $prFood->fresh()
-            ]);
-        }
-        
-        return redirect()->route('pr-foods.index');
+        // Return JSON response for axios requests
+        // Component will handle the response and reload data
+        return response()->json([
+            'success' => true,
+            'message' => $request->approved ? 'PR Food berhasil disetujui' : 'PR Food berhasil ditolak',
+            'pr_food' => $prFood->fresh()
+        ], 200, [
+            'Content-Type' => 'application/json',
+        ], JSON_UNESCAPED_UNICODE);
     }
 
     // Approval SSD Manager
@@ -424,15 +424,15 @@ class PrFoodController extends Controller
             \Log::info('Notif reject sent', ['user_id' => $requestedBy, 'pr_id' => $prFood->id]);
         }
         
-        if ($request->expectsJson() || $request->ajax()) {
-            return response()->json([
-                'success' => true,
-                'message' => $request->approved ? 'PR Food berhasil disetujui' : 'PR Food berhasil ditolak',
-                'pr_food' => $prFood->fresh()
-            ]);
-        }
-        
-        return redirect()->route('pr-foods.index');
+        // Return JSON response for axios requests
+        // Component will handle the response and reload data
+        return response()->json([
+            'success' => true,
+            'message' => $request->approved ? 'PR Food berhasil disetujui' : 'PR Food berhasil ditolak',
+            'pr_food' => $prFood->fresh()
+        ], 200, [
+            'Content-Type' => 'application/json',
+        ], JSON_UNESCAPED_UNICODE);
     }
 
     // Approval Vice COO

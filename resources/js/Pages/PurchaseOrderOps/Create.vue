@@ -13,6 +13,7 @@ const loading = ref(false);
 const generatingPO = ref(false);
 const expandedPRs = ref({});
 const notes = ref('');
+const showTutorial = ref(false);
 
 // Form untuk generate PO
 const poForm = useForm({
@@ -20,6 +21,8 @@ const poForm = useForm({
     ppn_enabled: false, // PPN switch
     discount_total_percent: 0, // Discount total percent
     discount_total_amount: 0, // Discount total amount
+    payment_type: 'lunas', // Payment type: 'lunas' or 'termin'
+    payment_terms: '', // Payment terms description (for termin)
 });
 
 // Fetch PR list yang belum di-PO
@@ -439,6 +442,53 @@ onMounted(() => {
             </div>
           </div>
         </div>
+        <!-- Payment Type -->
+        <div class="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
+          <div class="flex items-center justify-between mb-3">
+            <h4 class="text-sm font-semibold text-blue-800">Metode Pembayaran</h4>
+            <button
+              type="button"
+              @click="showTutorial = true"
+              class="text-blue-600 hover:text-blue-800 text-xs font-medium flex items-center gap-1"
+            >
+              <i class="fa fa-question-circle"></i>
+              <span class="text-red-600 font-semibold">Klik disini untuk tutorial</span>
+            </button>
+          </div>
+          <div class="space-y-3">
+            <div class="flex items-center space-x-4">
+              <label class="flex items-center">
+                <input
+                  type="radio"
+                  v-model="poForm.payment_type"
+                  value="lunas"
+                  class="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50"
+                />
+                <span class="ml-2 text-sm text-gray-700">Bayar Lunas</span>
+              </label>
+              <label class="flex items-center">
+                <input
+                  type="radio"
+                  v-model="poForm.payment_type"
+                  value="termin"
+                  class="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50"
+                />
+                <span class="ml-2 text-sm text-gray-700">Termin Bayar</span>
+              </label>
+            </div>
+            <!-- Payment Terms Input (only show if termin selected) -->
+            <div v-if="poForm.payment_type === 'termin'">
+              <label class="block text-sm font-medium text-gray-700 mb-1">Detail Termin Pembayaran</label>
+              <textarea
+                v-model="poForm.payment_terms"
+                rows="2"
+                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="Contoh: 50% DP saat PO, 50% saat barang diterima"
+              ></textarea>
+            </div>
+          </div>
+        </div>
+
         <!-- PPN Toggle -->
         <div class="mb-6">
           <label class="flex items-center">
@@ -826,6 +876,174 @@ onMounted(() => {
           <p class="text-white bg-black bg-opacity-50 px-3 py-1 rounded-lg text-sm">
             {{ lightboxImage?.file_name }}
           </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tutorial Modal -->
+    <div v-if="showTutorial" class="fixed inset-0 z-50 overflow-y-auto" @click.self="showTutorial = false">
+      <div class="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0">
+        <!-- Background overlay -->
+        <div class="fixed inset-0 transition-opacity bg-gray-500 bg-opacity-75" @click="showTutorial = false"></div>
+
+        <!-- Modal panel -->
+        <div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-5xl sm:w-full">
+          <!-- Header -->
+          <div class="bg-blue-600 px-6 py-4 flex items-center justify-between">
+            <h3 class="text-lg font-semibold text-white">
+              <i class="fa fa-graduation-cap mr-2"></i>
+              Tutorial: Metode Pembayaran (Payment Type)
+            </h3>
+            <button
+              @click="showTutorial = false"
+              class="text-white hover:text-gray-200 focus:outline-none"
+            >
+              <i class="fa fa-times text-xl"></i>
+            </button>
+          </div>
+
+          <!-- Content -->
+          <div class="px-6 py-6 max-h-[70vh] overflow-y-auto">
+            <div class="space-y-6">
+              <!-- Introduction -->
+              <div class="bg-blue-50 border-l-4 border-blue-500 p-4 rounded">
+                <h4 class="font-semibold text-blue-800 mb-2">
+                  <i class="fa fa-info-circle mr-2"></i>
+                  Apa itu Metode Pembayaran?
+                </h4>
+                <p class="text-sm text-blue-700">
+                  Metode pembayaran menentukan cara pembayaran untuk Purchase Order ini. Sistem mendukung dua jenis:
+                  <strong>Bayar Lunas</strong> (pembayaran penuh sekaligus) dan <strong>Termin Bayar</strong> (pembayaran bertahap).
+                  Pilihan ini akan mempengaruhi cara pembayaran di menu Non Food Payment nantinya.
+                </p>
+              </div>
+
+              <!-- Step 1: Bayar Lunas -->
+              <div class="border border-gray-200 rounded-lg p-4">
+                <div class="flex items-start">
+                  <div class="flex-shrink-0 w-8 h-8 bg-green-600 text-white rounded-full flex items-center justify-center font-bold">
+                    1
+                  </div>
+                  <div class="ml-4 flex-1">
+                    <h4 class="font-semibold text-gray-900 mb-2">
+                      <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 mr-2">
+                        Bayar Lunas
+                      </span>
+                      Pembayaran Penuh Sekaligus
+                    </h4>
+                    <ul class="text-sm text-gray-700 space-y-1 list-disc list-inside">
+                      <li>Pilih opsi <strong>"Bayar Lunas"</strong> untuk pembayaran penuh sekaligus</li>
+                      <li>Cocok untuk pembayaran langsung setelah barang diterima</li>
+                      <li>Di menu Non Food Payment, hanya bisa membuat <strong>1x pembayaran</strong> dengan amount = Grand Total PO</li>
+                      <li>Tidak perlu mengisi detail termin</li>
+                    </ul>
+                    <div class="bg-green-50 border-l-4 border-green-500 p-3 rounded mt-2">
+                      <p class="text-xs text-green-800">
+                        <i class="fa fa-check-circle mr-1"></i>
+                        <strong>Contoh:</strong> PO dengan Grand Total Rp 10.000.000 → Payment 1x sebesar Rp 10.000.000
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Step 2: Termin Bayar -->
+              <div class="border border-gray-200 rounded-lg p-4">
+                <div class="flex items-start">
+                  <div class="flex-shrink-0 w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center font-bold">
+                    2
+                  </div>
+                  <div class="ml-4 flex-1">
+                    <h4 class="font-semibold text-gray-900 mb-2">
+                      <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 mr-2">
+                        Termin Bayar
+                      </span>
+                      Pembayaran Bertahap
+                    </h4>
+                    <ul class="text-sm text-gray-700 space-y-1 list-disc list-inside">
+                      <li>Pilih opsi <strong>"Termin Bayar"</strong> untuk pembayaran bertahap</li>
+                      <li>Cocok untuk pembayaran yang dibagi menjadi beberapa termin</li>
+                      <li>Di menu Non Food Payment, bisa membuat <strong>multiple payments</strong> sampai lunas</li>
+                      <li><strong>Wajib</strong> mengisi "Detail Termin Pembayaran"</li>
+                    </ul>
+                    <div class="bg-blue-50 border-l-4 border-blue-500 p-3 rounded mt-2">
+                      <p class="text-xs text-blue-800 mb-2">
+                        <i class="fa fa-info-circle mr-1"></i>
+                        <strong>Detail Termin Pembayaran:</strong>
+                      </p>
+                      <ul class="text-xs text-blue-700 space-y-1 list-disc list-inside ml-4">
+                        <li>Contoh: "50% di muka, 50% setelah barang diterima"</li>
+                        <li>Contoh: "30% di muka, 40% saat pengiriman, 30% setelah diterima"</li>
+                        <li>Detail ini akan muncul di menu Non Food Payment sebagai referensi</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Step 3: Flow di Non Food Payment -->
+              <div class="border border-gray-200 rounded-lg p-4">
+                <div class="flex items-start">
+                  <div class="flex-shrink-0 w-8 h-8 bg-purple-600 text-white rounded-full flex items-center justify-center font-bold">
+                    3
+                  </div>
+                  <div class="ml-4 flex-1">
+                    <h4 class="font-semibold text-gray-900 mb-2">Dampak di Menu Non Food Payment</h4>
+                    <div class="space-y-3">
+                      <div class="bg-gray-50 p-3 rounded border border-gray-200">
+                        <p class="text-sm font-medium text-gray-900 mb-1">
+                          <i class="fa fa-check-circle text-green-500 mr-1"></i>
+                          Jika PO dengan <strong>Bayar Lunas</strong>:
+                        </p>
+                        <ul class="text-xs text-gray-700 space-y-1 list-disc list-inside ml-4">
+                          <li>Hanya bisa membuat 1x payment</li>
+                          <li>Amount harus = Grand Total PO</li>
+                          <li>Jika sudah ada payment, tidak bisa buat payment baru</li>
+                        </ul>
+                      </div>
+                      <div class="bg-gray-50 p-3 rounded border border-gray-200">
+                        <p class="text-sm font-medium text-gray-900 mb-1">
+                          <i class="fa fa-calendar-alt text-blue-500 mr-1"></i>
+                          Jika PO dengan <strong>Termin Bayar</strong>:
+                        </p>
+                        <ul class="text-xs text-gray-700 space-y-1 list-disc list-inside ml-4">
+                          <li>Bisa membuat multiple payments</li>
+                          <li>Amount bisa ≤ Sisa Pembayaran</li>
+                          <li>Sistem menampilkan: Total PO, Sudah Dibayar, Sisa Pembayaran</li>
+                          <li>Progress bar visual untuk tracking pembayaran</li>
+                          <li>Riwayat semua pembayaran untuk PO tersebut</li>
+                        </ul>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Tips -->
+              <div class="bg-amber-50 border-l-4 border-amber-500 p-4 rounded">
+                <h4 class="font-semibold text-amber-800 mb-2">
+                  <i class="fa fa-lightbulb mr-2"></i>
+                  Tips Penting
+                </h4>
+                <ul class="text-sm text-amber-700 space-y-1 list-disc list-inside">
+                  <li>Metode pembayaran <strong>tidak bisa diubah</strong> setelah PO dibuat</li>
+                  <li>Pastikan pilih metode yang sesuai dengan kesepakatan dengan supplier</li>
+                  <li>Untuk termin, isi detail termin dengan jelas untuk referensi di kemudian hari</li>
+                  <li>Detail termin hanya sebagai catatan, sistem tidak memvalidasi apakah pembayaran sesuai detail termin</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+
+          <!-- Footer -->
+          <div class="bg-gray-50 px-6 py-4 flex justify-end">
+            <button
+              @click="showTutorial = false"
+              class="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+            >
+              Tutup
+            </button>
+          </div>
         </div>
       </div>
     </div>

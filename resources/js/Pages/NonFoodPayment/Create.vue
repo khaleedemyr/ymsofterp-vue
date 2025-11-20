@@ -150,6 +150,19 @@
               <label class="block text-sm font-medium text-gray-700">Division</label>
               <p class="mt-1 text-gray-900">{{ selectedPR.division_name }}</p>
             </div>
+            <div v-if="selectedPO && selectedPO.payment_type">
+              <label class="block text-sm font-medium text-gray-700">Metode Pembayaran</label>
+              <div class="mt-1">
+                <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium"
+                      :class="selectedPO.payment_type === 'lunas' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'">
+                  <i :class="selectedPO.payment_type === 'lunas' ? 'fa fa-check-circle mr-1' : 'fa fa-calendar-alt mr-1'"></i>
+                  {{ selectedPO.payment_type === 'lunas' ? 'Bayar Lunas' : 'Termin Bayar' }}
+                </span>
+              </div>
+              <p v-if="selectedPO.payment_type === 'termin' && selectedPO.payment_terms" class="mt-2 text-sm text-gray-700">
+                <strong>Detail Termin:</strong> {{ selectedPO.payment_terms }}
+              </p>
+            </div>
           </div>
 
           <!-- PR Information Section (Title & Description) -->
@@ -449,18 +462,74 @@
               </p>
             </div>
 
+            <!-- Payment Termin Info (only for PO with termin payment) -->
+            <div v-if="selectedPO && selectedPO.payment_type === 'termin'" class="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-4">
+              <div class="flex items-center justify-between mb-3">
+                <h4 class="text-sm font-semibold text-blue-800 flex items-center">
+                  <i class="fa fa-calendar-alt mr-2"></i>
+                  Informasi Pembayaran Termin
+                </h4>
+                <button
+                  type="button"
+                  @click="showTutorial = true"
+                  class="text-blue-600 hover:text-blue-800 text-xs font-medium flex items-center gap-1"
+                >
+                  <i class="fa fa-question-circle"></i>
+                  <span class="text-red-600 font-semibold">Tutorial</span>
+                </button>
+              </div>
+              <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                <div>
+                  <label class="block text-xs font-medium text-gray-600 mb-1">Total PO</label>
+                  <p class="text-lg font-bold text-gray-900">{{ formatCurrency(selectedPO.grand_total) }}</p>
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-gray-600 mb-1">Sudah Dibayar</label>
+                  <p class="text-lg font-bold text-green-600">{{ formatCurrency(paymentInfo.total_paid) }}</p>
+                  <p class="text-xs text-gray-500 mt-1">{{ paymentInfo.payment_count }} pembayaran</p>
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-gray-600 mb-1">Sisa Pembayaran</label>
+                  <p class="text-lg font-bold" :class="paymentInfo.remaining > 0 ? 'text-red-600' : 'text-green-600'">
+                    {{ formatCurrency(paymentInfo.remaining) }}
+                  </p>
+                </div>
+              </div>
+              <div v-if="paymentInfo.remaining > 0" class="mt-3">
+                <div class="w-full bg-gray-200 rounded-full h-2.5">
+                  <div 
+                    class="bg-blue-600 h-2.5 rounded-full transition-all duration-300" 
+                    :style="{ width: `${(paymentInfo.total_paid / selectedPO.grand_total) * 100}%` }"
+                  ></div>
+                </div>
+                <p class="text-xs text-gray-600 mt-1 text-center">
+                  Progress: {{ ((paymentInfo.total_paid / selectedPO.grand_total) * 100).toFixed(1) }}%
+                </p>
+              </div>
+              <div v-else class="mt-3 p-2 bg-green-100 border border-green-300 rounded-lg">
+                <p class="text-sm text-green-800 text-center font-medium">
+                  <i class="fa fa-check-circle mr-1"></i>
+                  PO sudah lunas!
+                </p>
+              </div>
+            </div>
+
             <!-- Amount (Auto-filled from PO/PR, but editable) -->
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-2">
                 Amount * 
                 <span class="text-xs font-normal text-gray-500">(Dapat diubah)</span>
+                <span v-if="selectedPO && selectedPO.payment_type === 'termin'" class="text-xs font-normal text-blue-600 ml-2">
+                  (Maks: {{ formatCurrency(paymentInfo.remaining) }})
+                </span>
               </label>
               <div class="relative">
                 <input 
                   type="number" 
                   v-model="form.amount" 
                   step="0.01"
-                  min="0"
+                  :min="0"
+                  :max="selectedPO && selectedPO.payment_type === 'termin' ? paymentInfo.remaining : undefined"
                   required 
                   class="w-full px-4 py-2 pr-24 rounded-xl border border-gray-300 focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition"
                   placeholder="0.00"
@@ -482,6 +551,10 @@
               </p>
               <p v-if="selectedPO || selectedPR" class="mt-1 text-xs text-gray-600">
                 Nilai {{ selectedPO ? 'PO' : 'PR' }}: <strong>{{ formatCurrency(originalAmount || (selectedPO ? selectedPO.grand_total : selectedPR.amount)) }}</strong>
+              </p>
+              <p v-if="selectedPO && selectedPO.payment_type === 'termin' && paymentInfo.remaining < selectedPO.grand_total" class="mt-1 text-xs text-blue-600">
+                <i class="fa fa-info-circle mr-1"></i>
+                Ini adalah pembayaran termin. Sisa yang harus dibayar: <strong>{{ formatCurrency(paymentInfo.remaining) }}</strong>
               </p>
             </div>
 
@@ -581,6 +654,220 @@
         </div>
       </div>
     </div>
+
+    <!-- Tutorial Modal -->
+    <div v-if="showTutorial" class="fixed inset-0 z-50 overflow-y-auto" @click.self="showTutorial = false">
+      <div class="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0">
+        <!-- Background overlay -->
+        <div class="fixed inset-0 transition-opacity bg-gray-500 bg-opacity-75" @click="showTutorial = false"></div>
+
+        <!-- Modal panel -->
+        <div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-5xl sm:w-full">
+          <!-- Header -->
+          <div class="bg-blue-600 px-6 py-4 flex items-center justify-between">
+            <h3 class="text-lg font-semibold text-white">
+              <i class="fa fa-graduation-cap mr-2"></i>
+              Tutorial: Pembayaran Termin & Cara Bayar Sisa
+            </h3>
+            <button
+              @click="showTutorial = false"
+              class="text-white hover:text-gray-200 focus:outline-none"
+            >
+              <i class="fa fa-times text-xl"></i>
+            </button>
+          </div>
+
+          <!-- Content -->
+          <div class="px-6 py-6 max-h-[70vh] overflow-y-auto">
+            <div class="space-y-6">
+              <!-- Introduction -->
+              <div class="bg-blue-50 border-l-4 border-blue-500 p-4 rounded">
+                <h4 class="font-semibold text-blue-800 mb-2">
+                  <i class="fa fa-info-circle mr-2"></i>
+                  Pembayaran untuk PO dengan Metode Termin
+                </h4>
+                <p class="text-sm text-blue-700">
+                  Jika PO dibuat dengan metode <strong>Termin Bayar</strong>, Anda bisa membuat multiple payments 
+                  sampai PO lunas. Sistem akan menampilkan informasi progress pembayaran dan sisa yang harus dibayar.
+                </p>
+              </div>
+
+              <!-- Step 1: Pilih PO dengan Termin -->
+              <div class="border border-gray-200 rounded-lg p-4">
+                <div class="flex items-start">
+                  <div class="flex-shrink-0 w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center font-bold">
+                    1
+                  </div>
+                  <div class="ml-4 flex-1">
+                    <h4 class="font-semibold text-gray-900 mb-2">Pilih PO dengan Payment Type = Termin</h4>
+                    <ul class="text-sm text-gray-700 space-y-1 list-disc list-inside">
+                      <li>Di form Create Payment, pilih PO yang sudah di-approve</li>
+                      <li>PO dengan payment_type = 'termin' akan menampilkan badge <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">Termin Bayar</span></li>
+                      <li>Sistem akan otomatis menampilkan informasi pembayaran termin</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Step 2: Lihat Informasi Pembayaran -->
+              <div class="border border-gray-200 rounded-lg p-4">
+                <div class="flex items-start">
+                  <div class="flex-shrink-0 w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center font-bold">
+                    2
+                  </div>
+                  <div class="ml-4 flex-1">
+                    <h4 class="font-semibold text-gray-900 mb-2">Lihat Informasi Pembayaran Termin</h4>
+                    <p class="text-sm text-gray-700 mb-2">
+                      Setelah memilih PO dengan termin, akan muncul box informasi:
+                    </p>
+                    <div class="bg-gray-50 p-3 rounded border border-gray-200">
+                      <ul class="text-xs text-gray-700 space-y-1">
+                        <li><strong>Total PO:</strong> Grand total dari PO</li>
+                        <li><strong>Sudah Dibayar:</strong> Total semua payment yang sudah dibuat (approved/paid)</li>
+                        <li><strong>Sisa Pembayaran:</strong> Total PO - Sudah Dibayar</li>
+                        <li><strong>Progress Bar:</strong> Visual progress pembayaran (persentase)</li>
+                        <li><strong>Detail Termin:</strong> Catatan termin dari PO (contoh: "50% di muka, 50% setelah barang diterima")</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Step 3: Input Amount -->
+              <div class="border border-gray-200 rounded-lg p-4">
+                <div class="flex items-start">
+                  <div class="flex-shrink-0 w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center font-bold">
+                    3
+                  </div>
+                  <div class="ml-4 flex-1">
+                    <h4 class="font-semibold text-gray-900 mb-2">Input Amount Pembayaran</h4>
+                    <p class="text-sm text-gray-700 mb-2">
+                      Field Amount akan otomatis terisi dengan <strong>Sisa Pembayaran</strong>. Anda punya 2 opsi:
+                    </p>
+                    <div class="space-y-2">
+                      <div class="bg-green-50 border-l-4 border-green-500 p-3 rounded">
+                        <p class="text-xs font-medium text-green-800 mb-1">
+                          <i class="fa fa-check-circle mr-1"></i>
+                          Opsi A: Bayar Sisa Penuh (Lunas)
+                        </p>
+                        <ul class="text-xs text-green-700 space-y-1 list-disc list-inside ml-4">
+                          <li>Biarkan amount = Sisa Pembayaran</li>
+                          <li>Atau klik tombol <strong>Reset</strong> untuk set ke sisa</li>
+                          <li>Setelah payment ini, PO akan <strong>LUNAS</strong> ✅</li>
+                        </ul>
+                      </div>
+                      <div class="bg-blue-50 border-l-4 border-blue-500 p-3 rounded">
+                        <p class="text-xs font-medium text-blue-800 mb-1">
+                          <i class="fa fa-calendar-alt mr-1"></i>
+                          Opsi B: Bayar Sebagian (Partial)
+                        </p>
+                        <ul class="text-xs text-blue-700 space-y-1 list-disc list-inside ml-4">
+                          <li>Ubah amount menjadi lebih kecil dari sisa</li>
+                          <li>Contoh: Sisa Rp 5.000.000 → Input Rp 3.000.000</li>
+                          <li>Masih ada sisa, bisa buat payment lagi nanti</li>
+                        </ul>
+                      </div>
+                    </div>
+                    <div class="bg-amber-50 border-l-4 border-amber-500 p-3 rounded mt-2">
+                      <p class="text-xs text-amber-800">
+                        <i class="fa fa-exclamation-triangle mr-1"></i>
+                        <strong>Validasi:</strong> Amount tidak boleh melebihi Sisa Pembayaran. Sistem akan menolak jika amount > sisa.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Step 4: Cara Bayar Sisa Termin -->
+              <div class="border border-gray-200 rounded-lg p-4">
+                <div class="flex items-start">
+                  <div class="flex-shrink-0 w-8 h-8 bg-purple-600 text-white rounded-full flex items-center justify-center font-bold">
+                    4
+                  </div>
+                  <div class="ml-4 flex-1">
+                    <h4 class="font-semibold text-gray-900 mb-2">Cara Membayar Sisa Termin (Payment Berikutnya)</h4>
+                    <p class="text-sm text-gray-700 mb-2">
+                      Jika sudah ada payment sebelumnya dan masih ada sisa:
+                    </p>
+                    <ol class="text-sm text-gray-700 space-y-2 list-decimal list-inside">
+                      <li>Buka menu <strong>Non Food Payment → Create</strong></li>
+                      <li>Pilih <strong>PO yang sama</strong> (yang sudah punya payment sebelumnya)</li>
+                      <li>Lihat info: <strong>Sisa Pembayaran</strong> akan otomatis ter-update</li>
+                      <li>Input amount untuk pembayaran berikutnya (≤ Sisa Pembayaran)</li>
+                      <li>Submit dan approve payment</li>
+                      <li>Ulangi sampai PO lunas (Sisa = 0)</li>
+                    </ol>
+                    <div class="bg-purple-50 border-l-4 border-purple-500 p-3 rounded mt-2">
+                      <p class="text-xs text-purple-800">
+                        <i class="fa fa-info-circle mr-1"></i>
+                        <strong>Catatan:</strong> Setiap payment akan punya sequence number (#1, #2, #3, dst) dan bisa dilihat di Show page.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Step 5: Perbedaan Lunas vs Termin -->
+              <div class="border border-gray-200 rounded-lg p-4">
+                <div class="flex items-start">
+                  <div class="flex-shrink-0 w-8 h-8 bg-green-600 text-white rounded-full flex items-center justify-center font-bold">
+                    5
+                  </div>
+                  <div class="ml-4 flex-1">
+                    <h4 class="font-semibold text-gray-900 mb-2">Perbedaan: PO Lunas vs PO Termin</h4>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mt-2">
+                      <div class="bg-green-50 p-3 rounded border border-green-200">
+                        <p class="text-xs font-semibold text-green-800 mb-1">PO dengan Bayar Lunas:</p>
+                        <ul class="text-xs text-green-700 space-y-1 list-disc list-inside">
+                          <li>Hanya 1x payment</li>
+                          <li>Amount = Grand Total PO</li>
+                          <li>Tidak ada info box termin</li>
+                          <li>Tidak bisa buat payment baru jika sudah ada payment</li>
+                        </ul>
+                      </div>
+                      <div class="bg-blue-50 p-3 rounded border border-blue-200">
+                        <p class="text-xs font-semibold text-blue-800 mb-1">PO dengan Termin Bayar:</p>
+                        <ul class="text-xs text-blue-700 space-y-1 list-disc list-inside">
+                          <li>Multiple payments</li>
+                          <li>Amount ≤ Sisa Pembayaran</li>
+                          <li>Ada info box dengan progress</li>
+                          <li>Bisa buat payment baru sampai lunas</li>
+                        </ul>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Tips -->
+              <div class="bg-amber-50 border-l-4 border-amber-500 p-4 rounded">
+                <h4 class="font-semibold text-amber-800 mb-2">
+                  <i class="fa fa-lightbulb mr-2"></i>
+                  Tips Penting
+                </h4>
+                <ul class="text-sm text-amber-700 space-y-1 list-disc list-inside">
+                  <li>Selalu cek <strong>Sisa Pembayaran</strong> sebelum input amount</li>
+                  <li>Gunakan field <strong>Description</strong> untuk tracking (contoh: "Pembayaran termin pertama (50% di muka)")</li>
+                  <li>Cek progress di Show page setelah approve payment</li>
+                  <li>Sistem otomatis mencegah overpayment (amount > sisa)</li>
+                  <li>PO yang sudah lunas tidak akan muncul di list Available PO</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+
+          <!-- Footer -->
+          <div class="bg-gray-50 px-6 py-4 flex justify-end">
+            <button
+              @click="showTutorial = false"
+              class="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+            >
+              Tutup
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   </AppLayout>
 </template>
 
@@ -629,6 +916,12 @@ const prAttachments = ref([]);
 const lightboxImage = ref(null);
 const lightboxVisible = ref(false);
 const originalAmount = ref(null);
+const showTutorial = ref(false);
+const paymentInfo = ref({
+  total_paid: 0,
+  remaining: 0,
+  payment_count: 0
+});
 
 const form = reactive({
   purchase_order_ops_id: null,
@@ -640,7 +933,8 @@ const form = reactive({
   due_date: '',
   description: '',
   reference_number: '',
-  notes: ''
+  notes: '',
+  is_partial_payment: false
 });
 
 function onSupplierChange(supplier) {
@@ -705,11 +999,20 @@ function resetSelection() {
   form.purchase_requisition_id = null;
   form.supplier_id = '';
   form.amount = '';
+  form.is_partial_payment = false;
   originalAmount.value = null;
+  paymentInfo.value = {
+    total_paid: 0,
+    remaining: 0,
+    payment_count: 0
+  };
 }
 
 function resetAmountToOriginal() {
-  if (originalAmount.value !== null) {
+  if (selectedPO.value && selectedPO.value.payment_type === 'termin') {
+    // For termin, reset to remaining amount
+    form.amount = paymentInfo.value.remaining > 0 ? paymentInfo.value.remaining : 0;
+  } else if (originalAmount.value !== null) {
     form.amount = originalAmount.value;
   } else if (selectedPO.value) {
     form.amount = selectedPO.value.grand_total;
@@ -733,8 +1036,6 @@ async function selectPO(po) {
   form.purchase_order_ops_id = po.id;
   form.purchase_requisition_id = null;
   form.supplier_id = po.supplier_id;
-  form.amount = po.grand_total;
-  originalAmount.value = po.grand_total;
   
   // Set selected supplier from PO
   if (po.supplier_id && props.suppliers) {
@@ -742,6 +1043,43 @@ async function selectPO(po) {
     if (supplier) {
       selectedSupplier.value = supplier;
     }
+  }
+  
+  // Load payment info for termin payment
+  if (po.payment_type === 'termin') {
+    try {
+      const paymentResponse = await axios.get(`/api/non-food-payments/payment-info/${po.id}`);
+      paymentInfo.value = {
+        total_paid: paymentResponse.data.total_paid || 0,
+        remaining: paymentResponse.data.remaining || po.grand_total,
+        payment_count: paymentResponse.data.payment_count || 0
+      };
+      
+      // Set default amount to remaining if termin
+      form.amount = paymentInfo.value.remaining > 0 ? paymentInfo.value.remaining : 0;
+      originalAmount.value = paymentInfo.value.remaining;
+      form.is_partial_payment = paymentInfo.value.total_paid > 0;
+    } catch (error) {
+      console.error('Error loading payment info:', error);
+      paymentInfo.value = {
+        total_paid: 0,
+        remaining: po.grand_total,
+        payment_count: 0
+      };
+      form.amount = po.grand_total;
+      originalAmount.value = po.grand_total;
+      form.is_partial_payment = false;
+    }
+  } else {
+    // For lunas payment
+    form.amount = po.grand_total;
+    originalAmount.value = po.grand_total;
+    form.is_partial_payment = false;
+    paymentInfo.value = {
+      total_paid: 0,
+      remaining: po.grand_total,
+      payment_count: 0
+    };
   }
   
   // Load PO items grouped by outlet
@@ -753,8 +1091,8 @@ async function selectPO(po) {
     poAttachments.value = response.data.po_attachments || [];
     prAttachments.value = [];
     
-    // Update amount with total from API if available, and save as original
-    if (response.data.total_amount) {
+    // Update amount with total from API if available (only if not termin)
+    if (response.data.total_amount && po.payment_type !== 'termin') {
       form.amount = response.data.total_amount;
       originalAmount.value = response.data.total_amount;
     }
@@ -832,6 +1170,22 @@ function submitForm() {
       Swal.fire('Error', 'Supplier harus dipilih.', 'error');
     });
     return;
+  }
+
+  // Validate amount for termin payment
+  if (selectedPO.value && selectedPO.value.payment_type === 'termin') {
+    if (parseFloat(form.amount) > paymentInfo.value.remaining) {
+      import('sweetalert2').then(({ default: Swal }) => {
+        Swal.fire('Error', `Jumlah pembayaran melebihi sisa yang harus dibayar. Sisa: ${formatCurrency(paymentInfo.value.remaining)}`, 'error');
+      });
+      return;
+    }
+    if (parseFloat(form.amount) <= 0) {
+      import('sweetalert2').then(({ default: Swal }) => {
+        Swal.fire('Error', 'Jumlah pembayaran harus lebih dari 0.', 'error');
+      });
+      return;
+    }
   }
 
   isSubmitting.value = true;

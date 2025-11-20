@@ -169,6 +169,8 @@ class NonFoodPaymentController extends Controller
                 'poo.grand_total',
                 'poo.supplier_id',
                 'poo.notes',
+                'poo.payment_type',
+                'poo.payment_terms',
                 's.name as supplier_name',
                 'pr.pr_number as source_pr_number',
                 'pr.title as pr_title',
@@ -462,6 +464,54 @@ class NonFoodPaymentController extends Controller
         }
     }
 
+    public function getPaymentInfo($poId)
+    {
+        try {
+            $po = DB::table('purchase_order_ops')
+                ->where('id', $poId)
+                ->first();
+            
+            if (!$po) {
+                return response()->json(['error' => 'Purchase Order not found'], 404);
+            }
+            
+            // Get total paid amount from all non-cancelled payments
+            $totalPaid = DB::table('non_food_payments')
+                ->where('purchase_order_ops_id', $poId)
+                ->where('status', '!=', 'cancelled')
+                ->sum('amount');
+            
+            $remaining = $po->grand_total - $totalPaid;
+            
+            // Get payment count
+            $paymentCount = DB::table('non_food_payments')
+                ->where('purchase_order_ops_id', $poId)
+                ->where('status', '!=', 'cancelled')
+                ->count();
+            
+            // Get payment history
+            $paymentHistory = DB::table('non_food_payments')
+                ->where('purchase_order_ops_id', $poId)
+                ->where('status', '!=', 'cancelled')
+                ->select('id', 'payment_number', 'amount', 'payment_date', 'status', 'payment_sequence')
+                ->orderBy('payment_sequence', 'asc')
+                ->orderBy('payment_date', 'asc')
+                ->get();
+            
+            return response()->json([
+                'total_paid' => (float) $totalPaid,
+                'remaining' => max(0, (float) $remaining),
+                'payment_count' => $paymentCount,
+                'grand_total' => (float) $po->grand_total,
+                'payment_history' => $paymentHistory
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'error' => 'Failed to get payment info: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
     public function getPRItems($prId)
     {
         try {
@@ -698,6 +748,7 @@ class NonFoodPaymentController extends Controller
             'description' => 'nullable|string|max:1000',
             'reference_number' => 'nullable|string|max:100',
             'notes' => 'nullable|string|max:1000',
+            'is_partial_payment' => 'nullable|boolean',
         ]);
 
         // Validate that at least one transaction is selected
@@ -710,13 +761,31 @@ class NonFoodPaymentController extends Controller
             return back()->with('error', 'Supplier harus dipilih untuk payment.');
         }
 
-        // Check if PO already has a payment
+        // Check if PO already has a payment (only for lunas payment)
         if ($request->purchase_order_ops_id) {
-            $existingPayment = NonFoodPayment::where('purchase_order_ops_id', $request->purchase_order_ops_id)
-                ->where('status', '!=', 'cancelled')
-                ->first();
-            if ($existingPayment) {
-                return back()->with('error', 'Purchase Order ini sudah memiliki payment yang aktif.');
+            $po = \App\Models\PurchaseOrderOps::find($request->purchase_order_ops_id);
+            
+            // For termin payment, allow multiple payments
+            if ($po && $po->payment_type === 'termin') {
+                // Check total paid amount
+                $totalPaid = NonFoodPayment::where('purchase_order_ops_id', $request->purchase_order_ops_id)
+                    ->where('status', '!=', 'cancelled')
+                    ->sum('amount');
+                
+                $remaining = $po->grand_total - $totalPaid;
+                
+                // Validate payment amount doesn't exceed remaining
+                if ($request->amount > $remaining) {
+                    return back()->with('error', "Jumlah pembayaran melebihi sisa yang harus dibayar. Sisa: " . number_format($remaining, 0, ',', '.'));
+                }
+            } else {
+                // For lunas payment, only allow one payment
+                $existingPayment = NonFoodPayment::where('purchase_order_ops_id', $request->purchase_order_ops_id)
+                    ->where('status', '!=', 'cancelled')
+                    ->first();
+                if ($existingPayment) {
+                    return back()->with('error', 'Purchase Order ini sudah memiliki payment yang aktif.');
+                }
             }
         }
 
@@ -753,6 +822,22 @@ class NonFoodPaymentController extends Controller
             // Generate payment number
             $paymentNumber = (new NonFoodPayment())->generatePaymentNumber();
 
+            // Get payment sequence for termin payments
+            $paymentSequence = null;
+            $isPartialPayment = false;
+            if ($request->purchase_order_ops_id) {
+                $po = \App\Models\PurchaseOrderOps::find($request->purchase_order_ops_id);
+                if ($po && $po->payment_type === 'termin') {
+                    $isPartialPayment = true;
+                    // Get next sequence number
+                    $lastPayment = NonFoodPayment::where('purchase_order_ops_id', $request->purchase_order_ops_id)
+                        ->where('status', '!=', 'cancelled')
+                        ->orderBy('payment_sequence', 'desc')
+                        ->first();
+                    $paymentSequence = $lastPayment ? ($lastPayment->payment_sequence + 1) : 1;
+                }
+            }
+
             // Create payment
             $payment = NonFoodPayment::create([
                 'payment_number' => $paymentNumber,
@@ -767,6 +852,8 @@ class NonFoodPaymentController extends Controller
                 'description' => $request->description,
                 'reference_number' => $request->reference_number,
                 'notes' => $request->notes,
+                'is_partial_payment' => $isPartialPayment,
+                'payment_sequence' => $paymentSequence,
                 'created_by' => Auth::id(),
             ]);
 

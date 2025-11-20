@@ -1577,6 +1577,54 @@ function getUnitName(item) {
                   </div>
                 </div>
               </div>
+
+              <!-- Payment Type Info -->
+              <div class="border border-blue-200 rounded-lg p-4 bg-blue-50">
+                <div class="flex items-start">
+                  <div class="flex-shrink-0 w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center font-bold">
+                    <i class="fa fa-info-circle text-sm"></i>
+                  </div>
+                  <div class="ml-4 flex-1">
+                    <h4 class="font-semibold text-blue-900 mb-2">
+                      <i class="fa fa-money-bill-wave mr-2"></i>
+                      Informasi: Payment Type di Purchase Order
+                    </h4>
+                    <p class="text-sm text-blue-800 mb-2">
+                      PO yang digunakan sebagai sumber data contra bon mungkin memiliki metode pembayaran:
+                    </p>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mt-2">
+                      <div class="bg-white p-3 rounded border border-blue-200">
+                        <p class="text-xs font-semibold text-green-800 mb-1">
+                          <i class="fa fa-check-circle mr-1"></i>
+                          Bayar Lunas:
+                        </p>
+                        <ul class="text-xs text-gray-700 space-y-1 list-disc list-inside">
+                          <li>Pembayaran penuh sekaligus</li>
+                          <li>Hanya 1x payment di Non Food Payment</li>
+                        </ul>
+                      </div>
+                      <div class="bg-white p-3 rounded border border-blue-200">
+                        <p class="text-xs font-semibold text-blue-800 mb-1">
+                          <i class="fa fa-calendar-alt mr-1"></i>
+                          Termin Bayar:
+                        </p>
+                        <ul class="text-xs text-gray-700 space-y-1 list-disc list-inside">
+                          <li>Pembayaran bertahap</li>
+                          <li>Multiple payments di Non Food Payment</li>
+                          <li>Ada progress tracking pembayaran</li>
+                        </ul>
+                      </div>
+                    </div>
+                    <div class="bg-blue-100 border-l-4 border-blue-500 p-3 rounded mt-2">
+                      <p class="text-xs text-blue-800">
+                        <i class="fa fa-info-circle mr-1"></i>
+                        <strong>Catatan:</strong> Payment type ditentukan saat membuat PO di menu Purchase Order Ops. 
+                        Informasi ini akan muncul di menu Non Food Payment saat membuat payment untuk PO tersebut.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 

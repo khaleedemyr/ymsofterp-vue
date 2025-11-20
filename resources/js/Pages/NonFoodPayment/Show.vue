@@ -108,6 +108,106 @@
                 <label class="block text-sm font-medium text-gray-700">Grand Total</label>
                 <p class="mt-1 text-lg font-bold text-blue-600">{{ formatCurrency(payment.purchase_order_ops.grand_total) }}</p>
               </div>
+              <div v-if="payment.purchase_order_ops.payment_type">
+                <label class="block text-sm font-medium text-gray-700">Metode Pembayaran</label>
+                <div class="mt-1">
+                  <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium"
+                        :class="payment.purchase_order_ops.payment_type === 'lunas' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'">
+                    <i :class="payment.purchase_order_ops.payment_type === 'lunas' ? 'fa fa-check-circle mr-1' : 'fa fa-calendar-alt mr-1'"></i>
+                    {{ payment.purchase_order_ops.payment_type === 'lunas' ? 'Bayar Lunas' : 'Termin Bayar' }}
+                  </span>
+                </div>
+                <p v-if="payment.purchase_order_ops.payment_type === 'termin' && payment.purchase_order_ops.payment_terms" class="mt-2 text-sm text-gray-700">
+                  <strong>Detail Termin:</strong> {{ payment.purchase_order_ops.payment_terms }}
+                </p>
+              </div>
+            </div>
+
+            <!-- Payment Termin Progress (only for termin payment) -->
+            <div v-if="payment.purchase_order_ops.payment_type === 'termin'" class="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-xl">
+              <div v-if="loadingPaymentInfo" class="text-center py-4">
+                <i class="fas fa-spinner fa-spin text-blue-500"></i>
+                <p class="text-sm text-gray-600 mt-2">Memuat informasi pembayaran...</p>
+              </div>
+              <div v-else-if="paymentInfo">
+              <h3 class="text-lg font-semibold text-blue-800 mb-4 flex items-center">
+                <i class="fa fa-chart-line mr-2"></i>
+                Progress Pembayaran Termin
+              </h3>
+              <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                <div>
+                  <label class="block text-xs font-medium text-gray-600 mb-1">Total PO</label>
+                  <p class="text-lg font-bold text-gray-900">{{ formatCurrency(payment.purchase_order_ops.grand_total) }}</p>
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-gray-600 mb-1">Sudah Dibayar</label>
+                  <p class="text-lg font-bold text-green-600">{{ formatCurrency(paymentInfo.total_paid) }}</p>
+                  <p class="text-xs text-gray-500 mt-1">{{ paymentInfo.payment_count }} pembayaran</p>
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-gray-600 mb-1">Sisa Pembayaran</label>
+                  <p class="text-lg font-bold" :class="paymentInfo.remaining > 0 ? 'text-red-600' : 'text-green-600'">
+                    {{ formatCurrency(paymentInfo.remaining) }}
+                  </p>
+                </div>
+              </div>
+              
+              <!-- Progress Bar -->
+              <div v-if="paymentInfo.remaining > 0" class="mb-4">
+                <div class="w-full bg-gray-200 rounded-full h-3">
+                  <div 
+                    class="bg-blue-600 h-3 rounded-full transition-all duration-300" 
+                    :style="{ width: `${(paymentInfo.total_paid / payment.purchase_order_ops.grand_total) * 100}%` }"
+                  ></div>
+                </div>
+                <p class="text-xs text-gray-600 mt-1 text-center">
+                  Progress: {{ ((paymentInfo.total_paid / payment.purchase_order_ops.grand_total) * 100).toFixed(1) }}%
+                </p>
+              </div>
+              <div v-else class="mb-4 p-2 bg-green-100 border border-green-300 rounded-lg">
+                <p class="text-sm text-green-800 text-center font-medium">
+                  <i class="fa fa-check-circle mr-1"></i>
+                  PO sudah lunas!
+                </p>
+              </div>
+
+              <!-- Payment History -->
+              <div v-if="paymentInfo.payment_history && paymentInfo.payment_history.length > 0" class="mt-4">
+                <h4 class="text-sm font-semibold text-gray-700 mb-2">Riwayat Pembayaran</h4>
+                <div class="space-y-2">
+                  <div 
+                    v-for="(hist, index) in paymentInfo.payment_history" 
+                    :key="hist.id"
+                    class="flex items-center justify-between p-2 bg-white rounded-lg border"
+                    :class="hist.id === payment.id ? 'border-blue-500 bg-blue-50' : 'border-gray-200'"
+                  >
+                    <div class="flex items-center gap-3">
+                      <span class="text-xs font-medium text-gray-500">#{{ hist.payment_sequence || (index + 1) }}</span>
+                      <div>
+                        <p class="text-sm font-medium text-gray-900">{{ hist.payment_number }}</p>
+                        <p class="text-xs text-gray-500">{{ formatDate(hist.payment_date) }}</p>
+                      </div>
+                    </div>
+                    <div class="text-right">
+                      <p class="text-sm font-semibold text-gray-900">{{ formatCurrency(hist.amount) }}</p>
+                      <span 
+                        class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
+                        :class="{
+                          'bg-green-100 text-green-800': hist.status === 'paid',
+                          'bg-yellow-100 text-yellow-800': hist.status === 'approved',
+                          'bg-blue-100 text-blue-800': hist.status === 'pending'
+                        }"
+                      >
+                        {{ hist.status }}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              </div>
+              <div v-else class="text-center py-4 text-gray-500">
+                <p class="text-sm">Tidak dapat memuat informasi pembayaran</p>
+              </div>
             </div>
 
             <!-- PO Items -->
@@ -363,9 +463,10 @@
 </template>
 
 <script setup>
-import { ref } from 'vue';
+import { ref, onMounted } from 'vue';
 import { router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
+import axios from 'axios';
 
 const props = defineProps({
   payment: Object,
@@ -376,6 +477,8 @@ const props = defineProps({
 const payment = props.payment;
 const lightboxImage = ref(null);
 const lightboxVisible = ref(false);
+const paymentInfo = ref(null);
+const loadingPaymentInfo = ref(false);
 
 function formatDate(date) {
   if (!date) return '-';
@@ -581,4 +684,29 @@ function printPayment() {
   const printUrl = `/non-food-payments/print-preview?ids=${payment.id}`;
   window.open(printUrl, '_blank', 'width=800,height=600,scrollbars=yes,resizable=yes');
 }
+
+// Fetch payment info for termin payment
+async function fetchPaymentInfo() {
+  if (payment.purchase_order_ops_id && payment.purchase_order_ops?.payment_type === 'termin') {
+    loadingPaymentInfo.value = true;
+    try {
+      const response = await axios.get(`/api/non-food-payments/payment-info/${payment.purchase_order_ops_id}`);
+      paymentInfo.value = response.data;
+    } catch (error) {
+      console.error('Error fetching payment info:', error);
+      paymentInfo.value = {
+        total_paid: 0,
+        remaining: payment.purchase_order_ops?.grand_total || 0,
+        payment_count: 0,
+        payment_history: []
+      };
+    } finally {
+      loadingPaymentInfo.value = false;
+    }
+  }
+}
+
+onMounted(() => {
+  fetchPaymentInfo();
+});
 </script>
