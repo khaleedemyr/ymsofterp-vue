@@ -693,10 +693,6 @@ function getPriorityClass(priority) {
   return classes[priority] || 'bg-gray-100 text-gray-800';
 }
 
-// Lightbox state
-const lightboxImage = ref(null);
-const lightboxImageName = ref('');
-
 // Helper functions for file handling
 function isImageFile(fileName) {
   if (!fileName) return false;
