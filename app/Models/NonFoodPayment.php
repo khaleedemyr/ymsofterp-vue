@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Auth;
 
 class NonFoodPayment extends Model
 {
@@ -26,6 +27,10 @@ class NonFoodPayment extends Model
         'created_by',
         'approved_by',
         'approved_at',
+        'approved_finance_manager_by',
+        'approved_finance_manager_at',
+        'approved_gm_finance_by',
+        'approved_gm_finance_at',
         'notes',
         'is_partial_payment',
         'payment_sequence'
@@ -36,6 +41,8 @@ class NonFoodPayment extends Model
         'payment_date' => 'date',
         'due_date' => 'date',
         'approved_at' => 'datetime',
+        'approved_finance_manager_at' => 'datetime',
+        'approved_gm_finance_at' => 'datetime',
     ];
 
     // Relationships
@@ -62,6 +69,16 @@ class NonFoodPayment extends Model
     public function approver()
     {
         return $this->belongsTo(User::class, 'approved_by');
+    }
+
+    public function financeManagerApprover()
+    {
+        return $this->belongsTo(User::class, 'approved_finance_manager_by');
+    }
+
+    public function gmFinanceApprover()
+    {
+        return $this->belongsTo(User::class, 'approved_gm_finance_by');
     }
 
     public function attachments()
@@ -95,6 +112,7 @@ class NonFoodPayment extends Model
     {
         return match($this->status) {
             'pending' => 'bg-yellow-100 text-yellow-800',
+            'pending_finance_manager' => 'bg-orange-100 text-orange-800',
             'approved' => 'bg-green-100 text-green-800',
             'paid' => 'bg-blue-100 text-blue-800',
             'rejected' => 'bg-red-100 text-red-800',
@@ -116,31 +134,70 @@ class NonFoodPayment extends Model
     // Methods
     public function canBeApproved()
     {
-        return $this->status === 'pending';
+        // Superadmin can approve at any level
+        $user = Auth::user();
+        if (!$user) {
+            return false;
+        }
+        
+        $isSuperadmin = $user->id_role === '5af56935b011a' && $user->status === 'A';
+        
+        if ($isSuperadmin) {
+            return in_array($this->status, ['pending', 'pending_finance_manager']);
+        }
+        
+        // Finance Manager can approve if status is pending (no approval yet)
+        if ($user->id_jabatan == 160 && $user->status == 'A') {
+            return $this->status === 'pending';
+        }
+        
+        // GM Finance can approve if Finance Manager already approved
+        if ($user->id_jabatan == 316 && $user->status == 'A') {
+            return $this->status === 'pending_finance_manager' && $this->approved_finance_manager_by !== null;
+        }
+        
+        return false;
+    }
+    
+    public function getCurrentApprovalLevel()
+    {
+        if ($this->approved_gm_finance_by !== null) {
+            return 'approved'; // Fully approved
+        }
+        if ($this->approved_finance_manager_by !== null) {
+            return 'pending_gm_finance'; // Waiting for GM Finance
+        }
+        return 'pending_finance_manager'; // Waiting for Finance Manager
     }
 
     public function canBeRejected()
     {
-        return $this->status === 'pending';
+        // Can be rejected if still in pending state (any level)
+        return in_array($this->status, ['pending', 'pending_finance_manager']);
     }
 
     public function canBePaid()
     {
+        // Can be paid if status is approved
+        // For backward compatibility: if approved_gm_finance_by is null but status is approved,
+        // it means it's old data that was approved before 2-level approval was implemented
         return $this->status === 'approved';
     }
 
     public function canBeCancelled()
     {
-        return in_array($this->status, ['pending', 'approved']);
+        return in_array($this->status, ['pending', 'pending_finance_manager', 'approved']);
     }
 
     public function canBeEdited()
     {
+        // Can only edit if still in initial pending state
         return $this->status === 'pending';
     }
 
     public function canBeDeleted()
     {
+        // Can only delete if still in initial pending state
         return $this->status === 'pending';
     }
 

@@ -1094,35 +1094,72 @@ class NonFoodPaymentController extends Controller
         try {
             DB::beginTransaction();
             
+            $user = Auth::user();
+            $isSuperadmin = $user->id_role === '5af56935b011a' && $user->status === 'A';
             $note = $request ? $request->input('note', '') : '';
             
-            // Update status to approved (NOT paid)
-            $nonFoodPayment->update([
-                'status' => 'approved',
-                'approved_by' => Auth::id(),
-                'approved_at' => now(),
-            ]);
+            $updateData = [];
+            $approvalLevel = '';
+            $notificationMessage = '';
             
-            // Refresh to ensure status is saved correctly
-            $nonFoodPayment->refresh();
-            
-            // Verify status is still 'approved' and not 'paid'
-            if ($nonFoodPayment->status !== 'approved') {
-                \Log::warning('Non Food Payment status changed after approve', [
-                    'payment_id' => $nonFoodPayment->id,
-                    'expected_status' => 'approved',
-                    'actual_status' => $nonFoodPayment->status
-                ]);
-                // Force set back to approved
-                $nonFoodPayment->update(['status' => 'approved']);
+            // Determine approval level
+            if ($isSuperadmin) {
+                // Superadmin can approve all levels at once
+                if ($nonFoodPayment->status === 'pending' || $nonFoodPayment->approved_finance_manager_by === null) {
+                    // Approve Finance Manager level
+                    $updateData['approved_finance_manager_by'] = Auth::id();
+                    $updateData['approved_finance_manager_at'] = now();
+                    $approvalLevel = 'Finance Manager';
+                }
+                // Also approve GM Finance level
+                $updateData['approved_gm_finance_by'] = Auth::id();
+                $updateData['approved_gm_finance_at'] = now();
+                $updateData['status'] = 'approved';
+                $updateData['approved_by'] = Auth::id();
+                $updateData['approved_at'] = now();
+                $approvalLevel = 'GM Finance (Superadmin)';
+                $notificationMessage = "Non Food Payment {$nonFoodPayment->payment_number} telah disetujui oleh Superadmin.";
+            } elseif ($user->id_jabatan == 160 && $user->status == 'A') {
+                // Finance Manager approval (Level 1)
+                $updateData['approved_finance_manager_by'] = Auth::id();
+                $updateData['approved_finance_manager_at'] = now();
+                $updateData['status'] = 'pending_finance_manager'; // Status tetap pending, tunggu GM Finance
+                $approvalLevel = 'Finance Manager';
+                $notificationMessage = "Non Food Payment {$nonFoodPayment->payment_number} telah disetujui oleh Finance Manager, menunggu persetujuan GM Finance.";
+            } elseif ($user->id_jabatan == 316 && $user->status == 'A') {
+                // GM Finance approval (Level 2) - only if Finance Manager already approved
+                if ($nonFoodPayment->approved_finance_manager_by === null) {
+                    DB::rollBack();
+                    if ($request && ($request->wantsJson() || $request->ajax() || $request->expectsJson())) {
+                        return response()->json(['success' => false, 'message' => 'Payment ini harus disetujui Finance Manager terlebih dahulu.'], 400);
+                    }
+                    return back()->with('error', 'Payment ini harus disetujui Finance Manager terlebih dahulu.');
+                }
+                $updateData['approved_gm_finance_by'] = Auth::id();
+                $updateData['approved_gm_finance_at'] = now();
+                $updateData['status'] = 'approved'; // Final approval
+                $updateData['approved_by'] = Auth::id();
+                $updateData['approved_at'] = now();
+                $approvalLevel = 'GM Finance';
+                $notificationMessage = "Non Food Payment {$nonFoodPayment->payment_number} telah disetujui oleh GM Finance.";
+            } else {
+                DB::rollBack();
+                if ($request && ($request->wantsJson() || $request->ajax() || $request->expectsJson())) {
+                    return response()->json(['success' => false, 'message' => 'Anda tidak memiliki izin untuk menyetujui payment ini.'], 403);
+                }
+                return back()->with('error', 'Anda tidak memiliki izin untuk menyetujui payment ini.');
             }
+            
+            // Update payment
+            $nonFoodPayment->update($updateData);
+            $nonFoodPayment->refresh();
 
             // Log activity
             \App\Models\ActivityLog::create([
                 'user_id' => Auth::id(),
                 'activity_type' => 'approve',
                 'module' => 'non_food_payment',
-                'description' => 'Approve Non Food Payment: ' . $nonFoodPayment->payment_number,
+                'description' => "Approve Non Food Payment ({$approvalLevel}): " . $nonFoodPayment->payment_number,
                 'ip_address' => $request ? $request->ip() : request()->ip(),
             ]);
 
@@ -1132,30 +1169,28 @@ class NonFoodPaymentController extends Controller
                     'user_id' => $nonFoodPayment->created_by,
                     'type' => 'non_food_payment_approval',
                     'title' => 'Non Food Payment Disetujui',
-                    'message' => "Non Food Payment {$nonFoodPayment->payment_number} telah disetujui oleh Finance Manager.",
+                    'message' => $notificationMessage,
                 ]);
             }
 
-            // Update PR status to PAID if all payments are completed
-            // Note: This only updates PR status, NOT payment status
-            $this->updatePRStatusIfAllPaid($nonFoodPayment);
-            
-            // Final refresh to ensure status is still 'approved'
-            $nonFoodPayment->refresh();
-            if ($nonFoodPayment->status !== 'approved') {
-                \Log::error('Non Food Payment status changed to ' . $nonFoodPayment->status . ' after updatePRStatusIfAllPaid', [
-                    'payment_id' => $nonFoodPayment->id
-                ]);
-                $nonFoodPayment->update(['status' => 'approved']);
+            // Update PR status to PAID if all payments are completed (only if fully approved)
+            if ($nonFoodPayment->status === 'approved') {
+                $this->updatePRStatusIfAllPaid($nonFoodPayment);
             }
 
             DB::commit();
 
+            $successMessage = $isSuperadmin 
+                ? 'Non Food Payment berhasil disetujui (semua level).'
+                : ($user->id_jabatan == 160 
+                    ? 'Non Food Payment berhasil disetujui, menunggu persetujuan GM Finance.'
+                    : 'Non Food Payment berhasil disetujui.');
+
             if ($request && ($request->wantsJson() || $request->ajax() || $request->expectsJson())) {
-                return response()->json(['success' => true, 'message' => 'Non Food Payment berhasil disetujui.']);
+                return response()->json(['success' => true, 'message' => $successMessage]);
             }
 
-            return back()->with('success', 'Non Food Payment berhasil disetujui.');
+            return back()->with('success', $successMessage);
 
         } catch (\Exception $e) {
             DB::rollBack();
@@ -1176,13 +1211,28 @@ class NonFoodPaymentController extends Controller
         }
 
         try {
+            $user = Auth::user();
             $note = $request ? $request->input('note', '') : '';
             
-            $nonFoodPayment->update([
+            $updateData = [
                 'status' => 'rejected',
                 'approved_by' => Auth::id(),
                 'approved_at' => now(),
-            ]);
+            ];
+            
+            // If Finance Manager rejects, clear their approval
+            if ($user->id_jabatan == 160 && $user->status == 'A') {
+                $updateData['approved_finance_manager_by'] = null;
+                $updateData['approved_finance_manager_at'] = null;
+            }
+            
+            // If GM Finance rejects, clear their approval but keep Finance Manager approval
+            if ($user->id_jabatan == 316 && $user->status == 'A') {
+                $updateData['approved_gm_finance_by'] = null;
+                $updateData['approved_gm_finance_at'] = null;
+            }
+            
+            $nonFoodPayment->update($updateData);
 
             // Log activity
             \App\Models\ActivityLog::create([
@@ -1509,14 +1559,14 @@ class NonFoodPaymentController extends Controller
             $user = Auth::user();
             $isSuperadmin = $user->id_role === '5af56935b011a' && $user->status === 'A';
             
-            $query = NonFoodPayment::with(['supplier', 'creator', 'purchaseOrderOps', 'purchaseRequisition'])
-                ->where('status', 'pending')
-                ->orderByDesc('created_at');
-            
             $pendingApprovals = [];
             
-            // Finance Manager approvals (id_jabatan == 160) and Superadmin
+            // Finance Manager approvals (id_jabatan == 160) - Level 1
             if (($user->id_jabatan == 160 && $user->status == 'A') || $isSuperadmin) {
+                $query = NonFoodPayment::with(['supplier', 'creator', 'purchaseOrderOps', 'purchaseRequisition'])
+                    ->where('status', 'pending')
+                    ->orderByDesc('created_at');
+                
                 // Get approver name for this level
                 $approver = DB::table('users')
                     ->where('id_jabatan', 160)
@@ -1549,6 +1599,54 @@ class NonFoodPaymentController extends Controller
                         'payment_type' => $paymentType,
                         'source_number' => $sourceNumber,
                         'approver_name' => $approver ? $approver->nama_lengkap : 'Finance Manager',
+                        'approval_level' => 'Finance Manager',
+                        'description' => $nfp->description,
+                        'notes' => $nfp->notes,
+                        'created_at' => $nfp->created_at
+                    ];
+                }
+            }
+            
+            // GM Finance approvals (id_jabatan == 316) - Level 2
+            if (($user->id_jabatan == 316 && $user->status == 'A') || $isSuperadmin) {
+                $query = NonFoodPayment::with(['supplier', 'creator', 'purchaseOrderOps', 'purchaseRequisition'])
+                    ->where('status', 'pending_finance_manager')
+                    ->whereNotNull('approved_finance_manager_by')
+                    ->orderByDesc('approved_finance_manager_at');
+                
+                // Get approver name for this level
+                $approver = DB::table('users')
+                    ->where('id_jabatan', 316)
+                    ->where('status', 'A')
+                    ->select('nama_lengkap')
+                    ->first();
+                
+                $gmFinanceApprovals = $query->get();
+                
+                foreach ($gmFinanceApprovals as $nfp) {
+                    $paymentType = 'Unknown';
+                    $sourceNumber = null;
+                    
+                    if ($nfp->purchase_order_ops_id && $nfp->purchaseOrderOps) {
+                        $paymentType = 'PO';
+                        $sourceNumber = $nfp->purchaseOrderOps->number;
+                    } elseif ($nfp->purchase_requisition_id && $nfp->purchaseRequisition) {
+                        $paymentType = 'PR';
+                        $sourceNumber = $nfp->purchaseRequisition->pr_number;
+                    }
+                    
+                    $pendingApprovals[] = [
+                        'id' => $nfp->id,
+                        'payment_number' => $nfp->payment_number,
+                        'payment_date' => $nfp->payment_date,
+                        'amount' => $nfp->amount,
+                        'payment_method' => $nfp->payment_method,
+                        'supplier' => $nfp->supplier ? ['name' => $nfp->supplier->name] : null,
+                        'creator' => $nfp->creator ? ['nama_lengkap' => $nfp->creator->nama_lengkap] : null,
+                        'payment_type' => $paymentType,
+                        'source_number' => $sourceNumber,
+                        'approver_name' => $approver ? $approver->nama_lengkap : 'GM Finance',
+                        'approval_level' => 'GM Finance',
                         'description' => $nfp->description,
                         'notes' => $nfp->notes,
                         'created_at' => $nfp->created_at
