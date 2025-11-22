@@ -824,8 +824,10 @@ class MemberAppsSettingsController extends Controller
                 'name' => $outlet->nama_outlet,
                 'description' => $request->description,
                 'whatsapp_number' => $request->whatsapp_number,
-                'facility' => $request->facility ? json_encode($request->facility) : null,
-                'tripadvisor_link' => $request->tripadvisor_link,
+                'facility' => ($request->has('facility') && is_array($request->facility) && count($request->facility) > 0) 
+                    ? json_encode($request->facility) 
+                    : null,
+                'tripadvisor_link' => $request->tripadvisor_link ?: null,
                 'is_active' => true
             ];
 
@@ -884,7 +886,9 @@ class MemberAppsSettingsController extends Controller
                 'gallery_images' => 'nullable|array',
                 'gallery_images.*' => 'image|mimes:jpeg,png,jpg,gif|max:2048',
                 'delete_gallery_ids' => 'nullable|array',
-                'delete_gallery_ids.*' => 'exists:member_apps_brand_galleries,id'
+                'delete_gallery_ids.*' => 'exists:member_apps_brand_galleries,id',
+                'facility' => 'nullable', // Can be array or JSON string
+                'tripadvisor_link' => 'nullable|url|max:500'
             ]);
 
             if ($validator->fails()) {
@@ -902,11 +906,31 @@ class MemberAppsSettingsController extends Controller
                 return redirect()->back()->withErrors($validator)->withInput();
             }
 
+            // Handle facility - can be array, JSON string, or empty string
+            $facility = null;
+            if ($request->has('facility') && $request->facility !== '' && $request->facility !== '[]') {
+                if (is_array($request->facility)) {
+                    // If it's already an array, encode it
+                    $facility = count($request->facility) > 0 ? json_encode($request->facility) : null;
+                } elseif (is_string($request->facility)) {
+                    // If it's a JSON string, validate and use it
+                    $decoded = json_decode($request->facility, true);
+                    if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                        $facility = count($decoded) > 0 ? $request->facility : null;
+                    } else {
+                        // If it's not valid JSON, try to treat it as a single value
+                        \Log::warning('Invalid facility JSON format', ['facility' => $request->facility]);
+                        $facility = null;
+                    }
+                }
+            }
+            // If facility is empty string or '[]', $facility remains null
+            
             $data = [
                 'description' => $request->description,
                 'whatsapp_number' => $request->whatsapp_number,
-                'facility' => $request->facility ? json_encode($request->facility) : null,
-                'tripadvisor_link' => $request->tripadvisor_link,
+                'facility' => $facility,
+                'tripadvisor_link' => $request->tripadvisor_link ?: null,
                 'is_active' => true
             ];
 

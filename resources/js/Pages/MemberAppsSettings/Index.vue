@@ -3697,6 +3697,17 @@ const saveBrand = () => {
     formData.append('whatsapp_number', brandForm.value.whatsapp_number)
   }
   
+  // Append facility as JSON string
+  if (brandForm.value.facility && brandForm.value.facility.length > 0) {
+    formData.append('facility', JSON.stringify(brandForm.value.facility))
+  } else {
+    // Send empty array for update to clear facility, or null for create
+    formData.append('facility', editingBrand.value ? '[]' : '')
+  }
+  
+  // Append tripadvisor_link (always send, even if empty)
+  formData.append('tripadvisor_link', brandForm.value.tripadvisor_link || '')
+  
   if (brandForm.value.logo) {
     formData.append('logo', brandForm.value.logo)
   }
