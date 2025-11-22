@@ -19,11 +19,30 @@ class OpexReportController extends Controller
         $status = $request->input('status'); // all, paid, unpaid
 
         // Build the hierarchical query
+        // Support both old structure (category/outlet at PR level) and new structure (category/outlet at items level)
         $query = DB::table('purchase_order_ops as poo')
             ->leftJoin('purchase_order_ops_items as poi', 'poo.id', '=', 'poi.purchase_order_ops_id')
             ->leftJoin('purchase_requisitions as pr', 'poi.source_id', '=', 'pr.id')
-            ->leftJoin('tbl_data_outlet as o', 'pr.outlet_id', '=', 'o.id_outlet')
-            ->leftJoin('purchase_requisition_categories as prc', 'pr.category_id', '=', 'prc.id')
+            // Join to PR items to get category and outlet from items (new structure)
+            // Use pr_ops_item_id if available, otherwise try to match by item_name
+            ->leftJoin('purchase_requisition_items as pri', function($join) {
+                $join->on('pr.id', '=', 'pri.purchase_requisition_id')
+                     ->where(function($q) {
+                         $q->whereColumn('poi.pr_ops_item_id', 'pri.id')
+                           ->orWhere(function($q2) {
+                               $q2->whereNull('poi.pr_ops_item_id')
+                                  ->whereColumn('poi.item_name', 'pri.item_name');
+                           });
+                     });
+            })
+            // Get outlet from items (new structure) or fallback to PR level (old structure)
+            ->leftJoin('tbl_data_outlet as o', function($join) {
+                $join->on(DB::raw('COALESCE(pri.outlet_id, pr.outlet_id)'), '=', 'o.id_outlet');
+            })
+            // Get category from items (new structure) or fallback to PR level (old structure)
+            ->leftJoin('purchase_requisition_categories as prc', function($join) {
+                $join->on(DB::raw('COALESCE(pri.category_id, pr.category_id)'), '=', 'prc.id');
+            })
             ->leftJoin('suppliers as s', 'poo.supplier_id', '=', 's.id')
             ->leftJoin('non_food_payments as nfp', function($join) {
                 $join->on('poo.id', '=', 'nfp.purchase_order_ops_id')
@@ -31,10 +50,11 @@ class OpexReportController extends Controller
             })
             ->where('poo.status', 'approved') // Only approved POs
             ->whereBetween('poo.date', [$dateFrom, $dateTo])
+            ->where('poi.source_type', 'purchase_requisition_ops') // Only PR source
             ->select(
-                'o.id_outlet as outlet_id',
+                DB::raw('COALESCE(pri.outlet_id, pr.outlet_id) as outlet_id'),
                 'o.nama_outlet as outlet_name',
-                'prc.id as category_id',
+                DB::raw('COALESCE(pri.category_id, pr.category_id) as category_id'),
                 'prc.name as category_name',
                 'prc.division as category_division',
                 'prc.subcategory as category_subcategory',
@@ -58,11 +78,23 @@ class OpexReportController extends Controller
 
         // Apply filters
         if ($outletId) {
-            $query->where('o.id_outlet', $outletId);
+            $query->where(function($q) use ($outletId) {
+                $q->where('pri.outlet_id', $outletId)
+                  ->orWhere(function($q2) use ($outletId) {
+                      $q2->whereNull('pri.outlet_id')
+                         ->where('pr.outlet_id', $outletId);
+                  });
+            });
         }
 
         if ($categoryId) {
-            $query->where('prc.id', $categoryId);
+            $query->where(function($q) use ($categoryId) {
+                $q->where('pri.category_id', $categoryId)
+                  ->orWhere(function($q2) use ($categoryId) {
+                      $q2->whereNull('pri.category_id')
+                         ->where('pr.category_id', $categoryId);
+                  });
+            });
         }
 
         if ($status === 'paid') {
@@ -465,11 +497,17 @@ class OpexReportController extends Controller
                 $rnfAmount = 0;
                 
                 // Get NFP amount for this category
-                $prIdsInCategory = DB::table('purchase_requisitions')
-                    ->where('category_id', $category->id)
-                    ->whereBetween('created_at', [$dateFrom, $dateTo])
-                    ->whereIn('status', ['SUBMITTED', 'APPROVED', 'PROCESSED', 'COMPLETED'])
-                    ->pluck('id')
+                // Support both old structure (category at PR level) and new structure (category at items level)
+                $prIdsInCategory = DB::table('purchase_requisitions as pr')
+                    ->leftJoin('purchase_requisition_items as pri', 'pr.id', '=', 'pri.purchase_requisition_id')
+                    ->where(function($q) use ($category) {
+                        $q->where('pr.category_id', $category->id)
+                          ->orWhere('pri.category_id', $category->id);
+                    })
+                    ->whereBetween('pr.created_at', [$dateFrom, $dateTo])
+                    ->whereIn('pr.status', ['SUBMITTED', 'APPROVED', 'PROCESSED', 'COMPLETED'])
+                    ->distinct()
+                    ->pluck('pr.id')
                     ->toArray();
                 
                 $poIdsInCategory = DB::table('purchase_order_ops_items as poi')
@@ -487,18 +525,37 @@ class OpexReportController extends Controller
                     ->sum('amount');
                 
                 // Get PR unpaid amount (exclude held PRs)
+                // Support both old structure (category at PR level) and new structure (category at items level)
                 $allPrs = DB::table('purchase_requisitions as pr')
-                    ->where('pr.category_id', $category->id)
+                    ->leftJoin('purchase_requisition_items as pri', 'pr.id', '=', 'pri.purchase_requisition_id')
+                    ->where(function($q) use ($category) {
+                        $q->where('pr.category_id', $category->id)
+                          ->orWhere('pri.category_id', $category->id);
+                    })
                     ->whereBetween('pr.created_at', [$dateFrom, $dateTo])
                     ->whereIn('pr.status', ['SUBMITTED', 'APPROVED', 'PROCESSED', 'COMPLETED'])
                     ->where('pr.is_held', false) // Exclude held PRs
+                    ->distinct()
                     ->pluck('pr.id')
                     ->toArray();
                 
                 $poTotalsByPr = DB::table('purchase_order_ops_items as poi')
                     ->leftJoin('purchase_order_ops as poo', 'poi.purchase_order_ops_id', '=', 'poo.id')
                     ->leftJoin('purchase_requisitions as pr', 'poi.source_id', '=', 'pr.id')
-                    ->where('pr.category_id', $category->id)
+                    ->leftJoin('purchase_requisition_items as pri', function($join) {
+                        $join->on('pr.id', '=', 'pri.purchase_requisition_id')
+                             ->where(function($q) {
+                                 $q->whereColumn('poi.pr_ops_item_id', 'pri.id')
+                                   ->orWhere(function($q2) {
+                                       $q2->whereNull('poi.pr_ops_item_id')
+                                          ->whereColumn('poi.item_name', 'pri.item_name');
+                                   });
+                             });
+                    })
+                    ->where(function($q) use ($category) {
+                        $q->where('pr.category_id', $category->id)
+                          ->orWhere('pri.category_id', $category->id);
+                    })
                     ->whereBetween('pr.created_at', [$dateFrom, $dateTo])
                     ->where('pr.is_held', false) // Exclude held PRs
                     ->where('poi.source_type', 'purchase_requisition_ops')
@@ -513,7 +570,20 @@ class OpexReportController extends Controller
                     ->leftJoin('purchase_order_ops as poo', 'nfp.purchase_order_ops_id', '=', 'poo.id')
                     ->leftJoin('purchase_order_ops_items as poi', 'poo.id', '=', 'poi.purchase_order_ops_id')
                     ->leftJoin('purchase_requisitions as pr', 'poi.source_id', '=', 'pr.id')
-                    ->where('pr.category_id', $category->id)
+                    ->leftJoin('purchase_requisition_items as pri', function($join) {
+                        $join->on('pr.id', '=', 'pri.purchase_requisition_id')
+                             ->where(function($q) {
+                                 $q->whereColumn('poi.pr_ops_item_id', 'pri.id')
+                                   ->orWhere(function($q2) {
+                                       $q2->whereNull('poi.pr_ops_item_id')
+                                          ->whereColumn('poi.item_name', 'pri.item_name');
+                                   });
+                             });
+                    })
+                    ->where(function($q) use ($category) {
+                        $q->where('pr.category_id', $category->id)
+                          ->orWhere('pri.category_id', $category->id);
+                    })
                     ->whereBetween('pr.created_at', [$dateFrom, $dateTo])
                     ->where('pr.is_held', false) // Exclude held PRs
                     ->whereBetween('nfp.payment_date', [$dateFrom, $dateTo])
@@ -556,12 +626,18 @@ class OpexReportController extends Controller
                 // 1 payment = 1 transaksi pembayaran yang unik, tidak boleh dihitung berkali-kali
                 
                 // Get PR IDs in this category for the selected date range (follow date filter from above)
+                // Support both old structure (category at PR level) and new structure (category at items level)
                 // Use whereBetween to follow the date filter selected by user
-                $prIdsInCategory = DB::table('purchase_requisitions')
-                    ->where('category_id', $category->id)
-                    ->whereBetween('created_at', [$dateFrom, $dateTo])
-                    ->whereIn('status', ['SUBMITTED', 'APPROVED', 'PROCESSED', 'COMPLETED'])
-                    ->pluck('id')
+                $prIdsInCategory = DB::table('purchase_requisitions as pr')
+                    ->leftJoin('purchase_requisition_items as pri', 'pr.id', '=', 'pri.purchase_requisition_id')
+                    ->where(function($q) use ($category) {
+                        $q->where('pr.category_id', $category->id)
+                          ->orWhere('pri.category_id', $category->id);
+                    })
+                    ->whereBetween('pr.created_at', [$dateFrom, $dateTo])
+                    ->whereIn('pr.status', ['SUBMITTED', 'APPROVED', 'PROCESSED', 'COMPLETED'])
+                    ->distinct()
+                    ->pluck('pr.id')
                     ->toArray();
                 
                 // Get PO IDs that are linked to PRs in this category (from selected date range)
@@ -574,7 +650,8 @@ class OpexReportController extends Controller
                 
                 // Get paid payments directly from non_food_payments (grouped by payment ID to avoid duplicates)
                 // 1 payment = 1 transaksi pembayaran unik, tidak dihitung berkali-kali
-                // Ambil outlet dari PR pertama yang terkait dengan payment ini
+                // Support both old structure (outlet at PR level) and new structure (outlet at items level)
+                // Ambil outlet dari items (new structure) atau fallback ke PR level (old structure)
                 $paidPaymentsData = DB::table('non_food_payments as nfp')
                     ->leftJoin('purchase_order_ops as poo', 'nfp.purchase_order_ops_id', '=', 'poo.id')
                     ->leftJoin('purchase_order_ops_items as poi', function($join) {
@@ -582,14 +659,26 @@ class OpexReportController extends Controller
                              ->where('poi.source_type', '=', 'purchase_requisition_ops');
                     })
                     ->leftJoin('purchase_requisitions as pr', 'poi.source_id', '=', 'pr.id')
-                    ->leftJoin('tbl_data_outlet as o', 'pr.outlet_id', '=', 'o.id_outlet')
+                    ->leftJoin('purchase_requisition_items as pri', function($join) {
+                        $join->on('pr.id', '=', 'pri.purchase_requisition_id')
+                             ->where(function($q) {
+                                 $q->whereColumn('poi.pr_ops_item_id', 'pri.id')
+                                   ->orWhere(function($q2) {
+                                       $q2->whereNull('poi.pr_ops_item_id')
+                                          ->whereColumn('poi.item_name', 'pri.item_name');
+                                   });
+                             });
+                    })
+                    ->leftJoin('tbl_data_outlet as o', function($join) {
+                        $join->on(DB::raw('COALESCE(pri.outlet_id, pr.outlet_id)'), '=', 'o.id_outlet');
+                    })
                     ->whereIn('nfp.purchase_order_ops_id', $poIdsInCategory)
                     ->whereBetween('nfp.payment_date', [$dateFrom, $dateTo])
                     ->whereIn('nfp.status', ['paid', 'approved'])
                     ->where('nfp.status', '!=', 'cancelled')
                     ->groupBy('nfp.id') // Group by payment ID saja untuk menghindari duplikasi
                     ->select(
-                        DB::raw('MIN(o.id_outlet) as outlet_id'), // Ambil outlet pertama
+                        DB::raw('MIN(COALESCE(pri.outlet_id, pr.outlet_id)) as outlet_id'), // Ambil outlet dari items atau PR
                         DB::raw('MIN(o.nama_outlet) as outlet_name'),
                         'nfp.amount as total_paid_amount', // Payment amount (unique per payment ID)
                         DB::raw('GROUP_CONCAT(DISTINCT pr.pr_number ORDER BY pr.pr_number SEPARATOR ", ") as pr_numbers'),
@@ -606,13 +695,19 @@ class OpexReportController extends Controller
                 // Jika PR belum jadi PO, Unpaid = PR Amount
                 
                 // Get all PRs in this category for the selected date range (follow date filter from above)
+                // Support both old structure (category at PR level) and new structure (category at items level)
                 // Exclude held PRs from unpaid calculation
                 $allPrs = DB::table('purchase_requisitions as pr')
                     ->leftJoin('tbl_data_outlet as o', 'pr.outlet_id', '=', 'o.id_outlet')
-                    ->where('pr.category_id', $category->id)
+                    ->leftJoin('purchase_requisition_items as pri', 'pr.id', '=', 'pri.purchase_requisition_id')
+                    ->where(function($q) use ($category) {
+                        $q->where('pr.category_id', $category->id)
+                          ->orWhere('pri.category_id', $category->id);
+                    })
                     ->whereBetween('pr.created_at', [$dateFrom, $dateTo])
                     ->whereIn('pr.status', ['SUBMITTED', 'APPROVED', 'PROCESSED', 'COMPLETED'])
                     ->where('pr.is_held', false) // Exclude held PRs
+                    ->distinct()
                     ->select(
                         'pr.id as pr_id',
                         'o.id_outlet as outlet_id',
@@ -626,11 +721,25 @@ class OpexReportController extends Controller
 
                 // Get PO totals per PR (sum of all PO items for each PR)
                 // Follow date filter from above (use whereBetween for PR created_at)
+                // Support both old structure (category at PR level) and new structure (category at items level)
                 // Exclude held PRs from unpaid calculation
                 $poTotalsByPr = DB::table('purchase_order_ops_items as poi')
                     ->leftJoin('purchase_order_ops as poo', 'poi.purchase_order_ops_id', '=', 'poo.id')
                     ->leftJoin('purchase_requisitions as pr', 'poi.source_id', '=', 'pr.id')
-                    ->where('pr.category_id', $category->id)
+                    ->leftJoin('purchase_requisition_items as pri', function($join) {
+                        $join->on('pr.id', '=', 'pri.purchase_requisition_id')
+                             ->where(function($q) {
+                                 $q->whereColumn('poi.pr_ops_item_id', 'pri.id')
+                                   ->orWhere(function($q2) {
+                                       $q2->whereNull('poi.pr_ops_item_id')
+                                          ->whereColumn('poi.item_name', 'pri.item_name');
+                                   });
+                             });
+                    })
+                    ->where(function($q) use ($category) {
+                        $q->where('pr.category_id', $category->id)
+                          ->orWhere('pri.category_id', $category->id);
+                    })
                     ->whereBetween('pr.created_at', [$dateFrom, $dateTo])
                     ->where('pr.is_held', false) // Exclude held PRs
                     ->where('poi.source_type', 'purchase_requisition_ops')

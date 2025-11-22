@@ -58,7 +58,8 @@ class PurchaseRequisitionController extends Controller
             'creator',
             'heldBy', // Load user who held the PR
             'approvalFlows.approver', // Load approval flows with approver
-            'items.outlet' // Load items with outlet for multi-outlet modes
+            'items.outlet', // Load items with outlet for multi-outlet modes
+            'items.category' // Load items with category for pr_ops and purchase_payment modes
         ]);
 
         // Filter by created_by if user doesn't have special role

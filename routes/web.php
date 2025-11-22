@@ -292,6 +292,10 @@ Route::middleware(['auth'])->group(function () {
     Route::delete('/announcement/{id}', [AnnouncementController::class, 'destroy'])->name('announcement.destroy');
     Route::resource('categories', CategoryController::class);
     Route::put('/categories/{id}', [App\Http\Controllers\CategoryController::class, 'update']);
+    Route::resource('chart-of-accounts', App\Http\Controllers\ChartOfAccountController::class);
+    Route::resource('jurnal', App\Http\Controllers\JurnalController::class);
+    Route::post('jurnal/{id}/post', [App\Http\Controllers\JurnalController::class, 'post'])->name('jurnal.post');
+    Route::post('jurnal/{id}/cancel', [App\Http\Controllers\JurnalController::class, 'cancel'])->name('jurnal.cancel');
     Route::patch('/categories/{id}', [App\Http\Controllers\CategoryController::class, 'update']);
     Route::post('/categories/{id}', [App\Http\Controllers\CategoryController::class, 'update'])->name('categories.update');
     Route::patch('/categories/{id}/toggle-status', [CategoryController::class, 'toggleStatus'])->name('categories.toggle-status');

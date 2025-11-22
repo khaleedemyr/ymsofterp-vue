@@ -211,15 +211,21 @@
                       {{ getModeLabel(pr.mode) }}
                     </span>
                     <!-- Category Information -->
-                    <div v-if="pr.category" class="flex flex-col gap-0.5 mt-1">
-                      <span class="text-xs font-medium text-gray-700">{{ pr.category.name }}</span>
+                    <div v-if="getCategoriesList(pr).length > 0" class="flex flex-col gap-1 mt-1 max-h-32 overflow-y-auto">
+                      <div v-for="(category, idx) in getCategoriesList(pr).slice(0, 3)" :key="idx" 
+                           class="flex flex-col gap-0.5 p-1.5 bg-blue-50 rounded border border-blue-100">
+                        <span class="text-xs font-medium text-gray-800">{{ category.name }}</span>
                       <div class="flex items-center gap-1 flex-wrap">
-                        <span v-if="pr.category.division" class="text-xs text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">
-                          {{ pr.category.division }}
+                          <span v-if="category.division" class="text-xs text-gray-600 bg-white px-1.5 py-0.5 rounded border border-gray-200">
+                            {{ category.division }}
                         </span>
-                        <span v-if="pr.category.subcategory" class="text-xs text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">
-                          {{ pr.category.subcategory }}
+                          <span v-if="category.subcategory" class="text-xs text-gray-600 bg-white px-1.5 py-0.5 rounded border border-gray-200">
+                            {{ category.subcategory }}
                         </span>
+                        </div>
+                      </div>
+                      <div v-if="getCategoriesList(pr).length > 3" class="text-xs text-gray-500 italic mt-1 px-1.5">
+                        +{{ getCategoriesList(pr).length - 3 }} category lainnya
                       </div>
                     </div>
                     <span v-else class="text-xs text-gray-400 italic">No category</span>
@@ -962,6 +968,36 @@ function formatCurrency(amount) {
     minimumFractionDigits: 0,
   }).format(amount);
 }
+
+function getCategoriesList(pr) {
+  if (!pr) return [];
+  
+  const categories = [];
+  const categoryMap = new Map(); // Untuk menghindari duplikasi
+  
+  // Untuk mode pr_ops dan purchase_payment: ambil semua unique categories dari items
+  if ((pr.mode === 'pr_ops' || pr.mode === 'purchase_payment') && pr.items && pr.items.length > 0) {
+    pr.items.forEach(item => {
+      if (item.category && item.category.id) {
+        // Gunakan ID sebagai key untuk menghindari duplikasi
+        if (!categoryMap.has(item.category.id)) {
+          categoryMap.set(item.category.id, item.category);
+          categories.push(item.category);
+        }
+      }
+    });
+  }
+  
+  // Fallback ke PR level category jika tidak ada category dari items
+  if (categories.length === 0 && pr.category && pr.category.id) {
+    if (!categoryMap.has(pr.category.id)) {
+      categories.push(pr.category);
+    }
+  }
+  
+  return categories;
+}
+
 
 function getOutletList(pr) {
   if (!pr) return [];

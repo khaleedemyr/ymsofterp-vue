@@ -82,6 +82,7 @@ const menuGroups = [
             { name: () => 'Group Video Tutorial', icon: 'fa-solid fa-folder', route: '/video-tutorial-groups', code: 'master-data-video-tutorial-groups' },
             { name: () => 'Locked Budget Food Categories', icon: 'fa-solid fa-lock', route: '/locked-budget-food-categories', code: 'locked_budget_food_categories' },
             { name: () => 'Budget Management', icon: 'fa-solid fa-chart-pie', route: '/budget-management', code: 'budget_management' },
+            { name: () => 'Chart of Account', icon: 'fa-solid fa-chart-line', route: '/chart-of-accounts', code: 'chart_of_account' },
         ],
     },
     {
@@ -200,6 +201,7 @@ const menuGroups = [
         collapsible: true,
         open: ref(false),
         menus: [
+            { name: () => 'Jurnal', icon: 'fa-solid fa-book', route: '/jurnal', code: 'jurnal' },
             { name: () => 'Contra Bon', icon: 'fa-solid fa-file-circle-xmark', route: '/contra-bons', code: 'contra_bon' },
             { name: () => 'Food Payment', icon: 'fa-solid fa-money-bill-transfer', route: '/food-payments', code: 'food_payment' },
             { name: () => 'Non Food Payment', icon: 'fa-solid fa-credit-card', route: '/non-food-payments', code: 'non_food_payment' },
