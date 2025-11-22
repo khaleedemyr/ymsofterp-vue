@@ -888,7 +888,8 @@ class MemberAppsSettingsController extends Controller
                 'delete_gallery_ids' => 'nullable|array',
                 'delete_gallery_ids.*' => 'exists:member_apps_brand_galleries,id',
                 'facility' => 'nullable', // Can be array or JSON string
-                'tripadvisor_link' => 'nullable|url|max:500'
+                'facility_clear' => 'nullable|string',
+                'tripadvisor_link' => 'nullable|string|max:500' // Changed from url to string to allow empty or partial URLs
             ]);
 
             if ($validator->fails()) {
@@ -906,25 +907,45 @@ class MemberAppsSettingsController extends Controller
                 return redirect()->back()->withErrors($validator)->withInput();
             }
 
-            // Handle facility - can be array, JSON string, or empty string
+            // Handle facility - can be array from FormData (facility[]) or clear marker
             $facility = null;
-            if ($request->has('facility') && $request->facility !== '' && $request->facility !== '[]') {
-                if (is_array($request->facility)) {
-                    // If it's already an array, encode it
-                    $facility = count($request->facility) > 0 ? json_encode($request->facility) : null;
-                } elseif (is_string($request->facility)) {
-                    // If it's a JSON string, validate and use it
-                    $decoded = json_decode($request->facility, true);
-                    if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
-                        $facility = count($decoded) > 0 ? $request->facility : null;
-                    } else {
-                        // If it's not valid JSON, try to treat it as a single value
-                        \Log::warning('Invalid facility JSON format', ['facility' => $request->facility]);
+            \Log::info('UpdateBrand - Facility input', [
+                'has_facility' => $request->has('facility'),
+                'facility_value' => $request->facility,
+                'facility_type' => gettype($request->facility),
+                'is_array' => is_array($request->facility),
+                'has_facility_clear' => $request->has('facility_clear')
+            ]);
+            
+            if ($request->has('facility_clear') && $request->facility_clear == '1') {
+                // Explicit clear marker
+                $facility = null;
+                \Log::info('UpdateBrand - Clearing facility (explicit clear marker)');
+            } elseif ($request->has('facility')) {
+                $facilityInput = $request->facility;
+                
+                if (is_array($facilityInput)) {
+                    // If it's already an array from FormData (facility[]), encode it
+                    $facility = count($facilityInput) > 0 ? json_encode($facilityInput) : null;
+                    \Log::info('UpdateBrand - Facility from array', ['facility' => $facility]);
+                } elseif (is_string($facilityInput)) {
+                    if ($facilityInput === '' || $facilityInput === '[]') {
+                        // Empty string or empty array means clear facility
                         $facility = null;
+                    } else {
+                        // If it's a JSON string, validate and use it
+                        $decoded = json_decode($facilityInput, true);
+                        if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                            $facility = count($decoded) > 0 ? $facilityInput : null;
+                        } else {
+                            \Log::warning('Invalid facility JSON format', ['facility' => $facilityInput]);
+                            $facility = null;
+                        }
                     }
                 }
             }
-            // If facility is empty string or '[]', $facility remains null
+            
+            \Log::info('UpdateBrand - Processed facility', ['facility' => $facility]);
             
             $data = [
                 'description' => $request->description,
@@ -933,6 +954,8 @@ class MemberAppsSettingsController extends Controller
                 'tripadvisor_link' => $request->tripadvisor_link ?: null,
                 'is_active' => true
             ];
+            
+            \Log::info('UpdateBrand - Data to update', $data);
 
             if ($request->hasFile('logo')) {
                 // Delete old logo
@@ -958,7 +981,18 @@ class MemberAppsSettingsController extends Controller
                 $data['pdf_new_dining_experience'] = $request->file('pdf_new_dining_experience')->store('member-apps/brands/pdfs', 'public');
             }
 
+            \Log::info('UpdateBrand - Updating brand', [
+                'brand_id' => $brand->id,
+                'data' => $data
+            ]);
+            
             $brand->update($data);
+            
+            \Log::info('UpdateBrand - Brand updated successfully', [
+                'brand_id' => $brand->id,
+                'facility' => $brand->facility,
+                'tripadvisor_link' => $brand->tripadvisor_link
+            ]);
 
             // Handle delete gallery images
             if ($request->has('delete_gallery_ids')) {

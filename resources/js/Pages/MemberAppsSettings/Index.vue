@@ -3697,12 +3697,21 @@ const saveBrand = () => {
     formData.append('whatsapp_number', brandForm.value.whatsapp_number)
   }
   
-  // Append facility as JSON string
+  // Append facility as array (FormData will handle it correctly)
+  console.log('Saving brand - facility:', brandForm.value.facility)
+  console.log('Saving brand - tripadvisor_link:', brandForm.value.tripadvisor_link)
+  
   if (brandForm.value.facility && brandForm.value.facility.length > 0) {
-    formData.append('facility', JSON.stringify(brandForm.value.facility))
-  } else {
-    // Send empty array for update to clear facility, or null for create
-    formData.append('facility', editingBrand.value ? '[]' : '')
+    // Send as array - FormData will convert to facility[]
+    brandForm.value.facility.forEach((facility) => {
+      formData.append('facility[]', facility)
+    })
+    console.log('Sending facility as array:', brandForm.value.facility)
+  } else if (editingBrand.value) {
+    // For update, if facility is empty, we need to clear it
+    // Send a special marker to indicate empty
+    formData.append('facility_clear', '1')
+    console.log('Sending facility clear marker for update')
   }
   
   // Append tripadvisor_link (always send, even if empty)
