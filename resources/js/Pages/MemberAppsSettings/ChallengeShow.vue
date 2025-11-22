@@ -47,11 +47,11 @@
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
               <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1">Challenge Type</label>
-                <p class="text-gray-900 font-semibold">{{ getChallengeTypeLabel(challenge.challenge_type_id) }}</p>
+                <p class="text-gray-900 font-semibold">{{ getChallengeTypeLabel(challenge.challenge_type_id) || 'Not specified' }}</p>
               </div>
-              <div v-if="challenge.validity_period_days">
+              <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1">Validity Period</label>
-                <p class="text-gray-900">{{ challenge.validity_period_days }} days</p>
+                <p class="text-gray-900">{{ challenge.validity_period_days || 30 }} days</p>
               </div>
               <div v-if="challenge.start_date">
                 <label class="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
@@ -79,11 +79,50 @@
                 </div>
                 <div v-if="challenge.rules.reward_type">
                   <label class="block text-sm font-medium text-gray-700 mb-1">Reward Value</label>
-                  <div v-if="challenge.rules.reward_type === 'item' && challenge.reward_item" class="flex items-center gap-2">
-                    <i class="fa-solid fa-box text-blue-600"></i>
-                    <p class="text-gray-900 font-semibold">{{ challenge.reward_item.name }}</p>
+                  <!-- Item Reward -->
+                  <div v-if="challenge.rules.reward_type === 'item' && challenge.rules.reward_value">
+                    <div v-if="Array.isArray(challenge.rules.reward_value) && challenge.rules.reward_value.length > 0" class="space-y-2">
+                      <div v-for="(itemId, index) in challenge.rules.reward_value" :key="index" class="flex items-center gap-2">
+                        <i class="fa-solid fa-box text-blue-600"></i>
+                        <p class="text-gray-900 font-semibold">
+                          {{ getItemName(itemId) || `Item ID: ${itemId}` }}
+                        </p>
+                      </div>
+                    </div>
+                    <div v-else-if="challenge.reward_item" class="flex items-center gap-2">
+                      <i class="fa-solid fa-box text-blue-600"></i>
+                      <p class="text-gray-900 font-semibold">{{ challenge.reward_item.name }}</p>
+                    </div>
+                    <p v-else class="text-gray-900 font-semibold">{{ challenge.rules.reward_value || '-' }}</p>
+                  </div>
+                  <!-- Points Reward -->
+                  <div v-else-if="challenge.rules.reward_type === 'points'">
+                    <p class="text-gray-900 font-semibold">{{ challenge.rules.reward_value || challenge.points_reward || 0 }} points</p>
+                  </div>
+                  <!-- Voucher Reward -->
+                  <div v-else-if="challenge.rules.reward_type === 'voucher' && challenge.rules.reward_value">
+                    <div v-if="Array.isArray(challenge.rules.reward_value) && challenge.rules.reward_value.length > 0" class="space-y-2">
+                      <div v-for="(voucherId, index) in challenge.rules.reward_value" :key="index" class="flex items-center gap-2">
+                        <i class="fa-solid fa-tag text-green-600"></i>
+                        <p class="text-gray-900 font-semibold">
+                          {{ getVoucherName(voucherId) || `Voucher ID: ${voucherId}` }}
+                        </p>
+                      </div>
+                    </div>
+                    <p v-else class="text-gray-900 font-semibold">{{ challenge.rules.reward_value || '-' }}</p>
                   </div>
                   <p v-else class="text-gray-900 font-semibold">{{ challenge.rules.reward_value || '-' }}</p>
+                </div>
+                <!-- Reward Outlets for Item/Voucher -->
+                <div v-if="(challenge.rules.reward_type === 'item' || challenge.rules.reward_type === 'voucher') && challenge.rules.reward_all_outlets !== undefined">
+                  <label class="block text-sm font-medium text-gray-700 mb-1">Reward Available At</label>
+                  <span v-if="challenge.rules.reward_all_outlets" class="px-2 py-1 rounded text-sm bg-blue-100 text-blue-800">
+                    All Outlets
+                  </span>
+                  <div v-else-if="challenge.rules.reward_outlet_ids && challenge.rules.reward_outlet_ids.length > 0" class="space-y-1">
+                    <p class="text-gray-900 font-semibold">{{ challenge.rules.reward_outlet_ids.length }} Selected Outlet(s)</p>
+                  </div>
+                  <span v-else class="px-2 py-1 rounded text-sm bg-gray-100 text-gray-800">Not specified</span>
                 </div>
                 <div v-if="challenge.rules.immediate !== undefined">
                   <label class="block text-sm font-medium text-gray-700 mb-1">Immediate Reward</label>
@@ -95,54 +134,78 @@
 
               <!-- Product-based Rules -->
               <div v-else-if="challenge.challenge_type_id === 'product'" class="space-y-3">
-                <div v-if="challenge.rules.product_category">
-                  <label class="block text-sm font-medium text-gray-700 mb-1">Product Category</label>
-                  <p class="text-gray-900 font-semibold">{{ challenge.rules.product_category }}</p>
+                <div v-if="challenge.rules.products && Array.isArray(challenge.rules.products) && challenge.rules.products.length > 0">
+                  <label class="block text-sm font-medium text-gray-700 mb-1">Selected Products</label>
+                  <div class="space-y-2">
+                    <div v-for="(productId, index) in challenge.rules.products" :key="index" class="flex items-center gap-2">
+                      <i class="fa-solid fa-box text-blue-600"></i>
+                      <p class="text-gray-900 font-semibold">
+                        {{ getItemName(productId) || `Product ID: ${productId}` }}
+                      </p>
+                    </div>
+                  </div>
                 </div>
                 <div v-if="challenge.rules.quantity_required">
                   <label class="block text-sm font-medium text-gray-700 mb-1">Quantity Required</label>
                   <p class="text-gray-900 font-semibold">{{ challenge.rules.quantity_required }}</p>
                 </div>
-                <div v-if="challenge.rules.reward_type">
-                  <label class="block text-sm font-medium text-gray-700 mb-1">Reward Type</label>
-                  <p class="text-gray-900 font-semibold">{{ getRewardTypeLabel(challenge.rules.reward_type) }}</p>
-                </div>
-                <div v-if="challenge.rules.reward_value">
-                  <label class="block text-sm font-medium text-gray-700 mb-1">Reward Value</label>
-                  <p class="text-gray-900 font-semibold">{{ challenge.rules.reward_value }}</p>
-                </div>
-              </div>
-
-              <!-- Multi-condition Rules -->
-              <div v-else-if="challenge.challenge_type_id === 'multi-condition'" class="space-y-3">
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div v-if="challenge.rules.min_spending">
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Min Spending</label>
-                    <p class="text-gray-900 font-semibold">Rp {{ formatCurrency(challenge.rules.min_spending) }}</p>
+                <div v-if="challenge.rules.all_outlets !== undefined">
+                  <label class="block text-sm font-medium text-gray-700 mb-1">Available At</label>
+                  <span v-if="challenge.rules.all_outlets" class="px-2 py-1 rounded text-sm bg-blue-100 text-blue-800">
+                    All Outlets
+                  </span>
+                  <div v-else-if="challenge.rules.outlet_ids && challenge.rules.outlet_ids.length > 0" class="space-y-1">
+                    <p class="text-gray-900 font-semibold">{{ challenge.rules.outlet_ids.length }} Selected Outlet(s)</p>
                   </div>
-                  <div v-if="challenge.rules.min_transactions">
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Min Transactions</label>
-                    <p class="text-gray-900 font-semibold">{{ challenge.rules.min_transactions }}</p>
-                  </div>
-                  <div v-if="challenge.rules.min_visits">
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Min Visits</label>
-                    <p class="text-gray-900 font-semibold">{{ challenge.rules.min_visits }}</p>
-                  </div>
+                  <span v-else class="px-2 py-1 rounded text-sm bg-gray-100 text-gray-800">Not specified</span>
                 </div>
                 <div v-if="challenge.rules.reward_type">
                   <label class="block text-sm font-medium text-gray-700 mb-1">Reward Type</label>
                   <p class="text-gray-900 font-semibold">{{ getRewardTypeLabel(challenge.rules.reward_type) }}</p>
                 </div>
-                <div v-if="challenge.rules.reward_value">
+                <div v-if="challenge.rules.reward_type">
                   <label class="block text-sm font-medium text-gray-700 mb-1">Reward Value</label>
-                  <p class="text-gray-900 font-semibold">{{ challenge.rules.reward_value }}</p>
+                  <!-- Item Reward -->
+                  <div v-if="challenge.rules.reward_type === 'item' && challenge.rules.reward_value">
+                    <div v-if="Array.isArray(challenge.rules.reward_value) && challenge.rules.reward_value.length > 0" class="space-y-2">
+                      <div v-for="(itemId, index) in challenge.rules.reward_value" :key="index" class="flex items-center gap-2">
+                        <i class="fa-solid fa-box text-blue-600"></i>
+                        <p class="text-gray-900 font-semibold">
+                          {{ getItemName(itemId) || `Item ID: ${itemId}` }}
+                        </p>
+                      </div>
+                    </div>
+                    <p v-else class="text-gray-900 font-semibold">{{ challenge.rules.reward_value || '-' }}</p>
+                  </div>
+                  <!-- Points Reward -->
+                  <div v-else-if="challenge.rules.reward_type === 'points'">
+                    <p class="text-gray-900 font-semibold">{{ challenge.rules.reward_value || challenge.points_reward || 0 }} points</p>
+                  </div>
+                  <!-- Voucher Reward -->
+                  <div v-else-if="challenge.rules.reward_type === 'voucher' && challenge.rules.reward_value">
+                    <div v-if="Array.isArray(challenge.rules.reward_value) && challenge.rules.reward_value.length > 0" class="space-y-2">
+                      <div v-for="(voucherId, index) in challenge.rules.reward_value" :key="index" class="flex items-center gap-2">
+                        <i class="fa-solid fa-tag text-green-600"></i>
+                        <p class="text-gray-900 font-semibold">
+                          {{ getVoucherName(voucherId) || `Voucher ID: ${voucherId}` }}
+                        </p>
+                      </div>
+                    </div>
+                    <p v-else class="text-gray-900 font-semibold">{{ challenge.rules.reward_value || '-' }}</p>
+                  </div>
+                  <p v-else class="text-gray-900 font-semibold">{{ challenge.rules.reward_value || '-' }}</p>
                 </div>
-              </div>
-
-              <!-- Custom Rules -->
-              <div v-else-if="challenge.challenge_type_id === 'custom'">
-                <label class="block text-sm font-medium text-gray-700 mb-1">Custom Rules</label>
-                <p class="text-gray-900 whitespace-pre-wrap">{{ challenge.rules }}</p>
+                <!-- Reward Outlets for Item/Voucher -->
+                <div v-if="(challenge.rules.reward_type === 'item' || challenge.rules.reward_type === 'voucher') && challenge.rules.reward_all_outlets !== undefined">
+                  <label class="block text-sm font-medium text-gray-700 mb-1">Reward Available At</label>
+                  <span v-if="challenge.rules.reward_all_outlets" class="px-2 py-1 rounded text-sm bg-blue-100 text-blue-800">
+                    All Outlets
+                  </span>
+                  <div v-else-if="challenge.rules.reward_outlet_ids && challenge.rules.reward_outlet_ids.length > 0" class="space-y-1">
+                    <p class="text-gray-900 font-semibold">{{ challenge.rules.reward_outlet_ids.length }} Selected Outlet(s)</p>
+                  </div>
+                  <span v-else class="px-2 py-1 rounded text-sm bg-gray-100 text-gray-800">Not specified</span>
+                </div>
               </div>
             </div>
           </div>
@@ -221,6 +284,39 @@ const getRewardTypeLabel = (type) => {
     'voucher': 'Voucher'
   }
   return types[type] || type || 'Unknown'
+}
+
+const getItemName = (itemId) => {
+  if (!itemId || !props.challenge) return null
+  
+  // Convert to string for consistent key lookup
+  const id = String(itemId)
+  
+  // Check reward_items (for reward items)
+  if (props.challenge.reward_items && props.challenge.reward_items[id]) {
+    return props.challenge.reward_items[id].name
+  }
+  
+  // Check product_items (for product-based challenge)
+  if (props.challenge.product_items && props.challenge.product_items[id]) {
+    return props.challenge.product_items[id].name
+  }
+  
+  return null
+}
+
+const getVoucherName = (voucherId) => {
+  if (!voucherId || !props.challenge) return null
+  
+  // Convert to string for consistent key lookup
+  const id = String(voucherId)
+  
+  // Check reward_vouchers
+  if (props.challenge.reward_vouchers && props.challenge.reward_vouchers[id]) {
+    return props.challenge.reward_vouchers[id].name
+  }
+  
+  return null
 }
 
 const goBack = () => {

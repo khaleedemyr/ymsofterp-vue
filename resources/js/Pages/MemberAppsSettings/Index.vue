@@ -3221,19 +3221,43 @@ const editChallenge = (challenge) => {
       rules.reward_outlet_ids = []
     }
   } else if (rules.reward_type === 'points') {
-    // For points, ensure it's a number
-    rules.reward_value = parseInt(rules.reward_value) || 0
+    // For points, use reward_value from rules, or fallback to points_reward from challenge
+    if (rules.reward_value) {
+      rules.reward_value = parseInt(rules.reward_value) || 0
+    } else if (challenge.points_reward) {
+      rules.reward_value = parseInt(challenge.points_reward) || 0
+    } else {
+      rules.reward_value = 0
+    }
+  } else {
+    // If no reward_type is set but points_reward exists, set reward_type to points
+    if (!rules.reward_type && challenge.points_reward) {
+      rules.reward_type = 'points'
+      rules.reward_value = parseInt(challenge.points_reward) || 0
+    }
+  }
+  
+  // Format dates for input fields (YYYY-MM-DD)
+  let startDate = ''
+  let endDate = ''
+  if (challenge.start_date) {
+    const start = new Date(challenge.start_date)
+    startDate = start.toISOString().split('T')[0]
+  }
+  if (challenge.end_date) {
+    const end = new Date(challenge.end_date)
+    endDate = end.toISOString().split('T')[0]
   }
   
   challengeForm.value = {
     challenge_type_id: challenge.challenge_type_id || '',
-    title: challenge.title,
+    title: challenge.title || '',
     description: challenge.description || '',
     rules: rules,
     validity_period_days: challenge.validity_period_days || 30,
     image: null,
-    start_date: challenge.start_date || '',
-    end_date: challenge.end_date || '',
+    start_date: startDate,
+    end_date: endDate,
     is_active: challenge.is_active !== undefined ? challenge.is_active : true
   }
   showChallengeModal.value = true
@@ -3476,6 +3500,14 @@ const saveChallenge = () => {
   formData.append('start_date', challengeForm.value.start_date)
   formData.append('end_date', challengeForm.value.end_date)
   formData.append('is_active', challengeForm.value.is_active ? '1' : '0')
+  
+  // Extract points_reward from rules if reward_type is 'points', otherwise use 0 as default
+  let pointsReward = 0
+  if (rules.reward_type === 'points' && rules.reward_value) {
+    pointsReward = parseInt(rules.reward_value) || 0
+  }
+  formData.append('points_reward', pointsReward.toString())
+  
   // Always send challenge_type_id if it exists (even if empty string)
   if (challengeForm.value.challenge_type_id !== undefined && challengeForm.value.challenge_type_id !== null) {
     formData.append('challenge_type_id', challengeForm.value.challenge_type_id || '')
