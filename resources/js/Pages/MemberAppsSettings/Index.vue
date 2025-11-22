@@ -283,6 +283,29 @@
                     </div>
                   </div>
                 </div>
+                <div v-if="brand.facility && (Array.isArray(brand.facility) ? brand.facility.length > 0 : JSON.parse(brand.facility || '[]').length > 0)" class="mb-3">
+                  <p class="text-xs font-medium text-gray-700 mb-1">
+                    <i class="fa-solid fa-building mr-1"></i>Facilities:
+                  </p>
+                  <div class="flex flex-wrap gap-1">
+                    <span 
+                      v-for="(facility, index) in (Array.isArray(brand.facility) ? brand.facility : JSON.parse(brand.facility || '[]'))" 
+                      :key="index"
+                      class="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs"
+                    >
+                      {{ getFacilityName(facility) }}
+                    </span>
+                  </div>
+                </div>
+                <div v-if="brand.tripadvisor_link" class="mb-3">
+                  <p class="text-xs font-medium text-gray-700 mb-1">
+                    <i class="fa-solid fa-star mr-1"></i>TripAdvisor:
+                  </p>
+                  <a :href="brand.tripadvisor_link" target="_blank" class="text-blue-600 hover:text-blue-800 text-xs break-all">
+                    <i class="fa-solid fa-external-link-alt mr-1"></i>
+                    {{ brand.tripadvisor_link }}
+                  </a>
+                </div>
                 <div class="flex justify-between items-center mb-3">
                   <span :class="['px-2 py-1 rounded-full text-xs font-medium', brand.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800']">
                     {{ brand.is_active ? 'Active' : 'Inactive' }}
@@ -2931,6 +2954,18 @@ const formatDate = (date) => {
     month: 'long',
     day: 'numeric'
   })
+}
+
+// Helper function to get facility display name
+const getFacilityName = (facilityKey) => {
+  const facilityNames = {
+    'wifi': 'Speed Wi-fi',
+    'smoking_area': 'Smoking Area',
+    'mushola': 'Mushola',
+    'meeting_room': 'Meeting Room',
+    'valet_parking': 'Free Valet Parking'
+  }
+  return facilityNames[facilityKey] || facilityKey
 }
 
 // Modal functions
