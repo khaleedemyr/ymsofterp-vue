@@ -158,7 +158,15 @@ class ChallengeController extends Controller
 
             // Get member progress if authenticated
             $progress = null;
-            $member = $request->user();
+            // Try to get user from request (works with or without auth middleware)
+            $member = null;
+            try {
+                $member = auth('sanctum')->user();
+            } catch (\Exception $e) {
+                // If sanctum fails, try to get from request
+                $member = $request->user();
+            }
+            
             if ($member) {
                 $progressRecord = MemberAppsChallengeProgress::where('member_id', $member->id)
                     ->where('challenge_id', $challenge->id)
@@ -183,7 +191,7 @@ class ChallengeController extends Controller
                         'reward_expires_at' => $progressRecord->reward_expires_at ? $progressRecord->reward_expires_at->format('Y-m-d H:i:s') : null,
                         'is_reward_expired' => $progressRecord->isRewardExpired(),
                         'can_claim_reward' => $progressRecord->canClaimReward(),
-                        'progress_data' => $progressRecord->progress_data,
+                        'progress_data' => $progressRecord->progress_data ?? [],
                     ];
                 }
             }
