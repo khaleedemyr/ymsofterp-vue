@@ -195,6 +195,8 @@ class BrandController extends Controller
                     ? json_decode($brandData->facility, true) 
                     : $brandData->facility;
                 
+                \Log::info('BrandController show - facilityData: ' . json_encode($facilityData));
+                
                 if (is_array($facilityData)) {
                     $facilityInfo = [
                         'wifi' => [
@@ -229,8 +231,12 @@ class BrandController extends Controller
                             $facilities[] = array_merge(['key' => $facilityKey], $facilityInfo[$facilityKey]);
                         }
                     }
+                    
+                    \Log::info('BrandController show - processed facilities: ' . json_encode($facilities));
                 }
             }
+            
+            \Log::info('BrandController show - final facilities count: ' . count($facilities));
 
             return response()->json([
                 'success' => true,
