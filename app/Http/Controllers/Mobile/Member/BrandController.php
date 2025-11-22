@@ -75,6 +75,17 @@ class BrandController extends Controller
                             ->toArray();
                     }
                     
+                    // Process facility data for list (simplified)
+                    $facilityCount = 0;
+                    if ($brandData && $brandData->facility) {
+                        $facilityData = is_string($brandData->facility) 
+                            ? json_decode($brandData->facility, true) 
+                            : $brandData->facility;
+                        if (is_array($facilityData)) {
+                            $facilityCount = count($facilityData);
+                        }
+                    }
+                    
                     return [
                         'id' => $outletId,
                         'name' => $brandArray['nama_outlet'] ?? '',
@@ -91,6 +102,8 @@ class BrandController extends Controller
                         'pdf_menu' => $pdfMenuUrl,
                         'pdf_new_dining_experience' => $pdfNewDiningUrl,
                         'whatsapp_number' => $brandData ? $brandData->whatsapp_number : null,
+                        'tripadvisor_link' => $brandData ? $brandData->tripadvisor_link : null,
+                        'facility_count' => $facilityCount,
                         'gallery' => $galleryImages,
                     ];
                 });
@@ -175,6 +188,50 @@ class BrandController extends Controller
                     ->toArray();
             }
 
+            // Process facility data
+            $facilities = [];
+            if ($brandData && $brandData->facility) {
+                $facilityData = is_string($brandData->facility) 
+                    ? json_decode($brandData->facility, true) 
+                    : $brandData->facility;
+                
+                if (is_array($facilityData)) {
+                    $facilityInfo = [
+                        'wifi' => [
+                            'name' => 'Speed Wi-fi',
+                            'description' => 'High-speed internet access is available to support your connectivity throughout your visit.',
+                            'image' => 'https://ymsofterp.com/images/WIFI.png'
+                        ],
+                        'smoking_area' => [
+                            'name' => 'Smoking Area',
+                            'description' => 'Our designated smoking area offers comfort for guests who wish to relax without disturbing others',
+                            'image' => 'https://ymsofterp.com/images/SMOKINGAREA.png'
+                        ],
+                        'mushola' => [
+                            'name' => 'Mushola',
+                            'description' => 'A clean and comfortable prayer room is available to ensure you can worship in peace',
+                            'image' => 'https://ymsofterp.com/images/MUSHOLA.png'
+                        ],
+                        'meeting_room' => [
+                            'name' => 'Meeting Room',
+                            'description' => 'A comfortable meeting room, suitable for business needs or private events.',
+                            'image' => 'https://ymsofterp.com/images/MEETINGROOM.png'
+                        ],
+                        'valet_parking' => [
+                            'name' => 'Free Valet Parking',
+                            'description' => 'Enjoy complimentary parking convenience with our valet service',
+                            'image' => 'https://ymsofterp.com/images/VALET.png'
+                        ],
+                    ];
+                    
+                    foreach ($facilityData as $facilityKey) {
+                        if (isset($facilityInfo[$facilityKey])) {
+                            $facilities[] = array_merge(['key' => $facilityKey], $facilityInfo[$facilityKey]);
+                        }
+                    }
+                }
+            }
+
             return response()->json([
                 'success' => true,
                 'data' => [
@@ -193,6 +250,8 @@ class BrandController extends Controller
                     'pdf_menu' => $pdfMenuUrl,
                     'pdf_new_dining_experience' => $pdfNewDiningUrl,
                     'whatsapp_number' => $brandData ? $brandData->whatsapp_number : null,
+                    'tripadvisor_link' => $brandData ? $brandData->tripadvisor_link : null,
+                    'facility' => $facilities,
                     'gallery' => $galleryImages,
                 ],
                 'message' => 'Brand retrieved successfully'

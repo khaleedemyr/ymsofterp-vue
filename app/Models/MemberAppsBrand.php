@@ -19,12 +19,15 @@ class MemberAppsBrand extends Model
         'pdf_menu',
         'pdf_new_dining_experience',
         'website_url',
+        'facility',
+        'tripadvisor_link',
         'is_active',
         'sort_order'
     ];
 
     protected $casts = [
         'is_active' => 'boolean',
+        'facility' => 'array',
     ];
 
     public function outlet()

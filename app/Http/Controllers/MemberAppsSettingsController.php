@@ -794,7 +794,10 @@ class MemberAppsSettingsController extends Controller
                 'pdf_menu' => 'nullable|file|mimes:pdf|max:10240',
                 'pdf_new_dining_experience' => 'nullable|file|mimes:pdf|max:10240',
                 'gallery_images' => 'nullable|array',
-                'gallery_images.*' => 'image|mimes:jpeg,png,jpg,gif|max:2048'
+                'gallery_images.*' => 'image|mimes:jpeg,png,jpg,gif|max:2048',
+                'facility' => 'nullable|array',
+                'facility.*' => 'string|in:wifi,smoking_area,mushola,meeting_room,valet_parking',
+                'tripadvisor_link' => 'nullable|url|max:500'
             ]);
 
             if ($validator->fails()) {
@@ -821,6 +824,8 @@ class MemberAppsSettingsController extends Controller
                 'name' => $outlet->nama_outlet,
                 'description' => $request->description,
                 'whatsapp_number' => $request->whatsapp_number,
+                'facility' => $request->facility ? json_encode($request->facility) : null,
+                'tripadvisor_link' => $request->tripadvisor_link,
                 'is_active' => true
             ];
 
@@ -900,6 +905,8 @@ class MemberAppsSettingsController extends Controller
             $data = [
                 'description' => $request->description,
                 'whatsapp_number' => $request->whatsapp_number,
+                'facility' => $request->facility ? json_encode($request->facility) : null,
+                'tripadvisor_link' => $request->tripadvisor_link,
                 'is_active' => true
             ];
 

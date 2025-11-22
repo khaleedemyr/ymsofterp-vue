@@ -2054,6 +2054,41 @@
               </div>
             </div>
             <div>
+              <label class="block text-sm font-medium text-gray-700 mb-2">Facilities</label>
+              <div class="space-y-2">
+                <label class="flex items-center space-x-2 cursor-pointer">
+                  <input type="checkbox" v-model="brandForm.facility" value="wifi" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+                  <span class="text-sm text-gray-700">Speed Wi-fi</span>
+                </label>
+                <label class="flex items-center space-x-2 cursor-pointer">
+                  <input type="checkbox" v-model="brandForm.facility" value="smoking_area" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+                  <span class="text-sm text-gray-700">Smoking Area</span>
+                </label>
+                <label class="flex items-center space-x-2 cursor-pointer">
+                  <input type="checkbox" v-model="brandForm.facility" value="mushola" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+                  <span class="text-sm text-gray-700">Mushola</span>
+                </label>
+                <label class="flex items-center space-x-2 cursor-pointer">
+                  <input type="checkbox" v-model="brandForm.facility" value="meeting_room" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+                  <span class="text-sm text-gray-700">Meeting Room</span>
+                </label>
+                <label class="flex items-center space-x-2 cursor-pointer">
+                  <input type="checkbox" v-model="brandForm.facility" value="valet_parking" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+                  <span class="text-sm text-gray-700">Free Valet Parking</span>
+                </label>
+              </div>
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-2">TripAdvisor Link</label>
+              <input 
+                v-model="brandForm.tripadvisor_link" 
+                type="url" 
+                placeholder="https://www.tripadvisor.com/..."
+                class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              >
+              <p class="text-xs text-gray-500 mt-1">Masukkan link TripAdvisor untuk brand ini</p>
+            </div>
+            <div>
               <label class="block text-sm font-medium text-gray-700 mb-2">Foto Gallery</label>
               <input @change="handleBrandGalleryChange" type="file" accept="image/*" multiple class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
               <div class="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
@@ -2729,6 +2764,8 @@ const brandForm = ref({
   outlet_id: '',
   description: '',
   whatsapp_number: '',
+  facility: [],
+  tripadvisor_link: '',
   logo: null,
   pdf_menu: null,
   pdf_new_dining_experience: null,
@@ -2971,6 +3008,9 @@ const openBrandModal = () => {
   brandForm.value = {
     outlet_id: '',
     description: '',
+    whatsapp_number: '',
+    facility: [],
+    tripadvisor_link: '',
     logo: null,
     pdf_menu: null,
     pdf_new_dining_experience: null,
@@ -3009,6 +3049,8 @@ const closeBrandModal = () => {
     outlet_id: '',
     description: '',
     whatsapp_number: '',
+    facility: [],
+    tripadvisor_link: '',
     logo: null,
     pdf_menu: null,
     pdf_new_dining_experience: null,
@@ -3282,6 +3324,8 @@ const editBrand = (brand) => {
     outlet_id: brand.outlet_id || '',
     description: brand.description || '',
     whatsapp_number: brand.whatsapp_number || '',
+    facility: brand.facility ? (Array.isArray(brand.facility) ? brand.facility : JSON.parse(brand.facility)) : [],
+    tripadvisor_link: brand.tripadvisor_link || '',
     logo: null,
     pdf_menu: null,
     pdf_new_dining_experience: null,
