@@ -9,6 +9,8 @@ use App\Models\MemberAppsChallenge;
 use App\Models\MemberAppsMember;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Auth;
+use Laravel\Sanctum\PersonalAccessToken;
 
 class RewardController extends Controller
 {
@@ -21,46 +23,64 @@ class RewardController extends Controller
     public function index(Request $request)
     {
         try {
-            $member = $request->user();
+            $member = null;
             $memberPoints = 0;
             $memberId = null;
             
-            // Get member points if authenticated
-            if ($member) {
-                $memberPoints = $member->just_points ?? 0;
-                $memberId = $member->id;
+            // Try to authenticate user from token if provided
+            $token = $request->bearerToken();
+            if ($token) {
+                // Find token in database
+                $accessToken = PersonalAccessToken::findToken($token);
+                if ($accessToken) {
+                    // Get the user (member) associated with this token
+                    $member = $accessToken->tokenable;
+                    if ($member instanceof MemberAppsMember) {
+                        $memberPoints = $member->just_points ?? 0;
+                        $memberId = $member->id;
+                    }
+                }
             }
+            
+            // Log for debugging
+            \Log::info('RewardController@index', [
+                'has_member' => $member ? 'yes' : 'no',
+                'member_id' => $memberId,
+                'member_points' => $memberPoints,
+                'has_token' => $token ? 'yes' : 'no',
+            ]);
 
-            // 1. Ambil rewards yang point member cukup (atau jika tidak login, ambil semua)
-            $rewardsQuery = DB::table('member_apps_rewards as rewards')
-                ->join('items', 'rewards.item_id', '=', 'items.id')
-                ->leftJoin('categories', 'items.category_id', '=', 'categories.id')
-                ->leftJoin('sub_categories', function($join) {
-                    $join->on('items.sub_category_id', '=', 'sub_categories.id')
-                         ->whereNotNull('items.sub_category_id');
-                })
-                ->where('rewards.is_active', 1);
+            // 1. Ambil rewards yang point member cukup
+            // Jika member tidak authenticated atau point = 0, tidak tampilkan reward biasa (hanya challenge rewards)
+            $rewards = collect();
             
-            // Filter by points if member is authenticated
+            // Hanya query rewards jika member authenticated dan punya point > 0
             if ($member && $memberPoints > 0) {
-                $rewardsQuery->where('rewards.points_required', '<=', $memberPoints);
+                $rewards = DB::table('member_apps_rewards as rewards')
+                    ->join('items', 'rewards.item_id', '=', 'items.id')
+                    ->leftJoin('categories', 'items.category_id', '=', 'categories.id')
+                    ->leftJoin('sub_categories', function($join) {
+                        $join->on('items.sub_category_id', '=', 'sub_categories.id')
+                             ->whereNotNull('items.sub_category_id');
+                    })
+                    ->where('rewards.is_active', 1)
+                    ->where('rewards.points_required', '<=', $memberPoints)
+                    ->select(
+                        'rewards.id as reward_id',
+                        'rewards.item_id',
+                        'rewards.points_required',
+                        'rewards.serial_code',
+                        'items.name as item_name',
+                        'items.sku',
+                        'items.description',
+                        'items.category_id',
+                        'items.sub_category_id',
+                        'categories.name as category_name',
+                        'sub_categories.name as sub_category_name'
+                    )
+                    ->orderBy('rewards.id', 'asc')
+                    ->get();
             }
-            
-            $rewards = $rewardsQuery->select(
-                    'rewards.id as reward_id',
-                    'rewards.item_id',
-                    'rewards.points_required',
-                    'rewards.serial_code',
-                    'items.name as item_name',
-                    'items.sku',
-                    'items.description',
-                    'items.category_id',
-                    'items.sub_category_id',
-                    'categories.name as category_name',
-                    'sub_categories.name as sub_category_name'
-                )
-                ->orderBy('rewards.id', 'asc')
-                ->get();
 
             // 2. Ambil reward dari challenge yang sudah completed
             $challengeRewards = collect();
