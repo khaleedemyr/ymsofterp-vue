@@ -3355,17 +3355,45 @@ const editWhatsOn = (news) => {
 
 const editBrand = (brand) => {
   editingBrand.value = brand
+  // Parse facility - handle both array and JSON string
+  let facilityArray = []
+  if (brand.facility) {
+    if (Array.isArray(brand.facility)) {
+      facilityArray = brand.facility
+    } else if (typeof brand.facility === 'string') {
+      try {
+        facilityArray = JSON.parse(brand.facility)
+        if (!Array.isArray(facilityArray)) {
+          facilityArray = []
+        }
+      } catch (e) {
+        console.error('Error parsing facility:', e)
+        facilityArray = []
+      }
+    }
+  }
+  
+  console.log('=== EDIT BRAND DEBUG ===')
+  console.log('brand.facility:', brand.facility)
+  console.log('facilityArray:', facilityArray)
+  console.log('brand.tripadvisor_link:', brand.tripadvisor_link)
+  console.log('brand.description:', brand.description)
+  console.log('brand.whatsapp_number:', brand.whatsapp_number)
+  
   brandForm.value = {
     outlet_id: brand.outlet_id || '',
     description: brand.description || '',
     whatsapp_number: brand.whatsapp_number || '',
-    facility: brand.facility ? (Array.isArray(brand.facility) ? brand.facility : JSON.parse(brand.facility)) : [],
+    facility: facilityArray,
     tripadvisor_link: brand.tripadvisor_link || '',
     logo: null,
     pdf_menu: null,
     pdf_new_dining_experience: null,
     gallery_images: []
   }
+  
+  console.log('brandForm.value after setting:', JSON.parse(JSON.stringify(brandForm.value)))
+  
   brandGalleryImages.value = []
   deleteGalleryIds.value = []
   showBrandModal.value = true
@@ -3686,25 +3714,38 @@ const saveBrand = () => {
   
   savingBrand.value = true
   
+  // Debug: Log form data before sending
+  console.log('=== SAVE BRAND DEBUG ===')
+  console.log('editingBrand:', editingBrand.value)
+  console.log('brandForm.value:', JSON.parse(JSON.stringify(brandForm.value)))
+  console.log('facility:', brandForm.value.facility)
+  console.log('tripadvisor_link:', brandForm.value.tripadvisor_link)
+  console.log('description:', brandForm.value.description)
+  console.log('whatsapp_number:', brandForm.value.whatsapp_number)
+  
   const formData = new FormData()
   
   if (!editingBrand.value) {
     formData.append('outlet_id', brandForm.value.outlet_id)
   }
   
-  formData.append('description', brandForm.value.description)
-  if (brandForm.value.whatsapp_number) {
-    formData.append('whatsapp_number', brandForm.value.whatsapp_number)
-  }
+  // Always append description, even if empty
+  formData.append('description', brandForm.value.description || '')
+  
+  // Always append whatsapp_number, even if empty
+  formData.append('whatsapp_number', brandForm.value.whatsapp_number || '')
   
   // Append facility as array (FormData will handle it correctly)
+  console.log('Saving brand - facility type:', typeof brandForm.value.facility)
   console.log('Saving brand - facility:', brandForm.value.facility)
+  console.log('Saving brand - facility isArray:', Array.isArray(brandForm.value.facility))
   console.log('Saving brand - tripadvisor_link:', brandForm.value.tripadvisor_link)
   
-  if (brandForm.value.facility && brandForm.value.facility.length > 0) {
+  if (brandForm.value.facility && Array.isArray(brandForm.value.facility) && brandForm.value.facility.length > 0) {
     // Send as array - FormData will convert to facility[]
     brandForm.value.facility.forEach((facility) => {
       formData.append('facility[]', facility)
+      console.log('Appended facility:', facility)
     })
     console.log('Sending facility as array:', brandForm.value.facility)
   } else if (editingBrand.value) {
@@ -3715,7 +3756,15 @@ const saveBrand = () => {
   }
   
   // Append tripadvisor_link (always send, even if empty)
-  formData.append('tripadvisor_link', brandForm.value.tripadvisor_link || '')
+  const tripadvisorLink = brandForm.value.tripadvisor_link || ''
+  formData.append('tripadvisor_link', tripadvisorLink)
+  console.log('Appended tripadvisor_link:', tripadvisorLink)
+  
+  // Debug: Log all FormData entries
+  console.log('=== FormData entries ===')
+  for (let pair of formData.entries()) {
+    console.log(pair[0] + ': ' + pair[1])
+  }
   
   if (brandForm.value.logo) {
     formData.append('logo', brandForm.value.logo)
@@ -3748,14 +3797,29 @@ const saveBrand = () => {
   const method = editingBrand.value ? 'put' : 'post'
   
   // Use axios for file uploads to get better error handling
+  console.log('=== SENDING REQUEST ===')
+  console.log('Method:', method)
+  console.log('URL:', url)
+  
+  // Get CSRF token from meta tag
+  const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')
+  if (csrfToken) {
+    formData.append('_token', csrfToken)
+  }
+  
+  // For PUT request, Laravel needs _method
+  if (method === 'put') {
+    formData.append('_method', 'PUT')
+  }
+  
   axios({
-    method: method,
+    method: 'post', // Always use POST, Laravel will handle PUT via _method
     url: url,
     data: formData,
     headers: {
-      'Content-Type': 'multipart/form-data',
       'Accept': 'application/json',
       'X-Requested-With': 'XMLHttpRequest'
+      // Don't set Content-Type for FormData, let browser set it automatically with boundary
     }
   })
   .then((response) => {

@@ -907,27 +907,34 @@ class MemberAppsSettingsController extends Controller
                 return redirect()->back()->withErrors($validator)->withInput();
             }
 
-            // Handle facility - can be array from FormData (facility[]) or clear marker
-            $facility = null;
-            \Log::info('UpdateBrand - Facility input', [
+            // Log all request data for debugging
+            $allData = $request->all();
+            \Log::info('UpdateBrand - All request data', [
+                'all_input' => $allData,
                 'has_facility' => $request->has('facility'),
-                'facility_value' => $request->facility,
-                'facility_type' => gettype($request->facility),
-                'is_array' => is_array($request->facility),
-                'has_facility_clear' => $request->has('facility_clear')
+                'facility_input' => $request->input('facility'),
+                'facility_from_all' => isset($allData['facility']) ? $allData['facility'] : null,
+                'has_facility_clear' => $request->has('facility_clear'),
+                'tripadvisor_link_input' => $request->input('tripadvisor_link'),
+                'description_input' => $request->input('description'),
+                'whatsapp_number_input' => $request->input('whatsapp_number'),
             ]);
             
-            if ($request->has('facility_clear') && $request->facility_clear == '1') {
+            // Handle facility - Laravel automatically converts facility[] to array
+            $facility = null;
+            
+            if ($request->has('facility_clear') && $request->input('facility_clear') == '1') {
                 // Explicit clear marker
                 $facility = null;
                 \Log::info('UpdateBrand - Clearing facility (explicit clear marker)');
-            } elseif ($request->has('facility')) {
-                $facilityInput = $request->facility;
+            } else {
+                // Get facility from request - use input() which supports arrays
+                $facilityInput = $request->input('facility');
                 
-                if (is_array($facilityInput)) {
+                if (is_array($facilityInput) && count($facilityInput) > 0) {
                     // If it's already an array from FormData (facility[]), encode it
-                    $facility = count($facilityInput) > 0 ? json_encode($facilityInput) : null;
-                    \Log::info('UpdateBrand - Facility from array', ['facility' => $facility]);
+                    $facility = json_encode($facilityInput);
+                    \Log::info('UpdateBrand - Facility from array', ['facility' => $facility, 'input' => $facilityInput]);
                 } elseif (is_string($facilityInput)) {
                     if ($facilityInput === '' || $facilityInput === '[]') {
                         // Empty string or empty array means clear facility
@@ -942,16 +949,19 @@ class MemberAppsSettingsController extends Controller
                             $facility = null;
                         }
                     }
+                } else {
+                    \Log::info('UpdateBrand - No facility input or empty', ['facilityInput' => $facilityInput]);
                 }
             }
             
             \Log::info('UpdateBrand - Processed facility', ['facility' => $facility]);
             
+            // Use input() method to get data from request
             $data = [
-                'description' => $request->description,
-                'whatsapp_number' => $request->whatsapp_number,
+                'description' => $request->input('description'),
+                'whatsapp_number' => $request->input('whatsapp_number'),
                 'facility' => $facility,
-                'tripadvisor_link' => $request->tripadvisor_link ?: null,
+                'tripadvisor_link' => $request->input('tripadvisor_link') ?: null,
                 'is_active' => true
             ];
             
