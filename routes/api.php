@@ -347,6 +347,8 @@ Route::prefix('mobile/member')->group(function () {
     Route::get('/banners', [\App\Http\Controllers\Mobile\Member\BannerController::class, 'index'])->name('api.mobile.member.banners.index');
     Route::get('/challenges', [\App\Http\Controllers\Mobile\Member\ChallengeController::class, 'index'])->name('api.mobile.member.challenges.index');
     Route::get('/challenges/{id}', [\App\Http\Controllers\Mobile\Member\ChallengeController::class, 'show'])->name('api.mobile.member.challenges.show');
+    Route::post('/challenges/{id}/start', [\App\Http\Controllers\Mobile\Member\ChallengeController::class, 'start'])->name('api.mobile.member.challenges.start')->middleware('auth:sanctum');
+    Route::post('/challenges/{id}/refresh', [\App\Http\Controllers\Mobile\Member\ChallengeController::class, 'refresh'])->name('api.mobile.member.challenges.refresh')->middleware('auth:sanctum');
     Route::get('/faqs', [\App\Http\Controllers\Mobile\Member\FaqController::class, 'index'])->name('api.mobile.member.faqs.index');
     Route::get('/whats-on', [\App\Http\Controllers\Mobile\Member\WhatsOnController::class, 'index'])->name('api.mobile.member.whats-on.index');
     Route::get('/terms-conditions', [\App\Http\Controllers\Mobile\Member\TermConditionController::class, 'index'])->name('api.mobile.member.terms-conditions.index');

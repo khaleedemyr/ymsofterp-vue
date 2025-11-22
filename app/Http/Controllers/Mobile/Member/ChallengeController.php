@@ -4,9 +4,12 @@ namespace App\Http\Controllers\Mobile\Member;
 
 use App\Http\Controllers\Controller;
 use App\Models\MemberAppsChallenge;
+use App\Models\MemberAppsChallengeProgress;
 use App\Models\Item;
 use App\Models\MemberAppsVoucher;
+use App\Services\ChallengeProgressService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class ChallengeController extends Controller
 {
@@ -112,7 +115,7 @@ class ChallengeController extends Controller
     /**
      * Get challenge detail by ID
      */
-    public function show($id)
+    public function show(Request $request, $id)
     {
         try {
             $challenge = MemberAppsChallenge::findOrFail($id);
@@ -131,7 +134,7 @@ class ChallengeController extends Controller
             $startDate = $challenge->start_date ? $challenge->start_date->format('Y-m-d') : null;
             $endDate = $challenge->end_date ? $challenge->end_date->format('Y-m-d') : null;
 
-            // Format valid until text
+            // Format valid until text (this is for challenge completion deadline, not reward expiry)
             $validUntil = null;
             if ($endDate) {
                 $endDateObj = \Carbon\Carbon::parse($endDate);
@@ -153,6 +156,38 @@ class ChallengeController extends Controller
             // Enrich rules with item/voucher names
             $enrichedRules = $this->enrichRulesWithNames($rules);
 
+            // Get member progress if authenticated
+            $progress = null;
+            $member = $request->user();
+            if ($member) {
+                $progressRecord = MemberAppsChallengeProgress::where('member_id', $member->id)
+                    ->where('challenge_id', $challenge->id)
+                    ->first();
+                
+                if ($progressRecord) {
+                    // Refresh progress from transactions if not completed
+                    if (!$progressRecord->is_completed) {
+                        $progressService = new ChallengeProgressService();
+                        $progressService->updateProgressFromTransaction($member->id);
+                        
+                        // Reload progress record
+                        $progressRecord->refresh();
+                    }
+                    
+                    $progress = [
+                        'started_at' => $progressRecord->started_at ? $progressRecord->started_at->format('Y-m-d H:i:s') : null,
+                        'is_completed' => $progressRecord->is_completed,
+                        'completed_at' => $progressRecord->completed_at ? $progressRecord->completed_at->format('Y-m-d H:i:s') : null,
+                        'reward_claimed' => $progressRecord->reward_claimed,
+                        'reward_claimed_at' => $progressRecord->reward_claimed_at ? $progressRecord->reward_claimed_at->format('Y-m-d H:i:s') : null,
+                        'reward_expires_at' => $progressRecord->reward_expires_at ? $progressRecord->reward_expires_at->format('Y-m-d H:i:s') : null,
+                        'is_reward_expired' => $progressRecord->isRewardExpired(),
+                        'can_claim_reward' => $progressRecord->canClaimReward(),
+                        'progress_data' => $progressRecord->progress_data,
+                    ];
+                }
+            }
+
             return response()->json([
                 'success' => true,
                 'data' => [
@@ -167,6 +202,7 @@ class ChallengeController extends Controller
                     'challenge_type_id' => $challenge->challenge_type_id,
                     'validity_period_days' => $challenge->validity_period_days,
                     'rules' => $enrichedRules,
+                    'progress' => $progress,
                 ],
                 'message' => 'Challenge retrieved successfully'
             ]);
@@ -174,6 +210,149 @@ class ChallengeController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to retrieve challenge: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Start a challenge
+     */
+    public function start(Request $request, $id)
+    {
+        try {
+            $member = $request->user();
+            if (!$member) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthenticated'
+                ], 401);
+            }
+
+            $challenge = MemberAppsChallenge::findOrFail($id);
+
+            // Check if challenge is active
+            if (!$challenge->is_active) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Challenge is not active'
+                ], 400);
+            }
+
+            // Check if challenge hasn't ended
+            if ($challenge->end_date && $challenge->end_date->isPast()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Challenge has ended'
+                ], 400);
+            }
+
+            // Check if member already started this challenge
+            $existingProgress = MemberAppsChallengeProgress::where('member_id', $member->id)
+                ->where('challenge_id', $challenge->id)
+                ->first();
+
+            if ($existingProgress) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Challenge already started'
+                ], 400);
+            }
+
+            // Create progress record
+            $progress = MemberAppsChallengeProgress::create([
+                'member_id' => $member->id,
+                'challenge_id' => $challenge->id,
+                'started_at' => now(),
+                'progress_data' => [],
+                'is_completed' => false,
+            ]);
+
+            \Log::info('Challenge started', [
+                'member_id' => $member->id,
+                'challenge_id' => $challenge->id,
+                'progress_id' => $progress->id
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'id' => $progress->id,
+                    'started_at' => $progress->started_at->format('Y-m-d H:i:s'),
+                    'is_completed' => false,
+                ],
+                'message' => 'Challenge started successfully'
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Error starting challenge', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to start challenge: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Refresh challenge progress from transactions
+     */
+    public function refresh(Request $request, $id)
+    {
+        try {
+            $member = $request->user();
+            if (!$member) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthenticated'
+                ], 401);
+            }
+
+            $challenge = MemberAppsChallenge::findOrFail($id);
+            
+            // Get progress record
+            $progress = MemberAppsChallengeProgress::where('member_id', $member->id)
+                ->where('challenge_id', $challenge->id)
+                ->first();
+
+            if (!$progress) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Challenge not started'
+                ], 400);
+            }
+
+            // Update progress from transactions
+            $progressService = new ChallengeProgressService();
+            $progressService->updateProgressFromTransaction($member->id);
+
+            // Reload progress
+            $progress->refresh();
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'started_at' => $progress->started_at ? $progress->started_at->format('Y-m-d H:i:s') : null,
+                    'is_completed' => $progress->is_completed,
+                    'completed_at' => $progress->completed_at ? $progress->completed_at->format('Y-m-d H:i:s') : null,
+                    'reward_claimed' => $progress->reward_claimed,
+                    'reward_expires_at' => $progress->reward_expires_at ? $progress->reward_expires_at->format('Y-m-d H:i:s') : null,
+                    'is_reward_expired' => $progress->isRewardExpired(),
+                    'can_claim_reward' => $progress->canClaimReward(),
+                    'progress_data' => $progress->progress_data,
+                ],
+                'message' => 'Progress refreshed successfully'
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Error refreshing challenge progress', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to refresh progress: ' . $e->getMessage()
             ], 500);
         }
     }
