@@ -50,37 +50,30 @@ class RewardController extends Controller
                 'has_token' => $token ? 'yes' : 'no',
             ]);
 
-            // 1. Ambil rewards yang point member cukup
-            // Jika member tidak authenticated atau point = 0, tidak tampilkan reward biasa (hanya challenge rewards)
-            $rewards = collect();
-            
-            // Hanya query rewards jika member authenticated dan punya point > 0
-            if ($member && $memberPoints > 0) {
-                $rewards = DB::table('member_apps_rewards as rewards')
-                    ->join('items', 'rewards.item_id', '=', 'items.id')
-                    ->leftJoin('categories', 'items.category_id', '=', 'categories.id')
-                    ->leftJoin('sub_categories', function($join) {
-                        $join->on('items.sub_category_id', '=', 'sub_categories.id')
-                             ->whereNotNull('items.sub_category_id');
-                    })
-                    ->where('rewards.is_active', 1)
-                    ->where('rewards.points_required', '<=', $memberPoints)
-                    ->select(
-                        'rewards.id as reward_id',
-                        'rewards.item_id',
-                        'rewards.points_required',
-                        'rewards.serial_code',
-                        'items.name as item_name',
-                        'items.sku',
-                        'items.description',
-                        'items.category_id',
-                        'items.sub_category_id',
-                        'categories.name as category_name',
-                        'sub_categories.name as sub_category_name'
-                    )
-                    ->orderBy('rewards.id', 'asc')
-                    ->get();
-            }
+            // 1. Ambil semua rewards (tidak filter, tampilkan semua)
+            $rewards = DB::table('member_apps_rewards as rewards')
+                ->join('items', 'rewards.item_id', '=', 'items.id')
+                ->leftJoin('categories', 'items.category_id', '=', 'categories.id')
+                ->leftJoin('sub_categories', function($join) {
+                    $join->on('items.sub_category_id', '=', 'sub_categories.id')
+                         ->whereNotNull('items.sub_category_id');
+                })
+                ->where('rewards.is_active', 1)
+                ->select(
+                    'rewards.id as reward_id',
+                    'rewards.item_id',
+                    'rewards.points_required',
+                    'rewards.serial_code',
+                    'items.name as item_name',
+                    'items.sku',
+                    'items.description',
+                    'items.category_id',
+                    'items.sub_category_id',
+                    'categories.name as category_name',
+                    'sub_categories.name as sub_category_name'
+                )
+                ->orderBy('rewards.id', 'asc')
+                ->get();
 
             // 2. Ambil reward dari challenge yang sudah completed
             $challengeRewards = collect();
@@ -150,7 +143,8 @@ class RewardController extends Controller
                                         'category_name' => $item->category_name,
                                         'sub_category_name' => $item->sub_category_name,
                                         'category_display' => trim(($item->category_name ?? '') . ' ' . ($item->sub_category_name ?? '')),
-                                        'serial_code' => null,
+                                        'serial_code' => null, // Challenge rewards don't have serial code
+                                        'can_redeem' => true, // Challenge rewards can always be redeemed
                                         'is_challenge_reward' => true,
                                         'challenge_id' => $progress->challenge_id,
                                         'challenge_title' => $challenge->title,
@@ -166,7 +160,7 @@ class RewardController extends Controller
             }
 
             // 3. Format rewards dengan gambar
-            $formattedRewards = $rewards->map(function ($reward) {
+            $formattedRewards = $rewards->map(function ($reward) use ($memberPoints) {
                 // Ambil gambar pertama dari item_images
                 $firstImage = DB::table('item_images')
                     ->where('item_id', $reward->item_id)
@@ -178,6 +172,9 @@ class RewardController extends Controller
                 if ($reward->sub_category_name) {
                     $categoryDisplay = $categoryDisplay . ' ' . $reward->sub_category_name;
                 }
+
+                // Check if member can redeem (has enough points)
+                $canRedeem = $memberPoints >= $reward->points_required;
 
                 return [
                     'id' => $reward->reward_id,
@@ -193,7 +190,8 @@ class RewardController extends Controller
                     'category_name' => $reward->category_name,
                     'sub_category_name' => $reward->sub_category_name,
                     'category_display' => trim($categoryDisplay),
-                    'serial_code' => $reward->serial_code,
+                    'serial_code' => $canRedeem ? $reward->serial_code : null, // Hide serial code if can't redeem
+                    'can_redeem' => $canRedeem,
                     'is_challenge_reward' => false,
                 ];
             });
