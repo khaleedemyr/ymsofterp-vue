@@ -304,6 +304,72 @@ class ChallengeController extends Controller
     }
 
     /**
+     * Update challenge progress from POS (called after order payment)
+     */
+    public function updateProgressFromPos(Request $request)
+    {
+        try {
+            $validator = \Validator::make($request->all(), [
+                'member_id' => 'required|string',
+                'order_id' => 'required|string',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validation failed',
+                    'errors' => $validator->errors()
+                ], 400);
+            }
+
+            $memberId = $request->input('member_id');
+            $orderId = $request->input('order_id');
+
+            // Find member by member_id (could be from member_apps_members table)
+            $member = MemberAppsMember::where('member_id', $memberId)
+                ->orWhere('id', $memberId)
+                ->first();
+
+            if (!$member) {
+                \Log::warning('Member not found for challenge progress update', [
+                    'member_id' => $memberId,
+                    'order_id' => $orderId
+                ]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Member not found'
+                ], 404);
+            }
+
+            // Update challenge progress using service
+            $progressService = new ChallengeProgressService();
+            $progressService->updateProgressFromTransaction($member->id, $orderId);
+
+            \Log::info('Challenge progress updated from POS', [
+                'member_id' => $member->id,
+                'member_id_input' => $memberId,
+                'order_id' => $orderId
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Challenge progress updated successfully'
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Error updating challenge progress from POS', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'request' => $request->all()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to update challenge progress: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
      * Refresh challenge progress from transactions
      */
     public function refresh(Request $request, $id)

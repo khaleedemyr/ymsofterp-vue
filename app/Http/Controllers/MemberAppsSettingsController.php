@@ -325,47 +325,47 @@ class MemberAppsSettingsController extends Controller
                 'challenge_type_id' => $request->challenge_type_id
             ]);
             
-            $validator = Validator::make($request->all(), [
-                'title' => 'required|string|max:255',
-                'description' => 'nullable|string',
-                'rules' => 'required|string',
-                'image' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
-                'points_reward' => 'required|integer|min:0',
-                'start_date' => 'nullable|date',
-                'end_date' => 'nullable|date|after:start_date',
-                'challenge_type_id' => 'nullable|string',
-                'validity_period_days' => 'nullable|integer|min:1'
-            ]);
+        $validator = Validator::make($request->all(), [
+            'title' => 'required|string|max:255',
+            'description' => 'nullable|string',
+            'rules' => 'required|string',
+            'image' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
+            'points_reward' => 'required|integer|min:0',
+            'start_date' => 'nullable|date',
+            'end_date' => 'nullable|date|after:start_date',
+            'challenge_type_id' => 'nullable|string',
+            'validity_period_days' => 'nullable|integer|min:1'
+        ]);
 
-            if ($validator->fails()) {
+        if ($validator->fails()) {
                 \Log::error('StoreChallenge - Validation failed', [
                     'errors' => $validator->errors()->toArray()
                 ]);
-                return redirect()->back()->withErrors($validator)->withInput();
-            }
+            return redirect()->back()->withErrors($validator)->withInput();
+        }
 
-            $data = [
-                'title' => $request->title,
-                'description' => $request->description,
-                'rules' => $request->rules,
+        $data = [
+            'title' => $request->title,
+            'description' => $request->description,
+            'rules' => $request->rules,
                 'points_reward' => $request->points_reward ?? 0,
-                'start_date' => $request->start_date,
-                'end_date' => $request->end_date,
-                'is_active' => true
-            ];
-            
-            // Always set challenge_type_id if provided (even if empty string)
-            if ($request->filled('challenge_type_id')) {
-                $data['challenge_type_id'] = $request->challenge_type_id;
-            }
-            
-            if ($request->filled('validity_period_days')) {
-                $data['validity_period_days'] = $request->validity_period_days;
-            }
+            'start_date' => $request->start_date,
+            'end_date' => $request->end_date,
+            'is_active' => true
+        ];
+        
+        // Always set challenge_type_id if provided (even if empty string)
+        if ($request->filled('challenge_type_id')) {
+            $data['challenge_type_id'] = $request->challenge_type_id;
+        }
+        
+        if ($request->filled('validity_period_days')) {
+            $data['validity_period_days'] = $request->validity_period_days;
+        }
 
-            if ($request->hasFile('image')) {
-                $data['image'] = $request->file('image')->store('member-apps/challenges', 'public');
-            }
+        if ($request->hasFile('image')) {
+            $data['image'] = $request->file('image')->store('member-apps/challenges', 'public');
+        }
 
             \Log::info('StoreChallenge - Data to create', $data);
             
@@ -376,7 +376,7 @@ class MemberAppsSettingsController extends Controller
                 'title' => $challenge->title
             ]);
 
-            return redirect()->back()->with('success', 'Challenge berhasil ditambahkan');
+        return redirect()->back()->with('success', 'Challenge berhasil ditambahkan');
         } catch (\Exception $e) {
             \Log::error('StoreChallenge - Error occurred', [
                 'message' => $e->getMessage(),
@@ -468,66 +468,66 @@ class MemberAppsSettingsController extends Controller
                 'challenge_type_id' => $request->challenge_type_id
             ]);
             
-            $challenge = MemberAppsChallenge::findOrFail($id);
-            
-            $validator = Validator::make($request->all(), [
-                'title' => 'required|string|max:255',
-                'description' => 'nullable|string',
-                'rules' => 'required|string',
-                'image' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
-                'points_reward' => 'required|integer|min:0',
-                'start_date' => 'nullable|date',
-                'end_date' => 'nullable|date|after:start_date',
-                'is_active' => 'nullable|boolean',
-                'challenge_type_id' => 'nullable|string',
-                'validity_period_days' => 'nullable|integer|min:1'
-            ]);
+        $challenge = MemberAppsChallenge::findOrFail($id);
+        
+        $validator = Validator::make($request->all(), [
+            'title' => 'required|string|max:255',
+            'description' => 'nullable|string',
+            'rules' => 'required|string',
+            'image' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
+            'points_reward' => 'required|integer|min:0',
+            'start_date' => 'nullable|date',
+            'end_date' => 'nullable|date|after:start_date',
+            'is_active' => 'nullable|boolean',
+            'challenge_type_id' => 'nullable|string',
+            'validity_period_days' => 'nullable|integer|min:1'
+        ]);
 
-            if ($validator->fails()) {
+        if ($validator->fails()) {
                 \Log::error('UpdateChallenge - Validation failed', [
                     'id' => $id,
                     'errors' => $validator->errors()->toArray()
                 ]);
-                return redirect()->back()->withErrors($validator)->withInput();
-            }
+            return redirect()->back()->withErrors($validator)->withInput();
+        }
 
-            $data = [
-                'title' => $request->title,
-                'description' => $request->description,
-                'rules' => $request->rules,
+        $data = [
+            'title' => $request->title,
+            'description' => $request->description,
+            'rules' => $request->rules,
                 'points_reward' => $request->points_reward ?? 0,
-                'start_date' => $request->start_date,
-                'end_date' => $request->end_date,
-                'is_active' => $request->has('is_active')
-            ];
-            
-            // Always set challenge_type_id if provided (even if empty string)
-            if ($request->filled('challenge_type_id')) {
-                $data['challenge_type_id'] = $request->challenge_type_id;
-            }
-            
-            if ($request->filled('validity_period_days')) {
-                $data['validity_period_days'] = $request->validity_period_days;
-            }
+            'start_date' => $request->start_date,
+            'end_date' => $request->end_date,
+            'is_active' => $request->has('is_active')
+        ];
+        
+        // Always set challenge_type_id if provided (even if empty string)
+        if ($request->filled('challenge_type_id')) {
+            $data['challenge_type_id'] = $request->challenge_type_id;
+        }
+        
+        if ($request->filled('validity_period_days')) {
+            $data['validity_period_days'] = $request->validity_period_days;
+        }
 
-            if ($request->hasFile('image')) {
-                // Delete old image
-                if ($challenge->image) {
-                    Storage::disk('public')->delete($challenge->image);
-                }
-                $data['image'] = $request->file('image')->store('member-apps/challenges', 'public');
+        if ($request->hasFile('image')) {
+            // Delete old image
+            if ($challenge->image) {
+                Storage::disk('public')->delete($challenge->image);
             }
+            $data['image'] = $request->file('image')->store('member-apps/challenges', 'public');
+        }
 
             \Log::info('UpdateChallenge - Data to update', $data);
-            
-            $challenge->update($data);
+
+        $challenge->update($data);
             
             \Log::info('UpdateChallenge - Successfully updated', [
                 'id' => $challenge->id,
                 'title' => $challenge->title
             ]);
 
-            return redirect()->back()->with('success', 'Challenge berhasil diperbarui');
+        return redirect()->back()->with('success', 'Challenge berhasil diperbarui');
         } catch (\Exception $e) {
             \Log::error('UpdateChallenge - Error occurred', [
                 'id' => $id,

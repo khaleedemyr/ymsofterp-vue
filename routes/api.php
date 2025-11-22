@@ -349,6 +349,14 @@ Route::prefix('mobile/member')->group(function () {
     Route::get('/challenges/{id}', [\App\Http\Controllers\Mobile\Member\ChallengeController::class, 'show'])->name('api.mobile.member.challenges.show');
     Route::post('/challenges/{id}/start', [\App\Http\Controllers\Mobile\Member\ChallengeController::class, 'start'])->name('api.mobile.member.challenges.start')->middleware('auth:sanctum');
     Route::post('/challenges/{id}/refresh', [\App\Http\Controllers\Mobile\Member\ChallengeController::class, 'refresh'])->name('api.mobile.member.challenges.refresh')->middleware('auth:sanctum');
+    Route::post('/challenges/update-progress', [\App\Http\Controllers\Mobile\Member\ChallengeController::class, 'updateProgressFromPos'])->name('api.mobile.member.challenges.update-progress');
+    
+    // Point earning endpoint (called from POS)
+    Route::post('/points/earn', [\App\Http\Controllers\Mobile\Member\PointController::class, 'earn'])->name('api.mobile.member.points.earn');
+    // Point history and expiring soon (Auth required)
+    Route::get('/points/history', [\App\Http\Controllers\Mobile\Member\PointController::class, 'history'])->name('api.mobile.member.points.history')->middleware('auth:sanctum');
+    Route::get('/points/expiring-soon', [\App\Http\Controllers\Mobile\Member\PointController::class, 'expiringSoon'])->name('api.mobile.member.points.expiring-soon')->middleware('auth:sanctum');
+    Route::get('/points/expiring-detail', [\App\Http\Controllers\Mobile\Member\PointController::class, 'expiringDetail'])->name('api.mobile.member.points.expiring-detail')->middleware('auth:sanctum');
     Route::get('/faqs', [\App\Http\Controllers\Mobile\Member\FaqController::class, 'index'])->name('api.mobile.member.faqs.index');
     Route::get('/whats-on', [\App\Http\Controllers\Mobile\Member\WhatsOnController::class, 'index'])->name('api.mobile.member.whats-on.index');
     Route::get('/terms-conditions', [\App\Http\Controllers\Mobile\Member\TermConditionController::class, 'index'])->name('api.mobile.member.terms-conditions.index');

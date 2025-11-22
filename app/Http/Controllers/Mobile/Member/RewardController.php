@@ -4,27 +4,49 @@ namespace App\Http\Controllers\Mobile\Member;
 
 use App\Http\Controllers\Controller;
 use App\Models\MemberAppsReward;
+use App\Models\MemberAppsChallengeProgress;
+use App\Models\MemberAppsChallenge;
+use App\Models\MemberAppsMember;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
 class RewardController extends Controller
 {
     /**
-     * Get all active rewards dengan join ke items dan item_images
+     * Get all active rewards yang bisa di-redeem oleh member
+     * Filter berdasarkan:
+     * 1. Point member cukup untuk redeem
+     * 2. Reward dari challenge yang sudah completed
      */
-    public function index()
+    public function index(Request $request)
     {
         try {
-            // Ambil rewards dengan items, categories, dan sub_categories
-            $rewards = DB::table('member_apps_rewards as rewards')
+            $member = $request->user();
+            $memberPoints = 0;
+            $memberId = null;
+            
+            // Get member points if authenticated
+            if ($member) {
+                $memberPoints = $member->just_points ?? 0;
+                $memberId = $member->id;
+            }
+
+            // 1. Ambil rewards yang point member cukup (atau jika tidak login, ambil semua)
+            $rewardsQuery = DB::table('member_apps_rewards as rewards')
                 ->join('items', 'rewards.item_id', '=', 'items.id')
                 ->leftJoin('categories', 'items.category_id', '=', 'categories.id')
                 ->leftJoin('sub_categories', function($join) {
                     $join->on('items.sub_category_id', '=', 'sub_categories.id')
                          ->whereNotNull('items.sub_category_id');
                 })
-                ->where('rewards.is_active', 1)
-                ->select(
+                ->where('rewards.is_active', 1);
+            
+            // Filter by points if member is authenticated
+            if ($member && $memberPoints > 0) {
+                $rewardsQuery->where('rewards.points_required', '<=', $memberPoints);
+            }
+            
+            $rewards = $rewardsQuery->select(
                     'rewards.id as reward_id',
                     'rewards.item_id',
                     'rewards.points_required',
@@ -40,8 +62,91 @@ class RewardController extends Controller
                 ->orderBy('rewards.id', 'asc')
                 ->get();
 
-            // Ambil gambar pertama untuk setiap item
-            $rewards = $rewards->map(function ($reward) {
+            // 2. Ambil reward dari challenge yang sudah completed
+            $challengeRewards = collect();
+            if ($memberId) {
+                $completedChallenges = MemberAppsChallengeProgress::where('member_id', $memberId)
+                    ->where('is_completed', true)
+                    ->where(function($query) {
+                        // Reward belum expired
+                        $query->whereNull('reward_expires_at')
+                              ->orWhere('reward_expires_at', '>', now());
+                    })
+                    ->where('reward_claimed', false) // Belum di-claim
+                    ->with('challenge')
+                    ->get();
+
+                foreach ($completedChallenges as $progress) {
+                    $challenge = $progress->challenge;
+                    if (!$challenge) continue;
+
+                    $rules = $challenge->rules;
+                    if (is_string($rules)) {
+                        $rules = json_decode($rules, true);
+                    }
+
+                    // Check reward type
+                    if (isset($rules['reward_type'])) {
+                        if ($rules['reward_type'] === 'item' && isset($rules['reward_value'])) {
+                            // Reward berupa item
+                            $itemIds = is_array($rules['reward_value']) 
+                                ? $rules['reward_value'] 
+                                : [$rules['reward_value']];
+                            
+                            foreach ($itemIds as $itemId) {
+                                // Get item details
+                                $item = DB::table('items')
+                                    ->leftJoin('categories', 'items.category_id', '=', 'categories.id')
+                                    ->leftJoin('sub_categories', function($join) {
+                                        $join->on('items.sub_category_id', '=', 'sub_categories.id')
+                                             ->whereNotNull('items.sub_category_id');
+                                    })
+                                    ->where('items.id', $itemId)
+                                    ->select(
+                                        'items.id as item_id',
+                                        'items.name as item_name',
+                                        'items.sku',
+                                        'items.description',
+                                        'items.category_id',
+                                        'items.sub_category_id',
+                                        'categories.name as category_name',
+                                        'sub_categories.name as sub_category_name'
+                                    )
+                                    ->first();
+
+                                if ($item) {
+                                    // Use negative ID to avoid conflict with regular rewards
+                                    // Format: -{challenge_id}{item_id} (e.g., -1123 for challenge 1, item 123)
+                                    $challengeRewardId = -(intval($progress->challenge_id) * 1000000 + intval($itemId));
+                                    
+                                    $challengeRewards->push([
+                                        'id' => $challengeRewardId,
+                                        'item_id' => $item->item_id,
+                                        'item_name' => $item->item_name,
+                                        'points_required' => 0, // Free from challenge
+                                        'points_display' => 'FREE',
+                                        'sku' => $item->sku,
+                                        'description' => $item->description,
+                                        'category_name' => $item->category_name,
+                                        'sub_category_name' => $item->sub_category_name,
+                                        'category_display' => trim(($item->category_name ?? '') . ' ' . ($item->sub_category_name ?? '')),
+                                        'serial_code' => null,
+                                        'is_challenge_reward' => true,
+                                        'challenge_id' => $progress->challenge_id,
+                                        'challenge_title' => $challenge->title,
+                                    ]);
+                                }
+                            }
+                        } elseif ($rules['reward_type'] === 'voucher' && isset($rules['reward_value'])) {
+                            // Reward berupa voucher - skip for now as vouchers are handled separately
+                            // TODO: Add voucher reward handling if needed
+                        }
+                    }
+                }
+            }
+
+            // 3. Format rewards dengan gambar
+            $formattedRewards = $rewards->map(function ($reward) {
                 // Ambil gambar pertama dari item_images
                 $firstImage = DB::table('item_images')
                     ->where('item_id', $reward->item_id)
@@ -69,15 +174,37 @@ class RewardController extends Controller
                     'sub_category_name' => $reward->sub_category_name,
                     'category_display' => trim($categoryDisplay),
                     'serial_code' => $reward->serial_code,
+                    'is_challenge_reward' => false,
                 ];
             });
 
+            // 4. Format challenge rewards dengan gambar
+            $formattedChallengeRewards = $challengeRewards->map(function ($reward) {
+                // Ambil gambar pertama dari item_images
+                $firstImage = DB::table('item_images')
+                    ->where('item_id', $reward['item_id'])
+                    ->orderBy('id', 'asc')
+                    ->first();
+
+                return array_merge($reward, [
+                    'image' => $firstImage && $firstImage->path
+                        ? 'https://ymsofterp.com/storage/' . $firstImage->path
+                        : null,
+                ]);
+            });
+
+            // 5. Gabungkan semua rewards (challenge rewards di depan)
+            $allRewards = $formattedChallengeRewards->concat($formattedRewards);
+
             return response()->json([
                 'success' => true,
-                'data' => $rewards,
+                'data' => $allRewards->values()->all(),
                 'message' => 'Rewards retrieved successfully'
             ]);
         } catch (\Exception $e) {
+            \Log::error('Error in RewardController@index: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString()
+            ]);
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to retrieve rewards: ' . $e->getMessage(),
