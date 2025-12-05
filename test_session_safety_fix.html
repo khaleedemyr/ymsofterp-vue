@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Session Safety Fix</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .test-section { margin: 20px 0; padding: 20px; border: 1px solid #ccc; border-radius: 5px; }
+        .form-group { margin: 10px 0; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; }
+        button { padding: 10px 20px; margin: 5px; background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer; }
+        button:hover { background: #0056b3; }
+        button.danger { background: #dc3545; }
+        button.danger:hover { background: #c82333; }
+        .result { margin-top: 20px; padding: 10px; background: #f8f9fa; border-radius: 5px; }
+        .error { background: #f8d7da; color: #721c24; }
+        .success { background: #d4edda; color: #155724; }
+        .warning { background: #fff3cd; color: #856404; }
+        .log { background: #e9ecef; padding: 10px; margin: 10px 0; border-radius: 5px; font-family: monospace; font-size: 12px; }
+    </style>
+</head>
+<body>
+    <h1>Test Session Safety Fix</h1>
+    
+    <div class="test-section">
+        <h2>Session Management Test</h2>
+        
+        <div class="form-group">
+            <button onclick="testAddSession()">Test Add Session</button>
+            <button onclick="testAddSessionItem()">Test Add Session Item</button>
+            <button onclick="testRemoveSession()">Test Remove Session</button>
+            <button onclick="testRemoveSessionItem()">Test Remove Session Item</button>
+            <button onclick="testItemTypeChange()">Test Item Type Change</button>
+            <button onclick="testMaterialFileChange()">Test Material File Change</button>
+            <button onclick="testRemoveMaterialFile()">Test Remove Material File</button>
+        </div>
+        
+        <div class="form-group">
+            <button onclick="testCorruptedData()" class="danger">Test Corrupted Data</button>
+            <button onclick="testUndefinedSessions()" class="danger">Test Undefined Sessions</button>
+            <button onclick="testInvalidIndexes()" class="danger">Test Invalid Indexes</button>
+        </div>
+        
+        <div class="form-group">
+            <button onclick="resetForm()">Reset Form</button>
+            <button onclick="showFormState()">Show Form State</button>
+            <button onclick="clearLog()">Clear Log</button>
+        </div>
+    </div>
+    
+    <div id="result" class="result" style="display: none;"></div>
+    
+    <div id="log" class="log" style="display: none;"></div>
+
+    <script>
+        // Simulate the form structure from Vue component
+        let form = {
+            sessions: [
+                {
+                    order_number: 1,
+                    session_title: 'Test Session 1',
+                    session_description: 'Test Description 1',
+                    estimated_duration_minutes: 60,
+                    items: [
+                        {
+                            order_number: 1,
+                            item_type: 'material',
+                            item_id: '',
+                            quiz_id: '',
+                            questionnaire_id: '',
+                            title: 'Test Item 1',
+                            description: 'Test Description 1',
+                            estimated_duration_minutes: 30,
+                            material_files: []
+                        }
+                    ]
+                }
+            ]
+        };
+        
+        let logMessages = [];
+        
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = `[${timestamp}] ${type.toUpperCase()}: ${message}`;
+            logMessages.push(logEntry);
+            
+            const logElement = document.getElementById('log');
+            logElement.style.display = 'block';
+            logElement.innerHTML = logMessages.join('<br>');
+            
+            console.log(logEntry);
+        }
+        
+        function showResult(title, content, type = 'info') {
+            const result = document.getElementById('result');
+            result.style.display = 'block';
+            
+            let html = `<h3>${title}</h3>`;
+            html += `<div class="${type}">${content}</div>`;
+            
+            result.innerHTML = html;
+        }
+        
+        // Session management methods with safety checks
+        function addSession() {
+            log('=== ADD SESSION STARTED ===');
+            
+            // Safety check: ensure sessions array exists
+            if (!form.sessions || !Array.isArray(form.sessions)) {
+                log('Sessions array is not initialized, creating default structure', 'warning');
+                form.sessions = [];
+            }
+            
+            const maxOrder = Math.max(...form.sessions.map(s => s.order_number), 0);
+            form.sessions.push({
+                order_number: maxOrder + 1,
+                session_title: '',
+                session_description: '',
+                estimated_duration_minutes: '',
+                items: [
+                    {
+                        order_number: 1,
+                        item_type: '',
+                        item_id: '',
+                        quiz_id: '',
+                        questionnaire_id: '',
+                        title: '',
+                        description: '',
+                        estimated_duration_minutes: '',
+                        material_files: []
+                    }
+                ]
+            });
+            
+            log(`Session added successfully. Total sessions: ${form.sessions.length}`, 'success');
+            return true;
+        }
+        
+        function addSessionItem(sessionIndex) {
+            log(`=== ADD SESSION ITEM STARTED (Session ${sessionIndex + 1}) ===`);
+            
+            // Safety check: ensure sessions array exists
+            if (!form.sessions || !Array.isArray(form.sessions)) {
+                log('Sessions array is not initialized', 'error');
+                return false;
+            }
+            
+            const session = form.sessions[sessionIndex];
+            if (!session) {
+                log(`Session at index ${sessionIndex} not found`, 'error');
+                return false;
+            }
+            
+            // Safety check: ensure items array exists
+            if (!session.items || !Array.isArray(session.items)) {
+                log(`Session ${sessionIndex} items array is not initialized, creating default structure`, 'warning');
+                session.items = [];
+            }
+            
+            const maxOrder = Math.max(...session.items.map(item => item.order_number), 0);
+            session.items.push({
+                order_number: maxOrder + 1,
+                item_type: '',
+                item_id: '',
+                quiz_id: '',
+                questionnaire_id: '',
+                title: '',
+                description: '',
+                estimated_duration_minutes: '',
+                material_files: []
+            });
+            
+            log(`Session item added to session ${sessionIndex + 1}. Total items: ${session.items.length}`, 'success');
+            return true;
+        }
+        
+        function removeSession(sessionIndex) {
+            log(`=== REMOVE SESSION STARTED (Session ${sessionIndex + 1}) ===`);
+            
+            // Safety check: ensure sessions array exists
+            if (!form.sessions || !Array.isArray(form.sessions)) {
+                log('Sessions array is not initialized', 'error');
+                return false;
+            }
+            
+            if (sessionIndex < 0 || sessionIndex >= form.sessions.length) {
+                log(`Invalid session index: ${sessionIndex}`, 'error');
+                return false;
+            }
+            
+            form.sessions.splice(sessionIndex, 1);
+            
+            // Reorder remaining sessions
+            form.sessions.forEach((session, index) => {
+                session.order_number = index + 1;
+            });
+            
+            log(`Session removed successfully. Total sessions: ${form.sessions.length}`, 'success');
+            return true;
+        }
+        
+        function removeSessionItem(sessionIndex, itemIndex) {
+            log(`=== REMOVE SESSION ITEM STARTED (Session ${sessionIndex + 1}, Item ${itemIndex + 1}) ===`);
+            
+            // Safety check: ensure sessions array exists
+            if (!form.sessions || !Array.isArray(form.sessions)) {
+                log('Sessions array is not initialized', 'error');
+                return false;
+            }
+            
+            const session = form.sessions[sessionIndex];
+            if (!session) {
+                log(`Session at index ${sessionIndex} not found`, 'error');
+                return false;
+            }
+            
+            // Safety check: ensure items array exists
+            if (!session.items || !Array.isArray(session.items)) {
+                log(`Session ${sessionIndex} items array is not initialized`, 'error');
+                return false;
+            }
+            
+            if (itemIndex < 0 || itemIndex >= session.items.length) {
+                log(`Invalid item index: ${itemIndex}`, 'error');
+                return false;
+            }
+            
+            session.items.splice(itemIndex, 1);
+            
+            // Reorder remaining items
+            session.items.forEach((item, index) => {
+                item.order_number = index + 1;
+            });
+            
+            log(`Session item removed from session ${sessionIndex + 1}. Total items: ${session.items.length}`, 'success');
+            return true;
+        }
+        
+        function onItemTypeChange(sessionIndex, itemIndex) {
+            log(`=== ITEM TYPE CHANGE STARTED (Session ${sessionIndex + 1}, Item ${itemIndex + 1}) ===`);
+            
+            // Safety check: ensure sessions array exists
+            if (!form.sessions || !Array.isArray(form.sessions)) {
+                log('Sessions array is not initialized', 'error');
+                return false;
+            }
+            
+            const session = form.sessions[sessionIndex];
+            if (!session) {
+                log(`Session at index ${sessionIndex} not found`, 'error');
+                return false;
+            }
+            
+            // Safety check: ensure items array exists
+            if (!session.items || !Array.isArray(session.items)) {
+                log(`Session ${sessionIndex} items array is not initialized`, 'error');
+                return false;
+            }
+            
+            const item = session.items[itemIndex];
+            if (!item) {
+                log(`Item at index ${itemIndex} not found in session ${sessionIndex}`, 'error');
+                return false;
+            }
+            
+            // Reset item-specific data when type changes
+            item.item_id = '';
+            item.quiz_id = '';
+            item.questionnaire_id = '';
+            item.material_files = [];
+            
+            // Set default title based on type
+            if (item.item_type === 'quiz') {
+                item.title = 'Quiz';
+            } else if (item.item_type === 'questionnaire') {
+                item.title = 'Kuesioner';
+            } else if (item.item_type === 'material') {
+                item.title = 'Materi';
+            }
+            
+            log(`Item type changed to ${item.item_type}, reset data:`, 'info');
+            log(`  - item_id: ${item.item_id}`, 'info');
+            log(`  - quiz_id: ${item.quiz_id}`, 'info');
+            log(`  - questionnaire_id: ${item.questionnaire_id}`, 'info');
+            log(`  - material_files: ${item.material_files.length}`, 'info');
+            
+            return true;
+        }
+        
+        function onMaterialFileChange(sessionIndex, itemIndex) {
+            log(`=== MATERIAL FILE CHANGE STARTED (Session ${sessionIndex + 1}, Item ${itemIndex + 1}) ===`);
+            
+            // Safety check: ensure sessions array exists
+            if (!form.sessions || !Array.isArray(form.sessions)) {
+                log('Sessions array is not initialized', 'error');
+                return false;
+            }
+            
+            const session = form.sessions[sessionIndex];
+            if (!session) {
+                log(`Session at index ${sessionIndex} not found`, 'error');
+                return false;
+            }
+            
+            // Safety check: ensure items array exists
+            if (!session.items || !Array.isArray(session.items)) {
+                log(`Session ${sessionIndex} items array is not initialized`, 'error');
+                return false;
+            }
+            
+            const item = session.items[itemIndex];
+            if (!item) {
+                log(`Item at index ${itemIndex} not found in session ${sessionIndex}`, 'error');
+                return false;
+            }
+            
+            // Initialize material_files array if not exists
+            if (!item.material_files) {
+                item.material_files = [];
+            }
+            
+            // Simulate adding a file
+            item.material_files.push({
+                name: 'test-file.pdf',
+                size: 1024,
+                type: 'application/pdf'
+            });
+            
+            log(`Material file added successfully. Total files: ${item.material_files.length}`, 'success');
+            return true;
+        }
+        
+        function removeMaterialFile(sessionIndex, itemIndex, fileIndex) {
+            log(`=== REMOVE MATERIAL FILE STARTED (Session ${sessionIndex + 1}, Item ${itemIndex + 1}, File ${fileIndex + 1}) ===`);
+            
+            // Safety check: ensure sessions array exists
+            if (!form.sessions || !Array.isArray(form.sessions)) {
+                log('Sessions array is not initialized', 'error');
+                return false;
+            }
+            
+            const session = form.sessions[sessionIndex];
+            if (!session) {
+                log(`Session at index ${sessionIndex} not found`, 'error');
+                return false;
+            }
+            
+            // Safety check: ensure items array exists
+            if (!session.items || !Array.isArray(session.items)) {
+                log(`Session ${sessionIndex} items array is not initialized`, 'error');
+                return false;
+            }
+            
+            const item = session.items[itemIndex];
+            if (!item) {
+                log(`Item at index ${itemIndex} not found in session ${sessionIndex}`, 'error');
+                return false;
+            }
+            
+            // Safety check: ensure material_files array exists
+            if (!item.material_files || !Array.isArray(item.material_files)) {
+                log(`Item material_files array is not initialized`, 'error');
+                return false;
+            }
+            
+            if (fileIndex < 0 || fileIndex >= item.material_files.length) {
+                log(`Invalid file index: ${fileIndex}`, 'error');
+                return false;
+            }
+            
+            item.material_files.splice(fileIndex, 1);
+            log(`Material file removed from item ${itemIndex + 1} in session ${sessionIndex + 1}. Total files: ${item.material_files.length}`, 'success');
+            return true;
+        }
+        
+        // Test functions
+        function testAddSession() {
+            log('Testing addSession function...');
+            const result = addSession();
+            if (result) {
+                showResult('Add Session Test', 'Session added successfully!', 'success');
+            } else {
+                showResult('Add Session Test', 'Failed to add session!', 'error');
+            }
+        }
+        
+        function testAddSessionItem() {
+            log('Testing addSessionItem function...');
+            const result = addSessionItem(0); // Add to first session
+            if (result) {
+                showResult('Add Session Item Test', 'Session item added successfully!', 'success');
+            } else {
+                showResult('Add Session Item Test', 'Failed to add session item!', 'error');
+            }
+        }
+        
+        function testRemoveSession() {
+            log('Testing removeSession function...');
+            const result = removeSession(0); // Remove first session
+            if (result) {
+                showResult('Remove Session Test', 'Session removed successfully!', 'success');
+            } else {
+                showResult('Remove Session Test', 'Failed to remove session!', 'error');
+            }
+        }
+        
+        function testRemoveSessionItem() {
+            log('Testing removeSessionItem function...');
+            const result = removeSessionItem(0, 0); // Remove first item from first session
+            if (result) {
+                showResult('Remove Session Item Test', 'Session item removed successfully!', 'success');
+            } else {
+                showResult('Remove Session Item Test', 'Failed to remove session item!', 'error');
+            }
+        }
+        
+        function testItemTypeChange() {
+            log('Testing onItemTypeChange function...');
+            const result = onItemTypeChange(0, 0); // Change first item from first session
+            if (result) {
+                showResult('Item Type Change Test', 'Item type changed successfully!', 'success');
+            } else {
+                showResult('Item Type Change Test', 'Failed to change item type!', 'error');
+            }
+        }
+        
+        function testMaterialFileChange() {
+            log('Testing onMaterialFileChange function...');
+            const result = onMaterialFileChange(0, 0); // Change first item from first session
+            if (result) {
+                showResult('Material File Change Test', 'Material file changed successfully!', 'success');
+            } else {
+                showResult('Material File Change Test', 'Failed to change material file!', 'error');
+            }
+        }
+        
+        function testRemoveMaterialFile() {
+            log('Testing removeMaterialFile function...');
+            const result = removeMaterialFile(0, 0, 0); // Remove first file from first item from first session
+            if (result) {
+                showResult('Remove Material File Test', 'Material file removed successfully!', 'success');
+            } else {
+                showResult('Remove Material File Test', 'Failed to remove material file!', 'error');
+            }
+        }
+        
+        // Test error conditions
+        function testCorruptedData() {
+            log('Testing with corrupted data...');
+            
+            // Corrupt the form data
+            form.sessions = null;
+            
+            log('Attempting to add session with corrupted data...');
+            const result = addSession();
+            
+            if (result) {
+                showResult('Corrupted Data Test', 'Safety check worked! Form was repaired.', 'success');
+            } else {
+                showResult('Corrupted Data Test', 'Safety check failed!', 'error');
+            }
+        }
+        
+        function testUndefinedSessions() {
+            log('Testing with undefined sessions...');
+            
+            // Set sessions to undefined
+            form.sessions = undefined;
+            
+            log('Attempting to add session with undefined sessions...');
+            const result = addSession();
+            
+            if (result) {
+                showResult('Undefined Sessions Test', 'Safety check worked! Form was repaired.', 'success');
+            } else {
+                showResult('Undefined Sessions Test', 'Safety check failed!', 'error');
+            }
+        }
+        
+        function testInvalidIndexes() {
+            log('Testing with invalid indexes...');
+            
+            // Ensure we have some data to work with
+            if (!form.sessions || form.sessions.length === 0) {
+                addSession();
+            }
+            
+            log('Attempting to access invalid session index...');
+            const result1 = addSessionItem(999); // Invalid session index
+            
+            log('Attempting to access invalid item index...');
+            const result2 = removeSessionItem(0, 999); // Invalid item index
+            
+            if (!result1 && !result2) {
+                showResult('Invalid Indexes Test', 'Safety check worked! Invalid indexes were caught.', 'success');
+            } else {
+                showResult('Invalid Indexes Test', 'Safety check failed!', 'error');
+            }
+        }
+        
+        function resetForm() {
+            log('Resetting form to initial state...');
+            form = {
+                sessions: [
+                    {
+                        order_number: 1,
+                        session_title: 'Test Session 1',
+                        session_description: 'Test Description 1',
+                        estimated_duration_minutes: 60,
+                        items: [
+                            {
+                                order_number: 1,
+                                item_type: 'material',
+                                item_id: '',
+                                quiz_id: '',
+                                questionnaire_id: '',
+                                title: 'Test Item 1',
+                                description: 'Test Description 1',
+                                estimated_duration_minutes: 30,
+                                material_files: []
+                            }
+                        ]
+                    }
+                ]
+            };
+            log('Form reset successfully', 'success');
+            showResult('Reset Form', 'Form has been reset to initial state!', 'success');
+        }
+        
+        function showFormState() {
+            log('Showing current form state...');
+            const formState = JSON.stringify(form, null, 2);
+            showResult('Form State', `<pre>${formState}</pre>`, 'info');
+        }
+        
+        function clearLog() {
+            logMessages = [];
+            document.getElementById('log').style.display = 'none';
+            document.getElementById('result').style.display = 'none';
+        }
+        
+        // Initialize
+        log('Session Safety Fix Test initialized', 'info');
+        log('Form structure:', 'info');
+        log(`  - Sessions: ${form.sessions.length}`, 'info');
+        log(`  - Items in first session: ${form.sessions[0].items.length}`, 'info');
+    </script>
+</body>
+</html>

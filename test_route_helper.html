@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Route Helper</title>
+</head>
+<body>
+    <h1>Test Route Helper</h1>
+    <p>Buka console browser dan jalankan:</p>
+    <pre>
+// Test route helper
+console.log('Testing route helper...');
+console.log('route("master-soal.index"):', route('master-soal.index'));
+console.log('route("master-soal.create"):', route('master-soal.create'));
+    </pre>
+    
+    <script>
+        // Test basic route helper
+        try {
+            console.log('Route helper test:');
+            console.log('route("master-soal.index"):', route('master-soal.index'));
+            console.log('route("master-soal.create"):', route('master-soal.create'));
+        } catch (error) {
+            console.error('Route helper error:', error);
+        }
+    </script>
+</body>
+</html>

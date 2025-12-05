@@ -1,0 +1,33 @@
+# Cron Command for Birthday Voucher Distribution
+
+## Laravel Scheduler Command
+The birthday voucher distribution is scheduled to run daily at 01:00 AM via Laravel's scheduler.
+
+## Server Cron Setup
+Add this line to your crontab (crontab -e):
+
+```
+* * * * * cd /home/ymsuperadmin/public_html && php artisan schedule:run >> /dev/null 2>&1
+```
+
+## Manual Execution
+To manually test the birthday voucher distribution:
+
+```bash
+cd /home/ymsuperadmin/public_html
+php artisan vouchers:distribute-birthday
+```
+
+## Log File Location
+Logs are automatically written to:
+```
+storage/logs/birthday-vouchers-distribution.log
+```
+
+## What It Does
+- Checks for all active birthday vouchers (`is_birthday_voucher = true` and `is_active = true`)
+- Finds all active members whose birthday (month and day) matches today
+- Distributes vouchers to eligible members
+- Prevents duplicate distributions on the same day
+- Generates unique voucher codes and serial codes
+

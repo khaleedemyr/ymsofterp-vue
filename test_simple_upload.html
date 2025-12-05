@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Material Upload</title>
+</head>
+<body>
+    <h1>Test Material File Upload</h1>
+    
+    <form action="/lms/courses" method="POST" enctype="multipart/form-data">
+        <input type="hidden" name="_token" value="{{ csrf_token() }}">
+        
+        <div>
+            <label>Course Title:</label>
+            <input type="text" name="title" value="Test Course" required>
+        </div>
+        
+        <div>
+            <label>Description:</label>
+            <textarea name="description" required>Test Description</textarea>
+        </div>
+        
+        <div>
+            <label>Category ID:</label>
+            <input type="text" name="category_id" value="1" required>
+        </div>
+        
+        <div>
+            <label>Target Type:</label>
+            <select name="target_type" required>
+                <option value="all">All</option>
+            </select>
+        </div>
+        
+        <div>
+            <label>Trainer Type:</label>
+            <select name="trainer_type" required>
+                <option value="internal">Internal</option>
+            </select>
+        </div>
+        
+        <div>
+            <label>Duration (minutes):</label>
+            <input type="number" name="duration_minutes" value="60" required>
+        </div>
+        
+        <div>
+            <label>Type:</label>
+            <select name="type" required>
+                <option value="online">Online</option>
+            </select>
+        </div>
+        
+        <div>
+            <label>Status:</label>
+            <select name="status" required>
+                <option value="draft">Draft</option>
+            </select>
+        </div>
+        
+        <!-- Sessions -->
+        <div>
+            <label>Session Title:</label>
+            <input type="text" name="sessions[0][session_title]" value="Test Session" required>
+        </div>
+        
+        <div>
+            <label>Session Description:</label>
+            <textarea name="sessions[0][session_description]">Test Session Description</textarea>
+        </div>
+        
+        <div>
+            <label>Session Order:</label>
+            <input type="number" name="sessions[0][order_number]" value="1" required>
+        </div>
+        
+        <div>
+            <label>Session Duration:</label>
+            <input type="number" name="sessions[0][estimated_duration_minutes]" value="60" required>
+        </div>
+        
+        <!-- Session Items -->
+        <div>
+            <label>Item Type:</label>
+            <select name="sessions[0][items][0][item_type]" required>
+                <option value="material">Material</option>
+            </select>
+        </div>
+        
+        <div>
+            <label>Item Title:</label>
+            <input type="text" name="sessions[0][items][0][title]" value="Test Material">
+        </div>
+        
+        <div>
+            <label>Item Description:</label>
+            <textarea name="sessions[0][items][0][description]">Test Material Description</textarea>
+        </div>
+        
+        <div>
+            <label>Item Order:</label>
+            <input type="number" name="sessions[0][items][0][order_number]" value="1" required>
+        </div>
+        
+        <div>
+            <label>Item Duration:</label>
+            <input type="number" name="sessions[0][items][0][estimated_duration_minutes]" value="30">
+        </div>
+        
+        <!-- Material Files -->
+        <div>
+            <label>Material File:</label>
+            <input type="file" name="sessions[0][items][0][material_files][0]" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.gif,.mp4,.avi,.mov">
+        </div>
+        
+        <button type="submit">Create Course with Material</button>
+    </form>
+    
+    <script>
+        // Debug: Log form data before submission
+        document.querySelector('form').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData(this);
+            
+            console.log('Form data before submission:');
+            for (let [key, value] of formData.entries()) {
+                console.log(`${key}:`, value);
+            }
+            
+            // Submit the form
+            this.submit();
+        });
+    </script>
+</body>
+</html>

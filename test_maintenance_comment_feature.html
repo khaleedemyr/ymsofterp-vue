@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Maintenance Comment Feature</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+        }
+        .test-title {
+            font-size: 18px;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 15px;
+        }
+        .test-description {
+            color: #666;
+            margin-bottom: 15px;
+        }
+        .test-steps {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+        .test-steps ol {
+            margin: 0;
+            padding-left: 20px;
+        }
+        .test-steps li {
+            margin: 8px 0;
+        }
+        .expected-result {
+            background: #e8f5e8;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 10px 0;
+            border-left: 4px solid #28a745;
+        }
+        .note {
+            background: #fff3cd;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 10px 0;
+            border-left: 4px solid #ffc107;
+        }
+        .code-block {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            font-family: monospace;
+            margin: 10px 0;
+            border: 1px solid #dee2e6;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Test Maintenance Comment Feature</h1>
+        <p>Dokumen ini menjelaskan cara menguji fitur comment yang baru diimplementasikan di Maintenance Order List.</p>
+
+        <div class="test-section">
+            <div class="test-title">1. Test Comment Modal Opening</div>
+            <div class="test-description">
+                Test untuk memastikan comment modal dapat dibuka dari berbagai tempat di maintenance order list.
+            </div>
+            <div class="test-steps">
+                <ol>
+                    <li>Buka halaman Maintenance Order List</li>
+                    <li>Klik tombol comment (ikon chat) di kolom Comments</li>
+                    <li>Klik tombol "More Actions" (3 titik) lalu pilih "Add Comment"</li>
+                </ol>
+            </div>
+            <div class="expected-result">
+                <strong>Expected Result:</strong> Comment modal terbuka dengan daftar komentar yang ada (jika ada) dan form untuk menambah komentar baru.
+            </div>
+        </div>
+
+        <div class="test-section">
+            <div class="test-title">2. Test Adding New Comment</div>
+            <div class="test-description">
+                Test untuk memastikan user dapat menambah komentar baru dengan atau tanpa attachment.
+            </div>
+            <div class="test-steps">
+                <ol>
+                    <li>Buka comment modal untuk task tertentu</li>
+                    <li>Tulis komentar di textarea</li>
+                    <li>Klik tombol "Kirim"</li>
+                </ol>
+            </div>
+            <div class="expected-result">
+                <strong>Expected Result:</strong> Komentar baru muncul di daftar komentar, comment count bertambah, dan form dikosongkan.
+            </div>
+        </div>
+
+        <div class="test-section">
+            <div class="test-title">3. Test Adding Comment with Attachments</div>
+            <div class="test-description">
+                Test untuk memastikan user dapat menambah komentar dengan attachment (foto, video, file).
+            </div>
+            <div class="test-steps">
+                <ol>
+                    <li>Buka comment modal</li>
+                    <li>Klik tombol kamera untuk foto</li>
+                    <li>Klik tombol video untuk rekam video</li>
+                    <li>Klik tombol paperclip untuk upload file</li>
+                    <li>Tulis komentar dan kirim</li>
+                </ol>
+            </div>
+            <div class="expected-result">
+                <strong>Expected Result:</strong> Attachment berhasil diupload dan ditampilkan di komentar, file tersimpan di storage.
+            </div>
+        </div>
+
+        <div class="test-section">
+            <div class="test-title">4. Test Comment Count Display</div>
+            <div class="test-description">
+                Test untuk memastikan jumlah komentar ditampilkan dengan benar di berbagai tempat.
+            </div>
+            <div class="test-steps">
+                <ol>
+                    <li>Lihat kolom Comments di table</li>
+                    <li>Lihat action menu untuk task</li>
+                    <li>Tambah komentar baru</li>
+                    <li>Refresh halaman</li>
+                </ol>
+            </div>
+            <div class="expected-result">
+                <strong>Expected Result:</strong> Comment count ditampilkan dengan benar dan update real-time setelah komentar ditambah.
+            </div>
+        </div>
+
+        <div class="test-section">
+            <div class="test-title">5. Test Comment Deletion</div>
+            <div class="test-description">
+                Test untuk memastikan user dapat menghapus komentar miliknya sendiri.
+            </div>
+            <div class="test-steps">
+                <ol>
+                    <li>Buka comment modal</li>
+                    <li>Lihat komentar yang dibuat oleh user yang sedang login</li>
+                    <li>Klik tombol hapus (trash icon)</li>
+                    <li>Konfirmasi penghapusan</li>
+                </ol>
+            </div>
+            <div class="expected-result">
+                <strong>Expected Result:</strong> Komentar berhasil dihapus, comment count berkurang, dan komentar hilang dari daftar.
+            </div>
+        </div>
+
+        <div class="test-section">
+            <div class="test-title">6. Test Comment Modal Responsiveness</div>
+            <div class="test-description">
+                Test untuk memastikan comment modal responsive di berbagai ukuran layar.
+            </div>
+            <div class="test-steps">
+                <ol>
+                    <li>Buka comment modal di desktop</li>
+                    <li>Resize browser window</li>
+                    <li>Test di mobile device atau mobile view</li>
+                </ol>
+            </div>
+            <div class="expected-result">
+                <strong>Expected Result:</strong> Modal responsive dan dapat digunakan dengan baik di berbagai ukuran layar.
+            </div>
+        </div>
+
+        <div class="note">
+            <strong>Note:</strong> Pastikan semua endpoint API untuk comment sudah berfungsi dengan baik:
+            <div class="code-block">
+                GET /api/maintenance-comments/{taskId} - Get comments<br>
+                GET /api/maintenance-comments/{taskId}/count - Get comment count<br>
+                POST /api/maintenance-comments - Add new comment<br>
+                DELETE /api/maintenance-comments/{id} - Delete comment
+            </div>
+        </div>
+
+        <div class="note">
+            <strong>Note:</strong> Fitur ini menggunakan komponen yang sama dengan maintenance order taker, jadi pastikan:
+            <ul>
+                <li>CommentModal.vue sudah ada dan berfungsi</li>
+                <li>CameraModal.vue sudah ada untuk capture foto/video</li>
+                <li>Database tables maintenance_comments dan maintenance_comment_attachments sudah ada</li>
+                <li>Storage disk public sudah dikonfigurasi dengan benar</li>
+            </ul>
+        </div>
+
+        <div class="test-section">
+            <div class="test-title">7. Test Error Handling</div>
+            <div class="test-description">
+                Test untuk memastikan error handling berfungsi dengan baik.
+            </div>
+            <div class="test-steps">
+                <ol>
+                    <li>Test dengan network yang lambat</li>
+                    <li>Test dengan file yang terlalu besar</li>
+                    <li>Test dengan file type yang tidak didukung</li>
+                    <li>Test dengan API yang down</li>
+                </ol>
+            </div>
+            <div class="expected-result">
+                <strong>Expected Result:</strong> Error ditampilkan dengan user-friendly message, aplikasi tidak crash.
+            </div>
+        </div>
+    </div>
+</body>
+</html>

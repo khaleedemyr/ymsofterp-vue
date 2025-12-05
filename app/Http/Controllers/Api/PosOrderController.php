@@ -1,0 +1,641 @@
+<?php
+
+namespace App\Http\Controllers\Api;
+
+use App\Http\Controllers\Controller;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Validator;
+use App\Models\MemberAppsMember;
+use App\Models\MemberAppsPointTransaction;
+use App\Models\MemberAppsPointEarning;
+use App\Models\MemberAppsMonthlySpending;
+use App\Services\MemberTierService;
+use App\Events\PointEarned;
+use Carbon\Carbon;
+
+class PosOrderController extends Controller
+{
+    /**
+     * Sync order from POS to server pusat
+     * This endpoint receives order data from POS and saves it to database
+     */
+    public function syncOrder(Request $request)
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'order' => 'required|array',
+                'order.id' => 'required|string',
+                'order.nomor' => 'required|string',
+                'kode_outlet' => 'required|string',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validation failed',
+                    'errors' => $validator->errors()
+                ], 400);
+            }
+
+            $orderData = $request->input('order');
+            $kodeOutlet = $request->input('kode_outlet');
+
+            Log::info('POS Order Sync Request', [
+                'order_id' => $orderData['id'] ?? null,
+                'kode_outlet' => $kodeOutlet
+            ]);
+
+            DB::beginTransaction();
+
+            try {
+                // Helper function untuk konversi datetime ke format MySQL
+                $convertDateTime = function($dateTime) {
+                    if (!$dateTime) {
+                        return now()->format('Y-m-d H:i:s');
+                    }
+                    
+                    // Jika sudah format MySQL (YYYY-MM-DD HH:MM:SS), return langsung
+                    if (is_string($dateTime) && preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/', $dateTime)) {
+                        return $dateTime;
+                    }
+                    
+                    // Jika format ISO 8601 atau format lain, coba parse dengan Carbon
+                    try {
+                        return Carbon::parse($dateTime)->format('Y-m-d H:i:s');
+                    } catch (\Exception $e) {
+                        Log::warning('Error parsing datetime', [
+                            'datetime' => $dateTime,
+                            'error' => $e->getMessage()
+                        ]);
+                        return now()->format('Y-m-d H:i:s');
+                    }
+                };
+                
+                // 1. Insert/Update order
+                $orderInsert = [
+                    'id' => $orderData['id'],
+                    'nomor' => $orderData['nomor'],
+                    'table' => $orderData['table'] ?? '-',
+                    'paid_number' => $orderData['paid_number'] ?? null,
+                    'waiters' => $orderData['waiters'] ?? '-',
+                    'member_id' => $orderData['member_id'] ?? '',
+                    'member_name' => $orderData['member_name'] ?? '',
+                    'mode' => $orderData['mode'] ?? null,
+                    'pax' => $orderData['pax'] ?? null,
+                    'total' => $orderData['total'] ?? 0,
+                    'discount' => $orderData['discount'] ?? 0,
+                    'cashback' => $orderData['cashback'] ?? 0,
+                    'dpp' => $orderData['dpp'] ?? 0,
+                    'pb1' => $orderData['pb1'] ?? 0,
+                    'service' => $orderData['service'] ?? 0,
+                    'grand_total' => $orderData['grand_total'] ?? 0,
+                    'status' => $orderData['status'] ?? 'paid',
+                    'created_at' => $convertDateTime($orderData['created_at'] ?? null),
+                    'updated_at' => $convertDateTime($orderData['updated_at'] ?? null),
+                    'joined_tables' => $orderData['joined_tables'] ?? null,
+                    'promo_ids' => $orderData['promo_ids'] ?? null,
+                    'commfee' => $orderData['commfee'] ?? 0,
+                    'rounding' => $orderData['rounding'] ?? 0,
+                    'sales_lead' => $orderData['sales_lead'] ?? null,
+                    'redeem_amount' => $orderData['redeem_amount'] ?? 0,
+                    'manual_discount_amount' => $orderData['manual_discount_amount'] ?? 0,
+                    'manual_discount_reason' => $orderData['manual_discount_reason'] ?? null,
+                    'voucher_info' => $orderData['voucher_info'] ?? null,
+                    'inactive_promo_items' => $orderData['inactive_promo_items'] ?? null,
+                    'promo_discount_info' => $orderData['promo_discount_info'] ?? null,
+                    'issync' => 1,
+                    'kode_outlet' => $kodeOutlet,
+                ];
+
+                // Use upsert to handle existing orders (insert or update)
+                $updateColumns = [
+                    'nomor', 'table', 'paid_number', 'waiters', 'member_id', 'member_name',
+                    'mode', 'pax', 'total', 'discount', 'cashback', 'dpp', 'pb1', 'service',
+                    'grand_total', 'status', 'updated_at', 'joined_tables', 'promo_ids',
+                    'commfee', 'rounding', 'sales_lead', 'redeem_amount',
+                    'manual_discount_amount', 'manual_discount_reason', 
+                    'voucher_info', 'inactive_promo_items', 'promo_discount_info',
+                    'issync', 'kode_outlet'
+                ];
+                
+                DB::table('orders')->upsert(
+                    [$orderInsert],
+                    ['id'], // Unique key
+                    $updateColumns
+                );
+
+                Log::info('Order synced', ['order_id' => $orderData['id']]);
+
+                // 2. Insert/Update order_items
+                if (isset($orderData['items']) && is_array($orderData['items'])) {
+                    // Delete existing items first (to handle updates)
+                    DB::table('order_items')->where('order_id', $orderData['id'])->delete();
+
+                    foreach ($orderData['items'] as $item) {
+                        DB::table('order_items')->insert([
+                            'id' => $item['id'] ?? null,
+                            'order_id' => $orderData['id'],
+                            'item_id' => $item['item_id'] ?? null,
+                            'item_name' => $item['item_name'] ?? '',
+                            'qty' => $item['qty'] ?? 0,
+                            'price' => $item['price'] ?? 0,
+                            'tally' => $item['tally'] ?? null,
+                            'modifiers' => $item['modifiers'] ?? null,
+                            'notes' => $item['notes'] ?? null,
+                            'subtotal' => $item['subtotal'] ?? 0,
+                            'created_at' => $convertDateTime($item['created_at'] ?? null),
+                            'kode_outlet' => $kodeOutlet,
+                        ]);
+                    }
+                    Log::info('Order items synced', [
+                        'order_id' => $orderData['id'],
+                        'items_count' => count($orderData['items'])
+                    ]);
+                }
+
+                // 3. Insert/Update order_promos
+                if (isset($orderData['promos']) && is_array($orderData['promos'])) {
+                    // Delete existing promos first
+                    DB::table('order_promos')->where('order_id', $orderData['id'])->delete();
+
+                    foreach ($orderData['promos'] as $promo) {
+                        DB::table('order_promos')->insert([
+                            'order_id' => $orderData['id'],
+                            'promo_id' => $promo['promo_id'] ?? null,
+                            'status' => $promo['status'] ?? 'active', // Include status (active/inactive)
+                            'created_at' => $convertDateTime($promo['created_at'] ?? null),
+                            'kode_outlet' => $kodeOutlet,
+                        ]);
+                    }
+                    Log::info('Order promos synced', [
+                        'order_id' => $orderData['id'],
+                        'promos_count' => count($orderData['promos'])
+                    ]);
+                }
+
+                // 4. Insert/Update order_payment
+                if (isset($orderData['payments']) && is_array($orderData['payments'])) {
+                    // Delete existing payments first
+                    DB::table('order_payment')->where('order_id', $orderData['id'])->delete();
+
+                    foreach ($orderData['payments'] as $payment) {
+                        DB::table('order_payment')->insert([
+                            'id' => $payment['id'] ?? null,
+                            'order_id' => $orderData['id'],
+                            'paid_number' => $payment['paid_number'] ?? null,
+                            'payment_type' => $payment['payment_type'] ?? null,
+                            'payment_code' => $payment['payment_code'] ?? null,
+                            'amount' => $payment['amount'] ?? 0,
+                            'card_first4' => $payment['card_first4'] ?? null,
+                            'card_last4' => $payment['card_last4'] ?? null,
+                            'approval_code' => $payment['approval_code'] ?? null,
+                            'created_at' => $convertDateTime($payment['created_at'] ?? null),
+                            'kasir' => $payment['kasir'] ?? '-',
+                            'note' => $payment['note'] ?? null,
+                            'change' => $payment['change'] ?? 0,
+                            'kode_outlet' => $kodeOutlet,
+                        ]);
+                    }
+                    Log::info('Order payments synced', [
+                        'order_id' => $orderData['id'],
+                        'payments_count' => count($orderData['payments'])
+                    ]);
+                }
+
+                // 5. Handle member spending and points (if member exists)
+                if (!empty($orderData['member_id'])) {
+                    $member = MemberAppsMember::where('member_id', $orderData['member_id'])
+                        ->orWhere('id', $orderData['member_id'])
+                        ->first();
+                    
+                    if ($member) {
+                        $grandTotal = $orderData['grand_total'] ?? 0;
+                        $transactionDate = Carbon::parse($orderData['created_at'] ?? now());
+                        $voucherInfo = $orderData['voucher_info'] ?? null;
+                        
+                        // Check if voucher was used (voucher_info is not null)
+                        $hasVoucher = !empty($voucherInfo);
+                        
+                        // Always record transaction for monthly spending and total spending lifetime
+                        // This ensures tier can still increase even with voucher
+                        MemberTierService::recordTransaction($member->id, $grandTotal, $transactionDate);
+                        
+                        Log::info('Member transaction recorded', [
+                            'member_id' => $member->id,
+                            'grand_total' => $grandTotal,
+                            'has_voucher' => $hasVoucher,
+                            'transaction_date' => $transactionDate->format('Y-m-d H:i:s')
+                        ]);
+                        
+                        // Only insert point if NO voucher was used
+                        if (!$hasVoucher && $grandTotal > 0) {
+                            // Calculate points based on member tier
+                            $tier = strtolower($member->member_level ?? 'silver');
+                            $pointsEarned = 0;
+                            
+                            // Point earning rate based on tier
+                            // Silver: 1 point per Rp 10,000
+                            // Loyal: 1.5 points per Rp 10,000
+                            // Elite: 2 points per Rp 10,000
+                            // Prestige: 2 points per Rp 10,000 (same as Elite)
+                            $earningRate = 0.0001; // Default: 1 point per Rp 10,000
+                            if ($tier === 'loyal') {
+                                $earningRate = 0.00015; // 1.5 points per Rp 10,000
+                            } elseif ($tier === 'elite' || $tier === 'prestige') {
+                                $earningRate = 0.0002; // 2 points per Rp 10,000
+                            }
+                            
+                            $pointsEarned = floor($grandTotal * $earningRate);
+                            
+                            if ($pointsEarned > 0) {
+                                // Add points to member
+                                $member->just_points = ($member->just_points ?? 0) + $pointsEarned;
+                                $member->save();
+                                
+                                // Calculate expires_at: 1 year from transaction date
+                                $expiresAt = $transactionDate->copy()->addYear();
+                                
+                                // Create point transaction
+                                $pointTransaction = MemberAppsPointTransaction::create([
+                                    'member_id' => $member->id,
+                                    'transaction_type' => 'earn',
+                                    'point_amount' => $pointsEarned,
+                                    'transaction_amount' => $grandTotal,
+                                    'reference_id' => $orderData['id'],
+                                    'channel' => 'dine-in',
+                                    'transaction_date' => $transactionDate->toDateString(),
+                                    'description' => "Point earning from order {$orderData['nomor']}",
+                                    'earning_rate' => $earningRate,
+                                    'expires_at' => $expiresAt->toDateString(),
+                                    'is_expired' => false,
+                                    'created_at' => $transactionDate,
+                                    'updated_at' => $transactionDate
+                                ]);
+                                
+                                // Create point earning record (required for expiry tracking)
+                                MemberAppsPointEarning::create([
+                                    'member_id' => $member->id,
+                                    'point_transaction_id' => $pointTransaction->id,
+                                    'point_amount' => $pointsEarned,
+                                    'remaining_points' => $pointsEarned, // Initially all points are remaining
+                                    'earned_at' => $transactionDate->toDateString(),
+                                    'expires_at' => $expiresAt->toDateString(),
+                                    'is_expired' => false,
+                                    'is_fully_redeemed' => false,
+                                ]);
+                                
+                                Log::info('Points earned for member', [
+                                    'member_id' => $member->id,
+                                    'points_earned' => $pointsEarned,
+                                    'tier' => $tier,
+                                    'earning_rate' => $earningRate,
+                                    'grand_total' => $grandTotal,
+                                    'transaction_id' => $pointTransaction->id,
+                                    'expires_at' => $expiresAt->toDateString()
+                                ]);
+                                
+                                // Dispatch event for push notification
+                                try {
+                                    // Get outlet name for notification
+                                    $outletName = 'Outlet';
+                                    if (!empty($kodeOutlet)) {
+                                        try {
+                                            $outletData = DB::selectOne(
+                                                "SELECT nama_outlet FROM tbl_data_outlet WHERE qr_code = ? LIMIT 1",
+                                                [$kodeOutlet]
+                                            );
+                                            if ($outletData) {
+                                                $outletName = $outletData->nama_outlet;
+                                            }
+                                        } catch (\Exception $e) {
+                                            Log::warning('Error getting outlet name for notification in POS', [
+                                                'kode_outlet' => $kodeOutlet,
+                                                'error' => $e->getMessage()
+                                            ]);
+                                        }
+                                    }
+                                    
+                                    Log::info('Dispatching PointEarned event from POS', [
+                                        'member_id' => $member->id,
+                                        'points' => $pointsEarned,
+                                        'order_id' => $orderData['id'],
+                                        'outlet_name' => $outletName,
+                                    ]);
+                                    
+                                    event(new PointEarned(
+                                        $member,
+                                        $pointTransaction,
+                                        $pointsEarned,
+                                        'transaction',
+                                        [
+                                            'order_id' => $orderData['id'],
+                                            'outlet_name' => $outletName,
+                                        ]
+                                    ));
+                                    
+                                    Log::info('PointEarned event dispatched successfully from POS', [
+                                        'member_id' => $member->id,
+                                    ]);
+                                } catch (\Exception $e) {
+                                    // Log error but don't fail the point earning
+                                    Log::error('Error dispatching PointEarned event from POS', [
+                                        'member_id' => $member->id,
+                                        'error' => $e->getMessage(),
+                                        'trace' => $e->getTraceAsString()
+                                    ]);
+                                }
+                            }
+                        } else {
+                            Log::info('Points not earned - voucher used', [
+                                'member_id' => $member->id,
+                                'has_voucher' => $hasVoucher,
+                                'voucher_info' => $voucherInfo ? 'exists' : 'null'
+                            ]);
+                        }
+                    }
+                }
+
+                DB::commit();
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Order synced successfully',
+                    'data' => [
+                        'order_id' => $orderData['id'],
+                        'kode_outlet' => $kodeOutlet
+                    ]
+                ]);
+
+            } catch (\Exception $e) {
+                DB::rollBack();
+                Log::error('Error syncing order', [
+                    'order_id' => $orderData['id'] ?? null,
+                    'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString()
+                ]);
+                throw $e;
+            }
+
+        } catch (\Exception $e) {
+            Log::error('POS Order Sync Error', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to sync order: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Rollback member transaction when order is voided
+     * This endpoint rolls back:
+     * - Total spending
+     * - Point transactions
+     * - Monthly spending
+     * - Challenge progress (if any)
+     */
+    public function rollbackMemberTransaction(Request $request)
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'order_id' => 'required|string',
+                'order_nomor' => 'required|string',
+                'member_id' => 'required|string',
+                'grand_total' => 'required|numeric',
+                'transaction_date' => 'required|date',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validation failed',
+                    'errors' => $validator->errors()
+                ], 400);
+            }
+
+            $orderId = $request->input('order_id');
+            $orderNomor = $request->input('order_nomor');
+            $memberId = $request->input('member_id');
+            $grandTotal = $request->input('grand_total');
+            $transactionDate = $request->input('transaction_date');
+
+            Log::info('Rollback Member Transaction', [
+                'order_id' => $orderId,
+                'order_nomor' => $orderNomor,
+                'member_id' => $memberId,
+                'grand_total' => $grandTotal,
+                'transaction_date' => $transactionDate
+            ]);
+
+            DB::beginTransaction();
+
+            try {
+                // Find member
+                $member = MemberAppsMember::where('member_id', $memberId)
+                    ->orWhere('id', $memberId)
+                    ->first();
+
+                if (!$member) {
+                    DB::rollBack();
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Member not found'
+                    ], 404);
+                }
+
+                // 1. Rollback total spending (lifetime)
+                if ($member->total_spending && $member->total_spending >= $grandTotal) {
+                    $member->total_spending = $member->total_spending - $grandTotal;
+                    $member->save();
+                    Log::info('Rollback total spending', [
+                        'member_id' => $memberId,
+                        'old_total' => $member->total_spending + $grandTotal,
+                        'new_total' => $member->total_spending
+                    ]);
+                }
+
+                // 2. Rollback point transactions (delete or mark as voided)
+                $pointTransactions = MemberAppsPointTransaction::where('member_id', $member->id)
+                    ->where(function($query) use ($orderId, $orderNomor) {
+                        $query->where('reference_id', $orderId)
+                              ->orWhere('reference_id', $orderNomor);
+                    })
+                    ->get();
+
+                $totalPointsToRollback = 0;
+                foreach ($pointTransactions as $transaction) {
+                    // Rollback point redemption from earnings if this is a redemption transaction
+                    if ($transaction->transaction_type === 'redeem') {
+                        try {
+                            $pointEarningService = new \App\Services\PointEarningService();
+                            $rollbackResult = $pointEarningService->rollbackPointRedemptionFromEarnings($transaction->id);
+                            
+                            if (!$rollbackResult) {
+                                Log::warning('Failed to rollback point earnings for redemption in void order', [
+                                    'point_transaction_id' => $transaction->id,
+                                    'member_id' => $member->id,
+                                    'order_id' => $orderId,
+                                ]);
+                            } else {
+                                Log::info('Point earnings rolled back for void order', [
+                                    'point_transaction_id' => $transaction->id,
+                                    'points_returned' => $rollbackResult['points_returned'] ?? 0,
+                                    'details_count' => $rollbackResult['details_count'] ?? 0,
+                                ]);
+                            }
+                        } catch (\Exception $e) {
+                            Log::error('Error rolling back point earnings for redemption in void order', [
+                                'point_transaction_id' => $transaction->id,
+                                'member_id' => $member->id,
+                                'order_id' => $orderId,
+                                'error' => $e->getMessage(),
+                            ]);
+                            // Continue with rollback anyway
+                        }
+                    } elseif ($transaction->transaction_type === 'earn') {
+                        // For point earning, delete the point earning record
+                        try {
+                            $pointEarning = MemberAppsPointEarning::where('point_transaction_id', $transaction->id)->first();
+                            if ($pointEarning) {
+                                $pointEarning->delete();
+                                Log::info('Point earning record deleted for void order', [
+                                    'point_transaction_id' => $transaction->id,
+                                    'point_earning_id' => $pointEarning->id,
+                                    'member_id' => $member->id,
+                                    'order_id' => $orderId,
+                                ]);
+                            }
+                        } catch (\Exception $e) {
+                            Log::error('Error deleting point earning record for void order', [
+                                'point_transaction_id' => $transaction->id,
+                                'member_id' => $member->id,
+                                'order_id' => $orderId,
+                                'error' => $e->getMessage(),
+                            ]);
+                            // Continue with rollback anyway
+                        }
+                    }
+                    
+                    if ($transaction->point_amount > 0) {
+                        $totalPointsToRollback += $transaction->point_amount;
+                    }
+                    // Delete the transaction
+                    $transaction->delete();
+                }
+
+                // Rollback points from member
+                if ($totalPointsToRollback > 0 && $member->just_points >= $totalPointsToRollback) {
+                    $member->just_points = $member->just_points - $totalPointsToRollback;
+                    $member->save();
+                    Log::info('Rollback points', [
+                        'member_id' => $memberId,
+                        'points_rolled_back' => $totalPointsToRollback,
+                        'new_points' => $member->just_points
+                    ]);
+                }
+
+                // 3. Rollback monthly spending
+                $transactionDateObj = Carbon::parse($transactionDate);
+                $year = (int) $transactionDateObj->format('Y');
+                $month = (int) $transactionDateObj->format('m');
+
+                $monthlySpending = MemberAppsMonthlySpending::where('member_id', $member->id)
+                    ->where('year', $year)
+                    ->where('month', $month)
+                    ->first();
+
+                if ($monthlySpending && $monthlySpending->total_spending >= $grandTotal) {
+                    $monthlySpending->total_spending = $monthlySpending->total_spending - $grandTotal;
+                    $monthlySpending->transaction_count = max(0, $monthlySpending->transaction_count - 1);
+                    $monthlySpending->save();
+                    Log::info('Rollback monthly spending', [
+                        'member_id' => $memberId,
+                        'year' => $year,
+                        'month' => $month,
+                        'old_spending' => $monthlySpending->total_spending + $grandTotal,
+                        'new_spending' => $monthlySpending->total_spending
+                    ]);
+                }
+
+                // 4. Recalculate tier based on new rolling 12-month spending
+                MemberTierService::updateMemberTier($member->id, $transactionDateObj);
+
+                // 5. Rollback challenge progress (if any)
+                // Find challenge progress that was updated by this order
+                // Note: progress_data is JSON, so we need to check if it contains the order info
+                $challengeProgress = DB::table('member_apps_challenge_progress')
+                    ->where('member_id', $member->id)
+                    ->where(function($query) use ($orderId, $orderNomor) {
+                        $query->where('progress_data', 'like', '%"order_id":"' . $orderId . '"%')
+                              ->orWhere('progress_data', 'like', '%"order_nomor":"' . $orderNomor . '"%')
+                              ->orWhere('progress_data', 'like', '%order_id":"' . $orderId . '"%')
+                              ->orWhere('progress_data', 'like', '%order_nomor":"' . $orderNomor . '"%');
+                    })
+                    ->get();
+
+                foreach ($challengeProgress as $progress) {
+                    $progressData = json_decode($progress->progress_data, true);
+                    if (isset($progressData['spending'])) {
+                        $oldSpending = (float) $progressData['spending'];
+                        $newSpending = max(0, $oldSpending - $grandTotal);
+                        $progressData['spending'] = $newSpending;
+                        
+                        // Update progress
+                        DB::table('member_apps_challenge_progress')
+                            ->where('id', $progress->id)
+                            ->update([
+                                'progress_data' => json_encode($progressData),
+                                'updated_at' => now()
+                            ]);
+                        
+                        Log::info('Rollback challenge progress', [
+                            'member_id' => $memberId,
+                            'challenge_progress_id' => $progress->id,
+                            'old_spending' => $oldSpending,
+                            'new_spending' => $newSpending
+                        ]);
+                    }
+                }
+
+                DB::commit();
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Member transaction rolled back successfully',
+                    'data' => [
+                        'order_id' => $orderId,
+                        'member_id' => $memberId,
+                        'points_rolled_back' => $totalPointsToRollback,
+                        'spending_rolled_back' => $grandTotal
+                    ]
+                ]);
+
+            } catch (\Exception $e) {
+                DB::rollBack();
+                Log::error('Error rolling back member transaction', [
+                    'order_id' => $orderId,
+                    'member_id' => $memberId,
+                    'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString()
+                ]);
+                throw $e;
+            }
+
+        } catch (\Exception $e) {
+            Log::error('Rollback Member Transaction Error', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to rollback member transaction: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+}

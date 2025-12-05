@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Enhanced Maintenance Comment Feature</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+        }
+        .test-title {
+            font-size: 18px;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 15px;
+        }
+        .test-description {
+            color: #666;
+            margin-bottom: 15px;
+        }
+        .test-steps {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+        .test-steps ol {
+            margin: 0;
+            padding-left: 20px;
+        }
+        .test-steps li {
+            margin: 8px 0;
+        }
+        .expected-result {
+            background: #e8f5e8;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 10px 0;
+            border-left: 4px solid #28a745;
+        }
+        .note {
+            background: #fff3cd;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 10px 0;
+            border-left: 4px solid #ffc107;
+        }
+        .code-block {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            font-family: monospace;
+            margin: 10px 0;
+            border: 1px solid #dee2e6;
+        }
+        .new-feature {
+            background: #e3f2fd;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 10px 0;
+            border-left: 4px solid #2196f3;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Test Enhanced Maintenance Comment Feature</h1>
+        <p>Dokumen ini menjelaskan cara menguji fitur comment yang sudah ditingkatkan dengan loading spinner, draft auto-save, dan fitur tambahan lainnya.</p>
+
+        <div class="new-feature">
+            <div class="test-title">🚀 Fitur Baru yang Ditambahkan</div>
+            <ul>
+                <li>✅ Loading spinner saat simpan comment</li>
+                <li>✅ Auto-save draft saat mengetik</li>
+                <li>✅ Keyboard shortcuts (Ctrl+Enter, Esc)</li>
+                <li>✅ Better error handling dan validasi</li>
+                <li>✅ Loading state untuk fetch comments</li>
+                <li>✅ Confirmation untuk comment kosong dengan file</li>
+                <li>✅ Improved UI/UX dengan feedback yang lebih baik</li>
+            </ul>
+        </div>
+
+        <div class="test-section">
+            <div class="test-title">1. Test Loading Spinner pada Submit Comment</div>
+            <div class="test-description">
+                Test untuk memastikan loading spinner muncul saat menyimpan comment dan tombol disabled selama proses.
+            </div>
+            <div class="test-steps">
+                <ol>
+                    <li>Buka comment modal untuk task tertentu</li>
+                    <li>Tulis komentar atau upload file</li>
+                    <li>Klik tombol "Kirim"</li>
+                    <li>Perhatikan perubahan pada tombol</li>
+                </ol>
+            </div>
+            <div class="expected-result">
+                <strong>Expected Result:</strong> 
+                <ul>
+                    <li>Tombol berubah menjadi "Menyimpan..." dengan spinner</li>
+                    <li>Tombol disabled selama proses submit</li>
+                    <li>Spinner berputar sampai proses selesai</li>
+                    <li>Tombol kembali normal setelah selesai</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="test-section">
+            <div class="test-title">2. Test Auto-Save Draft Feature</div>
+            <div class="test-description">
+                Test untuk memastikan draft comment tersimpan otomatis saat user mengetik.
+            </div>
+            <div class="test-steps">
+                <ol>
+                    <li>Buka comment modal</li>
+                    <li>Tulis beberapa kata di textarea</li>
+                    <li>Tutup modal tanpa submit</li>
+                    <li>Buka kembali comment modal untuk task yang sama</li>
+                    <li>Periksa apakah draft tersimpan</li>
+                </ol>
+            </div>
+            <div class="expected-result">
+                <strong>Expected Result:</strong> 
+                <ul>
+                    <li>Draft tersimpan otomatis saat mengetik</li>
+                    <li>Indikator "Draft tersimpan otomatis" muncul</li>
+                    <li>Draft dapat di-load kembali setelah modal dibuka ulang</li>
+                    <li>Draft expired setelah 1 jam</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="test-section">
+            <div class="test-title">3. Test Keyboard Shortcuts</div>
+            <div class="test-description">
+                Test untuk memastikan keyboard shortcuts berfungsi dengan baik.
+            </div>
+            <div class="test-steps">
+                <ol>
+                    <li>Buka comment modal</li>
+                    <li>Tulis komentar</li>
+                    <li>Tekan Ctrl+Enter (atau Cmd+Enter di Mac)</li>
+                    <li>Tekan Esc untuk tutup modal</li>
+                </ol>
+            </div>
+            <div class="expected-result">
+                <strong>Expected Result:</strong> 
+                <ul>
+                    <li>Ctrl+Enter berfungsi untuk submit comment</li>
+                    <li>Esc berfungsi untuk tutup modal</li>
+                    <li>Info keyboard shortcuts ditampilkan di bawah textarea</li>
+                    <li>Placeholder text menunjukkan shortcut yang tersedia</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="test-section">
+            <div class="test-title">4. Test Enhanced Error Handling</div>
+            <div class="test-description">
+                Test untuk memastikan error handling yang lebih baik dan user-friendly.
+            </div>
+            <div class="test-steps">
+                <ol>
+                    <li>Test dengan task ID yang invalid</li>
+                    <li>Test dengan file yang terlalu besar</li>
+                    <li>Test dengan network error</li>
+                    <li>Test dengan server error</li>
+                </ol>
+            </div>
+            <div class="expected-result">
+                <strong>Expected Result:</strong> 
+                <ul>
+                    <li>Error message yang spesifik dan informatif</li>
+                    <li>User tidak bisa submit dengan task ID invalid</li>
+                    <li>File size validation yang jelas</li>
+                    <li>Network error handling yang graceful</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="test-section">
+            <div class="test-title">5. Test Loading States</div>
+            <div class="test-description">
+                Test untuk memastikan semua loading states berfungsi dengan baik.
+            </div>
+            <div class="test-steps">
+                <ol>
+                    <li>Buka comment modal</li>
+                    <li>Perhatikan loading state saat fetch comments</li>
+                    <li>Submit comment dan perhatikan loading state</li>
+                    <li>Test dengan network yang lambat</li>
+                </ol>
+            </div>
+            <div class="expected-result">
+                <strong>Expected Result:</strong> 
+                <ul>
+                    <li>Loading spinner muncul saat fetch comments</li>
+                    <li>Loading spinner muncul saat submit comment</li>
+                    <li>UI disabled selama loading</li>
+                    <li>Loading state yang smooth dan tidak flicker</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="test-section">
+            <div class="test-title">6. Test Comment Validation</div>
+            <div class="test-description">
+                Test untuk memastikan validasi comment berfungsi dengan baik.
+            </div>
+            <div class="test-steps">
+                <ol>
+                    <li>Submit comment kosong tanpa file</li>
+                    <li>Submit comment kosong dengan file</li>
+                    <li>Submit comment dengan text saja</li>
+                    <li>Submit comment dengan file saja</li>
+                </ol>
+            </div>
+            <div class="expected-result">
+                <strong>Expected Result:</strong> 
+                <ul>
+                    <li>Comment kosong tanpa file tidak bisa di-submit</li>
+                    <li>Confirmation dialog muncul untuk comment kosong dengan file</li>
+                    <li>Comment dengan text saja bisa di-submit</li>
+                    <li>Comment dengan file saja bisa di-submit setelah konfirmasi</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="test-section">
+            <div class="test-title">7. Test UI/UX Improvements</div>
+            <div class="test-description">
+                Test untuk memastikan semua improvement UI/UX berfungsi dengan baik.
+            </div>
+            <div class="test-steps">
+                <ol>
+                    <li>Test focus states pada textarea</li>
+                    <li>Test hover effects pada tombol</li>
+                    <li>Test responsive design</li>
+                    <li>Test accessibility features</li>
+                </ol>
+            </div>
+            <div class="expected-result">
+                <strong>Expected Result:</strong> 
+                <ul>
+                    <li>Focus ring yang jelas pada textarea</li>
+                    <li>Hover effects yang smooth</li>
+                    <li>Responsive di semua ukuran layar</li>
+                    <li>Keyboard navigation yang baik</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="note">
+            <strong>Note:</strong> Pastikan semua fitur baru berfungsi dengan baik:
+            <div class="code-block">
+                // Loading states
+                isSubmitting: boolean - untuk submit comment
+                isLoadingComments: boolean - untuk fetch comments
+                
+                // Auto-save draft
+                saveDraft() - simpan draft otomatis
+                loadDraft() - load draft saat modal dibuka
+                clearDraft() - hapus draft setelah submit berhasil
+                
+                // Keyboard shortcuts
+                Ctrl+Enter - submit comment
+                Esc - tutup modal
+                
+                // Enhanced validation
+                Task ID validation
+                Comment content validation
+                File validation
+            </div>
+        </div>
+
+        <div class="note">
+            <strong>Note:</strong> Fitur ini menggunakan localStorage untuk draft, jadi pastikan:
+            <ul>
+                <li>Browser support localStorage</li>
+                <li>Draft expired setelah 1 jam</li>
+                <li>Draft per-task (tidak overlap antar task)</li>
+                <li>Draft di-clear setelah submit berhasil</li>
+            </ul>
+        </div>
+
+        <div class="test-section">
+            <div class="test-title">8. Test Edge Cases</div>
+            <div class="test-description">
+                Test untuk memastikan fitur berfungsi baik dalam kondisi ekstrim.
+            </div>
+            <div class="test-steps">
+                <ol>
+                    <li>Test dengan comment yang sangat panjang</li>
+                    <li>Test dengan banyak file attachment</li>
+                    <li>Test dengan browser yang berbeda</li>
+                    <li>Test dengan network yang tidak stabil</li>
+                </ol>
+            </div>
+            <div class="expected-result">
+                <strong>Expected Result:</strong> 
+                <ul>
+                    <li>Comment panjang ditangani dengan baik</li>
+                    <li>Multiple files dapat di-handle</li>
+                    <li>Cross-browser compatibility</li>
+                    <li>Graceful degradation pada network issues</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="test-section">
+            <div class="test-title">9. Test Performance</div>
+            <div class="test-description">
+                Test untuk memastikan performa fitur comment tetap baik.
+            </div>
+            <div class="test-steps">
+                <ol>
+                    <li>Test dengan banyak comments</li>
+                    <li>Test dengan file yang besar</li>
+                    <li>Test dengan multiple modal opens</li>
+                    <li>Test memory usage</li>
+                </ol>
+            </div>
+            <div class="expected-result">
+                <strong>Expected Result:</strong> 
+                <ul>
+                    <li>Loading time yang reasonable</li>
+                    <li>Tidak ada memory leak</li>
+                    <li>UI tetap responsive</li>
+                    <li>Efficient API calls</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="test-section">
+            <div class="test-title">10. Test Integration</div>
+            <div class="test-description">
+                Test untuk memastikan integrasi dengan sistem maintenance order berfungsi baik.
+            </div>
+            <div class="test-steps">
+                <ol>
+                    <li>Test comment count update</li>
+                    <li>Test comment list refresh</li>
+                    <li>Test comment deletion</li>
+                    <li>Test comment dengan attachments</li>
+                </ol>
+            </div>
+            <div class="expected-result">
+                <strong>Expected Result:</strong> 
+                <ul>
+                    <li>Comment count update real-time</li>
+                    <li>Comment list refresh otomatis</li>
+                    <li>Comment deletion berfungsi</li>
+                    <li>Attachments tersimpan dan dapat diakses</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

@@ -1,0 +1,23 @@
+# Command Cron Job untuk Point Expiry
+
+## Option 1: Menggunakan Laravel Scheduler (Recommended)
+# Command ini akan menjalankan SEMUA scheduled commands termasuk point expiry
+# Jalankan setiap menit
+* * * * * cd /home/ymsuperadmin/public_html && php artisan schedule:run >> /dev/null 2>&1
+
+## Option 2: Command Langsung untuk Point Expiry
+# Command ini hanya menjalankan point expiry
+# Jalankan setiap hari jam 00:00 (midnight)
+0 0 * * * cd /home/ymsuperadmin/public_html && php artisan points:expire >> storage/logs/points-expiry.log 2>&1
+
+## Penjelasan:
+# - cd /home/ymsuperadmin/public_html : Masuk ke direktori project Laravel
+# - php artisan points:expire : Menjalankan command expire points
+# - >> storage/logs/points-expiry.log : Menyimpan output ke log file
+# - 2>&1 : Mengarahkan error output ke log file juga
+
+## Catatan:
+# - Jika sudah ada cron job untuk "schedule:run", gunakan Option 1 (tidak perlu tambah lagi)
+# - Jika ingin command khusus untuk point expiry saja, gunakan Option 2
+# - Pastikan path /home/ymsuperadmin/public_html sesuai dengan path project Anda
+

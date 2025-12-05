@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Comment Modal - Fix dengan Computed Properties</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+        }
+        .test-title {
+            font-size: 18px;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 15px;
+        }
+        .debug-info {
+            background: #e3f2fd;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 10px 0;
+            border-left: 4px solid #2196f3;
+        }
+        .error-info {
+            background: #f8d7da;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 10px 0;
+            border-left: 4px solid #dc3545;
+        }
+        .solution {
+            background: #d4edda;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 10px 0;
+            border-left: 4px solid #28a745;
+        }
+        .code-block {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            font-family: monospace;
+            margin: 10px 0;
+            border: 1px solid #dee2e6;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Test Comment Modal - Fix dengan Computed Properties</h1>
+        <p>Dokumen ini menjelaskan solusi untuk masalah "task-id=undefined" menggunakan computed properties.</p>
+
+        <div class="test-section">
+            <div class="test-title">🔍 Masalah yang Ditemukan</div>
+            <div class="error-info">
+                <strong>Gejala:</strong> Console log menunjukkan task ID valid (136) tapi Vue warning menunjukkan "task-id=undefined"
+                <br><strong>Root Cause:</strong> Masalah reaktivitas antara state update dan prop binding
+                <br><strong>Lokasi Error:</strong> List.vue:699 - CommentModal menerima undefined untuk task-id
+            </div>
+        </div>
+
+        <div class="test-section">
+            <div class="test-title">🔧 Solusi yang Diimplementasikan</div>
+            <div class="solution">
+                <strong>1. Computed Properties untuk Reaktivitas:</strong>
+                <ul>
+                    <li><code>canShowCommentModal</code> - memastikan semua kondisi terpenuhi</li>
+                    <li><code>commentModalTaskId</code> - memastikan task ID selalu valid</li>
+                </ul>
+                
+                <strong>2. Enhanced Debugging:</strong>
+                <ul>
+                    <li>Console logging di computed properties</li>
+                    <li>Debug box dengan computed values</li>
+                    <li>Real-time monitoring</li>
+                </ul>
+                
+                <strong>3. Conditional Rendering yang Lebih Aman:</strong>
+                <ul>
+                    <li>Gunakan computed property untuk v-if</li>
+                    <li>Gunakan computed property untuk :task-id</li>
+                    <li>Prevent undefined values</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="test-section">
+            <div class="test-title">📋 Implementasi Computed Properties</div>
+            <div class="code-block">
+// Computed untuk comment modal
+const canShowCommentModal = computed(() => {
+  const canShow = showCommentModal.value && selectedTask.value && selectedTask.value.id;
+  console.log('canShowCommentModal computed:', {
+    showCommentModal: showCommentModal.value,
+    selectedTask: selectedTask.value,
+    selectedTaskId: selectedTask.value?.id,
+    result: canShow
+  });
+  return canShow;
+});
+
+const commentModalTaskId = computed(() => {
+  const taskId = selectedTask.value?.id;
+  console.log('commentModalTaskId computed:', taskId);
+  return taskId;
+});
+            </div>
+        </div>
+
+        <div class="test-section">
+            <div class="test-title">📋 Template dengan Computed Properties</div>
+            <div class="code-block">
+<!-- Comment Modal -->
+&lt;CommentModal 
+  v-if="canShowCommentModal"
+  :task-id="commentModalTaskId"
+  @close="closeCommentModal"
+  @comment-added="onCommentAdded"
+/&gt;
+
+<!-- Debug Info -->
+&lt;div v-if="showCommentModal"&gt;
+  &lt;strong&gt;Computed Values:&lt;/strong&gt;&lt;br&gt;
+  canShowCommentModal: {{ canShowCommentModal }}&lt;br&gt;
+  commentModalTaskId: {{ commentModalTaskId }}
+&lt;/div&gt;
+            </div>
+        </div>
+
+        <div class="test-section">
+            <div class="test-title">🧪 Test Steps</div>
+            <div class="debug-info">
+                <ol>
+                    <li><strong>Buka Console (F12):</strong> Pastikan console terbuka</li>
+                    <li><strong>Klik Comment Button:</strong> Klik tombol comment di kolom Comments</li>
+                    <li><strong>Lihat Console Logs:</strong> Perhatikan computed properties logs</li>
+                    <li><strong>Lihat Debug Box:</strong> Perhatikan computed values</li>
+                    <li><strong>Check Modal:</strong> Apakah comment modal muncul?</li>
+                </ol>
+            </div>
+        </div>
+
+        <div class="test-section">
+            <div class="test-title">🐛 Console Log yang Diharapkan</div>
+            <div class="code-block">
+=== DEBUG COMMENT MODAL ===
+Opening comment modal directly for task: 136
+Task object: {id: 136, title: "...", ...}
+Before setting values:
+showCommentModal.value: false
+selectedTask.value: null
+After setting values:
+showCommentModal.value: true
+selectedTask.value: {id: 136, title: "...", ...}
+selectedTask.value.id: 136
+=== END DEBUG ===
+
+canShowCommentModal computed: {
+  showCommentModal: true,
+  selectedTask: {id: 136, ...},
+  selectedTaskId: 136,
+  result: true
+}
+
+commentModalTaskId computed: 136
+            </div>
+        </div>
+
+        <div class="test-section">
+            <div class="test-title">📊 Debug Box yang Diharapkan</div>
+            <div class="debug-info">
+                <strong>Box debug harus menampilkan:</strong>
+                <ul>
+                    <li>showCommentModal: true</li>
+                    <li>selectedTask: exists</li>
+                    <li>selectedTask.id: 136</li>
+                    <li><strong>Computed Values:</strong></li>
+                    <li>canShowCommentModal: true</li>
+                    <li>commentModalTaskId: 136</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="test-section">
+            <div class="test-title">✅ Expected Result Setelah Fix</div>
+            <div class="solution">
+                <ul>
+                    <li>✅ Tidak ada Vue warning "task-id=undefined"</li>
+                    <li>✅ CommentModal menerima taskId yang valid</li>
+                    <li>✅ Modal comment muncul dengan benar</li>
+                    <li>✅ Console menunjukkan computed properties berfungsi</li>
+                    <li>✅ Debug box menunjukkan semua values valid</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="test-section">
+            <div class="test-title">🚨 Jika Masih Ada Masalah</div>
+            <div class="error-info">
+                <strong>Check hal-hal berikut:</strong>
+                <ol>
+                    <li>Console errors atau warnings</li>
+                    <li>Computed properties tidak ter-trigger</li>
+                    <li>State tidak ter-update dengan benar</li>
+                    <li>Component import errors</li>
+                    <li>Vue version compatibility</li>
+                </ol>
+            </div>
+        </div>
+
+        <div class="test-section">
+            <div class="test-title">💡 Keuntungan Computed Properties</div>
+            <div class="debug-info">
+                <ul>
+                    <li><strong>Reaktivitas:</strong> Otomatis update ketika dependencies berubah</li>
+                    <li><strong>Caching:</strong> Hanya compute ulang ketika perlu</li>
+                    <li><strong>Debugging:</strong> Mudah track perubahan values</li>
+                    <li><strong>Performance:</strong> Lebih efisien daripada methods</li>
+                    <li><strong>Maintainability:</strong> Logic terpisah dan reusable</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="test-section">
+            <div class="test-title">📝 Checklist Test</div>
+            <div class="debug-info">
+                <ol>
+                    <li>✅ Console menunjukkan debug info lengkap</li>
+                    <li>✅ Computed properties logs muncul</li>
+                    <li>✅ Debug box menunjukkan computed values</li>
+                    <li>✅ canShowCommentModal: true</li>
+                    <li>✅ commentModalTaskId: 136 (atau ID yang sesuai)</li>
+                    <li>✅ Tidak ada Vue warning</li>
+                    <li>✅ Comment modal muncul dan berfungsi</li>
+                </ol>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
