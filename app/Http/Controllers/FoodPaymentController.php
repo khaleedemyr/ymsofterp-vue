@@ -15,20 +15,43 @@ class FoodPaymentController extends Controller
     // List all food payments
     public function index(Request $request)
     {
-        $query = FoodPayment::with(['supplier', 'creator', 'financeManager', 'contraBons'])->orderByDesc('created_at');
+        $query = FoodPayment::with(['supplier', 'creator', 'financeManager', 'contraBons' => function($q) {
+            $q->select('food_contra_bons.id', 'food_contra_bons.supplier_invoice_number', 'food_contra_bons.number');
+        }])->orderByDesc('created_at');
 
         if ($request->search) {
             $search = $request->search;
             $query->where(function($q) use ($search) {
+                // Search di kolom langsung
                 $q->where('number', 'like', "%$search%")
+                  ->orWhere('payment_type', 'like', "%$search%")
+                  ->orWhere('status', 'like', "%$search%")
+                  ->orWhere('notes', 'like', "%$search%")
+                  // Search di total (format angka)
+                  ->orWhereRaw("CAST(total AS CHAR) LIKE ?", ["%$search%"])
+                  // Search di tanggal (format YYYY-MM-DD)
+                  ->orWhereDate('date', 'like', "%$search%")
+                  ->orWhereRaw("DATE_FORMAT(date, '%d-%m-%Y') LIKE ?", ["%$search%"])
+                  ->orWhereRaw("DATE_FORMAT(date, '%Y-%m-%d') LIKE ?", ["%$search%"])
+                  // Search di supplier name
                   ->orWhereHas('supplier', function($q2) use ($search) {
                       $q2->where('name', 'like', "%$search%");
                   })
-                  ->orWhere('payment_type', 'like', "%$search%")
-                  ->orWhere('total', 'like', "%$search%")
-                  ->orWhere('status', 'like', "%$search%")
+                  // Search di creator name
                   ->orWhereHas('creator', function($q2) use ($search) {
                       $q2->where('nama_lengkap', 'like', "%$search%");
+                  })
+                  // Search di finance manager name
+                  ->orWhereHas('financeManager', function($q2) use ($search) {
+                      $q2->where('nama_lengkap', 'like', "%$search%");
+                  })
+                  // Search di GM finance name
+                  ->orWhereHas('gmFinance', function($q2) use ($search) {
+                      $q2->where('nama_lengkap', 'like', "%$search%");
+                  })
+                  // Search di invoice numbers dari contra bon
+                  ->orWhereHas('contraBons', function($q2) use ($search) {
+                      $q2->where('supplier_invoice_number', 'like', "%$search%");
                   });
             });
         }
@@ -43,6 +66,17 @@ class FoodPaymentController extends Controller
         }
 
         $payments = $query->paginate(10)->withQueryString();
+        
+        // Transform payments untuk menambahkan invoice numbers
+        $payments->getCollection()->transform(function($payment) {
+            $payment->invoice_numbers = $payment->contraBons
+                ->pluck('supplier_invoice_number')
+                ->filter()
+                ->unique()
+                ->values()
+                ->toArray();
+            return $payment;
+        });
 
         return inertia('FoodPayment/Index', [
             'payments' => $payments,

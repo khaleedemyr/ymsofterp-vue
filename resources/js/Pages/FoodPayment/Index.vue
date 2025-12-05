@@ -17,7 +17,7 @@
           v-model="search"
           @input="onSearchInput"
           type="text"
-          placeholder="Cari nomor/Supplier..."
+          placeholder="Cari semua kolom (nomor, tanggal, supplier, payment type, total, status, pembuat, dll)..."
           class="w-64 px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition"
         />
         <select v-model="selectedStatus" @change="onStatusChange" class="px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition">
@@ -39,6 +39,7 @@
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Tanggal</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Supplier</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Payment Type</th>
+              <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">No Invoice</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Total</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Status</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Dibuat Oleh</th>
@@ -47,13 +48,21 @@
           </thead>
           <tbody>
             <tr v-if="!payments.data || !payments.data.length">
-              <td colspan="8" class="text-center py-10 text-gray-400">Belum ada data Food Payment.</td>
+              <td colspan="9" class="text-center py-10 text-gray-400">Belum ada data Food Payment.</td>
             </tr>
             <tr v-for="p in payments.data" :key="p.id" class="hover:bg-blue-50 transition shadow-sm">
               <td class="px-6 py-3 font-mono font-semibold text-blue-700">{{ p.number }}</td>
               <td class="px-6 py-3">{{ formatDate(p.date) }}</td>
               <td class="px-6 py-3">{{ p.supplier?.name }}</td>
               <td class="px-6 py-3">{{ p.payment_type }}</td>
+              <td class="px-6 py-3">
+                <div v-if="p.invoice_numbers && p.invoice_numbers.length > 0" class="flex flex-wrap gap-1">
+                  <span v-for="(invoice, idx) in p.invoice_numbers" :key="idx" class="text-xs font-mono text-blue-700 bg-blue-50 px-2 py-1 rounded border border-blue-200">
+                    {{ invoice }}
+                  </span>
+                </div>
+                <span v-else class="text-gray-400 text-xs">-</span>
+              </td>
               <td class="px-6 py-3">{{ formatCurrency(p.total) }}</td>
               <td class="px-6 py-3">
                 <span :class="{

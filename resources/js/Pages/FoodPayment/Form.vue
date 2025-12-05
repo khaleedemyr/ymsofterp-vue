@@ -160,7 +160,10 @@ const existingBuktiPath = ref(null);
 const totalBayar = computed(() => {
   return contraBons.value
     .filter(cb => form.value.selected_contra_bon_ids.includes(cb.id))
-    .reduce((sum, cb) => sum + (cb.total_amount || 0), 0);
+    .reduce((sum, cb) => {
+      const amount = parseFloat(cb.total_amount) || 0;
+      return sum + amount;
+    }, 0);
 });
 
 function goBack() { 
@@ -208,15 +211,20 @@ async function onSupplierChange(supplier) {
   if (!supplier || !supplier.id) return;
   try {
     const res = await axios.get('/api/food-payments/contra-bon-unpaid');
-    // Filter hanya yang supplier_id sesuai
-    let availableContraBons = res.data.filter(cb => cb.supplier_id == supplier.id);
+    // Filter hanya yang supplier_id sesuai dan pastikan total_amount adalah number
+    let availableContraBons = res.data
+      .filter(cb => cb.supplier_id == supplier.id)
+      .map(cb => ({
+        ...cb,
+        total_amount: parseFloat(cb.total_amount) || 0
+      }));
     
     // Jika edit mode, tambahkan contra bon yang sudah dipilih meskipun sudah paid
     if (isEditMode.value && props.payment?.contra_bons) {
       const selectedIds = props.payment.contra_bons.map(cb => cb.id);
       const selectedContraBons = props.payment.contra_bons.map(cb => ({
         ...cb,
-        total_amount: cb.total_amount || cb.pivot?.total_amount || 0
+        total_amount: parseFloat(cb.total_amount || cb.pivot?.total_amount || 0)
       }));
       // Gabungkan dengan yang available, pastikan tidak duplikat
       const existingIds = availableContraBons.map(cb => cb.id);
