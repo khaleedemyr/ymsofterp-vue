@@ -1184,17 +1184,21 @@ class PurchaseOrderOpsController extends Controller
         $request->validate([
             'approved' => 'required|boolean',
             'comments' => 'nullable|string|max:1000',
+            'comment' => 'nullable|string|max:1000', // Alias for comments
         ]);
 
         try {
             DB::beginTransaction();
+
+            // Support both 'comments' and 'comment' parameters
+            $comments = $request->input('comments') ?? $request->input('comment');
 
             // Update approval flow
             $approvalFlow->update([
                 'status' => $request->approved ? 'APPROVED' : 'REJECTED',
                 'approved_at' => $request->approved ? now() : null,
                 'rejected_at' => !$request->approved ? now() : null,
-                'comments' => $request->comments,
+                'comments' => $comments,
             ]);
 
             if ($request->approved) {
@@ -1290,8 +1294,8 @@ class PurchaseOrderOpsController extends Controller
                 $rejectionMessage .= "❌ Status: DITOLAK\n";
                 $rejectionMessage .= "• Ditolak oleh: {$currentApprover->nama_lengkap}\n";
                 $rejectionMessage .= "• Level: {$approvalFlow->approval_level}\n";
-                if ($request->comments) {
-                    $rejectionMessage .= "• Alasan: {$request->comments}\n";
+                if ($comments) {
+                    $rejectionMessage .= "• Alasan: {$comments}\n";
                 }
                 $rejectionMessage .= "\n📝 Silakan periksa dan perbaiki PO sebelum mengajukan ulang.";
                 
