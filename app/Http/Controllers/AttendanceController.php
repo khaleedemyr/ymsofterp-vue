@@ -1601,4 +1601,102 @@ private function getCorrectionRequests($userId, $startDate, $endDate)
             return collect([]);
         }
     }
+
+    /**
+     * Get attendance data for mobile app (API endpoint)
+     */
+    public function getAttendanceDataApi(Request $request)
+    {
+        $user = auth()->user();
+        
+        // Get date range from request or default to payroll period
+        $bulan = $request->get('bulan', date('m'));
+        $tahun = $request->get('tahun', date('Y'));
+        $startDate = date('Y-m-d', strtotime("$tahun-$bulan-26 -1 month"));
+        $endDate = date('Y-m-d', strtotime("$tahun-$bulan-25"));
+        
+        // Get user's work schedule for the date range
+        $workSchedules = $this->getWorkSchedules($user->id, $startDate, $endDate);
+        
+        // Get attendance summary
+        $attendanceSummary = $this->getAttendanceSummary($user->id, $startDate, $endDate);
+        
+        // Get attendance data with first in and last out
+        $attendanceData = $this->getAttendanceDataWithFirstInLastOut($user->id, $startDate, $endDate);
+        
+        // Format calendar data
+        $calendar = [];
+        foreach ($workSchedules as $schedule) {
+            $attendanceInfo = $attendanceData[$schedule->schedule_date] ?? null;
+            
+            if (!isset($calendar[$schedule->schedule_date])) {
+                $calendar[$schedule->schedule_date] = [];
+            }
+            
+            $calendar[$schedule->schedule_date][] = [
+                'user_id' => $user->id,
+                'nama_lengkap' => $user->nama_lengkap,
+                'shift_id' => $schedule->shift_id,
+                'shift_name' => $schedule->shift_name,
+                'time_start' => $schedule->start_time,
+                'time_end' => $schedule->end_time,
+                'first_in' => $attendanceInfo['first_in'] ?? null,
+                'last_out' => $attendanceInfo['last_out'] ?? null,
+                'telat' => $attendanceInfo['telat'] ?? 0,
+                'lembur' => $attendanceInfo['lembur'] ?? 0,
+                'has_attendance' => $attendanceInfo ? true : false,
+                'has_no_checkout' => $attendanceInfo['has_no_checkout'] ?? false,
+            ];
+        }
+        
+        // Get holidays for the date range
+        $holidays = DB::table('tbl_kalender_perusahaan')
+            ->whereBetween('tgl_libur', [$startDate, $endDate])
+            ->select('tgl_libur as date', 'keterangan as name')
+            ->get();
+        
+        // Get approved absent requests
+        $approvedAbsents = $this->getApprovedAbsentRequests($user->id, $startDate, $endDate);
+        
+        // Get user's leave requests
+        $userLeaveRequests = $this->getUserLeaveRequests($user->id, $startDate, $endDate);
+        
+        // Get active leave types
+        $leaveTypes = LeaveType::active()
+            ->select('id', 'name', 'max_days', 'requires_document', 'description')
+            ->orderBy('name')
+            ->get();
+        
+        // Get PH and Extra Off data
+        $phData = $this->getPHData($user->id, $startDate, $endDate);
+        $extraOffData = $this->getExtraOffData($user->id, $startDate, $endDate);
+        
+        // Get correction requests
+        $correctionRequests = $this->getCorrectionRequests($user->id, $startDate, $endDate);
+        
+        return response()->json([
+            'success' => true,
+            'attendanceSummary' => $attendanceSummary,
+            'calendar' => $calendar,
+            'holidays' => $holidays,
+            'approvedAbsents' => $approvedAbsents,
+            'userLeaveRequests' => $userLeaveRequests,
+            'leaveTypes' => $leaveTypes,
+            'phData' => $phData,
+            'extraOffData' => $extraOffData,
+            'correctionRequests' => $correctionRequests,
+            'filters' => [
+                'bulan' => $bulan,
+                'tahun' => $tahun,
+                'start_date' => $startDate,
+                'end_date' => $endDate,
+            ],
+            'user' => [
+                'id' => $user->id,
+                'nama_lengkap' => $user->nama_lengkap,
+                'id_outlet' => $user->id_outlet,
+                'cuti' => $user->cuti ?? 0,
+            ]
+        ]);
+    }
 }
