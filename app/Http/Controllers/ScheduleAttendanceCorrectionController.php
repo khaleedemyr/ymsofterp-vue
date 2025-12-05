@@ -590,6 +590,134 @@ class ScheduleAttendanceCorrectionController extends Controller
     }
     
     /**
+     * Get correction approval detail
+     */
+    public function getApprovalDetail($id)
+    {
+        try {
+            $approval = DB::table('schedule_attendance_correction_approvals as saca')
+                ->leftJoin('users as requester', 'saca.requested_by', '=', 'requester.id')
+                ->leftJoin('users as employee', 'saca.user_id', '=', 'employee.id')
+                ->leftJoin('users as approver', 'saca.approved_by', '=', 'approver.id')
+                ->leftJoin('tbl_data_outlet', 'saca.outlet_id', '=', 'tbl_data_outlet.id_outlet')
+                ->leftJoin('tbl_data_divisi', 'saca.division_id', '=', 'tbl_data_divisi.id')
+                ->leftJoin('shifts', function($join) {
+                    $join->on('saca.old_value', '=', 'shifts.shift_name')
+                         ->on('saca.division_id', '=', 'shifts.division_id');
+                })
+                ->where('saca.id', $id)
+                ->select([
+                    'saca.*',
+                    'requester.nama_lengkap as requested_by_name',
+                    'requester.id as requester_id',
+                    'employee.nama_lengkap as employee_name',
+                    'employee.id as employee_id',
+                    'approver.nama_lengkap as approver_name',
+                    'approver.id as approver_id',
+                    'tbl_data_outlet.nama_outlet',
+                    'tbl_data_outlet.id_outlet',
+                    'tbl_data_divisi.nama_divisi',
+                    'shifts.shift_name as old_shift_name',
+                ])
+                ->first();
+            
+            if (!$approval) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Approval tidak ditemukan'
+                ], 404);
+            }
+            
+            // Get approval flows (if table exists)
+            $approvalFlows = collect();
+            try {
+                $approvalFlows = DB::table('schedule_attendance_correction_approval_flows as sacaf')
+                    ->leftJoin('users', 'sacaf.approver_id', '=', 'users.id')
+                    ->where('sacaf.approval_id', $id)
+                    ->select([
+                        'sacaf.*',
+                        'users.nama_lengkap as approver_name',
+                    ])
+                    ->orderBy('sacaf.sequence')
+                    ->get();
+            } catch (\Exception $e) {
+                // Table might not exist, use simple approval info instead
+                if ($approval->approved_by) {
+                    $approvalFlows = collect([
+                        (object)[
+                            'id' => null,
+                            'sequence' => 1,
+                            'status' => $approval->status,
+                            'approved_at' => $approval->approved_at,
+                            'comments' => $approval->rejection_reason ?? null,
+                            'approver_id' => $approval->approved_by,
+                            'approver_name' => $approval->approver_name,
+                        ]
+                    ]);
+                }
+            }
+            
+            // Transform approval data
+            $correctionData = [
+                'id' => $approval->id,
+                'type' => $approval->type,
+                'status' => $approval->status,
+                'tanggal' => $approval->tanggal,
+                'old_value' => $approval->old_value,
+                'new_value' => $approval->new_value,
+                'reason' => $approval->reason,
+                'record_id' => $approval->record_id,
+                'created_at' => $approval->created_at,
+                'updated_at' => $approval->updated_at,
+                'employee' => [
+                    'id' => $approval->employee_id,
+                    'nama_lengkap' => $approval->employee_name,
+                ],
+                'outlet' => [
+                    'id_outlet' => $approval->id_outlet,
+                    'nama_outlet' => $approval->nama_outlet,
+                ],
+                'division' => [
+                    'id' => $approval->division_id,
+                    'nama_divisi' => $approval->nama_divisi,
+                ],
+                'requester' => [
+                    'id' => $approval->requester_id,
+                    'nama_lengkap' => $approval->requested_by_name,
+                ],
+                'approval_flows' => $approvalFlows->map(function($flow) {
+                    return [
+                        'id' => $flow->id,
+                        'sequence' => $flow->sequence,
+                        'status' => $flow->status,
+                        'approved_at' => $flow->approved_at,
+                        'comments' => $flow->comments,
+                        'approver' => [
+                            'id' => $flow->approver_id,
+                            'nama_lengkap' => $flow->approver_name,
+                        ],
+                    ];
+                })->toArray(),
+            ];
+            
+            return response()->json([
+                'success' => true,
+                'correction' => $correctionData
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Error getting Correction approval detail', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to load Correction approval detail'
+            ], 500);
+        }
+    }
+    
+    /**
      * Approve correction
      */
     public function approveCorrection(Request $request, $id)
