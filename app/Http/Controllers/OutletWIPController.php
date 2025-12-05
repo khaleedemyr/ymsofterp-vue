@@ -14,13 +14,15 @@ class OutletWIPController extends Controller
     {
         $user = auth()->user();
         
-        // Ambil item hasil produksi (composed & aktif)
+        // Ambil item hasil produksi (composed & aktif) dengan validasi category show_pos=0
         $items = DB::table('items')
             ->leftJoin('units as small_unit', 'items.small_unit_id', '=', 'small_unit.id')
             ->leftJoin('units as medium_unit', 'items.medium_unit_id', '=', 'medium_unit.id')
             ->leftJoin('units as large_unit', 'items.large_unit_id', '=', 'large_unit.id')
+            ->join('categories', 'items.category_id', '=', 'categories.id')
             ->where('items.composition_type', 'composed')
             ->where('items.status', 'active')
+            ->where('categories.show_pos', 0)
             ->select(
                 'items.*',
                 'small_unit.name as small_unit_name',
@@ -249,12 +251,15 @@ class OutletWIPController extends Controller
     {
         $user = auth()->user();
         
+        // Ambil item hasil produksi (composed & aktif) dengan validasi category show_pos=0
         $items = DB::table('items')
             ->leftJoin('units as small_unit', 'items.small_unit_id', '=', 'small_unit.id')
             ->leftJoin('units as medium_unit', 'items.medium_unit_id', '=', 'medium_unit.id')
             ->leftJoin('units as large_unit', 'items.large_unit_id', '=', 'large_unit.id')
+            ->join('categories', 'items.category_id', '=', 'categories.id')
             ->where('items.composition_type', 'composed')
             ->where('items.status', 'active')
+            ->where('categories.show_pos', 0)
             ->select(
                 'items.*',
                 'small_unit.name as small_unit_name',
@@ -322,13 +327,15 @@ class OutletWIPController extends Controller
             ->where('header_id', $id)
             ->get();
 
-        // Get items
+        // Get items dengan validasi category show_pos=0
         $items = DB::table('items')
             ->leftJoin('units as small_unit', 'items.small_unit_id', '=', 'small_unit.id')
             ->leftJoin('units as medium_unit', 'items.medium_unit_id', '=', 'medium_unit.id')
             ->leftJoin('units as large_unit', 'items.large_unit_id', '=', 'large_unit.id')
+            ->join('categories', 'items.category_id', '=', 'categories.id')
             ->where('items.composition_type', 'composed')
             ->where('items.status', 'active')
+            ->where('categories.show_pos', 0)
             ->select(
                 'items.*',
                 'small_unit.name as small_unit_name',

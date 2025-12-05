@@ -150,34 +150,69 @@ class PackingListController extends Controller
 
     public function create(Request $request)
     {
-        // OPTIMIZED: Ambil semua FO yang approved atau packing dengan eager loading
-        $query = FoodFloorOrder::whereIn('food_floor_orders.status', ['approved', 'packing'])
-            ->where('food_floor_orders.fo_mode', '!=', 'RO Supplier')
-            ->with([
-                'outlet', 
-                'user', 
-                'items.item.smallUnit', 
-                'items.item.mediumUnit', 
-                'items.item.largeUnit', 
-                'warehouseDivisions', 
-                'warehouseOutlet'
-            ])
-            ->join('tbl_data_outlet', 'food_floor_orders.id_outlet', '=', 'tbl_data_outlet.id_outlet');
-
+        // OPTIMIZED: Gunakan raw query untuk performa maksimal
+        // Query langsung di database untuk filter FO yang masih punya item belum di-packing
+        $query = "
+            SELECT DISTINCT fo.id
+            FROM food_floor_orders fo
+            JOIN food_floor_order_items foi ON fo.id = foi.floor_order_id
+            JOIN items i ON foi.item_id = i.id
+            LEFT JOIN food_packing_list_items pli ON foi.id = pli.food_floor_order_item_id
+            LEFT JOIN food_packing_lists pl ON pli.packing_list_id = pl.id 
+                AND pl.food_floor_order_id = fo.id 
+                AND pl.status = 'packing'
+            WHERE fo.status IN ('approved', 'packing')
+            AND fo.fo_mode != 'RO Supplier'
+        ";
+        
+        $params = [];
+        
         // Filter berdasarkan tanggal kedatangan jika ada
         if ($request->filled('arrival_date')) {
-            $query->whereDate('food_floor_orders.arrival_date', $request->arrival_date);
+            $query .= " AND DATE(food_floor_orders.arrival_date) = ?";
+            $params[] = $request->arrival_date;
+        }
+        
+        $query .= " AND pli.id IS NULL GROUP BY fo.id";
+
+        // Query untuk mendapatkan FO yang masih punya item belum di-packing
+        $floorOrderIds = \DB::select($query, $params);
+        $foIds = array_column($floorOrderIds, 'id');
+        
+        // Jika tidak ada FO yang perlu di-packing, return empty
+        if (empty($foIds)) {
+            $warehouseDivisions = \App\Models\WarehouseDivision::all();
+            return inertia('PackingList/Form', [
+                'floorOrders' => [],
+                'warehouseDivisions' => $warehouseDivisions,
+            ]);
         }
 
-        $floorOrders = $query->orderBy('food_floor_orders.tanggal', 'desc')
-            ->orderBy('tbl_data_outlet.nama_outlet')
-            ->get();
+        // OPTIMIZED: Ambil hanya FO yang relevan dengan eager loading minimal
+        $query = FoodFloorOrder::whereIn('food_floor_orders.id', $foIds)
+            ->with([
+                'outlet:id_outlet,nama_outlet', 
+                'user:id,nama_lengkap', 
+                'items' => function($q) {
+                    $q->select('id', 'floor_order_id', 'item_id', 'qty', 'unit')
+                      ->with(['item:id,name,warehouse_division_id']);
+                },
+                'warehouseDivisions:id,name,warehouse_id', 
+                'warehouseOutlet:id,name'
+            ]);
 
-        // OPTIMIZED: Batch query untuk cek packed items (mengurangi N+1 queries)
-        $floorOrderIds = $floorOrders->pluck('id')->toArray();
-        $packedItems = $this->getPackedItemsBatch($floorOrderIds);
+        $floorOrders = $query->orderBy('food_floor_orders.tanggal', 'desc')
+            ->get()
+            ->sortBy(function($fo) {
+                return $fo->outlet ? $fo->outlet->nama_outlet : '';
+            })
+            ->values();
+        
+        // OPTIMIZED: Batch query untuk cek packed items (lebih efisien)
+        $packedItems = $this->getPackedItemsBatchOptimized($foIds);
 
         // Filter FO yang masih memiliki item yang belum di-packing untuk setiap warehouse division
+        // OPTIMIZED: Gunakan collection methods yang lebih efisien
         $floorOrders = $floorOrders->filter(function($fo) use ($packedItems) {
             $foDivisions = $fo->warehouseDivisions->pluck('id')->toArray();
             
@@ -188,7 +223,8 @@ class PackingListController extends Controller
                 
                 if ($itemsInDivision->count() > 0) {
                     // OPTIMIZED: Gunakan data yang sudah di-batch query
-                    $packedItemIds = $packedItems->where('food_floor_order_id', $fo->id)
+                    $packedItemIds = $packedItems
+                        ->where('food_floor_order_id', $fo->id)
                         ->where('warehouse_division_id', $divisionId)
                         ->pluck('food_floor_order_item_id')
                         ->toArray();
@@ -211,10 +247,14 @@ class PackingListController extends Controller
 
     /**
      * OPTIMIZED: Batch query untuk mendapatkan packed items
-     * Menggantikan N+1 queries dengan 1 query
+     * Menggantikan N+1 queries dengan 1 query menggunakan join langsung
      */
     private function getPackedItemsBatch($floorOrderIds)
     {
+        if (empty($floorOrderIds)) {
+            return collect([]);
+        }
+        
         return FoodPackingListItem::whereHas('packingList', function($q) use ($floorOrderIds) {
             $q->whereIn('food_floor_order_id', $floorOrderIds)
               ->where('status', 'packing');
@@ -226,6 +266,37 @@ class PackingListController extends Controller
                 'food_floor_order_id' => $item->packingList->food_floor_order_id,
                 'warehouse_division_id' => $item->packingList->warehouse_division_id,
                 'food_floor_order_item_id' => $item->food_floor_order_item_id
+            ];
+        });
+    }
+
+    /**
+     * OPTIMIZED VERSION: Batch query menggunakan raw query untuk performa maksimal
+     */
+    private function getPackedItemsBatchOptimized($floorOrderIds)
+    {
+        if (empty($floorOrderIds)) {
+            return collect([]);
+        }
+        
+        $placeholders = implode(',', array_fill(0, count($floorOrderIds), '?'));
+        
+        $results = \DB::select("
+            SELECT 
+                pl.food_floor_order_id,
+                pl.warehouse_division_id,
+                pli.food_floor_order_item_id
+            FROM food_packing_list_items pli
+            JOIN food_packing_lists pl ON pli.packing_list_id = pl.id
+            WHERE pl.food_floor_order_id IN ({$placeholders})
+            AND pl.status = 'packing'
+        ", $floorOrderIds);
+        
+        return collect($results)->map(function($row) {
+            return [
+                'food_floor_order_id' => $row->food_floor_order_id,
+                'warehouse_division_id' => $row->warehouse_division_id,
+                'food_floor_order_item_id' => $row->food_floor_order_item_id
             ];
         });
     }
