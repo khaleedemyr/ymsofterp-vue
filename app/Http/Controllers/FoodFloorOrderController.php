@@ -942,6 +942,14 @@ class FoodFloorOrderController extends Controller
                 return $item;
             });
             
+            // Calculate total_amount from items (qty * price)
+            $totalAmount = $order->items->sum(function($item) {
+                return ($item->qty ?? 0) * ($item->price ?? 0);
+            });
+            
+            // Add total_amount to order object
+            $order->total_amount = $totalAmount;
+            
             return response()->json([
                 'success' => true,
                 'ro_khusus' => $order,
