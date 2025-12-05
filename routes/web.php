@@ -1847,7 +1847,6 @@ Route::middleware(['auth'])->group(function () {
     
     // Approval Routes
     Route::get('api/schedule-attendance-correction/pending-approvals', [ScheduleAttendanceCorrectionController::class, 'getPendingApprovals'])->name('schedule-attendance-correction.pending-approvals');
-    Route::get('api/approval-app/schedule-attendance-correction/{id}', [ScheduleAttendanceCorrectionController::class, 'getApprovalDetail'])->name('schedule-attendance-correction.get-approval-detail');
     Route::post('api/schedule-attendance-correction/approve/{id}', [ScheduleAttendanceCorrectionController::class, 'approveCorrection'])->name('schedule-attendance-correction.approve');
     Route::post('api/schedule-attendance-correction/reject/{id}', [ScheduleAttendanceCorrectionController::class, 'rejectCorrection'])->name('schedule-attendance-correction.reject');
 });

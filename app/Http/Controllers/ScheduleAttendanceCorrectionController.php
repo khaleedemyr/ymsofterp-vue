@@ -594,6 +594,12 @@ class ScheduleAttendanceCorrectionController extends Controller
      */
     public function getApprovalDetail($id)
     {
+        \Log::info('Correction Approval Detail Request', [
+            'id' => $id,
+            'user' => auth()->user() ? auth()->user()->id : 'not authenticated',
+            'token' => request()->bearerToken() ? 'present' : 'missing',
+        ]);
+        
         try {
             $approval = DB::table('schedule_attendance_correction_approvals as saca')
                 ->leftJoin('users as requester', 'saca.requested_by', '=', 'requester.id')
