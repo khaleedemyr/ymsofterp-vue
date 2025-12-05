@@ -22,7 +22,8 @@ class OutletWIPController extends Controller
             ->join('categories', 'items.category_id', '=', 'categories.id')
             ->where('items.composition_type', 'composed')
             ->where('items.status', 'active')
-            ->where('categories.show_pos', 0)
+            ->where('items.type', 'WIP')
+            ->where('categories.show_pos', '0')
             ->select(
                 'items.*',
                 'small_unit.name as small_unit_name',
@@ -259,7 +260,8 @@ class OutletWIPController extends Controller
             ->join('categories', 'items.category_id', '=', 'categories.id')
             ->where('items.composition_type', 'composed')
             ->where('items.status', 'active')
-            ->where('categories.show_pos', 0)
+            ->where('items.type', 'WIP')
+            ->where('categories.show_pos', '0')
             ->select(
                 'items.*',
                 'small_unit.name as small_unit_name',
@@ -335,7 +337,8 @@ class OutletWIPController extends Controller
             ->join('categories', 'items.category_id', '=', 'categories.id')
             ->where('items.composition_type', 'composed')
             ->where('items.status', 'active')
-            ->where('categories.show_pos', 0)
+            ->where('items.type', 'WIP')
+            ->where('categories.show_pos', '0')
             ->select(
                 'items.*',
                 'small_unit.name as small_unit_name',
