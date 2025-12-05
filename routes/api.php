@@ -295,6 +295,8 @@ Route::prefix('approval-app')->group(function () {
         
         Route::get('/schedule-attendance-correction/pending-approvals', [\App\Http\Controllers\ScheduleAttendanceCorrectionController::class, 'getPendingApprovals']);
         Route::get('/schedule-attendance-correction/{id}', [\App\Http\Controllers\ScheduleAttendanceCorrectionController::class, 'getApprovalDetail']);
+        Route::post('/schedule-attendance-correction/{id}/approve', [\App\Http\Controllers\ScheduleAttendanceCorrectionController::class, 'approveCorrection']);
+        Route::post('/schedule-attendance-correction/{id}/reject', [\App\Http\Controllers\ScheduleAttendanceCorrectionController::class, 'rejectCorrection']);
         
         // Food Payment routes
         Route::get('/food-payment/pending-approvals', [\App\Http\Controllers\FoodPaymentController::class, 'getPendingApprovals']);

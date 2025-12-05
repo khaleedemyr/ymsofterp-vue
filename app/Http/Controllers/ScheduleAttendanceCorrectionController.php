@@ -1022,10 +1022,6 @@ class ScheduleAttendanceCorrectionController extends Controller
      */
     public function rejectCorrection(Request $request, $id)
     {
-        $request->validate([
-            'rejection_reason' => 'required|string|max:500',
-        ]);
-        
         $user = auth()->user();
         
         // Only HRD users (division_id = 6) can reject
@@ -1034,6 +1030,16 @@ class ScheduleAttendanceCorrectionController extends Controller
                 'success' => false,
                 'message' => 'Unauthorized access'
             ], 403);
+        }
+        
+        // Get rejection reason from request (support both 'reason' and 'rejection_reason')
+        $rejectionReason = $request->input('reason') ?? $request->input('rejection_reason');
+        
+        if (!$rejectionReason || trim($rejectionReason) === '') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Alasan penolakan harus diisi'
+            ], 422);
         }
         
         try {
@@ -1056,7 +1062,7 @@ class ScheduleAttendanceCorrectionController extends Controller
                     'status' => 'rejected',
                     'approved_by' => $user->id,
                     'approved_at' => now(),
-                    'rejection_reason' => $request->input('rejection_reason'),
+                    'rejection_reason' => $rejectionReason,
                     'updated_at' => now(),
                 ]);
             
@@ -1064,7 +1070,7 @@ class ScheduleAttendanceCorrectionController extends Controller
             DB::table('notifications')->insert([
                 'user_id' => $approval->requested_by,
                 'type' => 'correction_rejected',
-                'message' => "Permohonan koreksi {$approval->type} Anda ditolak oleh HRD. Alasan: " . $request->input('rejection_reason'),
+                'message' => "Permohonan koreksi {$approval->type} Anda ditolak oleh HRD. Alasan: " . $rejectionReason,
                 'url' => '/schedule-attendance-correction',
                 'is_read' => 0,
                 'created_at' => now(),
