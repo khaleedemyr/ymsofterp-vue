@@ -1786,10 +1786,22 @@ class PurchaseOrderOpsController extends Controller
             // Calculate unpaid for each PR
             // NEW LOGIC: PR unpaid = PR dengan status SUBMITTED dan APPROVED yang belum jadi PO
             // PR yang sudah difilter di query (belum jadi PO, status SUBMITTED/APPROVED)
+            // IMPORTANT: Untuk GLOBAL budget, sum semua items dari semua outlets (tidak filter outlet)
+            // Untuk PR Ops, hitung berdasarkan items.subtotal di category ini (sum semua outlets)
             $prUnpaidAmount = 0;
             foreach ($allPrs as $pr) {
-                // PR yang sudah difilter di query (belum jadi PO, status SUBMITTED/APPROVED)
-                $prUnpaidAmount += $pr->amount;
+                // Untuk PR Ops: hitung berdasarkan items di category ini (sum semua outlets)
+                if (in_array($pr->mode, ['pr_ops', 'purchase_payment'])) {
+                    // Hitung subtotal items di category ini (semua outlets) - TIDAK filter outlet untuk global budget
+                    $categoryItemsSubtotal = DB::table('purchase_requisition_items')
+                        ->where('purchase_requisition_id', $pr->id)
+                        ->where('category_id', $categoryId)
+                        ->sum('subtotal');
+                    $prUnpaidAmount += $categoryItemsSubtotal ?? 0;
+                } else {
+                    // Untuk mode lain: gunakan PR amount
+                    $prUnpaidAmount += $pr->amount;
+                }
             }
             
             // Get unpaid PO data
@@ -2148,10 +2160,23 @@ class PurchaseOrderOpsController extends Controller
             // Calculate unpaid for each PR
             // NEW LOGIC: PR unpaid = PR dengan status SUBMITTED dan APPROVED yang belum jadi PO
             // PR yang sudah difilter di query (belum jadi PO, status SUBMITTED/APPROVED)
+            // IMPORTANT: Untuk PR Ops (mode pr_ops/purchase_payment), hitung berdasarkan items di outlet tersebut
+            // Untuk mode lain, gunakan PR amount
             $prUnpaidAmount = 0;
             foreach ($allPrs as $pr) {
-                // PR yang sudah difilter di query (belum jadi PO, status SUBMITTED/APPROVED)
-                $prUnpaidAmount += $pr->amount;
+                // Untuk PR Ops: hitung berdasarkan items di outlet tersebut
+                if (in_array($pr->mode, ['pr_ops', 'purchase_payment'])) {
+                    // Hitung subtotal items di outlet ini
+                    $outletItemsSubtotal = DB::table('purchase_requisition_items')
+                        ->where('purchase_requisition_id', $pr->id)
+                        ->where('outlet_id', $outletId)
+                        ->where('category_id', $categoryId)
+                        ->sum('subtotal');
+                    $prUnpaidAmount += $outletItemsSubtotal ?? 0;
+                } else {
+                    // Untuk mode lain: gunakan PR amount
+                    $prUnpaidAmount += $pr->amount;
+                }
             }
             
             // Get unpaid PO data for this outlet

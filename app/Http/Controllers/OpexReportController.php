@@ -695,9 +695,23 @@ class OpexReportController extends Controller
                         ->get();
                     
                     // Calculate unpaid for each PR
+                    // IMPORTANT: Untuk PR Ops (mode pr_ops/purchase_payment), hitung berdasarkan items di outlet tersebut
+                    // Untuk mode lain, gunakan PR amount
                     $prUnpaidAmount = 0;
                     foreach ($allPrs as $pr) {
-                        $prUnpaidAmount += $pr->amount;
+                        // Untuk PR Ops: hitung berdasarkan items di outlet tersebut
+                        if (in_array($pr->mode, ['pr_ops', 'purchase_payment'])) {
+                            // Hitung subtotal items di outlet ini
+                            $outletItemsSubtotal = DB::table('purchase_requisition_items')
+                                ->where('purchase_requisition_id', $pr->id)
+                                ->where('outlet_id', $outletId)
+                                ->where('category_id', $category->id)
+                                ->sum('subtotal');
+                            $prUnpaidAmount += $outletItemsSubtotal ?? 0;
+                        } else {
+                            // Untuk mode lain: gunakan PR amount
+                            $prUnpaidAmount += $pr->amount;
+                        }
                     }
                     
                     // Calculate unpaid for each PO
@@ -1276,13 +1290,31 @@ class OpexReportController extends Controller
                 // Calculate unpaid for each PR
                 // NEW LOGIC: PR unpaid = PR dengan status SUBMITTED dan APPROVED yang belum jadi PO
                 // PR yang sudah difilter di query (belum jadi PO)
+                // IMPORTANT: Untuk GLOBAL budget, sum semua items dari semua outlets (tidak filter outlet)
+                // Untuk PR Ops, hitung berdasarkan items.subtotal di category ini (sum semua outlets)
                 $prData = collect();
                 foreach ($allPrs as $pr) {
+                    // Get PR model untuk mendapatkan mode
+                    $prModel = \App\Models\PurchaseRequisition::find($pr->pr_id);
+                    
+                    // Untuk PR Ops: hitung berdasarkan items di category ini (sum semua outlets)
+                    if ($prModel && in_array($prModel->mode, ['pr_ops', 'purchase_payment'])) {
+                        // Hitung subtotal items di category ini (semua outlets) - TIDAK filter outlet untuk global budget
+                        $categoryItemsSubtotal = DB::table('purchase_requisition_items')
+                            ->where('purchase_requisition_id', $pr->pr_id)
+                            ->where('category_id', $category->id)
+                            ->sum('subtotal');
+                        $prAmount = $categoryItemsSubtotal ?? 0;
+                    } else {
+                        // Untuk mode lain: gunakan PR amount
+                        $prAmount = $pr->pr_amount;
+                    }
+                    
                     // PR yang sudah difilter di query (belum jadi PO, status SUBMITTED/APPROVED)
                     $prData->push((object)[
                         'outlet_id' => $pr->outlet_id,
                         'outlet_name' => $pr->outlet_name,
-                        'po_item_total' => $pr->pr_amount,
+                        'po_item_total' => $prAmount,
                         'pr_number' => $pr->pr_number,
                         'po_numbers' => null, // PR hasn't been converted to PO
                         'transaction_date' => $pr->transaction_date,

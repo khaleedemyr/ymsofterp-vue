@@ -153,9 +153,13 @@ class OpexByCategoryController extends Controller
             // - Hanya menghitung yang unpaid amount > 0
             
             // Get all PRs in category
+            // Support both old structure (outlet at PR level) and new structure (outlet at items level)
             $allPrs = DB::table('purchase_requisitions as pr')
-                ->leftJoin('tbl_data_outlet as o', 'pr.outlet_id', '=', 'o.id_outlet')
                 ->leftJoin('purchase_requisition_items as pri', 'pr.id', '=', 'pri.purchase_requisition_id')
+                ->leftJoin('tbl_data_outlet as o', function($join) {
+                    // Support both old structure (outlet at PR level) and new structure (outlet at items level)
+                    $join->on(DB::raw('COALESCE(pri.outlet_id, pr.outlet_id)'), '=', 'o.id_outlet');
+                })
                 ->where(function($q) use ($category) {
                     $q->where('pr.category_id', $category->id)
                       ->orWhere('pri.category_id', $category->id);
@@ -163,14 +167,23 @@ class OpexByCategoryController extends Controller
                 ->whereBetween('pr.created_at', [$dateFrom, $dateTo])
                 ->whereIn('pr.status', ['SUBMITTED', 'APPROVED', 'PROCESSED', 'COMPLETED'])
                 ->where('pr.is_held', false)
-                ->groupBy('pr.id', 'pr.pr_number', 'pr.created_at', 'pr.status', 'pr.amount', 'o.id_outlet', 'o.nama_outlet')
+                ->groupBy(
+                    'pr.id', 
+                    'pr.pr_number', 
+                    'pr.created_at', 
+                    'pr.status', 
+                    'pr.amount', 
+                    'o.id_outlet', 
+                    'o.nama_outlet',
+                    DB::raw('COALESCE(pri.outlet_id, pr.outlet_id)') // Add COALESCE to GROUP BY
+                )
                 ->select(
                     'pr.id as pr_id',
                     'pr.pr_number',
                     'pr.created_at as transaction_date',
                     'pr.amount as pr_amount',
                     'pr.status',
-                    'o.id_outlet as outlet_id',
+                    DB::raw('COALESCE(pri.outlet_id, pr.outlet_id) as outlet_id'), // Support both structures
                     'o.nama_outlet as outlet_name'
                 )
                 ->get();
@@ -248,15 +261,33 @@ class OpexByCategoryController extends Controller
             }
 
             // Calculate unpaid for each PR (only include if unpaid > 0)
+            // IMPORTANT: Untuk PR Ops, hitung berdasarkan items.subtotal di category ini (sum semua outlets)
+            // Untuk mode lain, gunakan PR amount
             $prTransactions = [];
             foreach ($allPrs as $pr) {
                 $prId = $pr->pr_id;
                 $poTotal = $poTotalsByPr[$prId] ?? 0;
                 $totalPaid = $paidTotalsByPr[$prId] ?? 0;
                 
-                // If PR hasn't been converted to PO, use PR amount
+                // Get PR model untuk mendapatkan mode
+                $prModel = \App\Models\PurchaseRequisition::find($prId);
+                
+                // Untuk PR Ops: hitung berdasarkan items di category ini (sum semua outlets)
+                if ($prModel && in_array($prModel->mode, ['pr_ops', 'purchase_payment'])) {
+                    // Hitung subtotal items di category ini (semua outlets) - TIDAK filter outlet untuk global budget
+                    $categoryItemsSubtotal = DB::table('purchase_requisition_items')
+                        ->where('purchase_requisition_id', $prId)
+                        ->where('category_id', $category->id)
+                        ->sum('subtotal');
+                    $prAmount = $categoryItemsSubtotal ?? 0;
+                } else {
+                    // Untuk mode lain: gunakan PR amount
+                    $prAmount = $pr->pr_amount;
+                }
+                
+                // If PR hasn't been converted to PO, use PR amount (or calculated items subtotal for PR Ops)
                 // If PR has been converted to PO, use PO total
-                $totalAmount = $poTotal > 0 ? $poTotal : $pr->pr_amount;
+                $totalAmount = $poTotal > 0 ? $poTotal : $prAmount;
                 $unpaidAmount = $totalAmount - $totalPaid;
                 
                 // Only include if there's unpaid amount
@@ -599,15 +630,33 @@ class OpexByCategoryController extends Controller
             }
 
             // Calculate unpaid total
+            // IMPORTANT: Untuk PR Ops, hitung berdasarkan items.subtotal di category ini (sum semua outlets)
+            // Untuk mode lain, gunakan PR amount
             $prTotal = 0;
             foreach ($allPrs as $pr) {
                 $prId = $pr->pr_id;
                 $poTotal = $poTotalsByPr[$prId] ?? 0;
                 $totalPaid = $paidTotalsByPr[$prId] ?? 0;
                 
-                // If PR hasn't been converted to PO, use PR amount
+                // Get PR model untuk mendapatkan mode
+                $prModel = \App\Models\PurchaseRequisition::find($prId);
+                
+                // Untuk PR Ops: hitung berdasarkan items di category ini (sum semua outlets)
+                if ($prModel && in_array($prModel->mode, ['pr_ops', 'purchase_payment'])) {
+                    // Hitung subtotal items di category ini (semua outlets) - TIDAK filter outlet untuk global budget
+                    $categoryItemsSubtotal = DB::table('purchase_requisition_items')
+                        ->where('purchase_requisition_id', $prId)
+                        ->where('category_id', $category->id)
+                        ->sum('subtotal');
+                    $prAmount = $categoryItemsSubtotal ?? 0;
+                } else {
+                    // Untuk mode lain: gunakan PR amount
+                    $prAmount = $pr->pr_amount;
+                }
+                
+                // If PR hasn't been converted to PO, use PR amount (or calculated items subtotal for PR Ops)
                 // If PR has been converted to PO, use PO total
-                $totalAmount = $poTotal > 0 ? $poTotal : $pr->pr_amount;
+                $totalAmount = $poTotal > 0 ? $poTotal : $prAmount;
                 $unpaidAmount = $totalAmount - $totalPaid;
                 
                 // Only include if there's unpaid amount

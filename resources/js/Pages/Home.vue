@@ -5971,7 +5971,7 @@ watch(locale, () => {
                                     {{ prApprovalBudgetInfo.budget_type === 'PER_OUTLET' ? 'Outlet Budget' : 'Total Budget' }}
                                 </div>
                                 <div class="text-xl font-bold text-blue-800 dark:text-blue-200">
-                                    Rp {{ new Intl.NumberFormat('id-ID').format(prApprovalBudgetInfo.budget_type === 'PER_OUTLET' ? prApprovalBudgetInfo.outlet_budget : prApprovalBudgetInfo.category_budget) }}
+                                    Rp {{ new Intl.NumberFormat('id-ID').format(getPrTotalBudget()) }}
                                 </div>
                                 <div v-if="prApprovalBudgetInfo.budget_type === 'PER_OUTLET'" class="text-xs text-gray-500 dark:text-gray-400 mt-1">
                                     Global: Rp {{ new Intl.NumberFormat('id-ID').format(prApprovalBudgetInfo.category_budget) }}
@@ -6125,7 +6125,7 @@ watch(locale, () => {
                                     </div>
                                     <div class="text-right">
                                         <div class="text-sm font-bold text-purple-800 dark:text-purple-200">
-                                            Rp {{ new Intl.NumberFormat('id-ID').format(prApprovalBudgetInfo.budget_type === 'PER_OUTLET' ? prApprovalBudgetInfo.outlet_used_amount : prApprovalBudgetInfo.category_used_amount) }}
+                                            Rp {{ new Intl.NumberFormat('id-ID').format(getPrUsedAmount()) }}
                                         </div>
                                     </div>
                                 </div>
@@ -6166,6 +6166,22 @@ watch(locale, () => {
                                     <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Status: Approved</p>
                                 </div>
                             </div>
+                        </div>
+                        
+                        <!-- Warning Messages -->
+                        <div v-if="getPrRealRemainingAmount() < 0" class="mt-4 p-3 bg-red-100 dark:bg-red-900/20 border border-red-300 dark:border-red-700 rounded text-red-800 dark:text-red-400 text-sm">
+                            <i class="fa fa-exclamation-triangle mr-2"></i>
+                            <strong>Budget Exceeded!</strong> 
+                            <span v-if="prApprovalBudgetInfo.budget_type === 'PER_OUTLET'">
+                                This outlet has exceeded its monthly budget limit.
+                            </span>
+                            <span v-else>
+                                This category has exceeded its monthly budget limit.
+                            </span>
+                        </div>
+                        <div v-else-if="getPrRealRemainingAmount() < (getPrTotalBudget() * 0.1)" class="mt-4 p-3 bg-yellow-100 dark:bg-yellow-900/20 border border-yellow-300 dark:border-yellow-700 rounded text-yellow-800 dark:text-yellow-400 text-sm">
+                            <i class="fa fa-exclamation-circle mr-2"></i>
+                            <strong>Budget Warning!</strong> Only Rp {{ new Intl.NumberFormat('id-ID').format(getPrRealRemainingAmount()) }} remaining.
                         </div>
                     </div>
 
@@ -6986,7 +7002,7 @@ watch(locale, () => {
                                     {{ poOpsApprovalBudgetInfo.budget_type === 'PER_OUTLET' ? 'Outlet Budget' : 'Total Budget' }}
                                 </div>
                                 <div class="text-lg font-bold text-blue-800">
-                                    Rp {{ new Intl.NumberFormat('id-ID').format(poOpsApprovalBudgetInfo.budget_type === 'PER_OUTLET' ? poOpsApprovalBudgetInfo.outlet_budget : poOpsApprovalBudgetInfo.category_budget) }}
+                                    Rp {{ new Intl.NumberFormat('id-ID').format(getPoOpsTotalBudget()) }}
                                 </div>
                                 <div v-if="poOpsApprovalBudgetInfo.budget_type === 'PER_OUTLET'" class="text-xs text-gray-500 dark:text-gray-400 mt-1">
                                     Global: Rp {{ new Intl.NumberFormat('id-ID').format(poOpsApprovalBudgetInfo.category_budget) }}
@@ -6995,7 +7011,7 @@ watch(locale, () => {
                             <div class="bg-white dark:bg-gray-800 p-3 rounded-lg">
                                 <div class="text-sm font-medium text-orange-600">Used This Month</div>
                                 <div class="text-lg font-bold text-orange-800">
-                                    Rp {{ new Intl.NumberFormat('id-ID').format(poOpsApprovalBudgetInfo.budget_type === 'PER_OUTLET' ? poOpsApprovalBudgetInfo.outlet_used_amount : poOpsApprovalBudgetInfo.category_used_amount) }}
+                                    Rp {{ new Intl.NumberFormat('id-ID').format(getPoOpsUsedAmount()) }}
                                 </div>
                             </div>
                             <div class="bg-white dark:bg-gray-800 p-3 rounded-lg">

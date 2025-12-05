@@ -100,6 +100,16 @@
             </option>
           </select>
           <select
+            v-model="outlet"
+            @change="debouncedSearch"
+            class="w-full md:w-auto px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition"
+          >
+            <option value="all">Semua Outlet</option>
+            <option v-for="o in filterOptions.outlets" :key="o.id_outlet" :value="o.id_outlet">
+              {{ o.nama_outlet }}
+            </option>
+          </select>
+          <select
             v-model="isHeld"
             @change="debouncedSearch"
             class="w-full md:w-auto px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition"
@@ -903,6 +913,7 @@ const search = ref(props.filters?.search || '');
 const status = ref(props.filters?.status || 'all');
 const division = ref(props.filters?.division || 'all');
 const category = ref(props.filters?.category || 'all');
+const outlet = ref(props.filters?.outlet || 'all');
 const isHeld = ref(props.filters?.is_held || 'all');
 // Set default date range to current month if not provided
 const getDefaultDateFrom = () => {
@@ -1427,6 +1438,7 @@ const debouncedSearch = debounce(() => {
     status: status.value,
     division: division.value,
     category: category.value,
+    outlet: outlet.value,
     is_held: isHeld.value,
     date_from: dateFrom.value,
     date_to: dateTo.value,
@@ -1440,6 +1452,7 @@ function loadData() {
     status: status.value,
     division: division.value,
     category: category.value,
+    outlet: outlet.value,
     is_held: isHeld.value,
     date_from: dateFrom.value,
     date_to: dateTo.value,

@@ -764,12 +764,13 @@ class ReportController extends Controller
     public function reportSalesPivotSpecial(Request $request)
     {
         // Use same logic as detail: group by item first, then sum by outlet (to avoid double counting)
+        // FIX: Ubah JOIN delivery_orders menjadi LEFT JOIN karena ada delivery_order yang sudah dihapus
         $query = DB::table('outlet_food_good_receives as gr')
             ->join('outlet_food_good_receive_items as i', 'gr.id', '=', 'i.outlet_food_good_receive_id')
             ->join('items as it', 'i.item_id', '=', 'it.id')
             ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
             ->join('units as u', 'i.unit_id', '=', 'u.id')
-            ->join('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
+            ->leftJoin('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
             ->leftJoin('food_floor_order_items as fo', function($join) {
                 $join->on('i.item_id', '=', 'fo.item_id')
                      ->on('fo.floor_order_id', '=', 'do.floor_order_id');
@@ -1009,12 +1010,13 @@ class ReportController extends Controller
             
             // Use EXACTLY the same logic as reportSalesPivotSpecial method
             // Use same logic as detail: group by item first, then sum by outlet (to avoid double counting)
+            // FIX: Ubah JOIN delivery_orders menjadi LEFT JOIN karena ada delivery_order yang sudah dihapus
             $query = DB::table('outlet_food_good_receives as gr')
                 ->join('outlet_food_good_receive_items as i', 'gr.id', '=', 'i.outlet_food_good_receive_id')
                 ->join('items as it', 'i.item_id', '=', 'it.id')
                 ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
                 ->join('units as u', 'i.unit_id', '=', 'u.id')
-                ->join('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
+                ->leftJoin('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
                 ->leftJoin('food_floor_order_items as fo', function($join) {
                     $join->on('i.item_id', '=', 'fo.item_id')
                          ->on('fo.floor_order_id', '=', 'do.floor_order_id');
