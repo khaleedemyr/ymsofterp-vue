@@ -350,6 +350,13 @@ Route::prefix('approval-app')->group(function () {
         
         // Employee Resignation routes
         Route::get('/employee-resignation/pending-approvals', [\App\Http\Controllers\EmployeeResignationController::class, 'pendingApprovals']);
+        
+        // Attendance routes
+        Route::get('/attendance/data', [\App\Http\Controllers\AttendanceController::class, 'getAttendanceDataApi'])->name('api.approval-app.attendance.data');
+        Route::get('/attendance/calendar-data', [\App\Http\Controllers\AttendanceController::class, 'getCalendarData'])->name('api.approval-app.attendance.calendar-data');
+        Route::post('/attendance/absent-request', [\App\Http\Controllers\AttendanceController::class, 'submitAbsentRequest'])->name('api.approval-app.attendance.absent-request');
+        Route::get('/attendance/approvers', [\App\Http\Controllers\AttendanceController::class, 'getApprovers'])->name('api.approval-app.attendance.approvers');
+        Route::post('/attendance/cancel-leave/{id}', [\App\Http\Controllers\AttendanceController::class, 'cancelLeaveRequest'])->name('api.approval-app.attendance.cancel-leave');
         Route::get('/employee-resignation/{id}', [\App\Http\Controllers\EmployeeResignationController::class, 'show']);
         Route::post('/employee-resignation/{id}/approve', [\App\Http\Controllers\EmployeeResignationController::class, 'approve']);
         Route::post('/employee-resignation/{id}/reject', [\App\Http\Controllers\EmployeeResignationController::class, 'reject']);
