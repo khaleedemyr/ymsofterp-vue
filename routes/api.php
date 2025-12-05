@@ -277,12 +277,19 @@ Route::prefix('approval-app')->group(function () {
         
         Route::get('/approval/pending', [\App\Http\Controllers\ApprovalController::class, 'getPendingApprovals']);
         Route::get('/approval/pending-hrd', [\App\Http\Controllers\ApprovalController::class, 'getPendingHrdApprovals']);
+        Route::get('/approval/{id}', [\App\Http\Controllers\ApprovalController::class, 'getApprovalDetails']);
+        Route::post('/approval/{id}/approve', [\App\Http\Controllers\ApprovalController::class, 'approve']);
+        Route::post('/approval/{id}/reject', [\App\Http\Controllers\ApprovalController::class, 'reject']);
         
         Route::get('/outlet-internal-use-waste/approvals/pending', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'getPendingApprovals']);
         Route::get('/outlet-internal-use-waste/{id}/approval-details', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'getApprovalDetails']);
+        Route::post('/outlet-internal-use-waste/{id}/approve', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'approve']);
+        Route::post('/outlet-internal-use-waste/{id}/reject', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'reject']);
         
         Route::get('/outlet-food-inventory-adjustment/pending-approvals', [\App\Http\Controllers\OutletFoodInventoryAdjustmentController::class, 'getPendingApprovals']);
         Route::get('/outlet-food-inventory-adjustment/{id}/approval-details', [\App\Http\Controllers\OutletFoodInventoryAdjustmentController::class, 'getApprovalDetails']);
+        Route::post('/outlet-food-inventory-adjustment/{id}/approve', [\App\Http\Controllers\OutletFoodInventoryAdjustmentController::class, 'approve']);
+        Route::post('/outlet-food-inventory-adjustment/{id}/reject', [\App\Http\Controllers\OutletFoodInventoryAdjustmentController::class, 'reject']);
         
         Route::get('/contra-bon/pending-approvals', [\App\Http\Controllers\ContraBonController::class, 'getPendingApprovals']);
         Route::get('/contra-bon/{id}', [\App\Http\Controllers\ContraBonController::class, 'getDetail']);
@@ -290,8 +297,17 @@ Route::prefix('approval-app')->group(function () {
         Route::post('/contra-bon/{id}/reject', [\App\Http\Controllers\ContraBonController::class, 'reject']);
         
         Route::get('/employee-movements/pending-approvals', [\App\Http\Controllers\EmployeeMovementController::class, 'getPendingApprovals']);
+        Route::get('/employee-movements/{id}/approval-details', [\App\Http\Controllers\EmployeeMovementController::class, 'getApprovalDetails']);
+        Route::post('/employee-movements/{id}/approve', [\App\Http\Controllers\EmployeeMovementController::class, 'approve']);
+        Route::post('/employee-movements/{id}/reject', function(\Illuminate\Http\Request $request, $id) {
+            $request->merge(['status' => 'rejected']);
+            return app(\App\Http\Controllers\EmployeeMovementController::class)->approve($request, $id);
+        });
         
         Route::get('/coaching/pending-approvals', [\App\Http\Controllers\CoachingController::class, 'getPendingApprovals']);
+        Route::get('/coaching/{id}', [\App\Http\Controllers\CoachingController::class, 'getDetail']);
+        Route::post('/coaching/{id}/approve', [\App\Http\Controllers\CoachingController::class, 'approve']);
+        Route::post('/coaching/{id}/reject', [\App\Http\Controllers\CoachingController::class, 'reject']);
         
         Route::get('/schedule-attendance-correction/pending-approvals', [\App\Http\Controllers\ScheduleAttendanceCorrectionController::class, 'getPendingApprovals']);
         Route::get('/schedule-attendance-correction/{id}', [\App\Http\Controllers\ScheduleAttendanceCorrectionController::class, 'getApprovalDetail']);
@@ -321,6 +337,7 @@ Route::prefix('approval-app')->group(function () {
         Route::get('/po-food/{id}', [\App\Http\Controllers\PurchaseOrderFoodsController::class, 'getDetail']);
         Route::post('/po-food/{id}/approve-purchasing-manager', [\App\Http\Controllers\PurchaseOrderFoodsController::class, 'approvePurchasingManager']);
         Route::post('/po-food/{id}/approve-gm-finance', [\App\Http\Controllers\PurchaseOrderFoodsController::class, 'approveGMFinance']);
+        Route::post('/po-food/{id}/reject', [\App\Http\Controllers\PurchaseOrderFoodsController::class, 'approvePurchasingManager']); // Reject uses same method with approved=false
         
         // Inventory stock route for approval app
         Route::get('/inventory/stock', [\App\Http\Controllers\ItemController::class, 'getStock']);
@@ -329,6 +346,7 @@ Route::prefix('approval-app')->group(function () {
         Route::get('/ro-khusus/pending-approvals', [\App\Http\Controllers\FoodFloorOrderController::class, 'getPendingROKhususApprovals']);
         Route::get('/ro-khusus/{id}', [\App\Http\Controllers\FoodFloorOrderController::class, 'getROKhususDetail']);
         Route::post('/ro-khusus/{id}/approve', [\App\Http\Controllers\FoodFloorOrderController::class, 'approve']); // approve dengan approved=true/false
+        Route::post('/ro-khusus/{id}/reject', [\App\Http\Controllers\FoodFloorOrderController::class, 'approve']); // reject menggunakan approve dengan approved=false
         
         // Employee Resignation routes
         Route::get('/employee-resignation/pending-approvals', [\App\Http\Controllers\EmployeeResignationController::class, 'pendingApprovals']);

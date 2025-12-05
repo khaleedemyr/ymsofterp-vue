@@ -300,6 +300,10 @@ class EmployeeResignationController extends Controller
                             ] : null,
                         ];
                     }),
+                    'current_approval_flow_id' => $employeeResignation->approvalFlows()
+                        ->where('approver_id', Auth::id())
+                        ->where('status', 'PENDING')
+                        ->value('id'),
                 ]
             ]);
         }
@@ -462,8 +466,13 @@ class EmployeeResignationController extends Controller
     /**
      * Approve employee resignation
      */
-    public function approve(Request $request, EmployeeResignation $employeeResignation)
+    public function approve(Request $request, $employeeResignation)
     {
+        // Support both route model binding (EmployeeResignation model) and $id (integer/string)
+        $employeeResignation = $employeeResignation instanceof EmployeeResignation 
+            ? $employeeResignation 
+            : EmployeeResignation::findOrFail($employeeResignation);
+        
         if ($employeeResignation->status !== 'submitted') {
             return response()->json([
                 'success' => false,
@@ -473,7 +482,12 @@ class EmployeeResignationController extends Controller
 
         $validated = $request->validate([
             'note' => 'nullable|string|max:500',
+            'comment' => 'nullable|string|max:500', // Alias for note
+            'comments' => 'nullable|string|max:500', // Alias for note
         ]);
+
+        // Support both 'note', 'comment', and 'comments' parameters
+        $note = $request->input('note') ?? $request->input('comment') ?? $request->input('comments');
 
         try {
             DB::beginTransaction();
@@ -481,10 +495,18 @@ class EmployeeResignationController extends Controller
             $currentApprover = Auth::user();
             
             // Get current approval flow for this approver
-            $currentApprovalFlow = $employeeResignation->approvalFlows()
-                ->where('approver_id', $currentApprover->id)
-                ->where('status', 'PENDING')
-                ->first();
+            // If approval_flow_id is provided, use it; otherwise find by approver_id
+            if ($request->has('approval_flow_id')) {
+                $currentApprovalFlow = $employeeResignation->approvalFlows()
+                    ->where('id', $request->approval_flow_id)
+                    ->where('status', 'PENDING')
+                    ->first();
+            } else {
+                $currentApprovalFlow = $employeeResignation->approvalFlows()
+                    ->where('approver_id', $currentApprover->id)
+                    ->where('status', 'PENDING')
+                    ->first();
+            }
 
             if (!$currentApprovalFlow) {
                 return response()->json([
@@ -497,7 +519,7 @@ class EmployeeResignationController extends Controller
             $currentApprovalFlow->update([
                 'status' => 'APPROVED',
                 'approved_at' => now(),
-                'comments' => $validated['note'] ?? null,
+                'comments' => $note,
             ]);
 
             // Check if there are more approvers pending
@@ -547,8 +569,13 @@ class EmployeeResignationController extends Controller
     /**
      * Reject employee resignation
      */
-    public function reject(Request $request, EmployeeResignation $employeeResignation)
+    public function reject(Request $request, $employeeResignation)
     {
+        // Support both route model binding (EmployeeResignation model) and $id (integer/string)
+        $employeeResignation = $employeeResignation instanceof EmployeeResignation 
+            ? $employeeResignation 
+            : EmployeeResignation::findOrFail($employeeResignation);
+        
         if ($employeeResignation->status !== 'submitted') {
             return response()->json([
                 'success' => false,
@@ -557,8 +584,20 @@ class EmployeeResignationController extends Controller
         }
 
         $validated = $request->validate([
-            'note' => 'required|string|max:500',
+            'note' => 'nullable|string|max:500',
+            'reason' => 'nullable|string|max:500', // Alias for note
+            'comment' => 'nullable|string|max:500', // Alias for note
         ]);
+
+        // Support 'note', 'reason', and 'comment' parameters
+        $rejectionReason = $request->input('note') ?? $request->input('reason') ?? $request->input('comment');
+        
+        if (!$rejectionReason) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Alasan penolakan harus diisi'
+            ], 400);
+        }
 
         try {
             DB::beginTransaction();
@@ -566,10 +605,18 @@ class EmployeeResignationController extends Controller
             $currentApprover = Auth::user();
             
             // Get current approval flow for this approver
-            $currentApprovalFlow = $employeeResignation->approvalFlows()
-                ->where('approver_id', $currentApprover->id)
-                ->where('status', 'PENDING')
-                ->first();
+            // If approval_flow_id is provided, use it; otherwise find by approver_id
+            if ($request->has('approval_flow_id')) {
+                $currentApprovalFlow = $employeeResignation->approvalFlows()
+                    ->where('id', $request->approval_flow_id)
+                    ->where('status', 'PENDING')
+                    ->first();
+            } else {
+                $currentApprovalFlow = $employeeResignation->approvalFlows()
+                    ->where('approver_id', $currentApprover->id)
+                    ->where('status', 'PENDING')
+                    ->first();
+            }
 
             if (!$currentApprovalFlow) {
                 return response()->json([
@@ -582,13 +629,13 @@ class EmployeeResignationController extends Controller
             $currentApprovalFlow->update([
                 'status' => 'REJECTED',
                 'rejected_at' => now(),
-                'comments' => $validated['note'],
+                'comments' => $rejectionReason,
             ]);
 
             // Update resignation status to rejected
             $employeeResignation->update([
                 'status' => 'rejected',
-                'notes' => $validated['note'],
+                'notes' => $rejectionReason,
             ]);
 
             // Send notification to creator

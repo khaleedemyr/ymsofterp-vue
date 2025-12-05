@@ -280,13 +280,21 @@ class PrFoodController extends Controller
             return redirect()->route('pr-foods.index')->with('error', 'PR MK tidak memerlukan approval Asisten SSD Manager');
         }
         
+        // Support 'note', 'comment', 'notes', and 'assistant_ssd_manager_note' parameters
+        $note = $request->input('assistant_ssd_manager_note') ?? $request->input('note') ?? 
+                $request->input('comment') ?? $request->input('notes');
+        
+        // Support both 'approved' boolean and 'reject' parameter
+        $isApproved = $request->has('approved') ? $request->approved : 
+                     ($request->has('reject') ? !$request->reject : true);
+        
         $updateData = [
             'assistant_ssd_manager_approved_at' => now(),
             'assistant_ssd_manager_approved_by' => Auth::id(),
-            'assistant_ssd_manager_note' => $request->assistant_ssd_manager_note,
+            'assistant_ssd_manager_note' => $note,
         ];
         
-        if ($request->approved) {
+        if ($isApproved) {
             // Jika approved, update status tetap draft (belum final approval)
             $updateData['status'] = 'draft';
             $prFood->update($updateData);
@@ -348,7 +356,7 @@ class PrFoodController extends Controller
         // Component will handle the response and reload data
         return response()->json([
             'success' => true,
-            'message' => $request->approved ? 'PR Food berhasil disetujui' : 'PR Food berhasil ditolak',
+            'message' => $isApproved ? 'PR Food berhasil disetujui' : 'PR Food berhasil ditolak',
             'pr_food' => $prFood->fresh()
         ], 200, [
             'Content-Type' => 'application/json',
@@ -375,19 +383,27 @@ class PrFoodController extends Controller
             return redirect()->route('pr-foods.index')->with('error', 'PR harus di-approve Asisten SSD Manager terlebih dahulu');
         }
         
+        // Support 'note', 'comment', 'notes', and 'ssd_manager_note' parameters
+        $note = $request->input('ssd_manager_note') ?? $request->input('note') ?? 
+                $request->input('comment') ?? $request->input('notes');
+        
+        // Support both 'approved' boolean and 'reject' parameter
+        $isApproved = $request->has('approved') ? $request->approved : 
+                     ($request->has('reject') ? !$request->reject : true);
+        
         $updateData = [
             'ssd_manager_approved_at' => now(),
             'ssd_manager_approved_by' => Auth::id(),
-            'ssd_manager_note' => $request->ssd_manager_note,
+            'ssd_manager_note' => $note,
         ];
-        $updateData['status'] = $request->approved ? 'approved' : 'rejected';
+        $updateData['status'] = $isApproved ? 'approved' : 'rejected';
         $prFood->update($updateData);
         
         ActivityLog::create([
             'user_id' => Auth::id(),
-            'activity_type' => $request->approved ? 'approve' : 'reject',
+            'activity_type' => $isApproved ? 'approve' : 'reject',
             'module' => 'pr_foods',
-            'description' => ($request->approved ? 'Approve' : 'Reject') . " PR Foods ($approverTitle): " . $prFood->pr_number,
+            'description' => ($isApproved ? 'Approve' : 'Reject') . " PR Foods ($approverTitle): " . $prFood->pr_number,
             'ip_address' => $request->ip(),
             'user_agent' => $request->userAgent(),
             'old_data' => null,
@@ -398,7 +414,7 @@ class PrFoodController extends Controller
         $requester = $prFood->requester->nama_lengkap ?? '-';
         $warehouse = $prFood->warehouse->name ?? '-';
         
-        if ($request->approved) {
+        if ($isApproved) {
             // Jika approved, langsung info Purchasing untuk proses PO
             $adminPurchasing = DB::table('users')->where('id_jabatan', 244)->where('status', 'A')->pluck('id');
             $purchasingManagers = DB::table('users')->where('id_jabatan', 168)->where('status', 'A')->pluck('id');
@@ -428,7 +444,7 @@ class PrFoodController extends Controller
         // Component will handle the response and reload data
         return response()->json([
             'success' => true,
-            'message' => $request->approved ? 'PR Food berhasil disetujui' : 'PR Food berhasil ditolak',
+            'message' => $isApproved ? 'PR Food berhasil disetujui' : 'PR Food berhasil ditolak',
             'pr_food' => $prFood->fresh()
         ], 200, [
             'Content-Type' => 'application/json',
@@ -439,23 +455,32 @@ class PrFoodController extends Controller
     public function approveViceCoo(Request $request, $id)
     {
         $prFood = PrFood::with(['requester', 'warehouse'])->findOrFail($id);
+        
+        // Support 'note', 'comment', 'notes', and 'vice_coo_note' parameters
+        $note = $request->input('vice_coo_note') ?? $request->input('note') ?? 
+                $request->input('comment') ?? $request->input('notes');
+        
+        // Support both 'approved' boolean and 'reject' parameter
+        $isApproved = $request->has('approved') ? $request->approved : 
+                     ($request->has('reject') ? !$request->reject : true);
+        
         $prFood->update([
             'vice_coo_approved_at' => now(),
             'vice_coo_approved_by' => Auth::id(),
-            'vice_coo_note' => $request->vice_coo_note,
-            'status' => $request->approved ? 'approved' : 'rejected',
+            'vice_coo_note' => $note,
+            'status' => $isApproved ? 'approved' : 'rejected',
         ]);
         ActivityLog::create([
             'user_id' => Auth::id(),
-            'activity_type' => $request->approved ? 'approve' : 'reject',
+            'activity_type' => $isApproved ? 'approve' : 'reject',
             'module' => 'pr_foods',
-            'description' => ($request->approved ? 'Approve' : 'Reject') . ' PR Foods (Vice COO): ' . $prFood->pr_number,
+            'description' => ($isApproved ? 'Approve' : 'Reject') . ' PR Foods (Vice COO): ' . $prFood->pr_number,
             'ip_address' => $request->ip(),
             'user_agent' => $request->userAgent(),
             'old_data' => null,
             'new_data' => $prFood->fresh()->toArray(),
         ]);
-        if ($request->approved) {
+        if ($isApproved) {
             // Notifikasi ke Admin Purchasing & Purchasing Manager
             $adminPurchasing = DB::table('users')->where('id_jabatan', 244)->where('status', 'A')->pluck('id');
             $purchasingManagers = DB::table('users')->where('id_jabatan', 168)->where('status', 'A')->pluck('id');
@@ -676,9 +701,38 @@ class PrFoodController extends Controller
                 'viceCoo'
             ])->findOrFail($id);
             
+            // Determine current approval level and approver info
+            $currentApprovalLevel = null;
+            $currentApproverId = null;
+            $user = Auth::user();
+            $isMKWarehouse = in_array($prFood->warehouse->name ?? '', ['MK1 Hot Kitchen', 'MK2 Cold Kitchen']);
+            
+            // Check which approval level is pending and if current user can approve
+            if (!$isMKWarehouse && !$prFood->assistant_ssd_manager_approved_at) {
+                // Assistant SSD Manager approval pending
+                if ($user->id_jabatan == 160) { // Asisten SSD Manager
+                    $currentApprovalLevel = 'assistant_ssd_manager';
+                    $currentApproverId = $user->id;
+                }
+            } elseif (!$prFood->ssd_manager_approved_at) {
+                // SSD Manager approval pending
+                if ($user->id_jabatan == 161 || ($isMKWarehouse && $user->id_jabatan == 162)) { // SSD Manager or Sous Chef MK
+                    $currentApprovalLevel = 'ssd_manager';
+                    $currentApproverId = $user->id;
+                }
+            } elseif (!$prFood->vice_coo_approved_at && $prFood->ssd_manager_approved_at) {
+                // Vice COO approval pending (only if SSD Manager already approved)
+                if ($user->id_jabatan == 163) { // Vice COO
+                    $currentApprovalLevel = 'vice_coo';
+                    $currentApproverId = $user->id;
+                }
+            }
+            
             return response()->json([
                 'success' => true,
-                'pr_food' => $prFood
+                'pr_food' => $prFood,
+                'current_approval_level' => $currentApprovalLevel,
+                'current_approver_id' => $currentApproverId,
             ]);
         } catch (\Exception $e) {
             \Log::error('Error getting PR Food detail', [

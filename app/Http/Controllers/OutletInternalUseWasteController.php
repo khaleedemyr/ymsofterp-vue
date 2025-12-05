@@ -2006,12 +2006,24 @@ class OutletInternalUseWasteController extends Controller
             DB::beginTransaction();
             $currentApprover = auth()->user();
             
+            // Support both 'note', 'comment', and 'notes' parameters
+            $note = $request->input('note') ?? $request->input('comment') ?? $request->input('notes');
+            
             // Update the approval flow for current approver
-            $currentApprovalFlow = DB::table('outlet_internal_use_waste_approval_flows')
-                ->where('header_id', $id)
-                ->where('approver_id', $currentApprover->id)
-                ->where('status', 'PENDING')
-                ->first();
+            // If approval_flow_id is provided, use it; otherwise find by approver_id
+            if ($request->has('approval_flow_id')) {
+                $currentApprovalFlow = DB::table('outlet_internal_use_waste_approval_flows')
+                    ->where('id', $request->approval_flow_id)
+                    ->where('header_id', $id)
+                    ->where('status', 'PENDING')
+                    ->first();
+            } else {
+                $currentApprovalFlow = DB::table('outlet_internal_use_waste_approval_flows')
+                    ->where('header_id', $id)
+                    ->where('approver_id', $currentApprover->id)
+                    ->where('status', 'PENDING')
+                    ->first();
+            }
             
             if (!$currentApprovalFlow) {
                 DB::rollBack();
@@ -2026,6 +2038,7 @@ class OutletInternalUseWasteController extends Controller
                 ->update([
                     'status' => 'APPROVED',
                     'approved_at' => now(),
+                    'comments' => $note,
                     'updated_at' => now(),
                 ]);
             
@@ -2156,19 +2169,40 @@ class OutletInternalUseWasteController extends Controller
         }
 
         $validated = $request->validate([
-            'rejection_reason' => 'required|string|max:500',
+            'rejection_reason' => 'nullable|string|max:500',
+            'reason' => 'nullable|string|max:500', // Alias for rejection_reason
+            'comment' => 'nullable|string|max:500', // Alias for rejection_reason
         ]);
+        
+        // Support 'rejection_reason', 'reason', and 'comment' parameters
+        $rejectionReason = $request->input('rejection_reason') ?? $request->input('reason') ?? $request->input('comment');
+        
+        if (!$rejectionReason) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Alasan penolakan harus diisi'
+            ], 400);
+        }
 
         try {
             DB::beginTransaction();
             $currentApprover = auth()->user();
             
             // Update the approval flow for current approver
-            $currentApprovalFlow = DB::table('outlet_internal_use_waste_approval_flows')
-                ->where('header_id', $id)
-                ->where('approver_id', $currentApprover->id)
-                ->where('status', 'PENDING')
-                ->first();
+            // If approval_flow_id is provided, use it; otherwise find by approver_id
+            if ($request->has('approval_flow_id')) {
+                $currentApprovalFlow = DB::table('outlet_internal_use_waste_approval_flows')
+                    ->where('id', $request->approval_flow_id)
+                    ->where('header_id', $id)
+                    ->where('status', 'PENDING')
+                    ->first();
+            } else {
+                $currentApprovalFlow = DB::table('outlet_internal_use_waste_approval_flows')
+                    ->where('header_id', $id)
+                    ->where('approver_id', $currentApprover->id)
+                    ->where('status', 'PENDING')
+                    ->first();
+            }
             
             if (!$currentApprovalFlow) {
                 DB::rollBack();
@@ -2183,7 +2217,7 @@ class OutletInternalUseWasteController extends Controller
                 ->update([
                     'status' => 'REJECTED',
                     'rejected_at' => now(),
-                    'comments' => $validated['rejection_reason'],
+                    'comments' => $rejectionReason,
                     'updated_at' => now(),
                 ]);
             
@@ -2216,7 +2250,7 @@ class OutletInternalUseWasteController extends Controller
                         'status' => 'REJECTED',
                         'approval_level' => $currentApprovalFlow->approval_level,
                         'rejected_by' => $currentApprover->id,
-                        'rejection_reason' => $validated['rejection_reason']
+                        'rejection_reason' => $rejectionReason
                     ]),
                     'created_at' => now(),
                     'updated_at' => now()
@@ -2484,11 +2518,23 @@ class OutletInternalUseWasteController extends Controller
             ->orderBy('af.approval_level')
             ->get();
         
+        // Get current approver (pending approver for current user)
+        $currentApprover = null;
+        $currentUserId = auth()->id();
+        if ($currentUserId) {
+            $currentApprover = DB::table('outlet_internal_use_waste_approval_flows')
+                ->where('header_id', $id)
+                ->where('approver_id', $currentUserId)
+                ->where('status', 'PENDING')
+                ->first();
+        }
+        
         return response()->json([
             'success' => true,
             'header' => $header,
             'details' => $details,
-            'approval_flows' => $approvalFlows
+            'approval_flows' => $approvalFlows,
+            'current_approval_flow_id' => $currentApprover ? $currentApprover->id : null,
         ]);
     }
 } 

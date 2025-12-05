@@ -406,8 +406,13 @@ class FoodFloorOrderController extends Controller
             abort(400, 'Tidak bisa approve order ini');
         }
 
-        // Check if this is a reject request
-        $isReject = $request->has('approved') && $request->approved === false;
+        // Support both 'approved' boolean and 'reject' parameter
+        $isReject = ($request->has('approved') && $request->approved === false) || 
+                    ($request->has('reject') && $request->reject === true);
+        
+        // Support 'note', 'comment', 'notes', and 'reason' parameters
+        $note = $request->input('note') ?? $request->input('comment') ?? 
+                $request->input('notes') ?? $request->input('reason');
         
         // Budget checking hanya untuk approve, bukan reject
         if (!$isReject) {
@@ -420,7 +425,8 @@ class FoodFloorOrderController extends Controller
                 if ($request->expectsJson() || $request->ajax() || $request->wantsJson()) {
                     return response()->json([
                         'success' => false,
-                        'message' => $budgetCheckResult['message']
+                        'message' => $budgetCheckResult['message'],
+                        'violations' => $budgetCheckResult['violations'] ?? null,
                     ], 422);
                 }
                 return redirect()->back()->withErrors(['budget' => $budgetCheckResult['message']]);
@@ -431,7 +437,7 @@ class FoodFloorOrderController extends Controller
             'status' => $isReject ? 'rejected' : 'approved',
             'approval_by' => $user->id,
             'approval_at' => now(),
-            'approval_notes' => $request->notes,
+            'approval_notes' => $note,
         ]);
         \App\Models\ActivityLog::create([
             'user_id' => $user->id,
@@ -938,7 +944,8 @@ class FoodFloorOrderController extends Controller
             
             return response()->json([
                 'success' => true,
-                'ro_khusus' => $order
+                'ro_khusus' => $order,
+                'current_approval_flow_id' => null, // RO Khusus doesn't use approval flow system
             ]);
         } catch (\Exception $e) {
             \Log::error('Error getting RO Khusus detail', [

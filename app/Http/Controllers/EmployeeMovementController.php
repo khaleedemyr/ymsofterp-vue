@@ -412,6 +412,99 @@ class EmployeeMovementController extends Controller
      * Get pending approvals for API (returns JSON)
      * Alias for pendingApprovals method
      */
+    public function getApprovalDetails($id)
+    {
+        try {
+            $movement = EmployeeMovement::with([
+                'employee.jabatan',
+                'employee.divisi',
+                'employee.outlet',
+                'approvalFlows.approver.jabatan',
+                'approvalFlows.approver.divisi',
+            ])->find($id);
+            
+            if (!$movement) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Employee Movement tidak ditemukan'
+                ], 404);
+            }
+            
+            // Get approval flows
+            $approvalFlows = $movement->approvalFlows()
+                ->orderBy('approval_level')
+                ->get()
+                ->map(function($flow) {
+                    return [
+                        'id' => $flow->id,
+                        'sequence' => $flow->approval_level,
+                        'status' => $flow->status,
+                        'approved_at' => $flow->approved_at,
+                        'rejected_at' => $flow->rejected_at,
+                        'notes' => $flow->notes,
+                        'approver' => [
+                            'id' => $flow->approver_id,
+                            'nama_lengkap' => $flow->approver ? $flow->approver->nama_lengkap : null,
+                        ],
+                    ];
+                });
+            
+            // Get current approver (pending approver for current user)
+            $currentApprover = null;
+            $currentUserId = auth()->id();
+            if ($currentUserId) {
+                $currentApprover = $movement->approvalFlows()
+                    ->where('approver_id', $currentUserId)
+                    ->where('status', 'PENDING')
+                    ->first();
+            }
+            
+            // Transform movement data
+            $movementData = [
+                'id' => $movement->id,
+                'employee_id' => $movement->employee_id,
+                'employee_name' => $movement->employee_name,
+                'employment_type' => $movement->employment_type,
+                'status' => $movement->status,
+                'employment_effective_date' => $movement->employment_effective_date,
+                'gaji_pokok_from' => $movement->gaji_pokok_from,
+                'gaji_pokok_to' => $movement->gaji_pokok_to,
+                'tunjangan_from' => $movement->tunjangan_from,
+                'tunjangan_to' => $movement->tunjangan_to,
+                'jabatan_from' => $movement->jabatan_from,
+                'jabatan_to' => $movement->jabatan_to,
+                'outlet_from' => $movement->outlet_from,
+                'outlet_to' => $movement->outlet_to,
+                'division_from' => $movement->division_from,
+                'division_to' => $movement->division_to,
+                'notes' => $movement->notes,
+                'created_at' => $movement->created_at,
+                'updated_at' => $movement->updated_at,
+                'employee' => [
+                    'id' => $movement->employee_id,
+                    'nama_lengkap' => $movement->employee ? $movement->employee->nama_lengkap : $movement->employee_name,
+                ],
+                'approval_flows' => $approvalFlows->toArray(),
+                'current_approval_flow_id' => $currentApprover ? $currentApprover->id : null,
+            ];
+            
+            return response()->json([
+                'success' => true,
+                'movement' => $movementData
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Error getting Employee Movement detail', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to load Employee Movement detail'
+            ], 500);
+        }
+    }
+
     public function getPendingApprovals(Request $request)
     {
         return $this->pendingApprovals($request);

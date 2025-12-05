@@ -849,28 +849,37 @@ class PurchaseOrderFoodsController extends Controller
     public function approvePurchasingManager(Request $request, $id)
     {
         $po = PurchaseOrderFood::findOrFail($id);
+        
+        // Support 'note', 'comment', 'notes', and 'purchasing_manager_note' parameters
+        $note = $request->input('purchasing_manager_note') ?? $request->input('note') ?? 
+                $request->input('comment') ?? $request->input('notes');
+        
+        // Support both 'approved' boolean and 'reject' parameter
+        $isApproved = $request->has('approved') ? $request->approved : 
+                     ($request->has('reject') ? !$request->reject : true);
+        
         $updateData = [
             'purchasing_manager_approved_at' => now(),
             'purchasing_manager_approved_by' => Auth::id(),
-            'purchasing_manager_note' => $request->note,
+            'purchasing_manager_note' => $note,
         ];
-        if (!$request->approved) {
+        if (!$isApproved) {
             $updateData['status'] = 'rejected';
         }
         $po->update($updateData);
 
         ActivityLog::create([
             'user_id' => Auth::id(),
-            'activity_type' => $request->approved ? 'approve' : 'reject',
+            'activity_type' => $isApproved ? 'approve' : 'reject',
             'module' => 'purchase_order_foods',
-            'description' => ($request->approved ? 'Approve' : 'Reject') . ' PO Foods (Purchasing Manager): ' . $po->number,
+            'description' => ($isApproved ? 'Approve' : 'Reject') . ' PO Foods (Purchasing Manager): ' . $po->number,
             'ip_address' => $request->ip(),
             'user_agent' => $request->userAgent(),
             'old_data' => null,
             'new_data' => $po->fresh()->toArray(),
         ]);
 
-        if ($request->approved) {
+        if ($isApproved) {
             // Notifikasi ke GM Finance (id_jabatan=152) dan Senior Manager (id_jabatan=381)
             $gmFinances = \DB::table('users')
                 ->whereIn('id_jabatan', [152, 381])
@@ -886,7 +895,11 @@ class PurchaseOrderFoodsController extends Controller
         }
         // ... handle notifikasi reject jika perlu
         if ($request->expectsJson() || $request->ajax() || $request->wantsJson()) {
-            return response()->json(['success' => true, 'message' => 'PO berhasil diapprove']);
+            return response()->json([
+                'success' => true,
+                'message' => $isApproved ? 'PO berhasil disetujui' : 'PO berhasil ditolak',
+                'po_food' => $po->fresh()
+            ]);
         }
         return redirect()->route('po-foods.show', $po->id);
     }
@@ -894,12 +907,21 @@ class PurchaseOrderFoodsController extends Controller
     public function approveGMFinance(Request $request, $id)
     {
         $po = PurchaseOrderFood::findOrFail($id);
+        
+        // Support 'note', 'comment', 'notes', and 'gm_finance_note' parameters
+        $note = $request->input('gm_finance_note') ?? $request->input('note') ?? 
+                $request->input('comment') ?? $request->input('notes');
+        
+        // Support both 'approved' boolean and 'reject' parameter
+        $isApproved = $request->has('approved') ? $request->approved : 
+                     ($request->has('reject') ? !$request->reject : true);
+        
         $updateData = [
             'gm_finance_approved_at' => now(),
             'gm_finance_approved_by' => Auth::id(),
-            'gm_finance_note' => $request->note,
+            'gm_finance_note' => $note,
         ];
-        if ($request->approved) {
+        if ($isApproved) {
             $updateData['status'] = 'approved';
         } else {
             $updateData['status'] = 'rejected';
@@ -908,9 +930,9 @@ class PurchaseOrderFoodsController extends Controller
 
         ActivityLog::create([
             'user_id' => Auth::id(),
-            'activity_type' => $request->approved ? 'approve' : 'reject',
+            'activity_type' => $isApproved ? 'approve' : 'reject',
             'module' => 'purchase_order_foods',
-            'description' => ($request->approved ? 'Approve' : 'Reject') . ' PO Foods (GM Finance): ' . $po->number,
+            'description' => ($isApproved ? 'Approve' : 'Reject') . ' PO Foods (GM Finance): ' . $po->number,
             'ip_address' => $request->ip(),
             'user_agent' => $request->userAgent(),
             'old_data' => null,
@@ -918,7 +940,11 @@ class PurchaseOrderFoodsController extends Controller
         ]);
         // ... handle notifikasi jika perlu
         if ($request->expectsJson() || $request->ajax() || $request->wantsJson()) {
-            return response()->json(['success' => true, 'message' => 'PO berhasil diapprove']);
+            return response()->json([
+                'success' => true,
+                'message' => $isApproved ? 'PO berhasil disetujui' : 'PO berhasil ditolak',
+                'po_food' => $po->fresh()
+            ]);
         }
         return redirect()->route('po-foods.show', $po->id);
     }
@@ -1442,9 +1468,31 @@ class PurchaseOrderFoodsController extends Controller
             $po->source_info = $sourceInfo;
             $po->warehouse_outlet_id = $warehouseOutletId;
             
+            // Determine current approval level and approver info
+            $currentApprovalLevel = null;
+            $currentApproverId = null;
+            $user = Auth::user();
+            
+            // Check which approval level is pending and if current user can approve
+            if (!$po->purchasing_manager_approved_at) {
+                // Purchasing Manager approval pending
+                if ($user->id_jabatan == 168) { // Purchasing Manager
+                    $currentApprovalLevel = 'purchasing_manager';
+                    $currentApproverId = $user->id;
+                }
+            } elseif (!$po->gm_finance_approved_at && $po->purchasing_manager_approved_at) {
+                // GM Finance approval pending (only if Purchasing Manager already approved)
+                if ($user->id_jabatan == 169) { // GM Finance
+                    $currentApprovalLevel = 'gm_finance';
+                    $currentApproverId = $user->id;
+                }
+            }
+            
             return response()->json([
                 'success' => true,
-                'po_food' => $po
+                'po_food' => $po,
+                'current_approval_level' => $currentApprovalLevel,
+                'current_approver_id' => $currentApproverId,
             ]);
         } catch (\Exception $e) {
             \Log::error('Error getting PO Food detail', [

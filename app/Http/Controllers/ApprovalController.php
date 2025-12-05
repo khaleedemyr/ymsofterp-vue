@@ -220,8 +220,15 @@ class ApprovalController extends Controller
     public function approve(Request $request, $id)
     {
         $request->validate([
-            'notes' => 'nullable|string|max:500'
+            'notes' => 'nullable|string|max:500',
+            'comment' => 'nullable|string|max:500', // Alias for notes
         ]);
+        
+        // Support both 'notes' and 'comment' parameters
+        $notes = $request->input('notes') ?? $request->input('comment');
+        if ($notes && !$request->has('notes')) {
+            $request->merge(['notes' => $notes]);
+        }
         
         $userId = auth()->id();
         
@@ -478,8 +485,16 @@ class ApprovalController extends Controller
     public function reject(Request $request, $id)
     {
         $request->validate([
-            'notes' => 'nullable|string|max:500'
+            'notes' => 'nullable|string|max:500',
+            'comment' => 'nullable|string|max:500', // Alias for notes
+            'reason' => 'nullable|string|max:500', // Alias for notes
         ]);
+        
+        // Support 'notes', 'comment', and 'reason' parameters
+        $notes = $request->input('notes') ?? $request->input('comment') ?? $request->input('reason');
+        if ($notes && !$request->has('notes')) {
+            $request->merge(['notes' => $notes]);
+        }
         
         $userId = auth()->id();
         

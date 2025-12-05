@@ -489,7 +489,7 @@ class CoachingController extends Controller
         }
     }
 
-    public function approve(Request $request, Coaching $coaching)
+    public function approve(Request $request, $id)
     {
         $request->validate([
             'approver_id' => 'required|integer',
@@ -497,6 +497,9 @@ class CoachingController extends Controller
         ]);
 
         try {
+            // Support both route model binding (Coaching model) and $id (integer/string)
+            $coaching = $id instanceof Coaching ? $id : Coaching::findOrFail($id);
+            
             // Find the approver record by ID (not by approver_id)
             $approver = $coaching->approvers()
                 ->where('id', $request->approver_id)
@@ -582,7 +585,7 @@ class CoachingController extends Controller
         }
     }
 
-    public function reject(Request $request, Coaching $coaching)
+    public function reject(Request $request, $id)
     {
         $request->validate([
             'approver_id' => 'required|integer',
@@ -590,6 +593,9 @@ class CoachingController extends Controller
         ]);
 
         try {
+            // Support both route model binding (Coaching model) and $id (integer/string)
+            $coaching = $id instanceof Coaching ? $id : Coaching::findOrFail($id);
+            
             // Find the approver record by ID (not by approver_id)
             $approver = $coaching->approvers()
                 ->where('id', $request->approver_id)
@@ -646,6 +652,100 @@ class CoachingController extends Controller
         } catch (\Exception $e) {
             return response()->json([
                 'message' => 'Gagal menolak coaching: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function getDetail($id)
+    {
+        try {
+            $coaching = Coaching::with([
+                'employee.jabatan',
+                'employee.divisi',
+                'employee.outlet',
+                'supervisor.jabatan',
+                'supervisor.divisi',
+                'creator',
+                'approvers.approver.jabatan',
+                'approvers.approver.divisi',
+            ])->find($id);
+            
+            if (!$coaching) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Coaching tidak ditemukan'
+                ], 404);
+            }
+            
+            // Get approval flows
+            $approvalFlows = $coaching->approvers()
+                ->orderBy('approval_level')
+                ->get()
+                ->map(function($approver) {
+                    return [
+                        'id' => $approver->id,
+                        'sequence' => $approver->approval_level,
+                        'status' => $approver->status,
+                        'approved_at' => $approver->approved_at,
+                        'rejected_at' => $approver->rejected_at,
+                        'comments' => $approver->comments,
+                        'approver' => [
+                            'id' => $approver->approver_id,
+                            'nama_lengkap' => $approver->approver ? $approver->approver->nama_lengkap : null,
+                        ],
+                    ];
+                });
+            
+            // Get current approver (pending approver for current user)
+            $currentApprover = null;
+            $currentUserId = auth()->id();
+            if ($currentUserId) {
+                $currentApprover = $coaching->approvers()
+                    ->where('approver_id', $currentUserId)
+                    ->where('status', 'pending')
+                    ->first();
+            }
+            
+            // Transform coaching data
+            $coachingData = [
+                'id' => $coaching->id,
+                'type' => $coaching->type,
+                'status' => $coaching->status,
+                'violation_date' => $coaching->violation_date,
+                'violation_details' => $coaching->violation_details,
+                'coaching_date' => $coaching->coaching_date,
+                'location' => $coaching->location,
+                'created_at' => $coaching->created_at,
+                'updated_at' => $coaching->updated_at,
+                'employee' => [
+                    'id' => $coaching->employee_id,
+                    'nama_lengkap' => $coaching->employee ? $coaching->employee->nama_lengkap : null,
+                ],
+                'supervisor' => [
+                    'id' => $coaching->supervisor_id,
+                    'nama_lengkap' => $coaching->supervisor ? $coaching->supervisor->nama_lengkap : null,
+                ],
+                'creator' => [
+                    'id' => $coaching->created_by,
+                    'nama_lengkap' => $coaching->creator ? $coaching->creator->nama_lengkap : null,
+                ],
+                'approval_flows' => $approvalFlows->toArray(),
+                'current_approver_id' => $currentApprover ? $currentApprover->id : null,
+            ];
+            
+            return response()->json([
+                'success' => true,
+                'coaching' => $coachingData
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Error getting Coaching detail', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to load Coaching detail'
             ], 500);
         }
     }

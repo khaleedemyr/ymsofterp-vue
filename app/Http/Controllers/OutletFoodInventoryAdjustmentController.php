@@ -607,11 +607,23 @@ class OutletFoodInventoryAdjustmentController extends Controller
             ->orderBy('af.approval_level', 'asc')
             ->get();
         
+        // Get current approver (pending approver for current user)
+        $currentApprover = null;
+        $currentUserId = auth()->id();
+        if ($currentUserId) {
+            $currentApprover = DB::table('outlet_food_inventory_adjustment_approval_flows')
+                ->where('adjustment_id', $id)
+                ->where('approver_id', $currentUserId)
+                ->where('status', 'PENDING')
+                ->first();
+        }
+        
         return response()->json([
             'success' => true,
             'adjustment' => $adjustment,
             'items' => $items,
-            'approval_flows' => $approvalFlows
+            'approval_flows' => $approvalFlows,
+            'current_approval_flow_id' => $currentApprover ? $currentApprover->id : null,
         ]);
     }
 
@@ -623,6 +635,9 @@ class OutletFoodInventoryAdjustmentController extends Controller
             $adj = DB::table('outlet_food_inventory_adjustments')->where('id', $id)->first();
             if (!$adj) throw new \Exception('Adjustment not found');
             
+            // Support both 'note', 'comment', and 'notes' parameters
+            $note = $request->input('note') ?? $request->input('comment') ?? $request->input('notes');
+            
             // Check if using new approval flow system
             $hasApprovalFlows = DB::table('outlet_food_inventory_adjustment_approval_flows')
                 ->where('adjustment_id', $id)
@@ -630,11 +645,20 @@ class OutletFoodInventoryAdjustmentController extends Controller
             
             if ($hasApprovalFlows && $adj->status === 'waiting_approval') {
                 // New approval flow system
-                $currentApprovalFlow = DB::table('outlet_food_inventory_adjustment_approval_flows')
-                    ->where('adjustment_id', $id)
-                    ->where('approver_id', $user->id)
-                    ->where('status', 'PENDING')
-                    ->first();
+                // If approval_flow_id is provided, use it; otherwise find by approver_id
+                if ($request->has('approval_flow_id')) {
+                    $currentApprovalFlow = DB::table('outlet_food_inventory_adjustment_approval_flows')
+                        ->where('id', $request->approval_flow_id)
+                        ->where('adjustment_id', $id)
+                        ->where('status', 'PENDING')
+                        ->first();
+                } else {
+                    $currentApprovalFlow = DB::table('outlet_food_inventory_adjustment_approval_flows')
+                        ->where('adjustment_id', $id)
+                        ->where('approver_id', $user->id)
+                        ->where('status', 'PENDING')
+                        ->first();
+                }
                 
                 if (!$currentApprovalFlow) {
                     throw new \Exception('Anda tidak memiliki hak untuk approve data ini');
@@ -659,7 +683,7 @@ class OutletFoodInventoryAdjustmentController extends Controller
                     ->update([
                         'status' => 'APPROVED',
                         'approved_at' => now(),
-                        'comments' => $request->note ?? null,
+                        'comments' => $note,
                         'updated_at' => now(),
                     ]);
                 
@@ -786,8 +810,20 @@ class OutletFoodInventoryAdjustmentController extends Controller
     public function reject(Request $request, $id)
     {
         $validated = $request->validate([
-            'rejection_reason' => 'required|string|max:500',
+            'rejection_reason' => 'nullable|string|max:500',
+            'reason' => 'nullable|string|max:500', // Alias for rejection_reason
+            'comment' => 'nullable|string|max:500', // Alias for rejection_reason
         ]);
+        
+        // Support 'rejection_reason', 'reason', and 'comment' parameters
+        $rejectionReason = $request->input('rejection_reason') ?? $request->input('reason') ?? $request->input('comment');
+        
+        if (!$rejectionReason) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Alasan penolakan harus diisi'
+            ], 400);
+        }
         
         DB::beginTransaction();
         try {
@@ -802,11 +838,20 @@ class OutletFoodInventoryAdjustmentController extends Controller
             
             if ($hasApprovalFlows && $adj->status === 'waiting_approval') {
                 // New approval flow system
-                $currentApprovalFlow = DB::table('outlet_food_inventory_adjustment_approval_flows')
-                    ->where('adjustment_id', $id)
-                    ->where('approver_id', $user->id)
-                    ->where('status', 'PENDING')
-                    ->first();
+                // If approval_flow_id is provided, use it; otherwise find by approver_id
+                if ($request->has('approval_flow_id')) {
+                    $currentApprovalFlow = DB::table('outlet_food_inventory_adjustment_approval_flows')
+                        ->where('id', $request->approval_flow_id)
+                        ->where('adjustment_id', $id)
+                        ->where('status', 'PENDING')
+                        ->first();
+                } else {
+                    $currentApprovalFlow = DB::table('outlet_food_inventory_adjustment_approval_flows')
+                        ->where('adjustment_id', $id)
+                        ->where('approver_id', $user->id)
+                        ->where('status', 'PENDING')
+                        ->first();
+                }
                 
                 if (!$currentApprovalFlow) {
                     throw new \Exception('Anda tidak memiliki hak untuk menolak data ini');
@@ -818,7 +863,7 @@ class OutletFoodInventoryAdjustmentController extends Controller
                     ->update([
                         'status' => 'REJECTED',
                         'rejected_at' => now(),
-                        'comments' => $validated['rejection_reason'],
+                        'comments' => $rejectionReason,
                         'updated_at' => now(),
                     ]);
                 
