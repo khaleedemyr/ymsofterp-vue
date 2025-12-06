@@ -614,7 +614,8 @@ class PurchaseOrderOpsController extends Controller
         ];
 
         // Get budget information if PO has source PR
-        // Use getBudgetInfo method to ensure consistency with Purchase Requisition
+        // For PR Ops, category_id is at items level, not PR level
+        // So we need to get category_id from first item to determine budget type
         $budgetInfo = null;
         if ($po->source_type === 'purchase_requisition_ops' && $po->source_id && $po->source_pr) {
             try {
@@ -623,10 +624,31 @@ class PurchaseOrderOpsController extends Controller
                     'source_pr_id' => $po->source_pr->id ?? 'N/A',
                     'is_api_request' => request()->wantsJson() || request()->is('api/*'),
                 ]);
-                $budgetInfo = $this->getBudgetInfo($po->source_pr);
+                
+                // For PR Ops, try to get category_id from first item
+                $firstCategoryId = null;
+                $firstOutletId = null;
+                foreach ($po->items as $item) {
+                    if ($item->pr_ops_item_id && $item->prOpsItem) {
+                        $firstCategoryId = $item->prOpsItem->category_id;
+                        $firstOutletId = $item->prOpsItem->outlet_id;
+                        break;
+                    }
+                }
+                
+                // If we have category_id from items, use it to get budget info
+                if ($firstCategoryId) {
+                    $budgetInfo = $this->getBudgetInfo($po->source_pr, $firstOutletId, $firstCategoryId);
+                } else {
+                    // Fallback: try without override (for old structure PRs)
+                    $budgetInfo = $this->getBudgetInfo($po->source_pr);
+                }
+                
                 \Log::info("Budget info retrieved in show method", [
                     'has_budget_info' => !is_null($budgetInfo),
                     'budget_type' => $budgetInfo['budget_type'] ?? 'N/A',
+                    'first_category_id' => $firstCategoryId,
+                    'first_outlet_id' => $firstOutletId,
                 ]);
             } catch (\Exception $e) {
                 \Log::warning('Failed to get budget info for PR ' . $po->source_pr->id . ': ' . $e->getMessage());
