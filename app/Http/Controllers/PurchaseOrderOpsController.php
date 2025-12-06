@@ -2154,22 +2154,55 @@ class PurchaseOrderOpsController extends Controller
                 ->pluck('pr.id')
                 ->toArray();
             
-            // Get PO IDs linked to PRs in this outlet
-            $poIdsInCategory = DB::table('purchase_order_ops_items as poi')
-                ->where('poi.source_type', 'purchase_requisition_ops')
-                ->whereIn('poi.source_id', $prIds)
-                ->distinct()
-                ->pluck('poi.purchase_order_ops_id')
-                ->toArray();
-            
             // Get paid amount from non_food_payments for this outlet (BUDGET IS MONTHLY - filter by payment_date)
             // IMPORTANT: Only count NFP with status 'paid' (not 'approved')
-            $paidAmountFromPo = DB::table('non_food_payments as nfp')
-                ->whereIn('nfp.purchase_order_ops_id', $poIdsInCategory)
-                ->where('nfp.status', 'paid') // Only 'paid' status, not 'approved'
+            // IMPORTANT: Hitung berdasarkan proporsi PO items dari outlet ini
+            // Get PO IDs that have paid NFP and contain items from this outlet
+            $poIdsWithPaidNfp = DB::table('non_food_payments as nfp')
+                ->where('nfp.status', 'paid')
                 ->where('nfp.status', '!=', 'cancelled')
                 ->whereBetween('nfp.payment_date', [$dateFrom, $dateTo])
-                ->sum('nfp.amount');
+                ->whereNotNull('nfp.purchase_order_ops_id')
+                ->pluck('nfp.purchase_order_ops_id')
+                ->toArray();
+            
+            // Calculate paid amount based on PO items from this outlet that are in paid PO
+            $paidAmountFromPo = 0;
+            if (!empty($poIdsWithPaidNfp)) {
+                // Get PO items total from this outlet in paid POs
+                $poItemsFromOutlet = DB::table('purchase_order_ops_items as poi')
+                    ->leftJoin('purchase_requisitions as pr', 'poi.source_id', '=', 'pr.id')
+                    ->leftJoin('purchase_requisition_items as pri', function($join) {
+                        $join->on('pr.id', '=', 'pri.purchase_requisition_id')
+                             ->where(function($q) {
+                                 $q->whereColumn('poi.pr_ops_item_id', 'pri.id')
+                                   ->orWhere(function($q2) {
+                                       $q2->whereNull('poi.pr_ops_item_id')
+                                          ->whereColumn('poi.item_name', 'pri.item_name');
+                                   });
+                             });
+                    })
+                    ->whereIn('poi.purchase_order_ops_id', $poIdsWithPaidNfp)
+                    ->where(function($q) use ($categoryId, $outletId) {
+                        // Old structure: category and outlet at PR level
+                        $q->where(function($q2) use ($categoryId, $outletId) {
+                            $q2->where('pr.category_id', $categoryId)
+                               ->where('pr.outlet_id', $outletId);
+                        })
+                        // New structure: category and outlet at items level
+                        ->orWhere(function($q2) use ($categoryId, $outletId) {
+                            $q2->where('pri.category_id', $categoryId)
+                               ->where('pri.outlet_id', $outletId);
+                        });
+                    })
+                    ->whereYear('pr.created_at', $year)
+                    ->whereMonth('pr.created_at', $month)
+                    ->where('pr.is_held', false)
+                    ->where('poi.source_type', 'purchase_requisition_ops')
+                    ->sum('poi.total');
+                
+                $paidAmountFromPo = $poItemsFromOutlet ?? 0;
+            }
             
             // Get Retail Non Food for this outlet (BUDGET IS MONTHLY - filter by transaction_date)
             $outletRetailNonFoodApproved = RetailNonFood::where('category_budget_id', $categoryId)
@@ -2273,7 +2306,8 @@ class PurchaseOrderOpsController extends Controller
             
             // Get unpaid PO data for this outlet
             // NEW LOGIC: PO unpaid = PO dengan status SUBMITTED dan APPROVED yang belum jadi NFP
-            $allPOs = DB::table('purchase_order_ops as poo')
+            // IMPORTANT: Hitung hanya PO items yang berasal dari outlet ini
+            $poUnpaidAmount = DB::table('purchase_order_ops as poo')
                 ->leftJoin('purchase_order_ops_items as poi', 'poo.id', '=', 'poi.purchase_order_ops_id')
                 ->leftJoin('purchase_requisitions as pr', 'poi.source_id', '=', 'pr.id')
                 ->leftJoin('purchase_requisition_items as pri', function($join) {
@@ -2293,7 +2327,7 @@ class PurchaseOrderOpsController extends Controller
                         $q2->where('pr.category_id', $categoryId)
                            ->where('pr.outlet_id', $outletId);
                     })
-                    // New structure: category and outlet at items level
+                    // New structure: category and outlet at items level - IMPORTANT: filter by pri
                     ->orWhere(function($q2) use ($categoryId, $outletId) {
                         $q2->where('pri.category_id', $categoryId)
                            ->where('pri.outlet_id', $outletId);
@@ -2305,18 +2339,7 @@ class PurchaseOrderOpsController extends Controller
                 ->where('poi.source_type', 'purchase_requisition_ops')
                 ->whereIn('poo.status', ['submitted', 'approved']) // PO dengan status SUBMITTED dan APPROVED
                 ->whereNull('nfp.id') // PO yang belum jadi NFP (belum ada NFP)
-                ->groupBy('poo.id')
-                ->select('poo.id as po_id', DB::raw('SUM(poi.total) as po_total'))
-                ->get();
-            
-            // Calculate unpaid for each PO
-            // NEW LOGIC: PO unpaid = PO dengan status SUBMITTED dan APPROVED yang belum jadi NFP
-            // PO yang sudah difilter di query (belum jadi NFP, status SUBMITTED/APPROVED)
-            $poUnpaidAmount = 0;
-            foreach ($allPOs as $po) {
-                // PO yang sudah difilter di query (belum jadi NFP, status SUBMITTED/APPROVED)
-                $poUnpaidAmount += $po->po_total ?? 0;
-            }
+                ->sum('poi.total'); // Sum hanya PO items yang match dengan filter outlet
             
             // Calculate unpaid NFP
             // NEW LOGIC: NFP unpaid = NFP dengan status pending dan approved
