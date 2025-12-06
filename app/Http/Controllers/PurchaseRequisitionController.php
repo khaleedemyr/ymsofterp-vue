@@ -1291,7 +1291,8 @@ class PurchaseRequisitionController extends Controller
         try {
             // Get current approver
             $currentApprover = auth()->user();
-            $isSuperadmin = $currentApprover->id_role === '5af56935b011a' && $currentApprover->status === 'A';
+            // Superadmin: user dengan id_role = '5af56935b011a' bisa approve semua
+            $isSuperadmin = $currentApprover->id_role === '5af56935b011a';
             
             if ($isSuperadmin) {
                 // Superadmin can approve any pending level - approve the next pending level
@@ -1376,7 +1377,8 @@ class PurchaseRequisitionController extends Controller
         try {
             // Get current approver
             $currentApprover = auth()->user();
-            $isSuperadmin = $currentApprover->id_role === '5af56935b011a' && $currentApprover->status === 'A';
+            // Superadmin: user dengan id_role = '5af56935b011a' bisa reject semua
+            $isSuperadmin = $currentApprover->id_role === '5af56935b011a';
             
             if ($isSuperadmin) {
                 // Superadmin can reject any pending level - reject the next pending level
@@ -1986,7 +1988,8 @@ class PurchaseRequisitionController extends Controller
                 ], 401);
             }
             
-            $isSuperadmin = $currentUser->id_role === '5af56935b011a' && $currentUser->status === 'A';
+            // Superadmin: user dengan id_role = '5af56935b011a' bisa melihat semua approval
+            $isSuperadmin = $currentUser->id_role === '5af56935b011a';
             
             if ($isSuperadmin) {
                 // Superadmin can see all pending approvals
@@ -2093,7 +2096,8 @@ class PurchaseRequisitionController extends Controller
     {
         try {
             $currentUser = auth()->user();
-            $isSuperadmin = $currentUser->id_role === '5af56935b011a' && $currentUser->status === 'A';
+            // Superadmin: user dengan id_role = '5af56935b011a' bisa melihat semua
+            $isSuperadmin = $currentUser->id_role === '5af56935b011a';
             
             $search = $request->get('search', '');
             $fromDate = $request->get('from_date');

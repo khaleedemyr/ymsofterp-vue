@@ -1341,20 +1341,35 @@ class PurchaseOrderOpsController extends Controller
      */
     public function getPendingApprovals()
     {
+        $user = Auth::user();
         $userId = Auth::id();
+        
+        // Superadmin: user dengan id_role = '5af56935b011a' bisa melihat semua approval
+        $isSuperadmin = $user && $user->id_role === '5af56935b011a';
+        
         // Only include POs where:
-        // - There is a PENDING step for current user
+        // - There is a PENDING step for current user (or all if superadmin)
         // - No approval flow is REJECTED (stop chain)
         // - Overall PO status is not rejected/cancelled/approved/received
-        $pendingPOs = PurchaseOrderOps::whereHas('approvalFlows', function($query) use ($userId) {
-            $query->where('approver_id', $userId)
-                  ->where('status', 'PENDING');
-        })
-        ->whereNotIn('status', ['rejected', 'approved', 'received', 'cancelled'])
-        ->whereDoesntHave('approvalFlows', function($q) {
-            $q->where('status', 'REJECTED');
-        })
-        ->with([
+        $query = PurchaseOrderOps::whereNotIn('status', ['rejected', 'approved', 'received', 'cancelled'])
+            ->whereDoesntHave('approvalFlows', function($q) {
+                $q->where('status', 'REJECTED');
+            });
+        
+        if ($isSuperadmin) {
+            // Superadmin can see all pending POs
+            $pendingPOs = $query->whereHas('approvalFlows', function($query) {
+                $query->where('status', 'PENDING');
+            });
+        } else {
+            // Regular users: only POs where they are the approver
+            $pendingPOs = $query->whereHas('approvalFlows', function($query) use ($userId) {
+                $query->where('approver_id', $userId)
+                      ->where('status', 'PENDING');
+            });
+        }
+        
+        $pendingPOs = $pendingPOs->with([
             'supplier', 
             'creator', 
             'source_pr.category',
@@ -1369,20 +1384,25 @@ class PurchaseOrderOpsController extends Controller
         ->get();
 
         // Enforce level order: only show if current user's pending flow is the lowest pending level
-        $pendingPOs = $pendingPOs->filter(function ($po) use ($userId) {
-            $flows = collect($po->approvalFlows ?? []);
-            if ($flows->contains(function ($f) { return strtoupper($f->status) === 'REJECTED'; })) {
-                return false;
-            }
-            // Normalize statuses
-            $pending = $flows->filter(function ($f) { return strtoupper($f->status) === 'PENDING'; })
-                             ->sortBy('approval_level');
-            if ($pending->isEmpty()) {
-                return false;
-            }
-            $nextFlow = $pending->first();
-            return intval($nextFlow->approver_id) === intval($userId);
-        })->map(function ($po) {
+        // Skip this filter for superadmin - they can see all pending approvals
+        if (!$isSuperadmin) {
+            $pendingPOs = $pendingPOs->filter(function ($po) use ($userId) {
+                $flows = collect($po->approvalFlows ?? []);
+                if ($flows->contains(function ($f) { return strtoupper($f->status) === 'REJECTED'; })) {
+                    return false;
+                }
+                // Normalize statuses
+                $pending = $flows->filter(function ($f) { return strtoupper($f->status) === 'PENDING'; })
+                                 ->sortBy('approval_level');
+                if ($pending->isEmpty()) {
+                    return false;
+                }
+                $nextFlow = $pending->first();
+                return intval($nextFlow->approver_id) === intval($userId);
+            });
+        }
+        
+        $pendingPOs = $pendingPOs->map(function ($po) {
             // Get approver name from the next pending approval flow
             $flows = collect($po->approvalFlows ?? []);
             $pending = $flows->filter(function ($f) { return strtoupper($f->status) === 'PENDING'; })
