@@ -258,6 +258,14 @@ const filteredAllPendingPoOps = computed(() => {
 });
 
 function isPoOpsVisibleToCurrentUser(po) {
+    // Superadmin (id_role = '5af56935b011a') can see all pending approvals
+    const isSuperadmin = user.id_role === '5af56935b011a';
+    if (isSuperadmin) {
+        const status = (po.status || '').toString().toLowerCase();
+        // Superadmin can see all pending/submitted/waiting approvals, but not completed ones
+        return !['approved', 'rejected', 'cancelled', 'received'].includes(status);
+    }
+    
     const status = (po.status || '').toString().toLowerCase();
     if (['approved', 'rejected', 'cancelled', 'received'].includes(status)) return false;
     const flows = Array.isArray(po.approval_flows) ? po.approval_flows : [];
@@ -833,11 +841,21 @@ async function loadPendingApprovals() {
         const response = await axios.get('/api/approval/pending');
         if (response.data.success) {
             const approvals = response.data.approvals || [];
-            pendingApprovals.value = approvals.filter(a => {
-                const status = (a.status || a.approval_status || '').toString().toLowerCase();
-                if (!status) return true;
-                return status === 'pending' || status === 'awaiting' || status === 'waiting';
-            });
+            // Superadmin (id_role = '5af56935b011a') can see all pending approvals
+            const isSuperadmin = user.id_role === '5af56935b011a';
+            if (isSuperadmin) {
+                // Superadmin sees all approvals that are not completed
+                pendingApprovals.value = approvals.filter(a => {
+                    const status = (a.status || a.approval_status || '').toString().toLowerCase();
+                    return !['approved', 'rejected', 'completed', 'cancelled'].includes(status);
+                });
+            } else {
+                pendingApprovals.value = approvals.filter(a => {
+                    const status = (a.status || a.approval_status || '').toString().toLowerCase();
+                    if (!status) return true;
+                    return status === 'pending' || status === 'awaiting' || status === 'waiting';
+                });
+            }
         }
     } catch (error) {
         console.error('Error loading pending approvals:', error);
@@ -2469,18 +2487,28 @@ async function loadLeaveNotifications() {
 
 // HRD approval functions
 async function loadPendingHrdApprovals() {
-    if (user.division_id !== 6) return; // Only for HRD users
+    // Superadmin (id_role = '5af56935b011a') can see all approvals
+    const isSuperadmin = user.id_role === '5af56935b011a';
+    if (!isSuperadmin && user.division_id !== 6) return; // Only for HRD users or superadmin
     
     loadingHrdApprovals.value = true;
     try {
         const response = await axios.get('/api/approval/pending-hrd');
         if (response.data.success) {
             const approvals = response.data.approvals || [];
-            pendingHrdApprovals.value = approvals.filter(a => {
-                const status = (a.status || a.approval_status || '').toString().toLowerCase();
-                if (!status) return true;
-                return status === 'pending' || status === 'awaiting' || status === 'waiting';
-            });
+            if (isSuperadmin) {
+                // Superadmin sees all approvals that are not completed
+                pendingHrdApprovals.value = approvals.filter(a => {
+                    const status = (a.status || a.approval_status || '').toString().toLowerCase();
+                    return !['approved', 'rejected', 'completed', 'cancelled'].includes(status);
+                });
+            } else {
+                pendingHrdApprovals.value = approvals.filter(a => {
+                    const status = (a.status || a.approval_status || '').toString().toLowerCase();
+                    if (!status) return true;
+                    return status === 'pending' || status === 'awaiting' || status === 'waiting';
+                });
+            }
         }
     } catch (error) {
         console.error('Error loading pending HRD approvals:', error);
@@ -2491,7 +2519,9 @@ async function loadPendingHrdApprovals() {
 
 // Correction approval functions
 async function loadPendingCorrectionApprovals() {
-    if (user.division_id !== 6) return; // Only for HRD users
+    // Superadmin (id_role = '5af56935b011a') can see all approvals
+    const isSuperadmin = user.id_role === '5af56935b011a';
+    if (!isSuperadmin && user.division_id !== 6) return; // Only for HRD users or superadmin
     
     loadingCorrectionApprovals.value = true;
     try {
