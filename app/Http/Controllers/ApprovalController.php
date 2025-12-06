@@ -64,7 +64,7 @@ class ApprovalController extends Controller
             // Get all pending flows for this absent request
             $pendingFlows = DB::table('absent_request_approval_flows')
                 ->where('absent_request_id', $approval->absent_request_id)
-                ->where('status', 'PENDING')
+                ->where('absent_request_approval_flows.status', 'PENDING')
                 ->orderBy('approval_level')
                 ->get();
             
@@ -116,9 +116,9 @@ class ApprovalController extends Controller
                 // New flow: get next pending approver
                 $nextFlow = DB::table('absent_request_approval_flows')
                     ->join('users', 'absent_request_approval_flows.approver_id', '=', 'users.id')
-                    ->where('absent_request_id', $approval->absent_request_id)
-                    ->where('status', 'PENDING')
-                    ->orderBy('approval_level')
+                    ->where('absent_request_approval_flows.absent_request_id', $approval->absent_request_id)
+                    ->where('absent_request_approval_flows.status', 'PENDING')
+                    ->orderBy('absent_request_approval_flows.approval_level')
                     ->select('users.nama_lengkap')
                     ->first();
                 $approverName = $nextFlow ? $nextFlow->nama_lengkap : null;
@@ -307,7 +307,7 @@ class ApprovalController extends Controller
             // Check new flow: user must be the next approver in line
             $pendingFlows = DB::table('absent_request_approval_flows')
                 ->where('absent_request_id', $absentRequest->id)
-                ->where('status', 'PENDING')
+                ->where('absent_request_approval_flows.status', 'PENDING')
                 ->orderBy('approval_level')
                 ->get();
             
@@ -397,7 +397,7 @@ class ApprovalController extends Controller
             // Check if there are more pending approvers
             $pendingFlows = DB::table('absent_request_approval_flows')
                 ->where('absent_request_id', $absentRequest->id)
-                ->where('status', 'PENDING')
+                ->where('absent_request_approval_flows.status', 'PENDING')
                 ->orderBy('approval_level')
                 ->get();
             
@@ -573,7 +573,7 @@ class ApprovalController extends Controller
             // Check new flow: user must be the next approver in line
             $pendingFlows = DB::table('absent_request_approval_flows')
                 ->where('absent_request_id', $absentRequest->id)
-                ->where('status', 'PENDING')
+                ->where('absent_request_approval_flows.status', 'PENDING')
                 ->orderBy('approval_level')
                 ->get();
             
