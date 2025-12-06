@@ -589,7 +589,9 @@ class PurchaseOrderOpsController extends Controller
         $po = PurchaseOrderOps::with([
             'supplier',
             'creator',
-            'items',
+            'items.prOpsItem.purchaseRequisition',
+            'items.prOpsItem.outlet',
+            'items.prOpsItem.category.division',
             'purchasing_manager',
             'gm_finance',
             'source_pr.category',
