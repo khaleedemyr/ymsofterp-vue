@@ -2276,13 +2276,9 @@ class PurchaseOrderOpsController extends Controller
             // Get unpaid PR data for this outlet
             // NEW LOGIC: PR unpaid = PR dengan status SUBMITTED dan APPROVED yang belum jadi PO dan belum jadi NFP
             // Support both old structure (category/outlet at PR level) and new structure (category/outlet at items level)
+            // IMPORTANT: Check if PR has PO items specifically for THIS outlet/category, not just any PO items
             $prIdsForUnpaid = DB::table('purchase_requisitions as pr')
                 ->leftJoin('purchase_requisition_items as pri', 'pr.id', '=', 'pri.purchase_requisition_id')
-                ->leftJoin('purchase_order_ops_items as poi', function($join) {
-                    $join->on('pr.id', '=', 'poi.source_id')
-                         ->where('poi.source_type', '=', 'purchase_requisition_ops');
-                })
-                ->leftJoin('purchase_order_ops as poo', 'poi.purchase_order_ops_id', '=', 'poo.id')
                 ->leftJoin('non_food_payments as nfp', 'pr.id', '=', 'nfp.purchase_requisition_id')
                 ->where(function($q) use ($categoryId, $outletId) {
                     // Old structure: category and outlet at PR level
@@ -2300,49 +2296,44 @@ class PurchaseOrderOpsController extends Controller
                 ->whereMonth('pr.created_at', $month)
                 ->whereIn('pr.status', ['SUBMITTED', 'APPROVED']) // Only SUBMITTED and APPROVED
                 ->where('pr.is_held', false) // Exclude held PRs
-                ->whereNull('poo.id') // PR yang belum jadi PO (belum ada PO)
                 ->whereNull('nfp.id') // PR yang belum jadi NFP (baik langsung maupun melalui PO)
+                ->whereNotExists(function($query) use ($categoryId, $outletId, $year, $month) {
+                    // Check if PR has PO items for this outlet/category
+                    $query->select(DB::raw(1))
+                        ->from('purchase_order_ops_items as poi')
+                        ->leftJoin('purchase_order_ops as poo', 'poi.purchase_order_ops_id', '=', 'poo.id')
+                        ->leftJoin('purchase_requisitions as pr2', 'poi.source_id', '=', 'pr2.id')
+                        ->leftJoin('purchase_requisition_items as pri2', function($join) {
+                            $join->on('pr2.id', '=', 'pri2.purchase_requisition_id')
+                                 ->where(function($q) {
+                                     $q->whereColumn('poi.pr_ops_item_id', 'pri2.id')
+                                       ->orWhere(function($q2) {
+                                           $q2->whereNull('poi.pr_ops_item_id')
+                                              ->whereColumn('poi.item_name', 'pri2.item_name');
+                                       });
+                                 });
+                        })
+                        ->whereColumn('pr.id', 'pr2.id')
+                        ->where('poi.source_type', 'purchase_requisition_ops')
+                        ->whereIn('poo.status', ['submitted', 'approved'])
+                        ->where(function($q) use ($categoryId, $outletId) {
+                            $q->where(function($q2) use ($categoryId, $outletId) {
+                                $q2->where('pr2.category_id', $categoryId)
+                                   ->where('pr2.outlet_id', $outletId);
+                            })
+                            ->orWhere(function($q2) use ($categoryId, $outletId) {
+                                $q2->where('pri2.category_id', $categoryId)
+                                   ->where('pri2.outlet_id', $outletId);
+                            });
+                        })
+                        ->whereYear('pr2.created_at', $year)
+                        ->whereMonth('pr2.created_at', $month);
+                })
                 ->distinct()
                 ->pluck('pr.id')
                 ->toArray();
             
             $allPrs = \App\Models\PurchaseRequisition::whereIn('id', $prIdsForUnpaid)->get();
-            
-            // Get PO totals per PR - untuk cek apakah PR sudah jadi PO
-            $poTotalsByPr = DB::table('purchase_order_ops_items as poi')
-                ->leftJoin('purchase_order_ops as poo', 'poi.purchase_order_ops_id', '=', 'poo.id')
-                ->leftJoin('purchase_requisitions as pr', 'poi.source_id', '=', 'pr.id')
-                ->leftJoin('purchase_requisition_items as pri', function($join) {
-                    $join->on('pr.id', '=', 'pri.purchase_requisition_id')
-                         ->where(function($q) {
-                             $q->whereColumn('poi.pr_ops_item_id', 'pri.id')
-                               ->orWhere(function($q2) {
-                                   $q2->whereNull('poi.pr_ops_item_id')
-                                      ->whereColumn('poi.item_name', 'pri.item_name');
-                               });
-                         });
-                })
-                ->where(function($q) use ($categoryId, $outletId) {
-                    // Old structure: category and outlet at PR level
-                    $q->where(function($q2) use ($categoryId, $outletId) {
-                        $q2->where('pr.category_id', $categoryId)
-                           ->where('pr.outlet_id', $outletId);
-                    })
-                    // New structure: category and outlet at items level
-                    ->orWhere(function($q2) use ($categoryId, $outletId) {
-                        $q2->where('pri.category_id', $categoryId)
-                           ->where('pri.outlet_id', $outletId);
-                    });
-                })
-                ->whereYear('pr.created_at', $year)
-                ->whereMonth('pr.created_at', $month)
-                ->where('pr.is_held', false)
-                ->where('poi.source_type', 'purchase_requisition_ops')
-                ->whereIn('poo.status', ['submitted', 'approved']) // PO dengan status SUBMITTED dan APPROVED
-                ->groupBy('pr.id')
-                ->select('pr.id as pr_id', DB::raw('SUM(poi.total) as po_total'))
-                ->pluck('po_total', 'pr_id')
-                ->toArray();
             
             // Calculate unpaid for each PR
             // NEW LOGIC: PR unpaid = PR dengan status SUBMITTED dan APPROVED yang belum jadi PO
