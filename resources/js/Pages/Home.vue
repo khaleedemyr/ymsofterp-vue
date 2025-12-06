@@ -68,6 +68,15 @@ const categoryCostApprovalRejectionReason = ref('');
 const selectedCategoryCostApprovals = ref(new Set()); // For multi-select
 const isSelectingCategoryCostApprovals = ref(false); // Toggle select mode
 
+// All Category Cost Modal
+const showAllCategoryCostModal = ref(false);
+const allCategoryCostApprovals = ref([]);
+const loadingAllCategoryCost = ref(false);
+const categoryCostSearchQuery = ref('');
+const categoryCostTypeFilter = ref('');
+const categoryCostDateFilter = ref('');
+const categoryCostSortBy = ref('newest');
+
 // Outlet Stock Adjustment approvals
 const pendingStockAdjustmentApprovals = ref([]);
 const selectedStockAdjustmentApprovals = ref(new Set()); // For multi-select
@@ -892,6 +901,88 @@ async function loadPendingCategoryCostApprovals() {
     } finally {
         loadingCategoryCostApprovals.value = false;
     }
+}
+
+// Load all Category Cost approvals for modal
+async function loadAllCategoryCostApprovals() {
+    loadingAllCategoryCost.value = true;
+    try {
+        const response = await axios.get('/outlet-internal-use-waste/approvals/pending');
+        if (response.data.success) {
+            allCategoryCostApprovals.value = response.data.headers || [];
+        }
+    } catch (error) {
+        console.error('Error loading all Category Cost approvals:', error);
+        allCategoryCostApprovals.value = [];
+    } finally {
+        loadingAllCategoryCost.value = false;
+    }
+}
+
+// Open all Category Cost modal
+async function openAllCategoryCostModal() {
+    showAllCategoryCostModal.value = true;
+    if (allCategoryCostApprovals.value.length === 0) {
+        await loadAllCategoryCostApprovals();
+    }
+}
+
+// Computed for filtered Category Cost approvals
+const filteredCategoryCostApprovals = computed(() => {
+    let filtered = [...allCategoryCostApprovals.value];
+    
+    // Search filter
+    if (categoryCostSearchQuery.value) {
+        const query = categoryCostSearchQuery.value.toLowerCase();
+        filtered = filtered.filter(header => 
+            (header.number || '').toLowerCase().includes(query) ||
+            (header.outlet_name || '').toLowerCase().includes(query) ||
+            (header.creator_name || '').toLowerCase().includes(query) ||
+            (header.warehouse_outlet_name || '').toLowerCase().includes(query) ||
+            (typeLabelCategoryCost(header.type) || '').toLowerCase().includes(query)
+        );
+    }
+    
+    // Type filter
+    if (categoryCostTypeFilter.value) {
+        filtered = filtered.filter(header => header.type === categoryCostTypeFilter.value);
+    }
+    
+    // Date filter
+    if (categoryCostDateFilter.value) {
+        const now = new Date();
+        if (categoryCostDateFilter.value === 'today') {
+            filtered = filtered.filter(header => {
+                const headerDate = new Date(header.date);
+                return headerDate.toDateString() === now.toDateString();
+            });
+        } else if (categoryCostDateFilter.value === 'week') {
+            const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+            filtered = filtered.filter(header => new Date(header.date) >= weekAgo);
+        } else if (categoryCostDateFilter.value === 'month') {
+            const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+            filtered = filtered.filter(header => new Date(header.date) >= monthAgo);
+        }
+    }
+    
+    // Sort
+    if (categoryCostSortBy.value === 'newest') {
+        filtered.sort((a, b) => new Date(b.created_at || b.date) - new Date(a.created_at || a.date));
+    } else if (categoryCostSortBy.value === 'oldest') {
+        filtered.sort((a, b) => new Date(a.created_at || a.date) - new Date(b.created_at || b.date));
+    } else if (categoryCostSortBy.value === 'number') {
+        filtered.sort((a, b) => (a.number || '').localeCompare(b.number || ''));
+    }
+    
+    return filtered;
+});
+
+// Clear Category Cost filters
+function clearCategoryCostFilters() {
+    categoryCostSearchQuery.value = '';
+    categoryCostTypeFilter.value = '';
+    categoryCostDateFilter.value = '';
+    categoryCostSortBy.value = 'newest';
 }
 
 // Load Purchase Order Ops approvals
@@ -5545,7 +5636,7 @@ watch(locale, () => {
                             
                             <!-- Show more button if there are more than 3 -->
                             <div v-if="pendingCategoryCostApprovals.length > 3" class="text-center pt-2">
-                                <button @click="loadPendingCategoryCostApprovals" class="text-sm text-purple-500 hover:text-purple-700 font-medium">
+                                <button @click="openAllCategoryCostModal" class="text-sm text-purple-500 hover:text-purple-700 font-medium">
                                     Lihat {{ pendingCategoryCostApprovals.length - 3 }} lainnya...
                                 </button>
                             </div>
@@ -6713,9 +6804,124 @@ watch(locale, () => {
                             class="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors">
                         <i class="fa fa-check mr-2"></i>Approve
                     </button>
-                    <button @click="showRejectCategoryCostModal(selectedCategoryCostApproval.header.id)" 
+                    <button @click="showRejectCategoryCostModal(selectedCategoryCostApproval.header.id)"
                             class="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors">
                         <i class="fa fa-times mr-2"></i>Reject
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- All Category Cost Outlet Approval Modal -->
+        <div v-if="showAllCategoryCostModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[50]" @click="showAllCategoryCostModal = false">
+            <div class="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-5xl mx-4 max-h-[90vh] overflow-y-auto" @click.stop>
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-lg font-medium text-gray-900 dark:text-white">
+                        <i class="fa fa-recycle mr-2 text-purple-500"></i>
+                        Semua Category Cost Outlet Pending
+                    </h3>
+                    <button @click="showAllCategoryCostModal = false" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                        <i class="fa-solid fa-times text-xl"></i>
+                    </button>
+                </div>
+
+                <!-- Filters -->
+                <div class="mb-4 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+                        <div>
+                            <label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Cari</label>
+                            <input v-model="categoryCostSearchQuery" type="text" placeholder="No CIU, Outlet, atau Pembuat"
+                                   class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 dark:bg-gray-600 dark:text-gray-100" />
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Tipe</label>
+                            <select v-model="categoryCostTypeFilter"
+                                    class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 dark:bg-gray-600 dark:text-gray-100">
+                                <option value="">Semua</option>
+                                <option value="use">Use</option>
+                                <option value="waste">Waste</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Tanggal</label>
+                            <select v-model="categoryCostDateFilter"
+                                    class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 dark:bg-gray-600 dark:text-gray-100">
+                                <option value="">Semua</option>
+                                <option value="today">Hari ini</option>
+                                <option value="week">7 hari terakhir</option>
+                                <option value="month">30 hari terakhir</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Urutkan</label>
+                            <select v-model="categoryCostSortBy"
+                                    class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 dark:bg-gray-600 dark:text-gray-100">
+                                <option value="newest">Terbaru</option>
+                                <option value="oldest">Terlama</option>
+                                <option value="number">Nomor CIU</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="mt-3">
+                        <button @click="clearCategoryCostFilters" 
+                                class="text-xs text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 border border-gray-300 dark:border-gray-600 rounded-md px-3 py-1 hover:bg-gray-50 dark:hover:bg-gray-700">
+                            <i class="fa-solid fa-times mr-1"></i>Reset Filter
+                        </button>
+                    </div>
+                </div>
+
+                <div v-if="loadingAllCategoryCost" class="text-center py-6">
+                    <div class="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-purple-500"></div>
+                    <p class="text-sm mt-2 text-gray-600 dark:text-gray-300">Memuat data...</p>
+                </div>
+
+                <div v-else>
+                    <div v-if="filteredCategoryCostApprovals.length === 0" class="text-center py-10">
+                        <i class="fa-solid fa-check-circle text-4xl text-green-500 mb-2"></i>
+                        <p class="text-gray-600 dark:text-gray-300">Tidak ada Category Cost Outlet pending</p>
+                    </div>
+                    <div v-else class="space-y-3">
+                        <div class="text-sm text-gray-600 dark:text-gray-400 mb-1">
+                            Menampilkan {{ filteredCategoryCostApprovals.length }} dari {{ allCategoryCostApprovals.length }} Category Cost Outlet
+                        </div>
+                        <div v-for="header in filteredCategoryCostApprovals" :key="'all-category-cost-' + header.id"
+                             class="p-3 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600 transition-colors cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600"
+                             @click="showCategoryCostApprovalDetails(header.id); showAllCategoryCostModal = false">
+                            <div class="flex items-center justify-between">
+                                <div class="flex-1 min-w-0">
+                                    <div class="flex items-center gap-2">
+                                        <span class="font-semibold text-gray-900 dark:text-white truncate">{{ header.number || 'N/A' }}</span>
+                                        <span class="text-xs px-2 py-0.5 rounded-full" :class="{
+                                            'bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-200': header.type === 'use',
+                                            'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-200': header.type === 'waste'
+                                        }">
+                                            {{ typeLabelCategoryCost(header.type) }}
+                                        </span>
+                                    </div>
+                                    <div class="text-xs text-gray-600 dark:text-gray-300 truncate mt-1">
+                                        <i class="fa fa-map-marker-alt mr-1 text-blue-500"></i>{{ header.outlet_name || 'N/A' }}
+                                    </div>
+                                    <div v-if="header.warehouse_outlet_name" class="text-xs text-gray-600 dark:text-gray-300 truncate">
+                                        <i class="fa fa-warehouse mr-1 text-blue-500"></i>{{ header.warehouse_outlet_name }}
+                                    </div>
+                                    <div class="text-[11px] text-gray-500 dark:text-gray-400 truncate mt-1">
+                                        <i class="fa fa-user mr-1 text-blue-500"></i>{{ header.creator_name || 'Unknown' }}
+                                    </div>
+                                    <div v-if="header.approver_name" class="text-[11px] text-purple-600 dark:text-purple-400 truncate mt-1">
+                                        <i class="fa fa-user-check mr-1"></i>{{ header.approver_name }}
+                                    </div>
+                                </div>
+                                <div class="text-xs text-gray-500 dark:text-gray-400 pl-3 whitespace-nowrap">
+                                    {{ formatDate(header.date) }}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex justify-end gap-3 mt-6 pt-4 border-t border-gray-200 dark:border-gray-600">
+                    <button @click="showAllCategoryCostModal = false" class="px-4 py-2 text-gray-600 dark:text-gray-400 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                        Tutup
                     </button>
                 </div>
             </div>
