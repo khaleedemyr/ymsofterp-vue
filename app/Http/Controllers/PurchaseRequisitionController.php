@@ -666,9 +666,10 @@ class PurchaseRequisitionController extends Controller
     /**
      * Display the specified purchase requisition
      */
-    public function show(PurchaseRequisition $purchaseRequisition)
+    public function show($id)
     {
-        $purchaseRequisition->load([
+        // Use findOrFail to ensure model is loaded correctly
+        $purchaseRequisition = PurchaseRequisition::with([
             'division',
             'outlet',
             'ticket',
@@ -681,7 +682,7 @@ class PurchaseRequisitionController extends Controller
             'items.outlet',
             'items.category',
             'approvalFlows.approver.jabatan'
-        ]);
+        ])->findOrFail($id);
 
         // Parse mode-specific data
         $modeSpecificData = [];
@@ -776,45 +777,136 @@ class PurchaseRequisitionController extends Controller
 
         // Return JSON for API requests (mobile app)
         if (request()->expectsJson() || request()->is('api/*') || request()->wantsJson()) {
-            // Ensure all fields are included in the response
-            // Explicitly get all attributes to ensure they're included
-            $prArray = array_merge(
-                $purchaseRequisition->getAttributes(),
-                [
-                    'id' => $purchaseRequisition->id,
-                    'pr_number' => $purchaseRequisition->pr_number,
-                    'title' => $purchaseRequisition->title,
-                    'amount' => $purchaseRequisition->amount,
-                    'status' => $purchaseRequisition->status,
-                    'mode' => $purchaseRequisition->mode,
-                    'priority' => $purchaseRequisition->priority,
-                    'currency' => $purchaseRequisition->currency,
-                    'division_id' => $purchaseRequisition->division_id,
-                    'outlet_id' => $purchaseRequisition->outlet_id,
-                    'category_id' => $purchaseRequisition->category_id,
-                    'ticket_id' => $purchaseRequisition->ticket_id,
-                    'description' => $purchaseRequisition->description,
-                    'notes' => $purchaseRequisition->notes,
-                    'is_held' => $purchaseRequisition->is_held,
-                    'created_by' => $purchaseRequisition->created_by,
-                    'created_at' => $purchaseRequisition->created_at,
-                    'updated_at' => $purchaseRequisition->updated_at,
-                ],
-                $purchaseRequisition->getRelations()
-            );
-            
-            // Log for debugging
-            \Log::info('PR Detail API Response', [
-                'pr_id' => $purchaseRequisition->id,
+            // Build response array manually to ensure all fields are included
+            $prData = [
+                'id' => $purchaseRequisition->id,
                 'pr_number' => $purchaseRequisition->pr_number,
+                'date' => $purchaseRequisition->date ? $purchaseRequisition->date->format('Y-m-d') : null,
+                'warehouse_id' => $purchaseRequisition->warehouse_id,
+                'requested_by' => $purchaseRequisition->requested_by,
+                'department' => $purchaseRequisition->department,
+                'division_id' => $purchaseRequisition->division_id,
+                'category_id' => $purchaseRequisition->category_id,
+                'outlet_id' => $purchaseRequisition->outlet_id,
+                'ticket_id' => $purchaseRequisition->ticket_id,
                 'title' => $purchaseRequisition->title,
+                'description' => $purchaseRequisition->description,
                 'amount' => $purchaseRequisition->amount,
-                'keys' => array_keys($prArray),
-            ]);
+                'currency' => $purchaseRequisition->currency,
+                'status' => $purchaseRequisition->status,
+                'priority' => $purchaseRequisition->priority,
+                'notes' => $purchaseRequisition->notes,
+                'mode' => $purchaseRequisition->mode,
+                'created_by' => $purchaseRequisition->created_by,
+                'updated_by' => $purchaseRequisition->updated_by,
+                'approved_ssd_by' => $purchaseRequisition->approved_ssd_by,
+                'approved_ssd_at' => $purchaseRequisition->approved_ssd_at ? $purchaseRequisition->approved_ssd_at->format('Y-m-d H:i:s') : null,
+                'approved_cc_by' => $purchaseRequisition->approved_cc_by,
+                'approved_cc_at' => $purchaseRequisition->approved_cc_at ? $purchaseRequisition->approved_cc_at->format('Y-m-d H:i:s') : null,
+                'is_held' => $purchaseRequisition->is_held,
+                'held_at' => $purchaseRequisition->held_at ? $purchaseRequisition->held_at->format('Y-m-d H:i:s') : null,
+                'held_by' => $purchaseRequisition->held_by,
+                'hold_reason' => $purchaseRequisition->hold_reason,
+                'created_at' => $purchaseRequisition->created_at ? $purchaseRequisition->created_at->format('Y-m-d H:i:s') : null,
+                'updated_at' => $purchaseRequisition->updated_at ? $purchaseRequisition->updated_at->format('Y-m-d H:i:s') : null,
+            ];
+            
+            // Add relationships
+            if ($purchaseRequisition->relationLoaded('division')) {
+                $prData['division'] = $purchaseRequisition->division ? [
+                    'id' => $purchaseRequisition->division->id,
+                    'nama_divisi' => $purchaseRequisition->division->nama_divisi,
+                ] : null;
+            }
+            
+            if ($purchaseRequisition->relationLoaded('outlet')) {
+                $prData['outlet'] = $purchaseRequisition->outlet ? [
+                    'id_outlet' => $purchaseRequisition->outlet->id_outlet,
+                    'nama_outlet' => $purchaseRequisition->outlet->nama_outlet,
+                ] : null;
+            }
+            
+            if ($purchaseRequisition->relationLoaded('ticket')) {
+                $prData['ticket'] = $purchaseRequisition->ticket ? [
+                    'id' => $purchaseRequisition->ticket->id,
+                    'ticket_number' => $purchaseRequisition->ticket->ticket_number,
+                ] : null;
+            }
+            
+            if ($purchaseRequisition->relationLoaded('category')) {
+                $prData['category'] = $purchaseRequisition->category ? [
+                    'id' => $purchaseRequisition->category->id,
+                    'name' => $purchaseRequisition->category->name,
+                ] : null;
+            }
+            
+            if ($purchaseRequisition->relationLoaded('creator')) {
+                $prData['creator'] = $purchaseRequisition->creator ? [
+                    'id' => $purchaseRequisition->creator->id,
+                    'nama_lengkap' => $purchaseRequisition->creator->nama_lengkap,
+                ] : null;
+            }
+            
+            // Add items, comments, attachments, etc.
+            if ($purchaseRequisition->relationLoaded('items')) {
+                $prData['items'] = $purchaseRequisition->items->map(function($item) {
+                    return array_merge($item->toArray(), [
+                        'outlet' => $item->outlet ? [
+                            'id_outlet' => $item->outlet->id_outlet,
+                            'nama_outlet' => $item->outlet->nama_outlet,
+                        ] : null,
+                        'category' => $item->category ? [
+                            'id' => $item->category->id,
+                            'name' => $item->category->name,
+                        ] : null,
+                    ]);
+                })->toArray();
+            }
+            
+            if ($purchaseRequisition->relationLoaded('comments')) {
+                $prData['comments'] = $purchaseRequisition->comments->map(function($comment) {
+                    return array_merge($comment->toArray(), [
+                        'user' => $comment->user ? [
+                            'id' => $comment->user->id,
+                            'nama_lengkap' => $comment->user->nama_lengkap,
+                        ] : null,
+                    ]);
+                })->toArray();
+            }
+            
+            if ($purchaseRequisition->relationLoaded('attachments')) {
+                $prData['attachments'] = $purchaseRequisition->attachments->toArray();
+            }
+            
+            if ($purchaseRequisition->relationLoaded('history')) {
+                $prData['history'] = $purchaseRequisition->history->map(function($history) {
+                    return array_merge($history->toArray(), [
+                        'user' => $history->user ? [
+                            'id' => $history->user->id,
+                            'nama_lengkap' => $history->user->nama_lengkap,
+                        ] : null,
+                    ]);
+                })->toArray();
+            }
+            
+            if ($purchaseRequisition->relationLoaded('approvalFlows')) {
+                $prData['approvalFlows'] = $purchaseRequisition->approvalFlows->map(function($flow) {
+                    return array_merge($flow->toArray(), [
+                        'approver' => $flow->approver ? [
+                            'id' => $flow->approver->id,
+                            'nama_lengkap' => $flow->approver->nama_lengkap,
+                            'jabatan' => $flow->approver->jabatan ? [
+                                'id' => $flow->approver->jabatan->id,
+                                'nama_jabatan' => $flow->approver->jabatan->nama_jabatan,
+                            ] : null,
+                        ] : null,
+                    ]);
+                })->toArray();
+            }
             
             return response()->json([
                 'success' => true,
-                'purchaseRequisition' => $prArray,
+                'purchaseRequisition' => $prData,
                 'modeSpecificData' => $modeSpecificData,
                 'budgetInfo' => $budgetInfo,
             ]);
