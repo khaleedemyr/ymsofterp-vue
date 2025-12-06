@@ -873,6 +873,17 @@ class FoodFloorOrderController extends Controller
                 $warehouseName = $order->warehouseOutlet ? $order->warehouseOutlet->name : 'Unknown';
                 $approvalLevelDisplay = $this->getApprovalLevelDisplay($warehouseName);
                 
+                // Get approver name based on warehouse outlet
+                $approverName = null;
+                if ($isSuperadmin) {
+                    // For superadmin, get approver based on warehouse outlet
+                    $approver = $this->getApproverByWarehouse($warehouseName);
+                    $approverName = $approver ? $approver->nama_lengkap : $approvalLevelDisplay;
+                } else {
+                    // For regular users, they are the approver
+                    $approverName = $user->nama_lengkap;
+                }
+                
                 $pendingApprovals[] = [
                     'id' => $order->id,
                     'order_number' => $order->order_number,
@@ -885,6 +896,7 @@ class FoodFloorOrderController extends Controller
                     'description' => $order->description,
                     'approval_level' => 'ro_khusus',
                     'approval_level_display' => $approvalLevelDisplay,
+                    'approver_name' => $approverName,
                     'created_at' => $order->created_at
                 ];
             }
@@ -919,6 +931,30 @@ class FoodFloorOrderController extends Controller
             default:
                 return 'Manager';
         }
+    }
+    
+    // Helper untuk mendapatkan approver berdasarkan warehouse outlet
+    private function getApproverByWarehouse($warehouseName)
+    {
+        $jabatanIds = [];
+        switch ($warehouseName) {
+            case 'Kitchen':
+                $jabatanIds = [163, 174, 180, 345, 346, 347, 348, 349];
+                break;
+            case 'Bar':
+                $jabatanIds = [175, 182, 323];
+                break;
+            case 'Service':
+                $jabatanIds = [176, 322, 164, 321];
+                break;
+            default:
+                return null;
+        }
+        
+        // Get first active user with matching jabatan
+        return \App\Models\User::whereIn('id_jabatan', $jabatanIds)
+            ->where('status', 'A')
+            ->first();
     }
 
     // API: Get RO Khusus detail for approval modal

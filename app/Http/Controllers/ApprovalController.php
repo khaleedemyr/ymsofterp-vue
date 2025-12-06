@@ -18,17 +18,27 @@ class ApprovalController extends Controller
      */
     public function getPendingApprovals(Request $request)
     {
+        $user = auth()->user();
         $userId = auth()->id();
         $limit = $request->get('limit', 10);
         
+        // Superadmin: user dengan id_role = '5af56935b011a' bisa melihat semua approval
+        $isSuperadmin = $user && $user->id_role === '5af56935b011a';
+        
         // Get pending approvals from approval flows (new flow - sequential approval)
-        $approvalFlows = DB::table('absent_request_approval_flows as arf')
+        $approvalFlowsQuery = DB::table('absent_request_approval_flows as arf')
             ->join('absent_requests as ar', 'arf.absent_request_id', '=', 'ar.id')
             ->join('approval_requests as apr', 'ar.approval_request_id', '=', 'apr.id')
             ->join('users', 'apr.user_id', '=', 'users.id')
             ->join('leave_types', 'apr.leave_type_id', '=', 'leave_types.id')
-            ->where('arf.approver_id', $userId)
-            ->where('arf.status', 'PENDING')
+            ->where('arf.status', 'PENDING');
+        
+        // Superadmin can see all, regular users only their own
+        if (!$isSuperadmin) {
+            $approvalFlowsQuery->where('arf.approver_id', $userId);
+        }
+        
+        $approvalFlows = $approvalFlowsQuery
             ->select([
                 'apr.id',
                 'apr.user_id',
@@ -45,8 +55,12 @@ class ApprovalController extends Controller
             ->orderBy('apr.created_at', 'desc')
             ->get();
         
-        // Filter: Only show if current user is the next approver in line
-        $filteredApprovals = $approvalFlows->filter(function($approval) {
+        // Filter: Only show if current user is the next approver in line (skip for superadmin)
+        $filteredApprovals = $approvalFlows->filter(function($approval) use ($isSuperadmin) {
+            if ($isSuperadmin) {
+                return true; // Superadmin can see all
+            }
+            
             // Get all pending flows for this absent request
             $pendingFlows = DB::table('absent_request_approval_flows')
                 ->where('absent_request_id', $approval->absent_request_id)
@@ -61,7 +75,7 @@ class ApprovalController extends Controller
         });
         
         // Also get old flow approvals (backward compatibility)
-        $oldApprovals = DB::table('approval_requests')
+        $oldApprovalsQuery = DB::table('approval_requests')
             ->join('users', 'approval_requests.user_id', '=', 'users.id')
             ->join('leave_types', 'approval_requests.leave_type_id', '=', 'leave_types.id')
             ->leftJoin('absent_requests', 'approval_requests.id', '=', 'absent_requests.approval_request_id')
@@ -69,9 +83,15 @@ class ApprovalController extends Controller
                 $join->on('absent_requests.id', '=', 'absent_request_approval_flows.absent_request_id')
                      ->where('absent_request_approval_flows.approver_id', '=', $userId);
             })
-            ->where('approval_requests.approver_id', $userId)
             ->where('approval_requests.status', 'pending')
-            ->whereNull('absent_request_approval_flows.id') // Only old flow (no approval flows)
+            ->whereNull('absent_request_approval_flows.id'); // Only old flow (no approval flows)
+        
+        // Superadmin can see all, regular users only their own
+        if (!$isSuperadmin) {
+            $oldApprovalsQuery->where('approval_requests.approver_id', $userId);
+        }
+        
+        $oldApprovals = $oldApprovalsQuery
             ->select([
                 'approval_requests.id',
                 'approval_requests.user_id',
@@ -90,6 +110,28 @@ class ApprovalController extends Controller
         $allApprovals = $filteredApprovals->merge($oldApprovals)->take($limit);
         
         $formattedApprovals = $allApprovals->map(function($approval) {
+            // Get approver name - for new flow, get from approval flows; for old flow, get from approver_id
+            $approverName = null;
+            if (isset($approval->absent_request_id)) {
+                // New flow: get next pending approver
+                $nextFlow = DB::table('absent_request_approval_flows')
+                    ->join('users', 'absent_request_approval_flows.approver_id', '=', 'users.id')
+                    ->where('absent_request_id', $approval->absent_request_id)
+                    ->where('status', 'PENDING')
+                    ->orderBy('approval_level')
+                    ->select('users.nama_lengkap')
+                    ->first();
+                $approverName = $nextFlow ? $nextFlow->nama_lengkap : null;
+            } else {
+                // Old flow: get approver from approval_requests
+                $approver = DB::table('approval_requests')
+                    ->join('users', 'approval_requests.approver_id', '=', 'users.id')
+                    ->where('approval_requests.id', $approval->id)
+                    ->select('users.nama_lengkap')
+                    ->first();
+                $approverName = $approver ? $approver->nama_lengkap : null;
+            }
+            
             return (object)[
                 'id' => $approval->id,
                 'user_id' => $approval->user_id,
@@ -106,7 +148,8 @@ class ApprovalController extends Controller
                     'name' => $approval->leave_type_name
                 ],
                 'duration_text' => $this->calculateDuration($approval->date_from, $approval->date_to),
-                'approval_level' => $approval->approval_level ?? null
+                'approval_level' => $approval->approval_level ?? null,
+                'approver_name' => $approverName
             ];
         });
             
@@ -641,8 +684,24 @@ class ApprovalController extends Controller
         $userId = $user->id;
         $limit = $request->get('limit', 10);
         
-        // Only HRD users (division_id = 6) can access this
-        if ($user->division_id != 6) {
+        // Superadmin: user dengan id_role = '5af56935b011a' bisa melihat semua approval
+        $isSuperadmin = $user->id_role === '5af56935b011a';
+        
+        \Log::info('HRD Approvals check', [
+            'user_id' => $userId,
+            'id_role' => $user->id_role,
+            'division_id' => $user->division_id,
+            'isSuperadmin' => $isSuperadmin
+        ]);
+        
+        // Only HRD users (division_id = 6) or superadmin can access this
+        if (!$isSuperadmin && $user->division_id != 6) {
+            \Log::warning('HRD Approvals: Access denied', [
+                'user_id' => $userId,
+                'id_role' => $user->id_role,
+                'division_id' => $user->division_id,
+                'isSuperadmin' => $isSuperadmin
+            ]);
             return response()->json([
                 'success' => false,
                 'message' => 'Unauthorized access'
@@ -672,6 +731,15 @@ class ApprovalController extends Controller
             
         // Format the data to match the expected structure
         $formattedApprovals = $approvals->map(function($approval) {
+            // Get approver name - for HRD approvals, get any HRD user
+            $approverName = null;
+            $hrdUser = DB::table('users')
+                ->where('division_id', 6)
+                ->where('status', 'A')
+                ->select('nama_lengkap')
+                ->first();
+            $approverName = $hrdUser ? $hrdUser->nama_lengkap : 'HRD';
+            
             return (object)[
                 'id' => $approval->id,
                 'user_id' => $approval->user_id,
@@ -687,7 +755,8 @@ class ApprovalController extends Controller
                     'id' => $approval->leave_type_id,
                     'name' => $approval->leave_type_name
                 ],
-                'duration_text' => $this->calculateDuration($approval->date_from, $approval->date_to)
+                'duration_text' => $this->calculateDuration($approval->date_from, $approval->date_to),
+                'approver_name' => $approverName
             ];
         });
             

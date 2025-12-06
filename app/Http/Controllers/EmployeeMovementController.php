@@ -514,17 +514,32 @@ class EmployeeMovementController extends Controller
     {
         $user = Auth::user();
 
+        // Superadmin: user dengan id_role = '5af56935b011a' bisa melihat semua approval
+        $isSuperadmin = $user && $user->id_role === '5af56935b011a';
+        
         // First, get movements with pending approval flows (new system)
-        $movementsWithApprovalFlows = EmployeeMovement::whereHas('approvalFlows', function($q) use ($user) {
-            $q->where('approver_id', $user->id)
-              ->where('status', 'PENDING');
-        })
-        ->where('status', 'pending')
-        ->with(['approvalFlows' => function($q) {
-            $q->orderBy('approval_level');
-        }, 'approvalFlows.approver.jabatan'])
-        ->get()
-        ->filter(function($movement) use ($user) {
+        $queryWithFlows = EmployeeMovement::where('status', 'pending')
+            ->whereHas('approvalFlows', function($q) {
+                $q->where('status', 'PENDING');
+            })
+            ->with(['approvalFlows' => function($q) {
+                $q->orderBy('approval_level');
+            }, 'approvalFlows.approver.jabatan']);
+        
+        if (!$isSuperadmin) {
+            $queryWithFlows->whereHas('approvalFlows', function($q) use ($user) {
+                $q->where('approver_id', $user->id)
+                  ->where('status', 'PENDING');
+            });
+        }
+        
+        $movementsWithApprovalFlows = $queryWithFlows->get()
+        ->filter(function($movement) use ($user, $isSuperadmin) {
+            // For superadmin, show all pending movements
+            if ($isSuperadmin) {
+                return true;
+            }
+            
             // Check if all previous flows are approved
             $pendingFlow = $movement->approvalFlows->firstWhere('approver_id', $user->id);
             if (!$pendingFlow || $pendingFlow->status !== 'PENDING') {
@@ -535,6 +550,17 @@ class EmployeeMovementController extends Controller
             return $previousFlows->every(function($flow) {
                 return $flow->status === 'APPROVED';
             });
+        })
+        ->map(function($movement) {
+            // Get approver name from next pending approval flow
+            $pendingFlows = $movement->approvalFlows->where('status', 'PENDING')->sortBy('approval_level');
+            if ($pendingFlows->isNotEmpty()) {
+                $nextFlow = $pendingFlows->first();
+                $movement->approver_name = $nextFlow->approver ? $nextFlow->approver->nama_lengkap : null;
+            } else {
+                $movement->approver_name = null;
+            }
+            return $movement;
         });
 
         // Then, get movements with old approval system (backward compatibility)
@@ -552,67 +578,113 @@ class EmployeeMovementController extends Controller
                 'created_at', 'updated_at'
             ])
             ->whereDoesntHave('approvalFlows') // Only get movements without approval flows
-            ->where(function ($q) use ($user) {
-                // HOD pending
-                $q->orWhere(function ($q2) use ($user) {
-                    $q2->where('hod_approver_id', $user->id)
-                        ->where(function ($s) {
+            ->where(function ($q) use ($user, $isSuperadmin) {
+                if ($isSuperadmin) {
+                    // Superadmin can see all pending movements (any pending approval)
+                    $q->where(function($q2) {
+                        $q2->where(function($s) {
                             $s->whereNull('hod_approval')
                               ->orWhere('hod_approval', '')
                               ->orWhereRaw("LOWER(hod_approval) = 'pending'");
                         })
-                        ->whereRaw("LOWER(status) = 'pending'")
-                        ->whereRaw("LOWER(COALESCE(gm_approval, '')) <> 'rejected'")
-                        ->whereRaw("LOWER(COALESCE(gm_hr_approval, '')) <> 'rejected'")
-                        ->whereRaw("LOWER(COALESCE(bod_approval, '')) <> 'rejected'");
-                });
-                // GM pending (after HOD approved)
-                $q->orWhere(function ($q2) use ($user) {
-                    $q2->where('gm_approver_id', $user->id)
-                        ->where(function ($s) {
+                        ->orWhere(function($s) {
                             $s->whereNull('gm_approval')
                               ->orWhere('gm_approval', '')
                               ->orWhereRaw("LOWER(gm_approval) = 'pending'");
                         })
-                        ->whereRaw("LOWER(COALESCE(hod_approval, '')) = 'approved'")
-                        ->whereRaw("LOWER(status) = 'pending'")
-                        ->whereRaw("LOWER(COALESCE(hod_approval, '')) <> 'rejected'")
-                        ->whereRaw("LOWER(COALESCE(gm_hr_approval, '')) <> 'rejected'")
-                        ->whereRaw("LOWER(COALESCE(bod_approval, '')) <> 'rejected'");
-                });
-                // GM HR pending (after GM approved)
-                $q->orWhere(function ($q2) use ($user) {
-                    $q2->where('gm_hr_approver_id', $user->id)
-                        ->where(function ($s) {
+                        ->orWhere(function($s) {
                             $s->whereNull('gm_hr_approval')
                               ->orWhere('gm_hr_approval', '')
                               ->orWhereRaw("LOWER(gm_hr_approval) = 'pending'");
                         })
-                        ->whereRaw("LOWER(COALESCE(gm_approval, '')) = 'approved'")
-                        ->whereRaw("LOWER(status) = 'pending'")
-                        ->whereRaw("LOWER(COALESCE(hod_approval, '')) <> 'rejected'")
-                        ->whereRaw("LOWER(COALESCE(gm_approval, '')) <> 'rejected'")
-                        ->whereRaw("LOWER(COALESCE(bod_approval, '')) <> 'rejected'");
-                });
-                // BOD pending (after GM HR approved)
-                $q->orWhere(function ($q2) use ($user) {
-                    $q2->where('bod_approver_id', $user->id)
-                        ->where(function ($s) {
+                        ->orWhere(function($s) {
                             $s->whereNull('bod_approval')
                               ->orWhere('bod_approval', '')
                               ->orWhereRaw("LOWER(bod_approval) = 'pending'");
-                        })
-                        ->whereRaw("LOWER(COALESCE(gm_hr_approval, '')) = 'approved'")
-                        ->whereRaw("LOWER(status) = 'pending'")
-                        ->whereRaw("LOWER(COALESCE(hod_approval, '')) <> 'rejected'")
-                        ->whereRaw("LOWER(COALESCE(gm_approval, '')) <> 'rejected'")
-                        ->whereRaw("LOWER(COALESCE(gm_hr_approval, '')) <> 'rejected'");
-                });
+                        });
+                    })
+                    ->whereRaw("LOWER(status) = 'pending'");
+                } else {
+                    // HOD pending
+                    $q->orWhere(function ($q2) use ($user) {
+                        $q2->where('hod_approver_id', $user->id)
+                            ->where(function ($s) {
+                                $s->whereNull('hod_approval')
+                                  ->orWhere('hod_approval', '')
+                                  ->orWhereRaw("LOWER(hod_approval) = 'pending'");
+                            })
+                            ->whereRaw("LOWER(status) = 'pending'")
+                            ->whereRaw("LOWER(COALESCE(gm_approval, '')) <> 'rejected'")
+                            ->whereRaw("LOWER(COALESCE(gm_hr_approval, '')) <> 'rejected'")
+                            ->whereRaw("LOWER(COALESCE(bod_approval, '')) <> 'rejected'");
+                    });
+                    // GM pending (after HOD approved)
+                    $q->orWhere(function ($q2) use ($user) {
+                        $q2->where('gm_approver_id', $user->id)
+                            ->where(function ($s) {
+                                $s->whereNull('gm_approval')
+                                  ->orWhere('gm_approval', '')
+                                  ->orWhereRaw("LOWER(gm_approval) = 'pending'");
+                            })
+                            ->whereRaw("LOWER(COALESCE(hod_approval, '')) = 'approved'")
+                            ->whereRaw("LOWER(status) = 'pending'")
+                            ->whereRaw("LOWER(COALESCE(hod_approval, '')) <> 'rejected'")
+                            ->whereRaw("LOWER(COALESCE(gm_hr_approval, '')) <> 'rejected'")
+                            ->whereRaw("LOWER(COALESCE(bod_approval, '')) <> 'rejected'");
+                    });
+                    // GM HR pending (after GM approved)
+                    $q->orWhere(function ($q2) use ($user) {
+                        $q2->where('gm_hr_approver_id', $user->id)
+                            ->where(function ($s) {
+                                $s->whereNull('gm_hr_approval')
+                                  ->orWhere('gm_hr_approval', '')
+                                  ->orWhereRaw("LOWER(gm_hr_approval) = 'pending'");
+                            })
+                            ->whereRaw("LOWER(COALESCE(gm_approval, '')) = 'approved'")
+                            ->whereRaw("LOWER(status) = 'pending'")
+                            ->whereRaw("LOWER(COALESCE(hod_approval, '')) <> 'rejected'")
+                            ->whereRaw("LOWER(COALESCE(gm_approval, '')) <> 'rejected'")
+                            ->whereRaw("LOWER(COALESCE(bod_approval, '')) <> 'rejected'");
+                    });
+                    // BOD pending (after GM HR approved)
+                    $q->orWhere(function ($q2) use ($user) {
+                        $q2->where('bod_approver_id', $user->id)
+                            ->where(function ($s) {
+                                $s->whereNull('bod_approval')
+                                  ->orWhere('bod_approval', '')
+                                  ->orWhereRaw("LOWER(bod_approval) = 'pending'");
+                            })
+                            ->whereRaw("LOWER(COALESCE(gm_hr_approval, '')) = 'approved'")
+                            ->whereRaw("LOWER(status) = 'pending'")
+                            ->whereRaw("LOWER(COALESCE(hod_approval, '')) <> 'rejected'")
+                            ->whereRaw("LOWER(COALESCE(gm_approval, '')) <> 'rejected'")
+                            ->whereRaw("LOWER(COALESCE(gm_hr_approval, '')) <> 'rejected'");
+                    });
+                }
             })
             ->orderByDesc('created_at');
 
         $limit = (int) $request->input('limit', 100);
-        $movementsOld = $query->limit($limit)->get();
+        $movementsOld = $query->limit($limit)->get()
+            ->map(function($movement) use ($isSuperadmin, $user) {
+                // Get approver name from old approval system
+                $approverName = null;
+                if (!$movement->hod_approval || strtolower($movement->hod_approval) === 'pending') {
+                    $hodApprover = \App\Models\User::find($movement->hod_approver_id);
+                    $approverName = $hodApprover ? $hodApprover->nama_lengkap : null;
+                } elseif (!$movement->gm_approval || strtolower($movement->gm_approval) === 'pending') {
+                    $gmApprover = \App\Models\User::find($movement->gm_approver_id);
+                    $approverName = $gmApprover ? $gmApprover->nama_lengkap : null;
+                } elseif (!$movement->gm_hr_approval || strtolower($movement->gm_hr_approval) === 'pending') {
+                    $gmHrApprover = \App\Models\User::find($movement->gm_hr_approver_id);
+                    $approverName = $gmHrApprover ? $gmHrApprover->nama_lengkap : null;
+                } elseif (!$movement->bod_approval || strtolower($movement->bod_approval) === 'pending') {
+                    $bodApprover = \App\Models\User::find($movement->bod_approver_id);
+                    $approverName = $bodApprover ? $bodApprover->nama_lengkap : null;
+                }
+                $movement->approver_name = $approverName;
+                return $movement;
+            });
 
         // Merge and limit results
         $allMovements = $movementsWithApprovalFlows->merge($movementsOld)->take($limit);

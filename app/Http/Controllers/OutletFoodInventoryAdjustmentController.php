@@ -512,15 +512,25 @@ class OutletFoodInventoryAdjustmentController extends Controller
             ], 401);
         }
         
+        // Superadmin: user dengan id_role = '5af56935b011a' bisa melihat semua approval
+        $isSuperadmin = $user->id_role === '5af56935b011a';
+        
         // Get all adjustments where user is an approver
-        $allPendingApprovals = DB::table('outlet_food_inventory_adjustment_approval_flows as af')
+        $query = DB::table('outlet_food_inventory_adjustment_approval_flows as af')
             ->join('outlet_food_inventory_adjustments as adj', 'af.adjustment_id', '=', 'adj.id')
             ->leftJoin('tbl_data_outlet as o', 'adj.id_outlet', '=', 'o.id_outlet')
             ->leftJoin('warehouse_outlets as wo', 'adj.warehouse_outlet_id', '=', 'wo.id')
             ->leftJoin('users as creator', 'adj.created_by', '=', 'creator.id')
-            ->where('af.approver_id', $user->id)
             ->where('af.status', 'PENDING')
-            ->where('adj.status', 'waiting_approval')
+            ->where('adj.status', 'waiting_approval');
+        
+        // Superadmin can see all pending approvals, regular users only their own
+        if (!$isSuperadmin) {
+            $query->where('af.approver_id', $user->id);
+        }
+        
+        $allPendingApprovals = $query
+            ->leftJoin('users as approver', 'af.approver_id', '=', 'approver.id')
             ->select(
                 'adj.id',
                 'adj.number',
@@ -532,26 +542,46 @@ class OutletFoodInventoryAdjustmentController extends Controller
                 'o.nama_outlet',
                 'wo.name as warehouse_outlet_name',
                 'creator.nama_lengkap as creator_name',
-                'af.approval_level'
+                'af.approval_level',
+                'approver.nama_lengkap as approver_name'
             )
             ->orderBy('adj.created_at', 'desc')
-            ->get();
+            ->get()
+            ->map(function($adj) {
+                // If approver_name is null, get it from the next pending approval flow
+                if (!$adj->approver_name) {
+                    $nextFlow = DB::table('outlet_food_inventory_adjustment_approval_flows as af')
+                        ->leftJoin('users as u', 'af.approver_id', '=', 'u.id')
+                        ->where('af.adjustment_id', $adj->id)
+                        ->where('af.status', 'PENDING')
+                        ->orderBy('af.approval_level', 'asc')
+                        ->select('u.nama_lengkap as approver_name')
+                        ->first();
+                    $adj->approver_name = $nextFlow->approver_name ?? null;
+                }
+                return $adj;
+            });
         
         // Filter to only show adjustments where current user is next in line
-        $filteredApprovals = $allPendingApprovals->filter(function($adj) use ($user) {
-            // Get all pending approval flows for this adjustment
-            $pendingFlows = DB::table('outlet_food_inventory_adjustment_approval_flows')
-                ->where('adjustment_id', $adj->id)
-                ->where('status', 'PENDING')
-                ->orderBy('approval_level', 'asc')
-                ->get();
-            
-            if ($pendingFlows->isEmpty()) return false;
-            
-            // Get the next approver (lowest approval level)
-            $nextApprover = $pendingFlows->first();
-            return $nextApprover->approver_id === $user->id;
-        });
+        // Skip this filter for superadmin - they can see all pending approvals
+        if ($isSuperadmin) {
+            $filteredApprovals = $allPendingApprovals;
+        } else {
+            $filteredApprovals = $allPendingApprovals->filter(function($adj) use ($user) {
+                // Get all pending approval flows for this adjustment
+                $pendingFlows = DB::table('outlet_food_inventory_adjustment_approval_flows')
+                    ->where('adjustment_id', $adj->id)
+                    ->where('status', 'PENDING')
+                    ->orderBy('approval_level', 'asc')
+                    ->get();
+                
+                if ($pendingFlows->isEmpty()) return false;
+                
+                // Get the next approver (lowest approval level)
+                $nextApprover = $pendingFlows->first();
+                return $nextApprover->approver_id === $user->id;
+            });
+        }
         
         return response()->json([
             'success' => true,

@@ -753,16 +753,26 @@ class CoachingController extends Controller
     public function getPendingApprovals(Request $request)
     {
         try {
+            $currentUser = auth()->user();
+            $isSuperadmin = $currentUser && $currentUser->id_role === '5af56935b011a';
             $userId = $request->get('user_id', auth()->id());
             
             // Debug logging
             \Log::info('Getting pending approvals for user: ' . $userId);
             
-            $approvers = CoachingApprover::where('approver_id', $userId)
-                ->where('status', 'pending')
-                ->with(['coaching.employee', 'coaching.supervisor'])
-                ->orderBy('created_at', 'desc')
-                ->get();
+            // Superadmin can see all pending approvals
+            if ($isSuperadmin) {
+                $approvers = CoachingApprover::where('status', 'pending')
+                    ->with(['coaching.employee', 'coaching.supervisor'])
+                    ->orderBy('created_at', 'desc')
+                    ->get();
+            } else {
+                $approvers = CoachingApprover::where('approver_id', $userId)
+                    ->where('status', 'pending')
+                    ->with(['coaching.employee', 'coaching.supervisor'])
+                    ->orderBy('created_at', 'desc')
+                    ->get();
+            }
                 
             \Log::info('Found ' . $approvers->count() . ' pending approvers');
             
@@ -782,6 +792,10 @@ class CoachingController extends Controller
                 }
                 return true;
             })->map(function($approver) {
+                // Get approver name
+                $approverUser = \App\Models\User::find($approver->approver_id);
+                $approverName = $approverUser ? $approverUser->nama_lengkap : 'N/A';
+                
                 return [
                     'id' => $approver->id,
                     'coaching_id' => $approver->coaching_id,
@@ -790,6 +804,7 @@ class CoachingController extends Controller
                     'violation_date' => $approver->coaching->violation_date,
                     'violation_details' => $approver->coaching->violation_details,
                     'supervisor_name' => $approver->coaching->supervisor->nama_lengkap ?? 'N/A',
+                    'approver_name' => $approverName,
                     'created_at' => $approver->created_at,
                     'coaching' => $approver->coaching
                 ];

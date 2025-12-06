@@ -104,7 +104,7 @@
                                 </div>
                             </div>
                             <div class="text-xs text-red-500 font-medium">
-                                <i class="fa fa-user-check mr-1"></i>Level {{ resignation.approval_level || 1 }}
+                                <i class="fa fa-user-check mr-1"></i>{{ resignation.approver_name || `Level ${resignation.approval_level || 1}` }}
                             </div>
                         </div>
                     </div>
@@ -384,7 +384,7 @@
                                 </div>
                             </div>
                             <div class="text-xs text-red-500 font-medium">
-                                <i class="fa fa-user-check mr-1"></i>Level {{ resignation.approval_level || 1 }}
+                                <i class="fa fa-user-check mr-1"></i>{{ resignation.approver_name || `Level ${resignation.approval_level || 1}` }}
                             </div>
                         </div>
                     </div>

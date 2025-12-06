@@ -102,7 +102,7 @@
                                 </div>
                             </div>
                             <div class="text-xs text-teal-500 font-medium">
-                                <i class="fa fa-clipboard-list mr-1"></i>{{ ro.approval_level_display }}
+                                <i class="fa fa-user-check mr-1"></i>{{ ro.approver_name || ro.approval_level_display }}
                             </div>
                         </div>
                     </div>
@@ -356,7 +356,7 @@
                                 </div>
                             </div>
                             <div class="text-xs text-teal-500 font-medium">
-                                <i class="fa fa-clipboard-list mr-1"></i>{{ ro.approval_level_display }}
+                                <i class="fa fa-user-check mr-1"></i>{{ ro.approver_name || ro.approval_level_display }}
                             </div>
                         </div>
                     </div>

@@ -561,8 +561,24 @@ class ScheduleAttendanceCorrectionController extends Controller
             ], 401);
         }
         
-        // Only HRD users (division_id = 6) can see pending approvals
-        if ($user->division_id != 6) {
+        // Superadmin: user dengan id_role = '5af56935b011a' bisa melihat semua approval
+        $isSuperadmin = $user->id_role === '5af56935b011a';
+        
+        \Log::info('Correction Approvals check', [
+            'user_id' => $user->id,
+            'id_role' => $user->id_role,
+            'division_id' => $user->division_id,
+            'isSuperadmin' => $isSuperadmin
+        ]);
+        
+        // Only HRD users (division_id = 6) or superadmin can see pending approvals
+        if (!$isSuperadmin && $user->division_id != 6) {
+            \Log::warning('Correction Approvals: Access denied', [
+                'user_id' => $user->id,
+                'id_role' => $user->id_role,
+                'division_id' => $user->division_id,
+                'isSuperadmin' => $isSuperadmin
+            ]);
             return response()->json([
                 'success' => false,
                 'message' => 'Unauthorized access'
@@ -581,7 +597,17 @@ class ScheduleAttendanceCorrectionController extends Controller
                 'tbl_data_outlet.nama_outlet'
             ])
             ->orderBy('saca.created_at', 'desc')
-            ->get();
+            ->get()
+            ->map(function($approval) {
+                // Get approver name - for corrections, get any HRD user
+                $hrdUser = DB::table('users')
+                    ->where('division_id', 6)
+                    ->where('status', 'A')
+                    ->select('nama_lengkap')
+                    ->first();
+                $approval->approver_name = $hrdUser ? $hrdUser->nama_lengkap : 'HRD';
+                return $approval;
+            });
             
         return response()->json([
             'success' => true,

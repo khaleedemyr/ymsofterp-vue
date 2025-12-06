@@ -415,23 +415,50 @@ class EmployeeResignationController extends Controller
             ->pluck('employee_resignation_id')
             ->unique();
 
+        $isSuperadmin = $user && $user->id_role === '5af56935b011a';
+        
+        // Superadmin can see all pending resignations
+        if ($isSuperadmin) {
+            $pendingResignationIds = EmployeeResignationApprovalFlow::where('status', 'PENDING')
+                ->pluck('employee_resignation_id')
+                ->unique();
+        }
+        
         $resignations = EmployeeResignation::with([
             'outlet',
             'employee',
             'creator',
-            'approvalFlows' => function($query) use ($user) {
-                $query->where('approver_id', $user->id)
-                      ->where('status', 'PENDING')
-                      ->orderBy('approval_level');
-            }
+            'approvalFlows' => function($query) use ($user, $isSuperadmin) {
+                if ($isSuperadmin) {
+                    $query->where('status', 'PENDING')
+                          ->orderBy('approval_level');
+                } else {
+                    $query->where('approver_id', $user->id)
+                          ->where('status', 'PENDING')
+                          ->orderBy('approval_level');
+                }
+            },
+            'approvalFlows.approver'
         ])
         ->whereIn('id', $pendingResignationIds)
         ->where('status', 'submitted')
         ->orderBy('created_at', 'desc')
         ->limit($limit)
         ->get()
-        ->map(function($resignation) {
-            $currentFlow = $resignation->approvalFlows->first();
+        ->map(function($resignation) use ($isSuperadmin, $user) {
+            // Get next pending approval flow
+            $pendingFlows = $resignation->approvalFlows->where('status', 'PENDING')->sortBy('approval_level');
+            $currentFlow = $pendingFlows->first();
+            
+            // Get approver name
+            $approverName = null;
+            if ($currentFlow && $currentFlow->approver) {
+                $approverName = $currentFlow->approver->nama_lengkap;
+            } elseif (!$isSuperadmin) {
+                // For regular users, they are the approver
+                $approverName = $user->nama_lengkap;
+            }
+            
             return [
                 'id' => $resignation->id,
                 'resignation_number' => $resignation->resignation_number,
@@ -454,6 +481,7 @@ class EmployeeResignationController extends Controller
                 ] : null,
                 'created_at' => $resignation->created_at,
                 'approval_level' => $currentFlow ? $currentFlow->approval_level : null,
+                'approver_name' => $approverName,
             ];
         });
 

@@ -2437,25 +2437,55 @@ class OutletInternalUseWasteController extends Controller
             ], 401);
         }
         
+        // Superadmin: user dengan id_role = '5af56935b011a' bisa melihat semua approval
+        $isSuperadmin = $currentUser->id_role === '5af56935b011a';
+        
         // Get all headers that have pending approval for current user
         // Only show if all lower level approvals are done
-        $pendingHeaders = DB::table('outlet_internal_use_waste_headers as h')
+        $query = DB::table('outlet_internal_use_waste_headers as h')
             ->join('outlet_internal_use_waste_approval_flows as af', 'h.id', '=', 'af.header_id')
             ->join('tbl_data_outlet as o', 'h.outlet_id', '=', 'o.id_outlet')
             ->join('users as creator', 'h.created_by', '=', 'creator.id')
             ->leftJoin('warehouse_outlets as wo', 'h.warehouse_outlet_id', '=', 'wo.id')
-            ->where('af.approver_id', $currentUser->id)
             ->where('af.status', 'PENDING')
-            ->where('h.status', 'SUBMITTED')
+            ->where('h.status', 'SUBMITTED');
+        
+        // Superadmin can see all pending approvals, regular users only their own
+        if (!$isSuperadmin) {
+            $query->where('af.approver_id', $currentUser->id);
+        }
+        
+        $pendingHeaders = $query
+            ->leftJoin('users as approver', 'af.approver_id', '=', 'approver.id')
             ->select(
                 'h.*',
                 'o.nama_outlet as outlet_name',
                 'wo.name as warehouse_outlet_name',
                 'creator.nama_lengkap as creator_name',
-                'af.approval_level'
+                'af.approval_level',
+                'approver.nama_lengkap as approver_name'
             )
             ->get()
-            ->filter(function($header) use ($currentUser) {
+            ->map(function($header) {
+                // If approver_name is null, get it from the next pending approval flow
+                if (!$header->approver_name) {
+                    $nextFlow = DB::table('outlet_internal_use_waste_approval_flows as af')
+                        ->leftJoin('users as u', 'af.approver_id', '=', 'u.id')
+                        ->where('af.header_id', $header->id)
+                        ->where('af.status', 'PENDING')
+                        ->orderBy('af.approval_level', 'asc')
+                        ->select('u.nama_lengkap as approver_name')
+                        ->first();
+                    $header->approver_name = $nextFlow->approver_name ?? null;
+                }
+                return $header;
+            })
+            ->filter(function($header) use ($currentUser, $isSuperadmin) {
+                // Superadmin can see all pending approvals
+                if ($isSuperadmin) {
+                    return true;
+                }
+                
                 // Check if all lower level approvals are done
                 $lowerLevelsPending = DB::table('outlet_internal_use_waste_approval_flows')
                     ->where('header_id', $header->id)

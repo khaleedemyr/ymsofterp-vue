@@ -1368,6 +1368,22 @@ class ContraBonController extends Controller
                     // Get source_types array (same logic as index method)
                     $sourceTypes = $this->getSourceTypes($cb);
                     
+                    // Get approver name - Finance Manager
+                    $approverName = null;
+                    if ($isSuperadmin) {
+                        // For superadmin, get the next approver (Finance Manager if not approved, GM Finance if Finance Manager approved)
+                        if (!$cb->finance_manager_approved_at) {
+                            $financeManager = \App\Models\User::where('id_jabatan', 160)->where('status', 'A')->first();
+                            $approverName = $financeManager ? $financeManager->nama_lengkap : 'Finance Manager';
+                        } elseif (!$cb->gm_finance_approved_at) {
+                            $gmFinance = \App\Models\User::whereIn('id_jabatan', [152, 381])->where('status', 'A')->first();
+                            $approverName = $gmFinance ? $gmFinance->nama_lengkap : 'GM Finance';
+                        }
+                    } else {
+                        // For Finance Manager, they are the approver
+                        $approverName = $user->nama_lengkap;
+                    }
+                    
                     $pendingApprovals[] = [
                         'id' => $cb->id,
                         'number' => $cb->number,
@@ -1379,7 +1395,52 @@ class ContraBonController extends Controller
                         'source_types' => $sourceTypes,
                         'creator' => $cb->creator ? ['nama_lengkap' => $cb->creator->nama_lengkap] : null,
                         'approval_level' => 'finance_manager',
-                        'approval_level_display' => 'Finance Manager'
+                        'approval_level_display' => 'Finance Manager',
+                        'approver_name' => $approverName
+                    ];
+                }
+            }
+            
+            // GM Finance approvals (id_jabatan == 152 atau 381)
+            if ((in_array($user->id_jabatan, [152, 381]) && $user->status == 'A') || $isSuperadmin) {
+                $gmFinanceApprovals = (clone $query)
+                    ->whereNotNull('finance_manager_approved_at')
+                    ->whereNull('gm_finance_approved_at')
+                    ->get();
+                
+                foreach ($gmFinanceApprovals as $cb) {
+                    // Ensure warehouseRetailFood is loaded if source_type is warehouse_retail_food
+                    if (!$cb->relationLoaded('warehouseRetailFood')) {
+                        $cb->load('warehouseRetailFood');
+                    }
+                    
+                    // Get source_types array (same logic as index method)
+                    $sourceTypes = $this->getSourceTypes($cb);
+                    
+                    // Get approver name - GM Finance
+                    $approverName = null;
+                    if ($isSuperadmin) {
+                        // For superadmin, get GM Finance approver
+                        $gmFinance = \App\Models\User::whereIn('id_jabatan', [152, 381])->where('status', 'A')->first();
+                        $approverName = $gmFinance ? $gmFinance->nama_lengkap : 'GM Finance';
+                    } else {
+                        // For GM Finance, they are the approver
+                        $approverName = $user->nama_lengkap;
+                    }
+                    
+                    $pendingApprovals[] = [
+                        'id' => $cb->id,
+                        'number' => $cb->number,
+                        'date' => $cb->date,
+                        'total_amount' => $cb->total_amount,
+                        'supplier' => $cb->supplier ? ['name' => $cb->supplier->name] : null,
+                        'source_type' => $cb->source_type,
+                        'source_type_display' => $this->getSourceTypeDisplay($cb),
+                        'source_types' => $sourceTypes,
+                        'creator' => $cb->creator ? ['nama_lengkap' => $cb->creator->nama_lengkap] : null,
+                        'approval_level' => 'gm_finance',
+                        'approval_level_display' => 'GM Finance',
+                        'approver_name' => $approverName
                     ];
                 }
             }

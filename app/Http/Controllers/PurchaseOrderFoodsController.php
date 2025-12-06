@@ -1346,6 +1346,17 @@ class PurchaseOrderFoodsController extends Controller
                     ->get();
                 
                 foreach ($purchasingManagerApprovals as $po) {
+                    // Get approver name - Purchasing Manager
+                    $approverName = null;
+                    if ($isSuperadmin) {
+                        // For superadmin, get Purchasing Manager approver
+                        $purchasingManager = \App\Models\User::whereIn('id_jabatan', [167, 168])->where('status', 'A')->first();
+                        $approverName = $purchasingManager ? $purchasingManager->nama_lengkap : 'Purchasing Manager';
+                    } else {
+                        // For Purchasing Manager, they are the approver
+                        $approverName = $user->nama_lengkap;
+                    }
+                    
                     $pendingApprovals[] = [
                         'id' => $po->id,
                         'number' => $po->number,
@@ -1358,6 +1369,7 @@ class PurchaseOrderFoodsController extends Controller
                         'notes' => $po->notes,
                         'approval_level' => 'purchasing_manager',
                         'approval_level_display' => 'Purchasing Manager',
+                        'approver_name' => $approverName,
                         'created_at' => $po->created_at
                     ];
                 }
@@ -1371,6 +1383,17 @@ class PurchaseOrderFoodsController extends Controller
                     ->get();
                 
                 foreach ($gmFinanceApprovals as $po) {
+                    // Get approver name - GM Finance
+                    $approverName = null;
+                    if ($isSuperadmin) {
+                        // For superadmin, get GM Finance approver
+                        $gmFinance = \App\Models\User::whereIn('id_jabatan', [152, 381])->where('status', 'A')->first();
+                        $approverName = $gmFinance ? $gmFinance->nama_lengkap : 'GM Finance';
+                    } else {
+                        // For GM Finance, they are the approver
+                        $approverName = $user->nama_lengkap;
+                    }
+                    
                     $pendingApprovals[] = [
                         'id' => $po->id,
                         'number' => $po->number,
@@ -1383,6 +1406,7 @@ class PurchaseOrderFoodsController extends Controller
                         'notes' => $po->notes,
                         'approval_level' => 'gm_finance',
                         'approval_level_display' => 'GM Finance',
+                        'approver_name' => $approverName,
                         'created_at' => $po->created_at
                     ];
                 }

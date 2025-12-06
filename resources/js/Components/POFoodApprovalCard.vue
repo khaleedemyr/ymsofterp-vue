@@ -102,7 +102,7 @@
                                 </div>
                             </div>
                             <div class="text-xs text-indigo-500 font-medium">
-                                <i class="fa fa-file-invoice-dollar mr-1"></i>{{ po.approval_level_display }}
+                                <i class="fa fa-user-check mr-1"></i>{{ po.approver_name || po.approval_level_display }}
                             </div>
                         </div>
                     </div>
@@ -384,7 +384,7 @@
                                 </div>
                             </div>
                             <div class="text-xs text-indigo-500 font-medium">
-                                <i class="fa fa-file-invoice-dollar mr-1"></i>{{ po.approval_level_display }}
+                                <i class="fa fa-user-check mr-1"></i>{{ po.approver_name || po.approval_level_display }}
                             </div>
                         </div>
                     </div>

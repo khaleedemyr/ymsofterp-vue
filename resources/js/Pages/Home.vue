@@ -2540,56 +2540,51 @@ async function loadPendingCorrectionApprovals() {
 async function loadAllApprovals() {
     loadingAllApprovals.value = true;
     try {
-        // Load all types of approvals
-        const [approvalsResponse, hrdResponse, correctionResponse] = await Promise.all([
-            axios.get('/api/approval/pending'),
-            user.division_id === 6 ? axios.get('/api/approval/pending-hrd') : Promise.resolve({ data: { success: true, approvals: [] } }),
-            user.division_id === 6 ? axios.get('/api/schedule-attendance-correction/pending-approvals') : Promise.resolve({ data: { success: true, approvals: [] } })
-        ]);
-
+        // Superadmin (id_role = '5af56935b011a') can see all approvals
+        const isSuperadmin = user.id_role === '5af56935b011a';
+        
+        // Load all types of approvals - use the same data that's already loaded
+        // This ensures consistency with the count displayed
         const allApprovalsData = [];
         
-        // Add leave approvals
-        if (approvalsResponse.data.success) {
-            (approvalsResponse.data.approvals || []).forEach(approval => {
-                const status = (approval.status || approval.approval_status || '').toString().toLowerCase();
-                if (status && status !== 'pending' && status !== 'awaiting' && status !== 'waiting') return;
-                allApprovalsData.push({
-                    ...approval,
-                    type: 'leave',
-                    typeLabel: 'Izin/Cuti'
-                });
+        // Add leave approvals (from pendingApprovals)
+        pendingApprovals.value.forEach(approval => {
+            allApprovalsData.push({
+                ...approval,
+                type: 'leave',
+                typeLabel: 'Izin/Cuti'
             });
-        }
+        });
 
-        // Add HRD approvals
-        if (hrdResponse.data.success) {
-            (hrdResponse.data.approvals || []).forEach(approval => {
-                const status = (approval.status || approval.approval_status || '').toString().toLowerCase();
-                if (status && status !== 'pending' && status !== 'awaiting' && status !== 'waiting') return;
-                allApprovalsData.push({
-                    ...approval,
-                    type: 'hrd_leave',
-                    typeLabel: 'Izin/Cuti HRD'
-                });
+        // Add HRD approvals (from pendingHrdApprovals)
+        pendingHrdApprovals.value.forEach(approval => {
+            allApprovalsData.push({
+                ...approval,
+                type: 'hrd_leave',
+                typeLabel: 'Izin/Cuti HRD'
             });
-        }
+        });
 
-        // Add correction approvals
-        if (correctionResponse.data.success) {
-            correctionResponse.data.approvals.forEach(approval => {
-                allApprovalsData.push({
-                    ...approval,
-                    type: 'correction',
-                    typeLabel: approval.type === 'schedule' ? 'Koreksi Schedule' : 'Koreksi Attendance'
-                });
+        // Add correction approvals (from pendingCorrectionApprovals)
+        pendingCorrectionApprovals.value.forEach(approval => {
+            allApprovalsData.push({
+                ...approval,
+                type: 'correction',
+                typeLabel: approval.type === 'schedule' ? 'Koreksi Schedule' : 'Koreksi Attendance'
             });
-        }
+        });
 
         // Sort by created date
         allApprovalsData.sort((a, b) => new Date(b.created_at || b.tanggal) - new Date(a.created_at || a.tanggal));
         
         allApprovals.value = allApprovalsData;
+        
+        console.log('All approvals loaded:', {
+            leave: pendingApprovals.value.length,
+            hrd: pendingHrdApprovals.value.length,
+            correction: pendingCorrectionApprovals.value.length,
+            total: allApprovalsData.length
+        });
     } catch (error) {
         console.error('Error loading all approvals:', error);
     } finally {
@@ -4861,7 +4856,7 @@ watch(locale, () => {
                                         </div>
                                     </div>
                                     <div class="text-xs text-blue-500 font-medium">
-                                        Klik untuk detail
+                                        <i class="fa fa-user-check mr-1"></i>{{ approval.approver_name || 'Approval' }}
                                     </div>
                                 </div>
                             </div>
@@ -4884,7 +4879,7 @@ watch(locale, () => {
                                         </div>
                                     </div>
                                     <div class="text-xs text-purple-500 font-medium">
-                                        Klik untuk detail
+                                        <i class="fa fa-user-check mr-1"></i>{{ approval.approver_name || 'HRD' }}
                                     </div>
                                 </div>
                             </div>
@@ -4909,6 +4904,9 @@ watch(locale, () => {
                                             <div class="font-medium mb-1 text-blue-700">Alasan Koreksi:</div>
                                             <div class="text-xs text-blue-600">{{ approval.reason }}</div>
                                         </div>
+                                    </div>
+                                    <div class="text-xs text-orange-500 font-medium">
+                                        <i class="fa fa-user-check mr-1"></i>{{ approval.approver_name || 'HRD' }}
                                     </div>
                                 </div>
                                 <div class="flex gap-2">
@@ -5010,7 +5008,7 @@ watch(locale, () => {
                                         <div class="text-xs truncate" :class="isNight ? 'text-slate-300' : 'text-slate-600'">{{ mv.employee_name }} — {{ (mv.employment_type || '').replaceAll('_', ' ') }}</div>
                                     </div>
                                     <div class="text-xs text-emerald-600 font-medium whitespace-nowrap ml-2">
-                                        <i class="fa fa-user-check mr-1"></i>Approval
+                                        <i class="fa fa-user-check mr-1"></i>{{ mv.approver_name || 'Approval' }}
                                     </div>
                                 </div>
                             </div>
@@ -5052,9 +5050,14 @@ watch(locale, () => {
                                             <div class="font-medium text-sm" :class="isNight ? 'text-white' : 'text-slate-800'">
                                                 {{ approval.employee_name }}
                                             </div>
-                                            <div class="text-xs px-2 py-1 rounded-full" 
-                                                 :class="isNight ? 'bg-blue-700 text-blue-200' : 'bg-blue-100 text-blue-800'">
-                                                Level {{ approval.approval_level }}
+                                            <div class="flex items-center gap-2">
+                                                <div class="text-xs px-2 py-1 rounded-full" 
+                                                     :class="isNight ? 'bg-blue-700 text-blue-200' : 'bg-blue-100 text-blue-800'">
+                                                    Level {{ approval.approval_level }}
+                                                </div>
+                                                <div class="text-xs text-blue-500 font-medium">
+                                                    <i class="fa fa-user-check mr-1"></i>{{ approval.approver_name || 'Approval' }}
+                                                </div>
                                             </div>
                                         </div>
                                         <div class="text-xs space-y-1 mb-3" :class="isNight ? 'text-slate-300' : 'text-slate-600'">
@@ -5473,7 +5476,7 @@ watch(locale, () => {
                                         </div>
                                     </div>
                                     <div class="text-xs text-blue-500 font-medium">
-                                        <i class="fa fa-file-invoice-dollar mr-1"></i>{{ cb.approval_level_display }}
+                                        <i class="fa fa-user-check mr-1"></i>{{ cb.approver_name || cb.approval_level_display }}
                                     </div>
                                 </div>
                             </div>
@@ -5535,7 +5538,7 @@ watch(locale, () => {
                                         </div>
                                     </div>
                                     <div class="text-xs text-purple-500 font-medium">
-                                        <i class="fa fa-recycle mr-1"></i>Approval
+                                        <i class="fa fa-user-check mr-1"></i>{{ header.approver_name || 'Approval' }}
                                     </div>
                                 </div>
                             </div>
@@ -5600,7 +5603,7 @@ watch(locale, () => {
                                         </div>
                                     </div>
                                     <div class="text-xs text-teal-500 font-medium">
-                                        <i class="fa fa-adjust mr-1"></i>Approval
+                                        <i class="fa fa-user-check mr-1"></i>{{ adj.approver_name || 'Approval' }}
                                     </div>
                                 </div>
                             </div>
