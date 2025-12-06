@@ -638,10 +638,10 @@ class PurchaseOrderOpsController extends Controller
                 
                 // If we have category_id from items, use it to get budget info
                 if ($firstCategoryId) {
-                    $budgetInfo = $this->getBudgetInfo($po->source_pr, $firstOutletId, $firstCategoryId);
+                    $budgetInfo = $this->getBudgetInfo($po->source_pr, $firstOutletId, $firstCategoryId, $po->id);
                 } else {
                     // Fallback: try without override (for old structure PRs)
-                    $budgetInfo = $this->getBudgetInfo($po->source_pr);
+                    $budgetInfo = $this->getBudgetInfo($po->source_pr, null, null, $po->id);
                 }
                 
                 \Log::info("Budget info retrieved in show method", [
@@ -726,7 +726,8 @@ class PurchaseOrderOpsController extends Controller
                     $itemBudgetInfo = $this->getBudgetInfo(
                         $basePr,
                         $overrideOutletId,
-                        $overrideCategoryId
+                        $overrideCategoryId,
+                        $po->id // Exclude current PO to avoid double counting
                     );
                     if ($itemBudgetInfo) {
                         // Calculate current amount for this outlet+category from PO items
@@ -742,9 +743,11 @@ class PurchaseOrderOpsController extends Controller
                         }
                         
                         // Calculate real remaining budget (considering current PO amount)
+                        // Since we excluded current PO from poUnpaidAmount, we need to add it back
                         if (isset($itemBudgetInfo['outlet_budget']) && isset($itemBudgetInfo['outlet_used_amount'])) {
                             $outletBudget = $itemBudgetInfo['outlet_budget'];
                             $outletUsedAmount = $itemBudgetInfo['outlet_used_amount'];
+                            // Add current PO amount to used amount (since we excluded it from calculation)
                             $totalWithCurrent = $outletUsedAmount + $currentAmount;
                             $itemBudgetInfo['real_remaining_budget'] = $outletBudget - $totalWithCurrent;
                             $itemBudgetInfo['current_amount'] = $currentAmount;
@@ -1819,7 +1822,7 @@ class PurchaseOrderOpsController extends Controller
     /**
      * Get budget info for a purchase requisition
      */
-    private function getBudgetInfo($purchaseRequisition, $overrideOutletId = null, $overrideCategoryId = null)
+    private function getBudgetInfo($purchaseRequisition, $overrideOutletId = null, $overrideCategoryId = null, $excludePoId = null)
     {
         \Log::info("getBudgetInfo called", [
             'pr_id' => $purchaseRequisition->id ?? 'N/A',
@@ -2306,6 +2309,7 @@ class PurchaseOrderOpsController extends Controller
             // Get unpaid PO data for this outlet
             // NEW LOGIC: PO unpaid = PO dengan status SUBMITTED dan APPROVED yang belum jadi NFP
             // Menggunakan logika yang SAMA PERSIS dengan OpexReportController
+            // IMPORTANT: Exclude current PO if provided to avoid double counting
             $allPOs = DB::table('purchase_order_ops as poo')
                 ->leftJoin('purchase_order_ops_items as poi', 'poo.id', '=', 'poi.purchase_order_ops_id')
                 ->leftJoin('purchase_requisitions as pr', 'poi.source_id', '=', 'pr.id')
@@ -2338,6 +2342,9 @@ class PurchaseOrderOpsController extends Controller
                 ->where('poi.source_type', 'purchase_requisition_ops')
                 ->whereIn('poo.status', ['submitted', 'approved']) // PO dengan status SUBMITTED dan APPROVED
                 ->whereNull('nfp.id') // PO yang belum jadi NFP (belum ada NFP)
+                ->when($excludePoId, function($q) use ($excludePoId) {
+                    $q->where('poo.id', '!=', $excludePoId); // Exclude current PO to avoid double counting
+                })
                 ->groupBy('poo.id')
                 ->select('poo.id as po_id', DB::raw('SUM(poi.total) as po_total'))
                 ->get();
