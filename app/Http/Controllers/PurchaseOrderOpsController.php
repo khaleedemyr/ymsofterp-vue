@@ -627,14 +627,59 @@ class PurchaseOrderOpsController extends Controller
 
         // Check if this is an API request (for modal)
         if (request()->wantsJson() || request()->is('api/*')) {
+            // For PER_OUTLET budget type, calculate budget info per outlet+category for each item
+            // Only calculate this for API requests to avoid unnecessary processing for web
+            $itemsBudgetInfo = [];
+            if ($budgetInfo && isset($budgetInfo['budget_type']) && $budgetInfo['budget_type'] === 'PER_OUTLET' && $po->source_pr) {
+                // Get unique outlet+category combinations from items
+                $outletCategoryCombos = [];
+                foreach ($po->items as $item) {
+                    if ($item->pr_ops_item_id && $item->prOpsItem) {
+                        $prItem = $item->prOpsItem;
+                        $outletId = $prItem->outlet_id;
+                        $categoryId = $prItem->category_id;
+                        
+                        if ($outletId && $categoryId) {
+                            $key = "{$outletId}_{$categoryId}";
+                            if (!isset($outletCategoryCombos[$key])) {
+                                $outletCategoryCombos[$key] = [
+                                    'outlet_id' => $outletId,
+                                    'category_id' => $categoryId,
+                                ];
+                            }
+                        }
+                    }
+                }
+                
+                // Calculate budget info for each outlet+category combination
+                foreach ($outletCategoryCombos as $key => $combo) {
+                    try {
+                        // Use source_pr as base and override outlet_id and category_id
+                        $basePr = $po->source_pr;
+                        $itemBudgetInfo = $this->getBudgetInfo(
+                            $basePr,
+                            $combo['outlet_id'],
+                            $combo['category_id']
+                        );
+                        if ($itemBudgetInfo) {
+                            $itemsBudgetInfo[$key] = $itemBudgetInfo;
+                        }
+                    } catch (\Exception $e) {
+                        \Log::warning("Failed to get budget info for outlet {$combo['outlet_id']} category {$combo['category_id']}: " . $e->getMessage());
+                    }
+                }
+            }
+            
             return response()->json([
                 'success' => true,
                 'po' => $po,
                 'user' => $userData,
-                'budgetInfo' => $budgetInfo
+                'budgetInfo' => $budgetInfo,
+                'itemsBudgetInfo' => $itemsBudgetInfo
             ]);
         }
 
+        // For web (Inertia), return as before - no changes to web functionality
         return inertia('PurchaseOrderOps/Show', [
             'po' => $po,
             'user' => $userData,
@@ -1686,10 +1731,10 @@ class PurchaseOrderOpsController extends Controller
     /**
      * Get budget info for a purchase requisition
      */
-    private function getBudgetInfo($purchaseRequisition)
+    private function getBudgetInfo($purchaseRequisition, $overrideOutletId = null, $overrideCategoryId = null)
     {
-        $categoryId = $purchaseRequisition->category_id;
-        $outletId = $purchaseRequisition->outlet_id;
+        $categoryId = $overrideCategoryId ?? $purchaseRequisition->category_id;
+        $outletId = $overrideOutletId ?? $purchaseRequisition->outlet_id;
         $currentAmount = $purchaseRequisition->amount;
         $year = $purchaseRequisition->created_at->year;
         $month = $purchaseRequisition->created_at->month;
