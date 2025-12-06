@@ -262,13 +262,23 @@ Route::prefix('approval-app')->group(function () {
         Route::post('/user/upload-avatar', [\App\Http\Controllers\Mobile\ApprovalApp\AuthController::class, 'uploadAvatar']);
         Route::get('/allowed-menus', [\App\Http\Controllers\Mobile\ApprovalApp\AuthController::class, 'getAllowedMenus']);
         
-        // Approval routes - using existing controller methods
+        // Purchase Requisition routes - using existing controller methods
+        Route::get('/purchase-requisitions', [\App\Http\Controllers\PurchaseRequisitionController::class, 'index']);
+        Route::get('/purchase-requisitions/{id}', [\App\Http\Controllers\PurchaseRequisitionController::class, 'show']);
+        Route::post('/purchase-requisitions', [\App\Http\Controllers\PurchaseRequisitionController::class, 'store']);
+        Route::put('/purchase-requisitions/{id}', [\App\Http\Controllers\PurchaseRequisitionController::class, 'update']);
+        Route::delete('/purchase-requisitions/{id}', [\App\Http\Controllers\PurchaseRequisitionController::class, 'destroy']);
+        Route::post('/purchase-requisitions/{id}/submit', [\App\Http\Controllers\PurchaseRequisitionController::class, 'submit']);
         Route::get('/purchase-requisitions/pending-approvals', [\App\Http\Controllers\PurchaseRequisitionController::class, 'getPendingApprovals']);
         Route::get('/purchase-requisitions/{id}/approval-details', [\App\Http\Controllers\PurchaseRequisitionController::class, 'getApprovalDetails']);
         Route::post('/purchase-requisitions/{id}/approve', [\App\Http\Controllers\PurchaseRequisitionController::class, 'approve']);
         Route::post('/purchase-requisitions/{id}/reject', [\App\Http\Controllers\PurchaseRequisitionController::class, 'reject']);
         Route::get('/purchase-requisitions/attachments/{attachmentId}/view', [\App\Http\Controllers\PurchaseRequisitionController::class, 'viewAttachmentApi']);
         Route::post('/purchase-requisitions/{id}/comments', [\App\Http\Controllers\PurchaseRequisitionController::class, 'addComment']);
+        Route::get('/purchase-requisitions/{id}/comments', [\App\Http\Controllers\PurchaseRequisitionController::class, 'getComments']);
+        Route::get('/purchase-requisitions/categories', [\App\Http\Controllers\PurchaseRequisitionController::class, 'getCategories']);
+        Route::get('/purchase-requisitions/approvers', [\App\Http\Controllers\PurchaseRequisitionController::class, 'getApprovers']);
+        Route::get('/purchase-requisitions/budget-info', [\App\Http\Controllers\PurchaseRequisitionController::class, 'getBudgetInfo']);
         
         Route::get('/po-ops/pending-approvals', [\App\Http\Controllers\PurchaseOrderOpsController::class, 'getPendingApprovals']);
         Route::get('/po-ops/{id}', [\App\Http\Controllers\PurchaseOrderOpsController::class, 'show']);

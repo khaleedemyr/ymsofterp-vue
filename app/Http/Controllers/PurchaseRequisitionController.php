@@ -391,6 +391,31 @@ class PurchaseRequisitionController extends Controller
             'approved' => (clone $statsQuery)->where('status', 'APPROVED')->count(),
         ];
 
+        // Return JSON for API requests (mobile app)
+        if ($request->expectsJson() || $request->is('api/*') || $request->wantsJson()) {
+            return response()->json([
+                'success' => true,
+                'data' => $purchaseRequisitions,
+                'filters' => [
+                    'search' => $search,
+                    'status' => $status,
+                    'division' => $division,
+                    'category' => $category,
+                    'is_held' => $isHeld,
+                    'date_from' => $dateFrom,
+                    'date_to' => $dateTo,
+                    'per_page' => $perPage,
+                ],
+                'filterOptions' => [
+                    'divisions' => $divisions,
+                    'categories' => $categories,
+                    'outlets' => Outlet::active()->orderBy('nama_outlet')->get(['id_outlet', 'nama_outlet']),
+                ],
+                'statistics' => $statistics,
+            ]);
+        }
+        
+        // Return Inertia for web requests
         return Inertia::render('PurchaseRequisition/Index', [
             'data' => $purchaseRequisitions,
             'filters' => [
@@ -749,6 +774,17 @@ class PurchaseRequisitionController extends Controller
             }
         }
 
+        // Return JSON for API requests (mobile app)
+        if (request()->expectsJson() || request()->is('api/*') || request()->wantsJson()) {
+            return response()->json([
+                'success' => true,
+                'purchaseRequisition' => $purchaseRequisition,
+                'modeSpecificData' => $modeSpecificData,
+                'budgetInfo' => $budgetInfo,
+            ]);
+        }
+        
+        // Return Inertia for web requests
         return Inertia::render('PurchaseRequisition/Show', [
             'purchaseRequisition' => $purchaseRequisition,
             'budgetInfo' => $budgetInfo,
