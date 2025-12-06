@@ -591,7 +591,7 @@ class PurchaseOrderOpsController extends Controller
             'creator',
             'items.prOpsItem.purchaseRequisition',
             'items.prOpsItem.outlet',
-            'items.prOpsItem.category.division',
+            'items.prOpsItem.category',
             'purchasing_manager',
             'gm_finance',
             'source_pr.category',
