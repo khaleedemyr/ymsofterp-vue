@@ -776,9 +776,45 @@ class PurchaseRequisitionController extends Controller
 
         // Return JSON for API requests (mobile app)
         if (request()->expectsJson() || request()->is('api/*') || request()->wantsJson()) {
+            // Ensure all fields are included in the response
+            // Explicitly get all attributes to ensure they're included
+            $prArray = array_merge(
+                $purchaseRequisition->getAttributes(),
+                [
+                    'id' => $purchaseRequisition->id,
+                    'pr_number' => $purchaseRequisition->pr_number,
+                    'title' => $purchaseRequisition->title,
+                    'amount' => $purchaseRequisition->amount,
+                    'status' => $purchaseRequisition->status,
+                    'mode' => $purchaseRequisition->mode,
+                    'priority' => $purchaseRequisition->priority,
+                    'currency' => $purchaseRequisition->currency,
+                    'division_id' => $purchaseRequisition->division_id,
+                    'outlet_id' => $purchaseRequisition->outlet_id,
+                    'category_id' => $purchaseRequisition->category_id,
+                    'ticket_id' => $purchaseRequisition->ticket_id,
+                    'description' => $purchaseRequisition->description,
+                    'notes' => $purchaseRequisition->notes,
+                    'is_held' => $purchaseRequisition->is_held,
+                    'created_by' => $purchaseRequisition->created_by,
+                    'created_at' => $purchaseRequisition->created_at,
+                    'updated_at' => $purchaseRequisition->updated_at,
+                ],
+                $purchaseRequisition->getRelations()
+            );
+            
+            // Log for debugging
+            \Log::info('PR Detail API Response', [
+                'pr_id' => $purchaseRequisition->id,
+                'pr_number' => $purchaseRequisition->pr_number,
+                'title' => $purchaseRequisition->title,
+                'amount' => $purchaseRequisition->amount,
+                'keys' => array_keys($prArray),
+            ]);
+            
             return response()->json([
                 'success' => true,
-                'purchaseRequisition' => $purchaseRequisition,
+                'purchaseRequisition' => $prArray,
                 'modeSpecificData' => $modeSpecificData,
                 'budgetInfo' => $budgetInfo,
             ]);
