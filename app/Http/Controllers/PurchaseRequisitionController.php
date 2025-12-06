@@ -869,6 +869,7 @@ class PurchaseRequisitionController extends Controller
                         'user' => $comment->user ? [
                             'id' => $comment->user->id,
                             'nama_lengkap' => $comment->user->nama_lengkap,
+                            'avatar' => $comment->user->avatar,
                         ] : null,
                     ]);
                 })->toArray();
@@ -1658,6 +1659,7 @@ class PurchaseRequisitionController extends Controller
                     'user' => $comment->user ? [
                         'id' => $comment->user->id,
                         'nama_lengkap' => $comment->user->nama_lengkap,
+                        'avatar' => $comment->user->avatar,
                     ] : null,
                 ]);
             });
