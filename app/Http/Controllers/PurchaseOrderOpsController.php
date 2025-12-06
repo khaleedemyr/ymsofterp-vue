@@ -2543,6 +2543,20 @@ class PurchaseOrderOpsController extends Controller
             $paidAmount = $paidAmountFromPo + $outletRetailNonFoodApproved;
             $outletUsedAmount = $paidAmount + $unpaidAmount;
 
+            // Debug logging
+            \Log::info("Budget calculation for outlet {$outletId} category {$categoryId}:", [
+                'paidAmountFromPo' => $paidAmountFromPo,
+                'outletRetailNonFoodApproved' => $outletRetailNonFoodApproved,
+                'paidAmount' => $paidAmount,
+                'prUnpaidAmount' => $prUnpaidAmount,
+                'poUnpaidAmount' => $poUnpaidAmount,
+                'nfpUnpaidAmount' => $nfpUnpaidAmount,
+                'unpaidAmount' => $unpaidAmount,
+                'outletUsedAmount' => $outletUsedAmount,
+                'outletBudget' => $outletBudget->allocated_budget,
+                'remaining' => $outletBudget->allocated_budget - $outletUsedAmount,
+            ]);
+
             $budgetInfo = [
                 'budget_type' => 'PER_OUTLET',
                 'current_year' => $year,
@@ -2551,6 +2565,7 @@ class PurchaseOrderOpsController extends Controller
                 'outlet_budget' => $outletBudget->allocated_budget,
                 'outlet_used_amount' => $outletUsedAmount,
                 'outlet_remaining_amount' => $outletBudget->allocated_budget - $outletUsedAmount,
+                'real_remaining_budget' => $outletBudget->allocated_budget - $outletUsedAmount, // Same as outlet_remaining_amount for now
                 'outlet_info' => [
                     'id' => $outletBudget->outlet_id,
                     'name' => $outletBudget->outlet->nama_outlet ?? 'Unknown Outlet',
