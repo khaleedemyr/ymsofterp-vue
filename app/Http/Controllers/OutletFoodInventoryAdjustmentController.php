@@ -1217,4 +1217,84 @@ class OutletFoodInventoryAdjustmentController extends Controller
             ]);
         }
     }
+
+    /**
+     * Get pending approvals for current user
+     */
+    public function getPendingApprovals(Request $request)
+    {
+        $currentUser = auth()->user();
+        if (!$currentUser) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthorized: User not authenticated',
+                'adjustments' => []
+            ], 401);
+        }
+        
+        // Superadmin: user dengan id_role = '5af56935b011a' bisa melihat semua approval
+        $isSuperadmin = $currentUser->id_role === '5af56935b011a';
+        
+        // Get all adjustments that have pending approval for current user
+        // Only show if all lower level approvals are done
+        $query = DB::table('outlet_food_inventory_adjustments as adj')
+            ->join('outlet_food_inventory_adjustment_approval_flows as af', 'adj.id', '=', 'af.adjustment_id')
+            ->join('tbl_data_outlet as o', 'adj.id_outlet', '=', 'o.id_outlet')
+            ->join('users as creator', 'adj.created_by', '=', 'creator.id')
+            ->leftJoin('warehouse_outlets as wo', 'adj.warehouse_outlet_id', '=', 'wo.id')
+            ->where('af.status', 'PENDING')
+            ->where('adj.status', 'SUBMITTED');
+        
+        // Superadmin can see all pending approvals, regular users only their own
+        if (!$isSuperadmin) {
+            $query->where('af.approver_id', $currentUser->id);
+        }
+        
+        $pendingAdjustments = $query
+            ->leftJoin('users as approver', 'af.approver_id', '=', 'approver.id')
+            ->select(
+                'adj.*',
+                'o.nama_outlet as outlet_name',
+                'wo.name as warehouse_outlet_name',
+                'creator.nama_lengkap as creator_name',
+                'af.approval_level',
+                'approver.nama_lengkap as approver_name'
+            )
+            ->get()
+            ->map(function($adjustment) {
+                // If approver_name is null, get it from the next pending approval flow
+                if (!$adjustment->approver_name) {
+                    $nextFlow = DB::table('outlet_food_inventory_adjustment_approval_flows as af')
+                        ->leftJoin('users as u', 'af.approver_id', '=', 'u.id')
+                        ->where('af.adjustment_id', $adjustment->id)
+                        ->where('af.status', 'PENDING')
+                        ->orderBy('af.approval_level', 'asc')
+                        ->select('u.nama_lengkap as approver_name')
+                        ->first();
+                    $adjustment->approver_name = $nextFlow->approver_name ?? null;
+                }
+                return $adjustment;
+            })
+            ->filter(function($adjustment) use ($currentUser, $isSuperadmin) {
+                // Superadmin can see all pending approvals
+                if ($isSuperadmin) {
+                    return true;
+                }
+                
+                // Check if all lower level approvals are done
+                $lowerLevelsPending = DB::table('outlet_food_inventory_adjustment_approval_flows')
+                    ->where('adjustment_id', $adjustment->id)
+                    ->where('approval_level', '<', $adjustment->approval_level)
+                    ->where('status', 'PENDING')
+                    ->count();
+                
+                return $lowerLevelsPending === 0;
+            })
+            ->values();
+        
+        return response()->json([
+            'success' => true,
+            'adjustments' => $pendingAdjustments
+        ]);
+    }
 } 
