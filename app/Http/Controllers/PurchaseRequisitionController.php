@@ -1645,12 +1645,22 @@ class PurchaseRequisitionController extends Controller
     /**
      * Get comments for purchase requisition
      */
-    public function getComments(PurchaseRequisition $purchaseRequisition)
+    public function getComments($id)
     {
+        $purchaseRequisition = PurchaseRequisition::findOrFail($id);
+        
         $comments = $purchaseRequisition->comments()
             ->with('user')
             ->orderBy('created_at', 'desc')
-            ->get();
+            ->get()
+            ->map(function($comment) {
+                return array_merge($comment->toArray(), [
+                    'user' => $comment->user ? [
+                        'id' => $comment->user->id,
+                        'nama_lengkap' => $comment->user->nama_lengkap,
+                    ] : null,
+                ]);
+            });
 
         // Mark as read by creating history (only if not already exists for today)
         $userId = auth()->id();
