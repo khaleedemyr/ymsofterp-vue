@@ -651,23 +651,44 @@ class PurchaseOrderOpsController extends Controller
                     }
                 }
                 
-                // Calculate budget info for each outlet+category combination
-                foreach ($outletCategoryCombos as $key => $combo) {
-                    try {
-                        // Use source_pr as base and override outlet_id and category_id
-                        $basePr = $po->source_pr;
-                        $itemBudgetInfo = $this->getBudgetInfo(
-                            $basePr,
-                            $combo['outlet_id'],
-                            $combo['category_id']
-                        );
-                        if ($itemBudgetInfo) {
-                            $itemsBudgetInfo[$key] = $itemBudgetInfo;
+            // Calculate budget info for each outlet+category combination
+            foreach ($outletCategoryCombos as $key => $combo) {
+                try {
+                    // Use source_pr as base and override outlet_id and category_id
+                    $basePr = $po->source_pr;
+                    $itemBudgetInfo = $this->getBudgetInfo(
+                        $basePr,
+                        $combo['outlet_id'],
+                        $combo['category_id']
+                    );
+                    if ($itemBudgetInfo) {
+                        // Calculate current amount for this outlet+category from PO items
+                        $currentAmount = 0;
+                        foreach ($po->items as $poItem) {
+                            if ($poItem->pr_ops_item_id && $poItem->prOpsItem) {
+                                $prItem = $poItem->prOpsItem;
+                                if ($prItem->outlet_id == $combo['outlet_id'] && 
+                                    $prItem->category_id == $combo['category_id']) {
+                                    $currentAmount += $poItem->total ?? 0;
+                                }
+                            }
                         }
-                    } catch (\Exception $e) {
-                        \Log::warning("Failed to get budget info for outlet {$combo['outlet_id']} category {$combo['category_id']}: " . $e->getMessage());
+                        
+                        // Calculate real remaining budget (considering current PO amount)
+                        if (isset($itemBudgetInfo['outlet_budget']) && isset($itemBudgetInfo['outlet_used_amount'])) {
+                            $outletBudget = $itemBudgetInfo['outlet_budget'];
+                            $outletUsedAmount = $itemBudgetInfo['outlet_used_amount'];
+                            $totalWithCurrent = $outletUsedAmount + $currentAmount;
+                            $itemBudgetInfo['real_remaining_budget'] = $outletBudget - $totalWithCurrent;
+                            $itemBudgetInfo['current_amount'] = $currentAmount;
+                        }
+                        
+                        $itemsBudgetInfo[$key] = $itemBudgetInfo;
                     }
+                } catch (\Exception $e) {
+                    \Log::warning("Failed to get budget info for outlet {$combo['outlet_id']} category {$combo['category_id']}: " . $e->getMessage());
                 }
+            }
             }
             
             return response()->json([
