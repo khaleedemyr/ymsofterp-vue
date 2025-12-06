@@ -639,6 +639,13 @@ class PurchaseOrderOpsController extends Controller
                         $outletId = $prItem->outlet_id;
                         $categoryId = $prItem->category_id;
                         
+                        \Log::info("Processing PO item for budget calculation", [
+                            'po_item_id' => $item->id ?? 'N/A',
+                            'pr_ops_item_id' => $item->pr_ops_item_id,
+                            'outlet_id' => $outletId,
+                            'category_id' => $categoryId,
+                        ]);
+                        
                         if ($outletId && $categoryId) {
                             $key = "{$outletId}_{$categoryId}";
                             if (!isset($outletCategoryCombos[$key])) {
@@ -647,19 +654,40 @@ class PurchaseOrderOpsController extends Controller
                                     'category_id' => $categoryId,
                                 ];
                             }
+                        } else {
+                            \Log::warning("PO item missing outlet_id or category_id", [
+                                'po_item_id' => $item->id ?? 'N/A',
+                                'outlet_id' => $outletId,
+                                'category_id' => $categoryId,
+                            ]);
                         }
                     }
                 }
+                
+                \Log::info("Outlet+Category combinations found", [
+                    'combos' => $outletCategoryCombos,
+                    'count' => count($outletCategoryCombos),
+                ]);
                 
             // Calculate budget info for each outlet+category combination
             foreach ($outletCategoryCombos as $key => $combo) {
                 try {
                     // Use source_pr as base and override outlet_id and category_id
                     $basePr = $po->source_pr;
+                    $overrideOutletId = $combo['outlet_id'] ?? null;
+                    $overrideCategoryId = $combo['category_id'] ?? null;
+                    
+                    \Log::info("Calculating budget for outlet+category combo", [
+                        'key' => $key,
+                        'outlet_id' => $overrideOutletId,
+                        'category_id' => $overrideCategoryId,
+                        'base_pr_id' => $basePr->id ?? 'N/A',
+                    ]);
+                    
                     $itemBudgetInfo = $this->getBudgetInfo(
                         $basePr,
-                        $combo['outlet_id'],
-                        $combo['category_id']
+                        $overrideOutletId,
+                        $overrideCategoryId
                     );
                     if ($itemBudgetInfo) {
                         // Calculate current amount for this outlet+category from PO items
