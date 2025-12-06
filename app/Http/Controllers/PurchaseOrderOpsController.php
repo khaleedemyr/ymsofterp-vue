@@ -618,7 +618,16 @@ class PurchaseOrderOpsController extends Controller
         $budgetInfo = null;
         if ($po->source_type === 'purchase_requisition_ops' && $po->source_id && $po->source_pr) {
             try {
+                \Log::info("Getting budget info for PO in show method", [
+                    'po_id' => $po->id,
+                    'source_pr_id' => $po->source_pr->id ?? 'N/A',
+                    'is_api_request' => request()->wantsJson() || request()->is('api/*'),
+                ]);
                 $budgetInfo = $this->getBudgetInfo($po->source_pr);
+                \Log::info("Budget info retrieved in show method", [
+                    'has_budget_info' => !is_null($budgetInfo),
+                    'budget_type' => $budgetInfo['budget_type'] ?? 'N/A',
+                ]);
             } catch (\Exception $e) {
                 \Log::warning('Failed to get budget info for PR ' . $po->source_pr->id . ': ' . $e->getMessage());
                 $budgetInfo = null;
@@ -630,6 +639,14 @@ class PurchaseOrderOpsController extends Controller
             // For PER_OUTLET budget type, calculate budget info per outlet+category for each item
             // Only calculate this for API requests to avoid unnecessary processing for web
             $itemsBudgetInfo = [];
+            
+            \Log::info("Checking if should calculate per-outlet budget", [
+                'has_budget_info' => !is_null($budgetInfo),
+                'budget_type' => $budgetInfo['budget_type'] ?? 'N/A',
+                'has_source_pr' => !is_null($po->source_pr),
+                'is_api_request' => request()->wantsJson() || request()->is('api/*'),
+            ]);
+            
             if ($budgetInfo && isset($budgetInfo['budget_type']) && $budgetInfo['budget_type'] === 'PER_OUTLET' && $po->source_pr) {
                 // Get unique outlet+category combinations from items
                 $outletCategoryCombos = [];
