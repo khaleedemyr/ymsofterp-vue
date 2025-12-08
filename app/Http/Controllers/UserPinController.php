@@ -326,4 +326,247 @@ class UserPinController extends Controller
             ], 500);
         }
     }
+
+    /**
+     * Get user pins for Approval App (using Bearer token from remember_token)
+     * Same as index() but for mobile app with Bearer token auth
+     */
+    public function indexForApprovalApp(Request $request)
+    {
+        // Get user from auth (set by approval.app.auth middleware)
+        $user = auth()->user();
+        
+        if (!$user) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthenticated'
+            ], 401);
+        }
+        
+        $userPins = DB::table('user_pins')
+            ->join('tbl_data_outlet', 'user_pins.outlet_id', '=', 'tbl_data_outlet.id_outlet')
+            ->where('user_pins.user_id', $user->id)
+            ->select(
+                'user_pins.id',
+                'user_pins.user_id',
+                'user_pins.outlet_id',
+                'user_pins.pin',
+                'user_pins.is_active',
+                'user_pins.created_at',
+                'user_pins.updated_at',
+                'tbl_data_outlet.nama_outlet',
+                DB::raw("tbl_data_outlet.nama_outlet as outlet_name")
+            )
+            ->orderBy('user_pins.created_at', 'desc')
+            ->get()
+            ->map(function ($pin) {
+                return [
+                    'id' => $pin->id,
+                    'user_id' => $pin->user_id,
+                    'outlet_id' => $pin->outlet_id,
+                    'pin' => $pin->pin,
+                    'is_active' => (bool) $pin->is_active,
+                    'created_at' => $pin->created_at,
+                    'updated_at' => $pin->updated_at,
+                    'nama_outlet' => $pin->nama_outlet,
+                    'outlet_name' => $pin->outlet_name,
+                    'outlet' => [
+                        'id_outlet' => $pin->outlet_id,
+                        'nama_outlet' => $pin->nama_outlet,
+                    ]
+                ];
+            });
+
+        return response()->json($userPins);
+    }
+
+    /**
+     * Store a new user pin for Approval App
+     */
+    public function storeForApprovalApp(Request $request)
+    {
+        $request->validate([
+            'outlet_id' => 'required|integer|exists:tbl_data_outlet,id_outlet',
+            'pin' => 'required|string|min:1|max:10',
+        ]);
+
+        $user = auth()->user();
+        
+        if (!$user) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthenticated'
+            ], 401);
+        }
+
+        // Check if user already has a pin for this outlet
+        $existingPin = DB::table('user_pins')
+            ->where('user_id', $user->id)
+            ->where('outlet_id', $request->outlet_id)
+            ->where('is_active', 1)
+            ->first();
+
+        if ($existingPin) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Anda sudah memiliki PIN untuk outlet ini. Silakan update PIN yang sudah ada.'
+            ], 400);
+        }
+
+        try {
+            $pinId = DB::table('user_pins')->insertGetId([
+                'user_id' => $user->id,
+                'outlet_id' => $request->outlet_id,
+                'pin' => $request->pin,
+                'is_active' => 1,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+            // Get outlet name for response
+            $outlet = DB::table('tbl_data_outlet')
+                ->where('id_outlet', $request->outlet_id)
+                ->first();
+
+            return response()->json([
+                'success' => true,
+                'message' => "PIN berhasil dibuat untuk outlet {$outlet->nama_outlet}",
+                'data' => [
+                    'id' => $pinId,
+                    'outlet_name' => $outlet->nama_outlet,
+                    'pin' => $request->pin
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal membuat PIN: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Update an existing user pin for Approval App
+     */
+    public function updateForApprovalApp(Request $request, $id)
+    {
+        $request->validate([
+            'pin' => 'required|string|min:1|max:10',
+        ]);
+
+        $user = auth()->user();
+        
+        if (!$user) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthenticated'
+            ], 401);
+        }
+
+        // Check if pin belongs to user
+        $userPin = DB::table('user_pins')
+            ->where('id', $id)
+            ->where('user_id', $user->id)
+            ->first();
+
+        if (!$userPin) {
+            return response()->json([
+                'success' => false,
+                'message' => 'PIN tidak ditemukan atau tidak memiliki akses'
+            ], 404);
+        }
+
+        try {
+            DB::table('user_pins')
+                ->where('id', $id)
+                ->update([
+                    'pin' => $request->pin,
+                    'updated_at' => now(),
+                ]);
+
+            // Get outlet name for response
+            $outlet = DB::table('tbl_data_outlet')
+                ->where('id_outlet', $userPin->outlet_id)
+                ->first();
+
+            return response()->json([
+                'success' => true,
+                'message' => "PIN berhasil diupdate untuk outlet {$outlet->nama_outlet}",
+                'data' => [
+                    'id' => $id,
+                    'outlet_name' => $outlet->nama_outlet,
+                    'pin' => $request->pin
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal mengupdate PIN: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Delete a user pin for Approval App
+     */
+    public function destroyForApprovalApp(Request $request, $id)
+    {
+        $user = auth()->user();
+        
+        if (!$user) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthenticated'
+            ], 401);
+        }
+
+        // Check if pin belongs to user
+        $userPin = DB::table('user_pins')
+            ->where('id', $id)
+            ->where('user_id', $user->id)
+            ->first();
+
+        if (!$userPin) {
+            return response()->json([
+                'success' => false,
+                'message' => 'PIN tidak ditemukan atau tidak memiliki akses'
+            ], 404);
+        }
+
+        try {
+            DB::table('user_pins')->where('id', $id)->delete();
+
+            // Get outlet name for response
+            $outlet = DB::table('tbl_data_outlet')
+                ->where('id_outlet', $userPin->outlet_id)
+                ->first();
+
+            return response()->json([
+                'success' => true,
+                'message' => "PIN berhasil dihapus untuk outlet {$outlet->nama_outlet}"
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal menghapus PIN: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Get outlets for Approval App
+     */
+    public function getOutletsForApprovalApp()
+    {
+        $outlets = DB::table('tbl_data_outlet')
+            ->where('status', 'A')
+            ->select('id_outlet', 'nama_outlet')
+            ->orderBy('nama_outlet')
+            ->get();
+
+        return response()->json($outlets);
+    }
 }

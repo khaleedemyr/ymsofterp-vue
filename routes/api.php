@@ -262,6 +262,13 @@ Route::prefix('approval-app')->group(function () {
         Route::post('/user/upload-avatar', [\App\Http\Controllers\Mobile\ApprovalApp\AuthController::class, 'uploadAvatar']);
         Route::get('/allowed-menus', [\App\Http\Controllers\Mobile\ApprovalApp\AuthController::class, 'getAllowedMenus']);
         
+        // User PIN routes for Approval App
+        Route::get('/user/pins', [\App\Http\Controllers\UserPinController::class, 'indexForApprovalApp']);
+        Route::post('/user/pins', [\App\Http\Controllers\UserPinController::class, 'storeForApprovalApp']);
+        Route::put('/user/pins/{id}', [\App\Http\Controllers\UserPinController::class, 'updateForApprovalApp']);
+        Route::delete('/user/pins/{id}', [\App\Http\Controllers\UserPinController::class, 'destroyForApprovalApp']);
+        Route::get('/outlets', [\App\Http\Controllers\UserPinController::class, 'getOutletsForApprovalApp']);
+        
         // Purchase Requisition routes - using existing controller methods
         // IMPORTANT: Specific routes (without {id}) must be defined BEFORE routes with {id} parameter
         Route::get('/purchase-requisitions', [\App\Http\Controllers\PurchaseRequisitionController::class, 'index']);
