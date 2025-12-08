@@ -660,7 +660,8 @@ class PurchaseOrderOpsController extends Controller
         if (request()->wantsJson() || request()->is('api/*')) {
             // For PER_OUTLET budget type, calculate budget info per outlet+category for each item
             // Only calculate this for API requests to avoid unnecessary processing for web
-            $itemsBudgetInfo = [];
+            // Initialize as object (empty array will be converted to object in JSON)
+            $itemsBudgetInfo = (object)[];
             
             \Log::info("Checking if should calculate per-outlet budget", [
                 'has_budget_info' => !is_null($budgetInfo),
@@ -669,7 +670,10 @@ class PurchaseOrderOpsController extends Controller
                 'is_api_request' => request()->wantsJson() || request()->is('api/*'),
             ]);
             
-            if ($budgetInfo && isset($budgetInfo['budget_type']) && $budgetInfo['budget_type'] === 'PER_OUTLET' && $po->source_pr) {
+            // For GLOBAL budget type, we still need to provide itemsBudgetInfo structure
+            // but it will be empty or contain single entry
+            if ($budgetInfo && isset($budgetInfo['budget_type']) && $po->source_pr) {
+                if ($budgetInfo['budget_type'] === 'PER_OUTLET') {
                 // Get unique outlet+category combinations from items
                 $outletCategoryCombos = [];
                 foreach ($po->items as $item) {
@@ -759,14 +763,21 @@ class PurchaseOrderOpsController extends Controller
                     \Log::warning("Failed to get budget info for outlet {$combo['outlet_id']} category {$combo['category_id']}: " . $e->getMessage());
                 }
             }
+                }
+            }
+            
+            // Ensure itemsBudgetInfo is always an object (not array) for JSON response
+            // Convert empty array to empty object
+            if (is_array($itemsBudgetInfo) && empty($itemsBudgetInfo)) {
+                $itemsBudgetInfo = (object)[];
             }
             
             return response()->json([
                 'success' => true,
                 'po' => $po,
                 'user' => $userData,
-                'budgetInfo' => $budgetInfo,
-                'itemsBudgetInfo' => $itemsBudgetInfo
+                'budgetInfo' => $budgetInfo, // Use camelCase for consistency with Flutter
+                'itemsBudgetInfo' => $itemsBudgetInfo // Use camelCase for consistency with Flutter - always object, never array
             ]);
         }
 
