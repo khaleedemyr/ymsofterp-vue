@@ -49,14 +49,73 @@
         </div>
         <!-- Card Info Contra Bon -->
         <div class="bg-blue-50 rounded-lg p-4 shadow mb-4">
-          <h3 class="font-bold mb-2">Pilih Contra Bon yang akan dibayar</h3>
-          <div class="border rounded p-2 max-h-60 overflow-y-auto bg-white">
-            <div v-if="contraBons.length === 0" class="text-gray-400 text-sm p-2">Tidak ada contra bon yang belum dibayar untuk supplier ini.</div>
-            <div v-for="cb in contraBons" :key="cb.id" class="flex items-center mb-2 p-3 hover:bg-blue-50 rounded border border-gray-200">
-              <input type="checkbox" :value="cb.id" v-model="form.selected_contra_bon_ids" class="mr-3" />
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="font-bold">Pilih Contra Bon yang akan dibayar</h3>
+            <div class="text-sm text-gray-600">
+              <span v-if="selectedSupplier">{{ filteredContraBons.length }} dari {{ contraBons.length }} contra bon</span>
+            </div>
+          </div>
+          
+          <!-- Search Input -->
+          <div class="mb-3">
+            <div class="relative">
+              <input
+                type="text"
+                v-model="contraBonSearch"
+                placeholder="Cari contra bon (nomor, invoice, supplier, total, tanggal, notes, PO, outlet...)"
+                class="w-full px-4 py-2 pl-10 rounded-lg border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500"
+              />
+              <i class="fa fa-search absolute left-3 top-3 text-gray-400"></i>
+              <button
+                v-if="contraBonSearch"
+                @click="contraBonSearch = ''"
+                type="button"
+                class="absolute right-3 top-2 text-gray-400 hover:text-gray-600"
+              >
+                <i class="fa fa-times"></i>
+              </button>
+            </div>
+          </div>
+          
+          <!-- Select All / Deselect All -->
+          <div v-if="filteredContraBons.length > 0" class="mb-2 flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <button
+                type="button"
+                @click="selectAllContraBons"
+                class="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
+              >
+                <i class="fa fa-check-square mr-1"></i>Pilih Semua
+              </button>
+              <button
+                type="button"
+                @click="deselectAllContraBons"
+                class="text-xs px-2 py-1 bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
+              >
+                <i class="fa fa-square mr-1"></i>Batal Semua
+              </button>
+            </div>
+            <div class="text-xs text-gray-600">
+              {{ form.selected_contra_bon_ids.length }} dipilih
+            </div>
+          </div>
+          
+          <div class="border rounded p-2 max-h-96 overflow-y-auto bg-white">
+            <div v-if="filteredContraBons.length === 0" class="text-gray-400 text-sm p-4 text-center">
+              <i class="fa fa-search text-2xl mb-2"></i>
+              <div v-if="contraBonSearch">Tidak ada contra bon ditemukan untuk "{{ contraBonSearch }}"</div>
+              <div v-else>Tidak ada contra bon yang belum dibayar untuk supplier ini.</div>
+            </div>
+            <div v-for="cb in filteredContraBons" :key="cb.id" class="flex items-center mb-2 p-3 hover:bg-blue-50 rounded border border-gray-200 transition-colors">
+              <input 
+                type="checkbox" 
+                :value="cb.id" 
+                v-model="form.selected_contra_bon_ids" 
+                class="mr-3 w-4 h-4 text-blue-600 rounded focus:ring-blue-500" 
+              />
               <div class="flex-1">
-                <div class="flex items-center gap-2 mb-1">
-                  <span class="font-medium">{{ cb.number }}</span>
+                <div class="flex items-center gap-2 mb-1 flex-wrap">
+                  <span class="font-medium text-gray-800">{{ cb.number }}</span>
                   <span v-if="cb.source_type_display === 'PR Foods'" class="bg-blue-100 text-blue-700 px-2 py-1 rounded-full text-xs font-semibold">
                     🔵 PR Foods
                   </span>
@@ -70,21 +129,45 @@
                     ⚪ Unknown
                   </span>
                 </div>
-                <div class="text-sm text-gray-600">
-                  <div>Total: {{ formatCurrency(cb.total_amount) }}</div>
+                <div class="text-sm text-gray-600 space-y-1">
+                  <div class="flex items-center gap-4 flex-wrap">
+                    <span><strong>Total:</strong> {{ formatCurrency(cb.total_amount) }}</span>
+                    <span v-if="cb.date" class="text-xs">
+                      <i class="fa fa-calendar mr-1"></i>{{ formatDate(cb.date) }}
+                    </span>
+                  </div>
                   <div v-if="cb.supplier_invoice_number" class="text-xs text-gray-500">
-                    No. Invoice: {{ cb.supplier_invoice_number }}
+                    <i class="fa fa-file-invoice mr-1"></i><strong>Invoice:</strong> {{ cb.supplier_invoice_number }}
+                  </div>
+                  <div v-if="cb.supplier?.name" class="text-xs text-gray-500">
+                    <i class="fa fa-truck mr-1"></i><strong>Supplier:</strong> {{ cb.supplier.name }}
+                  </div>
+                  <div v-if="cb.purchaseOrder?.number" class="text-xs text-blue-600">
+                    <i class="fa fa-shopping-cart mr-1"></i><strong>PO:</strong> {{ cb.purchaseOrder.number }}
+                  </div>
+                  <div v-if="cb.retailFood?.number" class="text-xs text-purple-600">
+                    <i class="fa fa-store mr-1"></i><strong>Retail:</strong> {{ cb.retailFood.number }}
                   </div>
                   <div v-if="cb.outlet_names && cb.outlet_names.length > 0" class="text-xs text-orange-600 mt-1">
                     <i class="fa fa-map-marker-alt mr-1"></i>
-                    Outlet: {{ cb.outlet_names.join(', ') }}
+                    <strong>Outlet:</strong> {{ cb.outlet_names.join(', ') }}
+                  </div>
+                  <div v-if="cb.notes" class="text-xs text-gray-500 italic mt-1">
+                    <i class="fa fa-sticky-note mr-1"></i>{{ cb.notes }}
                   </div>
                 </div>
               </div>
             </div>
           </div>
-          <div class="mt-4 text-right font-bold text-lg text-blue-700">
-            Total Bayar: {{ formatCurrency(totalBayar) }}
+          <div class="mt-4 flex items-center justify-between">
+            <div class="text-sm text-gray-600">
+              <span v-if="form.selected_contra_bon_ids.length > 0">
+                {{ form.selected_contra_bon_ids.length }} contra bon dipilih
+              </span>
+            </div>
+            <div class="text-right font-bold text-lg text-blue-700">
+              Total Bayar: {{ formatCurrency(totalBayar) }}
+            </div>
           </div>
         </div>
         <!-- Upload Bukti Transfer -->
@@ -144,6 +227,7 @@ const isEditMode = computed(() => !!props.payment);
 const suppliers = ref([]);
 const selectedSupplier = ref(null);
 const contraBons = ref([]);
+const contraBonSearch = ref('');
 const form = ref({
   date: '',
   payment_type: '',
@@ -165,6 +249,61 @@ const totalBayar = computed(() => {
       return sum + amount;
     }, 0);
 });
+
+// Filter contra bons based on search
+const filteredContraBons = computed(() => {
+  if (!contraBonSearch.value) {
+    return contraBons.value;
+  }
+  
+  const search = contraBonSearch.value.toLowerCase();
+  return contraBons.value.filter(cb => {
+    // Search in multiple fields
+    const number = (cb.number || '').toLowerCase();
+    const invoiceNumber = (cb.supplier_invoice_number || '').toLowerCase();
+    const supplierName = (cb.supplier?.name || '').toLowerCase();
+    const totalAmount = (cb.total_amount || '').toString().toLowerCase();
+    const date = cb.date ? new Date(cb.date).toLocaleDateString('id-ID').toLowerCase() : '';
+    const notes = (cb.notes || '').toLowerCase();
+    const poNumber = (cb.purchaseOrder?.number || '').toLowerCase();
+    const retailNumber = (cb.retailFood?.number || '').toLowerCase();
+    const outletNames = (cb.outlet_names || []).join(' ').toLowerCase();
+    const sourceType = (cb.source_type_display || '').toLowerCase();
+    
+    return number.includes(search) ||
+           invoiceNumber.includes(search) ||
+           supplierName.includes(search) ||
+           totalAmount.includes(search) ||
+           date.includes(search) ||
+           notes.includes(search) ||
+           poNumber.includes(search) ||
+           retailNumber.includes(search) ||
+           outletNames.includes(search) ||
+           sourceType.includes(search);
+  });
+});
+
+function formatDate(dateString) {
+  if (!dateString) return '-';
+  try {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('id-ID', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric'
+    });
+  } catch (e) {
+    return dateString;
+  }
+}
+
+function selectAllContraBons() {
+  form.value.selected_contra_bon_ids = filteredContraBons.value.map(cb => cb.id);
+}
+
+function deselectAllContraBons() {
+  form.value.selected_contra_bon_ids = [];
+}
 
 function goBack() { 
   router.visit('/food-payments'); 
@@ -208,16 +347,19 @@ async function onSupplierChange(supplier) {
     form.value.selected_contra_bon_ids = [];
   }
   contraBons.value = [];
+  contraBonSearch.value = '';
   if (!supplier || !supplier.id) return;
   try {
-    const res = await axios.get('/api/food-payments/contra-bon-unpaid');
-    // Filter hanya yang supplier_id sesuai dan pastikan total_amount adalah number
-    let availableContraBons = res.data
-      .filter(cb => cb.supplier_id == supplier.id)
-      .map(cb => ({
-        ...cb,
-        total_amount: parseFloat(cb.total_amount) || 0
-      }));
+    const res = await axios.get('/api/food-payments/contra-bon-unpaid', {
+      params: {
+        supplier_id: supplier.id
+      }
+    });
+    // Pastikan total_amount adalah number
+    let availableContraBons = res.data.map(cb => ({
+      ...cb,
+      total_amount: parseFloat(cb.total_amount) || 0
+    }));
     
     // Jika edit mode, tambahkan contra bon yang sudah dipilih meskipun sudah paid
     if (isEditMode.value && props.payment?.contra_bons) {
@@ -245,6 +387,7 @@ async function onSupplierChange(supplier) {
 function onSupplierRemove() {
   form.value.selected_contra_bon_ids = [];
   contraBons.value = [];
+  contraBonSearch.value = '';
   selectedSupplier.value = null;
 }
 

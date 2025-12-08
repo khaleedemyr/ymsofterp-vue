@@ -602,8 +602,8 @@ class FoodPaymentController extends Controller
         }
     }
 
-    // API: Get contra bon yang belum dibayar
-    public function getContraBonUnpaid()
+    // API: Get contra bon yang belum dibayar dengan search
+    public function getContraBonUnpaid(Request $request)
     {
         // Hanya ambil Contra Bon yang terkait dengan Food Payment yang statusnya bukan 'rejected'
         $paidContraBonIds = FoodPaymentContraBon::whereHas('foodPayment', function($query) {
@@ -612,10 +612,47 @@ class FoodPaymentController extends Controller
             ->pluck('contra_bon_id')
             ->toArray();
         
-        $contraBons = ContraBon::with(['supplier', 'purchaseOrder', 'retailFood'])
+        $query = ContraBon::with(['supplier', 'purchaseOrder', 'retailFood'])
             ->where('status', 'approved')
-            ->whereNotIn('id', $paidContraBonIds)
-            ->get();
+            ->whereNotIn('id', $paidContraBonIds);
+        
+        // Search functionality - search across multiple fields
+        if ($request->has('search') && !empty($request->search)) {
+            $search = $request->search;
+            $query->where(function($q) use ($search) {
+                // Search by contra bon number
+                $q->where('number', 'like', "%{$search}%")
+                  // Search by supplier invoice number
+                  ->orWhere('supplier_invoice_number', 'like', "%{$search}%")
+                  // Search by total amount
+                  ->orWhereRaw("CAST(total_amount AS CHAR) LIKE ?", ["%{$search}%"])
+                  // Search by date
+                  ->orWhereDate('date', 'like', "%{$search}%")
+                  ->orWhereRaw("DATE_FORMAT(date, '%d-%m-%Y') LIKE ?", ["%{$search}%"])
+                  ->orWhereRaw("DATE_FORMAT(date, '%Y-%m-%d') LIKE ?", ["%{$search}%"])
+                  // Search by notes
+                  ->orWhere('notes', 'like', "%{$search}%")
+                  // Search by supplier name
+                  ->orWhereHas('supplier', function($q2) use ($search) {
+                      $q2->where('name', 'like', "%{$search}%");
+                  })
+                  // Search by PO number
+                  ->orWhereHas('purchaseOrder', function($q2) use ($search) {
+                      $q2->where('number', 'like', "%{$search}%");
+                  })
+                  // Search by retail food number
+                  ->orWhereHas('retailFood', function($q2) use ($search) {
+                      $q2->where('number', 'like', "%{$search}%");
+                  });
+            });
+        }
+        
+        // Filter by supplier_id if provided
+        if ($request->has('supplier_id') && !empty($request->supplier_id)) {
+            $query->where('supplier_id', $request->supplier_id);
+        }
+        
+        $contraBons = $query->get();
         
         // Transform data to include source type and outlet information
         $contraBons = $contraBons->map(function($contraBon) {
