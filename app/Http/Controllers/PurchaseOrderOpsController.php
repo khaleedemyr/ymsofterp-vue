@@ -660,8 +660,8 @@ class PurchaseOrderOpsController extends Controller
         if (request()->wantsJson() || request()->is('api/*')) {
             // For PER_OUTLET budget type, calculate budget info per outlet+category for each item
             // Only calculate this for API requests to avoid unnecessary processing for web
-            // Initialize as object (empty array will be converted to object in JSON)
-            $itemsBudgetInfo = (object)[];
+            // Initialize as array (will be converted to object in JSON at the end if needed)
+            $itemsBudgetInfo = [];
             
             \Log::info("Checking if should calculate per-outlet budget", [
                 'has_budget_info' => !is_null($budgetInfo),
@@ -734,6 +734,11 @@ class PurchaseOrderOpsController extends Controller
                         $po->id // Exclude current PO to avoid double counting
                     );
                     if ($itemBudgetInfo) {
+                        // Convert to array if it's a stdClass object
+                        if (is_object($itemBudgetInfo) && !is_array($itemBudgetInfo)) {
+                            $itemBudgetInfo = (array) $itemBudgetInfo;
+                        }
+                        
                         // Calculate current amount for this outlet+category from PO items
                         $currentAmount = 0;
                         foreach ($po->items as $poItem) {
