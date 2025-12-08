@@ -15,6 +15,7 @@ const props = defineProps({
 const outletId = ref(props.filter?.outlet_id || '');
 const month = ref(props.filter?.month || new Date().getMonth() + 1);
 const year = ref(props.filter?.year || new Date().getFullYear());
+const serviceCharge = ref(props.filter?.service_charge || '');
 const loading = ref(false);
 const exporting = ref(false);
 
@@ -52,6 +53,7 @@ function lihatData() {
     outlet_id: outletId.value,
     month: formatMonth(month.value),
     year: year.value,
+    service_charge: serviceCharge.value || null,
   }, {
     preserveState: true,
     replace: true,
@@ -67,7 +69,7 @@ async function exportData() {
 
   exporting.value = true;
   try {
-    const url = `/payroll/report/export?outlet_id=${outletId.value}&month=${formatMonth(month.value)}&year=${year.value}`;
+    const url = `/payroll/report/export?outlet_id=${outletId.value}&month=${formatMonth(month.value)}&year=${year.value}&service_charge=${serviceCharge.value || 0}`;
     window.open(url, '_blank');
   } catch (error) {
     console.error('Error exporting:', error);
@@ -90,6 +92,9 @@ const summary = computed(() => {
       totalTunjangan: 0,
       totalGajiLembur: 0,
       totalUangMakan: 0,
+      totalServiceChargeByPoint: 0,
+      totalServiceChargeProRate: 0,
+      totalServiceCharge: 0,
       totalBPJSJKN: 0,
       totalBPJSTK: 0,
       totalPotonganTelat: 0,
@@ -102,6 +107,9 @@ const summary = computed(() => {
     totalTunjangan: props.payrollData.reduce((sum, item) => sum + Number(item.tunjangan), 0),
     totalGajiLembur: props.payrollData.reduce((sum, item) => sum + Number(item.gaji_lembur), 0),
     totalUangMakan: props.payrollData.reduce((sum, item) => sum + Number(item.uang_makan), 0),
+    totalServiceChargeByPoint: props.payrollData.reduce((sum, item) => sum + Number(item.service_charge_by_point || 0), 0),
+    totalServiceChargeProRate: props.payrollData.reduce((sum, item) => sum + Number(item.service_charge_pro_rate || 0), 0),
+    totalServiceCharge: props.payrollData.reduce((sum, item) => sum + Number(item.service_charge || 0), 0),
     totalBPJSJKN: props.payrollData.reduce((sum, item) => sum + Number(item.bpjs_jkn), 0),
     totalBPJSTK: props.payrollData.reduce((sum, item) => sum + Number(item.bpjs_tk), 0),
     totalPotonganTelat: props.payrollData.reduce((sum, item) => sum + Number(item.potongan_telat), 0),
@@ -113,6 +121,7 @@ watch(() => props.filter, (newFilter) => {
   outletId.value = newFilter?.outlet_id || '';
   month.value = newFilter?.month || new Date().getMonth() + 1;
   year.value = newFilter?.year || new Date().getFullYear();
+  serviceCharge.value = newFilter?.service_charge || '';
 }, { immediate: true });
 
 // Toggle expand row
@@ -329,6 +338,15 @@ async function showPayroll(employee) {
             <option v-for="y in props.years" :key="y.id" :value="y.id">{{ y.name }}</option>
           </select>
           
+          <input
+            v-model="serviceCharge"
+            type="number"
+            step="0.01"
+            min="0"
+            placeholder="Service Charge"
+            class="form-input rounded-xl shadow-lg w-48"
+          />
+          
           <button
             @click="lihatData"
             class="bg-gradient-to-br from-green-400 to-blue-500 text-white px-6 py-2 rounded-xl shadow-xl hover:scale-105 hover:shadow-2xl transition-all duration-300 font-bold"
@@ -351,7 +369,7 @@ async function showPayroll(employee) {
       <div class="flex-1 w-full">
         <div v-if="props.payrollData && props.payrollData.length > 0" class="w-full">
           <!-- Summary Cards -->
-                      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-8 gap-4 mb-6">
+                      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-11 gap-4 mb-6">
             <div class="bg-gradient-to-br from-green-400 to-green-600 text-white p-4 rounded-xl shadow-lg">
               <div class="text-sm font-medium">Total Gaji Pokok</div>
               <div class="text-2xl font-bold">{{ formatCurrency(summary.totalGajiPokok) }}</div>
@@ -371,6 +389,18 @@ async function showPayroll(employee) {
                           <div class="bg-gradient-to-br from-green-400 to-green-600 text-white p-4 rounded-xl shadow-lg">
                 <div class="text-sm font-medium">Total Uang Makan</div>
                 <div class="text-2xl font-bold">{{ formatCurrency(summary.totalUangMakan) }}</div>
+              </div>
+              <div class="bg-gradient-to-br from-purple-400 to-purple-600 text-white p-4 rounded-xl shadow-lg">
+                <div class="text-sm font-medium">Total SC By Point</div>
+                <div class="text-2xl font-bold">{{ formatCurrency(summary.totalServiceChargeByPoint) }}</div>
+              </div>
+              <div class="bg-gradient-to-br from-indigo-400 to-indigo-600 text-white p-4 rounded-xl shadow-lg">
+                <div class="text-sm font-medium">Total SC Pro Rate</div>
+                <div class="text-2xl font-bold">{{ formatCurrency(summary.totalServiceChargeProRate) }}</div>
+              </div>
+              <div class="bg-gradient-to-br from-green-400 to-green-600 text-white p-4 rounded-xl shadow-lg">
+                <div class="text-sm font-medium">Total Service Charge</div>
+                <div class="text-2xl font-bold">{{ formatCurrency(summary.totalServiceCharge) }}</div>
               </div>
               <div class="bg-gradient-to-br from-red-400 to-red-600 text-white p-4 rounded-xl shadow-lg">
                 <div class="text-sm font-medium">Total BPJS JKN</div>
@@ -405,12 +435,17 @@ async function showPayroll(employee) {
                   <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">Nama Karyawan</th>
                   <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">Jabatan</th>
                   <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">Divisi</th>
+                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Point</th>
                   <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Gaji Pokok</th>
                   <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Tunjangan</th>
                   <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Menit Telat</th>
                   <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Jam Lembur</th>
                   <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Gaji Lembur</th>
                   <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Uang Makan</th>
+                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Hari Kerja</th>
+                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">SC By Point</th>
+                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">SC Pro Rate</th>
+                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Total SC</th>
                   <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">BPJS JKN</th>
                   <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">BPJS TK</th>
                   <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Custom Earnings</th>
@@ -437,6 +472,9 @@ async function showPayroll(employee) {
                     <td class="px-4 py-3 text-sm text-gray-900 font-semibold">{{ item.nama_lengkap }}</td>
                     <td class="px-4 py-3 text-sm text-gray-700">{{ item.jabatan }}</td>
                     <td class="px-4 py-3 text-sm text-gray-700">{{ item.divisi }}</td>
+                    <td class="px-4 py-3 text-sm text-center font-bold text-purple-600">
+                      {{ item.point || 0 }}
+                    </td>
                     <td class="px-4 py-3 text-sm text-center font-bold text-green-600">
                       {{ formatCurrency(item.gaji_pokok) }}
                     </td>
@@ -481,6 +519,36 @@ async function showPayroll(employee) {
                       <div class="text-xs text-blue-600 mt-1">
                         {{ formatCurrency(item.nominal_uang_makan) }}/hari
                       </div>
+                    </td>
+                    <td class="px-4 py-3 text-sm text-center font-bold text-blue-600">
+                      {{ item.hari_kerja || 0 }}
+                    </td>
+                    <td class="px-4 py-3 text-sm text-center font-bold">
+                      <span v-if="item.master_data && item.master_data.sc == 1" class="text-green-600">
+                        {{ formatCurrency(item.service_charge_by_point || 0) }}
+                      </span>
+                      <span v-else class="text-gray-400">
+                        {{ formatCurrency(0) }}
+                        <span class="text-xs text-red-500 ml-1">(SC Disabled)</span>
+                      </span>
+                    </td>
+                    <td class="px-4 py-3 text-sm text-center font-bold">
+                      <span v-if="item.master_data && item.master_data.sc == 1" class="text-green-600">
+                        {{ formatCurrency(item.service_charge_pro_rate || 0) }}
+                      </span>
+                      <span v-else class="text-gray-400">
+                        {{ formatCurrency(0) }}
+                        <span class="text-xs text-red-500 ml-1">(SC Disabled)</span>
+                      </span>
+                    </td>
+                    <td class="px-4 py-3 text-sm text-center font-bold">
+                      <span v-if="item.master_data && item.master_data.sc == 1" class="text-green-600 font-bold">
+                        {{ formatCurrency(item.service_charge || 0) }}
+                      </span>
+                      <span v-else class="text-gray-400">
+                        {{ formatCurrency(0) }}
+                        <span class="text-xs text-red-500 ml-1">(SC Disabled)</span>
+                      </span>
                     </td>
                     <td class="px-4 py-3 text-sm text-center font-bold">
                       <span v-if="item.master_data && item.master_data.bpjs_jkn == 1" class="text-red-600">

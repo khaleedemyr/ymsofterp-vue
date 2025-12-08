@@ -1282,9 +1282,15 @@ class PurchaseRequisitionController extends Controller
     /**
      * Approve purchase requisition
      */
-    public function approve(PurchaseRequisition $purchaseRequisition)
+    public function approve(Request $request, PurchaseRequisition $purchaseRequisition)
     {
         if ($purchaseRequisition->status !== 'SUBMITTED') {
+            if ($request->expectsJson() || $request->wantsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Only submitted purchase requisitions can be approved.'
+                ], 400);
+            }
             return back()->withErrors(['error' => 'Only submitted purchase requisitions can be approved.']);
         }
 
@@ -1294,6 +1300,9 @@ class PurchaseRequisitionController extends Controller
             // Superadmin: user dengan id_role = '5af56935b011a' bisa approve semua
             $isSuperadmin = $currentApprover->id_role === '5af56935b011a';
             
+            // Get comment from request (for API calls)
+            $comment = $request->input('comment');
+            
             if ($isSuperadmin) {
                 // Superadmin can approve any pending level - approve the next pending level
                 $pendingFlows = $purchaseRequisition->approvalFlows()
@@ -1302,6 +1311,12 @@ class PurchaseRequisitionController extends Controller
                     ->get();
                 
                 if ($pendingFlows->isEmpty()) {
+                    if ($request->expectsJson() || $request->wantsJson()) {
+                        return response()->json([
+                            'success' => false,
+                            'message' => 'No pending approvals found.'
+                        ], 400);
+                    }
                     return back()->withErrors(['error' => 'No pending approvals found.']);
                 }
                 
@@ -1311,6 +1326,7 @@ class PurchaseRequisitionController extends Controller
                     'status' => 'APPROVED',
                     'approved_at' => now(),
                     'approver_id' => $currentApprover->id, // Update approver_id to superadmin
+                    'comments' => $comment,
                 ]);
             } else {
                 // Regular users: Update the approval flow for current approver
@@ -1320,12 +1336,19 @@ class PurchaseRequisitionController extends Controller
                     ->first();
                 
                 if (!$currentApprovalFlow) {
+                    if ($request->expectsJson() || $request->wantsJson()) {
+                        return response()->json([
+                            'success' => false,
+                            'message' => 'You are not authorized to approve this purchase requisition.'
+                        ], 403);
+                    }
                     return back()->withErrors(['error' => 'You are not authorized to approve this purchase requisition.']);
                 }
                 
                 $currentApprovalFlow->update([
                     'status' => 'APPROVED',
                     'approved_at' => now(),
+                    'comments' => $comment,
                 ]);
             }
             
@@ -1354,9 +1377,29 @@ class PurchaseRequisitionController extends Controller
                 $message = 'Purchase Requisition fully approved!';
             }
             
+            // Return JSON response for API calls
+            if ($request->expectsJson() || $request->wantsJson()) {
+                return response()->json([
+                    'success' => true,
+                    'message' => $message
+                ]);
+            }
+            
             return redirect()->route('purchase-requisitions.show', $purchaseRequisition)
                            ->with('success', $message);
         } catch (\Exception $e) {
+            \Log::error('Error approving PR', [
+                'pr_id' => $purchaseRequisition->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            if ($request->expectsJson() || $request->wantsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Failed to approve purchase requisition: ' . $e->getMessage()
+                ], 500);
+            }
             return back()->withErrors(['error' => 'Failed to approve purchase requisition: ' . $e->getMessage()]);
         }
     }

@@ -42,8 +42,16 @@ class PayrollController extends Controller
             $users = $userQuery->orderBy('nama_lengkap')->get(['id', 'nama_lengkap', 'nik', 'id_jabatan']);
             // Join jabatan
             $jabatans = DB::table('tbl_data_jabatan')->pluck('nama_jabatan', 'id_jabatan');
+            // Ambil data level dari jabatan
+            $jabatanLevels = DB::table('tbl_data_jabatan')->pluck('id_level', 'id_jabatan');
+            // Ambil data point dari level
+            $levelPoints = DB::table('tbl_data_level')
+                ->pluck('nilai_point', 'id');
             foreach ($users as $u) {
                 $u->jabatan = $jabatans[$u->id_jabatan] ?? '-';
+                // Ambil point dari level melalui jabatan
+                $userLevel = $jabatanLevels[$u->id_jabatan] ?? null;
+                $u->point = $userLevel ? ($levelPoints[$userLevel] ?? 0) : 0;
             }
             // Ambil payroll master untuk user2 tsb
             $userIds = $users->pluck('id');

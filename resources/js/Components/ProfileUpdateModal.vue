@@ -91,6 +91,7 @@ const form = useForm({
     division_id: '',
     tanggal_masuk: '',
     pin_pos: '',
+    pin_payroll: '',
     
     // Work Info Names (from API)
     jabatan_name: '',
@@ -616,10 +617,10 @@ const updateProfileData = async () => {
             let processedValue = value;
             
             // Special handling for specific fields
-            if (key === 'pin_pos') {
-                // pin_pos must be a string, ensure it's properly converted
+            if (key === 'pin_pos' || key === 'pin_payroll') {
+                // pin_pos and pin_payroll must be a string, ensure it's properly converted
                 processedValue = String(processedValue).trim();
-                console.log(`Special handling for pin_pos: "${processedValue}" (type: ${typeof processedValue})`);
+                console.log(`Special handling for ${key}: "${processedValue}" (type: ${typeof processedValue})`);
             } else {
                 // Convert to string if it's not already
                 if (typeof processedValue !== 'string') {
@@ -941,6 +942,19 @@ const submitPassword = () => {
                                 maxlength="10"
                             />
                             <InputError class="mt-2" :message="form.errors.pin_pos" />
+                        </div>
+
+                        <div>
+                            <InputLabel for="pin_payroll" value="PIN Payroll *" />
+                            <TextInput
+                                id="pin_payroll"
+                                type="text"
+                                class="mt-1 block w-full"
+                                v-model="form.pin_payroll"
+                                maxlength="10"
+                                required
+                            />
+                            <InputError class="mt-2" :message="form.errors.pin_payroll" />
                         </div>
 
                         <div>

@@ -24,7 +24,7 @@ class User extends Authenticatable
         'no_hp_kontak_darurat', 'hubungan_kontak_darurat', 'nomor_kk', 'nama_rekening', 'no_rekening',
         'npwp_number', 'bpjs_health_number', 'bpjs_employment_number', 'last_education', 'name_school_college',
         'school_college_major', 'foto_ktp', 'foto_kk', 'upload_latest_color_photo', 'avatar', 'banner', 'imei',
-        'device_info', 'status', 'pin_pos', 'tanggal_masuk', 'total_training_hours', 'total_teaching_hours', 'cuti',
+        'device_info', 'status', 'pin_pos', 'pin_payroll', 'tanggal_masuk', 'total_training_hours', 'total_teaching_hours', 'cuti',
         // field lama
         'id_jabatan', 'id_outlet', 'division_id',
     ];

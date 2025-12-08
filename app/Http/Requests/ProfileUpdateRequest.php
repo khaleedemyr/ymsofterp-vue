@@ -42,6 +42,7 @@ class ProfileUpdateRequest extends FormRequest
             
             // Work Info (readonly fields removed - not allowed to be updated by user)
             'pin_pos' => ['nullable', 'string', 'max:10'],
+            'pin_payroll' => ['required', 'string', 'max:10'],
             
             // Financial
             'nama_rekening' => ['nullable', 'string', 'max:255'],

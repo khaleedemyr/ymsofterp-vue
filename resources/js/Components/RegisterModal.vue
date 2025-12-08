@@ -85,6 +85,8 @@ const form = useForm({
     alamat_ktp: '',
     
     // Work Info (without jabatan, outlet, divisi)
+    pin_pos: '',
+    pin_payroll: '',
     
     // Financial
     nama_rekening: '',
@@ -178,6 +180,7 @@ const submitRegister = () => {
         // Contact Info
         'alamat': 'Alamat',
         'alamat_ktp': 'Alamat KTP',
+        'pin_payroll': 'PIN Payroll',
         'nama_kontak_darurat': 'Nama Kontak Darurat',
         'no_hp_kontak_darurat': 'No HP Kontak Darurat',
         'hubungan_kontak_darurat': 'Hubungan Kontak Darurat',
@@ -278,6 +281,8 @@ const submitRegister = () => {
                     'golongan_darah': 'Golongan Darah',
                     'alamat': 'Alamat',
                     'alamat_ktp': 'Alamat KTP',
+                    'pin_pos': 'PIN POS',
+                    'pin_payroll': 'PIN Payroll',
                     'nama_kontak_darurat': 'Nama Kontak Darurat',
                     'no_hp_kontak_darurat': 'No HP Kontak Darurat',
                     'hubungan_kontak_darurat': 'Hubungan Kontak Darurat',
@@ -709,6 +714,35 @@ const submitRegister = () => {
                             <InputLabel for="alamat_ktp" value="Alamat KTP *" />
                             <textarea v-model="form.alamat_ktp" required rows="3" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500"></textarea>
                             <InputError class="mt-2" :message="form.errors.alamat_ktp" />
+                        </div>
+
+                        <div class="md:col-span-2">
+                            <h3 class="text-lg font-medium text-gray-900 mb-4">Informasi Kerja</h3>
+                        </div>
+
+                        <div>
+                            <InputLabel for="pin_pos" value="PIN POS" />
+                            <TextInput
+                                id="pin_pos"
+                                type="text"
+                                class="mt-1 block w-full"
+                                v-model="form.pin_pos"
+                                maxlength="10"
+                            />
+                            <InputError class="mt-2" :message="form.errors.pin_pos" />
+                        </div>
+
+                        <div>
+                            <InputLabel for="pin_payroll" value="PIN Payroll *" />
+                            <TextInput
+                                id="pin_payroll"
+                                type="text"
+                                class="mt-1 block w-full"
+                                v-model="form.pin_payroll"
+                                maxlength="10"
+                                required
+                            />
+                            <InputError class="mt-2" :message="form.errors.pin_payroll" />
                         </div>
 
                         <div class="md:col-span-2">

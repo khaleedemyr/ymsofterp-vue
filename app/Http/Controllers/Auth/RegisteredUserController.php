@@ -51,6 +51,8 @@ class RegisteredUserController extends Controller
             'alamat_ktp' => 'required|string',
             
             // Work Info (without jabatan, outlet, divisi)
+            'pin_pos' => 'nullable|string|max:10',
+            'pin_payroll' => 'required|string|max:10',
             
             // Financial
             'nama_rekening' => 'required|string|max:255',
@@ -100,6 +102,8 @@ class RegisteredUserController extends Controller
             'golongan_darah' => $request->golongan_darah,
             'alamat' => $request->alamat,
             'alamat_ktp' => $request->alamat_ktp,
+            'pin_pos' => $request->pin_pos,
+            'pin_payroll' => $request->pin_payroll,
             'nama_rekening' => $request->nama_rekening,
             'no_rekening' => $request->no_rekening,
             'npwp_number' => $request->npwp_number,

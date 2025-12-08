@@ -327,6 +327,7 @@ async function importPayroll() {
                   <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">NIK</th>
                   <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">Nama Karyawan</th>
                   <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">Jabatan</th>
+                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Point</th>
                   <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">GAJI<br/>(EARN)</th>
                   <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">TUNJANGAN<br/>(EARN)</th>
                   <th class="px-2 py-3 text-center text-xs font-bold uppercase tracking-wider">OT<br/>(EARN)</th>
@@ -341,6 +342,7 @@ async function importPayroll() {
                 <tr class="bg-gradient-to-r from-blue-100 to-green-100 text-blue-900 text-xs">
                   <td></td>
                   <td class="text-right pr-2 font-bold">Isi Semua:</td>
+                  <td></td>
                   <td></td>
                   <td class="px-2 py-1 text-center">
                     <input 
@@ -395,6 +397,7 @@ async function importPayroll() {
                   <td class="px-4 py-2">{{ user.nik }}</td>
                   <td class="px-4 py-2 font-semibold">{{ user.nama_lengkap }}</td>
                   <td class="px-4 py-2">{{ user.jabatan }}</td>
+                  <td class="px-4 py-2 text-center font-bold text-purple-600">{{ user.point || 0 }}</td>
                   <template v-if="getPayrollDataByUserId[user.id]">
                     <td class="px-2 py-2 text-center">
                       <input 

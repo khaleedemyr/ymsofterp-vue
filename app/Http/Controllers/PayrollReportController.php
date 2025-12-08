@@ -17,6 +17,7 @@ class PayrollReportController extends Controller
         $outletId = $request->input('outlet_id');
         $month = $request->input('month', date('m'));
         $year = $request->input('year', date('Y'));
+        $serviceCharge = $request->input('service_charge', 0); // Nilai service charge per karyawan
 
         // Dropdown Outlet
         $outlets = DB::table('tbl_data_outlet')
@@ -68,6 +69,10 @@ class PayrollReportController extends Controller
             // Ambil data level dari jabatan
             $jabatanLevels = DB::table('tbl_data_jabatan')->pluck('id_level', 'id_jabatan');
             
+            // Ambil data point dari level
+            $levelPoints = DB::table('tbl_data_level')
+                ->pluck('nilai_point', 'id');
+            
             // Ambil data nominal lembur dan uang makan dari divisi
             $divisiNominalLembur = DB::table('tbl_data_divisi')
                 ->pluck('nominal_lembur', 'id');
@@ -90,6 +95,8 @@ class PayrollReportController extends Controller
                 ->get()
                 ->groupBy('user_id');
 
+            // Step 1: Hitung semua data dasar untuk semua user terlebih dahulu
+            $userData = [];
             foreach ($users as $user) {
                 // Ambil data master payroll untuk user ini
                 $masterData = $payrollMaster->get($user->id, (object)[
@@ -111,8 +118,68 @@ class PayrollReportController extends Controller
                 $totalTelat = $attendanceData->sum('telat');
                 $totalLembur = $attendanceData->sum('lembur');
 
-                // Hitung hari kerja yang sebenarnya dari periode yang dipilih
-                $hariKerja = $this->getHariKerja($user->id, $outletId, $startDate, $endDate);
+                // Hitung hari kerja berdasarkan data attendance yang sebenarnya terjadi
+                // Hari kerja = jumlah hari yang ada scan attendance-nya dan bukan off day
+                // Hanya hitung hari yang benar-benar ada scan attendance (bukan yang dijadwalkan saja)
+                $hariKerja = $attendanceData->filter(function($item) {
+                    // Hari kerja = ada scan attendance DAN bukan off day
+                    return isset($item['has_scan']) && $item['has_scan'] && !$item['is_off'];
+                })->count();
+
+                // Ambil point dari level melalui jabatan
+                $userLevel = $jabatanLevels[$user->id_jabatan] ?? null;
+                $userPoint = $userLevel ? ($levelPoints[$userLevel] ?? 0) : 0;
+
+                // Simpan data user untuk perhitungan service charge
+                $userData[$user->id] = [
+                    'user' => $user,
+                    'masterData' => $masterData,
+                    'attendanceData' => $attendanceData,
+                    'totalTelat' => $totalTelat,
+                    'totalLembur' => $totalLembur,
+                    'hariKerja' => $hariKerja,
+                    'userPoint' => $userPoint,
+                ];
+            }
+
+            // Step 2: Hitung total untuk service charge (hanya untuk user yang sc = 1)
+            $totalPointHariKerja = 0; // Sum(point × hari kerja) untuk semua user yang sc = 1
+            $totalHariKerja = 0; // Sum(hari kerja) untuk semua user yang sc = 1
+            
+            foreach ($userData as $data) {
+                if ($data['masterData']->sc == 1) {
+                    $totalPointHariKerja += $data['userPoint'] * $data['hariKerja'];
+                    $totalHariKerja += $data['hariKerja'];
+                }
+            }
+
+            // Step 3: Hitung rate service charge (50:50)
+            $serviceChargeByPoint = 0; // 50% untuk by point
+            $serviceChargeProRate = 0; // 50% untuk pro rate
+            $rateByPoint = 0; // Rate per (point × hari kerja)
+            $rateProRate = 0; // Rate per hari kerja
+
+            if ($serviceCharge > 0) {
+                $serviceChargeByPoint = $serviceCharge / 2; // 50%
+                $serviceChargeProRate = $serviceCharge / 2; // 50%
+
+                if ($totalPointHariKerja > 0) {
+                    $rateByPoint = $serviceChargeByPoint / $totalPointHariKerja;
+                }
+                if ($totalHariKerja > 0) {
+                    $rateProRate = $serviceChargeProRate / $totalHariKerja;
+                }
+            }
+
+            // Step 4: Hitung service charge per user dan total gaji
+            foreach ($userData as $userId => $data) {
+                $user = $data['user'];
+                $masterData = $data['masterData'];
+                $attendanceData = $data['attendanceData'];
+                $totalTelat = $data['totalTelat'];
+                $totalLembur = $data['totalLembur'];
+                $hariKerja = $data['hariKerja'];
+                $userPoint = $data['userPoint'];
                 
                 // Hitung gaji lembur menggunakan nominal_lembur dari divisi
                 $gajiLembur = 0;
@@ -225,20 +292,37 @@ class PayrollReportController extends Controller
                     ]);
                 }
 
+                // Hitung service charge (By Point dan Pro Rate) jika enabled
+                $serviceChargeByPointAmount = 0;
+                $serviceChargeProRateAmount = 0;
+                $serviceChargeTotal = 0;
+                
+                if ($masterData->sc == 1 && $serviceCharge > 0) {
+                    // Service charge by point = rate × (point × hari kerja)
+                    $serviceChargeByPointAmount = $rateByPoint * ($userPoint * $hariKerja);
+                    
+                    // Service charge pro rate = rate × hari kerja
+                    $serviceChargeProRateAmount = $rateProRate * $hariKerja;
+                    
+                    // Total service charge per user
+                    $serviceChargeTotal = $serviceChargeByPointAmount + $serviceChargeProRateAmount;
+                }
+
                 // Hitung custom earnings dan deductions
                 $userCustomItems = $customItems->get($user->id, collect());
                 $customEarnings = $userCustomItems->where('item_type', 'earn')->sum('item_amount');
                 $customDeductions = $userCustomItems->where('item_type', 'deduction')->sum('item_amount');
 
-                // Hitung total gaji
-                $totalGaji = $masterData->gaji + $masterData->tunjangan + $gajiLembur + $uangMakan + $customEarnings - $potonganTelat - $bpjsJKN - $bpjsTK - $customDeductions;
-
+                // Hitung total gaji (service charge ditambahkan sebagai earning)
+                $totalGaji = $masterData->gaji + $masterData->tunjangan + $gajiLembur + $uangMakan + $serviceChargeTotal + $customEarnings - $potonganTelat - $bpjsJKN - $bpjsTK - $customDeductions;
+                
                 $payrollData->push([
                     'user_id' => $user->id,
                     'nik' => $user->nik,
                     'nama_lengkap' => $user->nama_lengkap,
                     'jabatan' => $jabatans[$user->id_jabatan] ?? '-',
                     'divisi' => $divisions[$user->division_id] ?? '-',
+                    'point' => $userPoint,
                     'gaji_pokok' => $masterData->gaji,
                     'tunjangan' => $masterData->tunjangan,
                     'total_telat' => $totalTelat,
@@ -247,6 +331,9 @@ class PayrollReportController extends Controller
                     'gaji_lembur' => round($gajiLembur),
                     'nominal_uang_makan' => $divisiNominalUangMakan[$user->division_id] ?? 0,
                     'uang_makan' => round($uangMakan),
+                    'service_charge_by_point' => round($serviceChargeByPointAmount),
+                    'service_charge_pro_rate' => round($serviceChargeProRateAmount),
+                    'service_charge' => round($serviceChargeTotal),
                     'bpjs_jkn' => round($bpjsJKN),
                     'bpjs_tk' => round($bpjsTK),
                     'custom_earnings' => round($customEarnings),
@@ -271,6 +358,7 @@ class PayrollReportController extends Controller
                 'outlet_id' => $outletId,
                 'month' => $month,
                 'year' => $year,
+                'service_charge' => $serviceCharge,
             ],
         ]);
     }
@@ -406,63 +494,78 @@ class PayrollReportController extends Controller
         foreach ($period as $tanggal) {
             $dayData = $dataRows->where('tanggal', $tanggal);
             
+            $jam_masuk = null;
+            $jam_keluar = null;
+            $telat = 0;
+            $lembur = 0;
+            $is_off = false;
+            $has_scan = false; // Flag untuk menandai apakah hari ini ada scan attendance
+            
             if ($dayData->count() > 0) {
-                foreach ($dayData as $row) {
-                    $jam_masuk = $row['jam_masuk'] ? date('H:i:s', strtotime($row['jam_masuk'])) : null;
-                    $jam_keluar = $row['jam_keluar'] ? date('H:i:s', strtotime($row['jam_keluar'])) : null;
-                    $telat = 0;
-                    $lembur = 0;
-                    $is_off = false;
+                // Ambil data dari scan attendance yang ada
+                $row = $dayData->first();
+                $jam_masuk = $row['jam_masuk'] ? date('H:i:s', strtotime($row['jam_masuk'])) : null;
+                $jam_keluar = $row['jam_keluar'] ? date('H:i:s', strtotime($row['jam_keluar'])) : null;
+                $has_scan = true; // Ada scan attendance untuk hari ini
+            }
+            
+            // Cek shift untuk menentukan apakah off day
+            $shift = DB::table('user_shifts as us')
+                ->leftJoin('shifts as s', 'us.shift_id', '=', 's.id')
+                ->where('us.user_id', $userId)
+                ->where('us.tanggal', $tanggal)
+                ->where('us.outlet_id', $outletId)
+                ->select('s.time_start', 's.time_end', 's.shift_name', 'us.shift_id')
+                ->first();
+            
+            if ($shift) {
+                if (is_null($shift->shift_id) || (strtolower($shift->shift_name ?? '') === 'off')) {
+                    $is_off = true;
+                }
+            } else {
+                // Jika tidak ada shift, anggap sebagai off day
+                $is_off = true;
+            }
+            
+            // Hitung telat dan lembur hanya jika bukan off day dan ada scan attendance
+            if (!$is_off && $jam_masuk && $jam_keluar) {
+                if ($shift && $shift->time_start) {
+                    $start = strtotime($shift->time_start);
+                    $masuk = strtotime($jam_masuk);
+                    $diff = $masuk - $start;
+                    $telat = $diff > 0 ? round($diff/60) : 0;
+                }
+                if ($shift && $shift->time_end && $jam_keluar) {
+                    // Create full datetime for shift end
+                    $shiftEndDateTime = date('Y-m-d', strtotime($tanggal)) . ' ' . $shift->time_end;
                     
-                    $shift = DB::table('user_shifts as us')
-                        ->leftJoin('shifts as s', 'us.shift_id', '=', 's.id')
-                        ->where('us.user_id', $row['user_id'])
-                        ->where('us.tanggal', $tanggal)
-                        ->where('us.outlet_id', $row['id_outlet'])
-                        ->select('s.time_start', 's.time_end', 's.shift_name', 'us.shift_id')
-                        ->first();
-                    
-                    if ($shift) {
-                        if (is_null($shift->shift_id) || (strtolower($shift->shift_name ?? '') === 'off')) {
-                            $is_off = true;
-                        }
-                    }
-                    
-                    if (!$is_off) {
-                        if ($shift && $shift->time_start && $jam_masuk) {
-                            $start = strtotime($shift->time_start);
-                            $masuk = strtotime($jam_masuk);
-                            $diff = $masuk - $start;
-                            $telat = $diff > 0 ? round($diff/60) : 0;
-                        }
-                        if ($shift && $shift->time_end && $jam_keluar) {
-                            // Create full datetime for shift end
-                            $shiftEndDateTime = date('Y-m-d', strtotime($tanggal)) . ' ' . $shift->time_end;
-                            
-                            // Use scan out that's already in full datetime format
-                            $scanOutDateTime = $row['jam_keluar'];
-                            
+                    // Get scan out from dayData
+                    if ($dayData->count() > 0) {
+                        $row = $dayData->first();
+                        $scanOutDateTime = $row['jam_keluar'] ?? null;
+                        if ($scanOutDateTime) {
                             // Calculate time difference
                             $end = strtotime($shiftEndDateTime);
                             $keluar = strtotime($scanOutDateTime);
                             $diff = $keluar - $end;
                             $lembur = $diff > 0 ? floor($diff/3600) : 0;
                         }
-                    } else {
-                        $jam_masuk = null;
-                        $jam_keluar = null;
-                        $telat = 0;
-                        $lembur = 0;
                     }
-                    
-                    $rows->push([
-                        'tanggal' => $tanggal,
-                        'telat' => $telat,
-                        'lembur' => $lembur,
-                        'is_off' => $is_off,
-                    ]);
                 }
+            } else if ($is_off) {
+                $jam_masuk = null;
+                $jam_keluar = null;
+                $telat = 0;
+                $lembur = 0;
             }
+            
+            $rows->push([
+                'tanggal' => $tanggal,
+                'telat' => $telat,
+                'lembur' => $lembur,
+                'is_off' => $is_off,
+                'has_scan' => $has_scan, // Flag untuk menandai apakah hari ini ada scan attendance
+            ]);
         }
 
         return $rows;
@@ -518,6 +621,7 @@ class PayrollReportController extends Controller
         $outletId = $request->input('outlet_id');
         $month = $request->input('month');
         $year = $request->input('year');
+        $serviceCharge = $request->input('service_charge', 0);
 
         if (!$outletId || !$month || !$year) {
             return response()->json(['error' => 'Parameter tidak lengkap'], 400);
@@ -542,7 +646,15 @@ class PayrollReportController extends Controller
             ->get()
             ->keyBy('user_id');
 
-        $exportData = [];
+        // Ambil data level dari jabatan dan point
+        $jabatanLevels = DB::table('tbl_data_jabatan')->pluck('id_level', 'id_jabatan');
+        $levelPoints = DB::table('tbl_data_level')->pluck('nilai_point', 'id');
+        $divisiNominalLembur = DB::table('tbl_data_divisi')->pluck('nominal_lembur', 'id');
+        $divisiNominalUangMakan = DB::table('tbl_data_divisi')->pluck('nominal_uang_makan', 'id');
+        $levelNominalDasarBPJS = DB::table('tbl_data_level')->pluck('nilai_dasar_potongan_bpjs', 'id');
+
+        // Step 1: Hitung semua data dasar untuk semua user terlebih dahulu
+        $userData = [];
         foreach ($users as $user) {
             $masterData = $payrollMaster->get($user->id, (object)[
                 'gaji' => 0,
@@ -560,51 +672,106 @@ class PayrollReportController extends Controller
             $totalTelat = $attendanceData->sum('telat');
             $totalLembur = $attendanceData->sum('lembur');
 
-            // Hitung hari kerja yang sebenarnya dari periode yang dipilih
-            $hariKerja = $this->getHariKerja($user->id, $outletId, $startDate, $endDate);
+            // Hitung hari kerja berdasarkan data attendance yang sebenarnya terjadi
+            $hariKerja = $attendanceData->filter(function($item) {
+                return isset($item['has_scan']) && $item['has_scan'] && !$item['is_off'];
+            })->count();
+
+            // Ambil point dari level melalui jabatan
+            $userLevel = $jabatanLevels[$user->id_jabatan] ?? null;
+            $userPoint = $userLevel ? ($levelPoints[$userLevel] ?? 0) : 0;
+
+            // Simpan data user
+            $userData[$user->id] = [
+                'user' => $user,
+                'masterData' => $masterData,
+                'attendanceData' => $attendanceData,
+                'totalTelat' => $totalTelat,
+                'totalLembur' => $totalLembur,
+                'hariKerja' => $hariKerja,
+                'userPoint' => $userPoint,
+            ];
+        }
+
+        // Step 2: Hitung total untuk service charge
+        $totalPointHariKerja = 0;
+        $totalHariKerja = 0;
+        
+        foreach ($userData as $data) {
+            if ($data['masterData']->sc == 1) {
+                $totalPointHariKerja += $data['userPoint'] * $data['hariKerja'];
+                $totalHariKerja += $data['hariKerja'];
+            }
+        }
+
+        // Step 3: Hitung rate service charge (50:50)
+        $serviceChargeByPoint = 0;
+        $serviceChargeProRate = 0;
+        $rateByPoint = 0;
+        $rateProRate = 0;
+
+        if ($serviceCharge > 0) {
+            $serviceChargeByPoint = $serviceCharge / 2;
+            $serviceChargeProRate = $serviceCharge / 2;
+
+            if ($totalPointHariKerja > 0) {
+                $rateByPoint = $serviceChargeByPoint / $totalPointHariKerja;
+            }
+            if ($totalHariKerja > 0) {
+                $rateProRate = $serviceChargeProRate / $totalHariKerja;
+            }
+        }
+
+        // Step 4: Hitung service charge per user dan export data
+        $exportData = [];
+        foreach ($userData as $userId => $data) {
+            $user = $data['user'];
+            $masterData = $data['masterData'];
+            $totalTelat = $data['totalTelat'];
+            $totalLembur = $data['totalLembur'];
+            $hariKerja = $data['hariKerja'];
+            $userPoint = $data['userPoint'];
 
             $gajiLembur = 0;
             if ($totalLembur > 0 && $masterData->ot == 1) {
-                // Ambil nominal lembur dari divisi karyawan
-                $nominalLembur = DB::table('tbl_data_divisi')
-                    ->where('id', $user->division_id)
-                    ->value('nominal_lembur') ?? 0;
+                $nominalLembur = $divisiNominalLembur[$user->division_id] ?? 0;
                 $gajiLembur = $totalLembur * $nominalLembur;
             }
 
             // Hitung uang makan berdasarkan hari kerja
             $uangMakan = 0;
             if ($masterData->um == 1) {
-                // Ambil nominal uang makan dari divisi karyawan
-                $nominalUangMakan = DB::table('tbl_data_divisi')
-                    ->where('id', $user->division_id)
-                    ->value('nominal_uang_makan') ?? 0;
+                $nominalUangMakan = $divisiNominalUangMakan[$user->division_id] ?? 0;
                 $uangMakan = $hariKerja * $nominalUangMakan;
+            }
+
+            // Hitung service charge (By Point dan Pro Rate) jika enabled
+            $serviceChargeByPointAmount = 0;
+            $serviceChargeProRateAmount = 0;
+            $serviceChargeTotal = 0;
+            
+            if ($masterData->sc == 1 && $serviceCharge > 0) {
+                $serviceChargeByPointAmount = $rateByPoint * ($userPoint * $hariKerja);
+                $serviceChargeProRateAmount = $rateProRate * $hariKerja;
+                $serviceChargeTotal = $serviceChargeByPointAmount + $serviceChargeProRateAmount;
             }
 
             // Hitung BPJS JKN dan BPJS TK berdasarkan level dan outlet
             $bpjsJKN = 0;
             $bpjsTK = 0;
             if ($masterData->bpjs_jkn == 1 || $masterData->bpjs_tk == 1) {
-                // Ambil id_level dari jabatan karyawan
-                $userLevel = DB::table('tbl_data_jabatan')
-                    ->where('id_jabatan', $user->id_jabatan)
-                    ->value('id_level');
-                
-                // Ambil nilai dasar potongan BPJS dari level karyawan
-                $nilaiDasarBPJS = $userLevel ? (DB::table('tbl_data_level')
-                    ->where('id', $userLevel)
-                    ->value('nilai_dasar_potongan_bpjs') ?? 0) : 0;
+                $userLevel = $jabatanLevels[$user->id_jabatan] ?? null;
+                $nilaiDasarBPJS = $userLevel ? ($levelNominalDasarBPJS[$userLevel] ?? 0) : 0;
                 
                 if ($masterData->bpjs_jkn == 1) {
-                    $bpjsJKN = $nilaiDasarBPJS * 0.01; // 1% dari nilai dasar
+                    $bpjsJKN = $nilaiDasarBPJS * 0.01;
                 }
                 
                 if ($masterData->bpjs_tk == 1) {
                     if ($user->id_outlet == 1) {
-                        $bpjsTK = $nilaiDasarBPJS * 0.03; // 2% + 1% = 3% dari nilai dasar
+                        $bpjsTK = $nilaiDasarBPJS * 0.03;
                     } else {
-                        $bpjsTK = $nilaiDasarBPJS * 0.02; // 2% dari nilai dasar
+                        $bpjsTK = $nilaiDasarBPJS * 0.02;
                     }
                 }
             }
@@ -615,7 +782,7 @@ class PayrollReportController extends Controller
             if ($totalTelat > 0) {
                 $potonganTelat = $totalTelat * $gajiPerMenit;
             }
-            $totalGaji = $masterData->gaji + $masterData->tunjangan + $gajiLembur + $uangMakan - $potonganTelat - $bpjsJKN - $bpjsTK;
+            $totalGaji = $masterData->gaji + $masterData->tunjangan + $gajiLembur + $uangMakan + $serviceChargeTotal - $potonganTelat - $bpjsJKN - $bpjsTK;
 
             $exportData[] = [
                 'NIK' => $user->nik,
@@ -629,6 +796,9 @@ class PayrollReportController extends Controller
                 'Gaji Lembur' => round($gajiLembur),
                 'Nominal Uang Makan/Hari' => DB::table('tbl_data_divisi')->where('id', $user->division_id)->value('nominal_uang_makan') ?? 0,
                 'Uang Makan' => round($uangMakan),
+                'Service Charge By Point' => round($serviceChargeByPointAmount),
+                'Service Charge Pro Rate' => round($serviceChargeProRateAmount),
+                'Service Charge Total' => round($serviceChargeTotal),
                 'BPJS JKN' => round($bpjsJKN),
                 'BPJS TK' => round($bpjsTK),
                 'Gaji per Menit' => round($gajiPerMenit, 2),
@@ -1012,6 +1182,7 @@ class PayrollReportController extends Controller
         $outletId = $request->input('outlet_id');
         $month = $request->input('month');
         $year = $request->input('year');
+        $serviceCharge = $request->input('service_charge', 0);
 
         // Get user data
         $user = User::find($userId);
@@ -1090,6 +1261,12 @@ class PayrollReportController extends Controller
         $customEarnings = $customItems->where('item_type', 'earn')->sum('item_amount');
         $customDeductions = $customItems->where('item_type', 'deduction')->sum('item_amount');
 
+        // Hitung service charge jika enabled
+        $serviceChargeAmount = 0;
+        if ($masterData->sc == 1 && $serviceCharge > 0) {
+            $serviceChargeAmount = $serviceCharge;
+        }
+
         // Debug logging untuk custom items
         \Log::info('Payroll Show Debug - Custom Items', [
             'user_id' => $userId,
@@ -1105,7 +1282,7 @@ class PayrollReportController extends Controller
         ]);
 
         // Calculate total salary
-        $totalGaji = $masterData->gaji + $masterData->tunjangan + $gajiLembur + $uangMakan + $customEarnings - $potonganTelat - $bpjsJKN - $bpjsTK - $customDeductions;
+        $totalGaji = $masterData->gaji + $masterData->tunjangan + $gajiLembur + $uangMakan + $serviceChargeAmount + $customEarnings - $potonganTelat - $bpjsJKN - $bpjsTK - $customDeductions;
 
         // Prepare logo data with better error handling
         $imagePath = public_path('images/logojustusgroup.png');
@@ -1149,6 +1326,7 @@ class PayrollReportController extends Controller
                 'nominal_lembur_per_jam' => $nominalLemburPerJam,
                 'uang_makan' => $uangMakan,
                 'nominal_uang_makan' => $nominalUangMakan,
+                'service_charge' => round($serviceChargeAmount),
                 'total_telat' => $totalTelat,
                 'bpjs_jkn' => $bpjsJKN,
                 'bpjs_tk' => $bpjsTK,
@@ -1179,6 +1357,7 @@ class PayrollReportController extends Controller
             'nominal_lembur_per_jam' => $nominalLemburPerJam,
             'uang_makan' => $uangMakan,
             'nominal_uang_makan' => $nominalUangMakan,
+            'service_charge' => round($serviceChargeAmount),
             'total_telat' => $totalTelat,
             'bpjs_jkn' => $bpjsJKN,
             'bpjs_tk' => $bpjsTK,
@@ -1200,6 +1379,7 @@ class PayrollReportController extends Controller
         $outletId = $request->input('outlet_id');
         $month = $request->input('month');
         $year = $request->input('year');
+        $serviceCharge = $request->input('service_charge', 0);
 
         if (!$userId || !$outletId || !$month || !$year) {
             return response()->json(['error' => 'Parameter tidak lengkap'], 400);
@@ -1249,8 +1429,11 @@ class PayrollReportController extends Controller
         $totalTelat = $attendanceData->sum('telat');
         $totalLembur = $attendanceData->sum('lembur');
 
-        // Hitung hari kerja
-        $hariKerja = $this->getHariKerja($userId, $outletId, $startDate, $endDate);
+        // Hitung hari kerja berdasarkan data attendance yang sebenarnya terjadi
+        // Hanya hitung hari yang benar-benar ada scan attendance (bukan yang dijadwalkan saja)
+        $hariKerja = $attendanceData->filter(function($item) {
+            return isset($item['has_scan']) && $item['has_scan'] && !$item['is_off'];
+        })->count();
 
         // Ambil data nominal dari divisi
         $nominalLembur = DB::table('tbl_data_divisi')->where('id', $user->division_id)->value('nominal_lembur') ?? 0;
@@ -1309,6 +1492,12 @@ class PayrollReportController extends Controller
         $customEarnings = $customItems->where('item_type', 'earn')->sum('item_amount');
         $customDeductions = $customItems->where('item_type', 'deduction')->sum('item_amount');
 
+        // Hitung service charge jika enabled
+        $serviceChargeAmount = 0;
+        if ($masterData->sc == 1 && $serviceCharge > 0) {
+            $serviceChargeAmount = $serviceCharge;
+        }
+
         // Debug logging untuk custom items
         \Log::info('Payroll Print Debug - Custom Items', [
             'user_id' => $userId,
@@ -1324,7 +1513,7 @@ class PayrollReportController extends Controller
         ]);
 
         // Hitung total gaji
-        $totalGaji = $masterData->gaji + $masterData->tunjangan + $gajiLembur + $uangMakan + $customEarnings - $potonganTelat - $bpjsJKN - $bpjsTK - $customDeductions;
+        $totalGaji = $masterData->gaji + $masterData->tunjangan + $gajiLembur + $uangMakan + $serviceChargeAmount + $customEarnings - $potonganTelat - $bpjsJKN - $bpjsTK - $customDeductions;
 
         // Prepare logo data with better error handling
         $imagePath = public_path('images/logojustusgroup.png');
@@ -1365,6 +1554,7 @@ class PayrollReportController extends Controller
             'gaji_lembur' => round($gajiLembur),
             'nominal_uang_makan' => $nominalUangMakan,
             'uang_makan' => round($uangMakan),
+            'service_charge' => round($serviceChargeAmount),
             'bpjs_jkn' => round($bpjsJKN),
             'bpjs_tk' => round($bpjsTK),
             'custom_earnings' => round($customEarnings),

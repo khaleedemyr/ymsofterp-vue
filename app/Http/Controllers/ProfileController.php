@@ -45,8 +45,8 @@ class ProfileController extends Controller
             // Address
             'alamat', 'alamat_ktp',
             
-            // Work Info (only pin_pos is editable, others are readonly)
-            'pin_pos',
+            // Work Info (only pin_pos and pin_payroll are editable, others are readonly)
+            'pin_pos', 'pin_payroll',
             
             // Financial
             'nama_rekening', 'no_rekening', 'npwp_number', 'bpjs_health_number', 'bpjs_employment_number',
