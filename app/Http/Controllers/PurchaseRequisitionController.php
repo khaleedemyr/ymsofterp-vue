@@ -1282,13 +1282,44 @@ class PurchaseRequisitionController extends Controller
     /**
      * Approve purchase requisition
      */
-    public function approve(Request $request, PurchaseRequisition $purchaseRequisition)
+    public function approve(Request $request, $id)
     {
-        if ($purchaseRequisition->status !== 'SUBMITTED') {
+        // Handle both route model binding (web) and ID parameter (API)
+        if ($id instanceof PurchaseRequisition) {
+            $purchaseRequisition = $id;
+        } else {
+            $purchaseRequisition = PurchaseRequisition::find($id);
+            if (!$purchaseRequisition) {
+                if ($request->expectsJson() || $request->wantsJson()) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Purchase requisition not found.'
+                    ], 404);
+                }
+                return back()->withErrors(['error' => 'Purchase requisition not found.']);
+            }
+        }
+        
+        // Refresh model untuk mendapatkan data terbaru dari database
+        $purchaseRequisition->refresh();
+        
+        // Normalize status untuk menghindari masalah whitespace atau case
+        $status = strtoupper(trim($purchaseRequisition->status));
+        
+        // Debug log untuk melihat status sebenarnya
+        \Log::info('PR Approval Request', [
+            'pr_id' => $purchaseRequisition->id,
+            'pr_number' => $purchaseRequisition->pr_number,
+            'status_raw' => $purchaseRequisition->status,
+            'status_normalized' => $status,
+            'is_submitted' => $status === 'SUBMITTED',
+        ]);
+        
+        if ($status !== 'SUBMITTED') {
             if ($request->expectsJson() || $request->wantsJson()) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Only submitted purchase requisitions can be approved.'
+                    'message' => 'Only submitted purchase requisitions can be approved. Current status: ' . $purchaseRequisition->status
                 ], 400);
             }
             return back()->withErrors(['error' => 'Only submitted purchase requisitions can be approved.']);
