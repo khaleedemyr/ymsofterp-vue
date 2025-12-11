@@ -2584,7 +2584,7 @@ async function loadPendingHrdApprovals() {
     
     loadingHrdApprovals.value = true;
     try {
-        const response = await axios.get('/api/approval/pending-hrd');
+        const response = await axios.get('/api/approval/pending-hrd?limit=200');
         if (response.data.success) {
             const approvals = response.data.approvals || [];
             if (isSuperadmin) {
@@ -3976,7 +3976,7 @@ async function showAllPendingApprovals() {
         
         if (user.division_id === 6) {
             // Jika user adalah HRD, ambil pending HRD approvals
-            const response = await axios.get('/api/approval/pending-hrd?limit=50');
+            const response = await axios.get('/api/approval/pending-hrd?limit=200');
             if (response.data.success) {
                 allApprovals = response.data.approvals;
             }

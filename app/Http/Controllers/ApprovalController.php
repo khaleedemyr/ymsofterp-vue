@@ -363,6 +363,22 @@ class ApprovalController extends Controller
                     ->where('status', 'A')
                     ->select('id')
                     ->get();
+                
+                // Update HRD status for old flow
+                $hrdApprover = DB::table('users')
+                    ->where('division_id', 6)
+                    ->where('status', 'A')
+                    ->first();
+                
+                if ($hrdApprover) {
+                    DB::table('approval_requests')
+                        ->where('id', $id)
+                        ->update([
+                            'hrd_approver_id' => $hrdApprover->id,
+                            'hrd_status' => 'pending',
+                            'updated_at' => now()
+                        ]);
+                }
                     
                 foreach ($hrdUsers as $hrdUser) {
                     DB::table('notifications')->insert([
@@ -428,10 +444,13 @@ class ApprovalController extends Controller
                 }
                 
                 // Update absent request status to supervisor_approved (still in approval process)
+                // Note: approved_by diisi dengan approver terakhir yang approve (current approver)
                 DB::table('absent_requests')
                     ->where('id', $absentRequest->id)
                     ->update([
                         'status' => 'supervisor_approved',
+                        'approved_by' => $userId, // Set approved_by to current approver
+                        'approved_at' => now(), // Set approved_at timestamp
                         'updated_at' => now()
                     ]);
                 
@@ -464,6 +483,7 @@ class ApprovalController extends Controller
                     DB::table('approval_requests')
                         ->where('id', $id)
                         ->update([
+                            'status' => 'approved', // Update status to approved after all supervisors approve
                             'hrd_approver_id' => $hrdApprover->id,
                             'hrd_status' => 'pending',
                             'updated_at' => now()
@@ -471,10 +491,13 @@ class ApprovalController extends Controller
                 }
                 
                 // Update absent request status
+                // Note: approved_by diisi dengan approver terakhir yang approve (current approver)
                 DB::table('absent_requests')
                     ->where('id', $absentRequest->id)
                     ->update([
                         'status' => 'supervisor_approved', // All supervisors approved, waiting HRD
+                        'approved_by' => $userId, // Set approved_by to last approver
+                        'approved_at' => now(), // Set approved_at timestamp
                         'updated_at' => now()
                     ]);
                 
