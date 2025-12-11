@@ -126,10 +126,11 @@ class PurchaseOrderOpsController extends Controller
             ->toArray();
 
         // Get PRs that have been fully processed (all items are in PO)
+        // Check regardless of PR status - if all items are in PO, exclude the PR
         $fullyProcessedPRs = DB::table('purchase_requisitions as pr')
             ->join('purchase_requisition_items as items', 'pr.id', '=', 'items.purchase_requisition_id')
             ->leftJoin('purchase_order_ops_items as po_items', 'items.id', '=', 'po_items.pr_ops_item_id')
-            ->where('pr.status', 'APPROVED')
+            ->whereIn('pr.status', ['APPROVED', 'PROCESSED', 'COMPLETED', 'PAID']) // Include all active statuses
             ->where('pr.mode', 'pr_ops') // Only PR Ops mode
             ->groupBy('pr.id')
             ->havingRaw('COUNT(items.id) = COUNT(po_items.id)')
@@ -138,6 +139,8 @@ class PurchaseOrderOpsController extends Controller
 
         // Get available PRs that are approved and not fully processed
         // Note: PRs that are on hold will still be shown but cannot be expanded/selected
+        // We need to show PRs that still have at least one item not in PO
+        // So we'll get all PRs first, then filter items in the mapping
         $prs = DB::table('purchase_requisitions as pr')
             ->join('purchase_requisition_items as items', 'pr.id', '=', 'items.purchase_requisition_id')
             ->leftJoin('tbl_data_divisi as d', 'pr.division_id', '=', 'd.id')
@@ -145,10 +148,10 @@ class PurchaseOrderOpsController extends Controller
             ->leftJoin('tbl_data_outlet as pr_o', 'pr.outlet_id', '=', 'pr_o.id_outlet') // PR outlet for fallback
             ->leftJoin('purchase_requisition_categories as c', 'items.category_id', '=', 'c.id')
             ->leftJoin('purchase_requisition_categories as pr_c', 'pr.category_id', '=', 'pr_c.id') // PR category for fallback
-            ->where('pr.status', 'APPROVED') // Only approved PRs
+            ->whereIn('pr.status', ['APPROVED', 'PROCESSED', 'COMPLETED', 'PAID']) // Include PRs that are approved or already processed/paid but still have items not in PO
             ->where('pr.mode', 'pr_ops') // Only PR Ops mode
-            ->whereNotIn('pr.id', $fullyProcessedPRs) // Exclude fully processed PRs
-            ->whereNotIn('items.id', $poPrItemIds) // Exclude individual items already in PO
+            ->whereNotIn('pr.id', $fullyProcessedPRs) // Exclude fully processed PRs (all items already in PO)
+            // Don't exclude items here - we'll filter them in the mapping to show PR even if some items are already in PO
             ->select(
                 'pr.id',
                 'pr.pr_number',
@@ -178,8 +181,16 @@ class PurchaseOrderOpsController extends Controller
                 'd.nama_divisi as division_name'
             )
             ->get()
-            ->groupBy('id')
-            ->map(function ($group) {
+            ->groupBy(function ($item) {
+                return $item->id; // Group by PR ID
+            })
+            ->filter(function ($group) use ($poPrItemIds) {
+                // Only include PRs that have at least one item not in PO
+                return $group->filter(function ($item) use ($poPrItemIds) {
+                    return !in_array($item->item_id, $poPrItemIds);
+                })->count() > 0;
+            })
+            ->map(function ($group) use ($poPrItemIds) {
                 $first = $group->first();
                 
                 // Get PR outlet and category for fallback
@@ -254,7 +265,10 @@ class PurchaseOrderOpsController extends Controller
                     'outlet' => $prOutlet, // PR outlet for reference
                     'category' => $prCategory, // PR category for reference
                     'attachments' => $attachments,
-                    'items' => $group->map(function ($item) use ($first, $prOutlet, $prCategory) {
+                    'items' => $group->filter(function ($item) use ($poPrItemIds) {
+                        // Filter out items that are already in PO
+                        return !in_array($item->item_id, $poPrItemIds);
+                    })->map(function ($item) use ($first, $prOutlet, $prCategory) {
                         // For legacy items without outlet_id, use PR outlet as fallback
                         $outlet = null;
                         if ($item->outlet_id && $item->outlet_name) {

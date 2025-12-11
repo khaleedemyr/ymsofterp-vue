@@ -14,6 +14,7 @@ const generatingPO = ref(false);
 const expandedPRs = ref({});
 const notes = ref('');
 const showTutorial = ref(false);
+const searchTerm = ref('');
 
 // Form untuk generate PO
 const poForm = useForm({
@@ -33,7 +34,9 @@ const fetchPRList = async () => {
         const filtered = (response.data || []).filter(pr => {
             const mode = (pr.mode || 'pr_ops').toString().toLowerCase();
             const status = (pr.status || '').toString().toUpperCase();
-            return mode === 'pr_ops' && status === 'APPROVED';
+            // Include PRs with status APPROVED, PROCESSED, COMPLETED, or PAID (as long as they have items not yet in PO)
+            const allowedStatuses = ['APPROVED', 'PROCESSED', 'COMPLETED', 'PAID'];
+            return mode === 'pr_ops' && allowedStatuses.includes(status);
         });
         prList.value = filtered.map(pr => {
             // Ensure is_held and hold_reason are properly set
@@ -398,6 +401,90 @@ const getGroupedAttachments = (attachments) => {
     return grouped;
 };
 
+// Filtered PR list based on search term
+const filteredPRList = computed(() => {
+    if (!searchTerm.value || searchTerm.value.trim() === '') {
+        return prList.value;
+    }
+    
+    const term = searchTerm.value.toLowerCase().trim();
+    
+    return prList.value.filter(pr => {
+        // Search in PR number
+        if (pr.number && pr.number.toLowerCase().includes(term)) {
+            return true;
+        }
+        
+        // Search in title
+        if (pr.title && pr.title.toLowerCase().includes(term)) {
+            return true;
+        }
+        
+        // Search in division name
+        if (pr.division_name && pr.division_name.toLowerCase().includes(term)) {
+            return true;
+        }
+        
+        // Search in status
+        if (pr.status && pr.status.toLowerCase().includes(term)) {
+            return true;
+        }
+        
+        // Search in date (formatted)
+        if (pr.date) {
+            const dateStr = new Date(pr.date).toLocaleDateString('id-ID');
+            if (dateStr.toLowerCase().includes(term)) {
+                return true;
+            }
+        }
+        
+        // Search in amount (formatted)
+        const amountStr = new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(pr.amount || 0);
+        if (amountStr.toLowerCase().includes(term)) {
+            return true;
+        }
+        
+        // Search in description
+        if (pr.description && pr.description.toLowerCase().includes(term)) {
+            return true;
+        }
+        
+        // Search in item names
+        if (pr.items && pr.items.some(item => {
+            if (item.item_name && item.item_name.toLowerCase().includes(term)) {
+                return true;
+            }
+            // Search in item unit
+            if (item.unit && item.unit.toLowerCase().includes(term)) {
+                return true;
+            }
+            // Search in outlet name
+            if (item.outlet && item.outlet.nama_outlet && item.outlet.nama_outlet.toLowerCase().includes(term)) {
+                return true;
+            }
+            // Search in category name
+            if (item.category && item.category.name && item.category.name.toLowerCase().includes(term)) {
+                return true;
+            }
+            return false;
+        })) {
+            return true;
+        }
+        
+        // Search in PR outlet name
+        if (pr.outlet && pr.outlet.nama_outlet && pr.outlet.nama_outlet.toLowerCase().includes(term)) {
+            return true;
+        }
+        
+        // Search in PR category name
+        if (pr.category && pr.category.name && pr.category.name.toLowerCase().includes(term)) {
+            return true;
+        }
+        
+        return false;
+    });
+});
+
 onMounted(() => {
     fetchPRList();
     fetchSuppliers();
@@ -512,6 +599,31 @@ onMounted(() => {
           ></textarea>
         </div>
 
+        <!-- Search Box -->
+        <div class="mb-6">
+          <div class="relative">
+            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <i class="fas fa-search text-gray-400"></i>
+            </div>
+            <input
+              type="text"
+              v-model="searchTerm"
+              placeholder="Search by PR number, title, division, date, amount, status, item name, outlet, category..."
+              class="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+            />
+            <button
+              v-if="searchTerm"
+              @click="searchTerm = ''"
+              class="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"
+            >
+              <i class="fas fa-times"></i>
+            </button>
+          </div>
+          <p v-if="searchTerm" class="mt-2 text-sm text-gray-600">
+            Found {{ filteredPRList.length }} of {{ prList.length }} PR(s)
+          </p>
+        </div>
+
         <!-- PR List -->
         <div v-if="loading" class="text-center py-8">
           <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
@@ -522,8 +634,12 @@ onMounted(() => {
           <p class="text-gray-600">No available PR found</p>
         </div>
 
+        <div v-else-if="filteredPRList.length === 0" class="text-center py-8">
+          <p class="text-gray-600">No PR found matching "{{ searchTerm }}"</p>
+        </div>
+
         <div v-else class="space-y-6">
-          <div v-for="pr in prList" :key="pr.id" class="border border-gray-200 rounded-lg" :class="pr.is_held ? 'opacity-60' : ''">
+          <div v-for="pr in filteredPRList" :key="pr.id" class="border border-gray-200 rounded-lg" :class="pr.is_held ? 'opacity-60' : ''">
             <!-- PR Header -->
             <div class="bg-gray-50 px-4 py-3 border-b border-gray-200" :class="pr.is_held ? 'bg-red-50' : ''">
               <div class="flex items-center justify-between">
