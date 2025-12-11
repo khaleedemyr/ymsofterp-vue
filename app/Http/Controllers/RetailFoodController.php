@@ -6,6 +6,7 @@ use App\Models\RetailFood;
 use App\Models\RetailFoodItem;
 use App\Models\Outlet;
 use App\Exports\RetailFoodExport;
+use App\Exports\RetailFoodSupplierReportExport;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
@@ -1090,6 +1091,409 @@ class RetailFoodController extends Controller
 
         } catch (\Exception $e) {
             \Log::error('Retail Food Export Error: ' . $e->getMessage());
+            return response()->json([
+                'error' => 'Gagal export data: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Report per supplier dengan grouping by outlet
+     */
+    public function reportSupplier(Request $request)
+    {
+        $user = auth()->user()->load('outlet');
+        $userOutletId = $user->id_outlet;
+
+        // Get filter parameters
+        $search = $request->get('search', '');
+        
+        // Default to current month if no date filters provided
+        $dateFrom = $request->get('date_from', '');
+        $dateTo = $request->get('date_to', '');
+        
+        if (empty($dateFrom) || empty($dateTo)) {
+            $now = now();
+            $dateFrom = $now->copy()->startOfMonth()->format('Y-m-d');
+            $dateTo = $now->copy()->endOfMonth()->format('Y-m-d');
+        }
+
+        // Get transactions first (without items to avoid duplication)
+        $transactionQuery = DB::table('retail_food as rf')
+            ->join('suppliers as s', 'rf.supplier_id', '=', 's.id')
+            ->join('tbl_data_outlet as o', 'rf.outlet_id', '=', 'o.id_outlet')
+            ->where('rf.status', 'approved')
+            ->whereNotNull('rf.supplier_id');
+
+        // Apply outlet filter
+        if ($userOutletId != 1) {
+            $transactionQuery->where('rf.outlet_id', $userOutletId);
+        }
+
+        // Apply date filter
+        if ($dateFrom) {
+            $transactionQuery->whereDate('rf.transaction_date', '>=', $dateFrom);
+        }
+        if ($dateTo) {
+            $transactionQuery->whereDate('rf.transaction_date', '<=', $dateTo);
+        }
+
+        // Apply search filter (search in transaction level)
+        if ($search) {
+            $transactionQuery->where(function($q) use ($search) {
+                $q->where('s.name', 'like', "%{$search}%")
+                  ->orWhere('s.code', 'like', "%{$search}%")
+                  ->orWhere('o.nama_outlet', 'like', "%{$search}%")
+                  ->orWhere('rf.retail_number', 'like', "%{$search}%")
+                  ->orWhere('rf.notes', 'like', "%{$search}%")
+                  ->orWhereExists(function($subQuery) use ($search) {
+                      $subQuery->select(DB::raw(1))
+                          ->from('retail_food_items as rfi')
+                          ->whereColumn('rfi.retail_food_id', 'rf.id')
+                          ->where('rfi.item_name', 'like', "%{$search}%");
+                  });
+            });
+        }
+
+        // Get transactions
+        $transactions = $transactionQuery->select([
+                'rf.id as retail_food_id',
+                'rf.retail_number',
+                'rf.transaction_date',
+                'rf.total_amount',
+                'rf.notes',
+                'rf.outlet_id',
+                'rf.supplier_id',
+                's.name as supplier_name',
+                's.code as supplier_code',
+                'o.nama_outlet'
+            ])
+            ->orderBy('s.name')
+            ->orderBy('o.nama_outlet')
+            ->orderBy('rf.transaction_date', 'desc')
+            ->orderBy('rf.id')
+            ->get();
+
+        // Get items for all transactions
+        $transactionIds = $transactions->pluck('retail_food_id')->toArray();
+        $items = [];
+        if (!empty($transactionIds)) {
+            $items = DB::table('retail_food_items')
+                ->whereIn('retail_food_id', $transactionIds)
+                ->select([
+                    'id',
+                    'retail_food_id',
+                    'item_name',
+                    'qty',
+                    'unit',
+                    'price',
+                    'subtotal'
+                ])
+                ->orderBy('id')
+                ->get()
+                ->groupBy('retail_food_id');
+        }
+
+        // Combine transactions with items
+        $data = $transactions->map(function($transaction) use ($items) {
+            $transaction->items = $items->get($transaction->retail_food_id, collect())->toArray();
+            return $transaction;
+        });
+
+        // Group by supplier -> outlet -> transaction
+        $grouped = [];
+        foreach ($data as $row) {
+            $supplierId = $row->supplier_id;
+            $supplierName = $row->supplier_name;
+            $supplierCode = $row->supplier_code;
+            $outletId = $row->outlet_id;
+            $outletName = $row->nama_outlet;
+            $transactionId = $row->retail_food_id;
+
+            // Initialize supplier
+            if (!isset($grouped[$supplierId])) {
+                $grouped[$supplierId] = [
+                    'id' => $supplierId,
+                    'name' => $supplierName,
+                    'code' => $supplierCode,
+                    'total_amount' => 0,
+                    'outlets' => []
+                ];
+            }
+
+            // Initialize outlet
+            if (!isset($grouped[$supplierId]['outlets'][$outletId])) {
+                $grouped[$supplierId]['outlets'][$outletId] = [
+                    'id' => $outletId,
+                    'name' => $outletName,
+                    'total_amount' => 0,
+                    'transactions' => []
+                ];
+            }
+
+            // Initialize transaction
+            if (!isset($grouped[$supplierId]['outlets'][$outletId]['transactions'][$transactionId])) {
+                $transactionItems = isset($row->items) ? $row->items : [];
+                $grouped[$supplierId]['outlets'][$outletId]['transactions'][$transactionId] = [
+                    'id' => $transactionId,
+                    'retail_number' => $row->retail_number,
+                    'transaction_date' => $row->transaction_date,
+                    'total_amount' => $row->total_amount,
+                    'notes' => $row->notes,
+                    'items' => array_map(function($item) {
+                        return [
+                            'id' => $item->id,
+                            'item_name' => $item->item_name,
+                            'qty' => $item->qty,
+                            'unit' => $item->unit,
+                            'price' => $item->price,
+                            'subtotal' => $item->subtotal
+                        ];
+                    }, $transactionItems)
+                ];
+            }
+        }
+
+        // Calculate totals and convert to array
+        $result = [];
+        foreach ($grouped as $supplierId => $supplier) {
+            $supplierTotal = 0;
+            $outlets = [];
+            
+            foreach ($supplier['outlets'] as $outletId => $outlet) {
+                $outletTotal = 0;
+                $transactions = [];
+                
+                foreach ($outlet['transactions'] as $transactionId => $transaction) {
+                    $outletTotal += $transaction['total_amount'];
+                    $transactions[] = $transaction;
+                }
+                
+                $outlet['total_amount'] = $outletTotal;
+                $outlet['transactions'] = $transactions;
+                $supplierTotal += $outletTotal;
+                $outlets[] = $outlet;
+            }
+            
+            $supplier['total_amount'] = $supplierTotal;
+            $supplier['outlets'] = $outlets;
+            $result[] = $supplier;
+        }
+
+        // Sort by supplier name
+        usort($result, function($a, $b) {
+            return strcmp($a['name'], $b['name']);
+        });
+
+        return Inertia::render('RetailFood/ReportSupplier', [
+            'user' => $user,
+            'suppliers' => $result,
+            'filters' => [
+                'search' => $search,
+                'date_from' => $dateFrom,
+                'date_to' => $dateTo,
+            ]
+        ]);
+    }
+
+    /**
+     * Export report supplier to Excel
+     */
+    public function exportSupplierReport(Request $request)
+    {
+        $user = auth()->user()->load('outlet');
+        $userOutletId = $user->id_outlet;
+
+        // Get filter parameters (same as reportSupplier)
+        $search = $request->get('search', '');
+        
+        // Default to current month if no date filters provided
+        $dateFrom = $request->get('date_from', '');
+        $dateTo = $request->get('date_to', '');
+        
+        if (empty($dateFrom) || empty($dateTo)) {
+            $now = now();
+            $dateFrom = $now->copy()->startOfMonth()->format('Y-m-d');
+            $dateTo = $now->copy()->endOfMonth()->format('Y-m-d');
+        }
+
+        // Get transactions first (without items to avoid duplication)
+        $transactionQuery = DB::table('retail_food as rf')
+            ->join('suppliers as s', 'rf.supplier_id', '=', 's.id')
+            ->join('tbl_data_outlet as o', 'rf.outlet_id', '=', 'o.id_outlet')
+            ->where('rf.status', 'approved')
+            ->whereNotNull('rf.supplier_id');
+
+        // Apply outlet filter
+        if ($userOutletId != 1) {
+            $transactionQuery->where('rf.outlet_id', $userOutletId);
+        }
+
+        // Apply date filter
+        if ($dateFrom) {
+            $transactionQuery->whereDate('rf.transaction_date', '>=', $dateFrom);
+        }
+        if ($dateTo) {
+            $transactionQuery->whereDate('rf.transaction_date', '<=', $dateTo);
+        }
+
+        // Apply search filter (search in transaction level)
+        if ($search) {
+            $transactionQuery->where(function($q) use ($search) {
+                $q->where('s.name', 'like', "%{$search}%")
+                  ->orWhere('s.code', 'like', "%{$search}%")
+                  ->orWhere('o.nama_outlet', 'like', "%{$search}%")
+                  ->orWhere('rf.retail_number', 'like', "%{$search}%")
+                  ->orWhere('rf.notes', 'like', "%{$search}%")
+                  ->orWhereExists(function($subQuery) use ($search) {
+                      $subQuery->select(DB::raw(1))
+                          ->from('retail_food_items as rfi')
+                          ->whereColumn('rfi.retail_food_id', 'rf.id')
+                          ->where('rfi.item_name', 'like', "%{$search}%");
+                  });
+            });
+        }
+
+        // Get transactions
+        $transactions = $transactionQuery->select([
+                'rf.id as retail_food_id',
+                'rf.retail_number',
+                'rf.transaction_date',
+                'rf.total_amount',
+                'rf.notes',
+                'rf.outlet_id',
+                'rf.supplier_id',
+                's.name as supplier_name',
+                's.code as supplier_code',
+                'o.nama_outlet'
+            ])
+            ->orderBy('s.name')
+            ->orderBy('o.nama_outlet')
+            ->orderBy('rf.transaction_date', 'desc')
+            ->orderBy('rf.id')
+            ->get();
+
+        // Get items for all transactions
+        $transactionIds = $transactions->pluck('retail_food_id')->toArray();
+        $items = [];
+        if (!empty($transactionIds)) {
+            $items = DB::table('retail_food_items')
+                ->whereIn('retail_food_id', $transactionIds)
+                ->select([
+                    'id',
+                    'retail_food_id',
+                    'item_name',
+                    'qty',
+                    'unit',
+                    'price',
+                    'subtotal'
+                ])
+                ->orderBy('id')
+                ->get()
+                ->groupBy('retail_food_id');
+        }
+
+        // Combine transactions with items
+        $data = $transactions->map(function($transaction) use ($items) {
+            $transaction->items = $items->get($transaction->retail_food_id, collect())->toArray();
+            return $transaction;
+        });
+
+        // Group by supplier -> outlet -> transaction (same logic as reportSupplier)
+        $grouped = [];
+        foreach ($data as $row) {
+            $supplierId = $row->supplier_id;
+            $supplierName = $row->supplier_name;
+            $supplierCode = $row->supplier_code;
+            $outletId = $row->outlet_id;
+            $outletName = $row->nama_outlet;
+            $transactionId = $row->retail_food_id;
+
+            // Initialize supplier
+            if (!isset($grouped[$supplierId])) {
+                $grouped[$supplierId] = [
+                    'id' => $supplierId,
+                    'name' => $supplierName,
+                    'code' => $supplierCode,
+                    'total_amount' => 0,
+                    'outlets' => []
+                ];
+            }
+
+            // Initialize outlet
+            if (!isset($grouped[$supplierId]['outlets'][$outletId])) {
+                $grouped[$supplierId]['outlets'][$outletId] = [
+                    'id' => $outletId,
+                    'name' => $outletName,
+                    'total_amount' => 0,
+                    'transactions' => []
+                ];
+            }
+
+            // Initialize transaction
+            if (!isset($grouped[$supplierId]['outlets'][$outletId]['transactions'][$transactionId])) {
+                $transactionItems = isset($row->items) ? $row->items : [];
+                $grouped[$supplierId]['outlets'][$outletId]['transactions'][$transactionId] = [
+                    'id' => $transactionId,
+                    'retail_number' => $row->retail_number,
+                    'transaction_date' => $row->transaction_date,
+                    'total_amount' => $row->total_amount,
+                    'notes' => $row->notes,
+                    'items' => array_map(function($item) {
+                        return [
+                            'id' => $item->id,
+                            'item_name' => $item->item_name,
+                            'qty' => $item->qty,
+                            'unit' => $item->unit,
+                            'price' => $item->price,
+                            'subtotal' => $item->subtotal
+                        ];
+                    }, $transactionItems)
+                ];
+            }
+        }
+
+        // Calculate totals and convert to array
+        $result = [];
+        foreach ($grouped as $supplierId => $supplier) {
+            $supplierTotal = 0;
+            $outlets = [];
+            
+            foreach ($supplier['outlets'] as $outletId => $outlet) {
+                $outletTotal = 0;
+                $transactions = [];
+                
+                foreach ($outlet['transactions'] as $transactionId => $transaction) {
+                    $outletTotal += $transaction['total_amount'];
+                    $transactions[] = $transaction;
+                }
+                
+                $outlet['total_amount'] = $outletTotal;
+                $outlet['transactions'] = $transactions;
+                $supplierTotal += $outletTotal;
+                $outlets[] = $outlet;
+            }
+            
+            $supplier['total_amount'] = $supplierTotal;
+            $supplier['outlets'] = $outlets;
+            $result[] = $supplier;
+        }
+
+        // Sort by supplier name
+        usort($result, function($a, $b) {
+            return strcmp($a['name'], $b['name']);
+        });
+
+        // Export to Excel
+        try {
+            $export = new RetailFoodSupplierReportExport($result, [
+                'search' => $search,
+                'date_from' => $dateFrom,
+                'date_to' => $dateTo,
+            ]);
+            $export->export();
+        } catch (\Exception $e) {
+            \Log::error('Retail Food Supplier Report Export Error: ' . $e->getMessage());
             return response()->json([
                 'error' => 'Gagal export data: ' . $e->getMessage()
             ], 500);

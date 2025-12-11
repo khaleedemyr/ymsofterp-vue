@@ -313,6 +313,12 @@ const menuGroups = [
                 route: '/report-good-receive-outlet',
                 code: 'report_good_receive_outlet',
             },
+            {
+                name: () => 'Report Retail Food per Supplier',
+                icon: 'fa-solid fa-chart-line',
+                route: '/retail-food/report-supplier',
+                code: 'retail_food_supplier_report',
+            },
         ],
     },
     {

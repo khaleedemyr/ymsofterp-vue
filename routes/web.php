@@ -1121,6 +1121,8 @@ Route::post('/outlet-rejections/{outletRejection}/cancel', [\App\Http\Controller
 
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('retail-food/export', [\App\Http\Controllers\RetailFoodController::class, 'export'])->name('retail-food.export');
+    Route::get('retail-food/report-supplier', [\App\Http\Controllers\RetailFoodController::class, 'reportSupplier'])->name('retail-food.report-supplier');
+    Route::get('retail-food/report-supplier/export', [\App\Http\Controllers\RetailFoodController::class, 'exportSupplierReport'])->name('retail-food.report-supplier.export');
     Route::resource('retail-food', RetailFoodController::class);
     Route::get('retail-food/get-item-units/{itemId}', [\App\Http\Controllers\RetailFoodController::class, 'getItemUnits']);
     Route::post('retail-food/get-budget-info', [\App\Http\Controllers\RetailFoodController::class, 'getBudgetInfo']);

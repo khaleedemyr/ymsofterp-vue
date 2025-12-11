@@ -5,9 +5,17 @@
         <h1 class="text-2xl font-bold text-gray-800 flex items-center gap-2">
           <i class="fa-solid fa-store text-blue-500"></i> Outlet Retail Food
         </h1>
-        <button @click="goCreate" class="bg-gradient-to-r from-blue-500 to-blue-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold">
-          + Tambah Baru
-        </button>
+        <div class="flex gap-2">
+          <button 
+            @click="goReportSupplier" 
+            class="bg-gradient-to-r from-green-500 to-green-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold"
+          >
+            <i class="fa-solid fa-chart-line mr-2"></i>Report Supplier
+          </button>
+          <button @click="goCreate" class="bg-gradient-to-r from-blue-500 to-blue-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold">
+            + Tambah Baru
+          </button>
+        </div>
       </div>
 
       <!-- Filter Section -->
@@ -295,6 +303,10 @@ function clearFilters() {
     preserveState: true, 
     replace: true 
   })
+}
+
+function goReportSupplier() {
+  router.visit(route('retail-food.report-supplier'));
 }
 
 function goCreate() {
