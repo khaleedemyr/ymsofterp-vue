@@ -266,14 +266,14 @@ function cancel() {
                       <label :for="`parameter_pemeriksaan_${categoryIndex}_${parameterIndex}`" class="block text-sm font-medium text-gray-700 mb-2">
                         Nama Parameter Pemeriksaan <span class="text-red-500">*</span>
                       </label>
-                      <input
+                      <textarea
                         :id="`parameter_pemeriksaan_${categoryIndex}_${parameterIndex}`"
                         v-model="parameter.parameter_pemeriksaan"
-                        type="text"
-                        class="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition"
+                        rows="3"
+                        class="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition resize-y"
                         placeholder="Masukkan nama parameter pemeriksaan"
                         required
-                      />
+                      ></textarea>
                       <div v-if="errors[`categories.${categoryIndex}.parameters.${parameterIndex}.parameter_pemeriksaan`]" class="mt-1 text-sm text-red-600">
                         {{ errors[`categories.${categoryIndex}.parameters.${parameterIndex}.parameter_pemeriksaan`] }}
                       </div>
