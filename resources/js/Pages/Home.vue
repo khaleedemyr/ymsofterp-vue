@@ -136,6 +136,18 @@ const prModeFilter = ref(''); // '', 'pr_ops', 'purchase_payment', 'travel_appli
 const isSelectingAllPr = ref(false);
 const selectedAllPrApprovals = ref(new Set());
 
+// Outlet Stock Opname approvals
+const pendingStockOpnameApprovals = ref([]);
+const loadingStockOpnameApprovals = ref(false);
+const selectedStockOpnameApprovals = ref(new Set()); // For multi-select
+const isSelectingStockOpnameApprovals = ref(false); // Toggle select mode
+
+// Warehouse Stock Opname approvals
+const pendingWarehouseStockOpnameApprovals = ref([]);
+const loadingWarehouseStockOpnameApprovals = ref(false);
+const selectedWarehouseStockOpnameApprovals = ref(new Set()); // For multi-select
+const isSelectingWarehouseStockOpnameApprovals = ref(false); // Toggle select mode
+
 // Filtered and paginated Contra Bon approvals
 const filteredContraBonApprovals = computed(() => {
     let result = [...allContraBonApprovals.value];
@@ -686,6 +698,16 @@ const poOpsApprovalCount = computed(() => {
     return count > 0 ? count : 0;
 });
 
+const stockOpnameApprovalCount = computed(() => {
+    const count = pendingStockOpnameApprovals.value.length;
+    return count > 0 ? count : 0;
+});
+
+const warehouseStockOpnameApprovalCount = computed(() => {
+    const count = pendingWarehouseStockOpnameApprovals.value.length;
+    return count > 0 ? count : 0;
+});
+
 const stockAdjustmentApprovalCount = computed(() => {
     const count = pendingStockAdjustmentApprovals.value.length;
     return count > 0 ? count : 0;
@@ -1013,6 +1035,36 @@ async function loadPendingStockAdjustmentApprovals() {
         console.error('Error loading pending Stock Adjustment approvals:', error);
     } finally {
         loadingStockAdjustmentApprovals.value = false;
+    }
+}
+
+// Load Outlet Stock Opname approvals
+async function loadPendingStockOpnameApprovals() {
+    loadingStockOpnameApprovals.value = true;
+    try {
+        const response = await axios.get('/api/stock-opnames/pending-approvals');
+        if (response.data.success) {
+            pendingStockOpnameApprovals.value = response.data.stock_opnames || [];
+        }
+    } catch (error) {
+        console.error('Error loading pending Stock Opname approvals:', error);
+    } finally {
+        loadingStockOpnameApprovals.value = false;
+    }
+}
+
+// Load Warehouse Stock Opname approvals
+async function loadPendingWarehouseStockOpnameApprovals() {
+    loadingWarehouseStockOpnameApprovals.value = true;
+    try {
+        const response = await axios.get('/api/warehouse-stock-opnames/pending-approvals');
+        if (response.data.success) {
+            pendingWarehouseStockOpnameApprovals.value = response.data.warehouse_stock_opnames || [];
+        }
+    } catch (error) {
+        console.error('Error loading pending Warehouse Stock Opname approvals:', error);
+    } finally {
+        loadingWarehouseStockOpnameApprovals.value = false;
     }
 }
 
@@ -4705,6 +4757,8 @@ onMounted(() => {
     loadPendingCategoryCostApprovals();
     loadPendingStockAdjustmentApprovals();
     loadPendingContraBonApprovals();
+    loadPendingStockOpnameApprovals();
+    loadPendingWarehouseStockOpnameApprovals();
     loadPendingMovementApprovals();
     loadLeaveNotifications();
     loadPendingHrdApprovals();
@@ -5426,8 +5480,132 @@ watch(locale, () => {
                                     Lihat {{ pendingPoOpsApprovals.length - 3 }} PO Ops lainnya...
                                 </button>
                             </div>
+                        </div>
+                    </div>
+                </div>
 
+                <!-- Outlet Stock Opname Approval Section -->
+                <div v-if="stockOpnameApprovalCount > 0" class="flex-shrink-0 mb-4">
+                    <div class="backdrop-blur-md rounded-2xl shadow-2xl border p-4 transition-all duration-500 animate-fade-in hover:shadow-3xl"
+                        :class="isNight ? 'bg-slate-800/90 border-slate-600/50' : 'bg-white/90 border-white/20'">
+                        <div class="flex items-center justify-between mb-3">
+                            <div class="flex items-center gap-2">
+                                <div class="w-3 h-3 rounded-full bg-blue-500 animate-pulse"></div>
+                                <h3 class="text-lg font-bold" :class="isNight ? 'text-white' : 'text-slate-800'">
+                                    <i class="fa fa-clipboard-check mr-2 text-blue-500"></i>
+                                    Outlet Stock Opname Approval
+                                </h3>
+                            </div>
+                            <div class="bg-blue-500 text-white text-xs font-bold px-2 py-1 rounded-full">
+                                {{ stockOpnameApprovalCount }}
+                            </div>
+                        </div>
+                        
+                        <div v-if="loadingStockOpnameApprovals" class="text-center py-4">
+                            <div class="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500"></div>
+                            <p class="text-sm mt-2" :class="isNight ? 'text-slate-300' : 'text-slate-600'">Memuat data...</p>
+                        </div>
+                        
+                        <div v-else class="space-y-2">
+                            <div v-for="opname in pendingStockOpnameApprovals.slice(0, 3)" :key="'so-approval-' + opname.id"
+                                @click="router.visit(route('stock-opnames.show', opname.id))"
+                                class="p-3 rounded-lg transition-all duration-200 cursor-pointer hover:scale-105"
+                                :class="isNight ? 'bg-slate-700/50 hover:bg-slate-600/50' : 'bg-blue-50 hover:bg-blue-100'">
+                                <div class="flex items-center justify-between">
+                                    <div class="flex-1">
+                                        <div class="font-semibold text-sm" :class="isNight ? 'text-white' : 'text-slate-800'">
+                                            {{ opname.opname_number }}
+                                        </div>
+                                        <div class="text-xs" :class="isNight ? 'text-slate-300' : 'text-slate-600'">
+                                            <i class="fa fa-store mr-1 text-blue-500"></i>
+                                            {{ opname.outlet?.nama_outlet || '-' }}
+                                        </div>
+                                        <div v-if="opname.warehouse_outlet" class="text-xs" :class="isNight ? 'text-slate-300' : 'text-slate-600'">
+                                            <i class="fa fa-warehouse mr-1 text-purple-500"></i>
+                                            {{ opname.warehouse_outlet.name }}
+                                        </div>
+                                        <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
+                                            <i class="fa fa-calendar mr-1"></i>
+                                            {{ new Date(opname.opname_date).toLocaleDateString('id-ID') }}
+                                        </div>
+                                        <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
+                                            <i class="fa fa-user mr-1"></i>{{ opname.creator?.nama_lengkap }}
+                                        </div>
+                                    </div>
+                                    <div class="text-xs text-blue-500 font-medium">
+                                        <i class="fa fa-user-check mr-1"></i>{{ opname.approver_name || 'Stock Opname Approval' }}
+                                    </div>
+                                </div>
+                            </div>
                             
+                            <div v-if="pendingStockOpnameApprovals.length > 3" class="text-center pt-2">
+                                <button @click="router.visit(route('stock-opnames.index'))" class="text-sm text-blue-500 hover:text-blue-700 font-medium">
+                                    Lihat {{ pendingStockOpnameApprovals.length - 3 }} Stock Opname lainnya...
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Warehouse Stock Opname Approval Section -->
+                <div v-if="warehouseStockOpnameApprovalCount > 0" class="flex-shrink-0 mb-4">
+                    <div class="backdrop-blur-md rounded-2xl shadow-2xl border p-4 transition-all duration-500 animate-fade-in hover:shadow-3xl"
+                        :class="isNight ? 'bg-slate-800/90 border-slate-600/50' : 'bg-white/90 border-white/20'">
+                        <div class="flex items-center justify-between mb-3">
+                            <div class="flex items-center gap-2">
+                                <div class="w-3 h-3 rounded-full bg-purple-500 animate-pulse"></div>
+                                <h3 class="text-lg font-bold" :class="isNight ? 'text-white' : 'text-slate-800'">
+                                    <i class="fa fa-clipboard-check mr-2 text-purple-500"></i>
+                                    Warehouse Stock Opname Approval
+                                </h3>
+                            </div>
+                            <div class="bg-purple-500 text-white text-xs font-bold px-2 py-1 rounded-full">
+                                {{ warehouseStockOpnameApprovalCount }}
+                            </div>
+                        </div>
+                        
+                        <div v-if="loadingWarehouseStockOpnameApprovals" class="text-center py-4">
+                            <div class="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-purple-500"></div>
+                            <p class="text-sm mt-2" :class="isNight ? 'text-slate-300' : 'text-slate-600'">Memuat data...</p>
+                        </div>
+                        
+                        <div v-else class="space-y-2">
+                            <div v-for="opname in pendingWarehouseStockOpnameApprovals.slice(0, 3)" :key="'wso-approval-' + opname.id"
+                                @click="router.visit(route('warehouse-stock-opnames.show', opname.id))"
+                                class="p-3 rounded-lg transition-all duration-200 cursor-pointer hover:scale-105"
+                                :class="isNight ? 'bg-slate-700/50 hover:bg-slate-600/50' : 'bg-purple-50 hover:bg-purple-100'">
+                                <div class="flex items-center justify-between">
+                                    <div class="flex-1">
+                                        <div class="font-semibold text-sm" :class="isNight ? 'text-white' : 'text-slate-800'">
+                                            {{ opname.opname_number }}
+                                        </div>
+                                        <div class="text-xs" :class="isNight ? 'text-slate-300' : 'text-slate-600'">
+                                            <i class="fa fa-warehouse mr-1 text-purple-500"></i>
+                                            {{ opname.warehouse?.name || '-' }}
+                                        </div>
+                                        <div v-if="opname.warehouse_division" class="text-xs" :class="isNight ? 'text-slate-300' : 'text-slate-600'">
+                                            <i class="fa fa-layer-group mr-1 text-indigo-500"></i>
+                                            {{ opname.warehouse_division.name }}
+                                        </div>
+                                        <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
+                                            <i class="fa fa-calendar mr-1"></i>
+                                            {{ new Date(opname.opname_date).toLocaleDateString('id-ID') }}
+                                        </div>
+                                        <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
+                                            <i class="fa fa-user mr-1"></i>{{ opname.creator?.nama_lengkap }}
+                                        </div>
+                                    </div>
+                                    <div class="text-xs text-purple-500 font-medium">
+                                        <i class="fa fa-user-check mr-1"></i>{{ opname.approver_name || 'Warehouse Stock Opname Approval' }}
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div v-if="pendingWarehouseStockOpnameApprovals.length > 3" class="text-center pt-2">
+                                <button @click="router.visit(route('warehouse-stock-opnames.index'))" class="text-sm text-purple-500 hover:text-purple-700 font-medium">
+                                    Lihat {{ pendingWarehouseStockOpnameApprovals.length - 3 }} Warehouse Stock Opname lainnya...
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>

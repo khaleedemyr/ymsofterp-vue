@@ -742,6 +742,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
 // Laporan Stok Akhir
 Route::get('/inventory/stock-position', [\App\Http\Controllers\InventoryReportController::class, 'stockPosition'])->name('inventory.stock-position');
 Route::get('/inventory/stock-position/export', [\App\Http\Controllers\InventoryReportController::class, 'exportStockPosition'])->name('inventory.stock-position.export');
+Route::get('/inventory/stock-card/detail', [\App\Http\Controllers\InventoryReportController::class, 'getStockCardDetail'])->name('inventory.stock-card.detail');
 
 // Laporan Kartu Stok
 Route::get('/inventory/stock-card', [\App\Http\Controllers\InventoryReportController::class, 'stockCard'])->name('inventory.stock-card');
@@ -1060,7 +1061,38 @@ Route::post('/outlet-stock-balances/preview-import', [\App\Http\Controllers\Outl
 Route::get('/outlet-stock-balances/download-template', [\App\Http\Controllers\OutletStockBalanceController::class, 'downloadTemplate'])->name('outlet-stock-balances.download-template');
 
 Route::get('/outlet-inventory/stock-card', [\App\Http\Controllers\OutletInventoryReportController::class, 'stockCard'])->name('outlet-inventory.stock-card');
+Route::get('/outlet-inventory/stock-card/detail', [\App\Http\Controllers\OutletInventoryReportController::class, 'getStockCardDetail'])->name('outlet-inventory.stock-card.detail');
 Route::get('/outlet-inventory/inventory-value-report', [\App\Http\Controllers\OutletInventoryReportController::class, 'inventoryValueReport'])->name('outlet-inventory.inventory-value-report');
+
+// Stock Opname Routes (Outlet)
+Route::get('/stock-opnames', [\App\Http\Controllers\StockOpnameController::class, 'index'])->name('stock-opnames.index');
+Route::get('/stock-opnames/create', [\App\Http\Controllers\StockOpnameController::class, 'create'])->name('stock-opnames.create');
+Route::post('/stock-opnames', [\App\Http\Controllers\StockOpnameController::class, 'store'])->name('stock-opnames.store');
+Route::get('/stock-opnames/{id}', [\App\Http\Controllers\StockOpnameController::class, 'show'])->name('stock-opnames.show');
+Route::get('/stock-opnames/{id}/edit', [\App\Http\Controllers\StockOpnameController::class, 'edit'])->name('stock-opnames.edit');
+Route::put('/stock-opnames/{id}', [\App\Http\Controllers\StockOpnameController::class, 'update'])->name('stock-opnames.update');
+Route::delete('/stock-opnames/{id}', [\App\Http\Controllers\StockOpnameController::class, 'destroy'])->name('stock-opnames.destroy');
+Route::post('/stock-opnames/{id}/submit-approval', [\App\Http\Controllers\StockOpnameController::class, 'submitForApproval'])->name('stock-opnames.submit-approval');
+Route::post('/stock-opnames/{id}/approve', [\App\Http\Controllers\StockOpnameController::class, 'approve'])->name('stock-opnames.approve');
+Route::post('/stock-opnames/{id}/process', [\App\Http\Controllers\StockOpnameController::class, 'process'])->name('stock-opnames.process');
+Route::get('/api/stock-opnames/get-items', [\App\Http\Controllers\StockOpnameController::class, 'getItems'])->name('stock-opnames.get-items');
+Route::get('/api/stock-opnames/approvers', [\App\Http\Controllers\StockOpnameController::class, 'getApprovers'])->name('stock-opnames.approvers');
+Route::get('/api/stock-opnames/pending-approvals', [\App\Http\Controllers\StockOpnameController::class, 'getPendingApprovals'])->name('stock-opnames.pending-approvals')->middleware('auth');
+
+// Warehouse Stock Opname Routes
+Route::get('/warehouse-stock-opnames', [\App\Http\Controllers\WarehouseStockOpnameController::class, 'index'])->name('warehouse-stock-opnames.index');
+Route::get('/warehouse-stock-opnames/create', [\App\Http\Controllers\WarehouseStockOpnameController::class, 'create'])->name('warehouse-stock-opnames.create');
+Route::post('/warehouse-stock-opnames', [\App\Http\Controllers\WarehouseStockOpnameController::class, 'store'])->name('warehouse-stock-opnames.store');
+Route::get('/warehouse-stock-opnames/{id}', [\App\Http\Controllers\WarehouseStockOpnameController::class, 'show'])->name('warehouse-stock-opnames.show');
+Route::get('/warehouse-stock-opnames/{id}/edit', [\App\Http\Controllers\WarehouseStockOpnameController::class, 'edit'])->name('warehouse-stock-opnames.edit');
+Route::put('/warehouse-stock-opnames/{id}', [\App\Http\Controllers\WarehouseStockOpnameController::class, 'update'])->name('warehouse-stock-opnames.update');
+Route::delete('/warehouse-stock-opnames/{id}', [\App\Http\Controllers\WarehouseStockOpnameController::class, 'destroy'])->name('warehouse-stock-opnames.destroy');
+Route::post('/warehouse-stock-opnames/{id}/submit-approval', [\App\Http\Controllers\WarehouseStockOpnameController::class, 'submitForApproval'])->name('warehouse-stock-opnames.submit-approval');
+Route::post('/warehouse-stock-opnames/{id}/approve', [\App\Http\Controllers\WarehouseStockOpnameController::class, 'approve'])->name('warehouse-stock-opnames.approve');
+Route::post('/warehouse-stock-opnames/{id}/process', [\App\Http\Controllers\WarehouseStockOpnameController::class, 'process'])->name('warehouse-stock-opnames.process');
+Route::get('/api/warehouse-stock-opnames/get-items', [\App\Http\Controllers\WarehouseStockOpnameController::class, 'getItems'])->name('warehouse-stock-opnames.get-items');
+Route::get('/api/warehouse-stock-opnames/approvers', [\App\Http\Controllers\WarehouseStockOpnameController::class, 'getApprovers'])->name('warehouse-stock-opnames.approvers');
+Route::get('/api/warehouse-stock-opnames/pending-approvals', [\App\Http\Controllers\WarehouseStockOpnameController::class, 'getPendingApprovals'])->name('warehouse-stock-opnames.pending-approvals')->middleware('auth');
 Route::get('/outlet-inventory/category-recap-report', [\App\Http\Controllers\OutletInventoryReportController::class, 'categoryRecapReport'])->name('outlet-inventory.category-recap-report');
 
 Route::get('/outlet-internal-use-waste', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'index'])->name('outlet-internal-use-waste.index');

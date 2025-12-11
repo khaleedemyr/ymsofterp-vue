@@ -407,6 +407,9 @@ Route::get('/jabatan', function () {
 
 Route::get('/quotes/of-the-day', [QuoteController::class, 'getQuoteByDayOfYear']);
 
+// Stock card detail endpoint (requires authentication)
+Route::middleware('auth:web')->get('/outlet-inventory/stock-card/detail', [\App\Http\Controllers\OutletInventoryReportController::class, 'getStockCardDetail'])->name('api.outlet-inventory.stock-card.detail');
+
 Route::get('/outlet-inventory/stock', function (Request $request) {
     $item_id = $request->get('item_id');
     $warehouse_outlet_id = $request->get('warehouse_outlet_id');

@@ -1850,6 +1850,50 @@ class OutletInternalUseWasteController extends Controller
                 if (!isset($totalPerType[$type])) $totalPerType[$type] = 0;
                 $totalPerType[$type] += $subtotal_mac;
             }
+            
+            // Calculate subtotal MAC per header
+            $subtotalPerHeader = [];
+            foreach ($details as $item) {
+                $mac = null;
+                if (isset($inventoryItems[$item->item_id])) {
+                    $inventoryItem = $inventoryItems[$item->item_id];
+                    $header = $data->firstWhere('id', $item->header_id);
+                    if ($header) {
+                        $macKey = "{$inventoryItem->id}_{$header->outlet_id}_{$header->warehouse_outlet_id}_{$header->date}";
+                        if (isset($macHistories[$macKey])) {
+                            $mac = $macHistories[$macKey];
+                        }
+                    }
+                }
+                
+                $mac_converted = null;
+                if ($mac !== null) {
+                    $mac_converted = $mac;
+                    if ($item->unit_id == $item->medium_unit_id && $item->small_conversion_qty > 0) {
+                        $mac_converted = $mac * $item->small_conversion_qty;
+                    } elseif ($item->unit_id == $item->large_unit_id && $item->small_conversion_qty > 0 && $item->medium_conversion_qty > 0) {
+                        $mac_converted = $mac * $item->small_conversion_qty * $item->medium_conversion_qty;
+                    }
+                }
+                $subtotal_mac = ($mac_converted !== null) ? ($mac_converted * $item->qty) : 0;
+                
+                if (!isset($subtotalPerHeader[$item->header_id])) {
+                    $subtotalPerHeader[$item->header_id] = 0;
+                }
+                $subtotalPerHeader[$item->header_id] += $subtotal_mac;
+            }
+            
+            // Add subtotal_mac to each header row
+            $data = collect($data)->map(function($row) use ($subtotalPerHeader) {
+                $row->subtotal_mac = $subtotalPerHeader[$row->id] ?? 0;
+                return $row;
+            });
+        } else {
+            // If no details, set subtotal_mac to 0 for all rows
+            $data = collect($data)->map(function($row) {
+                $row->subtotal_mac = 0;
+                return $row;
+            });
         }
 
         $types = [

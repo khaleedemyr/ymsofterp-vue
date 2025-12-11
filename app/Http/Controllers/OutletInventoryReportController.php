@@ -299,6 +299,152 @@ class OutletInventoryReportController extends Controller
         ]);
     }
 
+    /**
+     * Get stock card detail for a specific item (for expandable rows in stock position)
+     */
+    public function getStockCardDetail(Request $request)
+    {
+        $user = auth()->user();
+        
+        // Validasi user sudah login
+        if (!$user) {
+            return response()->json([
+                'error' => 'Unauthorized. Silakan login terlebih dahulu.'
+            ], 401);
+        }
+        
+        $itemId = $request->input('item_id');
+        $outletId = $request->input('outlet_id');
+        $warehouseOutletId = $request->input('warehouse_outlet_id');
+        
+        // Default to current month (from tanggal 1 bulan berjalan)
+        $now = now();
+        $from = $request->input('from', $now->copy()->startOfMonth()->format('Y-m-d'));
+        $to = $request->input('to', $now->copy()->endOfMonth()->format('Y-m-d'));
+        
+        // Validasi input
+        if (!$itemId || !$outletId) {
+            return response()->json([
+                'error' => 'Item ID dan Outlet ID harus diisi'
+            ], 400);
+        }
+        
+        // Validasi akses outlet
+        if ($user->id_outlet != 1 && $user->id_outlet != $outletId) {
+            return response()->json([
+                'error' => 'Anda tidak memiliki akses untuk outlet ini.'
+            ], 403);
+        }
+        
+        // Get saldo awal (saldo akhir bulan sebelumnya)
+        $saldoAwal = null;
+        $lastDayOfPreviousMonth = now()->copy()->subMonth()->endOfMonth();
+        
+        $saldoQuery = DB::table('outlet_food_inventory_cards as c')
+            ->join('outlet_food_inventory_items as fi', 'c.inventory_item_id', '=', 'fi.id')
+            ->join('items as i', 'fi.item_id', '=', 'i.id')
+            ->leftJoin('units as us', 'i.small_unit_id', '=', 'us.id')
+            ->leftJoin('units as um', 'i.medium_unit_id', '=', 'um.id')
+            ->leftJoin('units as ul', 'i.large_unit_id', '=', 'ul.id')
+            ->where('i.id', $itemId)
+            ->where('c.id_outlet', $outletId)
+            ->whereDate('c.date', '<=', $lastDayOfPreviousMonth->format('Y-m-d'));
+        
+        if ($warehouseOutletId) {
+            $saldoQuery->where('c.warehouse_outlet_id', $warehouseOutletId);
+        }
+        
+        $saldoQuery->orderByDesc('c.date')->orderByDesc('c.id');
+        $last = $saldoQuery->first();
+        
+        if ($last) {
+            $saldoAwal = [
+                'small' => $last->saldo_qty_small ?? 0,
+                'medium' => $last->saldo_qty_medium ?? 0,
+                'large' => $last->saldo_qty_large ?? 0,
+                'small_unit_name' => $last->small_unit_name ?? '',
+                'medium_unit_name' => $last->medium_unit_name ?? '',
+                'large_unit_name' => $last->large_unit_name ?? '',
+            ];
+        } else {
+            // Jika tidak ada data sebelumnya, saldo awal = 0
+            $unitQuery = DB::table('items as i')
+                ->leftJoin('units as us', 'i.small_unit_id', '=', 'us.id')
+                ->leftJoin('units as um', 'i.medium_unit_id', '=', 'um.id')
+                ->leftJoin('units as ul', 'i.large_unit_id', '=', 'ul.id')
+                ->where('i.id', $itemId)
+                ->select('us.name as small_unit_name', 'um.name as medium_unit_name', 'ul.name as large_unit_name')
+                ->first();
+            
+            $saldoAwal = [
+                'small' => 0,
+                'medium' => 0,
+                'large' => 0,
+                'small_unit_name' => $unitQuery->small_unit_name ?? '',
+                'medium_unit_name' => $unitQuery->medium_unit_name ?? '',
+                'large_unit_name' => $unitQuery->large_unit_name ?? '',
+            ];
+        }
+        
+        // Get transactions from current month
+        $query = DB::table('outlet_food_inventory_cards as c')
+            ->join('outlet_food_inventory_items as fi', 'c.inventory_item_id', '=', 'fi.id')
+            ->join('items as i', 'fi.item_id', '=', 'i.id')
+            ->join('tbl_data_outlet as o', 'c.id_outlet', '=', 'o.id_outlet')
+            ->leftJoin('units as us', 'i.small_unit_id', '=', 'us.id')
+            ->leftJoin('units as um', 'i.medium_unit_id', '=', 'um.id')
+            ->leftJoin('units as ul', 'i.large_unit_id', '=', 'ul.id')
+            ->leftJoin('warehouse_outlets as wo', 'c.warehouse_outlet_id', '=', 'wo.id')
+            ->where('i.id', $itemId)
+            ->where('o.id_outlet', $outletId)
+            ->whereDate('c.date', '>=', $from)
+            ->whereDate('c.date', '<=', $to)
+            ->select(
+                'c.id',
+                'c.date',
+                'i.id as item_id',
+                'i.name as item_name',
+                'o.id_outlet',
+                'o.nama_outlet as outlet_name',
+                'c.in_qty_small',
+                'c.in_qty_medium',
+                'c.in_qty_large',
+                'c.out_qty_small',
+                'c.out_qty_medium',
+                'c.out_qty_large',
+                'c.value_in',
+                'c.value_out',
+                'c.saldo_value',
+                'c.saldo_qty_small',
+                'c.saldo_qty_medium',
+                'c.saldo_qty_large',
+                'c.reference_type',
+                'c.reference_id',
+                'c.description',
+                'us.name as small_unit_name',
+                'um.name as medium_unit_name',
+                'ul.name as large_unit_name',
+                'i.small_conversion_qty',
+                'i.medium_conversion_qty',
+                'wo.name as warehouse_outlet_name',
+                'c.warehouse_outlet_id'
+            );
+        
+        if ($warehouseOutletId) {
+            $query->where('c.warehouse_outlet_id', $warehouseOutletId);
+        }
+        
+        $query->orderBy('c.date')->orderBy('c.id');
+        $data = $query->get();
+        
+        // Convert collection to array for JSON response
+        return response()->json([
+            'cards' => $data->toArray(),
+            'saldo_awal' => $saldoAwal,
+            'count' => $data->count()
+        ]);
+    }
+
     public function inventoryValueReport(Request $request)
     {
         $user = auth()->user();

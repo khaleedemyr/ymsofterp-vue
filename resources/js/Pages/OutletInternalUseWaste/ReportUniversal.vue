@@ -66,21 +66,30 @@
         <div class="mt-4 flex justify-end">
           <button 
             @click="applyFilters"
-            :disabled="!from || !to"
-            class="px-6 py-2 bg-blue-500 text-white rounded-lg font-semibold hover:bg-blue-600 transition disabled:bg-gray-300 disabled:cursor-not-allowed"
+            :disabled="!from || !to || loadingData"
+            class="px-6 py-2 bg-blue-500 text-white rounded-lg font-semibold hover:bg-blue-600 transition disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center gap-2"
           >
-            <i class="fa fa-search mr-1"></i> Load Data
+            <i v-if="loadingData" class="fa fa-spinner fa-spin"></i>
+            <i v-else class="fa fa-search"></i>
+            <span>{{ loadingData ? 'Loading...' : 'Load Data' }}</span>
           </button>
         </div>
       </div>
+      <!-- Loading State -->
+      <div v-if="loadingData" class="bg-white rounded-xl shadow-lg p-12 text-center">
+        <div class="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mb-4"></div>
+        <p class="text-gray-600 font-medium">Memuat data laporan...</p>
+      </div>
+      
       <!-- Report Table -->
-      <div v-if="props.data && props.data.length > 0" class="overflow-x-auto bg-white rounded-xl shadow-lg">
+      <div v-else-if="props.data && props.data.length > 0" class="overflow-x-auto bg-white rounded-xl shadow-lg">
         <table class="min-w-full divide-y divide-gray-200">
           <thead class="bg-gray-50">
             <tr>
               <th></th>
               <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Tanggal</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Tipe</th>
+              <th class="px-6 py-3 text-right text-xs font-bold text-gray-700 uppercase tracking-wider">Subtotal MAC</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Outlet</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Warehouse Outlet</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Catatan</th>
@@ -97,6 +106,9 @@
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">{{ formatDate(row.date) }}</td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm">{{ typeLabel(row.type) }}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-right font-semibold text-blue-700">
+                  {{ formatRupiah(row.subtotal_mac || 0) }}
+                </td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm">{{ row.outlet_name }}</td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm">{{ row.warehouse_outlet_name }}</td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm">{{ row.notes || '-' }}</td>
@@ -104,7 +116,7 @@
               <transition name="fade-expand">
                 <tr v-if="expanded[row.id]" :key="'detail-'+row.id">
                   <td></td>
-                  <td colspan="5" class="bg-gray-50 px-0 py-0">
+                  <td colspan="6" class="bg-gray-50 px-0 py-0">
                     <div class="rounded-lg border border-blue-100 bg-blue-50/60 shadow-inner mx-4 my-2 overflow-x-auto">
                       <div v-if="loadingDetail[row.id]" class="text-gray-400 py-6 text-center">Loading...</div>
                       <div v-else-if="details[row.id] && details[row.id].length">
@@ -112,26 +124,28 @@
                           <thead class="sticky top-0 z-10 bg-blue-100/80">
                             <tr>
                               <th class="px-4 py-2 border-b font-semibold text-gray-700">Item</th>
-                              <th class="px-4 py-2 border-b font-semibold text-gray-700">Qty</th>
+                              <th class="px-4 py-2 border-b font-semibold text-gray-700 text-right">Qty</th>
                               <th class="px-4 py-2 border-b font-semibold text-gray-700">Unit</th>
-                              <th class="px-4 py-2 border-b font-semibold text-gray-700">MAC</th>
-                              <th class="px-4 py-2 border-b font-semibold text-gray-700">Subtotal MAC</th>
+                              <th class="px-4 py-2 border-b font-semibold text-gray-700 text-right">MAC<br/>(per unit)</th>
+                              <th class="px-4 py-2 border-b font-semibold text-gray-700 text-right">Qty × MAC</th>
+                              <th class="px-4 py-2 border-b font-semibold text-gray-700 text-right">Subtotal</th>
                               <th class="px-4 py-2 border-b font-semibold text-gray-700">Catatan</th>
                             </tr>
                           </thead>
                           <tbody>
                             <tr v-for="item in details[row.id]" :key="item.id" class="hover:bg-blue-100/60 transition-colors">
                               <td class="px-4 py-2 border-b">{{ item.item_name }}</td>
-                              <td class="px-4 py-2 border-b text-right">{{ item.qty }}</td>
+                              <td class="px-4 py-2 border-b text-right">{{ formatNumber(item.qty) }}</td>
                               <td class="px-4 py-2 border-b">{{ item.unit_name }}</td>
                               <td class="px-4 py-2 border-b text-right">{{ formatRupiah(item.mac_converted) }}</td>
-                              <td class="px-4 py-2 border-b text-right">{{ formatRupiah(item.subtotal_mac) }}</td>
+                              <td class="px-4 py-2 border-b text-right">{{ formatRupiah(getQtyTimesMac(item)) }}</td>
+                              <td class="px-4 py-2 border-b text-right font-semibold">{{ formatRupiah(item.subtotal_mac) }}</td>
                               <td class="px-4 py-2 border-b">{{ item.note || '-' }}</td>
                             </tr>
-                            <tr v-if="details[row.id] && details[row.id].length">
-                              <td colspan="4" class="px-4 py-2 border-b font-bold text-right bg-blue-50">Grand Total</td>
-                              <td class="px-4 py-2 border-b font-bold text-right bg-blue-50">{{ formatRupiah(grandTotal(details[row.id])) }}</td>
-                              <td class="px-4 py-2 border-b bg-blue-50"></td>
+                            <tr v-if="details[row.id] && Array.isArray(details[row.id]) && details[row.id].length > 0" class="bg-blue-50 border-t-2 border-blue-300">
+                              <td colspan="5" class="px-4 py-2 border-b font-bold text-right text-gray-900">Total MAC</td>
+                              <td class="px-4 py-2 border-b font-bold text-right text-lg text-blue-700">{{ formatRupiah(grandTotal(details[row.id])) }}</td>
+                              <td class="px-4 py-2 border-b"></td>
                             </tr>
                           </tbody>
                         </table>
@@ -143,6 +157,17 @@
               </transition>
             </template>
           </tbody>
+          <tfoot v-if="props.data && props.data.length > 0" class="bg-gray-100 border-t-2 border-gray-400">
+            <tr>
+              <td colspan="3" class="px-6 py-4 text-right font-bold text-gray-900 text-lg">
+                GRAND TOTAL MAC
+              </td>
+              <td class="px-6 py-4 text-right font-bold text-gray-900 text-xl">
+                {{ formatRupiah(grandTotalMacFromProps) }}
+              </td>
+              <td colspan="3" class="px-6 py-4"></td>
+            </tr>
+          </tfoot>
         </table>
       </div>
       <div v-else-if="from && to" class="bg-white rounded-xl shadow-lg p-8 text-center">
@@ -159,7 +184,7 @@
 
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue';
-import { ref, watch, computed } from 'vue';
+import { ref, watch, computed, onMounted } from 'vue';
 import { router, usePage } from '@inertiajs/vue3';
 import axios from 'axios';
 import Swal from 'sweetalert2';
@@ -195,39 +220,74 @@ const from = ref(props.filters?.from || '');
 const to = ref(props.filters?.to || '');
 
 // Add filtered warehouse outlets
-const filteredWarehouseOutlets = ref(props.warehouse_outlets || []);
+const filteredWarehouseOutlets = ref([]);
+
+// Function to filter warehouse outlets based on selected outlet
+async function filterWarehouseOutlets(outletId) {
+  console.log('Filtering warehouse outlets for outlet:', outletId);
+  
+  if (!outletId) {
+    // No outlet selected - show all for superuser, or user's outlet for regular user
+    if (isSuperuser.value) {
+      filteredWarehouseOutlets.value = props.warehouse_outlets || [];
+    } else {
+      const userOutletId = props.user_outlet_id || user.value.id_outlet;
+      filteredWarehouseOutlets.value = (props.warehouse_outlets || []).filter(wo => wo.outlet_id == userOutletId);
+    }
+    console.log('No outlet selected, filtered warehouse outlets:', filteredWarehouseOutlets.value.length);
+    return;
+  }
+  
+  // Always filter by outlet_id, regardless of user type
+  // Convert outletId to number for comparison
+  const outletIdNum = Number(outletId);
+  
+  if (isSuperuser.value) {
+    // For superuser, try to fetch from API first (more reliable)
+    try {
+      const response = await axios.get(`/api/warehouse-outlets/by-outlet/${outletId}`);
+      filteredWarehouseOutlets.value = response.data || [];
+      console.log('Fetched warehouse outlets from API:', filteredWarehouseOutlets.value.length);
+    } catch (error) {
+      console.error('Error fetching warehouse outlets:', error);
+      // Fallback to filter from props
+      filteredWarehouseOutlets.value = (props.warehouse_outlets || []).filter(wo => {
+        const woOutletId = Number(wo.outlet_id);
+        return woOutletId === outletIdNum;
+      });
+      console.log('Fallback filtered warehouse outlets:', filteredWarehouseOutlets.value.length, 'from', props.warehouse_outlets?.length || 0, 'total');
+    }
+  } else {
+    // For regular user, filter from existing warehouse outlets
+    filteredWarehouseOutlets.value = (props.warehouse_outlets || []).filter(wo => {
+      const woOutletId = Number(wo.outlet_id);
+      return woOutletId === outletIdNum;
+    });
+    console.log('Filtered warehouse outlets for regular user:', filteredWarehouseOutlets.value.length, 'from', props.warehouse_outlets?.length || 0, 'total');
+  }
+}
 
 const expanded = ref({});
 const details = ref({});
 const loadingDetail = ref({});
+const loadingData = ref(false);
 
 // Watch for outlet changes to filter warehouse outlets
-watch(selectedOutlet, async (newOutletId) => {
+watch(selectedOutlet, async (newOutletId, oldOutletId) => {
+  console.log('Outlet changed from', oldOutletId, 'to', newOutletId);
   // Reset warehouse outlet selection when outlet changes
   selectedWarehouse.value = '';
-  
-  if (newOutletId && isSuperuser.value) {
-    // For superuser, fetch warehouse outlets for selected outlet
-    try {
-      const response = await axios.get(`/api/warehouse-outlets/by-outlet/${newOutletId}`);
-      filteredWarehouseOutlets.value = response.data;
-    } catch (error) {
-      console.error('Error fetching warehouse outlets:', error);
-      filteredWarehouseOutlets.value = [];
-    }
-  } else if (newOutletId && !isSuperuser.value) {
-    // For regular user, filter from existing warehouse outlets
-    filteredWarehouseOutlets.value = props.warehouse_outlets.filter(wo => wo.outlet_id == newOutletId);
-  } else {
-    // No outlet selected, show all warehouse outlets for superuser or filter for regular user
-    if (isSuperuser.value) {
-      filteredWarehouseOutlets.value = props.warehouse_outlets;
-    } else {
-      const userOutletId = props.user_outlet_id || user.value.id_outlet;
-      filteredWarehouseOutlets.value = props.warehouse_outlets.filter(wo => wo.outlet_id == userOutletId);
-    }
-  }
+  await filterWarehouseOutlets(newOutletId);
 }, { immediate: true });
+
+// Initial filter on mount to ensure warehouse outlets are filtered correctly
+onMounted(() => {
+  if (selectedOutlet.value) {
+    filterWarehouseOutlets(selectedOutlet.value);
+  } else {
+    filterWarehouseOutlets(null);
+  }
+});
 
 function applyFilters() {
   // Only fetch if date range is provided
@@ -242,6 +302,8 @@ function applyFilters() {
     return;
   }
   
+  loadingData.value = true;
+  
   router.get(
     route('outlet-internal-use-waste.report-universal'),
     {
@@ -254,7 +316,13 @@ function applyFilters() {
     {
       preserveState: true,
       preserveScroll: true,
-      replace: true
+      replace: true,
+      onFinish: () => {
+        loadingData.value = false;
+      },
+      onError: () => {
+        loadingData.value = false;
+      }
     }
   );
 }
@@ -283,8 +351,11 @@ function toggleExpand(id) {
   if (expanded.value[id] && !details.value[id]) {
     loadingDetail.value[id] = true;
     axios.get(`/outlet-internal-use-waste/${id}/details`).then(res => {
-      details.value[id] = res.data.details;
-    }).catch(() => {
+      details.value[id] = res.data.details || [];
+      console.log('Details loaded for row', id, ':', details.value[id]);
+      console.log('Total MAC for row', id, ':', grandTotal(details.value[id]));
+    }).catch((error) => {
+      console.error('Error loading details for row', id, ':', error);
       details.value[id] = [];
     }).finally(() => {
       loadingDetail.value[id] = false;
@@ -294,13 +365,57 @@ function toggleExpand(id) {
 
 function formatRupiah(val) {
   if (val === null || val === undefined || isNaN(val)) return '-';
-  return 'Rp ' + Number(val).toLocaleString('id-ID', { minimumFractionDigits: 0 });
+  return 'Rp ' + Number(val).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function formatNumber(val) {
+  if (val === null || val === undefined || isNaN(val)) return '0';
+  return Number(val).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function getQtyTimesMac(item) {
+  if (!item || item.qty === null || item.qty === undefined || item.mac_converted === null || item.mac_converted === undefined) {
+    return 0;
+  }
+  return (Number(item.qty) || 0) * (Number(item.mac_converted) || 0);
 }
 
 function grandTotal(items) {
-  if (!items || !items.length) return 0;
-  return items.reduce((sum, item) => sum + (Number(item.subtotal_mac) || 0), 0);
+  if (!items || !Array.isArray(items) || items.length === 0) return 0;
+  return items.reduce((sum, item) => {
+    const subtotal = item.subtotal_mac !== null && item.subtotal_mac !== undefined 
+      ? Number(item.subtotal_mac) 
+      : 0;
+    return sum + subtotal;
+  }, 0);
 }
+
+// Calculate grand total MAC for all rows (from expanded details)
+const grandTotalMac = computed(() => {
+  if (!props.data || !Array.isArray(props.data) || props.data.length === 0) return 0;
+  
+  let total = 0;
+  props.data.forEach(row => {
+    if (details.value[row.id] && Array.isArray(details.value[row.id]) && details.value[row.id].length > 0) {
+      const rowTotal = grandTotal(details.value[row.id]);
+      total += rowTotal;
+    }
+  });
+  
+  return total;
+});
+
+// Calculate grand total MAC from props.data (subtotal_mac per row)
+const grandTotalMacFromProps = computed(() => {
+  if (!props.data || !Array.isArray(props.data) || props.data.length === 0) return 0;
+  
+  return props.data.reduce((sum, row) => {
+    const subtotal = row.subtotal_mac !== null && row.subtotal_mac !== undefined 
+      ? Number(row.subtotal_mac) 
+      : 0;
+    return sum + subtotal;
+  }, 0);
+});
 </script>
 
 <style scoped>

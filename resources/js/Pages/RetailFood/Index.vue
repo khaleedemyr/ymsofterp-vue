@@ -12,9 +12,9 @@
           >
             <i class="fa-solid fa-chart-line mr-2"></i>Report Supplier
           </button>
-          <button @click="goCreate" class="bg-gradient-to-r from-blue-500 to-blue-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold">
-            + Tambah Baru
-          </button>
+        <button @click="goCreate" class="bg-gradient-to-r from-blue-500 to-blue-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold">
+          + Tambah Baru
+        </button>
         </div>
       </div>
 

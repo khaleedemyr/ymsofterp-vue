@@ -756,8 +756,16 @@ class ScheduleAttendanceCorrectionController extends Controller
     {
         $user = auth()->user();
         
-        // Only HRD users (division_id = 6) can approve
-        if ($user->division_id != 6) {
+        if (!$user) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthorized access'
+            ], 403);
+        }
+        
+        // Only HRD users (division_id = 6) or superadmin can approve
+        $isSuperadmin = $user->id_role === '5af56935b011a';
+        if (!$isSuperadmin && $user->division_id != 6) {
             return response()->json([
                 'success' => false,
                 'message' => 'Unauthorized access'
@@ -810,30 +818,77 @@ class ScheduleAttendanceCorrectionController extends Controller
                 // Parse the new values from JSON for manual attendance
                 $newData = json_decode($approval->new_value, true);
                 
-                // Insert new record to att_log
-                $attLogId = DB::table('att_log')->insertGetId([
-                    'sn' => $newData['sn'],
-                    'pin' => $newData['pin'],
-                    'scan_date' => $newData['scan_date'],
-                    'verifymode' => $newData['verifymode'],
-                    'inoutmode' => $newData['inoutmode'],
-                    'device_ip' => $newData['device_ip'],
-                    'created_at' => now(),
-                    'updated_at' => now()
-                ]);
+                // Check if record already exists (primary key: sn, pin, scan_date)
+                $existingRecord = DB::table('att_log')
+                    ->where('sn', $newData['sn'])
+                    ->where('pin', $newData['pin'])
+                    ->where('scan_date', $newData['scan_date'])
+                    ->first();
                 
-                \Log::info('Manual attendance inserted:', [
-                    'att_log_id' => $attLogId,
-                    'sn' => $newData['sn'],
-                    'pin' => $newData['pin'],
-                    'scan_date' => $newData['scan_date'],
-                    'inoutmode' => $newData['inoutmode']
-                ]);
+                if ($existingRecord) {
+                    // Update existing record
+                    DB::table('att_log')
+                        ->where('sn', $newData['sn'])
+                        ->where('pin', $newData['pin'])
+                        ->where('scan_date', $newData['scan_date'])
+                        ->update([
+                            'verifymode' => $newData['verifymode'] ?? $existingRecord->verifymode,
+                            'inoutmode' => $newData['inoutmode'] ?? $existingRecord->inoutmode,
+                            'device_ip' => $newData['device_ip'] ?? $existingRecord->device_ip,
+                            'updated_at' => now()
+                        ]);
+                    
+                    // Get the record ID if it exists, otherwise use composite key identifier
+                    $attLogId = isset($existingRecord->id) ? $existingRecord->id : null;
+                    
+                    \Log::info('Manual attendance updated:', [
+                        'att_log_id' => $attLogId,
+                        'sn' => $newData['sn'],
+                        'pin' => $newData['pin'],
+                        'scan_date' => $newData['scan_date'],
+                        'inoutmode' => $newData['inoutmode']
+                    ]);
+                } else {
+                    // Insert new record to att_log
+                    try {
+                        $attLogId = DB::table('att_log')->insertGetId([
+                            'sn' => $newData['sn'],
+                            'pin' => $newData['pin'],
+                            'scan_date' => $newData['scan_date'],
+                            'verifymode' => $newData['verifymode'],
+                            'inoutmode' => $newData['inoutmode'],
+                            'device_ip' => $newData['device_ip'],
+                            'created_at' => now(),
+                            'updated_at' => now()
+                        ]);
+                    } catch (\Exception $e) {
+                        // If insertGetId fails (e.g., composite primary key), set to null
+                        $attLogId = null;
+                        \Log::warning('Could not get ID from insertGetId, using null', [
+                            'error' => $e->getMessage(),
+                            'sn' => $newData['sn'],
+                            'pin' => $newData['pin'],
+                            'scan_date' => $newData['scan_date']
+                        ]);
+                    }
+                    
+                    \Log::info('Manual attendance inserted:', [
+                        'att_log_id' => $attLogId,
+                        'sn' => $newData['sn'],
+                        'pin' => $newData['pin'],
+                        'scan_date' => $newData['scan_date'],
+                        'inoutmode' => $newData['inoutmode']
+                    ]);
+                }
                 
                 // Log the correction for audit trail
+                // If attLogId is null (composite key table), use 0 or NULL
+                // Store the composite key info in new_value instead
+                $recordId = $attLogId ?? 0;
+                
                 DB::table('schedule_attendance_corrections')->insert([
                     'type' => 'manual_attendance',
-                    'record_id' => $attLogId,
+                    'record_id' => $recordId,
                     'old_value' => null,
                     'new_value' => $approval->new_value,
                     'reason' => $approval->reason,
@@ -1050,8 +1105,16 @@ class ScheduleAttendanceCorrectionController extends Controller
     {
         $user = auth()->user();
         
-        // Only HRD users (division_id = 6) can reject
-        if ($user->division_id != 6) {
+        if (!$user) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthorized access'
+            ], 403);
+        }
+        
+        // Only HRD users (division_id = 6) or superadmin can reject
+        $isSuperadmin = $user->id_role === '5af56935b011a';
+        if (!$isSuperadmin && $user->division_id != 6) {
             return response()->json([
                 'success' => false,
                 'message' => 'Unauthorized access'
